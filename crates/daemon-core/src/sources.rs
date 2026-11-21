@@ -2,13 +2,13 @@
 //! current.
 //!
 //! Every trusted host with a route has one follower. It holds the host's
-//! SubscribeInventory call: at the stream's CaughtUp it records the host's
+//! FollowAgents call: at the stream's CaughtUp it records the host's
 //! generation, writes the rows the host lists and drops the ones it no
 //! longer lists, and only then marks the host ready. That is what
 //! "reachable" means for a source.
 //!
-//! Every replica agent of a ready host may have one source: one Subscribe
-//! call to the origin. The agents the store remembers of a host get theirs
+//! Every replica agent of a ready host may have one source: one
+//! FollowSession call to the origin. The agents the store remembers of a host get theirs
 //! as the host's inventory is subscribed, in the same step, so a launch
 //! reconciles in one round trip to each host rather than two; the
 //! inventory's CaughtUp confirms them, and drops any for an agent the host
@@ -45,8 +45,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use store::{Absorb, AgentKey, AgentRow, Marker, Record, StoreError};
 use wire::{
-    Agent, AgentRemoved, Item, ListItemsResponse, SessionEvent, SubscribeSessionRequest,
-    inventory_event, session_event, subscribe_session_request,
+    Agent, AgentRemoved, FollowSessionRequest, Item, ListItemsResponse, SessionEvent,
+    follow_session_request, inventory_event, session_event,
 };
 
 use crate::ids::{AgentId, CallId, HostId, TimerId};
@@ -559,8 +559,7 @@ impl Daemon {
         out.push(Output::Call {
             host,
             call,
-            request: PeerRequest::SubscribeInventory,
-            absorbed: true,
+            request: PeerRequest::FollowAgents,
         });
         let follower = self.sources.followers.entry(host).or_default();
         follower.state = Following::Streaming(Box::new(Inventory {
@@ -1054,7 +1053,7 @@ impl Daemon {
         }));
     }
 
-    /// Makes the Subscribe call that feeds `agent`'s replica: a tail of K
+    /// Makes the FollowSession call that feeds `agent`'s replica: a tail of K
     /// with no block, otherwise what came after its cursor. None when the
     /// replica's row is gone. Says whether it asked for a tail.
     fn source_call(
@@ -1065,7 +1064,7 @@ impl Daemon {
     ) -> Option<(CallId, bool)> {
         let row = self.store.agent(agent).ok().flatten()?;
         let from = self.source_from(&row);
-        let tail = matches!(from, subscribe_session_request::From::Tail(_));
+        let tail = matches!(from, follow_session_request::From::Tail(_));
         let call = self.pending.peers.mint();
         self.pending.peers.waiting.insert(
             call,
@@ -1076,33 +1075,32 @@ impl Daemon {
         out.push(Output::Call {
             host,
             call,
-            request: PeerRequest::SubscribeSession(SubscribeSessionRequest {
+            request: PeerRequest::FollowSession(FollowSessionRequest {
                 agent_id: agent.agent.clone(),
                 from: Some(from),
             }),
-            absorbed: true,
         });
         Some((call, tail))
     }
 
-    /// Where a replica's Subscribe starts: a tail of K with no block,
+    /// Where a replica's FollowSession starts: a tail of K with no block,
     /// otherwise after its cursor.
-    fn source_from(&self, row: &AgentRow) -> subscribe_session_request::From {
+    fn source_from(&self, row: &AgentRow) -> follow_session_request::From {
         let k = self.settings.tail_rows;
         if row.complete_from_order.is_some() {
-            subscribe_session_request::From::After(wire::After {
+            follow_session_request::From::After(wire::After {
                 revision: row.source_cursor,
                 cap: k,
                 generation: row.source_generation,
             })
         } else {
-            subscribe_session_request::From::Tail(k)
+            follow_session_request::From::Tail(k)
         }
     }
 
     /// The calls this host makes of each trusted host as it begins
     /// following it, as they stand now: the host's inventory and, under the
-    /// `Listed` policy, a Subscribe from its cursor for every agent of the
+    /// `Listed` policy, a FollowSession from its cursor for every agent of the
     /// host's the store holds and no source feeds yet. A launch sends them
     /// with the host's link before it is up, so the calls the core makes
     /// once it is up find their answers already arriving.
@@ -1112,7 +1110,7 @@ impl Daemon {
             .trusted
             .iter()
             .map(|host| {
-                let mut calls = vec![PeerRequest::SubscribeInventory];
+                let mut calls = vec![PeerRequest::FollowAgents];
                 if self.sources.policy == SourcePolicy::Listed {
                     for row in rows.iter().filter(|row| row.agent.host == host.0) {
                         let key = Key::from(&row.agent);
@@ -1121,7 +1119,7 @@ impl Daemon {
                         {
                             continue;
                         }
-                        calls.push(PeerRequest::SubscribeSession(SubscribeSessionRequest {
+                        calls.push(PeerRequest::FollowSession(FollowSessionRequest {
                             agent_id: row.agent.agent.clone(),
                             from: Some(self.source_from(row)),
                         }));
@@ -1510,7 +1508,6 @@ impl Daemon {
                 before_order,
                 page_size: limit,
             }),
-            absorbed: true,
         });
         Ok(())
     }
@@ -1851,7 +1848,6 @@ mod tests {
                     host,
                     call,
                     request,
-                    absorbed: true,
                 } if *host == HostId(PEER) => Some((*call, request.clone())),
                 _ => None,
             })
@@ -1937,7 +1933,7 @@ mod tests {
             },
         );
         match calls(&due).as_slice() {
-            [(call, PeerRequest::SubscribeInventory)] => *call,
+            [(call, PeerRequest::FollowAgents)] => *call,
             other => panic!("the timer subscribes to the inventory: {other:?}"),
         }
     }
@@ -1977,11 +1973,11 @@ mod tests {
         assert!(daemon.sources().ready(HostId(PEER)));
         assert_eq!(daemon.store.host_generation(&PEER).unwrap(), Some(3));
         let source = match calls(&caught_up).as_slice() {
-            [(call, PeerRequest::SubscribeSession(request))] => {
+            [(call, PeerRequest::FollowSession(request))] => {
                 assert_eq!(request.agent_id, THEIRS.to_vec());
                 assert_eq!(
                     request.from,
-                    Some(subscribe_session_request::From::Tail(200)),
+                    Some(follow_session_request::From::Tail(200)),
                     "with no block it asks for a tail of K"
                 );
                 *call
@@ -2352,9 +2348,18 @@ mod tests {
             2,
             "the inventory and the remembered agent: {flown:?}"
         );
+        // Early data may reach the host more than once, so only the two
+        // follows, which read and change nothing, ever go in a flight.
+        assert!(
+            flown.iter().all(|request| matches!(
+                request,
+                PeerRequest::FollowAgents | PeerRequest::FollowSession(_)
+            )),
+            "{flown:?}"
+        );
         assert_eq!(
             daemon.first_flight(),
-            vec![(HostId(PEER), vec![PeerRequest::SubscribeInventory])],
+            vec![(HostId(PEER), vec![PeerRequest::FollowAgents])],
             "an agent a source feeds is not asked for again"
         );
     }

@@ -1,9 +1,11 @@
 //! The link log: one INFO line for each link a host's links go through,
 //! coming up, going down or moving to another path, naming the peer, the
 //! path, whether the link resumed a session and how its early data fared,
-//! and one line each time the host's network changes under all of them.
-//! Daemons and the phone write it to their logs; stories and journeys read
-//! it back with [`LinkEvent::parse`] to say which path carried a link.
+//! one line each time the host's network changes under all of them, and one
+//! line for each call a node carried to another host for one of its
+//! clients, which passes through no state machine and so is seen nowhere
+//! else. Daemons and the phone write it to their logs; stories and journeys
+//! read it back with [`LinkEvent::parse`] to say which path carried a link.
 
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
@@ -18,6 +20,8 @@ pub const TARGET: &str = "amux::link";
 const MESSAGE: &str = "link";
 /// The message a network change's line carries.
 const REBIND: &str = "rebind";
+/// The message a carried call's line carries.
+const CARRIED: &str = "carried";
 
 /// What happened to the link.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -189,6 +193,86 @@ impl Rebind {
     }
 }
 
+/// The line written when a call this node carried to another host for one
+/// of its clients ended: the method, the host, how it ended and how long it
+/// ran, from the call arriving here to its last byte or its failure.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CarriedCall {
+    pub peer: HostId,
+    /// The call's path, `/package.Service/Method`.
+    pub method: String,
+    pub outcome: CarriedOutcome,
+    /// The gRPC status code the caller was given, as gRPC numbers it.
+    pub code: i32,
+    pub ms: u64,
+}
+
+/// How a carried call ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CarriedOutcome {
+    /// The host answered, with the status in the line's code.
+    Answered,
+    /// It never left: no link, not trusted, or no channel in time.
+    Unreachable,
+    /// It never left: only the relay reaches the host and the plan lapsed.
+    PaymentRequired,
+    /// It never left: the host no longer trusts this one.
+    Revoked,
+    /// It left, and no answer began in time or the link failed under it.
+    Aborted,
+    /// The caller let go of it before it ended.
+    Dropped,
+}
+
+impl CarriedCall {
+    /// Writes the line for a call `host` carried.
+    pub fn write(&self, host: HostId) {
+        tracing::info!(
+            target: TARGET,
+            %host,
+            peer = %self.peer,
+            method = %self.method,
+            outcome = %self.outcome,
+            code = self.code,
+            ms = self.ms,
+            "{CARRIED}"
+        );
+    }
+
+    /// Reads a line back as a log holds it: the host that carried the call,
+    /// and the call. Anything else in the log reads as None.
+    pub fn parse(line: &str) -> Option<(HostId, Self)> {
+        let (_, fields) = line.split_once(&format!("{TARGET}: {CARRIED} "))?;
+        let mut host = None;
+        let (mut peer, mut method, mut outcome, mut code, mut ms) = (None, None, None, None, None);
+        for field in fields.split_whitespace() {
+            let Some((key, value)) = field.split_once('=') else {
+                continue;
+            };
+            let value = value.trim_matches('"');
+            match key {
+                "host" => host = Some(value.parse().ok()?),
+                "peer" => peer = Some(value.parse().ok()?),
+                "method" => method = Some(value.to_owned()),
+                "outcome" => outcome = Some(value.parse().ok()?),
+                "code" => code = Some(value.parse().ok()?),
+                "ms" => ms = Some(value.parse().ok()?),
+                _ => {}
+            }
+        }
+        Some((
+            host?,
+            Self {
+                peer: peer?,
+                method: method?,
+                outcome: outcome?,
+                code: code?,
+                ms: ms?,
+            },
+        ))
+    }
+}
+
 /// The catch-up's milliseconds as the line spells them: a number, or
 /// `none`.
 struct CatchUp(Option<u32>);
@@ -249,6 +333,14 @@ spelled!(PathKind {
     ViaDaemon => "via_daemon",
 });
 spelled!(EarlyData { None => "none", Accepted => "accepted", Rejected => "rejected" });
+spelled!(CarriedOutcome {
+    Answered => "answered",
+    Unreachable => "unreachable",
+    PaymentRequired => "payment_required",
+    Revoked => "revoked",
+    Aborted => "aborted",
+    Dropped => "dropped",
+});
 
 #[cfg(test)]
 mod tests {
@@ -303,6 +395,27 @@ mod tests {
     }
 
     #[test]
+    fn a_carried_call_reads_back_and_never_as_a_link() {
+        let host = HostId::from_u128(1);
+        let call = CarriedCall {
+            peer: HostId::from_u128(2),
+            method: "/amux.v1.HostService/PinFolder".to_owned(),
+            outcome: CarriedOutcome::PaymentRequired,
+            code: 7,
+            ms: 12,
+        };
+        let line = format!(
+            "2026-11-19T09:00:00.000000Z  INFO amux::link: carried host={host} peer={} \
+             method=/amux.v1.HostService/PinFolder outcome=payment_required code=7 ms=12",
+            call.peer
+        );
+        assert_eq!(CarriedCall::parse(&line), Some((host, call)));
+        assert_eq!(LinkEvent::parse(&line), None);
+        assert_eq!(Rebind::parse(&line), None);
+        assert_eq!(CarriedCall::parse(&line.replace(" ms=12", "")), None);
+    }
+
+    #[test]
     fn link_log_names_a_direct_address_on_the_same_network_lan() {
         let kind = |addr: &str| PathKind::of_addr(addr.parse().unwrap());
         for lan in [
@@ -318,6 +431,78 @@ mod tests {
         }
         for direct in ["203.0.113.9:5000", "[2001:db8::1]:5000"] {
             assert_eq!(kind(direct), PathKind::Direct, "{direct}");
+        }
+    }
+}
+
+/// The link log the test process writes, as the daemon's log would hold it.
+/// It is the process's one subscriber, not one scoped to a test: a scoped
+/// one misses events written on other threads, and events whose callsites
+/// another test's thread registered first, while none was listening.
+#[cfg(test)]
+pub(crate) mod captured {
+    use std::sync::{Arc, Mutex, OnceLock};
+
+    use crate::HostId;
+
+    #[derive(Clone, Default)]
+    pub(crate) struct Traces(Arc<Mutex<Vec<u8>>>);
+
+    /// The capture, set up as the process's subscriber on first use.
+    pub(crate) fn log() -> &'static Traces {
+        static TRACES: OnceLock<Traces> = OnceLock::new();
+        TRACES.get_or_init(|| {
+            use tracing_subscriber::Layer as _;
+            use tracing_subscriber::layer::SubscriberExt as _;
+            use tracing_subscriber::util::SubscriberInitExt as _;
+
+            let traces = Traces::default();
+            let writer = traces.clone();
+            tracing_subscriber::registry()
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .with_ansi(false)
+                        .with_writer(move || writer.clone())
+                        .with_filter(tracing_subscriber::filter::Targets::new().with_target(
+                            super::TARGET,
+                            tracing_subscriber::filter::LevelFilter::INFO,
+                        )),
+                )
+                .try_init()
+                .expect("no other subscriber in node's unit tests");
+            traces
+        })
+    }
+
+    impl std::io::Write for Traces {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Traces {
+        /// What `host` wrote to the link log.
+        pub(crate) fn link_log(&self, host: HostId) -> Vec<super::LinkEvent> {
+            self.lines(super::LinkEvent::parse, host)
+        }
+
+        /// The calls `host` carried, as its log reads them back.
+        pub(crate) fn carried(&self, host: HostId) -> Vec<super::CarriedCall> {
+            self.lines(super::CarriedCall::parse, host)
+        }
+
+        fn lines<T>(&self, parse: fn(&str) -> Option<(HostId, T)>, host: HostId) -> Vec<T> {
+            String::from_utf8_lossy(&self.0.lock().unwrap())
+                .lines()
+                .filter_map(parse)
+                .filter(|(writer, _)| *writer == host)
+                .map(|(_, event)| event)
+                .collect()
         }
     }
 }

@@ -15,12 +15,15 @@
 //! and the answers back in order, carry the parent's inventory to the
 //! child's host, run every job at once, and fire a timer the core armed
 //! for now at once and one armed for later when the model chooses to wait.
-//! What the world does is the environment too: a person creates the child,
-//! stops or deletes the parent; a process exits unasked; the child's turn
-//! ends; the parent's process accepts a message written to it, writing its
-//! acceptance to its journal; the link goes down and comes back; the
-//! child's host unpairs from the parent's; and a daemon crashes and starts
-//! again, adopting the processes still running.
+//! What the world does is the environment too: the parent's create of the
+//! child reaches the child's host, carried there unread from the parent's
+//! as a call on that host whose caller is the parent, at any point, since
+//! a call already on its way may land after the parent was stopped or the
+//! link went; a person stops or deletes the parent; a process exits
+//! unasked; the child's turn ends; the parent's process accepts a message
+//! written to it, writing its acceptance to its journal; the link goes down
+//! and comes back; the child's host unpairs from the parent's; and a daemon
+//! crashes and starts again, adopting the processes still running.
 //!
 //! Under the suspension experiment the parent's process may also suspend
 //! while nothing is written to it, exiting with its journal saying so, and
@@ -35,8 +38,8 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 
 use daemon_core::payload::{
-    Answer, CarrierKind, ClientRequest, JobResult, MessageFrom, PeerFailure, PeerReply,
-    PeerRequest, Response, Status,
+    Answer, CarrierKind, ClientRequest, JobResult, PeerFailure, PeerRead, PeerReply, PeerRequest,
+    Response, Status, report_envelope,
 };
 use daemon_core::{
     AgentId, CallId, Create, Daemon, Ended, Fingerprint, HostId, Input, Job, LinkId, Output,
@@ -44,7 +47,7 @@ use daemon_core::{
 };
 use prost::Message as _;
 use store::{AgentKey, Sqlite};
-use wire::{InventoryEvent, Item, Lifecycle, Step, inventory_event};
+use wire::{DeliverReportRequest, InventoryEvent, Item, Lifecycle, Step, inventory_event};
 
 use crate::held::{Dir, Held, Journal, Slot};
 use crate::{Machine, Property};
@@ -57,7 +60,8 @@ const PARENT: AgentId = AgentId(*b"parent-000000000");
 const CHILD: AgentId = AgentId(*b"child-0000000000");
 /// Each agent's journal fits one segment.
 const SEGMENT_BYTES: u64 = 1 << 20;
-/// The person's calls: creating the child, stopping and deleting the
+/// The calls the hosts' cores are handed: the parent's create of the
+/// child on the child's host, and the person's stop and delete of the
 /// parent.
 const CREATE: CallId = CallId(1);
 const STOP: CallId = CallId(2);
@@ -279,7 +283,7 @@ pub struct State {
     link: Option<LinkId>,
     links: u64,
     following: Option<Following>,
-    /// The child's host's SendMessage calls on their way, encoded.
+    /// The child's host's DeliverReport calls on their way, encoded.
     sent: Vec<(CallId, Vec<u8>)>,
     /// Calls the parent's host took and has not answered: the child host's
     /// id for each, and the one the parent's driver named it by.
@@ -300,8 +304,9 @@ pub struct State {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Action {
-    /// A person creates the child on its host, under the parent; its
-    /// process starts and says Hello.
+    /// The parent's create of the child arrives on the child's host, which
+    /// makes the calling parent the child's; its process starts and says
+    /// Hello.
     Spawn,
     /// A person stops the parent.
     Stop,
@@ -525,7 +530,7 @@ impl Machine for FamilyDeliveries {
         if world {
             out.push(Action::Rest);
         }
-        // A create refused leaves no child, and the person may try again.
+        // A create refused leaves no child, and the parent may ask again.
         if world && !s.seen.child_created {
             out.push(Action::Spawn);
         }
@@ -1165,7 +1170,7 @@ impl<'a> Transition<'a> {
     /// answered there at once, a report goes on the link; with no link the
     /// call never leaves.
     fn call(&mut self, call: CallId, request: PeerRequest) {
-        if matches!(request, PeerRequest::SendMessage(_)) && self.next.used.unpaired {
+        if matches!(request, PeerRequest::DeliverReport(_)) && self.next.used.unpaired {
             self.next
                 .seen
                 .handed_after_unpair
@@ -1181,7 +1186,7 @@ impl<'a> Transition<'a> {
             );
         }
         match request {
-            request @ PeerRequest::SubscribeInventory => {
+            PeerRequest::FollowAgents => {
                 if let Some(old) = self.next.following.take() {
                     self.feed(PARENTS, Input::CallCancelled { call: old.call });
                 }
@@ -1195,12 +1200,12 @@ impl<'a> Transition<'a> {
                     Input::PeerCall {
                         from: HOSTS[CHILDS],
                         call,
-                        request,
+                        request: PeerRead::FollowAgents,
                     },
                 );
             }
-            PeerRequest::SendMessage(envelope) => {
-                self.next.sent.push((call, envelope.encode_to_vec()));
+            PeerRequest::DeliverReport(report) => {
+                self.next.sent.push((call, report.encode_to_vec()));
             }
             other => unreachable!("the child's host makes no {other:?} call here"),
         }
@@ -1245,7 +1250,7 @@ impl<'a> Transition<'a> {
                     PARENTS,
                     Input::ClientCall {
                         call: STOP,
-                        request: ClientRequest::FileAgent {
+                        request: ClientRequest::SetFiling {
                             agent: PARENT,
                             filing: daemon_core::Filing::Closed,
                         },
@@ -1356,15 +1361,12 @@ impl<'a> Transition<'a> {
                 }
             }
             Action::Carry => {
-                let (call, envelope) = self.next.sent.remove(0);
-                let envelope =
-                    wire::Envelope::decode(envelope.as_slice()).expect("an envelope decodes");
-                // The parent's driver takes the sender the child's host
-                // stamped.
-                let from = match envelope.from.clone().and_then(|from| from.value) {
-                    Some(wire::sender::Value::Agent(sender)) => MessageFrom::Peer(sender),
-                    _ => MessageFrom::PeerPerson,
-                };
+                let (call, report) = self.next.sent.remove(0);
+                let report =
+                    DeliverReportRequest::decode(report.as_slice()).expect("a report decodes");
+                // The parent's driver hands the report on as a message
+                // from the child, of the host the link authenticated.
+                let envelope = report_envelope(&HOSTS[CHILDS].0, &HOSTS[PARENTS].0, report);
                 // The parent's driver names the call by the lowest id it has
                 // free.
                 let there = (10..)
@@ -1378,7 +1380,6 @@ impl<'a> Transition<'a> {
                         call: there,
                         request: ClientRequest::SendMessage {
                             envelope: Box::new(envelope),
-                            from,
                         },
                     },
                 );
@@ -1386,9 +1387,8 @@ impl<'a> Transition<'a> {
             Action::Reply => {
                 let (call, reply) = self.next.replies.remove(0);
                 let answer = match reply {
-                    Reply::Accepted => Answer::Reply(Box::new(PeerReply::SendMessage(
-                        wire::SendMessageResponse::default(),
-                    ))),
+                    // DeliverReport answers with nothing.
+                    Reply::Accepted => Answer::Reply(Box::new(PeerReply::Done)),
                     Reply::Refused(code) => Answer::Failed(PeerFailure::Refused(wire::Error {
                         code,
                         message: String::new(),
@@ -1737,8 +1737,8 @@ impl<'a> Transition<'a> {
     }
 }
 
-/// What the parent's driver sends back for a message call that ended with
-/// `status`: the reply, or the error code a refusal travels as.
+/// What the parent's driver sends back for a report whose message ended
+/// with `status`: the reply, or the error code a refusal travels as.
 fn reply_of(status: &Status) -> Reply {
     match status {
         Status::Ok => Reply::Accepted,

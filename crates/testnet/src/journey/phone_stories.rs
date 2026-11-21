@@ -196,9 +196,12 @@ fn kept_unsent(drawn: &Drawn, text: &str) -> bool {
     drawn.value("chat.field") == text && !drawn.enabled("chat.send")
 }
 
-/// The chat is current: the empty composer offers to message the agent.
-fn current(drawn: &Drawn, agent: &str) -> bool {
-    drawn.label("chat.field") == format!("Message {agent}")
+/// The chat is current: its header says its machine is linked and the
+/// composer sends. A chat still dialling its machine reads "Reply" too, but
+/// its header says it is detached.
+fn current(drawn: &Drawn) -> bool {
+    drawn.value("chat.header") == "live"
+        && matches!(drawn.label("chat.field"), "Reply" | "Queue a message")
 }
 
 /// The prompts waiting under the feed, oldest first: each one's words and
@@ -290,7 +293,7 @@ fn link_done(results: &[Value]) -> Result<(), String> {
 /// The one prompt carrying the paste and the review, as the desk holds it.
 /// The phone's composer keeps a paste and a review as chips after the text,
 /// so they follow it in the order they were added.
-fn reviewed(chat: &Value, comment: &str) -> Result<Value, String> {
+fn reviewed(chat: &Value, comment: &str) -> Result<(Value, String), String> {
     let sent: Vec<&Value> = items(chat)
         .iter()
         .filter(|item| {
@@ -317,19 +320,19 @@ fn reviewed(chat: &Value, comment: &str) -> Result<Value, String> {
         .split_whitespace()
         .map(str::to_owned)
         .collect();
-    if words != ["Please", "check", "against"] || kinds != [&json!("text"), &json!("review")] {
+    if words != ["Please", "check", "against"]
+        || kinds != [&json!("text"), &json!("text")]
+        || !attachments[1]["review"].is_object()
+    {
         return Err(format!(
             "the prompt is not the text, then the paste, then the review: {item}"
         ));
     }
-    if attachments[0]["text"] != pasted() {
+    if attachments[0]["text"] != pasted() || attachments[0]["review"].is_object() {
         return Err("the pasted text arrived changed".to_owned());
     }
-    let comments = &attachments[1]["comments"];
-    if *comments != json!([{"path": "deploy.sh", "line": 3, "old_line": 0, "text": comment}]) {
-        return Err(format!("the review's comments are {comments}"));
-    }
-    Ok((*item).clone())
+    let snapshot = sent_review(&attachments[1], comment)?;
+    Ok(((*item).clone(), snapshot))
 }
 
 // --- acts ----------------------------------------------------------------
@@ -1245,15 +1248,10 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
         journey.tap("new-agent.provider")?;
         journey.choose("Claude")?;
     }
-    let drawn = journey.wait(
+    journey.wait(
         |drawn| !drawn.value("new-agent.directory").is_empty(),
         "a directory chosen",
     )?;
-    // Unnamed, an agent is called after the directory it starts in.
-    let named = Path::new(drawn.value("new-agent.directory"))
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
     journey.tap("new-agent.start")?;
     let created = journey.wait_inventory(
         "desk",
@@ -1265,6 +1263,12 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
         .next()
         .cloned()
         .unwrap_or_default();
+    // Unnamed, an agent is given a word-pair name by its host, so the story
+    // reads the one it was given.
+    let named = listed(&created, &id)
+        .and_then(|agent| agent["name"].as_str())
+        .unwrap_or_default()
+        .to_owned();
     lifecycle(&created, &id, &named, LIVE)?;
     journey.wait_for(&["chat.field"])?;
     send(journey, HELLO)?;
@@ -1317,7 +1321,7 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
     open_settled(journey, &id)?;
     journey.tap(&row)?;
     journey.wait(
-        |drawn| drawn.has("chat.field") && labelled(drawn, "Exited") && replies(drawn, READY) == 1,
+        |drawn| drawn.has("chat.field") && labelled(drawn, "Settled") && replies(drawn, READY) == 1,
         "the settled chat",
     )?;
     journey.screen("exited-and-resumable", &[])?;
@@ -1380,7 +1384,7 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
     open_settled(journey, &id)?;
     journey.tap(&row)?;
     journey.wait(
-        |drawn| labelled(drawn, "Exited"),
+        |drawn| labelled(drawn, "Settled"),
         "the chat saying it exited again",
     )?;
     journey.tap("chat.more")?;
@@ -1425,7 +1429,8 @@ pub(super) fn open_settled(journey: &mut PhoneJourney, agent: &str) -> Result<()
 }
 
 fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
-    review_repository(&journey.ready.root.join("desk/work"))?;
+    let work = journey.ready.root.join("desk/work");
+    review_repository(&work)?;
     // An agent reads its folder's git facts when it starts and when a turn
     // ends, and the reviewer started before its folder was a repository:
     // start it again so the phone has changes to offer for review.
@@ -1460,26 +1465,30 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
     // A review of the desk's working tree, with a comment on one line.
     journey.wait_for(&["chat.changes"])?;
     journey.tap("chat.changes")?;
+    let edit = |name: &str, element: &Value| {
+        name.starts_with("review.line")
+            && element["label"]
+                .as_str()
+                .is_some_and(|label| label.contains("rsync --delete"))
+    };
     let drawn = journey.wait(
-        |drawn| drawn.names().any(|name| name.starts_with("review.line.")),
-        "the review's lines",
+        |drawn| drawn.iter().any(|(name, element)| edit(name, element)),
+        "the review's changed line",
     )?;
     let line = drawn
         .iter()
-        .find(|(name, element)| {
-            name.starts_with("review.line.")
-                && element["label"]
-                    .as_str()
-                    .is_some_and(|label| label.contains("rsync --delete"))
-        })
+        .find(|(name, element)| edit(name, element))
         .map(|(name, _)| name.to_owned())
         .ok_or("no review line holds the edit")?;
     journey.perform(&line, "Select line")?;
-    journey.wait_for(&["review.comment"])?;
+    journey.wait(
+        |drawn| drawn.enabled("review.commentOn"),
+        "the line selected to comment on",
+    )?;
     // The chat behind the review keeps its header in the tree, undrawn, at
     // either of two offsets in its own bar.
     journey.screen("review-diff", &["chat.header", "chat.title"])?;
-    journey.tap("review.comment")?;
+    journey.tap("review.commentOn")?;
     journey.wait_for(&["review.note"])?;
     journey.type_text("review.note", COMMENT)?;
     journey.wait(
@@ -1488,14 +1497,14 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
     )?;
     journey.tap("review.add")?;
     journey.wait(
-        |drawn| labelled(drawn, COMMENT) && drawn.has("review.attach"),
+        |drawn| labelled(drawn, COMMENT) && drawn.has("review.done"),
         "the comment on the line",
     )?;
     journey.screen("review-comment", &["chat.header", "chat.title"])?;
-    journey.tap("review.attach")?;
+    journey.tap("review.done")?;
     journey.wait(
-        |drawn| drawn.has("chat.field") && !drawn.has("review.attach"),
-        "the chat again",
+        |drawn| drawn.has("chat.field") && drawn.has("chat.review.chip"),
+        "the chat again, the review's chip in the composer",
     )?;
 
     // Read with the keyboard down: the draft keeps its text and both chips.
@@ -1511,8 +1520,8 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
         "the reviewer's reply",
     )?;
 
-    // The desk received the text, the paste's exact text, the comment, and
-    // the patch it made itself, whose bytes are on its disk.
+    // The desk received the text, the paste's exact text, and the review as
+    // text naming its snapshot and the comment on its code.
     let received = journey.wait_chat(
         "desk",
         "reviewer",
@@ -1526,10 +1535,23 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
         },
         "received",
     )?;
-    let item = reviewed(&received, COMMENT)?;
+    let (item, snapshot) = reviewed(&received, COMMENT)?;
     let control =
         negative_control(reviewed(&received, &format!("{COMMENT} (a wrong comment)")).map(drop))?;
-    patch_on_disk(&journey.ready.root, &text(&item["attachments"][1]["patch"]))?;
+    snapshot_outside(&work, &text(&item["attachments"][1]["text"]), &snapshot)?;
+
+    // The desk's review holds the comment, sent in round 1 on that
+    // snapshot.
+    let desk_review = Control::Review {
+        host: "desk".to_owned(),
+        agent: "reviewer".to_owned(),
+    };
+    wait_sent_on_desk(
+        || journey.request(desk_review.clone(), None),
+        COMMENT,
+        &snapshot,
+    )?;
+    journey.request(desk_review, Some("desk-review"))?;
 
     // Opened again, the chat shows what was sent and the reply.
     reopen(journey, &reviewer, |drawn| {
@@ -1550,9 +1572,13 @@ fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
     Ok(vec![
         "the prompt reached the desk as the text, then the paste, then the review, as the composer showed them".to_owned(),
         "the paste arrived as one attachment holding exactly the twelve lines pasted".to_owned(),
-        format!("the review carries one comment on deploy.sh line 3: {}", quoted(COMMENT)),
+        format!(
+            "the review reached the agent as text: deploy.sh line 3, the changed line as diff, then {}, and the snapshot its line numbers refer to",
+            quoted(COMMENT)
+        ),
         control,
-        "the review names a patch the desk computed; its bytes on the desk hash to that name and hold the edit".to_owned(),
+        "the snapshot is a commit kept outside the repository; the command the review gives reads it and finds the tree unmoved, and it holds the edit".to_owned(),
+        "the desk's review holds the comment, sent in round 1 on that snapshot".to_owned(),
         "the chat opened again shows what was sent and the reply".to_owned(),
         "the chat's overview names the branch its folder is on, main".to_owned(),
         branch_control,
@@ -1564,6 +1590,23 @@ const SECOND: &str = "A second turn arrived while you were away.";
 const THIRD: &str = "Back after the restart.";
 const DRAFT: &str = "Pick up where we left off.";
 
+/// The open chat says the desk is out of reach: its own field and header.
+/// Any label saying so is not enough, as the fleet under the chat still
+/// reports its elements, and its offer to sign in names the desk out of
+/// reach while the chat itself still reads as connecting.
+fn desk_out_of_reach(drawn: &Drawn) -> bool {
+    drawn.label("chat.field") == "desk is out of reach · your draft is kept"
+        && drawn.label("chat.header") == "desk · away"
+}
+
+/// The open chat's own head says its agent stopped while amux was stopped.
+fn stopped_with_amux(drawn: &Drawn) -> bool {
+    drawn.label("chat.exited") == "Stopped · while amux was stopped"
+}
+
+/// The story reads the chat's own rows (`replies`) and head, never any
+/// label on screen: the fleet under the chat still reports its elements,
+/// and its row for the agent shows the agent's last words.
 fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
     // A real first run makes the phone's replica of the desk's agent.
     journey.launch(Launch::plain())?;
@@ -1600,8 +1643,11 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
     let row = format!("home.row.{keeper}");
     journey.wait_for(&[&row])?;
     journey.tap(&row)?;
+    // The desk reads as connecting until the phone's dial to it fails, at
+    // the daemon's ten-second limit: the chat is waited on until its own
+    // field and header say it is out of reach.
     let drawn = journey.wait(
-        |drawn| labelled(drawn, FIRST) && labelled(drawn, "out of reach"),
+        |drawn| replies(drawn, FIRST) > 0 && desk_out_of_reach(drawn),
         "the cached chat, out of reach",
     )?;
     if labelled(&drawn, SECOND) {
@@ -1612,11 +1658,13 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         |drawn| drawn.value("chat.field") == DRAFT,
         "the draft written",
     )?;
-    if current(&drawn, "keeper") {
+    if current(&drawn) {
         return Err("the chat reads current with the desk out of reach".to_owned());
     }
-    let detached = reopen(journey, &keeper, |drawn| drawn.value("chat.field") == DRAFT)?;
-    if !labelled(&detached, "out of reach") || labelled(&detached, SECOND) {
+    let detached = reopen(journey, &keeper, |drawn| {
+        drawn.value("chat.field") == DRAFT && desk_out_of_reach(drawn)
+    })?;
+    if replies(&detached, FIRST) == 0 || labelled(&detached, SECOND) {
         return Err("the chat opened again is not the cached tail out of reach".to_owned());
     }
     journey.screen("cached-offline", &["chat.row.turn-end"])?;
@@ -1631,10 +1679,10 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
     let deadline = Instant::now() + Duration::from_secs(60);
     let drawn = loop {
         let drawn = journey.elements()?;
-        if current(&drawn, "keeper") && !labelled(&drawn, SECOND) {
+        if current(&drawn) && replies(&drawn, SECOND) == 0 {
             return Err("the chat read current before the missed turn arrived".to_owned());
         }
-        if current(&drawn, "keeper") {
+        if current(&drawn) {
             break drawn;
         }
         if Instant::now() > deadline {
@@ -1647,11 +1695,15 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         .actions
         .push("reached the missed turn, then a current chat".to_owned());
     if replies(&drawn, SECOND) != 1 || drawn.value("chat.field") != DRAFT {
-        return Err("the missed turn did not append once with the draft kept".to_owned());
+        return Err(format!(
+            "the missed turn did not append once with the draft kept: {} rows of it, the field holding {:?}",
+            replies(&drawn, SECOND),
+            drawn.value("chat.field")
+        ));
     }
     journey.tap("chat.send")?;
     journey.wait(
-        |drawn| labelled(drawn, THIRD),
+        |drawn| replies(drawn, THIRD) > 0,
         "the reply to the kept draft",
     )?;
     let after = journey.wait_chat(
@@ -1662,7 +1714,7 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
     )?;
     reflected_once(&after, DRAFT)?;
     let control = negative_control(reflected_once(&after, &format!("{DRAFT} (a wrong draft)")))?;
-    reopen(journey, &keeper, |drawn| labelled(drawn, THIRD))?;
+    reopen(journey, &keeper, |drawn| replies(drawn, THIRD) > 0)?;
     journey.screen("reconciled", &["chat.row.turn-end"])?;
 
     // The desk loses power back to a checkpoint: the phone's replica is
@@ -1681,15 +1733,15 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         None,
     )?;
     // A restored drive has no running processes, so the rebuilt chat reads
-    // the agent exited: it swaps in under the rows on screen, which never
+    // the agent stopped: it swaps in under the rows on screen, which never
     // leave in between.
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let drawn = journey.elements()?;
-        if !(labelled(&drawn, FIRST) && labelled(&drawn, THIRD)) {
+        if replies(&drawn, FIRST) == 0 || replies(&drawn, THIRD) == 0 {
             return Err("rows left the screen during the Reset".to_owned());
         }
-        if labelled(&drawn, "Exited") {
+        if stopped_with_amux(&drawn) {
             break;
         }
         if Instant::now() > deadline {
@@ -1702,7 +1754,7 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         .actions
         .push("the rows stayed on screen until the rebuilt chat swapped in".to_owned());
     reopen(journey, &keeper, |drawn| {
-        labelled(drawn, THIRD) && labelled(drawn, "Exited")
+        replies(drawn, THIRD) > 0 && stopped_with_amux(drawn)
     })?;
     journey.screen("after-reset", &["chat.row.turn-end"])?;
     Ok(vec![
@@ -1711,7 +1763,7 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         "when the desk came back the missed turn appeared once, and only then did the chat read current".to_owned(),
         "the kept draft reached the desk once and was answered".to_owned(),
         control,
-        "rows stayed on screen through the desk's rewind and Reset until the rebuilt chat swapped in, reading the agent exited".to_owned(),
+        "rows stayed on screen through the desk's rewind and Reset until the rebuilt chat swapped in, reading the agent stopped".to_owned(),
     ])
 }
 
@@ -2949,12 +3001,28 @@ fn machine_lines(
 
 type Ups = BTreeMap<String, BTreeMap<String, String>>;
 
-/// The first link to come up to each machine, by machine name, with the
+/// Which of a launch's links to each machine a check judges.
+#[derive(Clone, Copy)]
+enum Judged {
+    /// The first to come up, whoever dialled: on the first launch ever no
+    /// end has a session ticket.
+    FirstUp,
+    /// The first the phone dialled itself. Only the dialling end logs its
+    /// early data as `accepted` or `rejected`; a machine dialling in to the
+    /// phone is logged `none` here, and can come up before the phone's own
+    /// dial does.
+    PhonesOwnDial,
+}
+
+/// The link `judged` picks to each machine, by machine name, with the
 /// milliseconds its catch-up took from the first packet where it carried
 /// one.
-fn first_ups(journey: &PhoneJourney, lines: &[String]) -> Ups {
+fn first_ups(journey: &PhoneJourney, lines: &[String], judged: Judged) -> Ups {
     let mut ups = Ups::new();
     for (name, fields) in machine_lines(journey, lines, "up") {
+        if matches!(judged, Judged::PhonesOwnDial) && field(&fields, "early_data") == "none" {
+            continue;
+        }
         ups.entry(name).or_insert(fields);
     }
     for (name, fields) in machine_lines(journey, lines, "caught_up") {
@@ -2976,8 +3044,14 @@ fn log_length(journey: &PhoneJourney) -> Result<u64, String> {
 }
 
 /// Waits for the launch to reconcile with every machine and for its link
-/// log to name a link to each, then keeps that log as `<launch>.log`.
-fn reconciled_launch(journey: &mut PhoneJourney, launch: &str, offset: u64) -> Result<Ups, String> {
+/// log to name the link `judged` picks to each, then keeps that log as
+/// `<launch>.log`.
+fn reconciled_launch(
+    journey: &mut PhoneJourney,
+    launch: &str,
+    offset: u64,
+    judged: Judged,
+) -> Result<Ups, String> {
     journey.app_within(
         json!({"kind": "awaitReconciled", "seconds": 60}),
         Duration::from_secs(70),
@@ -2998,7 +3072,7 @@ fn reconciled_launch(journey: &mut PhoneJourney, launch: &str, offset: u64) -> R
     let deadline = Instant::now() + Duration::from_secs(30);
     let (lines, ups) = loop {
         let lines = logged_since(journey, offset)?;
-        let ups = first_ups(journey, &lines);
+        let ups = first_ups(journey, &lines, judged);
         if ups.len() == RESUME_HOSTS.len() {
             break (lines, ups);
         }
@@ -3067,7 +3141,7 @@ fn resume(journey: &mut PhoneJourney) -> Proved {
     for host in RESUME_HOSTS {
         pair_by_code(journey, host)?;
     }
-    let first = reconciled_launch(journey, "first", 0)?;
+    let first = reconciled_launch(journey, "first", 0, Judged::FirstUp)?;
     for (host, fields) in machine_lines(journey, &logged_since(journey, 0)?, "up") {
         if field(&fields, "resumed") != "false" || field(&fields, "early_data") != "none" {
             return Err(format!(
@@ -3076,11 +3150,12 @@ fn resume(journey: &mut PhoneJourney) -> Proved {
         }
     }
 
-    // Closed and opened again: every machine resumed, its early data taken.
+    // Closed and opened again: the phone's dial to every machine resumed,
+    // its early data taken.
     journey.quit()?;
     let offset = log_length(journey)?;
     journey.relaunch(Launch::plain())?;
-    let relaunch = reconciled_launch(journey, "relaunch", offset)?;
+    let relaunch = reconciled_launch(journey, "relaunch", offset, Judged::PhonesOwnDial)?;
     for (host, fields) in &relaunch {
         if field(fields, "resumed") != "true" || field(fields, "early_data") != "accepted" {
             return Err(format!(
@@ -3095,7 +3170,7 @@ fn resume(journey: &mut PhoneJourney) -> Proved {
     restart(journey, "desk")?;
     let offset = log_length(journey)?;
     journey.relaunch(Launch::plain())?;
-    let after = reconciled_launch(journey, "after-host-restart", offset)?;
+    let after = reconciled_launch(journey, "after-host-restart", offset, Judged::PhonesOwnDial)?;
     for (host, fields) in &after {
         if field(fields, "resumed") != "true" {
             return Err(format!(
@@ -3164,19 +3239,49 @@ mod tests {
         assert!(trusted_as(&Drawn::default(), DESK, "desk").is_err());
     }
 
+    /// What the desk receives for a review with one comment on deploy.sh
+    /// line 3, as the agent reads it.
+    fn review_text(comment: &str, snapshot: &str) -> String {
+        format!(
+            "1 comment from a review of your changes.\n\n## deploy.sh, line 3\n\n```diff\n \
+             #!/bin/sh\n echo deploying\n-rsync build/ prod:/srv\n+rsync --delete build/ \
+             prod:/srv\n```\n\n{comment}\n\n---\nLine numbers are those of snapshot \
+             {snapshot}, a commit of the working tree taken for this review and kept outside \
+             the repository.\n"
+        )
+    }
+
     #[test]
     fn a_review_is_read_as_text_then_paste_then_review_with_its_one_comment() {
-        let comment = json!({"path": "deploy.sh", "line": 3, "old_line": 0, "text": COMMENT});
+        let snapshot = "4ad3b6b635913baff8282cc5a4d4db2c2811ddbe";
+        let review = |text: String| {
+            json!({
+                "kind": "text",
+                "name": "review",
+                "text": text,
+                "review": {"id": "ab", "round": 1, "comments": ["cd"]},
+            })
+        };
         let sent = json!({
             "text": "Please check \u{fffc} against",
             "attachments": [
-                {"kind": "text", "text": pasted()},
-                {"kind": "review", "comments": [comment], "patch": "ab"},
+                {"kind": "text", "name": "pasted-1", "text": pasted()},
+                review(review_text(COMMENT, snapshot)),
             ],
         });
         let chat = json!({"items": [{"text": "earlier", "attachments": []}, sent]});
-        assert_eq!(reviewed(&chat, COMMENT), Ok(sent.clone()));
+        assert_eq!(
+            reviewed(&chat, COMMENT),
+            Ok((sent.clone(), snapshot.to_owned()))
+        );
         assert!(reviewed(&chat, "another comment").is_err());
+        // The review's text without its entry is pasted text, not a review.
+        let mut plain = sent.clone();
+        plain["attachments"][1]
+            .as_object_mut()
+            .expect("an attachment")
+            .remove("review");
+        assert!(reviewed(&json!({"items": [plain]}), COMMENT).is_err());
         let mut swapped = sent.clone();
         swapped["attachments"]
             .as_array_mut()

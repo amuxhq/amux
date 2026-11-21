@@ -57,6 +57,10 @@ Tap an agent to open its chat.
   Images in the chat show a preview, and tapping an image or file opens it.
 - **Agent settings:** the model chip under the message box changes the
   agent's model, effort, permission or mode, wherever that agent allows it.
+- **Code:** code blocks in the agent's replies are coloured as an editor
+  colours them when they're in a common language: Rust, Swift, TypeScript,
+  JavaScript, Python, Go, C, C++, Java, shell, HTML, CSS, JSON, YAML, TOML
+  and Markdown. Code in any other language shows in one colour.
 - **Reading back:** scroll up and an arrow above the message box takes you back
   to the newest message. It says **New activity** once something has arrived.
 - **The overview:** shows the agent's tasks, its background jobs and the
@@ -77,19 +81,43 @@ can send it.
 ## Answering
 
 When an agent needs you, its question appears as a card at the bottom of the
-chat. A permission shows the command or the diff, with choices worded as what
-will happen, such as **Allow once** or **Always allow**. A plan offers to start
-building or to send it back with a note. Questions come one at a time, and you
-can always reply in your own words instead.
+chat. A permission shows the command or the diff, its code coloured as in the
+chat, with choices worded as what will happen, such as **Allow once** or
+**Always allow**. A plan offers to start building or to send it back with a
+note. Questions come one at a time, and you can always reply in your own
+words instead.
 
 ## Reviewing changes
 
-Open an agent's changes from its chat to read every file it touched. Select a
-line, or a range of lines, and comment on it with **Add to Review**. Your
-comments go back into the composer as one review, ready to send to the agent.
-The count on the chat is of the agent's whole folder; if the folder changed
-since the agent last finished a turn, opening its changes brings the count up
-to date.
+Open an agent's changes from its chat: the changes count at the top, the
+overview's **Review changes**, or the review chip in the message box. Reviews
+need the reviews experiment on the agent's computer;
+[Reviewing changes](reviews.md) explains how to switch it on, and how
+comments, rounds and **Since your last review** work. On the phone:
+
+- **Reading:** the review holds still while you read. If the agent changes
+  code meanwhile, the page says so and **Refresh** brings it up to date;
+  pulling the page down does the same. Tap a file's name to fold or open it,
+  and the list button at the top jumps between files. Tap the arrows on
+  hidden lines to show more of the file above or below a change. The switch
+  at the top changes between **Since your last review** and **All changes**.
+- **Commenting:** tap a line to select it, and tap another line in the same
+  file to stretch the selection to it. Or hold a line for a moment and drag,
+  the way you select text: hold your finger near the top or bottom of the
+  screen and the page scrolls to take the selection further. A quick swipe
+  still scrolls. Then tap **Comment on 3 lines** at the bottom. To comment on
+  a whole file, hold its name and choose **Comment on the File**.
+- **Changing a comment:** tap it to change its words or delete it.
+- **Sending:** while you have drafts, the message box shows a
+  **Review · 3 comments** chip, and whatever you send next carries them, with
+  your message as the summary; you can send the chip alone. **Done** at the
+  bottom of the review takes you back there. Tap the chip's **✕** to discard
+  the drafts instead.
+- **Starting over:** the **…** menu discards your drafts, or deletes the
+  whole review so the next look is a first look. Both ask first.
+
+A review you sent shows in the chat as a chip. Tap it to see that round
+again ([Look back at a round](reviews.md#look-back-at-a-round)).
 
 ## Computers
 

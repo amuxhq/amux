@@ -2,7 +2,7 @@
 title: Agents working together
 description: Let your agents message each other and start subagents of their own, Claude or Codex, on any of your computers.
 sidebar:
-  order: 4
+  order: 5
 ---
 
 Every agent amux runs, Claude or Codex, can see the rest of your fleet and work
@@ -82,15 +82,13 @@ follows as soon as that computer is back.
 
 With the `workspaces` experiment on, deleting the last agent in a worktree
 amux made removes the worktree too. Before you confirm, the terminal and the
-iPhone and Mac apps say so, with how many files have uncommitted changes and
-what becomes of its branch: it keeps its commits, or, when nothing was
-committed to it, it goes too. They ask the agent's computer how many commits
-the branch has that no other branch holds, so a branch you've merged
-elsewhere goes; until the computer answers, they say the branch stays if
-anything was committed to it. For an agent that isn't running, they also
-first ask its computer what the worktree holds now, and say they're checking
-until it answers. Confirming discards the changes they named. If the computer
-can't be asked, they say so, and a worktree with changes stays. A
+iPhone and Mac apps ask the agent's computer what the delete takes with it,
+and say they're checking until it answers. When the worktree goes, they say
+so, with how many files have uncommitted changes and what becomes of its
+branch: it keeps its commits, or, when it has none that another branch
+doesn't hold, it goes too, so a branch you've merged elsewhere goes.
+Confirming discards the changes they named. If the computer can't be asked,
+they say so, and a worktree with changes stays. A
 worktree whose changes weren't shown to you stays on disk, no longer amux's,
 and so does one you delete from an older app or with `amux rm` without
 `--discard-changes`. A worktree that other agents still use stays until the

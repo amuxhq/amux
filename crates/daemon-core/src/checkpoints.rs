@@ -28,7 +28,7 @@ use crate::Daemon;
 use crate::ids::{AgentId, JobId, TimerId};
 use crate::ingest::KEPT_SEGMENTS;
 use crate::io::{Input, Job, Output};
-use crate::payload::{ClientRequest, JobResult, PeerRequest};
+use crate::payload::{ClientRequest, JobResult};
 
 /// What the core remembers about its checkpoints.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -135,17 +135,14 @@ impl Checkpoints {
 fn writes(input: &Input, copying: JobId) -> bool {
     match input {
         Input::JobDone { job, .. } => *job != copying,
-        Input::ClientCall { request, .. } => match request {
+        Input::ClientCall { request, .. } => !matches!(
+            request,
             ClientRequest::SubscribeSession { .. }
-            | ClientRequest::ListItems(_)
-            | ClientRequest::GetItem(_)
-            | ClientRequest::SubscribeInventory
-            | ClientRequest::GetBlob(_)
-            | ClientRequest::GetDiff(_) => false,
-            ClientRequest::Forward { request, .. } => peer_writes(request),
-            _ => true,
-        },
-        Input::PeerCall { request, .. } => peer_writes(request),
+                | ClientRequest::ListItems(_)
+                | ClientRequest::GetItem(_)
+                | ClientRequest::SubscribeInventory
+                | ClientRequest::GetBlob(_)
+        ),
         Input::Tick { .. }
         | Input::Timer {
             id: TimerId::Checkpoint | TimerId::Refresh(_) | TimerId::Attempt(_) | TimerId::Retry(_),
@@ -167,22 +164,12 @@ fn writes(input: &Input, copying: JobId) -> bool {
         | Input::Wanted { .. }
         | Input::Entropy(_)
         | Input::Configure(_)
+        // A paired daemon asks this host only to read: its follows and its
+        // pages. A report it hands over reaches the core as a message.
+        | Input::PeerCall { .. }
         | Input::Checkpointed => false,
         _ => true,
     }
-}
-
-fn peer_writes(request: &PeerRequest) -> bool {
-    !matches!(
-        request,
-        PeerRequest::SubscribeSession(_)
-            | PeerRequest::SubscribeInventory
-            | PeerRequest::ListItems(_)
-            | PeerRequest::GetItem(_)
-            | PeerRequest::GetBlob(_)
-            | PeerRequest::GetDiff(_)
-            | PeerRequest::GetCatalogue(_)
-    )
 }
 
 impl Daemon {

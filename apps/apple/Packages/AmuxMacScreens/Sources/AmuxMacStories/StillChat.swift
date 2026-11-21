@@ -116,6 +116,9 @@ final class StillChat: ChatSurface {
         if case .resume? = frame?.composer.mode { return true }
         return false
     }
+    var hasMessage: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty || reviewChip != nil
+    }
     var sending: Bool { false }
     var slashMatches: [CommandMatch] { [] }
     func pick(_ match: CommandMatch) {}
@@ -132,62 +135,87 @@ final class StillChat: ChatSurface {
     var comparison: Comparison = .uncommitted
     var comparisons: [Comparison] { [.uncommitted, .onBranch] }
     func compare(_ comparison: Comparison) { self.comparison = comparison }
-    var review: ReviewState = .idle
-    /// The review a story shows once the pane asks for it.
-    var reviewing: StillReview?
-    func loadReview(keepingComments: Bool) {
-        if keepingComments, case .ready = review { return }
-        review = reviewing.map { .ready($0) } ?? .nothing
-    }
-    func attachReview() {}
+
+    /// The agent's review page a story shows, and the chip its drafts put
+    /// in the composer.
+    var page: StillReviewPage?
+    var reviewPage: (any ReviewPageSurface)? { page }
+    func openReviewPage() {}
+    func closeReviewPage() {}
+    var reviewChip: ReviewChip?
+    func discardReviewDrafts() { reviewChip = nil }
+    /// The round a sent review in the story's chat opens.
+    var round: ReviewPage?
+    func reviewRound(_ sent: SentReviewRef) async -> ReviewPage? { round }
 }
 
-/// A review that holds still, but takes comments.
+/// The agent's review page holding still, as the runtime would hand it:
+/// lines can be picked and a comment opened on them, but nothing is
+/// written anywhere.
 @MainActor
 @Observable
-final class StillReview: ReviewSurface {
-    var doc: ReviewDoc
-    private var shut: Set<Int> = []
-    private var anchor: ReviewSpot?
-    private var head: ReviewSpot?
-    private(set) var count = 0
+final class StillReviewPage: ReviewPageSurface {
+    var page: ReviewPage
+    private(set) var selected: ClosedRange<Int>?
+    private var from: Int?
+    var writing: Bool
+    var words: String
+    var waiting = 0
+    var notice: String?
 
-    init(doc: ReviewDoc, selected: ReviewSpot? = nil, folded: Set<Int> = []) {
-        self.doc = doc
-        anchor = selected
-        head = selected
-        shut = folded
+    init(page: ReviewPage, selected: ClosedRange<Int>? = nil, words: String? = nil) {
+        self.page = page
+        self.selected = selected
+        from = selected?.lowerBound
+        writing = words != nil
+        self.words = words ?? ""
     }
 
-    func folded(_ file: Int) -> Bool { shut.contains(file) }
-    func toggle(file: Int) {
-        if shut.contains(file) { shut.remove(file) } else { shut.insert(file) }
+    /// The selection's lines, worked out as the runtime does for a story:
+    /// a file's head alone is the whole file, else the snapshot's lines of
+    /// one file.
+    var anchor: ReviewAnchor? {
+        guard let selected, let header = page.header else { return nil }
+        let rows = selected.map { page.rows[$0].of }
+        if rows.count == 1, case .file(let file) = rows[0] {
+            return ReviewAnchor(commit: header.snapshot, path: file.path, start: 0, end: 0)
+        }
+        let lines: [ReviewCodeLine] = rows.compactMap {
+            if case .line(let line) = $0 { return line }
+            return nil
+        }
+        guard let path = lines.first?.path, lines.allSatisfy({ $0.path == path }) else { return nil }
+        let numbers = lines.compactMap { $0.newLine ?? $0.oldLine }
+        guard let start = numbers.min(), let end = numbers.max() else { return nil }
+        return ReviewAnchor(commit: header.snapshot, path: path, start: start, end: end)
     }
 
-    func isSelected(_ spot: ReviewSpot) -> Bool {
-        guard let anchor, let head else { return false }
-        return min(anchor, head) <= spot && spot <= max(anchor, head)
+    func refresh() {}
+    func moreContext(_ ask: ReviewContextAsk) {}
+    func show(_ view: ReviewView) {}
+    func toggleFile(_ path: String) {}
+    func toggleComment(_ id: [UInt8]) {}
+
+    func select(_ row: Int) {
+        from = row
+        selected = row...row
     }
 
-    var selecting: Bool { anchor != nil }
-    func begin(at spot: ReviewSpot) {
-        anchor = spot
-        head = spot
+    func extend(to row: Int) {
+        guard let from else { return }
+        selected = min(from, row)...max(from, row)
     }
-    func extend(to spot: ReviewSpot) { head = spot }
+
     func clearSelection() {
-        anchor = nil
-        head = nil
+        from = nil
+        selected = nil
+        writing = false
+        words = ""
     }
 
-    func comment(_ text: String) -> Bool {
-        guard let anchor, let head, !text.isEmpty else { return false }
-        let at = max(anchor, head)
-        doc.files[at.file].hunks[at.hunk].lines[at.line].comments.append(text)
-        count += 1
-        clearSelection()
-        return true
-    }
-
-    var canAttach: Bool { count > 0 && anchor == nil }
+    func comment(_ text: String) { clearSelection() }
+    func reword(_ id: [UInt8], as text: String) {}
+    func delete(_ id: [UInt8]) {}
+    func discardDrafts() {}
+    func startOver() {}
 }

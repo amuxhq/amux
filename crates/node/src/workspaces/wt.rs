@@ -18,7 +18,7 @@ use std::sync::Mutex;
 use daemon_core::workspaces::{Key, Kind, Plan, PlanRefusal, Planned, Removal, Resolved};
 use uuid::Uuid;
 
-use super::{Environment, Holder, Maker, branch_start, canonical_beyond, refused};
+use super::{Environment, Holder, Maker, branch_start, canonical_beyond, delete_if_empty, refused};
 
 /// The wt trees of one host.
 pub struct WtBackend {
@@ -171,15 +171,22 @@ impl Maker for WtBackend {
         if tree.owner().as_deref() != Some(self.owner.as_str()) {
             return Removal::Kept;
         }
+        // The branch is deleted here rather than by wt, by the rule a
+        // delete's warning counts with, so the two cannot disagree.
         let options = ::wt::Remove {
             ignore_dirty: discard,
-            delete_empty_branch: true,
+            delete_empty_branch: false,
             ..::wt::Remove::default()
         };
         match wt.remove(&tree, options) {
             Ok(removed) => {
                 for warning in &removed.warnings {
                     tracing::warn!(id = %workspace.id, %warning, "removing a wt tree");
+                }
+                if let Some(branch) = &removed.branch
+                    && let Err(error) = delete_if_empty(&tree.main, branch)
+                {
+                    tracing::warn!(id = %workspace.id, %error, "deleting a wt tree's empty branch failed");
                 }
                 Removal::Removed
             }

@@ -24,9 +24,6 @@ pub trait Redactor {
     /// An encoded protocol message, by its full name (`amux.v1.Item`),
     /// redacted and encoded again.
     fn message(&self, name: &str, bytes: &[u8]) -> Vec<u8>;
-    /// Content bytes the core only hands on, such as a kept blob or a
-    /// patch.
-    fn content(&self, bytes: &[u8]) -> Vec<u8>;
     /// A blob's hash, which is the hash of a person's file.
     fn hash(&self, bytes: &[u8]) -> Vec<u8>;
 }

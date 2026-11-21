@@ -19,7 +19,7 @@
 ## 79 recorded 78: fact Rpc method=item/fileChange/requestApproval
   ask 1 -> "exec-edaf930d-4144-4c2f-a080-7fe7c85664ae" 1/1 Open
     choices AllowOnce*, AllowAlways { subjects: ["<MACHINE_PATH>"], directories: [], mode: "", mode_name: "", scope: Session }, Deny, DenyAndStop
-    body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 0, lines: [Line(PatchLine { number: Some(1), kind: Added, text: "one" })], line: Some(1), reason: "", created: Some(true) }
+    body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 0, patch: [FilePatch { file: None, hunks: [PatchHunk { start: None, lines: [PatchLine { number: Some(1), kind: Added, text: "one" }] }] }], line: Some(1), reason: "", created: Some(true) }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 81 recorded 80: input stdin-10
   ask none

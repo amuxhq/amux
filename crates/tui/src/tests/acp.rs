@@ -286,6 +286,7 @@ fn a_new_agents_image_is_refused_before_the_agent_is_made() {
             mime: "image/png".into(),
             size: 8,
         })),
+        ..Default::default()
     });
     // Picked after the paste.
     home.open_setup().unwrap().pick(Item::Kind, "opencode");
@@ -546,4 +547,71 @@ fn an_edit_with_no_place_in_the_file_claims_no_line() {
     let screen = text(&buffer);
     assert!(screen.contains("Wants to edit"), "{screen}");
     assert!(!screen.contains("· line"), "{screen}");
+}
+
+/// An ACP agent's landed edit is coloured as its file's code over the
+/// diff's tints, as Claude's and Codex's are: its row names the file and its
+/// patch is hunks like theirs, so the shared drawing reads it the same way.
+#[test]
+fn an_acp_agents_landed_edit_is_coloured_as_its_files_code() {
+    use prost::Message as _;
+    use ui_view::TokenKind;
+    crate::code::highlighter().preload();
+    let agent = wire::Agent {
+        cwd: "/work".into(),
+        provider: "opencode".into(),
+        ..fixtures::agent(Kind::Acp)
+    };
+    let mut state = SessionState::new(agent, crate::chat::layout::CAP as usize);
+    state.update(Msg::Connection(ui_state::Connection::Live));
+    state.update(snapshot(Phase::Idle, vec![], vec![]));
+    let edit = wire::AcpTool {
+        title: "Edit src/ready.rs".into(),
+        kind: wire::AcpToolKind::Edit as i32,
+        state: wire::ToolState::Succeeded as i32,
+        class: wire::ToolClass::Consequential as i32,
+        diffs: vec![wire::AcpDiff {
+            path: "/work/src/ready.rs".into(),
+            old_text: Some("// Ready.\nfn ready() -> bool { false }\n".into()),
+            new_text: "// Ready.\nfn ready() -> bool { true }\n".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    state.update(event(session_event::Of::Item(wire::Item {
+        key: "tool:edit".into(),
+        order: 1,
+        revision: 1,
+        kind: Kind::Acp as i32,
+        body: wire::AcpItem {
+            kind: Some(wire::acp_item::Kind::Tool(edit)),
+        }
+        .encode_to_vec(),
+        ..Default::default()
+    })));
+    state.update(caught_up(0));
+
+    let rows = ui_view::chat_rows_for(
+        &state,
+        &["tool:edit".to_owned()],
+        ui_view::ToolRows::ShowAll,
+    );
+    let Some(ui_view::RowKind::FileChange { files, .. }) = rows.first().map(|row| &row.kind) else {
+        panic!("a file change row: {rows:?}");
+    };
+    assert_eq!(files[0].path, "src/ready.rs");
+    let head = ui_view::patch_head(&state, &"tool:edit".to_owned(), usize::MAX).expect("a head");
+    let theme = crate::theme::Theme::default();
+    let lines = crate::chat::rows::patch_lines(&head, &files[0].path, true, 'b', 80, theme);
+    let added = theme.diff_added();
+    let keyword = lines[1]
+        .spans
+        .iter()
+        .find(|span| span.content == "fn")
+        .map(|span| span.style);
+    assert_eq!(
+        keyword,
+        Some(theme.syntax_on_diff(added, TokenKind::Keyword)),
+        "{lines:?}"
+    );
 }

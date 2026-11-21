@@ -119,16 +119,15 @@ async fn a_trusted_host_stays_in_every_snapshot_while_unreachable() {
         .unwrap();
     // A call that has to reach it says which host could not be reached, by
     // the name a person knows it by.
-    let refused = wire::agent_service_server::AgentService::file_agent(
-        &net.client("laptop").unwrap(),
-        tonic::Request::new(wire::FileAgentRequest {
-            agent_id: net.agent("worker").unwrap().id.as_bytes().to_vec(),
-            filing: wire::Filing::Closed as i32,
-        }),
-    )
-    .await
-    .expect_err("the desk cannot be reached");
-    assert_eq!(refused.message(), "desk cannot be reached");
+    let refused = net
+        .person("laptop")
+        .await
+        .unwrap()
+        .agent(net.agent("worker").unwrap())
+        .set_filing(wire::Filing::Closed)
+        .await
+        .expect_err("the desk cannot be reached");
+    assert_eq!(refused.to_string(), "desk cannot be reached");
     let mut reopened = net.observe_inventory("laptop").await.unwrap();
     let opening = reopened
         .observe_until(observe::inventory_caught_up, PATIENCE)
@@ -1017,7 +1016,11 @@ async fn push_key_kept_for(net: &Net, on: &str, of: Uuid) -> Option<Vec<u8>> {
 
 /// A host says it wants notifications on its own inventory entry, which only
 /// hosts paired with it read, so a host paired with its neighbor never holds
-/// its key, and it can take the wish back.
+/// its key, and it can take the wish back. A host takes the key on any entry
+/// its paired host sends as that host's own, so a key passed on would land
+/// on the neighbor's row for the host in the middle: the neighbor holds no
+/// key there either, read once an agent made after the key arrived has
+/// reached it on the same inventory.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_push_key_reaches_the_hosts_paired_with_it_and_no_further() {
     let mut net = Net::start(
@@ -1052,7 +1055,17 @@ async fn a_push_key_reaches_the_hosts_paired_with_it_and_no_further() {
     })
     .await
     .unwrap();
+    net.spawn(
+        AgentDecl::new("after", "desk")
+            .steps(says("a"))
+            .prompt("go"),
+    )
+    .await
+    .unwrap();
+    net.current("tower", "after").await.unwrap();
+    let desk = net.host("desk").unwrap().host_id;
     assert_eq!(push_key_kept_for(&net, "tower", phone).await, None);
+    assert_eq!(push_key_kept_for(&net, "tower", desk).await, None);
 
     net.runtime("phone").unwrap().want_notifications(None);
     patience::until("the desk to forget the key", || async {

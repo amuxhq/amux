@@ -62,7 +62,7 @@
       "clients": ["terminal", "phone"],
       "topology": "journeys/topologies/terminal-stories.json",
       "phone_topology": "journeys/topologies/phone-stories.json",
-      "claim": "On the laptop a person writes to an agent on the desk: text, a twelve-line paste that stands in the sentence as one token, more text, and a review of the diff the desk computed of the agent's working tree, with a comment on one changed line. The desk receives one prompt holding those four in that order, the paste's exact text and the comment on that line, and the review names a patch whose bytes on the desk's disk hash to that name and hold the edit. Opening the chat again shows the tokens as they were sent."
+      "claim": "On the laptop a person writes to an agent on the desk, which runs reviews: text, a twelve-line paste that stands in the sentence as one token, more text, and a review of the agent's working tree with a comment on one changed line. The desk receives one prompt holding those four in that order: the paste's exact text, and the review as text naming the comment's file and line, the changed line it is on and the person's words, and the snapshot its line numbers refer to, a commit kept outside the repository that the command it gives reads. The desk's review holds the comment, sent in round 1 on that snapshot. Opening the chat again shows the tokens as they were sent."
     },
     {
       "id": "decide-plan-claude-sdk",

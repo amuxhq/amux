@@ -47,6 +47,7 @@ const PINNED: &[(&str, &[&str])] = &[
         "crates/wire/src/lib.rs",
         &[
             r#"pub const SURFACE_HEADER: &str = "amux-surface";"#,
+            r#"pub const CALLER_HEADER: &str = "amux-caller-bin";"#,
             r#"pub const STATUS_TOOL: &str = "status";"#,
             r#"pub const SEND_TOOL: &str = "send";"#,
             r#"pub const ATTACH_TOOL: &str = "attach";"#,

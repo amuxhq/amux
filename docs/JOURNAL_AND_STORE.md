@@ -34,7 +34,7 @@ generation file is `<root>/generation`. Everything else is in
 
 The names are constants: `GENERATION`, `STORE`, `AGENTS` and `REPLICAS` in
 [`crates/node/src/install.rs`](../crates/node/src/install.rs), and `JOURNAL`,
-`PTY`, `BLOBS` and `PRIVATE` in
+`PTY`, `BLOBS`, `PRIVATE` and the reviews experiment's `REVIEW` in
 [`crates/agent-dir/src/lib.rs`](../crates/agent-dir/src/lib.rs).
 
 ## The journal
@@ -561,19 +561,42 @@ one is left in place unread.
 
 ### Experiment tables
 
-An experiment keeps two kinds of data, and they live in different places:
+An experiment keeps up to three kinds of data, and they live in different places:
 
 - **What a row says to everyone** rides on the row, in the agents table's
   `experimental` column: the workspace an agent runs in, as
   `Agent.experimental["workspaces/1"]` carries it. The column is promised
   like every other; the entries in it are not. Only agents rows carry a map
-  (as only `Agent` and `AgentSpec` do on the wire); a host row gets one when
-  an experiment first needs it.
+  (on the wire `Agent` and `AgentSpec` do, and `Attachment`, whose map
+  travels inside the items and inputs that hold it); a host row gets one
+  when an experiment first needs it.
 - **A host's own working state**, which nobody else reads, lives in tables
   of the experiment's own:
   `exp_suspension_1_runs` (one of this host's own agents to the incarnation
   its current run began at, against which a child's report is judged; see
-  [the agent process](AGENT_PROCESS.md#a-suspended-agent-on-its-host)).
+  [the agent process](AGENT_PROCESS.md#a-suspended-agent-on-its-host)), and
+  the reviews experiment's `exp_reviews_1_reviews`, `_snapshots`, `_bases`,
+  `_rounds` and `_comments` (each own agent's one review: the base it began
+  with, the snapshots it keeps with the base commit each is compared
+  against and every other base each has been shown against, the rounds sent
+  and every comment with its anchor, snippet, round and revision;
+  [`crates/store/src/reviews.rs`](../crates/store/src/reviews.rs),
+  [reviews](REVIEWS.md)).
+  An agent's review rows go with the agent, in the store's `remove_agent`.
+- **Files outside the store**, when an experiment needs them, sit in the
+  agent's directory under a name of the experiment's own, and are
+  experiment data like its tables. The reviews experiment keeps
+  `<agent dir>/review/objects`, a git object store holding the snapshots of
+  the agent's working tree (untracked files included, so possibly secrets),
+  kept out of the repository, and `<agent dir>/review/indexes`, a git index
+  of each snapshot it keeps, which the diff command the agent is sent
+  reads. It goes with the agent's directory and when
+  the review is started over, and the daemon removes every own agent's
+  `review` folder when it next opens the profile with the experiment off,
+  never following a link in its place (`reviews::cleanup` in
+  [`crates/node`](../crates/node/src/reviews/cleanup.rs)). An older build
+  leaves the folder alone, as it does any file it does not know. No dump
+  includes it.
 
 Experiment tables are outside both rules: their shape may change in any
 release, and losing them is the price of shipping early. Each version of an
@@ -628,7 +651,7 @@ only by delete and by retention.
 Replica rows are a cache of a paired host's agent. Only `absorb` writes their
 records, copying the origin's revisions and orders as received. Each replica
 agent has one source in [`crates/daemon-core/src/sources.rs`](../crates/daemon-core/src/sources.rs):
-one `SubscribeSession` to the origin. With no block it asks for a tail of K rows; with
+one `PeerService.FollowSession` to the origin. With no block it asks for a tail of K rows; with
 one it asks for what came after its `source_cursor`, capped at K, under its
 `source_generation`, and the origin answers either that delta or `Reset` and a
 fresh tail. The source holds

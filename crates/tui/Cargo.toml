@@ -12,14 +12,16 @@ default = []
 # Named frames over interpreter fixtures, for goldens and screenshots.
 fixtures = []
 
-# Views come from ui-view over the state ui-runtime's drivers keep; the TUI
-# owns layout, keys and ephemeral view state only.
+# Views come from ui-view over the state ui-runtime's drivers keep, and code
+# is coloured by ui-code; the TUI owns layout, keys and ephemeral view state
+# only.
 [dependencies]
 attachments = { workspace = true }
 client = { workspace = true }
 ui-runtime = { workspace = true }
 ui-state = { workspace = true }
 settings = { workspace = true }
+ui-code = { workspace = true }
 ui-view = { workspace = true }
 wire = { workspace = true }
 anyhow = { workspace = true }
@@ -36,7 +38,6 @@ tempfile = { workspace = true }
 prost = { workspace = true }
 pulldown-cmark = { workspace = true }
 qrcode = { workspace = true }
-syntect = { workspace = true }
 jiff = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -54,13 +55,14 @@ signal-hook = { workspace = true }
 windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [dev-dependencies]
-async-trait = { workspace = true }
 interpret = { workspace = true }
 node = { workspace = true }
 prost = { workspace = true }
 provider-fakes = { workspace = true }
 testnet = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+tonic = { workspace = true }
+tower = { workspace = true }
 
 [[test]]
 name = "integration"

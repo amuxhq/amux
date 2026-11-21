@@ -3,7 +3,7 @@
 //! answer Subscribe and SubscribeInventory); ResolveAgent reads the fleet
 //! here. None touches an agent process.
 
-use daemon_core::payload::{CallError, PeerRequest, Response, Status};
+use daemon_core::payload::{CallError, PeerRead, Response, Status};
 pub use daemon_core::serve::MAX_PAGE;
 use store::{AgentKey, StoreError};
 use wire::{Agent, ErrorCode, GetItemRequest, Item, ListItemsRequest, ListItemsResponse};
@@ -56,15 +56,14 @@ impl From<Status> for ServeError {
             Status::Failed(CallError::OriginUnreachable) => ServeError::OriginUnreachable,
             Status::Failed(CallError::Store(why)) => ServeError::Failed(why),
             Status::Failed(
-                error @ (CallError::Peer(_)
-                | CallError::NotServed
-                | CallError::Registry(_)
+                error @ (CallError::Registry(_)
                 | CallError::NoBlob(_)
                 | CallError::Blob(_)
                 | CallError::Message(_)
                 | CallError::Trust(_)
                 | CallError::Window(_)
-                | CallError::Pairing(_)),
+                | CallError::Pairing(_)
+                | CallError::Review(_)),
             ) => ServeError::Failed(format!("{error:?}")),
         }
     }
@@ -106,7 +105,7 @@ impl ProfileRuntime {
         from: crate::HostId,
         request: ListItemsRequest,
     ) -> Result<ListItemsResponse, ServeError> {
-        let request = PeerRequest::ListItems(request);
+        let request = PeerRead::ListItems(request);
         let answers = self.driver().peer_call(core_host(from), request, 1).await;
         fetched(answers).await
     }
@@ -125,17 +124,6 @@ impl ProfileRuntime {
     pub async fn get_item(&self, request: &GetItemRequest) -> Result<Item, ServeError> {
         let answers = self.driver().call(Ask::GetItem(request.clone()), 1).await;
         item(answers).await
-    }
-
-    /// One item in full of one of this host's own agents, for the paired
-    /// host `from`. An agent this host only replicates is not found.
-    pub(crate) async fn peer_get_item(
-        &self,
-        from: crate::HostId,
-        request: GetItemRequest,
-    ) -> Result<Item, ServeError> {
-        let request = PeerRequest::GetItem(request);
-        item(self.driver().peer_call(core_host(from), request, 1).await).await
     }
 
     /// The one agent a reference names, across the fleet the store knows.

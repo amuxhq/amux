@@ -110,7 +110,7 @@ impl Outbox {
 
     /// Posts the profile list as it stands now; a list that cannot be read
     /// is left for the profile stream to post.
-    pub(crate) async fn post_profiles(&self, installation: &dyn client::Installation) {
+    pub(crate) async fn post_profiles(&self, installation: &client::Installation) {
         if let Ok(profiles) = installation.list_profiles().await {
             self.post_listed(&profiles);
         }

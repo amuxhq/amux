@@ -27,7 +27,7 @@ use std::collections::{HashMap, HashSet};
 
 pub(crate) use composer::resets;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
-use draw::{ROUNDED, StopAsk, change_totals, framed, line_places};
+use draw::{ChipSpot, ROUNDED, StopAsk, change_totals, framed, line_places, review_counter};
 #[cfg(feature = "fixtures")]
 use draw::{boxed_composer, hint_line, marked_edge_in};
 use ratatui::layout::Rect;
@@ -35,7 +35,7 @@ use ratatui::text::Line;
 use ui_state::{Composer, InputState, InputWhat, Key, SessionState};
 pub use ui_view::Comparison;
 use ui_view::{AskCard, CardState, Reach, ask_card, overview, queue_rows};
-use wire::Attachment;
+use wire::{Attachment, GetChangesResponse, get_changes_request};
 pub(crate) use words::{
     FREE_PLAN_AWAY, Keys, activity_words, keys, modes_stand_for_permissions, next_control,
     refusal_words,
@@ -53,7 +53,6 @@ use self::composer::QueueEntry;
 use self::feed::FeedHit;
 pub use self::layout::ToolSteps;
 use self::layout::{Anchor, Frame, Laid, Toggle};
-use self::review::ReviewPage;
 use self::selection::{FeedSelection, Point, ScreenCells, ScreenSelection};
 use crate::clipboard::{Clip, ClipboardContent};
 use crate::editor::Editor;
@@ -135,10 +134,36 @@ pub enum ChatEffect {
     Review,
     /// The review page, at this changed file.
     ReviewAt(String),
+    /// Open the agent's review again; `refresh` takes a new snapshot even
+    /// with drafts, moving them onto it.
+    ReviewOpen {
+        refresh: bool,
+    },
+    /// Make these edits to the agent's review, all or none, and open it
+    /// again afterwards when `reopen` says.
+    ReviewEdit {
+        edits: Vec<wire::experimental::ReviewEdit>,
+        reopen: bool,
+    },
+    /// Read these lines for more context on the review page.
+    ReviewContext(ui_view::ReviewContextAsk),
+    /// A prompt that carries the review's drafts, which the agent's host
+    /// marks sent when it accepts the message.
+    PromptWithReview {
+        text: String,
+        attachments: Vec<Attachment>,
+    },
     /// Open a link from the agent's text in the person's browser.
     OpenUrl(String),
     /// Open an attachment in the app the system picks for it.
     OpenAttachment(wire::BlobRef),
+    /// Show the round a sent review in the chat closed, read from the
+    /// agent's host; `text`, what the agent read, when the host no longer
+    /// holds it.
+    ReviewRound {
+        review: ui_view::SentReviewRef,
+        text: String,
+    },
     /// Fetch an attachment again after a failure.
     RetryBlob(Vec<u8>),
     /// Back to home: the header's [Home].
@@ -243,11 +268,11 @@ enum HeaderControl {
 /// Where each header control was drawn: its columns, and what it does.
 type HeaderSpots = Vec<((usize, usize), HeaderControl)>;
 
-/// The changed files of one comparison, fetched without a patch.
+/// The changed files of one comparison, as the agent's host answered.
 #[derive(Debug)]
 pub struct Fetched {
     pub key: FetchKey,
-    pub diff: wire::Diff,
+    pub changes: GetChangesResponse,
 }
 
 /// What a fetch of the changed files answers: a comparison, as of the
@@ -270,9 +295,22 @@ pub struct ChatView {
     pub ask: AskUi,
     /// The selected entry of the queue block while it has the keys.
     pub tray: Option<usize>,
-    /// The review page, kept behind its draft token while the chat shows.
-    pub review: Option<ReviewPage>,
-    pub review_open: bool,
+    /// The review page of the agent's review, kept while the chat is open
+    /// so returning to it draws at once.
+    pub review_page: Option<review::Page>,
+    pub review_page_open: bool,
+    /// A sent review's round, over the chat and its review page while
+    /// open, with the review it names.
+    pub round: Option<(ui_view::SentReviewRef, review::Page)>,
+    /// The window asking before the review chip's drafts are discarded.
+    discard_ask: Option<review::Asking>,
+    /// The review chip on the composer's edge on the last frame: its row,
+    /// its columns, and the columns of its ✕.
+    chip_spot: Option<ChipSpot>,
+    /// The review entry's counter when this composer last sent the drafts:
+    /// the chip waits for the row to move past it, so the same drafts are
+    /// not sent twice while the host marks them.
+    review_sent: Option<u64>,
     /// Whether the agent's own interface can be attached from here.
     pub attach: bool,
     /// How this machine reaches the agent's host, kept current by the app
@@ -441,8 +479,12 @@ impl ChatView {
             editor: Editor::default(),
             ask: AskUi::default(),
             tray: None,
-            review: None,
-            review_open: false,
+            review_page: None,
+            review_page_open: false,
+            round: None,
+            discard_ask: None,
+            chip_spot: None,
+            review_sent: None,
             attach,
             // Nothing is known against the host until the app reads the
             // fleet, before the chat is first drawn.
@@ -590,7 +632,7 @@ impl ChatView {
                 .find(|sent| sent.id == refused.input_id)
                 .map(|sent| &sent.what)
             {
-                self.editor.restore(text, attachments.clone());
+                self.take_back(text, attachments.clone());
                 self.draft_owed = true;
             }
             self.not_sent = Some(format!("not sent: {}", refusal_words(&refused.reason)));
@@ -621,8 +663,11 @@ impl ChatView {
     }
 
     pub fn field_text(&self, state: &SessionState) -> bool {
-        if self.review_open {
-            return self.review.as_ref().is_some_and(ReviewPage::editing);
+        if self.round.is_some() {
+            return false;
+        }
+        if self.review_page_open {
+            return self.review_page.as_ref().is_some_and(review::Page::editing);
         }
         if self.pane_open && self.pane_keys {
             return false;
@@ -638,7 +683,8 @@ impl ChatView {
     /// answer among them, types it.
     pub fn opens_help(&self, state: &SessionState, key: KeyEvent) -> bool {
         key.code == KeyCode::Char('?')
-            && !self.review_open
+            && self.round.is_none()
+            && !self.review_page_open
             && self.live_card(state).is_none()
             && self.tray.is_none()
             && self.editor.is_empty()
@@ -647,8 +693,14 @@ impl ChatView {
     /// Ctrl+C on a field with text: clears it as a kill. Only the field
     /// with the keys: a draft hidden behind a card stays.
     pub fn kill_field(&mut self, state: &SessionState) -> bool {
-        if self.review_open {
-            return self.review.as_mut().is_some_and(ReviewPage::kill_field);
+        if self.round.is_some() {
+            return false;
+        }
+        if self.review_page_open {
+            return self
+                .review_page
+                .as_mut()
+                .is_some_and(review::Page::kill_field);
         }
         if let Some(card) = self.card_takes_keys(state) {
             return self.ask.in_box_note(&card) && self.ask.kill_box_note();
@@ -659,8 +711,11 @@ impl ChatView {
     /// A bracketed paste goes to the field with the keys, and nowhere when
     /// none has them.
     pub fn paste_text(&mut self, state: &SessionState, text: &str) {
-        if self.review_open {
-            if let Some(page) = &mut self.review {
+        if self.round.is_some() {
+            return;
+        }
+        if self.review_page_open {
+            if let Some(page) = &mut self.review_page {
                 page.paste(text);
             }
             return;
@@ -690,12 +745,12 @@ impl ChatView {
     /// shown, while they still answer it.
     fn overview(&self, state: &SessionState) -> ui_view::Overview {
         let key = self.fetch_key(state);
-        let diff = self
+        let changed = self
             .changes
             .as_ref()
             .filter(|fetched| fetched.key.comparison == key.comparison)
-            .map(|fetched| &fetched.diff);
-        overview(state, diff)
+            .map(|fetched| &fetched.changes);
+        overview(state, changed)
     }
 
     /// The fetch the overview needs now: the comparison shown, as of the
@@ -707,28 +762,58 @@ impl ChatView {
         }
     }
 
-    /// The comparison's changed files to fetch, without a patch: while the
-    /// overview shows, once for each comparison and again whenever the
-    /// row's totals for it move. Never on every frame.
-    pub fn wants_changes(&mut self, state: &SessionState) -> Option<(FetchKey, wire::DiffBase)> {
-        if !self.pane_open || !matches!(state.composer(), Composer::Send | Composer::Resume) {
+    /// The comparison's changed files to ask the agent's host for, with
+    /// the base to ask for: while the overview shows, once for each
+    /// comparison and again whenever the row's totals for it move. Never on
+    /// every frame.
+    pub fn wants_changes(
+        &mut self,
+        state: &SessionState,
+    ) -> Option<(FetchKey, Option<get_changes_request::Base>)> {
+        if !self.pane_open
+            || !matches!(state.composer(), Composer::Send | Composer::Resume)
+            || !ui_view::lists_changes(state)
+        {
             return None;
         }
         let key = self.fetch_key(state);
         if self.changes_asked.as_ref() == Some(&key) {
             return None;
         }
-        let base = ui_view::diff_base(state, key.comparison)?;
         self.changes_asked = Some(key.clone());
+        let base = key.comparison.base();
         Some((key, base))
     }
 
     /// Takes in a fetch of the changed files, unless the person has moved
     /// to another comparison since it was asked for.
-    pub fn changes_fetched(&mut self, key: FetchKey, diff: wire::Diff) {
+    pub fn changes_fetched(&mut self, key: FetchKey, changes: GetChangesResponse) {
         if key.comparison == self.comparison {
-            self.changes = Some(Fetched { key, diff });
+            self.changes = Some(Fetched { key, changes });
         }
+    }
+
+    /// The branch the changes are counted against, for the header to name:
+    /// none for the uncommitted work. On the branch it is the base the
+    /// agent's host reported for the last list fetched, since the host
+    /// picks it, as from the branch's upstream when the agent works on its
+    /// base branch; until one is fetched, the base the row names.
+    fn compared_with<'a>(&'a self, state: &'a SessionState) -> Option<&'a str> {
+        if self.comparison == Comparison::Uncommitted {
+            return None;
+        }
+        self.changes
+            .as_ref()
+            .filter(|fetched| fetched.key.comparison == Comparison::OnBranch)
+            .map(|fetched| fetched.changes.base_branch.as_str())
+            .filter(|base| !base.is_empty())
+            .or_else(|| {
+                state
+                    .agent()
+                    .git
+                    .as_ref()
+                    .and_then(|git| git.base_branch.as_deref())
+            })
     }
 
     /// Switches the comparison the header and the overview count against:
@@ -739,7 +824,7 @@ impl ChatView {
             Comparison::Uncommitted => Comparison::OnBranch,
             Comparison::OnBranch => Comparison::Uncommitted,
         };
-        if ui_view::diff_base(state, next).is_none() {
+        if !next.offered(state) {
             return false;
         }
         self.comparison = next;
@@ -807,6 +892,10 @@ impl ChatView {
             FeedHit::Attachment(blob) | FeedHit::Thumbnail { blob, .. } => {
                 Some(ChatEffect::OpenAttachment(blob.clone()))
             }
+            FeedHit::Round { review, text } => Some(ChatEffect::ReviewRound {
+                review: review.clone(),
+                text: text.clone(),
+            }),
             _ => None,
         })
     }
@@ -1001,48 +1090,65 @@ impl ChatView {
         &self.attaching
     }
 
-    /// `<leader> r` with a review already in the draft: back to its page.
-    /// False when there is none, and a fresh diff is wanted.
-    pub fn resume_review(&mut self) -> bool {
-        let held = self
-            .review
-            .as_ref()
-            .is_some_and(|page| self.editor.find_attachment(|a| page.owns(a)).is_some());
-        self.review_open = held;
-        held
-    }
-
-    /// The review page, at the file `at` when one is named.
-    pub fn open_review_at(&mut self, diff: wire::Diff, patch: String, at: Option<&str>) {
-        let mut page = ReviewPage::new(diff, patch);
+    /// The agent's review page, made when first wanted, shown at the file
+    /// `at` when one is named.
+    pub fn open_review_page(&mut self, at: Option<&str>) -> &mut review::Page {
+        self.review_page_open = true;
+        let page = self.review_page.get_or_insert_with(review::Page::new);
         if let Some(path) = at {
             page.show_file(path);
         }
-        self.review = Some(page);
-        self.review_open = true;
+        page
     }
 
-    /// The review page already held, turned to the file `at`.
-    pub fn review_file(&mut self, at: &str) {
-        if let Some(page) = &mut self.review {
-            page.show_file(at);
+    /// A sent review's round over the chat, while it is read from the
+    /// agent's host.
+    pub fn open_round(&mut self, review: &ui_view::SentReviewRef) {
+        self.round = Some((review.clone(), review::Page::round(review.round)));
+    }
+
+    /// The round `review` names, read: shown when it is still the one
+    /// open; none, or a host out of reach with none of it loaded, shows
+    /// `text`, what the agent read. A round read from what was loaded with
+    /// the host out of reach says so.
+    pub fn round_read(
+        &mut self,
+        review: &ui_view::SentReviewRef,
+        read: Result<Option<ui_runtime::review::Round>, ui_runtime::review::ReviewError>,
+        text: &str,
+    ) {
+        if let Some((open, page)) = &mut self.round
+            && open == review
+        {
+            page.round_read(read, text);
         }
     }
 
-    /// Keeps the draft's Review token in step with the page: the first
-    /// comment inserts it at the cursor, later ones update it where it
-    /// sits, and the last deletion takes it out.
-    fn sync_review_token(&mut self) {
-        let Some(page) = &self.review else {
-            return;
-        };
-        let held = self.editor.find_attachment(|a| page.owns(a));
-        match (held, page.comments().is_empty()) {
-            (Some(index), false) => self.editor.replace_attachment(index, page.attachment()),
-            (Some(index), true) => self.editor.remove_attachment(index),
-            (None, false) => self.editor.attach(page.attachment()),
-            (None, true) => {}
-        }
+    /// The review chip the composer shows: from the agent's row, unless
+    /// this composer has just sent those drafts.
+    fn review_chip(&self, state: &SessionState) -> Option<ui_view::ReviewChip> {
+        let chip = ui_view::review_chip(state.agent())?;
+        (self.review_sent.is_none() || self.review_sent != review_counter(state)).then_some(chip)
+    }
+
+    /// A send of the review's drafts did not go: the chip is back.
+    pub fn review_unsent(&mut self) {
+        self.review_sent = None;
+    }
+
+    /// A prompt that did not reach the agent, refused, withdrawn from the
+    /// queue or never sent, comes back to the composer: its words and
+    /// attachments after any draft there, but not a review it carried.
+    /// That review's comments are still drafts on the agent's host, so the
+    /// chip is back and the next send reads them afresh: the agent gets
+    /// one review, in the words the drafts hold then.
+    pub fn take_back(&mut self, text: &str, attachments: Vec<Attachment>) {
+        let attachments = attachments
+            .into_iter()
+            .filter(|attachment| ui_view::sent_review::entry(attachment).is_none())
+            .collect();
+        self.editor.restore(text, attachments);
+        self.review_sent = None;
     }
 
     /// A page was asked for; another waits until the window grows.

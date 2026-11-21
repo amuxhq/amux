@@ -19,8 +19,7 @@ use std::time::Duration;
 use agent_dir::Clock;
 use node::harness::{LiveRoute, ScriptedDiscovery, scripted_discovery};
 use node::{
-    ClientApi, Daemon, Edge, EdgeOptions, LanOptions, Launch, LoopbackLink, ProfileId,
-    ProfileRuntime,
+    Daemon, Edge, EdgeOptions, LanOptions, Launch, LoopbackLink, ProfileId, ProfileRuntime,
 };
 use provider_fakes::script::{INPUT_LOG_ENV, SCRIPT_ENV, Script, Step};
 use serde::{Deserialize, Serialize};
@@ -28,13 +27,12 @@ use store::AgentKey;
 use tokio::sync::mpsc;
 use tracing::Instrument as _;
 use uuid::Uuid;
-use wire::agent_service_server::AgentService as _;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
     AgentRef, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, DeleteAgentRequest, Input, PromptInput, WithdrawQueued, claude_pty_input,
-    claude_sdk_input, codex_input, create_agent_request,
+    CreateAgentRequest, Input, PromptInput, WithdrawQueued, claude_pty_input, claude_sdk_input,
+    codex_input, create_agent_request,
 };
 
 use crate::binaries::Binaries;
@@ -182,6 +180,17 @@ impl NetAgent {
     }
 }
 
+/// An agent the net knows is addressed where it lives, as its row is.
+impl client::AgentAddress for NetAgent {
+    fn host_id(&self) -> &[u8] {
+        self.host_id.as_bytes()
+    }
+
+    fn agent_id(&self) -> &[u8] {
+        self.id.as_bytes()
+    }
+}
+
 /// Where a host's declared repositories are made, in its directory; each
 /// is one of the host's repositories.
 const REPOSITORIES: &str = "repositories";
@@ -241,6 +250,10 @@ pub enum NetError {
     Serve(#[from] node::ServeError),
     #[error("refused: {}", .0.message())]
     Refused(Box<tonic::Status>),
+    /// A call made through the client library failed: refused by the
+    /// host that answered it, or lost on the way.
+    #[error("refused: {0}")]
+    Call(#[from] client::RpcError),
     /// A spawn an agent asked its own process for got no child: the words
     /// its model would read.
     #[error("refused: {0}")]
@@ -315,7 +328,7 @@ struct Link {
 pub(crate) enum LinkFlip {
     // Weak, so a host killed or removed mid-flap still drops its edge,
     // which withdraws it from discovery.
-    InProcess {
+    Loopback {
         a: Weak<Edge>,
         b: Weak<Edge>,
         id_a: Uuid,
@@ -333,7 +346,7 @@ impl LinkFlip {
     pub(crate) fn cut(&mut self) {
         match self {
             // Dropping the link severs it.
-            Self::InProcess { live, .. } => *live = None,
+            Self::Loopback { live, .. } => *live = None,
             Self::Lan { lan, a, b } => {
                 lan.cut(a, b, true);
             }
@@ -345,7 +358,7 @@ impl LinkFlip {
     /// have not within a few seconds, it stays cut until the next period.
     pub(crate) async fn restore(&mut self) {
         match self {
-            Self::InProcess {
+            Self::Loopback {
                 a,
                 b,
                 id_a,
@@ -1037,14 +1050,7 @@ impl Net {
             ));
         }
         let host = self.host(&decl.host)?.clone();
-        let parent = match &decl.parent {
-            Some(parent) => Some(self.agent(parent)?.parent()),
-            None => None,
-        };
         decl.check_branch()?;
-        let provider = self.provider_of(&decl)?;
-        let script = self.write_script(&decl.name, decl.script.clone().unwrap_or_default())?;
-        let id = Uuid::new_v4();
         let cwd = match &decl.repository {
             Some(repository) => host
                 .work
@@ -1057,43 +1063,38 @@ impl Net {
         if let Some(branch) = &decl.branch {
             on_branch(&decl.host, Path::new(&cwd), branch)?;
         }
+        // No client names a parent: only an agent that calls is one. A
+        // declared child is asked of its parent's agent process, as the
+        // parent's own spawn tool asks.
+        if let Some(parent) = decl.parent.clone() {
+            let agent = self.asked_of(&parent, decl.clone(), cwd).await?;
+            self.topology.agents.push(decl);
+            return Ok(agent);
+        }
+        let provider = self.provider_of(&decl)?;
+        let script = self.write_script(&decl.name, decl.script.clone().unwrap_or_default())?;
+        let id = Uuid::new_v4();
         providers::choose(&self.choices(), id, provider, decl.kind, &script)?;
-        let request = CreateAgentRequest {
+        let request = wire::CreateAgentRequest {
             agent_id: id.as_bytes().to_vec(),
-            host: None,
             name: Some(decl.name.clone()),
-            parent,
             cwd,
             agent: Some(create_config(&decl, provider)),
             initial_prompt: decl
                 .prompt
                 .as_deref()
                 .map(|text| submission(b"testnet-first", text)),
-            ..CreateAgentRequest::default()
+            ..wire::CreateAgentRequest::default()
         };
-        let agent = match self.hosts[&decl.host].process.clone() {
-            Some(process) => process
-                .client()
-                .await
-                .map_err(|why| NetError::Process {
-                    host: decl.host.clone(),
-                    why,
-                })?
-                .agents
-                .create_agent(request)
-                .await
-                .map_err(|status| NetError::Refused(Box::new(status)))?
-                .into_inner()
-                .agent
-                .expect("a created agent is answered"),
-            None => {
-                let runtime = self.runtime(&decl.host)?;
-                runtime.set_launch(self.launch(&host, Some((decl.kind, &script, provider))));
-                let spawned = runtime.spawn(request, None).await;
-                runtime.set_launch(self.launch(&host, None));
-                spawned?
-            }
-        };
+        let person = self.person(&decl.host).await?;
+        let launching = self.launching(&host, Some((decl.kind, &script, provider)))?;
+        let created = person
+            .host(host.host_id.as_bytes())
+            .agents()
+            .create(request)
+            .await;
+        self.launched(&host, launching);
+        let agent = created?;
         self.agents.insert(
             decl.name.clone(),
             NetAgent {
@@ -1107,6 +1108,29 @@ impl Net {
         );
         self.topology.agents.push(decl);
         Ok(agent)
+    }
+
+    /// Sets the launch an in-process host starts its next agent process
+    /// with, and answers its runtime for [`Net::launched`] to set the
+    /// usual one back once the call that starts it returns. A process host
+    /// launches as its own config says.
+    fn launching(
+        &self,
+        host: &HostInfo,
+        agent: Option<(FakeKind, &Path, Provider)>,
+    ) -> Result<Option<Arc<ProfileRuntime>>, NetError> {
+        if self.process(&host.name)?.is_some() {
+            return Ok(None);
+        }
+        let runtime = self.runtime(&host.name)?;
+        runtime.set_launch(self.launch(host, agent));
+        Ok(Some(runtime))
+    }
+
+    fn launched(&self, host: &HostInfo, runtime: Option<Arc<ProfileRuntime>>) {
+        if let Some(runtime) = runtime {
+            runtime.set_launch(self.launch(host, None));
+        }
     }
 
     /// The provider an agent runs: its own choice, else its host's; a real
@@ -1277,33 +1301,10 @@ impl Net {
                 attachments: Vec::new(),
             }),
         });
-        if let Some(process) = self.hosts[&agent.host].process.clone() {
-            return Ok(process
-                .client()
-                .await
-                .map_err(|why| NetError::Process {
-                    host: agent.host.clone(),
-                    why,
-                })?
-                .agents
-                .resume_agent(wire::ResumeAgentRequest {
-                    agent_id: agent.id.as_bytes().to_vec(),
-                    initial_prompt: submission,
-                    if_suspended: false,
-                })
-                .await
-                .map_err(|status| NetError::Refused(Box::new(status)))?
-                .into_inner()
-                .agent
-                .expect("a resumed agent is answered"));
-        }
-        let runtime = self.runtime(&agent.host)?;
-        runtime.set_launch(self.launch(&host, Some((agent.kind, &script, agent.provider))));
-        let bootstrap = submission.map(|submission| wire::Bootstrap {
-            of: Some(wire::bootstrap::Of::Prompt(submission)),
-        });
-        let resumed = runtime.resume(agent.id, bootstrap).await;
-        runtime.set_launch(self.launch(&host, None));
+        let person = self.person(&agent.host).await?;
+        let launching = self.launching(&host, Some((agent.kind, &script, agent.provider)))?;
+        let resumed = person.agent(&agent).resume(submission, false).await;
+        self.launched(&host, launching);
         Ok(resumed?)
     }
 
@@ -1314,70 +1315,31 @@ impl Net {
             .await
     }
 
-    /// Sends the agent any input through its own host: an answer, a
-    /// withdrawal, an interrupt.
+    /// Sends the agent any input through its own host, as a person there
+    /// does: an answer, a withdrawal, an interrupt.
     pub async fn input(
         &self,
         name: &str,
         input: Input,
     ) -> Result<wire::SendInputResponse, NetError> {
         let agent = self.agent(name)?;
-        let request = wire::SendInputRequest {
-            agent_id: agent.id.as_bytes().to_vec(),
-            input: Some(input),
-        };
-        if let Some(process) = &self.hosts[&agent.host].process {
-            return Ok(process
-                .client()
-                .await
-                .map_err(|why| NetError::Process {
-                    host: agent.host.clone(),
-                    why,
-                })?
-                .sessions
-                .send_input(request)
-                .await
-                .map_err(|status| NetError::Refused(Box::new(status)))?
-                .into_inner());
-        }
-        let runtime = self.runtime(&agent.host)?;
-        runtime
-            .send_input(&request)
-            .await
-            .map_err(|error| NetError::Host {
-                host: agent.host.clone(),
-                error: error.to_string(),
-            })
+        Ok(self
+            .person(&agent.host)
+            .await?
+            .agent(agent)
+            .send_input(input)
+            .await?)
     }
 
     /// Settles the agent on its own host, as a person does there: it exits
     /// and can be resumed.
     pub async fn close_agent(&self, name: &str) -> Result<Ack, NetError> {
-        let agent = self.agent(name)?.clone();
-        let request = wire::FileAgentRequest {
-            agent_id: agent.id.as_bytes().to_vec(),
-            filing: wire::Filing::Closed as i32,
-        };
-        match &self.hosts[&agent.host].process {
-            Some(process) => {
-                process
-                    .client()
-                    .await
-                    .map_err(|why| NetError::Process {
-                        host: agent.host.clone(),
-                        why,
-                    })?
-                    .agents
-                    .file_agent(request)
-                    .await
-            }
-            None => {
-                self.client(&agent.host)?
-                    .file_agent(tonic::Request::new(request))
-                    .await
-            }
-        }
-        .map_err(|status| NetError::Refused(Box::new(status)))?;
+        let agent = self.agent(name)?;
+        self.person(&agent.host)
+            .await?
+            .agent(agent)
+            .set_filing(wire::Filing::Closed)
+            .await?;
         Ok(self.ack(format!("{name} settled")))
     }
 
@@ -1390,17 +1352,16 @@ impl Net {
         host: &str,
         name: &str,
     ) -> Result<(Vec<u8>, wire::Catalogue), NetError> {
+        use futures_util::StreamExt as _;
         use prost::Message as _;
         let id = self.agent(name)?.id;
-        let mut subscription = self
-            .runtime(host)?
-            .subscribe_session(id.as_bytes(), 1)
-            .await?;
+        let sessions = self.person(host).await?.sessions();
+        let mut subscription = sessions.subscribe(id.as_bytes(), 1).await?;
         let mut named = None;
         while let Some(event) = subscription.next().await {
-            match &event.of {
+            match event?.of {
                 Some(wire::session_event::Of::Snapshot(snapshot)) => {
-                    named.clone_from(&snapshot.catalogue);
+                    named = snapshot.catalogue;
                 }
                 Some(wire::session_event::Of::CaughtUp(_)) => break,
                 _ => {}
@@ -1409,16 +1370,8 @@ impl Net {
         let refused =
             |message: String| NetError::Refused(Box::new(tonic::Status::not_found(message)));
         let hash = named.ok_or_else(|| refused(format!("{name} offers nothing yet at {host}")))?;
-        let fetched = self
-            .client(host)?
-            .get_blob(tonic::Request::new(wire::GetBlobRequest {
-                agent_id: id.as_bytes().to_vec(),
-                hash: hash.clone(),
-            }))
-            .await
-            .map_err(|status| NetError::Refused(Box::new(status)))?
-            .into_inner();
-        let catalogue = wire::Catalogue::decode(fetched.bytes.as_slice())
+        let fetched = sessions.get_blob(id.as_bytes(), &hash).await?;
+        let catalogue = wire::Catalogue::decode(fetched.as_slice())
             .map_err(|error| refused(format!("{name}'s catalogue does not decode: {error}")))?;
         Ok((hash, catalogue))
     }
@@ -1427,40 +1380,61 @@ impl Net {
     /// children follow on their own hosts by the family rule, after this
     /// returns; the net forgets only this agent.
     pub async fn delete(&mut self, name: &str) -> Result<Ack, NetError> {
-        let agent = self.agent(name)?.clone();
-        let request = DeleteAgentRequest {
-            agent_id: agent.id.as_bytes().to_vec(),
-            ..DeleteAgentRequest::default()
-        };
-        match self.process(&agent.host)?.cloned() {
-            Some(process) => {
-                process
-                    .client()
-                    .await
-                    .map_err(|why| NetError::Process {
-                        host: agent.host.clone(),
-                        why,
-                    })?
-                    .agents
-                    .delete_agent(request)
-                    .await
-            }
-            None => {
-                self.client(&agent.host)?
-                    .delete_agent(tonic::Request::new(request))
-                    .await
-            }
-        }
-        .map_err(|status| NetError::Refused(Box::new(status)))?;
+        let agent = self.agent(name)?;
+        self.person(&agent.host)
+            .await?
+            .agent(agent)
+            .delete(false)
+            .await?;
         self.agents.remove(name);
         Ok(self.ack(format!("{name} deleted")))
     }
 
-    /// The client service a person reaches on `host`: the same calls a
-    /// phone or terminal makes there, forwarded to another host where the
-    /// agent lives there.
-    pub fn client(&self, host: &str) -> Result<ClientApi, NetError> {
-        Ok(ClientApi::new(&self.runtime(host)?, None))
+    /// A person's client of `host`'s node, as the clients there are: on a
+    /// host in the net's process, its services called in memory as the
+    /// phone calls its own runtime; on a process host, over the profile's
+    /// socket as the terminal client dials it. A call on another host's
+    /// agent is carried to that host, which answers it for this person.
+    pub async fn person(&self, host: &str) -> Result<client::Client, NetError> {
+        match self.process(host)?.cloned() {
+            Some(process) => process.client().await.map_err(|why| NetError::Process {
+                host: host.to_owned(),
+                why,
+            }),
+            None => Ok(client::Client::in_memory(
+                self.entrance(host)?,
+                client::Surface::Ios,
+            )),
+        }
+    }
+
+    /// The services `host`'s profile serves the phone in memory, behind the
+    /// same router and carrier as its socket, administration included: a
+    /// client built on it reaches every host `host` can, as the phone's.
+    pub fn entrance(
+        &self,
+        host: &str,
+    ) -> Result<
+        tower::util::BoxCloneService<
+            tonic::codegen::http::Request<tonic::body::Body>,
+            tonic::codegen::http::Response<tonic::body::Body>,
+            std::convert::Infallible,
+        >,
+        NetError,
+    > {
+        self.in_process(host, "this")?;
+        let entry = self
+            .hosts
+            .get(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?;
+        let daemon = entry
+            .daemon
+            .as_ref()
+            .ok_or_else(|| NetError::Down(host.to_owned()))?;
+        let registry = daemon.lock().unwrap().registry();
+        registry
+            .routes(entry.info.profile)
+            .map_err(|refusal| NetError::Down(format!("{host}: {refusal}")))
     }
 
     /// The administration of `host`'s profile, called in process as the
@@ -1478,27 +1452,24 @@ impl Net {
         Ok(daemon.lock().unwrap().profile_admin(entry.info.profile))
     }
 
-    /// The client service as `name`'s tools socket serves it: every call
-    /// is made as that agent, which its host checks and forwards.
-    pub fn tools(&self, name: &str) -> Result<ClientApi, NetError> {
-        let agent = self.agent(name)?;
-        Ok(ClientApi::new(&self.runtime(&agent.host)?, Some(agent.id)))
+    /// `name`'s own client: its tools socket, as its tool server dials it.
+    /// Every call is made as that agent, and is answered by the host that
+    /// owns what it acts on, which checks it against its own rows.
+    pub async fn tools(&self, name: &str) -> Result<client::Client, NetError> {
+        let socket = self.agent_dir(name)?.join(agent_dir::TOOLS_SOCK);
+        Ok(client::Client::connect(&socket, client::Surface::Terminal).await?)
     }
 
     /// `parent` spawns `decl` as its own spawn tool does: the request goes
     /// to `parent`'s agent process on its own socket, and that process
-    /// asks its daemon on its tools socket. It names `decl.host` as the
-    /// host: the parent's host resolves the name among the hosts it trusts
-    /// and forwards the create there, where the child plays its script in
-    /// that host's work directory.
+    /// makes the create, addressed to `decl.host` by its id, as the spawn
+    /// tool does after resolving the name: names are never addresses. The
+    /// child plays its script in that host's work directory.
     pub async fn spawn_child(
         &mut self,
         parent: &str,
         decl: AgentDecl,
     ) -> Result<wire::Agent, NetError> {
-        if self.agents.contains_key(&decl.name) {
-            return Err(NetError::AgentExists(decl.name));
-        }
         if decl.branch.is_some() {
             return Err(NetError::Host {
                 host: decl.host,
@@ -1508,31 +1479,46 @@ impl Net {
                 ),
             });
         }
+        let host = self.host(&decl.host)?;
+        let cwd = decl
+            .cwd
+            .clone()
+            .unwrap_or_else(|| host.work.to_string_lossy().into_owned());
+        self.asked_of(parent, decl, cwd).await
+    }
+
+    /// Asks `parent`'s agent process to make `decl` in `cwd`, as its spawn
+    /// tool does: the process makes the create on the child's host, as
+    /// itself, so the child's parent is the agent that asked.
+    async fn asked_of(
+        &mut self,
+        parent: &str,
+        decl: AgentDecl,
+        cwd: String,
+    ) -> Result<wire::Agent, NetError> {
+        if self.agents.contains_key(&decl.name) {
+            return Err(NetError::AgentExists(decl.name));
+        }
         let host = self.host(&decl.host)?.clone();
         let script = self.write_script(&decl.name, decl.script.clone().unwrap_or_default())?;
         let id = Uuid::new_v4();
         let provider = self.provider_of(&decl)?;
         let request = CreateAgentRequest {
             agent_id: id.as_bytes().to_vec(),
-            host: Some(wire::HostRef::named(decl.host.clone())),
             name: Some(decl.name.clone()),
             initial_prompt: decl
                 .prompt
                 .as_deref()
                 .map(|text| submission(b"testnet-first", text)),
-            cwd: decl
-                .cwd
-                .clone()
-                .unwrap_or_else(|| host.work.to_string_lossy().into_owned()),
+            cwd,
             agent: Some(create_config(&decl, provider)),
             ..CreateAgentRequest::default()
         };
         providers::choose(&self.choices(), id, provider, decl.kind, &script)?;
         let asked = self.agent_dir(parent)?;
-        let target = self.runtime(&decl.host)?;
-        target.set_launch(self.launch(&host, Some((decl.kind, &script, provider))));
-        let spawned = agent_dir::agent_sock::spawn(&asked, &request).await;
-        target.set_launch(self.launch(&host, None));
+        let launching = self.launching(&host, Some((decl.kind, &script, provider)))?;
+        let spawned = agent_dir::agent_sock::spawn(&asked, host.host_id.as_bytes(), &request).await;
+        self.launched(&host, launching);
         let agent = match spawned {
             Ok(agent_dir::agent_sock::Spawned::Created(response)) => {
                 response.agent.expect("a created agent is answered")
@@ -1780,6 +1766,7 @@ impl Net {
         if let Some(k) = own.decl.tail_rows {
             launch.core.tail_rows = k;
         }
+        launch.experiments = own.decl.enabled_experiments();
         if let Some(hook) = &self.launch_hook {
             hook(&host.name, &mut launch);
         }
@@ -2000,6 +1987,15 @@ impl Net {
             text.push_str(&format!(
                 "[new_agent.claude]\nmodel = \"{SMALL_CLAUDE}\"\neffort = \"medium\"\n\
                  [new_agent.codex]\nmodel = \"{SMALL_CODEX}\"\neffort = \"medium\"\n",
+            ));
+        }
+        if !decl.experiments.is_empty() {
+            // Read by a process host's daemon at start, and by an
+            // in-process one as the config it runs, which matches its
+            // launch, so it reports nothing waiting on a restart.
+            text.push_str(&format!(
+                "[experiments]\nenabled = {:?}\n",
+                decl.experiments
             ));
         }
         Ok(text)
@@ -2426,7 +2422,8 @@ impl Net {
     }
 
     /// A person on `from` starts an agent named `name` on `host`, as a
-    /// client there does: through `from`'s own runtime, which forwards it.
+    /// client there does: the host's name resolved among those `from`
+    /// knows, and the create addressed to it, which `from` carries there.
     pub async fn create_from(
         &self,
         from: &str,
@@ -2434,21 +2431,21 @@ impl Net {
         name: &str,
     ) -> Result<wire::Agent, NetError> {
         let work = self.host(host)?.work.to_string_lossy().into_owned();
-        Ok(self
-            .client(from)?
-            .create_agent(tonic::Request::new(wire::CreateAgentRequest {
+        let person = self.person(from).await?;
+        let at = person.inventory().resolve_host(host).await?;
+        Ok(person
+            .host(at.host_id())
+            .agents()
+            .create(wire::CreateAgentRequest {
                 agent_id: Uuid::new_v4().as_bytes().to_vec(),
-                host: Some(wire::HostRef::named(host)),
                 name: Some(name.to_owned()),
                 cwd: work,
-                agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudeSdk),
+                agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
+                    ClaudeCreateConfig::default(),
+                )),
                 ..wire::CreateAgentRequest::default()
-            }))
-            .await
-            .map_err(|status| NetError::Refused(Box::new(status)))?
-            .into_inner()
-            .agent
-            .expect("a created agent is answered"))
+            })
+            .await?)
     }
 
     /// The host's setting up as its daemon keeps it, and its settings.
@@ -2873,7 +2870,7 @@ impl Net {
             self.host(b)?.host_id,
         );
         self.sever_link(a, b)?;
-        Ok(LinkFlip::InProcess {
+        Ok(LinkFlip::Loopback {
             a: Arc::downgrade(&ends.0),
             b: Arc::downgrade(&ends.1),
             id_a: ends.2,
@@ -3284,32 +3281,14 @@ impl Net {
         id: Uuid,
         tail: u32,
     ) -> Result<Observer, NetError> {
-        if let Some(process) = self.process(host)?.cloned() {
-            let mut stream = process
-                .client()
-                .await
-                .map_err(|why| NetError::Process {
-                    host: host.to_owned(),
-                    why,
-                })?
-                .sessions
-                .subscribe_session(wire::SubscribeSessionRequest {
-                    agent_id: id.as_bytes().to_vec(),
-                    from: Some(wire::subscribe_session_request::From::Tail(tail)),
-                })
-                .await
-                .map_err(|status| NetError::Refused(Box::new(status)))?
-                .into_inner();
-            let (sender, incoming) = mpsc::unbounded_channel();
-            let reader = tokio::spawn(async move {
-                while let Ok(Some(response)) = stream.message().await {
-                    if let Some(event) = response.event
-                        && sender.send(event).is_err()
-                    {
-                        return;
-                    }
-                }
-            });
+        if self.process(host)?.is_some() {
+            let stream = self
+                .person(host)
+                .await?
+                .sessions()
+                .subscribe(id.as_bytes(), tail)
+                .await?;
+            let (incoming, reader) = forward_events(stream);
             return Ok(ObserverOf::new(
                 format!("{agent} observed at {host}"),
                 incoming,
@@ -3337,29 +3316,9 @@ impl Net {
 
     /// Opens a SubscribeInventory stream on `host` and records it.
     pub async fn observe_inventory(&self, host: &str) -> Result<InventoryObserver, NetError> {
-        if let Some(process) = self.process(host)?.cloned() {
-            let mut stream = process
-                .client()
-                .await
-                .map_err(|why| NetError::Process {
-                    host: host.to_owned(),
-                    why,
-                })?
-                .agents
-                .subscribe_inventory(wire::SubscribeInventoryRequest {})
-                .await
-                .map_err(|status| NetError::Refused(Box::new(status)))?
-                .into_inner();
-            let (sender, incoming) = mpsc::unbounded_channel();
-            let reader = tokio::spawn(async move {
-                while let Ok(Some(response)) = stream.message().await {
-                    if let Some(event) = response.event
-                        && sender.send(event).is_err()
-                    {
-                        return;
-                    }
-                }
-            });
+        if self.process(host)?.is_some() {
+            let stream = self.person(host).await?.inventory().subscribe().await?;
+            let (incoming, reader) = forward_events(stream);
             return Ok(ObserverOf::new(
                 format!("inventory at {host}"),
                 incoming,
@@ -3586,29 +3545,20 @@ impl Net {
         patience: Duration,
         mut probe: impl FnMut(&[wire::Item]) -> Result<T, String>,
     ) -> Result<T, NetError> {
-        let process = self.process(host)?.cloned().expect("a process host");
+        use futures_util::StreamExt as _;
         let deadline = tokio::time::Instant::now() + patience;
-        let failed = |why: String| NetError::Process {
-            host: host.to_owned(),
-            why,
-        };
         let mut seen = String::from("nothing yet");
         loop {
-            let mut client = process.client().await.map_err(failed)?;
+            let sessions = self.person(host).await?.sessions();
             let mut rows: BTreeMap<String, wire::Item> = BTreeMap::new();
             let mut stream = match tokio::time::timeout_at(
                 deadline,
-                client
-                    .sessions
-                    .subscribe_session(wire::SubscribeSessionRequest {
-                        agent_id: agent.id.as_bytes().to_vec(),
-                        from: Some(wire::subscribe_session_request::From::Tail(200)),
-                    }),
+                sessions.subscribe(agent.id.as_bytes(), 200),
             )
             .await
             {
-                Ok(Ok(stream)) => stream.into_inner(),
-                Ok(Err(status)) => return Err(NetError::Refused(Box::new(status))),
+                Ok(Ok(stream)) => stream,
+                Ok(Err(refused)) => return Err(refused.into()),
                 Err(_) => {
                     return Err(Stuck::Deadline {
                         what: what.to_owned(),
@@ -3619,8 +3569,8 @@ impl Net {
                 }
             };
             loop {
-                let event = match tokio::time::timeout_at(deadline, stream.message()).await {
-                    Ok(Ok(Some(event))) => event,
+                let event = match tokio::time::timeout_at(deadline, stream.next()).await {
+                    Ok(Some(Ok(event))) => event,
                     // The stream lagged, reset or closed: open it again and
                     // look afresh, which only moves forward.
                     Ok(_) => break,
@@ -3633,7 +3583,7 @@ impl Net {
                         .into());
                     }
                 };
-                match event.event.and_then(|event| event.of) {
+                match event.of {
                     Some(wire::session_event::Of::Item(item)) => {
                         rows.insert(item.key.clone(), item);
                     }
@@ -3642,16 +3592,9 @@ impl Net {
                         // page by page.
                         let mut before = rows.values().map(|item| item.order).min();
                         while let Some(order) = before.filter(|order| *order > 1) {
-                            let page = client
-                                .sessions
-                                .list_items(wire::ListItemsRequest {
-                                    agent_id: agent.id.as_bytes().to_vec(),
-                                    before_order: Some(order),
-                                    page_size: 500,
-                                })
-                                .await
-                                .map_err(|status| NetError::Refused(Box::new(status)))?
-                                .into_inner();
+                            let page = sessions
+                                .list_items(agent.id.as_bytes(), Some(order), 500)
+                                .await?;
                             before = page.items.iter().map(|item| item.order).min();
                             for item in page.items {
                                 rows.entry(item.key.clone()).or_insert(item);
@@ -4185,6 +4128,24 @@ fn on_branch(host: &str, dir: &Path, branch: &str) -> Result<(), NetError> {
 
 /// The kind an agent is created as, with its provider settings: its
 /// declared permission, nothing else.
+/// Reads a client's server stream into an observer's channel, until the
+/// stream ends or fails or the observer is dropped.
+fn forward_events<T: Send + 'static>(
+    mut stream: client::EventStream<T>,
+) -> (mpsc::UnboundedReceiver<T>, tokio::task::JoinHandle<()>) {
+    use futures_util::StreamExt as _;
+    let (sender, incoming) = mpsc::unbounded_channel();
+    let reader = tokio::spawn(async move {
+        while let Some(Ok(event)) = stream.next().await {
+            if sender.send(event).is_err() {
+                return;
+            }
+        }
+    });
+    (incoming, reader)
+}
+
+/// A kind and its settings as a person's create asks for them.
 fn create_config(decl: &AgentDecl, provider: Provider) -> create_agent_request::Agent {
     use create_agent_request::Agent;
     // A real Claude starts asking, as a person's own default on a real

@@ -104,13 +104,19 @@ async fn amux_new_with_worktree_starts_its_agent_in_a_new_worktree() {
             .map(|(path, _)| PathBuf::from(path))
             .unwrap_or_else(|| panic!("no worktree named in: {created}"));
         assert_ne!(at, work, "the agent works in its checkout");
+        // The answer comes before the worktree is made, and git writes the
+        // worktree's `.git` file before the rest of its records: it is made
+        // once git reads it as one.
         until("the worktree to be made", || {
             let at = at.clone();
             async move {
-                if at.join(".git").exists() {
-                    Ok(())
-                } else {
-                    Err(format!("{} is not made", at.display()))
+                let read = std::process::Command::new("git")
+                    .args(["-c", "core.fsmonitor=false", "rev-parse", "--git-dir"])
+                    .current_dir(&at)
+                    .output();
+                match read {
+                    Ok(output) if output.status.success() => Ok(()),
+                    _ => Err(format!("{} is not made", at.display())),
                 }
             }
         })

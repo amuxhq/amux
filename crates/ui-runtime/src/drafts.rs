@@ -29,28 +29,24 @@ struct Saves {
 impl Saves {
     /// Hands the daemon the newest pending draft, if any; called holding
     /// the turn. A save that fails loses only what the client still shows.
-    async fn flush(&self, client: &dyn Client, agent_id: &[u8]) {
+    async fn flush(&self, client: &Client, agent_id: &[u8]) {
         let pending = self
             .pending
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
         if let Some(draft) = pending {
-            let request = wire::UpdateDraftRequest {
-                agent_id: agent_id.to_vec(),
-                draft: Some(draft),
-            };
-            let _ = client.update_draft(request).await;
+            let _ = client.drafts().update(agent_id, draft).await;
         }
     }
 
     /// Saves `draft`, after every save asked for before.
-    fn save(self: Arc<Self>, client: Arc<dyn Client>, agent: &AgentKey, draft: wire::Draft) {
+    fn save(self: Arc<Self>, client: Client, agent: &AgentKey, draft: wire::Draft) {
         *self.pending.lock().unwrap_or_else(PoisonError::into_inner) = Some(draft);
         let agent_id = agent.agent.clone();
         tokio::spawn(async move {
             let _turn = self.turn.lock().await;
-            self.flush(&*client, &agent_id).await;
+            self.flush(&client, &agent_id).await;
         });
     }
 }
@@ -65,22 +61,19 @@ impl Drafts {
             .clone()
     }
 
-    pub(crate) fn keep(&self, client: Arc<dyn Client>, agent: &AgentKey, draft: wire::Draft) {
+    pub(crate) fn keep(&self, client: Client, agent: &AgentKey, draft: wire::Draft) {
         self.saves(agent).save(client, agent, draft);
     }
 
-    pub(crate) async fn kept(&self, client: &dyn Client, agent: &AgentKey) -> Option<wire::Draft> {
+    pub(crate) async fn kept(&self, client: &Client, agent: &AgentKey) -> Option<wire::Draft> {
         let saves = self.saves(agent);
         let _turn = saves.turn.lock().await;
         saves.flush(client, &agent.agent).await;
-        let request = wire::GetDraftRequest {
-            agent_id: agent.agent.clone(),
-        };
-        let draft = client.get_draft(request).await.unwrap_or_default();
+        let draft = client.drafts().get(&agent.agent).await.unwrap_or_default();
         Some(draft).filter(|draft| !draft.text.is_empty() || !draft.attachments.is_empty())
     }
 
-    pub(crate) async fn flushed(&self, client: &dyn Client) {
+    pub(crate) async fn flushed(&self, client: &Client) {
         let agents: Vec<(AgentKey, Arc<Saves>)> = self
             .agents
             .lock()

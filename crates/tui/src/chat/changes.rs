@@ -1,11 +1,10 @@
 //! A comparison's changed files as a list, under their folders as the
 //! shared view groups them, each file's lines added and removed at the
-//! right in the theme's green and red. The Overview's Changes section and
-//! the review page's file list both draw it; each places it and sets its
-//! width.
+//! right in the theme's green and red: the Overview's Changes section,
+//! which places it and sets its width.
 
 use ratatui::text::Line;
-use ui_view::Changes;
+use ui_view::{Changes, FileStatus};
 
 use crate::text::{self, pad_to, push};
 use crate::theme::Theme;
@@ -32,8 +31,9 @@ impl ChangesOut {
 }
 
 /// Files under their folder: a faint line naming it, shortened in the
-/// middle so both ends survive, then each file's name two columns in with
-/// its lines added and removed at the right; a blank line between folders.
+/// middle so both ends survive, then each file's name two columns in, after
+/// its old path when it was renamed, with its lines added and removed at
+/// the right; a blank line between folders.
 pub fn changes_lines(changes: &Changes, width: usize, theme: Theme) -> ChangesOut {
     let mut out = ChangesOut::default();
     for (n, folder) in changes.folders.iter().enumerate() {
@@ -68,14 +68,15 @@ pub fn changes_lines(changes: &Changes, width: usize, theme: Theme) -> ChangesOu
             };
             let counts = format!("{added}{removed}");
             let room = width.saturating_sub(indent + text::str_width(&counts) + 2);
+            // A renamed file names where it came from first, so a narrow
+            // list cuts that and keeps the name.
+            let label = match (&file.status, &file.old_path) {
+                (FileStatus::Renamed, Some(old)) => format!("{old} \u{2192} {}", file.name),
+                _ => file.name.clone(),
+            };
             let mut line = Line::default();
             pad_to(&mut line, indent);
-            push(
-                &mut line,
-                shorten_left(&file.name, room),
-                theme.text(),
-                width,
-            );
+            push(&mut line, shorten_left(&label, room), theme.text(), width);
             pad_to(&mut line, width.saturating_sub(text::str_width(&counts)));
             // Green and red from the terminal's palette.
             push(&mut line, added, theme.ok(), width);

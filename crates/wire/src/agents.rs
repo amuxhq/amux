@@ -158,9 +158,9 @@ mod tests {
         assert_eq!(super::name_or_id("my-own-agent"), "my-own-agent");
     }
 
-    /// A released build named Claude and Codex by an enum, at the tags the
-    /// provider ids do not reuse: its host entry and its catalogue request
-    /// still decode, as a provider with no id.
+    /// A released build named Claude and Codex by an enum, at a tag the
+    /// provider id does not reuse: its host entry still decodes, as a
+    /// provider with no id.
     #[test]
     fn a_released_builds_provider_enum_reads_as_no_id() {
         // ProviderOnHost { provider: PROVIDER_CLAUDE, catalogue: [7],
@@ -171,10 +171,5 @@ mod tests {
         assert_eq!(entry.provider_id, "");
         assert_eq!(entry.catalogue, Some(vec![7]));
         assert!(entry.signed_in);
-        // GetCatalogueRequest { host_id: [1], provider: PROVIDER_CODEX }.
-        let request = crate::GetCatalogueRequest::decode([0x0a, 0x01, 0x01, 0x10, 0x02].as_slice())
-            .expect("the request decodes");
-        assert_eq!(request.host_id, [1]);
-        assert_eq!(request.provider_id, "");
     }
 }

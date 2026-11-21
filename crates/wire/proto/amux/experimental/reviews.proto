@@ -1,0 +1,472 @@
+syntax = "proto3";
+
+package amux.experimental;
+
+import "amux/v1/records.proto";
+import "amux/v1/review_service.proto";
+
+// The reviews experiment, at version reviews/1: a person reviews an agent's
+// changes round by round, commenting on lines of snapshots of its working
+// tree, and sends the comments into the agent's chat.
+//
+// Like every amux.experimental file, it keeps none of amux.v1's promises;
+// see workspaces.proto. Every message and enum here is named for the
+// experiment, since the package is shared by every experiment.
+//
+// A snapshot is a commit of the agent's working tree, untracked files
+// included, kept in a store of the agent's own on its host and never in the
+// repository. Commits are named by their full object id.
+
+// The review page's calls. A host service, answered by the agent's host
+// for its own agents, only for persons, and only while the host runs the
+// experiment; anything else is answered UNIMPLEMENTED or refused.
+service Reviews1 {
+  // The agent's review. A person's open begins it on the first look, and
+  // takes a snapshot when the tree changed since the latest one and there
+  // are no drafts (or a refresh is asked for); a read-only open does
+  // neither, and answers the review as it stands, or an empty summary for
+  // an agent with none. Answers without file bodies. FAILED_PRECONDITION
+  // when the agent's folder is not a repository; DATA_LOSS when a commit
+  // the review needs can no longer be read.
+  rpc Open(ReviewOpenRequest) returns (ReviewSummary);
+  // The bodies of files of one comparison the review handed out: hunks with
+  // their lines highlighted, where each hunk sits in the code, the file's
+  // outline, and more context on request. A batch answers the files that
+  // fit; the rest are absent from the answer, for the client to ask for
+  // again.
+  rpc GetFiles(ReviewGetFilesRequest) returns (ReviewGetFilesResponse);
+  // Changes the review's comments, all of the edits or none, and answers
+  // the review as it is after them.
+  rpc Edit(ReviewEditRequest) returns (ReviewSummary);
+}
+
+// The review's entry on its agent's row, as `Agent.experimental["reviews/1"]`
+// carries it, so every client that has the row knows what the review holds
+// without asking. Written by the agent's host; absent while the agent has
+// no review.
+message ReviewRowEntry {
+  // Comments not yet sent.
+  uint32 drafts = 1;
+  // Goes up by one on every change to the review: a client that read the
+  // review at an earlier counter reads it again. A review started over
+  // counts afresh, so a client compares the id and the counter together.
+  uint64 counter = 2;
+  // The working tree has changed since the latest snapshot, worked out when
+  // the agent's turn ends.
+  bool moved = 3;
+  // The review the entry describes: ReviewSummary.id.
+  bytes review_id = 4;
+}
+
+// What a sent review's attachment says it is, as
+// `Attachment.experimental["reviews/1"]` carries it. The attachment itself
+// is text the agent reads; this entry lets a client draw it as a review and
+// lets the agent's host mark the comments it names sent.
+message SentReview {
+  // The review the comments belong to: ReviewSummary.id.
+  bytes review_id = 1;
+  // The round the sending client expected it to be. The host numbers
+  // rounds as the agent takes the messages, so two clients sending at once
+  // never claim one number.
+  uint32 round = 2;
+  // The snapshot the text's line numbers are on: ReviewSummary.snapshot of
+  // the summary the text was written from. The round is recorded on it, so
+  // a refresh before the agent takes the message moves no round onto code
+  // the sender never saw, and the host keeps it while the message waits in
+  // the agent's queue.
+  string snapshot = 3;
+  // The commit that snapshot was shown against for all changes when the
+  // text was written: ReviewSummary.base_commit. The round's base commit.
+  string base_commit = 5;
+  // Exactly the comments sent, each as it was when the text was written:
+  // the host marks sent those still drafts at that revision, and no others.
+  repeated ReviewSentComment comments = 4;
+}
+
+// A comment a sent review carries.
+message ReviewSentComment {
+  // ReviewerComment.id.
+  bytes id = 1;
+  // ReviewerComment.revision, as the text was written from it.
+  uint64 revision = 2;
+  // ReviewerComment.anchor, as the text was written from it: the lines the
+  // text names. A refresh moves a draft's anchor without raising its
+  // revision, so a comment marked sent takes this anchor back, on the
+  // snapshot its round is recorded on.
+  ReviewAnchor anchor = 3;
+}
+
+message ReviewOpenRequest {
+  bytes agent_id = 1;
+  // Picks the review's base branch anew; absent, the one the review has, or
+  // for a first look the default rule GetChanges uses.
+  optional string base_branch = 2;
+  // Takes a snapshot even with drafts, moving the drafts onto it.
+  bool refresh = 3;
+  // Reads the review without changing it: never begins one, never takes a
+  // snapshot, never picks a base. What a client opens with when it follows
+  // the row or builds a message, rather than a person opening the page. Set
+  // with base_branch or refresh, INVALID_ARGUMENT.
+  bool read_only = 4;
+}
+
+// A review as of one snapshot. An agent with no review answers a summary
+// whose id is empty.
+message ReviewSummary {
+  // Made by the host when the review begins; a review started over has a
+  // new id.
+  bytes id = 1;
+  string base_branch = 2;
+  // The commit the snapshot is compared against for all changes, recorded
+  // with the snapshot when it was taken.
+  string base_commit = 3;
+  // The snapshot this summary describes.
+  string snapshot = 4;
+  // The working tree has changed since the snapshot.
+  bool stale = 5;
+  // The rounds sent, oldest first; a round's number is its place, from 1.
+  repeated ReviewRound rounds = 6;
+  // What changed from the base commit to the snapshot, by path.
+  repeated amux.v1.ChangedFile files = 7;
+  reserved 8;
+  // What changed since the last round, by path, as REVIEW_VIEW_SINCE_LAST
+  // compares and limits it: a file the agent put back as it was, or made
+  // and then deleted, is here though `files` no longer lists it. Empty
+  // before the first round, and when the last round's snapshot can no
+  // longer be read.
+  repeated amux.v1.ChangedFile since_last = 16;
+  // Drafts and sent comments, each placed on the snapshot.
+  repeated ReviewerComment comments = 9;
+  // A merge or rebase was under way when the snapshot was taken, so
+  // conflicted files hold their markers as content.
+  bool merge_in_progress = 10;
+  // The snapshot store's folder on the agent's host, an absolute path: git
+  // reads a snapshot in the repository with it as an alternate object
+  // directory.
+  string objects = 11;
+  // The repository's top folder on the agent's host, an absolute path, that
+  // every path in the review is relative to.
+  string root = 12;
+  // How many drafts the refresh that took this snapshot moved onto it; zero
+  // for an answer that took none.
+  uint32 moved_drafts = 13;
+  // A git index of the snapshot, an absolute path on the agent's host,
+  // kept in the review's own folder: with it as GIT_INDEX_FILE and the
+  // store as an alternate, git diffs the working tree against the snapshot,
+  // and lists the files made since, writing nothing to the repository.
+  string index = 15;
+}
+
+message ReviewRound {
+  // The snapshot the round's text was written on: SentReview.snapshot of
+  // the message that sent it.
+  string snapshot = 1;
+  // The commit that snapshot was shown against for all changes when the
+  // text was written. A round's whole diff is GetFiles with this as `from`,
+  // the snapshot as `snapshot`, and REVIEW_VIEW_ALL.
+  string base_commit = 2;
+  // The input the agent took that closed the round: Item.input_id of the
+  // prompt or message carrying the sent review. A client opens the round
+  // a sent review in the chat closed by this, the id of the item holding
+  // it; a message whose comments were all sent or edited before the agent
+  // took it closed no round, and names none.
+  bytes input_id = 4;
+}
+
+// Which comparison a file's hunks show.
+enum ReviewView {
+  REVIEW_VIEW_UNSPECIFIED = 0;
+  // From the base commit to the snapshot.
+  REVIEW_VIEW_ALL = 1;
+  // From the last round's snapshot to this one, limited to what is still
+  // part of the agent's change.
+  REVIEW_VIEW_SINCE_LAST = 2;
+}
+
+// One comparison the review handed out, and the files of it wanted. The
+// host diffs exactly `from` to `snapshot`, after checking both are this
+// review's: `snapshot` one it keeps (a summary's snapshot, the one before
+// it, or a round's), and `from` a base commit that snapshot has been shown
+// against for REVIEW_VIEW_ALL, or a round's snapshot for
+// REVIEW_VIEW_SINCE_LAST. Anything else is INVALID_ARGUMENT; a snapshot no
+// longer kept, NOT_FOUND; one whose commits can no longer be read,
+// DATA_LOSS. A request names everything its answer depends on,
+// so it answers the same whatever the review's base becomes later.
+message ReviewGetFilesRequest {
+  bytes agent_id = 1;
+  // The commit the files are shown at: a ReviewSummary.snapshot, or a
+  // ReviewRound.snapshot.
+  string snapshot = 2;
+  ReviewView view = 3;
+  repeated ReviewFileRequest files = 4;
+  // The commit the view compares against: ReviewSummary.base_commit (or
+  // ReviewRound.base_commit) for all changes, the last round's snapshot for
+  // what changed since it.
+  string from = 5;
+  // Also answers `changed`: every file of the comparison, as the summary
+  // lists them. With no files asked for, the answer is the list alone:
+  // how a client shows a past round's whole diff, which no summary lists.
+  bool list = 6;
+  // For REVIEW_VIEW_SINCE_LAST, which keeps only what is part of the
+  // agent's change on either side: the base commit `snapshot` is shown
+  // against (ReviewSummary.base_commit), and the one the round's snapshot
+  // `from` was (ReviewRound.base_commit). Empty for REVIEW_VIEW_ALL.
+  string base = 7;
+  string from_base = 8;
+}
+
+message ReviewFileRequest {
+  string path = 1;
+  // More lines to read, from the side `context_side` names.
+  repeated ReviewLineRange context = 2;
+  // Which of the comparison's two commits the context is read from: the
+  // snapshot, or for lines on a hunk's removed side the commit it is
+  // compared against (`from`), where a renamed file has its old path. The
+  // request names a side, never a commit, so context is read only from
+  // the comparison the host checked. Unspecified with context asked for,
+  // INVALID_ARGUMENT.
+  ReviewSide context_side = 4;
+}
+
+message ReviewGetFilesResponse {
+  // The files asked for that fit in this answer, in the order asked.
+  repeated ReviewFileDiff files = 1;
+  // With `list`, what changed from `from` to `snapshot`, by path, as
+  // ReviewSummary.files lists all changes: for REVIEW_VIEW_SINCE_LAST,
+  // limited as its hunks are. Empty without `list`.
+  repeated amux.v1.ChangedFile changed = 2;
+}
+
+message ReviewFileDiff {
+  string path = 1;
+  // None for a binary file or one too large to show.
+  repeated ReviewHunk hunks = 2;
+  // The definitions the change touches, on either side, so a deleted one
+  // still shows; a definition's parent is an index into this list.
+  repeated ReviewDefinition outline = 3;
+  // The extra lines asked for, each a context line numbered as a line of
+  // the commit it was read from: new_line for the snapshot, old_line for a
+  // hunk's old commit.
+  repeated ReviewLine context = 4;
+}
+
+message ReviewHunk {
+  // The commit this view compared against: the request's `from`. A removed
+  // line belongs to it; every other line to the snapshot.
+  string old_commit = 1;
+  // The first line of each side, counted from 1.
+  uint32 old_start = 2;
+  uint32 new_start = 3;
+  // Where the hunk's changed lines sit in the code, outermost first; empty
+  // where no definition encloses them, or for a language with none. Taken
+  // from the added lines, or for a hunk that only removes, from the removed
+  // ones: each definition says which.
+  repeated ReviewDefinition scope = 4;
+  repeated ReviewLine lines = 5;
+}
+
+message ReviewLine {
+  ReviewLineKind kind = 1;
+  // The line's number on each side, from 1; zero on the side it is not on.
+  uint32 old_line = 2;
+  uint32 new_line = 3;
+  // Without its line ending.
+  string text = 4;
+  // Its highlighting, in order, covering the text; none when it is drawn
+  // plain.
+  repeated ReviewRun runs = 5;
+}
+
+enum ReviewLineKind {
+  REVIEW_LINE_KIND_UNSPECIFIED = 0;
+  REVIEW_LINE_KIND_CONTEXT = 1;
+  REVIEW_LINE_KIND_ADDED = 2;
+  REVIEW_LINE_KIND_REMOVED = 3;
+}
+
+// A stretch of a line's text that is all one kind.
+message ReviewRun {
+  ReviewTokenKind kind = 1;
+  // Its length in UTF-8 bytes.
+  uint32 len = 2;
+}
+
+// What a run of code is, as far as colouring it goes; each client maps a
+// kind to its own palette.
+enum ReviewTokenKind {
+  REVIEW_TOKEN_KIND_UNSPECIFIED = 0;
+  // Names, operators and punctuation.
+  REVIEW_TOKEN_KIND_PLAIN = 1;
+  REVIEW_TOKEN_KIND_KEYWORD = 2;
+  REVIEW_TOKEN_KIND_STRING = 3;
+  // Numbers and other literal constants.
+  REVIEW_TOKEN_KIND_NUMBER = 4;
+  REVIEW_TOKEN_KIND_TYPE = 5;
+  REVIEW_TOKEN_KIND_FUNCTION = 6;
+  REVIEW_TOKEN_KIND_COMMENT = 7;
+  // The added and removed lines of a file that is itself a diff.
+  REVIEW_TOKEN_KIND_INSERTED = 8;
+  REVIEW_TOKEN_KIND_DELETED = 9;
+}
+
+// One definition in a file: a module, type, function or item-level value.
+message ReviewDefinition {
+  ReviewDefinitionKind kind = 1;
+  // As the code spells it: "open", "Store".
+  string name = 2;
+  // A short label in the language's own words: "impl Display for Store",
+  // "fn open".
+  string label = 3;
+  // Its lines, from 1, both ends included, doc comments and attributes
+  // among them.
+  uint32 start_line = 4;
+  uint32 end_line = 5;
+  // The definition it sits in, as an index into the same list; absent at
+  // the top.
+  optional uint32 parent = 6;
+  // Which commit its lines are numbered in.
+  ReviewSide side = 7;
+}
+
+// Which of a comparison's two commits a definition's lines belong to.
+enum ReviewSide {
+  REVIEW_SIDE_UNSPECIFIED = 0;
+  // The snapshot shown: numbered as a line's new_line.
+  REVIEW_SIDE_SNAPSHOT = 1;
+  // The commit compared against, where only removed lines remain: numbered
+  // as a line's old_line. A comment's scope is on the commit its anchor
+  // names.
+  REVIEW_SIDE_COMPARED = 2;
+}
+
+// What a definition is, across languages. The numbers are the highlight
+// crate's own.
+enum ReviewDefinitionKind {
+  REVIEW_DEFINITION_KIND_UNSPECIFIED = 0;
+  // A module or namespace.
+  REVIEW_DEFINITION_KIND_MODULE = 1;
+  // A class, and its relatives: Swift's actor, Java's record.
+  REVIEW_DEFINITION_KIND_CLASS = 2;
+  REVIEW_DEFINITION_KIND_STRUCT = 3;
+  REVIEW_DEFINITION_KIND_ENUM = 4;
+  REVIEW_DEFINITION_KIND_UNION = 5;
+  // An interface, Rust's trait, Swift's protocol.
+  REVIEW_DEFINITION_KIND_INTERFACE = 6;
+  // Methods given to a type declared elsewhere: Rust's impl, Swift's
+  // extension.
+  REVIEW_DEFINITION_KIND_IMPL = 7;
+  // A new name for a type.
+  REVIEW_DEFINITION_KIND_TYPE_ALIAS = 8;
+  // A function outside any type.
+  REVIEW_DEFINITION_KIND_FUNCTION = 9;
+  // A function inside a type, or Go's function with a receiver.
+  REVIEW_DEFINITION_KIND_METHOD = 10;
+  REVIEW_DEFINITION_KIND_CONSTRUCTOR = 11;
+  // A value fixed at item level.
+  REVIEW_DEFINITION_KIND_CONSTANT = 12;
+  // A variable at item level.
+  REVIEW_DEFINITION_KIND_STATIC = 13;
+  REVIEW_DEFINITION_KIND_MACRO = 14;
+}
+
+// Lines of a file, from 1, both ends included. Zero to zero is the whole
+// file.
+message ReviewLineRange {
+  uint32 start = 1;
+  uint32 end = 2;
+}
+
+// A person's comment on lines of a file, or on the whole file.
+message ReviewerComment {
+  // Made by the client that wrote it.
+  bytes id = 1;
+  // Where it was written.
+  ReviewAnchor anchor = 2;
+  // Its words.
+  string text = 3;
+  // The commented lines and up to three above, in diff form, stored when
+  // the comment was saved: what it is shown with when its lines are gone.
+  repeated ReviewLine snippet = 4;
+  // The definitions enclosing the commented lines, outermost first.
+  repeated ReviewDefinition scope = 5;
+  // The round it was sent in, from 1; absent while it is a draft.
+  optional uint32 round = 6;
+  // Where it sits on the summary's snapshot.
+  ReviewPlacement placement = 7;
+  // Goes up each time a person puts it; a sent review names the revision
+  // its text was written from.
+  uint64 revision = 8;
+  // The revision the agent took it at, which closed its round: a sent
+  // review naming this comment at this revision is the message that sent
+  // it. Absent while a draft; it stays when a sent comment is edited.
+  optional uint64 sent_revision = 9;
+}
+
+// The lines a comment was written on.
+message ReviewAnchor {
+  // The commit that holds the lines: the snapshot for a new or context
+  // line, the commit the view compared against for a removed one.
+  string commit = 1;
+  string path = 2;
+  // Zero for the whole file.
+  ReviewLineRange lines = 3;
+}
+
+// Where a comment sits on a later snapshot, found by one diff from its
+// anchor's commit to that snapshot, following renames.
+message ReviewPlacement {
+  oneof at {
+    // No change touched its lines: here they are now, in the snapshot.
+    ReviewLineRange lines = 1;
+    // A sent comment whose lines were edited or deleted: shown folded,
+    // with its snippet.
+    amux.v1.Empty outdated = 2;
+    // On the whole file: a draft whose lines were edited, or a comment
+    // written on the whole file.
+    amux.v1.Empty file = 3;
+    // On removed lines of a commit a view of the summary still compares
+    // against: drawn on those lines, on the removed side of that view.
+    ReviewComparedLines compared = 5;
+  }
+  // A sent comment whose enclosing definition (or, with none, a line
+  // within three of it) changed since the round it was sent in.
+  bool changed_near = 4;
+  // The file it sits in, as the snapshot names it: its anchor's path, or
+  // the one a rename took it to. Empty for a comment whose commit can no
+  // longer be read, which is shown by its anchor and snippet.
+  string path = 6;
+}
+
+// Lines of a commit a view compares against, which the snapshot no longer
+// holds.
+message ReviewComparedLines {
+  // The commit: ReviewHunk.old_commit of the view that shows them.
+  string commit = 1;
+  // As the anchor gave them, numbered in that commit.
+  ReviewLineRange lines = 2;
+}
+
+message ReviewEditRequest {
+  bytes agent_id = 1;
+  repeated ReviewEdit edits = 2;
+}
+
+message ReviewEdit {
+  oneof of {
+    // Creates a draft, or changes a comment's words, by id.
+    ReviewPutComment put = 1;
+    // Deletes a comment by id, draft or sent; the chat keeps a sent one.
+    bytes delete = 2;
+    // Deletes every draft, leaving sent comments.
+    amux.v1.Empty discard_drafts = 3;
+    // Deletes the review: the next look is a first look.
+    amux.v1.Empty start_over = 4;
+  }
+}
+
+// A comment as its client writes it; the host stores its snippet and scope.
+message ReviewPutComment {
+  bytes id = 1;
+  ReviewAnchor anchor = 2;
+  string text = 3;
+}

@@ -140,7 +140,7 @@ pub fn queue_rows(state: &SessionState) -> Vec<QueuedRow> {
             };
             QueuedRow {
                 input_id: row.entry.input_id.clone(),
-                text: segments(&row.entry.text, &row.entry.attachments),
+                text: segments(&row.entry.text, &row.entry.attachments, &row.entry.input_id),
                 from_agent,
                 steered: row.steered,
                 can_withdraw: live && !row.steered,
@@ -216,7 +216,7 @@ pub fn prompts_underway(state: &SessionState) -> Vec<SentPrompt> {
         }
         let prompt = |lands, underway| SentPrompt {
             input_id: sent.id.clone(),
-            text: segments(text, attachments),
+            text: segments(text, attachments, &sent.id),
             lands,
             underway,
         };
@@ -307,7 +307,7 @@ pub fn untaken_by(
         .iter()
         .find_map(|attachment| match &attachment.of {
             Some(Of::Image(_)) if !can.images => Some(Untaken::Images),
-            Some(Of::File(_) | Of::Review(_)) if !can.files => Some(Untaken::Files),
+            Some(Of::File(_)) if !can.files => Some(Untaken::Files),
             _ => None,
         })
 }

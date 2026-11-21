@@ -7,7 +7,7 @@ import "amux/v1/agent_service.proto";
 import "amux/v1/chat.proto";
 import "amux/v1/records.proto";
 import "amux/v1/dump.proto";
-import "amux/v1/session_service.proto";
+import "amux/v1/session.proto";
 
 // The agent process's contract with its daemon: the immutable spec file each
 // incarnation starts from, and the frames on the agent directory's ctl.sock
@@ -315,13 +315,20 @@ message PtyResize {
 // private/agent.sock in the agent directory. One connection carries one ask
 // and its answer, each framed as on ctl.sock.
 message AgentAsk {
+  // Builds before the create took its host from the call's address asked
+  // for a spawn here, in a request this one does not read.
+  reserved 1;
   oneof of {
-    // A child agent: the request the daemon takes, as the tool server
-    // would have sent it there. The agent process hands it to its daemon
-    // and the answer back, so it knows of every child it asked for from
-    // before the daemon does.
-    CreateAgentRequest spawn = 1;
+    // A child agent: the create the tool server wants, made on the host
+    // host_id names. The tool server resolves a host a model names to its
+    // id before it asks, so a name never reaches here. The agent process
+    // makes the create, addressed to that host, through its daemon and
+    // hands the answer back, so it knows of every child it asked for from
+    // before any daemon does.
+    CreateAgentRequest spawn = 2;
   }
+  // The host a spawn is made on, by id; empty, the agent's own host.
+  bytes host_id = 3;
 }
 
 message AgentAnswer {

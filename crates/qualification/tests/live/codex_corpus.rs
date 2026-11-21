@@ -17,8 +17,8 @@ use std::path::PathBuf;
 use ui_state::{ItemBody, OpenAsk};
 use wire::codex_item::Kind as Codex;
 use wire::{
-    AgentRef, CodexCreateConfig, CodexInput, Kind, MessageBody, PromptInput, PutBlobRequest,
-    ResolveAgentRequest, codex_answer, codex_ask, codex_input, work,
+    AgentRef, CodexCreateConfig, CodexInput, Kind, MessageBody, PromptInput, codex_answer,
+    codex_ask, codex_input, work,
 };
 
 use super::asks::{Answer, settled};
@@ -165,37 +165,26 @@ impl Install {
     ) -> Result<(), String> {
         let host_id = self
             .client
-            .agents
-            .clone()
-            .resolve_agent(ResolveAgentRequest {
-                name: scenario.agent(),
-            })
+            .inventory()
+            .resolve_agent(&scenario.agent())
             .await
-            .map_err(|status| status.to_string())?
-            .into_inner()
-            .agent
-            .ok_or("the answer held no agent")?
+            .map_err(|error| error.to_string())?
             .host_id;
         self.client
-            .agents
-            .clone()
-            .send_message(wire::SendMessageRequest {
-                envelope: Some(wire::Envelope {
-                    id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-                    to: Some(AgentRef {
-                        host_id,
-                        agent_id: agent.to_vec(),
-                    }),
-                    context: None,
-                    from: None,
-                    body: Some(wire::envelope::Body::Message(MessageBody {
-                        text: text.into(),
-                        attachments: Vec::new(),
-                    })),
-                }),
+            .agent(&AgentRef {
+                host_id,
+                agent_id: agent.to_vec(),
             })
+            .send_message(
+                uuid::Uuid::new_v4().as_bytes().to_vec(),
+                None,
+                MessageBody {
+                    text: text.into(),
+                    attachments: Vec::new(),
+                },
+            )
             .await
-            .map_err(|status| status.to_string())?;
+            .map_err(|error| error.to_string())?;
         Ok(())
     }
 
@@ -565,20 +554,10 @@ impl Install {
             Err(verdict) => return Ok(verdict),
         };
         let blob = self
-            .client
-            .agents
-            .clone()
-            .put_blob(PutBlobRequest {
-                agent_id: agent.clone(),
-                name: "square.png".into(),
-                mime: "image/png".into(),
-                bytes: SQUARE_PNG.to_vec(),
-            })
+            .agent(&agent)
+            .put_blob("square.png", "image/png", SQUARE_PNG.to_vec())
             .await
-            .map_err(|status| format!("the image upload: {status}"))?
-            .into_inner()
-            .blob
-            .unwrap();
+            .map_err(|error| format!("the image upload: {error}"))?;
         self.input(
             &agent,
             wire::KindInput::Codex(CodexInput {
@@ -589,6 +568,7 @@ impl Install {
                         .into(),
                     attachments: vec![wire::Attachment {
                         of: Some(wire::attachment::Of::Image(blob)),
+                        ..Default::default()
                     }],
                 })),
             }),
@@ -604,6 +584,58 @@ impl Install {
         {
             return Err("Codex did not look at the image on disk".into());
         }
+        self.judged(scenario, &follow)
+    }
+
+    /// A review sent into the chat, under the permission Codex's own
+    /// config gives: the agent quotes the commented code as written, and
+    /// the diff command the review gives runs in Codex's default sandbox,
+    /// which reads the snapshot store outside the workspace, without asking
+    /// to leave it.
+    pub(super) async fn codex_review_attachment(&self) -> Result<Verdict, String> {
+        let scenario = Scenario::ReviewAttachment;
+        let (agent, follow) = match self
+            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .await?
+        {
+            Ok(ready) => ready,
+            Err(verdict) => return Ok(verdict),
+        };
+        let review = self.review_fixture(scenario, &agent)?;
+        self.input(
+            &agent,
+            wire::KindInput::Codex(CodexInput {
+                of: Some(codex_input::Of::Prompt(Self::review_prompt(review))),
+            }),
+        )
+        .await?;
+        let mut asked = Vec::new();
+        self.settle(&agent, &follow, "the review to be read", |ask| {
+            asked.push(super::ask_token(ask));
+            self.by_the_way(ask)
+        })
+        .await?;
+        let log = follow.snapshot();
+        let ran = commands(&log).into_iter().any(|(command, state)| {
+            command.command.contains("GIT_ALTERNATE_OBJECT_DIRECTORIES")
+                && command.command.contains(" diff ")
+                && state == wire::ToolState::Succeeded
+        });
+        if !ran {
+            return Err(format!(
+                "the review's diff command did not run: {:?}",
+                commands(&log)
+                    .iter()
+                    .map(|(command, state)| (command.command.clone(), state.as_str_name()))
+                    .collect::<Vec<_>>()
+            ));
+        }
+        if !asked.is_empty() {
+            return Err(format!(
+                "Codex asked before the review's command ran, so its sandbox refused it: {asked:?}"
+            ));
+        }
+        self.read_the_review(&log)?;
         self.judged(scenario, &follow)
     }
 

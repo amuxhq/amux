@@ -163,6 +163,35 @@ fn online(id: &str) -> FleetMsg {
     )))
 }
 
+fn offline(id: &str) -> FleetMsg {
+    ev(inventory_event::Of::Host(HostEntry::trusted_host(
+        id.as_bytes().to_vec(),
+        id,
+        wire::trusted::Reach::Offline(wire::Offline::default()),
+    )))
+}
+
+/// A link counts once, when the host is first read online after reading
+/// it otherwise: listings that read the same link agree on its count, and
+/// one read after the link went and came back does not, whichever
+/// listings a screen looked at in between.
+#[test]
+fn each_link_read_coming_up_counts_once() {
+    let mut fleet = FleetState::new();
+    assert_eq!(fleet.links(b"a"), 0, "never read");
+    fleet.update(offline("a"));
+    assert_eq!(fleet.links(b"a"), 0, "never linked");
+    fleet.update(online("a"));
+    assert_eq!(fleet.links(b"a"), 1);
+    fleet.update(online("a"));
+    assert_eq!(fleet.links(b"a"), 1, "the same link read again");
+    fleet.update(offline("a"));
+    assert_eq!(fleet.links(b"a"), 1);
+    fleet.update(online("a"));
+    assert_eq!(fleet.links(b"a"), 2, "another link");
+    assert_eq!(fleet.links(b"b"), 0, "each host counts its own");
+}
+
 /// A stop that could not reach a host this client still read as online,
 /// as when its own daemon restarts, is held; the stream that reopens names
 /// the host online again with no away in between, and the stop goes.
@@ -292,26 +321,6 @@ fn a_stop_released_at_a_listings_end_changes_its_row() {
     );
 }
 
-/// A row in `workspace` on its host, which made it when `made`, with the
-/// git facts its last turn end read.
-fn in_workspace(
-    mut agent: Agent,
-    kind: wire::experimental::WorkspaceKind,
-    workspace: &str,
-    made: bool,
-    git: Option<wire::Git>,
-) -> Agent {
-    let entry = wire::experimental::AgentWorkspace {
-        kind: kind as i32,
-        id: workspace.into(),
-        made_by_amux: made,
-        ..Default::default()
-    };
-    wire::experimental::WORKSPACE.put(&mut agent.experimental, &entry);
-    agent.git = git;
-    agent
-}
-
 fn totals(files: u32, added: u32, removed: u32) -> Option<wire::ChangeTotals> {
     Some(wire::ChangeTotals {
         files,
@@ -320,359 +329,70 @@ fn totals(files: u32, added: u32, removed: u32) -> Option<wire::ChangeTotals> {
     })
 }
 
-fn git(
-    branch: &str,
-    uncommitted: Option<wire::ChangeTotals>,
-    on_branch: Option<wire::ChangeTotals>,
-) -> Option<wire::Git> {
-    Some(wire::Git {
-        branch: Some(branch.into()),
-        uncommitted,
-        on_branch,
-        ..Default::default()
-    })
-}
-
+/// A delete's warning is the agent's host's answer, never the client's own
+/// reading of its rows: whether the workspace goes, its branch and that
+/// branch's own commits, and what is uncommitted. Only uncommitted changes
+/// the answer names are agreed to be lost; a host that could not be asked
+/// leaves a warning that agrees to lose nothing.
 #[test]
-fn a_delete_removes_the_workspace_only_with_its_last_member_counting_its_descendants_gone() {
-    use wire::experimental::WorkspaceKind::{Folder, Git, Wt};
-    let changed = git("fix-scroll", totals(3, 42, 7), totals(5, 60, 9));
-    let mut fleet = FleetState::new();
-    for msg in [
-        host("a"),
-        host("b"),
-        // A parent and its child share a tree; another agent shares a
-        // worktree with a stranger; one is alone in a folder of its own.
-        agent(in_workspace(
-            row("a", "parent", Phase::Idle, None),
-            Wt,
-            "/t/fix",
-            true,
-            changed.clone(),
-        )),
-        agent(in_workspace(
-            row("a", "child", Phase::Idle, Some(("a", "parent"))),
-            Wt,
-            "/t/fix",
-            true,
-            None,
-        )),
-        agent(in_workspace(
-            row("a", "one", Phase::Idle, None),
-            Git,
-            "/w/pair",
-            true,
-            None,
-        )),
-        agent(in_workspace(
-            row("a", "two", Phase::Idle, None),
-            Git,
-            "/w/pair",
-            true,
-            None,
-        )),
-        agent(in_workspace(
-            row("a", "notes", Phase::Idle, None),
-            Folder,
-            "/n",
-            false,
-            None,
-        )),
-        agent(in_workspace(
-            row("a", "hand", Phase::Idle, None),
-            Wt,
-            "/t/mine",
-            false,
-            None,
-        )),
-        // The same path on another host is another workspace.
-        agent(in_workspace(
-            row("b", "away", Phase::Idle, None),
-            Git,
-            "/w/solo",
-            true,
-            None,
-        )),
-        agent(in_workspace(
-            row("a", "solo", Phase::Idle, None),
-            Git,
-            "/w/solo",
-            true,
-            None,
-        )),
-        agent(row("a", "old", Phase::Idle, None)),
-        caught_up(),
-    ] {
-        fleet.update(msg);
-    }
-
-    let goes = fleet
-        .delete_removes_workspace(&at("a", "parent"))
-        .expect("its child goes with it");
-    assert_eq!(goes.uncommitted, totals(3, 42, 7));
-    assert_eq!(goes.branch.as_deref(), Some("fix-scroll"));
-    assert_eq!(
-        fleet.delete_removes_workspace(&at("a", "child")),
-        None,
-        "its parent stays in the tree"
-    );
-    assert_eq!(
-        fleet.delete_removes_workspace(&at("a", "one")),
-        None,
-        "a stranger shares it"
-    );
-    assert_eq!(
-        fleet.delete_removes_workspace(&at("a", "notes")),
-        None,
-        "a folder is never removed"
-    );
-    assert_eq!(
-        fleet.delete_removes_workspace(&at("a", "hand")),
-        None,
-        "a hand-made tree is kept"
-    );
-    assert_eq!(
-        fleet.delete_removes_workspace(&at("a", "solo")),
-        Some(ui_state::WorkspaceGoes {
-            uncommitted: None,
-            branch: None,
-            branch_commits: None,
-        }),
-        "the other host's agent is in another workspace; no git facts read yet"
-    );
-    assert_eq!(
-        fleet.delete_removes_workspace(&at("a", "old")),
-        None,
-        "no entry, no workspace"
-    );
-}
-
-/// Equal totals on the branch and uncommitted do not say the branch has no
-/// commits of its own: a line committed and then changed again uncommitted
-/// gives equal totals over a unique commit. The row carries no count of
-/// commits, so the branch is always named when the row has one, and its
-/// commits are the host's to count.
-#[test]
-fn the_branch_is_named_whenever_the_row_has_one() {
-    use wire::experimental::WorkspaceKind::Git;
-    let mut fleet = FleetState::new();
-    for msg in [
-        host("a"),
-        agent(in_workspace(
-            row("a", "same", Phase::Idle, None),
-            Git,
-            "/w/same",
-            true,
-            git("same", totals(1, 1, 1), totals(1, 1, 1)),
-        )),
-        agent(in_workspace(
-            row("a", "clean", Phase::Idle, None),
-            Git,
-            "/w/clean",
-            true,
-            git("clean", totals(0, 0, 0), totals(4, 30, 2)),
-        )),
-        agent(in_workspace(
-            row("a", "detached", Phase::Idle, None),
-            Git,
-            "/w/detached",
-            true,
-            Some(wire::Git {
-                branch: None,
-                ..Default::default()
-            }),
-        )),
-        caught_up(),
-    ] {
-        fleet.update(msg);
-    }
-    let same = fleet.delete_removes_workspace(&at("a", "same")).unwrap();
-    assert_eq!(
-        same.branch.as_deref(),
-        Some("same"),
-        "equal totals may hide a commit"
-    );
-    assert_eq!(same.uncommitted, totals(1, 1, 1));
-    let clean = fleet.delete_removes_workspace(&at("a", "clean")).unwrap();
-    assert_eq!(clean.uncommitted, None, "no uncommitted files");
-    assert_eq!(clean.branch.as_deref(), Some("clean"));
-    let detached = fleet
-        .delete_removes_workspace(&at("a", "detached"))
-        .unwrap();
-    assert_eq!(
-        detached.branch, None,
-        "a detached head has no branch to name"
-    );
-}
-
-/// An agent with a running process keeps its row's git facts current, so a
-/// delete's warning reads them; one suspended or exited cannot, so the
-/// warning starts by checking with the host, then says what the host found,
-/// or that a worktree with changes stays when the host could not say.
-#[test]
-fn a_delete_warning_asks_the_host_when_no_process_keeps_the_row_current() {
-    use ui_state::DeleteWarning;
-    use wire::experimental::WorkspaceKind::Git;
-    let stale = git("fix", None, None);
-    let mut suspended = in_workspace(
-        row("a", "sleepy", Phase::Idle, None),
-        Git,
-        "/w/sleepy",
-        true,
-        stale.clone(),
-    );
-    suspended.exit_cause = wire::ExitCause::Suspended as i32;
-    let mut exited = in_workspace(
-        row("a", "gone", Phase::Idle, None),
-        Git,
-        "/w/gone",
-        true,
-        stale.clone(),
-    );
-    exited.lifecycle = wire::Lifecycle::Exited as i32;
-    let mut fleet = FleetState::new();
-    for msg in [
-        host("a"),
-        agent(in_workspace(
-            row("a", "awake", Phase::Idle, None),
-            Git,
-            "/w/awake",
-            true,
-            git("awake", totals(1, 2, 0), None),
-        )),
-        agent(suspended),
-        agent(exited),
-        caught_up(),
-    ] {
-        fleet.update(msg);
-    }
-
-    let awake = fleet.delete_warning(&at("a", "awake")).unwrap();
-    assert!(
-        matches!(&awake, DeleteWarning::Goes(goes) if goes.uncommitted == totals(1, 2, 0)),
-        "{awake:?}"
-    );
-    assert!(awake.discards());
-    assert!(
-        awake.asks_host(),
-        "its branch's commits are not counted yet"
-    );
-
-    for name in ["sleepy", "gone"] {
-        let checking = fleet.delete_warning(&at("a", name)).unwrap();
-        assert!(
-            matches!(&checking, DeleteWarning::Checking(goes) if goes.branch.as_deref() == Some("fix")),
-            "{checking:?}"
-        );
-        assert!(!checking.discards(), "nothing named yet");
-        assert!(checking.asks_host());
-
-        let diff = wire::Diff {
-            files: vec![
-                wire::DiffFile {
-                    path: "README.md".into(),
-                    added: 1,
-                    removed: 0,
-                    ..Default::default()
-                },
-                wire::DiffFile {
-                    path: "notes.txt".into(),
-                    added: 1,
-                    removed: 0,
-                    ..Default::default()
-                },
-            ],
-            own_commits: Some(2),
-            ..Default::default()
+fn a_delete_warning_says_what_the_host_previewed() {
+    use ui_state::{DeleteWarning, WorkspaceGoes};
+    use wire::PreviewDeleteResponse;
+    let preview =
+        |removes_workspace, branch: Option<&str>, own_commits, uncommitted| PreviewDeleteResponse {
+            removes_workspace,
+            branch: branch.map(Into::into),
+            own_commits,
+            uncommitted,
         };
-        let found = checking.clone().answered::<()>(Ok(&diff));
-        assert_eq!(
-            found,
-            DeleteWarning::Goes(ui_state::WorkspaceGoes {
-                uncommitted: totals(2, 2, 0),
-                branch: Some("fix".into()),
-                branch_commits: Some(2),
-            })
-        );
-        assert!(found.discards());
-        assert!(!found.asks_host(), "settled");
 
-        let clean = checking.clone().answered::<()>(Ok(&wire::Diff::default()));
-        assert!(
-            matches!(&clean, DeleteWarning::Goes(goes) if goes.uncommitted.is_none()),
-            "{clean:?}"
-        );
-        assert!(!clean.discards());
-
-        let failed = checking.answered(Err("unreachable"));
-        assert!(
-            matches!(&failed, DeleteWarning::Unknown(goes) if goes.branch_commits.is_none()),
-            "{failed:?}"
-        );
-        assert!(!failed.discards(), "no consent without an answer");
-        assert!(!failed.asks_host());
-    }
-}
-
-/// Whether the branch has commits of its own is always the host's answer,
-/// even for an agent whose process keeps its row current: a merge made
-/// anywhere else takes them away, and the host deletes a branch with none.
-/// The answer counts them and changes nothing the warning already drew; a
-/// host that cannot say leaves them uncounted.
-#[test]
-fn a_delete_warning_takes_the_branchs_commits_from_the_host() {
-    use ui_state::DeleteWarning;
-    use wire::experimental::WorkspaceKind::Git;
-    let mut fleet = FleetState::new();
-    for msg in [
-        host("a"),
-        agent(in_workspace(
-            row("a", "awake", Phase::Idle, None),
-            Git,
-            "/w/awake",
-            true,
-            git("awake", totals(1, 2, 0), None),
-        )),
-        agent(in_workspace(
-            row("a", "detached", Phase::Idle, None),
-            Git,
-            "/w/detached",
-            true,
-            Some(wire::Git::default()),
-        )),
-        caught_up(),
-    ] {
-        fleet.update(msg);
-    }
-    let awake = fleet.delete_warning(&at("a", "awake")).unwrap();
-    let answer = |commits| wire::Diff {
-        own_commits: commits,
-        ..Default::default()
-    };
-    for commits in [0, 1, 3] {
-        let counted = awake.clone().answered::<()>(Ok(&answer(Some(commits))));
-        assert_eq!(
-            counted,
-            DeleteWarning::Goes(ui_state::WorkspaceGoes {
-                uncommitted: totals(1, 2, 0),
-                branch: Some("awake".into()),
-                branch_commits: Some(commits),
-            }),
-            "the row's uncommitted changes stay what was drawn"
-        );
-        assert!(!counted.asks_host());
-    }
-    let older = awake.clone().answered::<()>(Ok(&answer(None)));
-    assert!(
-        matches!(&older, DeleteWarning::Goes(goes) if goes.branch_commits.is_none()),
-        "a host before the count: {older:?}"
+    let dirty = preview(true, Some("fix"), Some(2), totals(3, 42, 7));
+    let goes = DeleteWarning::previewed::<()>(Ok(&dirty)).expect("the workspace goes");
+    assert_eq!(
+        goes,
+        DeleteWarning::Goes(WorkspaceGoes {
+            uncommitted: totals(3, 42, 7),
+            branch: Some("fix".into()),
+            branch_commits: Some(2),
+        })
     );
-    assert_eq!(awake.clone().answered(Err("unreachable")), awake);
-    let detached = fleet.delete_warning(&at("a", "detached")).unwrap();
-    assert!(!detached.asks_host(), "no branch to count");
-    let detached = detached.answered::<()>(Ok(&answer(Some(4))));
+    assert!(goes.discards());
+
+    let clean = preview(true, Some("fix"), Some(0), totals(0, 0, 0));
+    let clean = DeleteWarning::previewed::<()>(Ok(&clean)).unwrap();
     assert!(
-        matches!(&detached, DeleteWarning::Goes(goes) if goes.branch_commits.is_none()),
-        "{detached:?}"
+        matches!(&clean, DeleteWarning::Goes(goes) if goes.uncommitted.is_none()),
+        "no uncommitted files: {clean:?}"
     );
+    assert!(!clean.discards());
+
+    let uncounted = preview(true, Some("fix"), None, None);
+    assert!(
+        matches!(
+            DeleteWarning::previewed::<()>(Ok(&uncounted)),
+            Some(DeleteWarning::Goes(goes)) if goes.branch_commits.is_none()
+        ),
+        "commits the host could not count stay uncounted"
+    );
+
+    let detached = preview(true, None, Some(4), None);
+    assert!(
+        matches!(
+            DeleteWarning::previewed::<()>(Ok(&detached)),
+            Some(DeleteWarning::Goes(goes)) if goes.branch.is_none() && goes.branch_commits.is_none()
+        ),
+        "a detached head has no branch to count"
+    );
+
+    let stays = preview(false, Some("fix"), Some(2), totals(3, 42, 7));
+    assert_eq!(
+        DeleteWarning::previewed::<()>(Ok(&stays)),
+        None,
+        "a workspace that stays warns of nothing, whatever it holds"
+    );
+
+    let failed = DeleteWarning::previewed(Err("unreachable")).unwrap();
+    assert_eq!(failed, DeleteWarning::Unknown);
+    assert!(!failed.discards(), "no consent without an answer");
+    assert!(!DeleteWarning::Checking.discards(), "nothing named yet");
 }

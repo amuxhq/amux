@@ -147,7 +147,7 @@ async fn with_the_experiment_off_a_suspended_row_is_still_woken_and_closed() {
     }
 
     let envelope = Envelope {
-        id: b"wake-up".to_vec(),
+        id: b"wake-up-message!".to_vec(),
         to: Some(wire::AgentRef {
             host_id: host(&install).as_bytes().to_vec(),
             agent_id: napper.id.as_bytes().to_vec(),
@@ -168,7 +168,7 @@ async fn with_the_experiment_off_a_suspended_row_is_still_woken_and_closed() {
     assert!(
         matches!(
             spec.bootstrap.and_then(|bootstrap| bootstrap.of),
-            Some(wire::bootstrap::Of::AgentMessage(message)) if message.id == b"wake-up"
+            Some(wire::bootstrap::Of::AgentMessage(message)) if message.id == b"wake-up-message!"
         ),
         "the message is the first input"
     );
@@ -199,7 +199,7 @@ fn prompt(id: &[u8], text: &str) -> wire::Input {
 }
 
 /// What a person typing to the agent sends, as `amux send`, a chat's
-/// composer and a far host's forwarded send all do.
+/// composer and a call carried from a far host all do.
 fn typed(agent: &SyntheticAgent, id: &[u8], text: &str) -> wire::SendInputRequest {
     wire::SendInputRequest {
         agent_id: agent.id.as_bytes().to_vec(),
@@ -338,12 +338,90 @@ async fn a_persons_input_met_by_a_suspension_wakes_the_agent_with_it() {
     daemon.shutdown().await.unwrap();
 }
 
+/// A person's input typed once the row reads suspended, while the process
+/// that suspended is still connected, is held for the next incarnation:
+/// nothing is handed to the closing process, which would exit without
+/// answering and leave the person not knowing whether it arrived.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_persons_input_to_a_row_just_suspended_waits_for_the_process_to_go() {
+    let install = Install::new();
+    let mut napper = SyntheticAgent::new(&install, "napper", SEGMENTS);
+    napper.register(&install);
+    napper.write_spec();
+    napper.go_live();
+    // A closing process reads what it is sent and answers none of it.
+    napper.freeze();
+    let mut launch = install.launch(
+        "resumed",
+        vec![
+            support::text("awake"),
+            provider_fakes::script::Step::TurnEnd,
+        ],
+    );
+    launch.experiments = settings::experiments::Enabled::of(&[&settings::experiments::SUSPENSION]);
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    until_connected(&napper).await;
+
+    napper.append(&wire::Step {
+        incarnation_end: Some(wire::IncarnationEnd {
+            cause: ExitCause::Suspended as i32,
+            detail: None,
+        }),
+        ..wire::Step::default()
+    });
+    napper.nudge().await;
+    until("the row to read suspended", || async {
+        let row = row(&install, &napper);
+        (row.exit_cause == ExitCause::Suspended as i32)
+            .then_some(())
+            .ok_or_else(|| format!("{row:?}"))
+    })
+    .await
+    .unwrap();
+
+    let sent = tokio::spawn({
+        let runtime = runtime.clone();
+        let request = typed(&napper, b"typed-1", "time to go on");
+        async move { runtime.send_input(&request).await }
+    });
+    // A window: an input waiting for the exit leaves no mark to wait on.
+    holds_for("the input to wait", Duration::from_millis(300), || async {
+        !sent.is_finished()
+    })
+    .await
+    .expect("the input waits for the exit");
+    assert!(
+        napper.inputs().is_empty(),
+        "nothing is handed to the closing process: {:?}",
+        napper.inputs()
+    );
+    napper.die().await;
+    let verdict = sent.await.unwrap().expect("the input is answered");
+    assert!(
+        matches!(verdict.of, Some(wire::send_input_response::Of::Accepted(_))),
+        "the next incarnation took it: {verdict:?}"
+    );
+    assert_eq!(runtime.agent(napper.id).await.unwrap().incarnation, 2);
+    let spec = std::fs::read(napper.dir.join("spec.2")).unwrap();
+    let spec = <wire::AgentSpec as prost::Message>::decode(spec.as_slice()).unwrap();
+    assert!(
+        matches!(
+            spec.bootstrap.and_then(|bootstrap| bootstrap.of),
+            Some(wire::bootstrap::Of::Prompt(prompt)) if prompt.input_id == b"typed-1"
+        ),
+        "the input is the first"
+    );
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 /// A client acting on a row it holds asks for a wake, as `amux attach` does
 /// for an agent its row says is suspended: the agent is resumed only if it
 /// still is, and one stopped since is refused, never started again.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_resume_asked_only_if_suspended_starts_no_stopped_agent() {
-    use wire::agent_service_server::AgentService as _;
     let install = Install::new();
     let napper = SyntheticAgent::new(&install, "napper", SEGMENTS);
     napper.write_spec();
@@ -369,7 +447,7 @@ async fn a_resume_asked_only_if_suspended_starts_no_stopped_agent() {
         )
         .await;
     let runtime = runtime(&daemon, &install);
-    let client = node::ClientApi::new(&runtime, None);
+    let client = wire::agent_service_client(served_to(&runtime, None).await);
     let wake = |agent: &SyntheticAgent| {
         tonic::Request::new(wire::ResumeAgentRequest {
             agent_id: agent.id.as_bytes().to_vec(),
@@ -379,6 +457,7 @@ async fn a_resume_asked_only_if_suspended_starts_no_stopped_agent() {
     };
 
     let refused = client
+        .clone()
         .resume_agent(wake(&stopped))
         .await
         .expect_err("a stopped agent is not woken");
@@ -391,6 +470,7 @@ async fn a_resume_asked_only_if_suspended_starts_no_stopped_agent() {
     assert!(!stopped.dir.join("spec.2").exists());
 
     let woken = client
+        .clone()
         .resume_agent(wake(&napper))
         .await
         .expect("a suspended agent is woken")

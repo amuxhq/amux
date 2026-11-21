@@ -1,279 +1,235 @@
-//! The installation's profiles as a client manages them: the same calls
-//! over the front door's socket ([`GrpcInstallation`]) or in process
-//! ([`InProcessInstallation`]), as [`Client`](crate::Client) is for one
-//! profile's agents. Every method is the `InstallationService` call of the
-//! same name, except [`Installation::open_profile`], which reaches a
-//! profile's own services.
+//! The installation's profiles as a client manages them, through its
+//! front door: over the front door's socket, or called in memory where the
+//! installation runs in the client's own process. Opening a profile gives a
+//! [`Client`] of that profile's node.
 
 use std::path::Path;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use tonic::Request;
+use tonic::body::Body;
+use tonic::codegen::{StdError, http};
 use wire::installation_service_client::InstallationServiceClient;
-use wire::installation_service_server::InstallationService;
 use wire::{
     AnswerSignInRequest, BindProfileRequest, CreateProfileRequest, DeleteProfileRequest, Profile,
     RenameProfileRequest, SignInEvent, SignInRequest, SubscribeProfilesResponse,
 };
 
-use crate::{Client, EventStream, GrpcClient, RpcError, events, held, held_events};
+use crate::transport::{Address, Memory, Socket, Transport};
+use crate::{Client, Conn, EventStream, RpcError, Surface, events, held, held_events};
 
-#[async_trait]
-pub trait Installation: Send + Sync + 'static {
-    async fn get_installation(&self) -> Result<wire::Installation, RpcError>;
-    async fn list_profiles(&self) -> Result<Vec<Profile>, RpcError>;
-    /// The whole list now, then again whenever any profile changes.
-    async fn subscribe_profiles(&self) -> Result<EventStream<SubscribeProfilesResponse>, RpcError>;
-    async fn create_profile(&self, request: CreateProfileRequest) -> Result<Profile, RpcError>;
-    async fn bind_profile(&self, request: BindProfileRequest) -> Result<Profile, RpcError>;
-    async fn rename_profile(&self, request: RenameProfileRequest) -> Result<Profile, RpcError>;
-    async fn delete_profile(&self, request: DeleteProfileRequest) -> Result<(), RpcError>;
-    async fn sign_in(&self, request: SignInRequest) -> Result<EventStream<SignInEvent>, RpcError>;
-    async fn answer_sign_in(&self, request: AnswerSignInRequest) -> Result<(), RpcError>;
-    /// The everyday settings, as the config file resolves them.
-    async fn get_settings(&self) -> Result<wire::Settings, RpcError>;
-    /// Changes the named settings and applies each at once.
-    async fn update_settings(
-        &self,
-        request: wire::UpdateSettingsRequest,
-    ) -> Result<wire::Settings, RpcError>;
-    /// One profile's onboarding steps now, then again on every change.
-    async fn subscribe_onboarding(
-        &self,
-        request: wire::SubscribeOnboardingRequest,
-    ) -> Result<EventStream<wire::Onboarding>, RpcError>;
-    async fn answer_onboarding(
-        &self,
-        request: wire::AnswerOnboardingRequest,
-    ) -> Result<wire::Onboarding, RpcError>;
-    /// Folders worth offering as repositories.
-    async fn suggest_repositories(&self) -> Result<Vec<wire::Folder>, RpcError>;
-    /// A one-time link that signs the browser in and opens a page of the
-    /// profile's account service.
-    async fn web_sign_in_link(
-        &self,
-        request: wire::WebSignInLinkRequest,
-    ) -> Result<String, RpcError>;
-    /// The profile's own services: its agents and sessions, and its
-    /// administration (signing out, its identity, its dump).
-    async fn open_profile(&self, profile: &Profile) -> Result<Arc<dyn Client>, RpcError>;
-}
+/// Opens a profile hosted in this process by its id.
+type Open = Arc<dyn Fn(&[u8]) -> Result<Client, RpcError> + Send + Sync>;
 
-/// `$call!(self, method, request)` makes the call and yields its
-/// `Result<Response<_>, Status>`.
-macro_rules! installation_impl {
-    (impl[$($generics:tt)*] Installation for $ty:ty, $call:ident, $open:ident) => {
-        #[async_trait]
-        impl<$($generics)*> Installation for $ty {
-            async fn get_installation(&self) -> Result<wire::Installation, RpcError> {
-                held(
-                    $call!(self, get_installation, wire::GetInstallationRequest {})
-                        .await?
-                        .into_inner()
-                        .installation,
-                )
-            }
-
-            async fn list_profiles(&self) -> Result<Vec<Profile>, RpcError> {
-                Ok($call!(self, list_profiles, wire::ListProfilesRequest {})
-                    .await?
-                    .into_inner()
-                    .profiles)
-            }
-
-            async fn subscribe_profiles(
-                &self,
-            ) -> Result<EventStream<SubscribeProfilesResponse>, RpcError> {
-                Ok(events(
-                    $call!(self, subscribe_profiles, wire::SubscribeProfilesRequest {})
-                        .await?
-                        .into_inner(),
-                ))
-            }
-
-            async fn create_profile(
-                &self,
-                request: CreateProfileRequest,
-            ) -> Result<Profile, RpcError> {
-                held($call!(self, create_profile, request).await?.into_inner().profile)
-            }
-
-            async fn bind_profile(&self, request: BindProfileRequest) -> Result<Profile, RpcError> {
-                held($call!(self, bind_profile, request).await?.into_inner().profile)
-            }
-
-            async fn rename_profile(
-                &self,
-                request: RenameProfileRequest,
-            ) -> Result<Profile, RpcError> {
-                held($call!(self, rename_profile, request).await?.into_inner().profile)
-            }
-
-            async fn delete_profile(&self, request: DeleteProfileRequest) -> Result<(), RpcError> {
-                $call!(self, delete_profile, request).await?;
-                Ok(())
-            }
-
-            async fn sign_in(
-                &self,
-                request: SignInRequest,
-            ) -> Result<EventStream<SignInEvent>, RpcError> {
-                Ok(held_events(
-                    $call!(self, sign_in, request).await?.into_inner(),
-                    |response| response.event,
-                ))
-            }
-
-            async fn answer_sign_in(&self, request: AnswerSignInRequest) -> Result<(), RpcError> {
-                $call!(self, answer_sign_in, request).await?;
-                Ok(())
-            }
-
-            async fn get_settings(&self) -> Result<wire::Settings, RpcError> {
-                held(
-                    $call!(self, get_settings, wire::GetSettingsRequest {})
-                        .await?
-                        .into_inner()
-                        .settings,
-                )
-            }
-
-            async fn update_settings(
-                &self,
-                request: wire::UpdateSettingsRequest,
-            ) -> Result<wire::Settings, RpcError> {
-                held($call!(self, update_settings, request).await?.into_inner().settings)
-            }
-
-            async fn subscribe_onboarding(
-                &self,
-                request: wire::SubscribeOnboardingRequest,
-            ) -> Result<EventStream<wire::Onboarding>, RpcError> {
-                Ok(held_events(
-                    $call!(self, subscribe_onboarding, request).await?.into_inner(),
-                    |response| response.onboarding,
-                ))
-            }
-
-            async fn answer_onboarding(
-                &self,
-                request: wire::AnswerOnboardingRequest,
-            ) -> Result<wire::Onboarding, RpcError> {
-                held($call!(self, answer_onboarding, request).await?.into_inner().onboarding)
-            }
-
-            async fn suggest_repositories(&self) -> Result<Vec<wire::Folder>, RpcError> {
-                Ok($call!(self, suggest_repositories, wire::SuggestRepositoriesRequest {})
-                    .await?
-                    .into_inner()
-                    .folders)
-            }
-
-            async fn web_sign_in_link(
-                &self,
-                request: wire::WebSignInLinkRequest,
-            ) -> Result<String, RpcError> {
-                Ok($call!(self, web_sign_in_link, request).await?.into_inner().url)
-            }
-
-            async fn open_profile(&self, profile: &Profile) -> Result<Arc<dyn Client>, RpcError> {
-                $open!(self, profile)
-            }
-        }
-    };
-}
-
-/// The daemon's front door, over its local socket. Each profile it lists
-/// names its own socket, which [`Installation::open_profile`] dials.
 #[derive(Clone)]
-pub struct GrpcInstallation {
-    door: InstallationServiceClient<tonic::transport::Channel>,
-    /// What each profile opened from here names its client as.
-    surface: Option<&'static str>,
+pub struct Installation {
+    door: Conn,
+    surface: Surface,
+    /// None where each profile names the socket a client dials.
+    open: Option<Open>,
 }
 
-impl GrpcInstallation {
-    /// Connects to the front door at `path` (`<root>/amux.sock`).
-    pub async fn connect(path: &Path) -> Result<GrpcInstallation, RpcError> {
-        Ok(GrpcInstallation {
-            door: InstallationServiceClient::new(crate::local_channel(path).await?),
-            surface: None,
+impl Installation {
+    /// The front door at `path` (`<root>/amux.sock`). Each profile it lists
+    /// names its own socket, which [`Installation::open_profile`] dials.
+    pub async fn connect(path: &Path, surface: Surface) -> Result<Installation, RpcError> {
+        let door = Socket::connect(path).await?;
+        Ok(Installation {
+            door: Conn::on_node(door.node(), surface),
+            surface,
+            open: None,
         })
     }
 
-    /// Names this client as `surface` on every call, and the client of
-    /// every profile opened from here ([`GrpcClient::naming`]).
-    pub fn naming(mut self, surface: &'static str) -> GrpcInstallation {
-        self.surface = Some(surface);
-        self
-    }
-
-    fn request<T>(&self, message: T) -> Request<T> {
-        let mut request = Request::new(message);
-        if let Some(surface) = self.surface {
-            request.metadata_mut().insert(
-                wire::SURFACE_HEADER,
-                tonic::metadata::AsciiMetadataValue::from_static(surface),
-            );
+    /// The front door's service called in memory, with `open` making a
+    /// client of a hosted profile from its id.
+    pub fn in_memory<S>(
+        service: S,
+        surface: Surface,
+        open: impl Fn(&[u8]) -> Result<Client, RpcError> + Send + Sync + 'static,
+    ) -> Installation
+    where
+        S: tower::Service<http::Request<Body>, Response = http::Response<Body>>
+            + Clone
+            + Send
+            + 'static,
+        S::Error: Into<StdError>,
+        S::Future: Send + 'static,
+    {
+        Installation {
+            door: Transport::Memory(Memory::new(service)).conn(Address::Node, surface),
+            surface,
+            open: Some(Arc::new(open)),
         }
-        request
     }
-}
 
-macro_rules! grpc_call {
-    ($installation:expr, $name:ident, $request:expr) => {
-        $installation
-            .door
-            .clone()
-            .$name($installation.request($request))
-    };
-}
+    fn stub(&self) -> InstallationServiceClient<Conn> {
+        crate::stub!(
+            InstallationServiceClient<Conn>,
+            (self.door.clone(), self.door.origin())
+        )
+    }
 
-macro_rules! grpc_open {
-    ($installation:expr, $profile:expr) => {{
-        let client: Arc<dyn Client> = Arc::new(
-            GrpcClient::connect(Path::new(&$profile.socket_path))
+    /// The profile's own services, as a client of its node.
+    pub async fn open_profile(&self, profile: &Profile) -> Result<Client, RpcError> {
+        match &self.open {
+            Some(open) => open(&profile.id),
+            None => Client::connect(Path::new(&profile.socket_path), self.surface).await,
+        }
+    }
+
+    pub async fn get_installation(&self) -> Result<wire::Installation, RpcError> {
+        let request = wire::GetInstallationRequest {};
+        held(
+            self.stub()
+                .get_installation(request)
                 .await?
-                .naming($installation.surface),
-        );
-        Ok(client)
-    }};
-}
+                .into_inner()
+                .installation,
+        )
+    }
 
-installation_impl!(impl[] Installation for GrpcInstallation, grpc_call, grpc_open);
+    pub async fn list_profiles(&self) -> Result<Vec<Profile>, RpcError> {
+        let request = wire::ListProfilesRequest {};
+        Ok(self
+            .stub()
+            .list_profiles(request)
+            .await?
+            .into_inner()
+            .profiles)
+    }
 
-/// Opens a profile's services in process, by its id.
-pub type OpenProfile = Arc<dyn Fn(&[u8]) -> Result<Arc<dyn Client>, RpcError> + Send + Sync>;
+    /// The whole list now, then again whenever any profile changes.
+    pub async fn subscribe_profiles(
+        &self,
+    ) -> Result<EventStream<SubscribeProfilesResponse>, RpcError> {
+        let request = wire::SubscribeProfilesRequest {};
+        Ok(events(
+            self.stub().subscribe_profiles(request).await?.into_inner(),
+        ))
+    }
 
-/// The installation hosted in this process, called directly: the phone's
-/// embedded runtime. Errors take the shape they would over a socket.
-#[derive(Clone)]
-pub struct InProcessInstallation<S> {
-    service: S,
-    open: OpenProfile,
-}
+    pub async fn create_profile(&self, request: CreateProfileRequest) -> Result<Profile, RpcError> {
+        held(
+            self.stub()
+                .create_profile(request)
+                .await?
+                .into_inner()
+                .profile,
+        )
+    }
 
-impl<S: InstallationService> InProcessInstallation<S> {
-    pub fn new(service: S, open: OpenProfile) -> InProcessInstallation<S> {
-        InProcessInstallation { service, open }
+    pub async fn bind_profile(&self, request: BindProfileRequest) -> Result<Profile, RpcError> {
+        held(
+            self.stub()
+                .bind_profile(request)
+                .await?
+                .into_inner()
+                .profile,
+        )
+    }
+
+    pub async fn rename_profile(&self, request: RenameProfileRequest) -> Result<Profile, RpcError> {
+        held(
+            self.stub()
+                .rename_profile(request)
+                .await?
+                .into_inner()
+                .profile,
+        )
+    }
+
+    pub async fn delete_profile(&self, request: DeleteProfileRequest) -> Result<(), RpcError> {
+        self.stub().delete_profile(request).await?;
+        Ok(())
+    }
+
+    pub async fn sign_in(
+        &self,
+        request: SignInRequest,
+    ) -> Result<EventStream<SignInEvent>, RpcError> {
+        let stream = self.stub().sign_in(request).await?.into_inner();
+        Ok(held_events(stream, |response| response.event))
+    }
+
+    pub async fn answer_sign_in(&self, request: AnswerSignInRequest) -> Result<(), RpcError> {
+        self.stub().answer_sign_in(request).await?;
+        Ok(())
+    }
+
+    /// The everyday settings, as the config file resolves them.
+    pub async fn get_settings(&self) -> Result<wire::Settings, RpcError> {
+        let request = wire::GetSettingsRequest {};
+        held(
+            self.stub()
+                .get_settings(request)
+                .await?
+                .into_inner()
+                .settings,
+        )
+    }
+
+    /// Changes the named settings and applies each at once.
+    pub async fn update_settings(
+        &self,
+        request: wire::UpdateSettingsRequest,
+    ) -> Result<wire::Settings, RpcError> {
+        held(
+            self.stub()
+                .update_settings(request)
+                .await?
+                .into_inner()
+                .settings,
+        )
+    }
+
+    /// One profile's onboarding steps now, then again on every change.
+    pub async fn subscribe_onboarding(
+        &self,
+        request: wire::SubscribeOnboardingRequest,
+    ) -> Result<EventStream<wire::Onboarding>, RpcError> {
+        let stream = self
+            .stub()
+            .subscribe_onboarding(request)
+            .await?
+            .into_inner();
+        Ok(held_events(stream, |response| response.onboarding))
+    }
+
+    pub async fn answer_onboarding(
+        &self,
+        request: wire::AnswerOnboardingRequest,
+    ) -> Result<wire::Onboarding, RpcError> {
+        held(
+            self.stub()
+                .answer_onboarding(request)
+                .await?
+                .into_inner()
+                .onboarding,
+        )
+    }
+
+    /// Folders worth offering as repositories, newest first.
+    pub async fn suggest_repositories(&self) -> Result<Vec<wire::Folder>, RpcError> {
+        let request = wire::SuggestRepositoriesRequest {};
+        Ok(self
+            .stub()
+            .suggest_repositories(request)
+            .await?
+            .into_inner()
+            .folders)
+    }
+
+    /// A one-time link that signs the browser in and opens a page of the
+    /// profile's account service.
+    pub async fn web_sign_in_link(
+        &self,
+        request: wire::WebSignInLinkRequest,
+    ) -> Result<String, RpcError> {
+        Ok(self
+            .stub()
+            .web_sign_in_link(request)
+            .await?
+            .into_inner()
+            .url)
     }
 }
-
-macro_rules! in_process_call {
-    ($installation:expr, $name:ident, $request:expr) => {
-        InstallationService::$name(&$installation.service, Request::new($request))
-    };
-}
-
-macro_rules! in_process_open {
-    ($installation:expr, $profile:expr) => {
-        ($installation.open)(&$profile.id)
-    };
-}
-
-installation_impl!(
-    impl[S: InstallationService] Installation for InProcessInstallation<S>,
-    in_process_call,
-    in_process_open
-);

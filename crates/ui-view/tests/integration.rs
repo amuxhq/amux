@@ -6,6 +6,7 @@ mod support;
 mod acp;
 mod answers;
 mod goldens;
+mod reviews;
 mod runs;
 mod subagents;
 mod turns;

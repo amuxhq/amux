@@ -2037,6 +2037,7 @@ mod tests {
                     "report.pdf",
                     "application/pdf",
                 ))),
+                ..Default::default()
             },
             wire::Attachment {
                 of: Some(wire::attachment::Of::Image(blob(
@@ -2044,6 +2045,7 @@ mod tests {
                     "chart.png",
                     "image/png",
                 ))),
+                ..Default::default()
             },
         ];
         let dir = tempfile::tempdir().unwrap();
@@ -2107,6 +2109,7 @@ mod tests {
                     ),
                 ],
             })),
+            ..Default::default()
         };
         let request = br#"{"id":"amux-1","method":"turn/start","params":{"threadId":"t1","input":[{"type":"text","text":"fix","text_elements":[]}]}}"#;
         let written =
@@ -2143,6 +2146,7 @@ mod tests {
                     mime: mime.into(),
                     size: bytes.len() as u64,
                 })),
+                ..Default::default()
             }
         };
         let attachments = [
@@ -2177,6 +2181,7 @@ mod tests {
                 mime: "image/png".into(),
                 size: 3,
             })),
+            ..Default::default()
         };
         let request = br#"{"id":"amux-1","method":"turn/start","params":{"threadId":"t1","input":[{"type":"text","text":"which is which?","text_elements":[]}]}}"#;
         let written =
@@ -2206,6 +2211,7 @@ mod tests {
                 mime: "text/plain".into(),
                 size: 4,
             })),
+            ..Default::default()
         };
         let request = serde_json::json!({
             "id": "amux-2",

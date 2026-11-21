@@ -30,7 +30,7 @@ enum Cards {
                     .timeIntervalSince1970 * 1000),
                 host: "desk", hostReach: reach, children: children,
                 familyAttention: family ?? attention, members: members, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: filing, topLevel: true, native: false,
-                branch: nil, exitCause: attention == .exited ? .ended : nil, repository: nil, workspaceGoes: nil),
+                branch: nil, exitCause: attention == .exited ? .ended : nil, repository: nil),
             depth: depth, expanded: expanded, secondLine: .blank, loud: loud)
     }
 
@@ -68,14 +68,14 @@ enum Cards {
     }
 
     static func host(
-        _ id: HostId = desk, name: String = "desk", reach: Reach = .online(.direct),
+        _ id: HostId = desk, name: String = "desk", reach: Reach = .online(.direct), link: UInt64 = 0,
         trusted: Bool = true, candidate: Bool = false, local: Bool = false, addrs: [String] = [],
         relayOnly: Bool = false, through: String? = nil, pairingOpen: Bool = false,
         signedIn: Bool? = nil
     ) -> HostView {
         HostView(
             hostId: id.bytes, name: name, local: local, trusted: trusted, candidate: candidate,
-            reach: reach, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
+            reach: reach, link: link, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
             providers: [], lastDialError: nil, platform: nil,
             signedIn: signedIn, through: through, version: nil)
     }

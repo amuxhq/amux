@@ -72,7 +72,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tonic = { workspace = true }
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
 wire = { workspace = true, features = ["grpc"] }
 
 [target.'cfg(unix)'.dependencies]
@@ -82,7 +82,9 @@ tokio-tungstenite = { workspace = true }
 
 [dev-dependencies]
 agent-dir = { workspace = true }
+attachments = { workspace = true }
 bytes = { workspace = true }
+client = { workspace = true }
 hyper-util = { workspace = true }
 interpret = { workspace = true }
 prost = { workspace = true }

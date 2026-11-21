@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use client::{Clock, GrpcInstallation, Installation, SystemClock};
+use client::{Clock, Installation, Surface, SystemClock};
 use ui_runtime::Fleet;
 use ui_view::{FleetView, SecondLine};
 
@@ -27,13 +27,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 2. Pick a profile and open its services.
-    let installation = GrpcInstallation::connect(&front_door).await?;
+    // Every call names the client making it; this one is a terminal's.
+    let installation = Installation::connect(&front_door, Surface::Terminal).await?;
     let profiles = installation.list_profiles().await?;
     let profile = profiles.first().ok_or("the installation has no profiles")?;
     let client = installation.open_profile(profile).await?;
     // Which host is this machine: the views say whether each agent's host
     // can be reached from here.
-    let local_host = client.get_device_identity().await?.host_id;
+    let local_host = client.admin().get_device_identity().await?.host_id;
 
     // 3. Follow the fleet. The driver keeps the stream open, reconnects
     // when amux restarts and starts over when it falls behind.

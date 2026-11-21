@@ -249,12 +249,11 @@ fn blocks(text: &str, attachments: &[Attachment], blobs: &Path, takes: Takes) ->
                 sent_as_image = matches!(attachment.of, Some(Of::Image(_)));
             }
         }
-        // A file, a review's patch, or an image the agent cannot see as
-        // one (an SVG, say), embedded where the agent takes it.
+        // A file, or an image the agent cannot see as one (an SVG, say),
+        // embedded where the agent takes it.
         let file = match &attachment.of {
             Some(Of::File(blob)) => Some(blob),
             Some(Of::Image(blob)) if !sent_as_image => Some(blob),
-            Some(Of::Review(review)) => review.diff.as_ref().and_then(|diff| diff.patch.as_ref()),
             _ => None,
         };
         if takes.embedded
@@ -432,6 +431,7 @@ mod tests {
                     "red.png",
                     "image/png",
                 ))),
+                ..Default::default()
             },
             wire::Attachment {
                 of: Some(wire::attachment::Of::File(blob(
@@ -439,6 +439,7 @@ mod tests {
                     "notes.txt",
                     "text/plain",
                 ))),
+                ..Default::default()
             },
         ];
         let text = format!(
@@ -497,6 +498,7 @@ mod tests {
                     "red.png",
                     "image/png",
                 ))),
+                ..Default::default()
             },
             wire::Attachment {
                 of: Some(wire::attachment::Of::File(blob(
@@ -504,6 +506,7 @@ mod tests {
                     "notes.txt",
                     "text/plain",
                 ))),
+                ..Default::default()
             },
         ];
         let text = format!("{}{}", attachments::PLACEHOLDER, attachments::PLACEHOLDER);
@@ -564,6 +567,7 @@ mod tests {
                 "logo.svg",
                 "image/svg+xml",
             ))),
+            ..Default::default()
         }];
         let request = super::prompt_with_attachments(
             &prompt(&attachments::PLACEHOLDER.to_string()),

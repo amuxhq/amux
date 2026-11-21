@@ -550,6 +550,7 @@ fn attached(agent: &Agent, hash: u8, bytes: &[u8], image: bool, name: &str) -> w
         } else {
             wire::attachment::Of::File(blob)
         }),
+        ..Default::default()
     }
 }
 

@@ -7,7 +7,8 @@ attachment.*
 The extension lets a person comment on any web page, the way a diff review
 comments on lines, and send the comments to an agent together. It is another
 amux client: it talks only to the amux on its own machine, never dials another
-host, and keeps nothing but its unsent comments.
+host, and keeps nothing but its unsent comments. A review for an agent on a
+paired host is addressed to that host, and the profile's node carries it there.
 
 The pieces:
 
@@ -88,17 +89,62 @@ and the encoded request; the bridge makes the call on that socket and streams
 the response messages back. It decodes nothing and has no per-method code. A
 browser refuses a message over 1 MB to an extension, so a response message
 larger than 512 KiB goes in parts the extension joins. Every call carries the
-surface header `browser`, which the daemon counts in its analytics.
+surface header `browser`.
 
-**The bridge is a promise.** An installed host manifest runs it long after the
-build that wrote the manifest, for an extension at another version: its name,
-its arguments (a browser passes the extension's origin, and on Windows a
-window handle) and its framing only ever add. The command-line test in
-`crates/amux/src/main.rs` parses it. Everything the extension and amux say
-inside the framing is `amux.v1`, which only adds too. The bridge's greeting names the
-revision of the framing it speaks (`framing`, from 1), which goes up whenever
-the framing adds something, so an extension can tell what an older amux
-understands without reading meaning into amux's version.
+**Addressing a host.** Every call names an `authority`, the host it is
+for, as every client addresses a host service: the host's id in its one
+written form (lowercase, hyphenated), which browser-core's `authority` op
+gives, or `amux.local` for the node behind the target's socket. A call
+without one comes from an extension written for an earlier framing: the
+bridge ends it with "failed precondition", saying the extension needs
+updating, and stops, so nothing of it reaches the node. The bridge makes
+each call with its authority on the target's socket,
+on a channel of its own (a channel writes its own authority over every
+request's, so the bridge keeps one per target and authority), and the router
+behind the socket decides: another host's id is carried to that host over
+the link, anything else is answered by the node. The bridge does not read
+what the authority names; text that no HTTP request could carry as one ends
+the call "invalid argument". The extension names the owning host on every act
+on an agent (creating it, storing a screenshot, sending the review) and
+`amux.local` on reads of its own node (profiles, the device's identity, the
+fleet).
+
+**Counting.** The node reads the surface header into the caller, and a call
+it carries reaches the owner as a person on the browser at this host. So the
+browser opening is counted on the node it is attached to (`client_opened`,
+when it opens a profile's fleet), and a page review is counted once, on the
+host that owns the agent (`page_review_sent`, with the prompt counted as
+from here or from the paired host), and not on the node that carried it.
+
+**The bridge's name and arguments are a promise.** An installed host
+manifest runs it long after the build that wrote the manifest, for an
+extension at another version: its name and its arguments (a browser passes
+the extension's origin, and on Windows a window handle) keep working. The
+command-line test in `crates/amux/src/main.rs` parses it. Everything the
+extension and amux say inside the framing is `amux.v1`. The bridge's greeting
+names the revision of the framing it speaks (`framing`), so an extension can
+tell what an amux understands without reading meaning into amux's version:
+
+| Framing | Says |
+|---|---|
+| 1 | Calls by target, method and body; parts; cancelling. |
+| 2 | As 1, and every call names its `authority`: a host's id, or `amux.local` for the node behind the socket. |
+
+Framing 2 is the one revision that did not only add. A bridge speaking it
+answers a call with no `authority`, which only an extension written for
+framing 1 makes, with "failed precondition" saying the extension needs
+updating, and then stops; that extension shows the words as why its
+connection to amux stopped. An extension that hears a framing older than its
+own says amux needs installing or updating, as it does when amux is missing.
+
+The calls inside the framing are `amux.v1`, deployed together with every host
+and app, which the extension cannot be: it updates through the Chrome Web
+Store's review, on the store's schedule. When the calls the extension makes
+move without the framing changing, the published extension stops working
+against the new amux until its update is approved, and an extension built for
+the new calls against an older amux gets "unimplemented". In both cases it
+lists the profiles and then shows no agents and no folders, so it has nowhere
+to send a review and sends nothing to the wrong place.
 
 **Registration.** The supervisor writes, when it starts, a host manifest into
 the `NativeMessagingHosts` folder of each Chromium browser installed (Chrome,
@@ -171,12 +217,17 @@ of any framework for the apps that will inject it.
 
 The extension compiles the pure client crates (`wire`, `ui-state`, `ui-view`,
 `attachments`, `preview`) to WebAssembly because they happen to be pure, so the
-fleet model, the rows the picker draws and every `amux.v1` encoding are the
-same code the other clients run, and ship with the extension at its own
-version. Staying compatible with WebAssembly is **not** a constraint on those
-crates. If a change to a shared crate breaks the WebAssembly build, the change
-wins, and the extension does in TypeScript what it lost: decoding the fleet for
-the picker and encoding its few requests. Glue for WebAssembly lives only in
+fleet model, the rows the picker draws and every `amux.v1` encoding are the same
+code the other clients run, and ship with the extension at its own version. Code
+highlighting is not among them: it is tree-sitter and its grammars, which are C,
+and lives in `ui-code` beside `ui-view`; the extension draws no code and does
+not link it. So the WebAssembly is Rust alone, built without a C compiler, and
+it imports nothing: `core.ts` instantiates it with no imports, so a dependency
+that reaches for the browser's JavaScript (randomness, say) stops it loading.
+Staying compatible with WebAssembly is **not** a constraint on those crates. If
+a change to a shared crate breaks the WebAssembly build, the change wins, and
+the extension does in TypeScript what it lost: decoding the fleet for the picker
+and encoding its few requests. Glue for WebAssembly lives only in
 `browser-core`, whose one export takes and answers JSON; shared crates take no
 WebAssembly-specific shims or `cfg`s. The WebAssembly build runs in the
 browser's own recipes and CI job, never in `just premerge`.
@@ -245,9 +296,9 @@ main, so a change elsewhere pays nothing for it.
 - **Image and text attachments** instead of a kind of its own: clients would
   draw loose images and pasted text instead of a review, and each comment's
   pairing with its anchor would survive only as prose.
-- **Extending the `review` kind**: it is built around a diff, and an older
-  build would take a page review for a review and format it broken instead of
-  refusing it.
+- **Extending the diff review's kind** (since retired): it was built around a
+  diff, and an older build would have taken a page review for a review and
+  formatted it broken instead of refusing it.
 - **Separate anchor kinds** for a phrase, a block and a box: every gesture
   lands on a block, so one element with an optional quote and image covers all
   three.

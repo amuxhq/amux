@@ -36,17 +36,16 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 use wire::{
-    Agent, AgentHello, AgentRef, AgentSpec, Bootstrap, CreateAgentRequest, CtlFrame, DumpPart,
-    ErrorCode, Kind, SendInputResponse, ctl_frame,
+    Agent, AgentHello, AgentRef, AgentSpec, Bootstrap, CtlFrame, DumpPart, ErrorCode, Kind,
+    SendInputResponse, ctl_frame,
 };
 
 use crate::driver::{Ask, Delivered};
-use crate::grpc::ClientApi;
 use crate::install::{AGENTS, private_dir};
 use crate::outbox::PushSender;
 use crate::profiles::ProfileId;
 use crate::retention::Retention;
-use crate::{HostId, spec};
+use crate::spec;
 
 pub type AgentId = Uuid;
 
@@ -251,8 +250,6 @@ pub enum RegistryError {
     HasParent(AgentId),
     #[error("starting in a new worktree: {0}")]
     Worktree(#[from] git_facts::WorktreeError),
-    #[error("spawning on another host goes through that host's daemon")]
-    OtherHost,
     #[error("{}", attachments::UNREADABLE)]
     UnreadableAttachment,
     /// An ACP agent no built-in and no `[agents.<id>]` entry names.
@@ -278,10 +275,6 @@ pub enum RegistryError {
         /// The host runs no agents at all, as a phone does.
         runs_none: bool,
     },
-    #[error(transparent)]
-    HostName(#[from] crate::forward::HostNameError),
-    #[error(transparent)]
-    Forwarded(#[from] crate::forward::ForwardError),
     /// A create whose parent this host already sees as exited or deleted:
     /// the child would only be stopped again by the family rule.
     #[error("agent {0} has ended and starts no more agents")]
@@ -367,7 +360,6 @@ impl RegistryError {
             | Self::BadCwd(_)
             | Self::NoFarCwd(_)
             | Self::BadName(_) => ErrorCode::InvalidArgument,
-            Self::OtherHost => ErrorCode::Unimplemented,
             Self::KindNotRun { .. }
             | Self::UnknownAgent(_)
             | Self::AgentNotInstalled { .. }
@@ -387,8 +379,6 @@ impl RegistryError {
             },
             Self::Store(_) | Self::Io(_) | Self::Ingest(_) | Self::Core(_) => ErrorCode::Internal,
             Self::Refused(error) => return error.clone(),
-            Self::HostName(error) => return error.to_wire(),
-            Self::Forwarded(error) => return error.to_wire(),
         };
         crate::grpc::wire_error(code, self.to_string())
     }
@@ -505,7 +495,7 @@ pub struct ProfileRuntime {
     /// them.
     pins: crate::repositories::Pins,
     /// Where this host offers to start an agent, as its own entry says.
-    folders: Mutex<Vec<wire::Folder>>,
+    folders: crate::repositories::Offered,
 }
 
 /// A write waiting for its verdict: its number, and where the verdict
@@ -761,6 +751,7 @@ impl ProfileRuntime {
             budget: launch.step_budget,
             workspaces: launch.experiments.is_on(&settings::experiments::WORKSPACES),
             suspension,
+            reviews: launch.experiments.is_on(&settings::experiments::REVIEWS),
             rebooted,
         };
         let mut core = None;
@@ -809,7 +800,7 @@ impl ProfileRuntime {
             onboarding,
             remember_pick,
             pins,
-            folders: Mutex::new(Vec::new()),
+            folders: crate::repositories::Offered::default(),
         });
         core.expect("built with the runtime").start(&runtime.driver);
         runtime.tell_own_host();
@@ -1063,63 +1054,84 @@ impl ProfileRuntime {
 
     // --- spawn and resume ------------------------------------------------
 
-    /// Creates an agent: its row, its directory and `spec.1`, its tools
-    /// socket, and its process. `caller` is the agent whose tools socket
-    /// the request arrived on; it becomes the parent. Returns once the
-    /// process has sent its Hello, or has already exited.
-    pub async fn spawn(
+    /// Creates an agent on this host for `caller`: its row, its directory
+    /// and `spec.1`, its tools socket, and its process. The parent is the
+    /// calling agent and a person's agent has none, so no request can name
+    /// another. One of this host's agents that names no folder starts its
+    /// child where it works itself; an agent of another host has no folder
+    /// here to start from, so it must name one. Whether this host runs the
+    /// kind asked for is this host's own word, and a kind it does not run
+    /// is refused. A create for an agent that has already exited, or is
+    /// gone, is refused by the family rule as the row is written. Returns
+    /// once the process has sent its Hello, or has already exited.
+    pub(crate) async fn create(
         &self,
-        request: CreateAgentRequest,
-        caller: Option<AgentId>,
+        request: wire::CreateAgentRequest,
+        caller: &crate::api::Caller,
     ) -> Result<Agent, RegistryError> {
+        use crate::api::Caller;
         let id = match request.agent_id.len() {
             0 => Uuid::new_v4(),
             16 => Uuid::from_slice(&request.agent_id).expect("sixteen bytes"),
             n => return Err(RegistryError::BadId(n)),
         };
-        if self.target_host(&request)? != self.host() {
-            return Err(RegistryError::OtherHost);
-        }
-        let Some(agent) = &request.agent else {
+        let (works_here, parent) = match caller {
+            Caller::Person { .. } => (None, None),
+            Caller::Agent { agent, .. } if agent.host == self.host() => (Some(agent.agent), None),
+            Caller::Agent { agent, .. } => {
+                if request.cwd.is_empty() {
+                    let here = self
+                        .edge()
+                        .map_or_else(|| format!("host {}", self.host()), |edge| edge.host_name());
+                    return Err(RegistryError::NoFarCwd(here));
+                }
+                let parent = AgentRef {
+                    host_id: agent.host.as_bytes().to_vec(),
+                    agent_id: agent.agent.as_bytes().to_vec(),
+                };
+                (None, Some(parent))
+            }
+        };
+        let Some(agent) = request.agent else {
             return Err(RegistryError::NoKind);
         };
         let kind = agent.kind();
         if let Some(edge) = self.edge() {
             self.runs_kind(&edge.capabilities(), &edge.host_name(), kind)?;
         }
-        let picked = spec::picked_at_creation(agent, &request);
+        let picked =
+            spec::picked_at_creation(&agent, request.remember_model, request.remember_effort);
         // The host's copy of what the provider offers, which says which
         // efforts a remembered model takes.
         let offered = self.offers().offered(agent.provider_id());
-        let filled = spec::with_remembered(agent, &self.launch().new_agent, offered.as_ref());
+        let filled = spec::with_remembered(&agent, &self.launch().new_agent, offered.as_ref());
         let resolved = spec::resolve(&filled);
-        let mut request = request;
         let bootstrap = request
             .initial_prompt
-            .take()
             .map(spec::prompt_bootstrap)
             .transpose()?;
-        if request.cwd.is_empty()
-            && let Some(caller) = caller
+        let mut cwd = request.cwd;
+        if cwd.is_empty()
+            && let Some(caller) = works_here
         {
-            // One of this host's agents spawning here, whatever name it gave
-            // this host, starts its child where it works itself.
-            request.cwd = self
+            // One of this host's agents spawning here starts its child
+            // where it works itself.
+            cwd = self
                 .agent(caller)
                 .await
                 .map(|parent| parent.cwd)
                 .unwrap_or_default();
         }
-        request.cwd = this_hosts_folder(&request.cwd, std::env::home_dir().as_deref())?;
-        let parent = match caller {
+        let cwd = this_hosts_folder(&cwd, std::env::home_dir().as_deref())?;
+        let parent = match works_here {
             Some(caller) => Some(AgentRef {
                 host_id: self.host().as_bytes().to_vec(),
                 agent_id: caller.as_bytes().to_vec(),
             }),
-            None => request.parent.clone(),
+            None => parent,
         };
 
-        let given = request.name.clone().filter(|name| !name.is_empty());
+        let given = request.name.filter(|name| !name.is_empty());
         if let Some(problem) = given.as_deref().and_then(wire::agent_name_problem) {
             return Err(RegistryError::BadName(problem));
         }
@@ -1128,12 +1140,12 @@ impl ProfileRuntime {
         // has, with the workspaces experiment; the plan checks the rest.
         let branches = match given {
             Some(_) if !(workspaces && request.new_workspace) => Default::default(),
-            _ => crate::names::branch_names(Path::new(&request.cwd)).await,
+            _ => crate::names::branch_names(Path::new(&cwd)).await,
         };
         // The workspace an agent in an existing folder joins.
         let workspace = if workspaces && !request.new_workspace {
             let backends = self.workspaces.clone();
-            let folder = request.cwd.clone();
+            let folder = cwd.clone();
             tokio::task::spawn_blocking(move || backends.resolve(&folder))
                 .await
                 .ok()
@@ -1147,7 +1159,7 @@ impl ProfileRuntime {
             spec::Incarnation {
                 agent_id: id.as_bytes(),
                 kind,
-                cwd: &request.cwd,
+                cwd: &cwd,
                 name: "",
                 parent,
                 resolved: &resolved,
@@ -1158,13 +1170,13 @@ impl ProfileRuntime {
                 base_branch: None,
             },
         )?;
-        let recent = Path::new(&request.cwd)
+        let recent = Path::new(&cwd)
             .canonicalize()
             .ok()
             .and_then(|path| path.to_str().map(str::to_owned));
         let create = daemon_core::Create {
             agent: core_agent(id),
-            cwd: request.cwd,
+            cwd,
             given,
             branches: branches.into_iter().collect(),
             new_workspace: request.new_workspace,
@@ -1194,7 +1206,7 @@ impl ProfileRuntime {
 
     /// Where this host offers to start an agent, as its own entry says.
     pub(crate) fn folders(&self) -> Vec<wire::Folder> {
-        self.folders.lock().unwrap().clone()
+        self.folders.get()
     }
 
     /// Works out again where this host offers to start an agent, off the
@@ -1203,6 +1215,9 @@ impl ProfileRuntime {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
             return;
         };
+        // Numbered as it is asked for, after whatever change asked for it,
+        // so the latest-numbered refresh reads the latest settings.
+        let number = self.folders.ask();
         let runtime = Arc::downgrade(self);
         handle.spawn(async move {
             let Some(held) = runtime.upgrade() else {
@@ -1235,13 +1250,7 @@ impl ProfileRuntime {
             let Some(runtime) = runtime.upgrade() else {
                 return;
             };
-            let moved = {
-                let mut held = runtime.folders.lock().unwrap();
-                let moved = *held != folders;
-                *held = folders;
-                moved
-            };
-            if moved {
+            if runtime.folders.found(number, folders) {
                 runtime.tell_own_host();
             }
         });
@@ -1303,58 +1312,6 @@ impl ProfileRuntime {
         };
         let mut answers = self.driver().call(Ask::Ready(request), 1).await;
         let _ = answers.next().await;
-    }
-
-    /// The host a create request is for: the one it names, by id or by name
-    /// resolved against this host and the trusted ones, else this host.
-    pub fn target_host(&self, request: &CreateAgentRequest) -> Result<HostId, RegistryError> {
-        use wire::host_ref::Of;
-        match request.host.as_ref().and_then(|host| host.of.as_ref()) {
-            Some(Of::HostId(host)) => {
-                Uuid::from_slice(host).map_err(|_| RegistryError::BadId(host.len()))
-            }
-            Some(Of::Name(name)) if !name.is_empty() => Ok(self.resolve_host(name)?),
-            _ => Ok(self.host()),
-        }
-    }
-
-    /// Creates an agent on another host, forwarding the request to that
-    /// host's daemon. `caller`, the agent whose tools socket the request
-    /// came in on, becomes the parent, named by this host and its id.
-    pub async fn spawn_on(
-        &self,
-        host: HostId,
-        request: CreateAgentRequest,
-        caller: Option<AgentId>,
-    ) -> Result<Agent, RegistryError> {
-        // A host that announced which kinds it runs is not asked to start
-        // another: a phone runs none.
-        if let Some(entry) = self.host_entry_of(host)
-            && let Some(capabilities) = entry
-                .host
-                .as_ref()
-                .and_then(|host| host.capabilities.as_ref())
-            && let Some(kind) = request.agent.as_ref().map(|agent| agent.kind())
-        {
-            self.runs_kind(capabilities, entry.name(), kind)?;
-        }
-        // No folder there is a default worth guessing: the caller asks the
-        // person or names a path it knows on that host.
-        if request.cwd.is_empty() {
-            return Err(RegistryError::NoFarCwd(self.host_name(host)));
-        }
-        let mut request = request;
-        if let Some(caller) = caller {
-            request.parent = Some(AgentRef {
-                host_id: self.host().as_bytes().to_vec(),
-                agent_id: caller.as_bytes().to_vec(),
-            });
-        }
-        request.host = Some(wire::HostRef::id(host.as_bytes().to_vec()));
-        if request.agent_id.is_empty() {
-            request.agent_id = Uuid::new_v4().as_bytes().to_vec();
-        }
-        Ok(self.on_peer(host, request).await?)
     }
 
     /// Refuses a kind `capabilities` do not list, in words naming `host`.
@@ -1682,14 +1639,16 @@ impl ProfileRuntime {
         handle
     }
 
-    /// Serves the client service on `<dir>/tools.sock` for the agent's MCP
-    /// server. The socket is its caller's identity: whatever arrives on it
-    /// is from `id`.
+    /// Serves the agent's tools socket, `<dir>/tools.sock`, for its MCP
+    /// server: the services an agent's entry serves, with the router that
+    /// carries a call addressed to another host. The socket is its caller's
+    /// identity: whatever arrives on it is from `id`.
     fn bind_tools(&self, id: AgentId, dir: &Path) -> io::Result<JoinHandle<()>> {
         let listener = LocalListener::bind(&dir.join(agent_dir::TOOLS_SOCK))?;
         Ok(crate::grpc::serve_client(
             listener,
-            ClientApi::weak(self.me.clone(), Some(id)),
+            self.me.clone(),
+            crate::api::Entry::Tools(id),
             None,
         ))
     }
@@ -1707,7 +1666,7 @@ impl ProfileRuntime {
         filing: daemon_core::Filing,
     ) -> Result<Agent, RegistryError> {
         let agent = core_agent(id);
-        self.registry_row(id, ClientRequest::FileAgent { agent, filing })
+        self.registry_row(id, ClientRequest::SetFiling { agent, filing })
             .await
     }
 

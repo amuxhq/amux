@@ -40,12 +40,8 @@ pub enum CatalogueError {
     /// No built-in agent and no `[agents.<id>]` entry has the id.
     #[error("this computer knows no agent {0:?}")]
     NoAgent(String),
-    /// The request names no provider id: an earlier build named Claude and
-    /// Codex by a field this host no longer reads.
-    #[error(
-        "the request names no provider; a client that names Claude and Codex the way earlier \
-         builds did needs updating"
-    )]
+    /// The request names no provider id.
+    #[error("the request names no provider")]
     NoProvider,
     /// The agent's command is not found where agents are started from.
     #[error("{0} is not installed on this computer")]

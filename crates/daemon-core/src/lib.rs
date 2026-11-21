@@ -41,6 +41,7 @@ pub mod presence;
 pub mod reach;
 pub mod redact;
 pub mod retention;
+pub mod reviews;
 pub mod serve;
 pub mod sources;
 pub mod subagents;
@@ -136,11 +137,13 @@ pub struct StartOptions {
     /// journal gives no cause for is recorded only after a grace, and after
     /// a restart of the machine each agent found gone is suspended or
     /// continued. Rows already suspended are handled with it off too.
-    #[serde(default)]
     pub suspension: bool,
+    /// The daemon runs the reviews experiment (`reviews/1`): each own
+    /// agent may have a review of its working tree, written through the
+    /// core and told to every client on the agent's row.
+    pub reviews: bool,
     /// The machine has booted since the daemon before this one started: an
     /// agent this start finds gone ended with the machine, not by a fault.
-    #[serde(default)]
     pub rebooted: bool,
 }
 
@@ -217,11 +220,7 @@ impl Daemon {
                 self.timers.link_ms = link_ms;
             }
             Input::ClientCall { call, request } => self.client_call(call, request, out),
-            Input::PeerCall {
-                from,
-                call,
-                request,
-            } => self.peer_call(from, call, request, out),
+            Input::PeerCall { call, request, .. } => self.peer_call(call, request, out),
             Input::PeerAnswer { call, answer } => self.peer_answered(call, answer, out),
             Input::CallCancelled { call } => {
                 self.cancelled(call);
@@ -235,6 +234,7 @@ impl Daemon {
                 if !self.push_done(job, &result, out)
                     && !self.blob_done(job, &result, out)
                     && !self.workspace_job_done(job, &result, out)
+                    && !self.review_job_done(job, &result, out)
                 {
                     self.registry_job(job, result, out);
                 }

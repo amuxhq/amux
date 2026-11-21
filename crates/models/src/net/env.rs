@@ -41,8 +41,8 @@ use std::sync::Arc;
 
 use agent_core::{Agent, AgentValue, ConnId, Resumed};
 use daemon_core::payload::{
-    Answer, CallError, CarrierKind, ClientRequest, GitRefusal, JobResult, MessageFrom,
-    MessageRefusal, PeerFailure, PeerReply, PeerRequest, Response, Status,
+    Answer, CallError, CarrierKind, ClientRequest, JobResult, MessageRefusal, PeerFailure,
+    PeerReply, PeerRequest, Response, Status, report_envelope,
 };
 use daemon_core::reach::{AttemptOutcome, Dialling};
 use daemon_core::{
@@ -370,6 +370,10 @@ pub enum Lane {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Delivery {
     Host(usize, Dbg<Input>),
+    /// A paired host's call of host `h`'s peer service, as it went on the
+    /// link: node's peer edge hands its reads to the core, and a child's
+    /// report as the message from the child [`report_envelope`] spells.
+    Peer(usize, HostId, CallId, Dbg<PeerRequest>),
     Agent(usize, Dbg<agent_core::Input>),
     /// The job runs when it is delivered, then its host hears its result.
     Job(usize, JobId, Dbg<Job>),
@@ -1014,7 +1018,7 @@ impl Net {
                 .is_some_and(|delivery| {
                     matches!(
                         delivery,
-                        Delivery::Host(_, Dbg(Input::PeerCall { .. } | Input::PeerAnswer { .. }))
+                        Delivery::Peer(..) | Delivery::Host(_, Dbg(Input::PeerAnswer { .. }))
                     )
                 })
     }
@@ -1326,14 +1330,17 @@ impl Transition<'_> {
                     (Input::PeerAnswer { call, answer }, _) if answer.is_last() => {
                         self.w.outgoing.remove(&(h, *call));
                     }
-                    (Input::PeerCall { .. }, Lane::Request(caller, call)) => {
-                        if let Some(outgoing) = self.w.outgoing.get_mut(&(caller, call)) {
-                            outgoing.arrived = true;
-                        }
-                    }
                     _ => {}
                 }
-                let input = self.served_by_the_shell(input);
+                self.feed(h, input);
+            }
+            Delivery::Peer(h, from, call, Dbg(request)) => {
+                if let Lane::Request(caller, made) = lane
+                    && let Some(outgoing) = self.w.outgoing.get_mut(&(caller, made))
+                {
+                    outgoing.arrived = true;
+                }
+                let input = self.served_by_the_shell(h, from, call, request);
                 self.feed(h, input);
             }
             Delivery::Agent(p, Dbg(input)) => self.feed_agent(p, input),
@@ -1389,13 +1396,13 @@ impl Transition<'_> {
     fn describe(&self, delivery: &Delivery) -> String {
         let host = |h: usize| self.name(h).to_owned();
         match delivery {
+            Delivery::Peer(h, from, _, Dbg(request)) => format!(
+                "{} {} from {}",
+                host(*h),
+                peer_request(request),
+                self.host_index(*from).map_or("?".to_owned(), host)
+            ),
             Delivery::Host(h, Dbg(input)) => match input {
-                Input::PeerCall { from, request, .. } => format!(
-                    "{} {} from {}",
-                    host(*h),
-                    peer_request(request),
-                    self.host_index(*from).map_or("?".to_owned(), host)
-                ),
                 Input::PeerAnswer { answer, .. } => {
                     format!("{} answered {}", host(*h), answer_kind(answer))
                 }
@@ -1659,7 +1666,9 @@ impl Transition<'_> {
         {
             client
                 .ended
-                .get_or_insert(Dbg(Status::Failed(CallError::Peer(PeerFailure::Uncertain))));
+                .get_or_insert(Dbg(Status::Failed(CallError::Store(
+                    "its host went down".to_owned(),
+                ))));
         }
         self.w.unlocking.retain(|(host, ..)| *host != h);
         for p in 0..self.w.processes.len() {
@@ -1852,14 +1861,10 @@ impl Transition<'_> {
         let served = CallId(server.next_call);
         let stream = matches!(
             request,
-            PeerRequest::SubscribeSession(_) | PeerRequest::SubscribeInventory
+            PeerRequest::FollowSession(_) | PeerRequest::FollowAgents
         );
         let silent = match request {
-            PeerRequest::FileAgent(_) => Some(PeerReply::Agent(wire::Agent::default())),
-            PeerRequest::DeleteAgent(_) => Some(PeerReply::Done),
-            PeerRequest::SendMessage(_) => {
-                Some(PeerReply::SendMessage(wire::SendMessageResponse::default()))
-            }
+            PeerRequest::DeliverReport(_) => Some(PeerReply::Done),
             _ => None,
         };
         self.w.outgoing.insert(
@@ -1877,43 +1882,33 @@ impl Transition<'_> {
         let from = self.plan.hosts[h].id;
         self.push(
             Lane::Request(h, call),
-            host(
-                to,
-                Input::PeerCall {
-                    from,
-                    call: served,
-                    request,
-                },
-            ),
+            Delivery::Peer(to, from, served, Dbg(request)),
         );
     }
 
-    /// A paired host's call as node's peer edge hands it to the core: a
-    /// message as [`peer_message`] makes it, a create as [`peer_create`]
-    /// does.
-    fn served_by_the_shell(&self, input: Input) -> Input {
-        match input {
-            Input::PeerCall {
-                call,
-                request: PeerRequest::SendMessage(envelope),
-                ..
-            } => Input::ClientCall {
-                call,
-                request: peer_message(envelope),
-            },
-            Input::PeerCall {
+    /// A paired host's call to host `h` as node's peer edge hands it to
+    /// the core: a child's report as the message from the child
+    /// [`report_envelope`] spells. A call a person or an agent makes of
+    /// another host never passes through a core on its way: the calling
+    /// host's router carries it unread, so the net makes it on the host it
+    /// is for.
+    fn served_by_the_shell(
+        &self,
+        h: usize,
+        from: HostId,
+        call: CallId,
+        request: PeerRequest,
+    ) -> Input {
+        match request.read() {
+            Ok(request) => Input::PeerCall {
                 from,
                 call,
-                request: PeerRequest::CreateAgent(create),
-            } => match peer_create(create.clone(), self.w.now_ms) {
-                Some(request) => Input::ClientCall { call, request },
-                None => Input::PeerCall {
-                    from,
-                    call,
-                    request: PeerRequest::CreateAgent(create),
-                },
+                request,
             },
-            other => other,
+            Err(report) => Input::ClientCall {
+                call,
+                request: peer_message(report_envelope(&from.0, &self.plan.hosts[h].id.0, *report)),
+            },
         }
     }
 
@@ -2181,10 +2176,16 @@ impl Transition<'_> {
                     ..spec.clone()
                 })
             })),
-            Job::Compare { .. } => JobResult::CompareFailed(GitRefusal::NotARepository),
             Job::MakeWorktree { .. } => JobResult::Failed("no repository here".to_owned()),
             // The net's hosts run no experiment.
             Job::Workspace(_) => return None,
+            Job::Review(daemon_core::reviews::Job::Moved {
+                agent, snapshot, ..
+            }) => JobResult::Review(daemon_core::reviews::Done::Moved {
+                agent,
+                snapshot,
+                moved: Ok(false),
+            }),
             // Nothing reads back what these write: the trust file, the
             // store's main file, blobs and drafts.
             Job::Fsync { .. }
@@ -2648,53 +2649,18 @@ fn rehome(output: Output, scratch: &Path, home: &Path) -> Output {
     }
 }
 
-/// A create a paired host forwarded, as node's peer edge hands it to the
-/// core through the client service: its spec built as a client's create's
-/// is, with the parent and the first prompt the request names. None when
-/// the request names no agent id.
-fn peer_create(request: wire::CreateAgentRequest, now_ms: u64) -> Option<ClientRequest> {
-    let agent = AgentId::from_slice(&request.agent_id)?;
-    let mut spec = super::agent_spec(
-        agent,
-        &request.cwd,
-        request.parent,
-        None,
-        super::AGENT_GRACE_MS,
-        now_ms,
-    );
-    spec.bootstrap = request.initial_prompt.map(|prompt| wire::Bootstrap {
-        of: Some(wire::bootstrap::Of::Prompt(prompt)),
-    });
-    Some(ClientRequest::CreateAgent(Box::new(daemon_core::Create {
-        agent,
-        cwd: request.cwd,
-        given: request.name,
-        branches: BTreeSet::new(),
-        new_workspace: request.new_workspace,
-        workspace: None,
-        recent: None,
-        spec,
-    })))
-}
-
-/// A message a paired host sent, as node's peer edge hands it to the
-/// core: a client call from the agent the sending host stamped as its
-/// sender, or from the person when it names none.
+/// A message a paired host sent, as node's host services hand it to the
+/// core: its sender is the caller the call carried, set on the envelope.
 pub fn peer_message(envelope: wire::Envelope) -> ClientRequest {
-    let from = match envelope.from.clone().and_then(|from| from.value) {
-        Some(wire::sender::Value::Agent(sender)) => MessageFrom::Peer(sender),
-        _ => MessageFrom::PeerPerson,
-    };
     ClientRequest::SendMessage {
         envelope: Box::new(envelope),
-        from,
     }
 }
 
 /// The host a delivery is for, when it is for a host's daemon.
 fn addressed_to(processes: &[Process], delivery: &Delivery) -> Option<usize> {
     match delivery {
-        Delivery::Host(h, _) | Delivery::Job(h, ..) => Some(*h),
+        Delivery::Host(h, _) | Delivery::Peer(h, ..) | Delivery::Job(h, ..) => Some(*h),
         Delivery::Dial(p) | Delivery::Frame(p, ..) | Delivery::Closed(p, _) => {
             Some(processes[*p].host)
         }
@@ -2714,9 +2680,6 @@ fn addressed_to_process(delivery: &Delivery) -> Option<usize> {
 fn reply_of(response: Response) -> Option<PeerReply> {
     match response {
         Response::Fetched(fetched) => Some(PeerReply::Fetched(fetched)),
-        Response::Item(item) => Some(PeerReply::Item(item)),
-        Response::Agent(agent) => Some(PeerReply::Agent(*agent)),
-        Response::Peer(reply) => Some(*reply),
         _ => None,
     }
 }
@@ -2738,9 +2701,7 @@ pub fn wire_error(error: &CallError) -> wire::Error {
         }
         CallError::Message(MessageRefusal::Lost) => ErrorCode::Aborted,
         CallError::Message(MessageRefusal::Rejected(_)) => ErrorCode::FailedPrecondition,
-        CallError::NotServed | CallError::Message(MessageRefusal::OtherHost) => {
-            ErrorCode::Unimplemented
-        }
+        CallError::Message(MessageRefusal::OtherHost) => ErrorCode::Unimplemented,
         _ => ErrorCode::Internal,
     };
     wire::Error {
@@ -2752,22 +2713,10 @@ pub fn wire_error(error: &CallError) -> wire::Error {
 
 fn peer_request(request: &PeerRequest) -> &'static str {
     match request {
-        PeerRequest::SubscribeSession(_) => "SubscribeSession",
-        PeerRequest::SubscribeInventory => "SubscribeInventory",
+        PeerRequest::FollowAgents => "FollowAgents",
+        PeerRequest::FollowSession(_) => "FollowSession",
+        PeerRequest::DeliverReport(_) => "DeliverReport",
         PeerRequest::ListItems(_) => "ListItems",
-        PeerRequest::GetItem(_) => "GetItem",
-        PeerRequest::SendInput(_) => "SendInput",
-        PeerRequest::CreateAgent(_) => "CreateAgent",
-        PeerRequest::RenameAgent(_) => "RenameAgent",
-        PeerRequest::FileAgent(_) => "FileAgent",
-        PeerRequest::ResumeAgent(_) => "ResumeAgent",
-        PeerRequest::DeleteAgent(_) => "DeleteAgent",
-        PeerRequest::SendMessage(_) => "SendMessage",
-        PeerRequest::PutBlob(_) => "PutBlob",
-        PeerRequest::GetBlob(_) => "GetBlob",
-        PeerRequest::GetDiff(_) => "GetDiff",
-        PeerRequest::GetCatalogue(_) => "GetCatalogue",
-        PeerRequest::PinFolder(_) => "PinFolder",
     }
 }
 
@@ -2840,9 +2789,9 @@ fn job_kind(job: &Job) -> &'static str {
         Job::KillAgent { .. } => "KillAgent",
         Job::AwaitUnlocked { .. } => "AwaitUnlocked",
         Job::RemoveDir { .. } => "RemoveDir",
-        Job::Compare { .. } => "Compare",
         Job::MakeWorktree { .. } => "MakeWorktree",
         Job::Workspace(_) => "Workspace",
+        Job::Review(_) => "Review",
     }
 }
 

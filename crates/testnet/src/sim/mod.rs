@@ -33,7 +33,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use daemon_core::payload::{ClientRequest, PeerReply, PeerRequest, Response};
+use daemon_core::payload::{ClientRequest, Response};
 use daemon_core::{AgentId, CallId, Create, HostId, Input, Resume};
 use models::net::{Net, Spawn};
 use rng::Rng;
@@ -343,14 +343,14 @@ impl SimNet {
     /// Creates an agent on its host, as a client does, and waits for its
     /// process to say Hello.
     pub fn spawn(&mut self, decl: AgentDecl) -> Result<wire::Agent, NetError> {
-        self.create(decl, false)
+        self.create(decl)
     }
 
-    /// Creates an agent on its host. With `asked_by_parent` the create is
-    /// its parent's own spawn: the parent's process hears of the child
-    /// before the daemon does and of the answer once it has come, as the
-    /// agent process hears each spawn it carries to its daemon.
-    fn create(&mut self, decl: AgentDecl, asked_by_parent: bool) -> Result<wire::Agent, NetError> {
+    /// Creates an agent on its host. No client names a parent, so a child
+    /// is always its parent's own spawn: the parent's process hears of the
+    /// child before the create is made and of the answer once it has come,
+    /// as the agent process hears each spawn it carries.
+    fn create(&mut self, decl: AgentDecl) -> Result<wire::Agent, NetError> {
         if self.agents.contains_key(&decl.name) {
             return Err(NetError::AgentExists(decl.name));
         }
@@ -363,11 +363,18 @@ impl SimNet {
         let parent_id = parent
             .as_ref()
             .and_then(|parent| AgentId::from_slice(&parent.agent_id));
-        // A parent on another host makes its child as node does: its own
-        // host forwards the create to the child's.
-        let forwarded_by = match &decl.parent {
+        // A parent on another host makes its child as its agent process
+        // does: the create is a call on the child's host, carried there over
+        // the link from the parent's, and the child's host makes the calling
+        // agent the parent. The parent's own host's core never sees it.
+        let carried_from = match &decl.parent {
             Some(parent) if self.agent_named(parent)?.host != decl.host => {
-                Some(self.host_index(&self.agent_named(parent)?.host.clone())?)
+                let from = self.agent_named(parent)?.host.clone();
+                Some((
+                    from.clone(),
+                    self.host_index(&from)?,
+                    self.link(&from, &decl.host)?,
+                ))
             }
             _ => None,
         };
@@ -416,32 +423,21 @@ impl SimNet {
             None => sim.net.add_agent(agent, &decl.name, &steps),
         }
         let what = format!("{} to start on {}", decl.name, decl.host);
-        let asking = parent_id
-            .filter(|_| asked_by_parent)
-            .and_then(|parent| sim.net.process_of(parent));
+        let asking = parent_id.and_then(|parent| sim.net.process_of(parent));
         if let Some(p) = asking {
             sim.net.spawn_heard(p, agent.0.to_vec(), Spawn::Requested);
         }
-        let made = match forwarded_by {
-            Some(from) => {
-                let request = wire::CreateAgentRequest {
-                    agent_id: agent.0.to_vec(),
-                    name: create.given,
-                    parent: create.spec.parent,
-                    cwd: create.cwd,
-                    initial_prompt: decl
-                        .prompt
-                        .as_deref()
-                        .map(|text| submission(b"testnet-first", text)),
-                    ..wire::CreateAgentRequest::default()
-                };
-                let forward = ClientRequest::Forward {
-                    host: host_id,
-                    request: Box::new(PeerRequest::CreateAgent(request)),
-                };
-                registry_call(&mut sim, from, &what, forward)
+        // A carried call is made while the link between the two hosts is
+        // up, as a message from another host is; with no channel to the
+        // child's host the parent's create fails before it leaves.
+        let made = match carried_from {
+            Some((from, f, link)) if !(sim.is_up(f) && sim.net.is_live(link)) => {
+                Err(NetError::Host {
+                    host: from,
+                    error: format!("{what}: no channel to {}", decl.host),
+                })
             }
-            None => registry_call(
+            _ => registry_call(
                 &mut sim,
                 h,
                 &what,
@@ -756,7 +752,7 @@ impl World for SimNet {
         parent: &str,
         decl: AgentDecl,
     ) -> Result<wire::Agent, NetError> {
-        self.create(decl.parent(parent), true)
+        self.create(decl.parent(parent))
     }
 
     async fn delete(&mut self, agent: &str) -> Result<Ack, NetError> {
@@ -797,7 +793,7 @@ impl World for SimNet {
             &mut sim,
             h,
             &what,
-            ClientRequest::FileAgent {
+            ClientRequest::SetFiling {
                 agent: id,
                 filing: daemon_core::Filing::Closed,
             },
@@ -1175,10 +1171,6 @@ fn registry_call(
     let client = sim.net.take_client(h, call).expect("the registry call");
     let row = client.responses().find_map(|response| match response {
         Response::Agent(row) => Some((**row).clone()),
-        Response::Peer(reply) => match &**reply {
-            PeerReply::Agent(row) => Some(row.clone()),
-            _ => None,
-        },
         _ => None,
     });
     match ended {

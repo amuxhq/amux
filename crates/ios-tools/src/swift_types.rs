@@ -67,12 +67,15 @@ pub fn definitions() -> Map<String, Value> {
         ui_view::SettleWarning,
         ui_view::SettleTurn,
         ui_view::Offline,
-        ui_view::ReviewDoc,
+        ui_view::ReviewPage,
+        ui_view::ReviewChip,
+        ui_view::ReviewAnchor,
         ui_view::SettingsView,
         ui_view::SettingChange,
         ui_view::NewAgentChoices,
         ui_view::NewAgentPick,
         ui_view::Segment,
+        ui_view::HighlightedCode,
         app_runtime::values::StartConfig,
         app_runtime::values::AttachConfig,
         app_runtime::values::InstallOptions,
@@ -82,7 +85,9 @@ pub fn definitions() -> Map<String, Value> {
         app_runtime::values::ChatDelta,
         app_runtime::values::ChatFrame,
         app_runtime::values::Draft,
-        app_runtime::values::FrozenReview,
+        app_runtime::values::ReviewChange,
+        app_runtime::values::ReviewChoice,
+        app_runtime::values::ReviewOutcome,
         app_runtime::values::SendOutcome,
         app_runtime::values::ActOutcome,
         app_runtime::values::CommandOutcome,
@@ -833,6 +838,13 @@ mod tests {
     #[test]
     fn every_public_view_value_has_a_swift_mirror() {
         const STAY_IN_RUST: &[&str] = &[
+            // What a client asks of an agent before its kind's input is
+            // built: app-runtime and the browser bridge build it, and the
+            // phone names the act through them.
+            "Act",
+            // Which attachment an agent does not take: app-runtime words
+            // the refusal, and the phone shows the words.
+            "Untaken",
             // The answer body a choice sends: the phone names the choice.
             "Answer",
             // Borrowed option types; the chat holds its own open runs.
@@ -847,6 +859,11 @@ mod tests {
             // What a typed draft is to the terminal; the phone asks the
             // bridge's command call, which answers a CommandOutcome.
             "Slash",
+            // What a review page is composed with: app-runtime keeps it and
+            // hands the apps the page it composes, with its notices drawn
+            // as banners.
+            "ReviewPageState",
+            "ReviewNotice",
         ];
         let definitions = definitions();
         let root = repository();
@@ -856,15 +873,20 @@ mod tests {
             "crates/ui-view/src",
             "crates/app-runtime/src/values.rs",
         ] {
-            let path = root.join(dir);
-            let files = if path.is_dir() {
-                std::fs::read_dir(&path)
-                    .unwrap()
-                    .map(|entry| entry.unwrap().path())
-                    .collect()
-            } else {
-                vec![path]
-            };
+            // A folder's modules, its submodules' folders included.
+            let mut files = Vec::new();
+            let mut pending = vec![root.join(dir)];
+            while let Some(path) = pending.pop() {
+                if path.is_dir() {
+                    pending.extend(
+                        std::fs::read_dir(&path)
+                            .unwrap()
+                            .map(|entry| entry.unwrap().path()),
+                    );
+                } else {
+                    files.push(path);
+                }
+            }
             for file in files {
                 let text = std::fs::read_to_string(&file).unwrap();
                 for line in text.lines() {

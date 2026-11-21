@@ -254,10 +254,12 @@ impl Picked {
     }
 }
 
-/// The pick a creation asks the host to keep, if it asks.
+/// The pick a creation asks the host to keep, if it asks: its model with
+/// `remember_model`, its effort with `remember_effort`.
 pub fn picked_at_creation(
     agent: &create_agent_request::Agent,
-    request: &wire::CreateAgentRequest,
+    remember_model: bool,
+    remember_effort: bool,
 ) -> Option<Picked> {
     use create_agent_request::Agent;
     let (model, effort) = match agent {
@@ -268,8 +270,8 @@ pub fn picked_at_creation(
     Picked {
         kind: agent.kind(),
         provider: agent.provider_id().to_owned(),
-        model: model.clone().filter(|_| request.remember_model),
-        effort: effort.clone().filter(|_| request.remember_effort),
+        model: model.clone().filter(|_| remember_model),
+        effort: effort.clone().filter(|_| remember_effort),
     }
     .worth_keeping()
 }
@@ -939,14 +941,9 @@ mod tests {
             effort: Some("high".into()),
             ..Default::default()
         });
-        let request = |remember_model, remember_effort| wire::CreateAgentRequest {
-            remember_model,
-            remember_effort,
-            ..Default::default()
-        };
-        assert_eq!(picked_at_creation(&agent, &request(false, false)), None);
+        assert_eq!(picked_at_creation(&agent, false, false), None);
         assert_eq!(
-            picked_at_creation(&agent, &request(true, false)),
+            picked_at_creation(&agent, true, false),
             Some(Picked {
                 kind: Kind::ClaudeSdk,
                 provider: "claude".into(),
@@ -955,7 +952,7 @@ mod tests {
             })
         );
         let terminal = Agent::ClaudePty(claude(Some("sonnet")));
-        assert_eq!(picked_at_creation(&terminal, &request(true, true)), None);
+        assert_eq!(picked_at_creation(&terminal, true, true), None);
     }
 
     fn acp(agent: &str) -> wire::AcpCreateConfig {
@@ -984,13 +981,8 @@ mod tests {
             mode: Some("plan".into()),
             ..acp("opencode")
         });
-        let request = wire::CreateAgentRequest {
-            remember_model: true,
-            remember_effort: true,
-            ..Default::default()
-        };
         assert_eq!(
-            picked_at_creation(&picked, &request),
+            picked_at_creation(&picked, true, true),
             Some(Picked {
                 kind: Kind::Acp,
                 provider: "opencode".into(),

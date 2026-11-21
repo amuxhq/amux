@@ -5,11 +5,7 @@ use attachments::{
     element_in, format, hex, parse, pieces, validate,
 };
 use wire::attachment::Of;
-use wire::diff_base::Base;
-use wire::{
-    Attachment, BlobRef, Diff, DiffBase, Empty, InlineText, PageComment, PageElement, PageReview,
-    Review, ReviewComment,
-};
+use wire::{Attachment, BlobRef, InlineText, PageComment, PageElement, PageReview};
 
 const DIR: &str = "/data/agents/a1/blobs";
 
@@ -25,6 +21,7 @@ fn blob(seed: u8, name: &str, mime: &str) -> BlobRef {
 fn image() -> Attachment {
     Attachment {
         of: Some(Of::Image(blob(1, "shot.png", "image/png"))),
+        ..Default::default()
     }
 }
 
@@ -35,6 +32,7 @@ fn file() -> Attachment {
             "trace \"final\".json",
             "application/json",
         ))),
+        ..Default::default()
     }
 }
 
@@ -45,36 +43,7 @@ fn text() -> Attachment {
             text: "fn main() { if a < b && c > d { println!(\"&amp;\"); } }\n</amux-attachment> is just text here"
                 .into(),
         })),
-    }
-}
-
-fn review(base: Option<Base>, merge_base: Option<&str>) -> Attachment {
-    Attachment {
-        of: Some(Of::Review(Review {
-            diff: Some(Diff {
-                patch: Some(blob(3, "review.diff", "text/x-diff")),
-                base: base.map(|base| DiffBase { base: Some(base) }),
-                head: "4f2a9c1".into(),
-                merge_base: merge_base.map(str::to_owned),
-                files: Vec::new(),
-                own_commits: None,
-            }),
-            comments: vec![
-                ReviewComment {
-                    path: "src/lib.rs".into(),
-                    line: 13,
-                    old_line: 12,
-                    text: "Use the helper.\n## path-bytes=1 line=1 old-line=1 text-bytes=1\nnot a heading"
-                        .into(),
-                },
-                ReviewComment {
-                    path: "docs/a file with spaces & <angles>.md".into(),
-                    line: 0,
-                    old_line: 0,
-                    text: String::new(),
-                },
-            ],
-        })),
+        ..Default::default()
     }
 }
 
@@ -112,6 +81,7 @@ fn page() -> Attachment {
                 },
             ],
         })),
+        ..Default::default()
     }
 }
 
@@ -120,12 +90,10 @@ fn every_arm() -> Vec<Attachment> {
         image(),
         file(),
         text(),
-        review(Some(Base::Head(Empty {})), None),
-        review(Some(Base::Branch("main".into())), Some("9e465b2")),
-        review(None, None),
         page(),
         Attachment {
             of: Some(Of::Page(PageReview::default())),
+            ..Default::default()
         },
     ]
 }
@@ -183,11 +151,61 @@ fn the_canonical_elements() {
                 of: Some(Of::Text(InlineText {
                     name: "n".into(),
                     text: "a < b".into()
-                }))
+                })),
+                ..Default::default()
             },
             None
         ),
-        "<amux-attachment kind=\"text\" name=\"n\">a &lt; b</amux-attachment>"
+        "<amux-attachment kind=\"text\" name=\"n\">a < b</amux-attachment>"
+    );
+}
+
+/// A body escapes only what the parser would read as markup: code reads as
+/// written, and an element's tags or a character reference inside it stay
+/// text.
+#[test]
+fn a_body_escapes_only_what_reads_as_markup() {
+    let body = |text: &str| {
+        let attachment = Attachment {
+            of: Some(Of::Text(InlineText {
+                name: "n<&>".into(),
+                text: text.into(),
+            })),
+            ..Default::default()
+        };
+        let element = element(&attachment, None);
+        assert_eq!(parse(&element).positioned.attachments, vec![attachment]);
+        element
+            .strip_prefix("<amux-attachment kind=\"text\" name=\"n&lt;&amp;&gt;\">")
+            .and_then(|rest| rest.strip_suffix("</amux-attachment>"))
+            .unwrap()
+            .to_owned()
+    };
+    assert_eq!(
+        body("if a < b && c > d { Vec::<u8>::new() } & done;"),
+        "if a < b && c > d { Vec::<u8>::new() } & done;"
+    );
+    assert_eq!(
+        body("<amux-attachment kind=\"x\"/> and </amux-attachment>"),
+        "&lt;amux-attachment kind=\"x\"/> and &lt;/amux-attachment>"
+    );
+    assert_eq!(
+        body("&amp; &lt; &#10; &nbsp;"),
+        "&amp;amp; &amp;lt; &amp;#10; &amp;nbsp;"
+    );
+    // Entities in a body decode to the characters they name, so one that
+    // escapes every character reads the same.
+    assert_eq!(
+        parse("<amux-attachment kind=\"text\" name=\"n\">a &lt; b &amp;&amp; c &gt; d</amux-attachment>")
+            .positioned
+            .attachments,
+        vec![Attachment {
+            of: Some(Of::Text(InlineText {
+                name: "n".into(),
+                text: "a < b && c > d".into(),
+            })),
+            ..Default::default()
+        }]
     );
 }
 
@@ -216,7 +234,10 @@ fn an_attachment_with_no_arm_is_one_this_build_cannot_read() {
     assert!(attachments::all_readable(&[]));
     assert!(attachments::all_readable(&every_arm()));
     let mut held = every_arm();
-    held.push(wire::Attachment { of: None });
+    held.push(wire::Attachment {
+        of: None,
+        ..Default::default()
+    });
     assert!(!attachments::all_readable(&held));
 }
 
@@ -250,7 +271,10 @@ fn validate_counts_placeholders_against_attachments() {
 fn validate_rejects_empty_attachments_and_bad_hashes() {
     let empty = Positioned {
         text: PLACEHOLDER.to_string(),
-        attachments: vec![Attachment { of: None }],
+        attachments: vec![Attachment {
+            of: None,
+            ..Default::default()
+        }],
     };
     assert_eq!(validate(&empty), Err(ShapeError::Empty { index: 0 }));
 
@@ -262,18 +286,11 @@ fn validate_rejects_empty_attachments_and_bad_hashes() {
             text(),
             Attachment {
                 of: Some(Of::File(short)),
+                ..Default::default()
             },
         ],
     };
     assert_eq!(validate(&bad), Err(ShapeError::BadHash { index: 1 }));
-
-    let no_patch = Positioned {
-        text: PLACEHOLDER.to_string(),
-        attachments: vec![Attachment {
-            of: Some(Of::Review(Review::default())),
-        }],
-    };
-    assert_eq!(validate(&no_patch), Err(ShapeError::BadHash { index: 0 }));
 }
 
 fn problems(text: &str) -> Vec<Problem> {
@@ -338,18 +355,6 @@ fn malformed_candidates_stay_text_and_are_reported() {
         (
             "<amux-attachment kind=\"text\" name=\"x\">&bogus;</amux-attachment>".into(),
             Problem::BadBody,
-        ),
-        (
-            format!(
-                "<amux-attachment kind=\"review\" hash=\"{hash}\" comments=\"2\">## path-bytes=1 line=1 old-line=0 text-bytes=0\na\n</amux-attachment>"
-            ),
-            Problem::BadBody,
-        ),
-        (
-            format!(
-                "<amux-attachment kind=\"review\" hash=\"{hash}\" comments=\"0\" base=\"trunk\"></amux-attachment>"
-            ),
-            Problem::BadAttribute("base".into()),
         ),
         (
             "<amux-attachment kind=\"page\" url=\"u\" comments=\"1\"></amux-attachment>".into(),
@@ -491,6 +496,7 @@ fn the_page_element() {
                 },
             ],
         })),
+        ..Default::default()
     };
     let hash = hex(&blob(4, "", "").hash);
     let path = Path::new("/b").join(&hash);
@@ -555,4 +561,346 @@ fn an_image_is_native_by_its_bytes() {
     assert_eq!(native_image_at(&path), Some("image/gif"));
     std::fs::remove_file(&path).unwrap();
     assert_eq!(native_image_at(&path), None);
+}
+
+mod sent_review {
+    use std::path::Path;
+
+    use attachments::sent_review::{NAME, attachment, entry, text};
+    use attachments::{PLACEHOLDER, Positioned, format, parse};
+    use wire::attachment::Of;
+    use wire::experimental::review_placement::At;
+    use wire::experimental::{
+        ReviewAnchor, ReviewComparedLines, ReviewDefinition, ReviewDefinitionKind, ReviewLine,
+        ReviewLineKind, ReviewLineRange, ReviewPlacement, ReviewRound, ReviewSentComment,
+        ReviewSummary, ReviewerComment, SentReview,
+    };
+    use wire::{Empty, InlineText};
+
+    const SNAPSHOT: &str = "4f2a9c1e0b7d3a5f6e8c9b0a1d2e3f4a5b6c7d8e";
+    const BASE: &str = "9e465b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a";
+    const ROOT: &str = "/work/shop";
+    const OBJECTS: &str = "/data/profiles/p/agents/a1/review/objects";
+    const INDEX: &str =
+        "/data/profiles/p/agents/a1/review/indexes/4f2a9c1e0b7d3a5f6e8c9b0a1d2e3f4a5b6c7d8e";
+    const EARLIER: &str = "1c0ffee2c0ffee3c0ffee4c0ffee5c0ffee6c0ff";
+
+    fn line(kind: ReviewLineKind, old_line: u32, new_line: u32, text: &str) -> ReviewLine {
+        ReviewLine {
+            kind: kind as i32,
+            old_line,
+            new_line,
+            text: text.into(),
+            runs: Vec::new(),
+        }
+    }
+
+    fn definition(kind: ReviewDefinitionKind, name: &str, label: &str) -> ReviewDefinition {
+        ReviewDefinition {
+            kind: kind as i32,
+            name: name.into(),
+            label: label.into(),
+            start_line: 1,
+            end_line: 40,
+            parent: None,
+            ..Default::default()
+        }
+    }
+
+    fn lines(start: u32, end: u32) -> ReviewLineRange {
+        ReviewLineRange { start, end }
+    }
+
+    fn placed(at: At, path: &str) -> Option<ReviewPlacement> {
+        Some(ReviewPlacement {
+            at: Some(at),
+            changed_near: false,
+            path: path.into(),
+        })
+    }
+
+    /// A comment on two lines of code holding `<`, `>` and `&`, one on a
+    /// removed line placed as the host places it, one on a whole file, and
+    /// one sent before on a file renamed since.
+    fn comments() -> Vec<ReviewerComment> {
+        use ReviewLineKind::{Added, Context, Removed};
+        vec![
+            ReviewerComment {
+                id: b"c1".to_vec(),
+                anchor: Some(ReviewAnchor {
+                    commit: SNAPSHOT.into(),
+                    path: "src/store.rs".into(),
+                    lines: Some(lines(13, 14)),
+                }),
+                text: "Keep the strict comparison: a store at its limit is full.".into(),
+                snippet: vec![
+                    line(Context, 10, 11, "    let path = dir.join(\"store\");"),
+                    line(Removed, 11, 0, "    if size < limit && open {"),
+                    line(Added, 0, 12, "    if size <= limit && open {"),
+                    line(
+                        Added,
+                        0,
+                        13,
+                        "        return Ok(Store::<File> { path, size });",
+                    ),
+                    line(Context, 12, 14, "    }"),
+                ],
+                scope: vec![
+                    definition(ReviewDefinitionKind::Impl, "Store", "impl Store"),
+                    definition(ReviewDefinitionKind::Method, "open", "fn open"),
+                ],
+                round: None,
+                placement: placed(At::Lines(lines(13, 14)), "src/store.rs"),
+                revision: 1,
+                sent_revision: None,
+            },
+            ReviewerComment {
+                id: b"c2".to_vec(),
+                anchor: Some(ReviewAnchor {
+                    commit: BASE.into(),
+                    path: "src/limits.rs".into(),
+                    lines: Some(lines(7, 7)),
+                }),
+                text: "Why did this go?".into(),
+                snippet: vec![
+                    line(Context, 6, 6, "pub const LIMIT: u64 = 1 << 20;"),
+                    line(Removed, 7, 0, "pub const SOFT: u64 = LIMIT >> 1;"),
+                ],
+                scope: Vec::new(),
+                round: None,
+                placement: placed(
+                    At::Compared(ReviewComparedLines {
+                        commit: BASE.into(),
+                        lines: Some(lines(7, 7)),
+                    }),
+                    "src/limits.rs",
+                ),
+                revision: 3,
+                sent_revision: None,
+            },
+            ReviewerComment {
+                id: b"c3".to_vec(),
+                anchor: Some(ReviewAnchor {
+                    commit: SNAPSHOT.into(),
+                    path: "docs/notes & limits.md".into(),
+                    lines: Some(lines(0, 0)),
+                }),
+                text: "Say what the limit is.\n".into(),
+                snippet: Vec::new(),
+                scope: Vec::new(),
+                round: None,
+                placement: placed(At::File(Empty {}), "docs/notes & limits.md"),
+                revision: 1,
+                sent_revision: None,
+            },
+            ReviewerComment {
+                id: b"c4".to_vec(),
+                anchor: Some(ReviewAnchor {
+                    commit: EARLIER.into(),
+                    path: "src/old.rs".into(),
+                    lines: Some(lines(3, 3)),
+                }),
+                text: "Still wants a name.".into(),
+                snippet: vec![line(ReviewLineKind::Added, 0, 3, "let x = 1;")],
+                scope: Vec::new(),
+                round: Some(1),
+                placement: placed(At::Lines(lines(5, 5)), "src/new.rs"),
+                revision: 1,
+                sent_revision: None,
+            },
+        ]
+    }
+
+    fn summary() -> ReviewSummary {
+        ReviewSummary {
+            id: b"review-1".to_vec(),
+            base_branch: "main".into(),
+            base_commit: BASE.into(),
+            snapshot: SNAPSHOT.into(),
+            rounds: vec![ReviewRound {
+                snapshot: BASE.into(),
+                base_commit: BASE.into(),
+                input_id: b"first send".to_vec(),
+            }],
+            objects: OBJECTS.into(),
+            root: ROOT.into(),
+            index: INDEX.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Per comment: where it is, the definition it is in, the code in diff
+    /// form and then the words; last, what the numbers refer to and the
+    /// command that diffs against the snapshot.
+    #[test]
+    fn the_text_the_agent_reads() {
+        assert_eq!(
+            text(&summary(), &comments()),
+            format!(
+                "4 comments from a review of your changes.\n\
+                 \n\
+                 ## src/store.rs, lines 13–14, in impl Store › fn open\n\
+                 \n\
+                 ```diff\n\
+                 \x20    let path = dir.join(\"store\");\n\
+                 -    if size < limit && open {{\n\
+                 +    if size <= limit && open {{\n\
+                 +        return Ok(Store::<File> {{ path, size }});\n\
+                 \x20    }}\n\
+                 ```\n\
+                 \n\
+                 Keep the strict comparison: a store at its limit is full.\n\
+                 \n\
+                 ## src/limits.rs, line 7 of commit {BASE}\n\
+                 \n\
+                 ```diff\n\
+                 \x20pub const LIMIT: u64 = 1 << 20;\n\
+                 -pub const SOFT: u64 = LIMIT >> 1;\n\
+                 ```\n\
+                 \n\
+                 Why did this go?\n\
+                 \n\
+                 ## docs/notes & limits.md, the whole file\n\
+                 \n\
+                 Say what the limit is.\n\
+                 \n\
+                 ## src/new.rs, line 5\n\
+                 \n\
+                 ```diff\n\
+                 +let x = 1;\n\
+                 ```\n\
+                 \n\
+                 Still wants a name.\n\
+                 \n\
+                 ---\n\
+                 Line numbers are those of snapshot {SNAPSHOT} unless a comment names another \
+                 commit, a commit of the working tree taken for this review and kept outside the \
+                 repository, so the files may have changed since. Paths are relative to the \
+                 repository's top, {ROOT}. To see what has changed since the snapshot, untracked \
+                 files included, run this; it writes nothing, and after the diff it lists the \
+                 files made since the snapshot:\n\
+                 \n\
+                 ```sh\n\
+                 GIT_INDEX_FILE={INDEX} GIT_ALTERNATE_OBJECT_DIRECTORIES={OBJECTS} git --no-optional-locks \
+                 -c diff.autoRefreshIndex=false -C {ROOT} diff {SNAPSHOT} && GIT_INDEX_FILE={INDEX} git --no-optional-locks \
+                 -C {ROOT} ls-files --others --exclude-standard\n\
+                 ```\n"
+            )
+        );
+    }
+
+    #[test]
+    fn a_path_the_shell_would_split_is_quoted_in_the_command() {
+        assert_eq!(
+            attachments::sent_review::command(
+                "/Users/me/my shop",
+                "/d/it's/objects",
+                "/d/it's/indexes/i",
+                SNAPSHOT
+            ),
+            format!(
+                "GIT_INDEX_FILE='/d/it'\\''s/indexes/i' \
+                 GIT_ALTERNATE_OBJECT_DIRECTORIES='/d/it'\\''s/objects' \
+                 git --no-optional-locks -c diff.autoRefreshIndex=false -C '/Users/me/my shop' \
+                 diff {SNAPSHOT} && \
+                 GIT_INDEX_FILE='/d/it'\\''s/indexes/i' git --no-optional-locks \
+                 -C '/Users/me/my shop' ls-files --others --exclude-standard"
+            )
+        );
+    }
+
+    /// Without an index of the snapshot the text gives no command, rather
+    /// than one that misreports untracked files.
+    #[test]
+    fn with_no_index_there_is_no_command() {
+        let read = text(
+            &ReviewSummary {
+                index: String::new(),
+                ..summary()
+            },
+            &comments()[..1],
+        );
+        assert!(!read.contains("git --no-optional-locks"), "{read}");
+        assert!(
+            read.ends_with(&format!("repository's top, {ROOT}.\n")),
+            "{read}"
+        );
+    }
+
+    #[test]
+    fn a_snippet_holding_backticks_gets_a_longer_fence() {
+        let mut comment = comments().remove(0);
+        comment.snippet = vec![line(ReviewLineKind::Added, 0, 3, "let s = \"```\";")];
+        let read = text(&summary(), &[comment]);
+        assert!(
+            read.contains("````diff\n+let s = \"```\";\n````\n"),
+            "{read}"
+        );
+    }
+
+    /// The attachment is text named `review`, with the entry naming exactly
+    /// the comments sent, the round its sender expects and the snapshot.
+    #[test]
+    fn the_attachment_carries_its_text_and_its_entry() {
+        let sent = attachment(&summary(), &comments()[..2]);
+        assert_eq!(
+            sent.of,
+            Some(Of::Text(InlineText {
+                name: NAME.into(),
+                text: text(&summary(), &comments()[..2]),
+            }))
+        );
+        assert_eq!(
+            entry(&sent),
+            Some(SentReview {
+                review_id: b"review-1".to_vec(),
+                round: 2,
+                snapshot: SNAPSHOT.into(),
+                base_commit: BASE.into(),
+                comments: vec![
+                    ReviewSentComment {
+                        id: b"c1".to_vec(),
+                        revision: 1,
+                        anchor: comments()[0].anchor.clone(),
+                    },
+                    ReviewSentComment {
+                        id: b"c2".to_vec(),
+                        revision: 3,
+                        anchor: comments()[1].anchor.clone(),
+                    },
+                ],
+            })
+        );
+        let plain = wire::Attachment {
+            of: sent.of.clone(),
+            ..Default::default()
+        };
+        assert_eq!(entry(&plain), None);
+    }
+
+    /// The element the model reads holds the code as written, and parses
+    /// back to the same text.
+    #[test]
+    fn code_in_a_snippet_survives_the_element() {
+        let sent = attachment(&summary(), &comments());
+        let p = Positioned {
+            text: format!("Please look at these.\n{PLACEHOLDER}"),
+            attachments: vec![sent.clone()],
+        };
+        let formatted = format(&p, Path::new("/blobs"));
+        assert!(
+            formatted.contains("-    if size < limit && open {\n"),
+            "{formatted}"
+        );
+        assert!(
+            formatted.contains("+        return Ok(Store::<File> { path, size });\n"),
+            "{formatted}"
+        );
+        let parsed = parse(&formatted);
+        assert_eq!(parsed.reported, Vec::new());
+        // The element carries the text; the entry travels on the attachment.
+        let mut expected = p;
+        expected.attachments[0].experimental.clear();
+        assert_eq!(parsed.positioned, expected);
+    }
 }

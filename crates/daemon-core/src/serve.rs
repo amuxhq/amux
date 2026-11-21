@@ -63,9 +63,6 @@ enum OpenCall {
     Inventory { only: Option<Vec<u8>> },
     /// A ListItems waiting on the agent's origin.
     ListItems,
-    /// A call forwarded to the host that owns its agent, waiting on its
-    /// reply.
-    Forward,
 }
 
 impl Answers {
@@ -81,11 +78,6 @@ impl Answers {
 
     pub(crate) fn unmute(&mut self, agent: &AgentKey) {
         self.muted.remove(&Key::from(agent));
-    }
-
-    /// Holds `call` open until the host it was forwarded to replies.
-    pub(crate) fn forwarding(&mut self, call: CallId) {
-        self.open.insert(call, OpenCall::Forward);
     }
 
     pub(crate) fn watched(&self, key: &Key) -> bool {
@@ -119,10 +111,6 @@ impl Daemon {
             ClientRequest::ListItems(request) => self.list_items(call, &request, out),
             ClientRequest::GetItem(request) => self.get_item(call, &request, out),
             ClientRequest::SubscribeInventory => self.subscribe_inventory(call, None, out),
-            ClientRequest::Forward { host, request } => {
-                self.forward(call, host, request, out);
-                Ok(())
-            }
             // The registry answers its calls itself, once each is over.
             ClientRequest::CreateAgent(create) => {
                 self.create(call, create, out);
@@ -132,7 +120,7 @@ impl Daemon {
                 self.resume(call, resume, out);
                 Ok(())
             }
-            ClientRequest::FileAgent { agent, filing } => {
+            ClientRequest::SetFiling { agent, filing } => {
                 self.file(call, agent, filing, out);
                 Ok(())
             }
@@ -159,7 +147,7 @@ impl Daemon {
                 bytes,
             } => self.keep_blob(call, &agent_id, hash, bytes, out),
             ClientRequest::GetBlob(request) => self.get_blob(call, &request, out),
-            ClientRequest::GetDiff(request) => self.get_diff(call, request, out),
+            ClientRequest::Review(write) => self.review_write(call, *write, out),
             ClientRequest::UpdateDraft { agent_id, draft } => {
                 self.update_draft(call, agent_id, &draft, out);
                 Ok(())
@@ -196,9 +184,7 @@ impl Daemon {
                 self.pair_over_ssh(call, local, peer, reachability, out);
                 Ok(())
             }
-            ClientRequest::SendMessage { envelope, from } => {
-                self.send_message(call, *envelope, from, out)
-            }
+            ClientRequest::SendMessage { envelope } => self.send_message(call, *envelope, out),
         };
         self.end_unanswered(call, answered, out);
     }
@@ -428,7 +414,7 @@ impl Daemon {
             Some(OpenCall::Inventory { .. }) => {
                 Response::Inventory(Arc::new(inventory(inventory_event::Of::Lagged(Lagged {}))))
             }
-            Some(OpenCall::ListItems | OpenCall::Forward) | None => return,
+            Some(OpenCall::ListItems) | None => return,
         };
         self.answers.release(call);
         answered(call, response, out);
@@ -724,7 +710,7 @@ mod tests {
             Input::PeerCall {
                 from: crate::HostId(*OTHER),
                 call: CallId(3),
-                request: crate::payload::PeerRequest::SubscribeInventory,
+                request: crate::payload::PeerRead::FollowAgents,
             },
         );
         let inventory_answer = |of| Output::Answer {

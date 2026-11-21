@@ -47,10 +47,12 @@ impl ChatView {
             self.focus = None;
             self.page_asked = None;
         }
-        if self.review_open
-            && let Some(page) = &mut self.review
-        {
-            // Its header names the agent and where it works, as the chat's.
+        let shown = match &mut self.round {
+            Some((_, page)) => Some(page),
+            None if self.review_page_open => self.review_page.as_mut(),
+            None => None,
+        };
+        if let Some(page) = shown {
             let name = ui_state::shown_name(state.agent()).to_owned();
             let cwd = &state.agent().cwd;
             let place = if self.local {
@@ -59,22 +61,11 @@ impl ChatView {
                 cwd.clone()
             };
             page.set_owner(&name, &place);
-            let in_screen = matches!(self.selection, Some(Selection::Screen(_)));
-            let footer = footer.or_else(|| {
-                in_screen.then(|| {
-                    let mut pairs = Vec::new();
-                    if !self.copy_on_select && !self.copied {
-                        pairs.push(("c", "copy"));
-                    }
-                    pairs.push(("esc", "clear"));
-                    let hint = if self.copied {
-                        Hint::Noted("copied", keys(&pairs))
-                    } else {
-                        Hint::Keys(keys(&pairs))
-                    };
-                    hint_line(&hint, usize::from(area.width), theme).0
-                })
-            });
+            let footer = footer.or_else(|| self.screen_footer(usize::from(area.width), theme));
+            let page = match &mut self.round {
+                Some((_, page)) => page,
+                None => self.review_page.as_mut().expect("open"),
+            };
             page.draw(paint, area, footer, theme);
             let cells = ScreenCells::capture(
                 paint.buffer_mut(),
@@ -88,7 +79,81 @@ impl ChatView {
         if let Some(ask) = &self.stop_ask {
             stop_window(paint, area, ask, theme);
         }
+        if let Some(ask) = &self.discard_ask {
+            ask.draw(paint, area, theme);
+        }
         page
+    }
+}
+
+/// Where the review chip was drawn: its row, its columns, and its ✕'s.
+pub(super) type ChipSpot = (u16, (u16, u16), (u16, u16));
+
+/// The agent's review entry's change counter, from its row.
+pub(super) fn review_counter(state: &SessionState) -> Option<u64> {
+    wire::experimental::REVIEW_ROW
+        .get(&state.agent().experimental)
+        .map(|entry| entry.counter)
+}
+
+/// The review chip laid on the composer box's top edge, from the review's
+/// entry on the agent's row: "[review · 3 comments ✕]", and after it, when
+/// the code changed since the drafts were written, "written on older code",
+/// the words the apps' chip says it in. Returns the
+/// edge with it, and the columns of the chip and of its ✕.
+fn review_chip_line(
+    top: &Line<'static>,
+    chip: ui_view::ReviewChip,
+    width: usize,
+    theme: Theme,
+) -> (Line<'static>, (usize, usize), (usize, usize)) {
+    // The box's corner sits two columns in; the chip after one rule.
+    const AT: usize = 4;
+    let words = match chip.comments {
+        1 => "[review · 1 comment ".to_owned(),
+        n => format!("[review · {n} comments "),
+    };
+    let mut over = Line::from(Span::raw(" "));
+    over.spans.push(Span::styled(words, theme.chip()));
+    let close_from = AT + text::line_width(&over);
+    over.spans.push(Span::styled("✕", theme.chip()));
+    let close_to = AT + text::line_width(&over);
+    over.spans.push(Span::styled("]", theme.chip()));
+    let chip_to = AT + text::line_width(&over);
+    if chip.moved {
+        over.spans
+            .push(Span::styled(" written on older code ", theme.faint()));
+    } else {
+        over.spans.push(Span::raw(" "));
+    }
+    // Never over the box's far corner.
+    if AT + text::line_width(&over) + 3 > width {
+        return (top.clone(), (0, 0), (0, 0));
+    }
+    (
+        text::overlay(top, AT, over, width),
+        (AT + 1, chip_to),
+        (close_from, close_to),
+    )
+}
+
+impl ChatView {
+    /// The key line while text dragged over on a full-screen page is held.
+    fn screen_footer(&self, width: usize, theme: Theme) -> Option<Line<'static>> {
+        if !matches!(self.selection, Some(Selection::Screen(_))) {
+            return None;
+        }
+        let mut pairs = Vec::new();
+        if !self.copy_on_select && !self.copied {
+            pairs.push(("c", "copy"));
+        }
+        pairs.push(("esc", "clear"));
+        let hint = if self.copied {
+            Hint::Noted("copied", keys(&pairs))
+        } else {
+            Hint::Keys(keys(&pairs))
+        };
+        Some(hint_line(&hint, width, theme).0)
     }
 }
 
@@ -771,6 +836,19 @@ impl ChatView {
         if let Some((row, (from, to))) = ask_mode {
             self.mode_spot = Some((bottom_y(row), (area.x + from as u16, area.x + to as u16)));
         }
+        self.chip_spot = None;
+        if let Some((at, _)) = &boxed_at
+            && let Some(found) = self.review_chip(state)
+            && let Some(top) = bottom.get_mut(*at)
+        {
+            let (line, chip, close) = review_chip_line(top, found, width, theme);
+            *top = line;
+            self.chip_spot = Some((
+                bottom_y(*at),
+                (area.x + chip.0 as u16, area.x + chip.1 as u16),
+                (area.x + close.0 as u16, area.x + close.1 as u16),
+            ));
+        }
         if let Some((at, boxed)) = &boxed_at {
             if let Some((from, to)) = boxed.mode {
                 self.mode_spot = Some((
@@ -1153,7 +1231,13 @@ impl ChatView {
         // are the parent's to review: it has no [Diff] of its own.
         let diff = (!state.native()).then(|| {
             (
-                diff_spans(state, self.comparison, diff_hovered, theme),
+                diff_spans(
+                    state,
+                    self.comparison,
+                    self.compared_with(state),
+                    diff_hovered,
+                    theme,
+                ),
                 HeaderControl::Diff,
             )
         });
@@ -1242,17 +1326,10 @@ pub(super) fn change_totals(
 fn diff_spans(
     state: &SessionState,
     comparison: Comparison,
+    against: Option<&str>,
     hovered: bool,
     theme: Theme,
 ) -> Vec<Span<'static>> {
-    let against = match comparison {
-        Comparison::Uncommitted => None,
-        Comparison::OnBranch => state
-            .agent()
-            .git
-            .as_ref()
-            .and_then(|git| git.base_branch.as_deref()),
-    };
     let control = if hovered {
         theme.emphasis()
     } else {

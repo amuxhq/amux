@@ -5,14 +5,17 @@
 Every agent, of every kind, gets the same seven tools from amux's MCP tool
 server. With them an agent can list the fleet and its hosts, message another
 agent, start a child of any kind on any paired host, stop its own
-children, say what it is working on, and show a person a file it made. The
-daemon sets every message's sender and every child's parent from who called,
-and it has no kind-specific code for any of it: the recipient's own agent
+children, say what it is working on, and show a person a file it made. What
+the tools read, the agent's daemon answers from what it holds; what they do
+is addressed to the host that owns the agent it acts on, which sets every
+message's sender and every child's parent from who called. No daemon has
+kind-specific code for any of it: the recipient's own agent
 process decides how a message reaches its provider.
 
 The tool server is [`crates/agent/src/tools.rs`](../crates/agent/src/tools.rs).
-The daemon's side is `ClientApi` in
-[`crates/node/src/grpc.rs`](../crates/node/src/grpc.rs), the sender and
+The daemon's side is the services in
+[`crates/node/src/api`](../crates/node/src/api), which take the caller from
+the tools socket the call came in on, the sender and
 attachments a message needs before it is handed over in
 [`crates/node/src/relay.rs`](../crates/node/src/relay.rs), and the message
 lanes and the parent outbox in the daemon core's
@@ -44,25 +47,30 @@ from the moment a restarted daemon adopts the still-running agent, and the
 tool server finds the socket
 by its own directory, so the daemon knows which agent is calling from the
 connection it arrived on. No environment variable or token carries an id, and
-nothing in a request can claim one. The socket serves the ordinary
-`AgentService` and `SessionService` with a few calls refused; [the protocol](PROTOCOL.md)
-describes what the tools socket allows.
+nothing in a request can claim one. The socket serves the ordinary local and
+host services, without the profile's administration, and carries a call
+addressed to another host there as from this agent. Every rule about an
+agent caller is applied by the host that answers, against its own row;
+[the protocol](PROTOCOL.md#the-tools-socket) describes them.
 
 Five tools are fleet tools; two never reach the daemon. Four of the five
 (`agents`, `hosts`, `send`, `stop`) dial the daemon themselves. The fifth,
 `spawn`, asks its own agent process, which asks the daemon for it: the agent
 process listens on `<dir>/private/agent.sock` for its tool server alone,
-takes the `CreateAgentRequest` the tool server would have sent the daemon,
-makes that call on `<dir>/tools.sock` itself, and hands the daemon's answer
-back. So the daemon still learns who is spawning from the socket the call
+takes the `CreateAgentRequest` the tool server would have sent and the id of
+the host it is for, makes that call on `<dir>/tools.sock` itself, addressed
+to that host, and hands the answer back. So the daemon still learns who is spawning from the socket the call
 arrives on, the model reads what it would have read, and the agent process
 knows of every child it asked for from before the daemon does, which is what
 lets it wait for them ([one-shot](#families)). The socket carries one ask
 and one answer per connection, in the control socket's framing (a varint
 length, then the protobuf message): an `AgentAsk`, then an `AgentAnswer`.
-Each says which kind it is. Spawn is the only ask today, answered with the
-daemon's `CreateAgentResponse` or the words of the refusal; a later build
-can add another, and an agent process from before it refuses it in words.
+Each says which kind it is. Spawn is the only ask today: an `AgentAsk`
+whose `spawn` arm holds the create and whose `host_id` names the host by id,
+the agent's own when empty, answered with the `CreateAgentResponse` or the
+words of the refusal. A later build can add another ask, and an agent
+process from before it refuses it in words. The spawn ask's first number,
+used while the create named its host, stays reserved.
 The socket carries no gRPC, because an ask has one answer and the tool
 server turns every refusal into words for the model anyway. A tool server
 whose agent process has no such socket (a process started by a build from
@@ -87,11 +95,11 @@ process makes a spawn's call under the same rule.
 
 | Tool | Arguments | Answer | Reaches |
 | --- | --- | --- | --- |
-| `agents` | none | `{"agents": [...]}`, one row per agent the person has not settled | `SubscribeInventory`, read to `CaughtUp` |
+| `agents` | none | `{"agents": [...]}`, one row per agent the person has not settled | `InventoryService.SubscribeInventory`, read to `CaughtUp` |
 | `hosts` | none | `{"hosts": [...]}`, the trusted hosts | the same inventory |
-| `send` | `to`, `text`, `context?` | `{"id": "<envelope id>"}` once the recipient has the message | `ResolveAgent`, then `SendMessage` |
-| `spawn` | `kind`, `prompt`, `name?`, `cwd?`, `host?` | `{"name", "id"}` of the child | `CreateAgent`, made by the agent process |
-| `stop` | `name` | `{}` once the child has ended | `ResolveAgent`, then `FileAgent` (closed) |
+| `send` | `to`, `text`, `context?` | `{"id": "<envelope id>"}` once the recipient has the message | `ResolveAgent`, then `SendMessage` addressed to the recipient's host |
+| `spawn` | `kind`, `prompt`, `name?`, `cwd?`, `host?` | `{"name", "id"}` of the child | `ResolveHost` for a named host, then `CreateAgent` addressed to it, made by the agent process |
+| `stop` | `name` | `{}` once the child has ended | `ResolveAgent`, then `SetFiling` (closed) addressed to the child's host |
 | `status` | `working_on`: a string, or null | `ok` | nothing |
 | `attach` | `path`, `name?` | the attachment element | nothing |
 
@@ -155,8 +163,9 @@ is created as that ACP agent, and the host it runs on refuses one it does not
 offer, in its own words; an id no agent can have is refused by the tool. The
 create carries the first input as a prompt submission, which can hold nothing
 but a prompt, and names the kind by its arm with that kind's default
-settings. `name` names it. `host` is a trusted host's name, as a person would say it; the daemon
-resolves it, and omitted it means the caller's own host. `cwd` is a path on
+settings. `name` names it. `host` is a trusted host's name, as a person would say it; the tool
+server resolves it with `ResolveHost`, the create is addressed to the id that
+answers, and omitted it means the caller's own host. `cwd` is a path on
 the host the child runs on, where `~` and a path not from the root start at
 that host's home: omitted on the caller's host (named or not, by
 any of its names) it is the caller's own working directory, and omitted on
@@ -172,8 +181,9 @@ conversation, as the tool's description says for every caller.
 ### stop
 
 Stops one of the caller's own direct children, exactly as a person's close
-does: `FileAgent` with `FILING_CLOSED` on the tools socket. The daemon checks
-the lineage and refuses any other agent with `PERMISSION_DENIED`. The child's
+does: `SetFiling` with `FILING_CLOSED`, addressed to the child's host. That
+host checks the lineage against its own row for the child and refuses any
+other agent with `PERMISSION_DENIED`. The child's
 turn is cancelled the provider's own way, the child ends as stopped and filed
 as closed, out of the agents' listing, and the stopped child's own
 descendants are closed with it on their hosts (see [families](#families)).
@@ -259,13 +269,13 @@ milliseconds. A person's
 A send goes from the model to the recipient's provider like this:
 
 1. The harness calls `send` on the tool server, which resolves `to` with
-   `ResolveAgent` and calls `SendMessage` on `tools.sock` with an
-   `Envelope`: a fresh id, the recipient as a host and an agent, the text and
-   the context. It names no sender.
-2. The daemon stamps the `Envelope`: an ordinary message whose `from` is the
-   agent the socket belongs to (its id, host and name). For a recipient
-   on another host it forwards the envelope there
-   ([across hosts](#across-hosts)); otherwise it runs the recipient's lane.
+   `ResolveAgent` and calls `SendMessage` on `tools.sock`, addressed to the
+   recipient's host: a fresh id, the recipient's id, the text and the
+   context. It names no sender.
+2. For a recipient on another host the daemon carries the call there, with
+   the agent as its caller ([across hosts](#across-hosts)). The recipient's
+   host makes the `Envelope`: an ordinary message whose `from` is the agent
+   that called (its id, host and name), and runs the recipient's lane.
 3. A recipient that has exited is resumed with the message as its first
    input, unless it is closed (by the person, by its parent's `stop`, or
    by finishing as a one-shot child): then only its parent's message
@@ -322,10 +332,10 @@ parent edge: it talks to its user, and the daemon knows who that is.
 
 ![Spawn returns once the child's process has started and said hello. The first prompt is the first input in the child's queue. The child is one-shot because it has a parent: it exits when its turn ends with an empty queue and no accepted message pending, and the parent hears "finished" from the daemon, once, through the outbox. A parent's later send resumes the child with that message as its prompt.](figures/spawn-sequence.svg)
 
-**Spawn.** `CreateAgent` from the tools socket makes the caller the parent.
-The call is the agent process's, made for its tool server's `spawn`
-([the tool server](#the-tool-server)).
-The daemon writes the child's row first, so a crash leaves a row the next
+**Spawn.** A `CreateAgent` an agent makes makes that agent the parent, on
+whichever host the create is addressed to. The call is the agent process's,
+made for its tool server's `spawn` ([the tool server](#the-tool-server)).
+The child's host writes the child's row first, so a crash leaves a row the next
 start marks exited rather than a directory nothing lists; then the directory
 and `spec.1` with the kind, working directory, parent and the first prompt;
 then it binds the child's `tools.sock` and starts `amux internal agent <dir>`. It
@@ -387,19 +397,15 @@ exits `FINISHED` then; no turn end marked `last` preceded it, so its parent
 hears that it exited. A refusal does the same when it arrives after the
 turn that spawned was cut short and has already ended.
 
-A child created for an agent from outside it (a client naming a `parent` on
-the profile's socket) does not pass through the parent's process. The parent
-learns of it from the `children` frame alone, as every child was learned of
-before spawns went through the agent process: a subagent whose turn ends
-before that frame arrives exits without waiting for such a child. amux's own
-clients do not create children this way.
+Every child an agent has went through its own process: a create names no
+parent, so nothing outside the agent can give it one.
 
-The same holds for a child on another host whose create went out and whose
-answer was lost on the way: the daemon answers that the host stopped
-answering, which is a refusal, and a daemon that takes over mid-way does not
-hold the child until its host lists it. If that host made the child, the
-parent waits for it once a `children` frame names it or its report arrives,
-and not before.
+The one child the process cannot settle itself is one on another host whose
+create went out and whose answer was lost on the way: the daemon answers that
+the host stopped answering, which the process takes as a refusal, and a
+daemon that takes over mid-way does not hold the child until its host lists
+it. If that host made the child, the parent waits for it once a `children`
+frame names it or its report arrives, and not before.
 
 Three other ways to close the gap between a turn's end and the daemon's word
 of a new child were considered and turned down. Having the agent ask its
@@ -490,9 +496,10 @@ wait it retries every 30 seconds. For each row it:
   interpreter words for its model, as "the provider exited: exit code 1"),
   carrying the parent's incarnation and the child's, with an id derived from
   the child, incarnation, which report it is and turn, so every re-send of
-  one row has the same id. A local parent gets it through its lane; a remote parent through
-  `SendMessage` to its daemon. The row is deleted once the parent has
-  accepted.
+  one row has the same id. A local parent gets it through its lane; a remote
+  parent's host is handed it with `PeerService.DeliverReport`, which this
+  daemon calls for itself, and runs the parent's lane the same way. The row
+  is deleted once the parent has accepted.
 
 The fixed envelope id is what makes a crash harmless. A daemon that dies
 between the hand-off and the deletion re-sends the row on its next start, and
@@ -513,38 +520,44 @@ transcript keeps the words alone; its sender is on the item.
 
 ## Across hosts
 
-Messages, spawns and stops reach agents on paired hosts through the daemons'
-ordinary peer calls; nothing about them is specific to messaging.
+Messages, spawns and stops reach agents on paired hosts the way any act
+does: the tool server addresses the call to the host that owns what it acts
+on, by that host's id, and the daemon carries it there over the link unread,
+with the calling agent as its caller. The host that answers applies every
+rule about the caller against its own rows; nothing about this is specific
+to messaging.
 
-- **Send.** `ResolveAgent` finds a remote agent by its replica row. The local
-  daemon stamps the envelope as from the calling agent, with this host's id,
-  and makes the `AgentService.SendMessage` call, which carries that
-  envelope, on the recipient's daemon over the peer link. That daemon takes
-  the sender as stamped and runs the recipient's lane as for a local sender.
-  A message that arrived from a peer for a third host is not passed on. A
+- **Send.** `ResolveAgent` finds a remote agent by its replica row, which
+  carries its host's id. `SendMessage` is addressed to that host, which
+  makes the envelope as from the calling agent, of this host, brings the
+  message's files from this host with `PeerService.GetBlob`, and runs the
+  recipient's lane as for a local sender. A call that arrived on a link is
+  never carried on, so a message reaches no third host through another. A
   message resumes an exited recipient on another host the same way it does
   locally, a closed one only for its parent, since the parent edge names
   the parent's host.
-- **Spawn.** `host` names a trusted host; the local daemon resolves the name
-  (an exact match, then one ignoring case, and otherwise `NOT_FOUND` listing
-  the known names, or `FAILED_PRECONDITION` when several answer) and makes the
-  create on that host with the parent set to the calling agent on this host.
-  The forwarded call waits up to 30 seconds, which covers the child's start
-  there.
-- **Stop.** The lineage check runs against the child's replica row, which
-  carries the same parent edge, and the stop is then forwarded to the
-  child's host. A stop or delete of a parent is never sent to its children:
-  each child's host sees the parent's row change and follows by the
-  [family rule](PROTOCOL.md#the-family-rule), whenever it next hears from
-  the parent's host.
+- **Spawn.** `host` names a trusted host; the tool server resolves the name
+  with `ResolveHost` (an exact match, then one ignoring case, and otherwise
+  `NOT_FOUND` listing the known names, or `FAILED_PRECONDITION` when several
+  answer) and asks its agent process for the create on that host's id. The
+  child's host makes the child with the calling agent as its parent. A
+  carried call waits up to 30 seconds for its answer to begin, which covers
+  the child's start there.
+- **Stop.** `SetFiling` is addressed to the child's host, which checks the
+  lineage against its own row for the child: the row's parent edge names
+  the calling agent and its host. A stop or delete of a parent is never sent
+  to its children: each child's host sees the parent's row change and
+  follows by the [family rule](PROTOCOL.md#the-family-rule), whenever it
+  next hears from the parent's host.
 - **Reports to a parent.** A deliveries row for a parent on another host is
-  sent to that host's daemon as a message from the child. An answer of not
-  found means the parent or its incarnation is gone, and the row is dropped;
-  an unreachable host keeps the row until the host is back, and a host no
-  longer paired has its rows dropped.
+  handed to that host with `PeerService.DeliverReport`, the child's daemon
+  asking for itself. An answer of not found means the parent or its
+  incarnation is gone, and the row is dropped; an unreachable host keeps the
+  row until the host is back, and a host no longer paired has its rows
+  dropped.
 
-[The protocol](PROTOCOL.md) describes the peer calls, the one-hop forwarding
-rule and the links underneath.
+[The protocol](PROTOCOL.md#calls-on-another-hosts-agents) describes the
+carried call, the one-hop rule and the links underneath.
 
 ## Tests
 

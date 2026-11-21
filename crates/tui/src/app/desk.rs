@@ -5,7 +5,6 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 
 use client::Installation;
 use futures_util::StreamExt as _;
@@ -22,7 +21,7 @@ use crate::settings_screen::{SettingsEffect, SettingsScreen};
 /// installation's front door and the profile it opened.
 #[derive(Clone)]
 pub struct DeskConfig {
-    pub installation: Arc<dyn Installation>,
+    pub installation: Installation,
     pub profile: wire::Profile,
     /// What this machine is called in "Keep this Mac awake": "Mac" or
     /// "computer".
@@ -171,7 +170,7 @@ impl App {
                 profiles_send(DeskEvent::Profiles(listed.profiles));
             },
         );
-        let client = self.client.clone();
+        let client = self.client.admin();
         follow(
             move || {
                 let client = client.clone();
@@ -523,7 +522,7 @@ impl App {
                 // After any opening still on its way, so the window it
                 // opens is the one closed.
                 let (done, finished) = oneshot::channel();
-                let client = self.client.clone();
+                let client = self.client.admin();
                 desk.pairing_calls.run(async move {
                     let _ = client.cancel_pairing().await;
                     let _ = done.send(());
@@ -639,7 +638,7 @@ impl App {
 
     fn setup_effect(&mut self, effect: SetupEffect) {
         let send = self.desk_send();
-        let client = self.client.clone();
+        let client = self.client.admin();
         let events = self.events.clone();
         let Some(desk) = &mut self.desk else {
             return;
@@ -826,7 +825,7 @@ impl App {
                     }
                 }
                 SettingsEffect::SignOut => {
-                    let client = self.client.clone();
+                    let client = self.client.admin();
                     let events = self.events.clone();
                     tokio::spawn(async move {
                         let said = match client.sign_out().await {
@@ -902,7 +901,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     use super::*;
 
@@ -934,6 +933,7 @@ mod tests {
 
 #[cfg(test)]
 mod follow_tests {
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;

@@ -7,8 +7,9 @@
 //! and a relay link once an account is bound. The daemon's profile registry
 //! creates, binds, signs out and deletes them; every call here names
 //! the profile it is for. Chats read a profile's store through the same
-//! client service the terminal dials over a socket, called in process here;
-//! no client opens the store.
+//! services and stubs the terminal calls over a socket, called in memory
+//! here through the node's router, which carries a call addressed to
+//! another host to it; no client opens the store.
 //!
 //! Which replica agents keep a source open is switchable per profile: every
 //! listed agent for the profile in front of somebody, and only the ones a
@@ -27,7 +28,7 @@ use app_runtime::values::{
     Bearer, BillingInterval, Found, Identity, PairedPeer, PaywallFrom, PendingPair, Roster,
 };
 pub use app_runtime::values::{PairRequest, ProfileView, StartConfig, UsageEvent};
-use client::{Client, Clock, InProcess};
+use client::{Client, Clock, Installation, Surface};
 use node::{
     CloudOptions, Daemon, DiscoveryFactory, EdgeOptions, LanOptions, ProfileRefusal,
     ProfileRuntime, Registry, SourcePolicy, StartError, StartOptions,
@@ -35,6 +36,7 @@ use node::{
 pub use node::{Cores, ProfileId};
 pub use phone::Phone;
 use sha2::{Digest, Sha256};
+use wire::installation_service_server::InstallationServiceServer;
 use wire::{
     BeginPairRequest, Empty, HostRef, StartPairingRequest, begin_pair_request, host_ref,
     start_pairing_request,
@@ -281,7 +283,7 @@ impl EmbeddedRuntime {
             runtime.analytics().record_at_most_every(
                 CLIENT_OPENED_EVERY,
                 analytics::Event::ClientOpened {
-                    client: analytics::Client::Phone,
+                    client: analytics::Client::Ios,
                 },
             );
         }
@@ -364,19 +366,21 @@ impl EmbeddedRuntime {
 
     // --- the registry ------------------------------------------------------
 
-    /// The installation's front door, called in process: the same calls a
-    /// desktop client makes over the daemon's socket, so the app manages
-    /// profiles through one seam whichever runtime it has.
-    pub fn installation(&self) -> Result<Arc<dyn client::Installation>, EmbeddedError> {
+    /// The installation's front door, its service called in memory: the
+    /// same stubs a desktop client calls over the daemon's socket, so the
+    /// app manages profiles through one seam whichever runtime it has.
+    /// Opening a profile gives a client of its node in memory, as
+    /// [`EmbeddedRuntime::node`] does.
+    pub fn installation(&self) -> Result<Installation, EmbeddedError> {
         let door = self
             .daemon
             .lock()
             .unwrap_or_else(|poison| poison.into_inner())
             .as_ref()
-            .map(|daemon| daemon.front_door().answering(analytics::Client::Phone))
+            .map(|daemon| daemon.front_door())
             .ok_or(ProfileRefusal::Stopping)?;
         let registry = self.registry.clone();
-        let open: client::OpenProfile = Arc::new(move |id: &[u8]| {
+        let open = move |id: &[u8]| {
             let refused =
                 |code, message: String| client::RpcError::Refused(wire::Error::new(code, message));
             let profile = ProfileId::from_slice(id).map_err(|_| {
@@ -385,10 +389,14 @@ impl EmbeddedRuntime {
                     "a profile id is 16 bytes".into(),
                 )
             })?;
-            in_process(&registry, profile)
+            in_memory(&registry, profile)
                 .map_err(|error| refused(wire::ErrorCode::NotFound, error.to_string()))
-        });
-        Ok(Arc::new(client::InProcessInstallation::new(door, open)))
+        };
+        Ok(Installation::in_memory(
+            InstallationServiceServer::new(door),
+            Surface::Ios,
+            open,
+        ))
     }
 
     /// Every profile whose trust store holds `host_id`, oldest first.
@@ -407,10 +415,12 @@ impl EmbeddedRuntime {
 
     // --- one profile ---------------------------------------------------------
 
-    /// A profile's client services in process, as its chats and fleet call
-    /// them, with its administration for the dump.
-    pub fn client(&self, profile: ProfileId) -> Result<Arc<dyn Client>, EmbeddedError> {
-        Ok(in_process(&self.registry, profile)?)
+    /// A client of a profile's node called in memory, as the phone's fleet
+    /// and chats call it: the same stubs a socket's client uses, over the
+    /// node's router, so a call addressed to another host is carried there,
+    /// and the profile's administration beside them.
+    pub fn node(&self, profile: ProfileId) -> Result<Client, EmbeddedError> {
+        Ok(in_memory(&self.registry, profile)?)
     }
 
     /// Runs `work` where the profile's core steps, between two of its
@@ -677,10 +687,7 @@ fn fingerprint(pubkey: &[u8]) -> String {
         .collect()
 }
 
-/// A profile's client services and administration, called in process.
-fn in_process(registry: &Registry, profile: ProfileId) -> Result<Arc<dyn Client>, ProfileRefusal> {
-    let (service, admin) = registry.in_process(profile)?;
-    Ok(Arc::new(
-        InProcess::new(service).with_admin(Arc::new(admin)),
-    ))
+/// A client of a profile's node over its routes in memory, as the phone.
+fn in_memory(registry: &Registry, profile: ProfileId) -> Result<Client, ProfileRefusal> {
+    Ok(Client::in_memory(registry.routes(profile)?, Surface::Ios))
 }

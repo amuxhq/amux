@@ -140,7 +140,7 @@ struct ChatRow: View {
     @ViewBuilder private var kind: some View {
         switch row.kind {
         case .prompt(let text, let steered):
-            PromptBubble(text: ChatWords.text(of: text), steered: steered)
+            PromptBubble(segments: text, steered: steered)
                 .padding(.bottom, 14)
         case .prose(let text, let streaming, let workingNote):
             ProseView(source: ChatWords.text(of: text), streaming: streaming, quiet: workingNote)
@@ -626,28 +626,93 @@ struct GridLine: View {
     }
 }
 
-/// The person's prompt, in a bubble on the right.
+/// The person's prompt, in a bubble on the right. A review sent with it
+/// goes under the bubble as a chip, which opens the round it closed.
 struct PromptBubble: View {
-    let text: String
+    let segments: [Segment]
     let steered: Bool
 
     var body: some View {
+        let reviews = Self.reviews(segments)
+        let text = ChatWords.text(of: reviews.isEmpty ? segments : segments.filter { Self.review($0) == nil })
         HStack {
             Spacer(minLength: Metrics.reading / 5)
             VStack(alignment: .trailing, spacing: 4) {
-                Text(text)
-                    .font(.ui(.bubble))
-                    .lineSpacing(6)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).fill(Palette.well))
+                if !text.isEmpty || reviews.isEmpty {
+                    Text(text)
+                        .font(.ui(.bubble))
+                        .lineSpacing(6)
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous).fill(Palette.well))
+                }
+                ForEach(Array(reviews.enumerated()), id: \.offset) { _, review in
+                    SentReviewChip(review: review)
+                }
                 if steered {
                     Text("steered").font(.ui(.caption)).foregroundStyle(Palette.textTertiary)
                 }
             }
         }
         .padding(.top, 6)
+    }
+
+    /// The reviews sent with the prompt.
+    static func reviews(_ segments: [Segment]) -> [SentReviewChip.Sent] {
+        segments.compactMap(review)
+    }
+
+    static func review(_ segment: Segment) -> SentReviewChip.Sent? {
+        if case .attachment(.sentReview(let comments, let sent, let text)) = segment {
+            return SentReviewChip.Sent(comments: comments, sent: sent, text: text)
+        }
+        return nil
+    }
+}
+
+/// A review sent into the chat: "Review · 3 comments", opening the round it
+/// closed, read from the agent's host.
+struct SentReviewChip: View {
+    struct Sent: Identifiable {
+        let comments: UInt32
+        let sent: SentReviewRef
+        /// What the agent read, shown once the host holds none of the round.
+        let text: String
+        /// The review and the input that sent it name it: the host finds
+        /// its round by the input.
+        var id: String {
+            [sent.reviewId, sent.inputId].map { bytes in
+                bytes.map { String(format: "%02x", $0) }.joined()
+            }.joined(separator: ".")
+        }
+    }
+
+    let review: Sent
+    @Environment(\.reviewRounds) private var rounds
+    @State private var opened: Sent?
+
+    var body: some View {
+        Button {
+            opened = review
+        } label: {
+            HStack(spacing: 5) {
+                Icon("message-square-text", size: 12).foregroundStyle(Palette.textSecondary)
+                Text(ChatWords.reviewChip(ReviewChip(comments: review.comments, moved: false))).lineLimit(1)
+            }
+            .font(.ui(.meta))
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(RoundedRectangle(cornerRadius: Radius.row, style: .continuous).fill(Palette.well))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Show the round this review sent")
+        .sheet(item: $opened) { review in
+            ReviewRoundSheet(
+                round: review.sent.round, text: review.text, read: { await rounds.read(review.sent) },
+                openReview: rounds.openReview, close: { opened = nil })
+        }
     }
 }
 

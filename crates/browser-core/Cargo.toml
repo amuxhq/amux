@@ -17,6 +17,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 ui-state = { workspace = true }
 ui-view = { workspace = true }
+uuid = { workspace = true }
 wire = { workspace = true }
 
 [lints]

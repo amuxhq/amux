@@ -519,7 +519,9 @@ impl Setup {
     /// The create request, with the first prompt when there is one: the
     /// agent in the kind its host starts it as, with what was picked. An
     /// agent used in its own terminal sets its model, effort, permission and
-    /// mode there, so none goes.
+    /// mode there, so none goes. It is made on the chosen host,
+    /// [`Setup::host`], which the call is addressed to; the request itself
+    /// names no host.
     pub fn request(
         &self,
         agent_id: Vec<u8>,
@@ -533,7 +535,6 @@ impl Setup {
         };
         CreateAgentRequest {
             agent_id,
-            host: Some(wire::HostRef::id(self.host.clone())),
             name: self.name.clone(),
             cwd: self.folder.clone(),
             initial_prompt: prompt,
@@ -542,7 +543,6 @@ impl Setup {
             // What a chat's sibling merely copied is not the person's pick.
             remember_model: !own && self.model.is_some() && self.model != self.copied.0,
             remember_effort: !own && self.effort.is_some() && self.effort != self.copied.1,
-            ..CreateAgentRequest::default()
         }
     }
 }

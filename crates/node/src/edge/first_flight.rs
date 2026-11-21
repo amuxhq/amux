@@ -90,7 +90,7 @@ impl FirstFlights {
             .iter()
             .position(|(asked, _)| asked == request)?;
         let (_, reply) = landed.answers.remove(at);
-        let catch_up = matches!(request, PeerRequest::SubscribeInventory)
+        let catch_up = matches!(request, PeerRequest::FollowAgents)
             .then(|| landed.catch_up.take())
             .flatten();
         Some(Taken { reply, catch_up })

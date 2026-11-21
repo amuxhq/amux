@@ -23,6 +23,7 @@ struct TranscriptList: View {
     @Environment(\.reportedIdentifierPrefix) private var reportedPrefix
     @Environment(\.reportsIdentifiedElementGeometry) private var reportsGeometry
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.codeHighlighting) private var codeHighlighting
     @State private var reported = ReportedElements()
     let model: ChatModel
     /// What stands above the oldest row.
@@ -43,7 +44,8 @@ struct TranscriptList: View {
                     design: design, photographed: photographed, reducesMotion: reducesMotion,
                     reducesTransparency: reducesTransparency,
                     reportsElements: reportsElements, reportedPrefix: reportedPrefix,
-                    reportsGeometry: reportsGeometry, dynamicTypeSize: dynamicTypeSize),
+                    reportsGeometry: reportsGeometry, dynamicTypeSize: dynamicTypeSize,
+                    codeHighlighting: codeHighlighting),
                 revision: model.revision, toNewest: model.toNewest,
                 insets: proxy.safeAreaInsets, reported: reported, openAgent: openAgent)
             .ignoresSafeArea()
@@ -84,6 +86,7 @@ struct CellEnvironment: Equatable {
     /// again: the rows would redraw at the new size regardless, inside
     /// frames cached for the old one.
     var dynamicTypeSize: DynamicTypeSize
+    var codeHighlighting: CodeHighlighting
 }
 
 private extension View {
@@ -96,6 +99,7 @@ private extension View {
             .environment(\.reportsIdentifiedElements, environment.reportsElements)
             .environment(\.reportedIdentifierPrefix, environment.reportedPrefix)
             .environment(\.reportsIdentifiedElementGeometry, environment.reportsGeometry)
+            .environment(\.codeHighlighting, environment.codeHighlighting)
     }
 }
 

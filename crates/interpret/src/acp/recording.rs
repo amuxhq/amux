@@ -87,6 +87,7 @@ fn image(data: &str, mime: &str) -> Option<wire::Attachment> {
             mime: mime.to_owned(),
             size: bytes.len() as u64,
         })),
+        ..Default::default()
     })
 }
 

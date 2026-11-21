@@ -8,10 +8,13 @@
 //! before that ask existed reads one it does not know and refuses it in
 //! words.
 //!
-//! The one ask today is a spawn: the `CreateAgentRequest` the daemon takes,
-//! as the tool server would have sent it there. The agent process hands it
-//! to its daemon and the answer back, so it knows of every child it asked
-//! for from before the daemon does.
+//! The one ask today is a spawn: the child the tool server wants, with the
+//! host it is to run on named by id (the tool server resolved the name a
+//! model gave), or none for the agent's own host. The agent process makes
+//! the create, addressed to that host, through its daemon, which passes a
+//! call for another host on to it, and hands the answer back. So it knows
+//! of every child it asked for from before any daemon does, wherever the
+//! child runs.
 //!
 //! Nothing richer is needed: an ask has one answer, and the tool server
 //! turns any refusal into words for the model anyway, so no status code
@@ -82,11 +85,17 @@ impl From<Spawned> for AgentAnswer {
     }
 }
 
-/// Asks the agent process in `dir` for the child `request` describes and
-/// waits for its answer.
-pub async fn spawn(dir: &Path, request: &CreateAgentRequest) -> Result<Spawned, AskError> {
+/// Asks the agent process in `dir` for the child `request` describes, made
+/// on the host `host_id` names (empty, the agent's own), and waits for its
+/// answer.
+pub async fn spawn(
+    dir: &Path,
+    host_id: &[u8],
+    request: &CreateAgentRequest,
+) -> Result<Spawned, AskError> {
     let asked = AgentAsk {
         of: Some(agent_ask::Of::Spawn(request.clone())),
+        host_id: host_id.to_vec(),
     };
     match ask(dir, &asked).await?.of {
         Some(agent_answer::Of::Spawned(response)) => Ok(Spawned::Created(Box::new(response))),
@@ -136,7 +145,7 @@ mod tests {
                 agent_id: b"child".to_vec(),
                 ..Default::default()
             };
-            let (asked, served) = tokio::join!(spawn(dir.path(), &request), async {
+            let (asked, served) = tokio::join!(spawn(dir.path(), &[7; 16], &request), async {
                 let mut stream = listener.accept().await.unwrap();
                 let ask = read_ask(&mut stream).await.unwrap();
                 write_answer(&mut stream, &answer.clone().into())
@@ -145,8 +154,11 @@ mod tests {
                 ask
             });
             assert_eq!(
-                served.and_then(|ask| ask.of),
-                Some(agent_ask::Of::Spawn(request))
+                served,
+                Some(AgentAsk {
+                    of: Some(agent_ask::Of::Spawn(request)),
+                    host_id: vec![7; 16],
+                })
             );
             assert_eq!(asked.unwrap(), answer);
         }
@@ -160,12 +172,12 @@ mod tests {
         std::fs::create_dir(dir.path().join(PRIVATE)).unwrap();
         let request = CreateAgentRequest::default();
         assert!(matches!(
-            spawn(dir.path(), &request).await,
+            spawn(dir.path(), &[], &request).await,
             Err(AskError::NotListening(_))
         ));
 
         let mut listener = local_socket::LocalListener::bind(&path(dir.path())).unwrap();
-        let (asked, ()) = tokio::join!(spawn(dir.path(), &request), async {
+        let (asked, ()) = tokio::join!(spawn(dir.path(), &[], &request), async {
             let mut stream = listener.accept().await.unwrap();
             let _ = read_ask(&mut stream).await;
         });

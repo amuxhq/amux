@@ -15,10 +15,7 @@ use prost::Message as _;
 use provider_fakes::script::{AcpAgent, Call, Offer, Outcome, Script, Step};
 use store::AgentRow;
 use testnet::{FAKE_ACP_AGENT, HostDecl, Net, Observer, PATIENCE, Topology, until};
-use tonic::Request;
 use uuid::Uuid;
-use wire::agent_service_server::AgentService as _;
-use wire::session_service_server::SessionService as _;
 use wire::{AcpInput, Lifecycle, Phase, acp_input};
 
 const REPLY: &str = "Hello from the fake agent.";
@@ -88,17 +85,15 @@ fn prompt(text: &str) -> wire::Input {
 }
 
 /// Sends `input` to `agent` from `host`'s client and expects it accepted.
-async fn send(net: &Net, host: &str, agent: Uuid, input: wire::Input) {
+async fn send(net: &Net, host: &str, agent: &wire::AgentRef, input: wire::Input) {
     let verdict = net
-        .client(host)
-        .unwrap()
-        .send_input(Request::new(wire::SendInputRequest {
-            agent_id: agent.as_bytes().to_vec(),
-            input: Some(input),
-        }))
+        .person(host)
         .await
         .unwrap()
-        .into_inner();
+        .agent(agent)
+        .send_input(input)
+        .await
+        .unwrap();
     assert!(
         matches!(verdict.of, Some(wire::send_input_response::Of::Accepted(_))),
         "{verdict:?}"
@@ -223,10 +218,12 @@ async fn an_acp_agent_on_one_host_is_driven_from_another() {
 
     // Created from the laptop, on the desk, by the agent's id.
     let created = net
-        .client("laptop")
+        .person("laptop")
+        .await
         .unwrap()
-        .create_agent(Request::new(wire::CreateAgentRequest {
-            host: Some(wire::HostRef::named("desk")),
+        .host(desk.as_bytes())
+        .agents()
+        .create(wire::CreateAgentRequest {
             name: Some("helper".into()),
             cwd: net
                 .host("desk")
@@ -241,16 +238,17 @@ async fn an_acp_agent_on_one_host_is_driven_from_another() {
                 },
             )),
             ..wire::CreateAgentRequest::default()
-        }))
+        })
         .await
-        .expect("the desk starts the laptop's ACP agent")
-        .into_inner()
-        .agent
-        .unwrap();
+        .expect("the desk starts the laptop's ACP agent");
     assert_eq!(created.host_id, desk.as_bytes(), "made on the desk");
     assert_eq!(created.kind(), wire::Kind::Acp);
     let id = Uuid::from_slice(&created.agent_id).unwrap();
     let key = store::AgentKey::new(desk.as_bytes().to_vec(), id.as_bytes().to_vec());
+    let address = wire::AgentRef {
+        host_id: created.host_id.clone(),
+        agent_id: created.agent_id.clone(),
+    };
     let own = until_row(&net, "desk", &key, "the agent ready", |row| {
         phase(row) == Phase::Idle
     })
@@ -272,7 +270,7 @@ async fn an_acp_agent_on_one_host_is_driven_from_another() {
         testnet::observe::caught_up,
     )
     .await;
-    send(&net, "laptop", id, prompt("Say hello.")).await;
+    send(&net, "laptop", &address, prompt("Say hello.")).await;
     observe_until(&mut laptop, "the streamed reply", |events| {
         says(events, REPLY)
     })
@@ -296,7 +294,7 @@ async fn an_acp_agent_on_one_host_is_driven_from_another() {
     println!("2. the laptop's prompt is answered {REPLY:?}, streamed in {streamed} appends");
 
     // The permission request, read and answered on the laptop.
-    send(&net, "laptop", id, prompt("Run the test suite.")).await;
+    send(&net, "laptop", &address, prompt("Run the test suite.")).await;
     let asking = until_row(&net, "laptop", &key, "the permission request", |row| {
         phase(row) == Phase::NeedsYou
     })
@@ -317,7 +315,7 @@ async fn an_acp_agent_on_one_host_is_driven_from_another() {
     send(
         &net,
         "laptop",
-        id,
+        &address,
         input(acp_input::Of::Answer(wire::AcpAnswer {
             ask_key: ask.key.clone(),
             of: Some(wire::acp_answer::Of::Option(allow.clone())),
@@ -342,7 +340,7 @@ async fn an_acp_agent_on_one_host_is_driven_from_another() {
     );
 
     // An interrupt from the laptop cancels the long job.
-    send(&net, "laptop", id, prompt("Start the long job.")).await;
+    send(&net, "laptop", &address, prompt("Start the long job.")).await;
     observe_until(&mut laptop, "the long job to start", |events| {
         says(events, STARTED)
     })
@@ -354,7 +352,7 @@ async fn an_acp_agent_on_one_host_is_driven_from_another() {
     send(
         &net,
         "laptop",
-        id,
+        &address,
         input(acp_input::Of::Interrupt(wire::Interrupt {})),
     )
     .await;
@@ -374,12 +372,11 @@ async fn an_acp_agent_on_one_host_is_driven_from_another() {
     println!("4. the laptop's interrupt cancels the long job; the desk's agent is idle again");
 
     // A stop from the laptop ends it on the desk.
-    net.client("laptop")
+    net.person("laptop")
+        .await
         .unwrap()
-        .file_agent(Request::new(wire::FileAgentRequest {
-            agent_id: id.as_bytes().to_vec(),
-            filing: wire::Filing::Closed as i32,
-        }))
+        .agent(&address)
+        .set_filing(wire::Filing::Closed)
         .await
         .expect("the desk stops the agent");
     for host in ["desk", "laptop"] {
@@ -492,15 +489,13 @@ async fn a_hosts_acp_agent_is_offered_with_its_descriptor_and_capabilities_to_an
 
     // The catalogue the entry names, asked of the desk from the laptop.
     let catalogue = net
-        .client("laptop")
-        .unwrap()
-        .get_catalogue(Request::new(wire::GetCatalogueRequest {
-            host_id: desk.as_bytes().to_vec(),
-            provider_id: FAKE_ACP_AGENT.into(),
-        }))
+        .person("laptop")
         .await
-        .expect("the desk answers what its agent offers")
-        .into_inner();
+        .unwrap()
+        .host(desk.as_bytes())
+        .catalogue(FAKE_ACP_AGENT)
+        .await
+        .expect("the desk answers what its agent offers");
     assert_eq!(
         Some(&catalogue.hash),
         offered.catalogue.as_ref(),

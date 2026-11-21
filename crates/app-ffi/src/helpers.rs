@@ -190,7 +190,7 @@ pub(crate) unsafe fn profile_act_on_profiles<T, F, Fut>(
 ) -> u64
 where
     T: Serialize + Send + 'static,
-    F: FnOnce(Arc<dyn client::Installation>, ProfileId) -> Fut,
+    F: FnOnce(client::Installation, ProfileId) -> Fut,
     Fut: Future<Output = Answered<T>> + Send + 'static,
 {
     guard(0, || {

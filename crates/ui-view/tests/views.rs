@@ -381,21 +381,27 @@ fn attachments_keep_their_positions() {
             mime: "image/png".into(),
             size: 10,
         })),
+        ..Default::default()
     };
     let text = wire::Attachment {
         of: Some(wire::attachment::Of::Text(wire::InlineText {
             name: "pasted".into(),
             text: "x\ny".into(),
         })),
+        ..Default::default()
     };
-    let tokens = segments("see \u{FFFC} and \u{FFFC}.", &[image.clone(), text.clone()]);
+    let tokens = segments(
+        "see \u{FFFC} and \u{FFFC}.",
+        &[image.clone(), text.clone()],
+        &[],
+    );
     assert_eq!(
         tokens,
         vec![
             Segment::Text("see ".into()),
-            Segment::Attachment(AttachmentView::of(&image)),
+            Segment::Attachment(AttachmentView::of(&image, &[])),
             Segment::Text(" and ".into()),
-            Segment::Attachment(AttachmentView::of(&text)),
+            Segment::Attachment(AttachmentView::of(&text, &[])),
             Segment::Text(".".into()),
         ]
     );
@@ -415,7 +421,7 @@ fn attachments_keep_their_positions() {
             rows[0].kind,
             RowKind::Prompt {
                 text: vec![
-                    Segment::Attachment(AttachmentView::of(&image)),
+                    Segment::Attachment(AttachmentView::of(&image, &[])),
                     Segment::Text("first".into())
                 ],
                 steered: false
@@ -686,76 +692,6 @@ fn a_fleet_filter_keeps_what_a_row_says_narrowed_to_a_state_or_a_host() {
         only: Some(FleetOnly::Working),
     };
     assert!(names(both).is_empty());
-}
-
-#[test]
-fn the_review_document_parses_files_hunks_and_places_comments() {
-    let patch = "diff --git a/src/a.rs b/src/a.rs\nindex 1..2 100644\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -10,3 +10,4 @@ fn a()\n keep\n-old\n+new\n+more\n keep2\ndiff --git a/new.txt b/new.txt\nnew file mode 100644\n--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1 @@\n+hello\ndiff --git a/x b/y\nsimilarity index 100%\nrename from x\nrename to y\n";
-    let comments = vec![
-        wire::ReviewComment {
-            path: "src/a.rs".into(),
-            line: 11,
-            old_line: 0,
-            text: "why new?".into(),
-        },
-        wire::ReviewComment {
-            path: "src/a.rs".into(),
-            line: 0,
-            old_line: 11,
-            text: "keep old".into(),
-        },
-        wire::ReviewComment {
-            path: "new.txt".into(),
-            line: 0,
-            old_line: 0,
-            text: "whole file".into(),
-        },
-    ];
-    let doc = review_doc(
-        &wire::Diff {
-            head: "abc".into(),
-            ..Default::default()
-        },
-        patch,
-        &comments,
-    );
-    assert_eq!(doc.files.len(), 3);
-    assert_eq!((doc.added, doc.removed), (3, 1));
-    let a = &doc.files[0];
-    assert_eq!(
-        (a.path.as_str(), a.status, a.added, a.removed),
-        ("src/a.rs", FileStatus::Modified, 2, 1)
-    );
-    // A hunk carries git's name for where it is, not its ranges; one that
-    // starts at a file's top leaves nothing out before it.
-    assert_eq!(
-        (a.hunks[0].skips, a.hunks[0].scope.as_str()),
-        (true, "fn a()")
-    );
-    assert_eq!(
-        (
-            doc.files[1].hunks[0].skips,
-            doc.files[1].hunks[0].scope.as_str()
-        ),
-        (false, "")
-    );
-    let lines = &a.hunks[0].lines;
-    assert_eq!(lines[0].old_line, Some(10));
-    assert_eq!(
-        (lines[2].kind, lines[2].new_line, lines[2].comments.clone()),
-        (LineKind::Added, Some(11), vec!["why new?".to_owned()])
-    );
-    assert_eq!(lines[1].comments, vec!["keep old".to_owned()]);
-    assert_eq!(doc.files[1].status, FileStatus::Added);
-    assert_eq!(doc.files[1].comments, vec!["whole file".to_owned()]);
-    assert_eq!(
-        (
-            doc.files[2].status,
-            doc.files[2].old_path.as_deref(),
-            doc.files[2].path.as_str()
-        ),
-        (FileStatus::Renamed, Some("x"), "y")
-    );
 }
 
 fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAsk>) -> Vec<u8> {
@@ -2180,14 +2116,35 @@ fn a_landed_edit_shows_its_numbered_patch_head_and_a_run_its_newest_subjects() {
                 ToolState::Succeeded,
             ),
             tool_item(4, "Edit", edit.clone(), patch, ToolState::Succeeded),
-            tool_item(5, "Edit", edit, json!({}), ToolState::Running),
+            tool_item(5, "Edit", edit.clone(), json!({}), ToolState::Running),
+            tool_item(
+                6,
+                "Edit",
+                edit,
+                json!({"structuredPatch": [
+                    {"oldStart": 2, "newStart": 2, "lines": ["+/* opened"]},
+                    {"oldStart": 40, "newStart": 41, "lines": ["+fn far() {}"]},
+                ]}),
+                ToolState::Succeeded,
+            ),
         ],
         true,
     );
+    let hunks = patch_head(&state, &"k6".to_owned(), 10).unwrap().hunks;
+    assert_eq!(
+        hunks
+            .iter()
+            .map(|hunk| (hunk.start, hunk.lines.len()))
+            .collect::<Vec<_>>(),
+        vec![
+            (Some(HunkStart { old: 2, new: 2 }), 1),
+            (Some(HunkStart { old: 40, new: 41 }), 1)
+        ],
+        "each hunk of the patch is its own"
+    );
     let head = patch_head(&state, &"k4".to_owned(), 3).expect("the landed edit has a head");
     let seen: Vec<(Option<u32>, LineKind, &str)> = head
-        .lines
-        .iter()
+        .lines()
         .map(|line| (line.number, line.kind, line.text.as_str()))
         .collect();
     assert_eq!(
@@ -2233,11 +2190,8 @@ fn a_landed_edit_shows_its_numbered_patch_head_and_a_run_its_newest_subjects() {
     };
     page(&mut codex, vec![change(ToolState::Succeeded)], true);
     let head = patch_head(&codex, &"change".to_owned(), 10).unwrap();
-    let seen: Vec<(Option<u32>, LineKind)> = head
-        .lines
-        .iter()
-        .map(|line| (line.number, line.kind))
-        .collect();
+    let seen: Vec<(Option<u32>, LineKind)> =
+        head.lines().map(|line| (line.number, line.kind)).collect();
     assert_eq!(
         seen,
         vec![
@@ -2280,8 +2234,7 @@ fn a_patch_head_keeps_hunk_lines_that_look_like_file_headers() {
     page(&mut codex, vec![change], true);
     let head = patch_head(&codex, &"change".to_owned(), 10).unwrap();
     let seen: Vec<(Option<u32>, LineKind, &str)> = head
-        .lines
-        .iter()
+        .lines()
         .map(|line| (line.number, line.kind, line.text.as_str()))
         .collect();
     assert_eq!(
@@ -2294,6 +2247,16 @@ fn a_patch_head_keeps_hunk_lines_that_look_like_file_headers() {
             (Some(10), LineKind::Added, "b"),
         ]
     );
+    // The two hunks stay apart, and a head cut short counts what it left.
+    let sizes = |head: &PatchHead| {
+        head.hunks
+            .iter()
+            .map(|hunk| hunk.lines.len())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(sizes(&head), vec![3, 2]);
+    let short = patch_head(&codex, &"change".to_owned(), 4).unwrap();
+    assert_eq!((sizes(&short), short.more), (vec![3, 1], 1));
 }
 
 fn sdk_item(order: u64, revision: u64, kind: wire::claude_item::Kind, text: &str) -> Item {
@@ -2396,6 +2359,7 @@ fn a_reply_opening_with_an_attachment_still_says_something_on_its_row() {
             mime: "text/plain".into(),
             size: 16,
         })),
+        ..Default::default()
     };
     let reply = Item {
         attachments: vec![file],
@@ -2427,6 +2391,7 @@ fn an_agent_message_carries_its_attachments_as_chips() {
             mime: "text/plain".into(),
             size: 27,
         })),
+        ..Default::default()
     };
     let message = Item {
         attachments: vec![file.clone()],
@@ -2460,7 +2425,7 @@ fn an_agent_message_carries_its_attachments_as_chips() {
         *text,
         vec![
             Segment::Text("second look at this ".into()),
-            Segment::Attachment(AttachmentView::of(&file)),
+            Segment::Attachment(AttachmentView::of(&file, &[])),
         ]
     );
 }
@@ -2747,28 +2712,40 @@ fn rows_hold_their_order_while_an_agent_streams() {
 
 #[test]
 fn changed_files_group_by_folder_with_root_files_first() {
-    let file = |path: &str, added, removed, change: wire::DiffFileChange| wire::DiffFile {
+    use wire::{ChangedFile as Changed, FileStatus as Status, GetChangesResponse};
+    let file = |path: &str, added, removed, status: Status| Changed {
         path: path.into(),
         added,
         removed,
-        change: change as i32,
-        binary: false,
-    };
-    let diff = wire::Diff {
-        files: vec![
-            file("src/b.rs", 3, 1, wire::DiffFileChange::Changed),
-            file("README.md", 2, 0, wire::DiffFileChange::Changed),
-            file("docs/x/y.md", 0, 9, wire::DiffFileChange::Deleted),
-            file("src/a.rs", 5, 0, wire::DiffFileChange::Created),
-            file("Cargo.toml", 1, 1, wire::DiffFileChange::Changed),
-        ],
+        status: status as i32,
+        language: "rust".into(),
         ..Default::default()
     };
-    let changes = changes(&diff);
+    let answer = GetChangesResponse {
+        base_branch: "origin/main".into(),
+        base_commit: "abc".into(),
+        files: vec![
+            file("src/b.rs", 3, 1, Status::Changed),
+            file("README.md", 2, 0, Status::Changed),
+            file("docs/x/y.md", 0, 9, Status::Deleted),
+            file("src/a.rs", 5, 0, Status::Created),
+            file("Cargo.toml", 1, 1, Status::Changed),
+            Changed {
+                old_path: Some("src/old.rs".into()),
+                ..file("src/new.rs", 0, 0, Status::Renamed)
+            },
+        ],
+    };
+    let changes = changes(&answer);
+    assert_eq!(
+        changes.base.as_deref(),
+        Some("origin/main"),
+        "the base the host used"
+    );
     assert_eq!(
         changes.totals,
         ChangeTotals {
-            files: 5,
+            files: 6,
             added: 11,
             removed: 11
         }
@@ -2786,12 +2763,18 @@ fn changed_files_group_by_folder_with_root_files_first() {
         vec![
             ("", vec!["Cargo.toml", "README.md"]),
             ("docs/x/", vec!["y.md"]),
-            ("src/", vec!["a.rs", "b.rs"]),
+            ("src/", vec!["a.rs", "b.rs", "new.rs"]),
         ]
     );
     let a = &changes.folders[2].files[0];
     assert_eq!((a.path.as_str(), a.status), ("src/a.rs", FileStatus::Added));
+    assert_eq!(a.language, "rust", "the language the host named");
     assert_eq!(changes.folders[1].files[0].status, FileStatus::Deleted);
+    let renamed = &changes.folders[2].files[2];
+    assert_eq!(
+        (renamed.status, renamed.old_path.as_deref()),
+        (FileStatus::Renamed, Some("src/old.rs"))
+    );
 }
 
 #[test]
@@ -2799,17 +2782,39 @@ fn the_overview_holds_the_changes_it_is_given() {
     let mut state = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     state.update(snapshot(Kind::Codex, Phase::Idle, vec![], vec![]));
     assert_eq!(overview(&state, None).changes, None);
-    let diff = wire::Diff::default();
+    let clean = wire::GetChangesResponse::default();
     assert_eq!(
-        overview(&state, Some(&diff)).changes,
+        overview(&state, Some(&clean)).changes,
         Some(Changes::default()),
         "a fetched clean tree is no changes, not unknown"
     );
     assert!(
-        diff_base(&state, Comparison::OnBranch).is_none(),
+        !Comparison::OnBranch.offered(&state),
         "no base branch, nothing to compare the branch with"
     );
-    assert!(diff_base(&state, Comparison::Uncommitted).is_some());
+    assert!(Comparison::Uncommitted.offered(&state));
+}
+
+/// The overview asks the agent's host for HEAD when it counts the
+/// uncommitted work, and for nothing on the branch, so the base is the
+/// host's to pick.
+#[test]
+fn the_overview_leaves_the_branchs_base_to_the_host() {
+    use wire::get_changes_request::Base;
+    assert!(matches!(
+        Comparison::Uncommitted.base(),
+        Some(Base::Head(_))
+    ));
+    assert_eq!(Comparison::OnBranch.base(), None);
+
+    let mut row = agent(Kind::Codex, Phase::Working);
+    row.git = Some(wire::Git {
+        branch: Some("main".into()),
+        base_branch: Some("main".into()),
+        ..Default::default()
+    });
+    let state = SessionState::new(row, CAP);
+    assert!(Comparison::OnBranch.offered(&state));
 }
 
 /// A prompt on its way stays where it was first drawn: at the feed's end
@@ -3400,12 +3405,12 @@ fn a_notebook_edit_ask_shows_the_cell_change() {
         )],
         vec![],
     );
-    let AskBody::Edit { lines, .. } = &card.body else {
+    let AskBody::Edit { patch, .. } = &card.body else {
         panic!("not an edit card: {:?}", card.body);
     };
     assert!(
-        format!("{lines:?}").contains("print(2)"),
-        "the notebook edit's card shows no change: {lines:?}"
+        format!("{patch:?}").contains("print(2)"),
+        "the notebook edit's card shows no change: {patch:?}"
     );
 }
 
@@ -3452,6 +3457,71 @@ fn a_multi_file_patch_ask_names_every_file_and_its_change() {
         assert!(
             shown.contains(name),
             "the patch card never names {name}: {shown}"
+        );
+    }
+}
+
+/// An edit ask's separate places in the file are hunks of their own: one
+/// replacement of a Claude edit, or one hunk of a Codex patch, each, so the
+/// code a client colours (`ui-code`, which colours each hunk as a fragment
+/// of its own) does not read a block comment the first leaves open into the
+/// next.
+#[test]
+fn an_edit_asks_places_are_hunks_of_their_own() {
+    let path = format!("{QA_CWD}/src/lib.rs");
+    let claude = card_of(
+        Kind::ClaudeSdk,
+        vec![claude_permission(
+            "MultiEdit",
+            serde_json::json!({"file_path": path, "edits": [
+                {"old_string": "fn a() {}", "new_string": "/* opened here"},
+                {"old_string": "fn b() {}", "new_string": "fn far() {}"},
+            ]}),
+        )],
+        vec![],
+    );
+    let codex = card_of(
+        Kind::Codex,
+        vec![],
+        vec![wire::CodexAsk {
+            key: "patch-1".into(),
+            item_key: "t1".into(),
+            body: Some(wire::codex_ask::Body::FileChange(
+                wire::FileChangeApproval {
+                    changes: vec![wire::FileChange {
+                        path: path.clone(),
+                        kind: wire::FileChangeKind::Update as i32,
+                        patch: "@@ -3 +3 @@\n-fn a() {}\n+/* opened here\n@@ -40 +40 @@\n-fn b() {}\n+fn far() {}\n".into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        }],
+    );
+    for (who, card) in [("claude", claude), ("codex", codex)] {
+        let AskBody::Edit { patch, .. } = &card.body else {
+            panic!("{who}: not an edit card: {:?}", card.body);
+        };
+        let [file] = patch.as_slice() else {
+            panic!("{who}: one file: {patch:?}");
+        };
+        let texts: Vec<Vec<&str>> = file
+            .hunks
+            .iter()
+            .map(|hunk| {
+                hunk.lines
+                    .iter()
+                    .filter(|line| line.kind == LineKind::Added)
+                    .map(|line| line.text.as_str())
+                    .collect()
+            })
+            .collect();
+        assert_eq!(
+            texts,
+            [vec!["/* opened here"], vec!["fn far() {}"]],
+            "{who}: each place is its own hunk"
         );
     }
 }
@@ -3640,22 +3710,6 @@ fn an_explore_step_keeps_its_failure_reason_and_its_result() {
     }
 }
 
-/// Git quotes a path holding a quote, a backslash or a non-ASCII letter in
-/// its patch headers (`"a/we ird<&>\"\303\251.txt"`). The review page names
-/// the file as it is on disk, which is also the path a review comment
-/// gives the agent, not git's quoted octal form.
-#[test]
-fn the_review_document_reads_gits_quoted_paths() {
-    let patch = "diff --git \"a/we ird<&>\\\"\\303\\251.txt\" \"b/we ird<&>\\\"\\303\\251.txt\"\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ \"b/we ird<&>\\\"\\303\\251.txt\"\n@@ -0,0 +1 @@\n+hello\n";
-    let doc = review_doc(&wire::Diff::default(), patch, &[]);
-    let paths: Vec<&str> = doc.files.iter().map(|file| file.path.as_str()).collect();
-    assert_eq!(
-        paths,
-        vec!["we ird<&>\"é.txt"],
-        "the review names the file in git's quoted form"
-    );
-}
-
 /// A command's output as a terminal shows it: colour codes are not text,
 /// and the words after a carriage return are kept, where the phone drew
 /// `[31mRED[0m` and cut `aaa\rbbb` to `aaa…`.
@@ -3775,6 +3829,7 @@ fn direction_controls_in_names_are_not_drawn_as_direction_changes() {
             mime: "application/octet-stream".into(),
             size: 16,
         })),
+        ..Default::default()
     };
     let reply = Item {
         attachments: vec![file],
@@ -4464,6 +4519,7 @@ fn an_older_steps_image_still_draws() {
     if let Some(wire::claude_item::Kind::Tool(tool)) = &mut body.kind {
         tool.attachments = vec![wire::Attachment {
             of: Some(wire::attachment::Of::Image(image.clone())),
+            ..Default::default()
         }];
     }
     read.body = body.encode_to_vec();

@@ -292,12 +292,14 @@ fn marked_history() -> ClientSessionHistory {
         attachments: vec![
             wire::Attachment {
                 of: Some(wire::attachment::Of::Image(blob(&hash("image")))),
+                ..Default::default()
             },
             wire::Attachment {
                 of: Some(wire::attachment::Of::Text(wire::InlineText {
                     name: marked(),
                     text: marked(),
                 })),
+                ..Default::default()
             },
         ],
         kind: kind as i32,
@@ -375,6 +377,7 @@ fn marked_history() -> ClientSessionHistory {
         text: marked(),
         attachments: vec![wire::Attachment {
             of: Some(wire::attachment::Of::File(blob(&hash("file")))),
+            ..Default::default()
         }],
         steer: false,
         sender: None,
@@ -410,6 +413,7 @@ fn marked_history() -> ClientSessionHistory {
                 text: marked(),
                 attachments: vec![wire::Attachment {
                     of: Some(wire::attachment::Of::Image(blob(&hash("sent-image")))),
+                    ..Default::default()
                 }],
             })),
         },

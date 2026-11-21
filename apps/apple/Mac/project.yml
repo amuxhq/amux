@@ -128,6 +128,10 @@ targets:
         excludes:
           - AmuxMacApp.swift
       - path: Tests
+      # The rule code's colours are held to, shared with the iPhone's
+      # tests so both apps check the same thing; the apps share no test
+      # package to carry it.
+      - path: ../Packages/AmuxFeatures/Tests/AmuxFeaturesTests/CodeContrast.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: sh.amux.desktop.tests

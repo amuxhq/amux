@@ -136,6 +136,13 @@ you move out of it if it's long. Click the count to open it again, or press
 Backspace just below it to remove the whole quote. Once sent, your message
 renders as markdown, like the agent's replies.
 
+Code blocks in the agent's replies, and the diff it asks permission to make,
+are coloured as an editor colours them when they're in a common language:
+Rust, Swift, TypeScript, JavaScript, Python, Go, C, C++, Java, shell, HTML,
+CSS, JSON, YAML, TOML and Markdown. Code in any other language shows in one
+colour. In a terminal limited to 16 colours, a diff's added and removed lines
+stay in the diff's own green and red, so they still read as changes.
+
 Attachments in the chat are underlined: click one to open it, or focus its
 message with the leader and `j` or `k` and press the leader then `o`. Pictures,
 PDFs and plain text open in their usual app, and anything else is shown in its
@@ -220,24 +227,49 @@ one at a time and end on a review of your answers.
 
 ## Reviewing changes
 
-Press Ctrl+A then `r`, or click `[Diff]` in the header, to open the review: the
-files the agent changed on the left, and every change on the right.
+Press Ctrl+A then `r`, or click `[Diff]` in the header, to open the review; a
+file in the overview opens it at that file. Reviews need the reviews
+experiment on the agent's computer; [Reviewing changes](reviews.md) explains
+how to switch it on, and how comments, rounds and **Since your last review**
+work.
+
+The review holds still while you read: if the agent changes code meanwhile,
+the page says so and `r` refreshes it.
 
 | Key | What it does |
 |---|---|
 | `j` `k` | Next or previous line |
+| `J` `K` | Next or previous change |
 | `]` `[` | Next or previous file |
-| `c` | Comment on the line, or on the whole file from its heading |
+| `c` or Enter | Comment on the line; `c` on a file's heading comments on the whole file |
+| `v`, or Shift+↓ ↑ | Select several lines, then `c` to comment on all of them |
+| Enter on a draft | Change its words; empty them to delete it |
+| `d` | Delete the comment under the cursor |
+| Enter on a file's heading, or `f` | Fold or open the file |
+| Enter or `e` on hidden lines | Show more lines above or below |
+| Tab | Switch between All changes and Since your last review |
+| `r` | Refresh to the code as it is now |
+| `D` | Discard your draft comments, asking first |
+| `S` | Start the review over, asking first |
 | `q` | Back to the chat |
 
-Your comments go into the message box as one review, ready to send to the
-agent with anything else you want to say.
+While you have drafts, the message box shows `[review · 3 comments ✕]`:
+whatever you send next carries them to the agent, with your message as the
+summary. Click the ✕ to discard them instead. When the agent has changed
+code since you wrote them, the chip adds `written on older code`
+([what that means](reviews.md#written-on-older-code)).
+
+A review you sent shows in the chat as `[review · 3 comments]`. Click it, or
+focus its message and press Ctrl+A then `o`, to see that round again
+([Look back at a round](reviews.md#look-back-at-a-round)); Enter on a file
+folds it, and `q` goes back to the chat.
 
 The header can count either your uncommitted changes, or everything since the
-branch left its base. Ctrl+A then `c` switches between the two. The count is of
-the agent's whole folder, so agents sharing one checkout count the same
-changes: it updates when any of them finishes a turn, and opening the review
-corrects it if the folder changed in between, say because you committed.
+branch left its base. Ctrl+A then `c` switches between the two. For an agent
+working on the base branch itself, everything on the branch is what isn't
+pushed yet: its commits since the upstream, and its uncommitted changes. The
+count is of the agent's whole folder, so agents sharing one checkout count
+the same changes: it updates when any of them finishes a turn.
 
 ## Chatting in each agent's own interface
 
@@ -301,6 +333,10 @@ Press `,` on home for settings:
   stay that way until something reaches them, and one that was working
   carries on where it left off; its chat marks where with "Resumed · after
   the computer restarted".
+
+  With `reviews` on, you can review an agent's changes, comment on its lines
+  and send the comments back round by round
+  ([Reviewing changes](reviews.md)).
 
 These settings belong to the computer, so your phone and every other terminal
 see a change at once. Copying when you select is the exception: it applies to

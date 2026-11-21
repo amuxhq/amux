@@ -129,15 +129,18 @@ fn attachments_follow_what_the_agent_takes() {
     };
     let image = wire::Attachment {
         of: Some(wire::attachment::Of::Image(blob("image/png"))),
+        ..Default::default()
     };
     let file = wire::Attachment {
         of: Some(wire::attachment::Of::File(blob("text/plain"))),
+        ..Default::default()
     };
     let text = wire::Attachment {
         of: Some(wire::attachment::Of::Text(wire::InlineText {
             name: "pasted".into(),
             text: "words".into(),
         })),
+        ..Default::default()
     };
     let takes_none = wire::AgentCapabilities {
         files: false,

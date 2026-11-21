@@ -52,6 +52,7 @@ and `resumed` (`resume`). The terminal corpus is
 | `sign_in_problem` | a rejected credential, set through the agent's `--settings` |
 | `steer_folded` | a message sent into the running turn, and another left queued for the next |
 | `usage` | one turn, then the usage windows read |
+| `review_attachment` | a review sent as the client sends one, with code holding `<`, `>` and `&`: the commented code quoted as written, and the review's diff command against the snapshot run |
 
 Every capture from `subagents_parallel` down was recorded with the two
 options amux's initialize sets so that each subagent's whole conversation,

@@ -1,43 +1,44 @@
 shell |  | agents | 0,62,402,778
 chat |  | keeper | 0,116,402,724
-chat.row.boundary | Started |  | 16,124,370,34
-chat.row.prompt | Remember this recovery turn. |  | 16,158,370,40
-chat.row.prose | The recovery state is safely stored. | final | 16,210,370,20
-chat.prose.render |  | rendered | 16,210,370,20
+chat.row.prompt | Remember this recovery turn. |  | 16,124,370,40
+chat.prose.render |  | rendered | 155,134,217,20
+chat.row.prose | The recovery state is safely stored. | final | 16,176,370,20
+chat.prose.render |  | rendered | 16,176,370,20
 chat.row.turn-end | <volatile>
-chat.row.prompt | Carry on. |  | 16,267,370,40
-chat.row.prose | A second turn arrived while you were away. | final | 16,319,370,20
-chat.prose.render |  | rendered | 16,319,370,20
+chat.row.prompt | Carry on. |  | 16,233,370,40
+chat.prose.render |  | rendered | 306,243,66,20
+chat.row.prose | A second turn arrived while you were away. | final | 16,285,370,20
+chat.prose.render |  | rendered | 16,285,370,20
 chat.row.turn-end | <volatile>
-chat.row.prompt | Pick up where we left off. |  | 16,377,370,40
-chat.row.prose | Back after the restart. | final | 16,428,370,20
-chat.prose.render |  | rendered | 16,428,370,20
+chat.row.prompt | Pick up where we left off. |  | 16,343,370,40
+chat.prose.render |  | rendered | 190,353,182,20
+chat.row.prose | Back after the restart. | final | 16,394,370,20
+chat.prose.render |  | rendered | 16,394,370,20
 chat.row.turn-end | <volatile>
-chat.exited | Exited · while amux was stopped | desk | 28,720,346,20
-chat.field | keeper has exited · a message resumes it |  | 28,750,346,24
+chat.exited | Stopped · while amux was stopped | desk | 28,720,346,20
+chat.field | Reply |  | 28,750,346,24
 chat.attach | Attach | closed | 23,779,44,44
 chat.model | claude-fake-1 · medium |  | 71,779,117,44
 chat.dictate | Dictate | idle | 228,779,44,44
 chat.resume | Resume |  | 276,779,103,44 (disabled)
 chat.more | More |  | 350,66,28,36
-chat.header | Exited · while amux was stopped | live | 76,66,221,36
-chat.title | keeper | keeper | 76,66,221,36
- | Exited · while amux was stopped, desk |  | 29,720,345,20
+chat.header | Stopped · while amux was stopped | live | 76,66,224,36
+chat.title | keeper | keeper | 76,66,224,36
+ | Stopped · while amux was stopped, desk |  | 29,720,345,20
  | Attach |  | 23,779,44,44
  | claude-fake-1 |  | 71,779,117,44
  | Dictate |  | 228,779,44,44
  | Resume |  | 276,779,103,44 (disabled)
- | Started |  | 16,124,370,34
- | Remember this recovery turn. |  | 16,158,370,40
- | The recovery state is safely stored. |  | 16,210,370,20
- | Worked <t> |  | 16,237,62,16
- | Carry on. |  | 16,267,370,40
- | A second turn arrived while you were away. |  | 16,319,370,20
- | Worked <t> |  | 16,347,62,16
- | Pick up where we left off. |  | 16,377,370,40
- | Back after the restart. |  | 16,428,370,20
- | Worked <t> |  | 16,456,62,16
+ | Remember this recovery turn. |  | 16,124,370,40
+ | The recovery state is safely stored. |  | 16,176,370,20
+ | Worked for <t> |  | 16,203,81,16
+ | Carry on. |  | 16,233,370,40
+ | A second turn arrived while you were away. |  | 16,285,370,20
+ | Worked for <t> |  | 16,313,81,16
+ | Pick up where we left off. |  | 16,343,370,40
+ | Back after the restart. |  | 16,394,370,20
+ | Worked for <t> |  | 16,422,81,16
 BackButton | Agents |  | 16,62,44,44
- | keeper, Exited · while amux was stopped |  | 76,66,221,36
+ | keeper, Stopped · while amux was stopped |  | 76,66,224,36
  | More |  | 350,66,28,36
  | Back |  | 16,73,44,23

@@ -290,6 +290,7 @@ pub(crate) fn presented(
         } else {
             wire::attachment::Of::File(blob)
         }),
+        ..Default::default()
     };
     (attachment, Effect::WriteBlob { hash, bytes })
 }

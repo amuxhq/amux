@@ -10,7 +10,7 @@ use super::layout::Anchor;
 use super::selection::{FeedSelection, Point, ScreenCells, ScreenSelection};
 use super::{
     ChatEffect, ChatView, HeaderControl, Press, Pressed, Selection, composer, line_places, pane,
-    wheel_lines,
+    review, wheel_lines,
 };
 use crate::theme::Theme;
 use crate::wheel::Direction;
@@ -38,9 +38,12 @@ impl ChatView {
             MouseEventKind::Up(MouseButton::Left) => return self.release(state, theme),
             _ => {}
         }
-        if self.review_open
-            && let Some(page) = &mut self.review
-        {
+        let shown = match &mut self.round {
+            Some((_, page)) => Some(page),
+            None if self.review_page_open => self.review_page.as_mut(),
+            None => None,
+        };
+        if let Some(page) = shown {
             match event.kind {
                 MouseEventKind::ScrollUp => {
                     self.selection = None;
@@ -155,6 +158,21 @@ impl ChatView {
                 }
                 let (x, y) = (event.column, event.row);
                 let on = |row: u16, (from, to): (u16, u16)| row == y && (from..to).contains(&x);
+                // The review chip: its ✕ asks to discard the drafts, the rest
+                // of it opens the review.
+                if let Some((row, chip, close)) = self.chip_spot
+                    && let Some(found) = self.review_chip(state)
+                {
+                    if on(row, close) {
+                        self.discard_ask = Some(review::Asking::new(review::Confirm::Discard {
+                            drafts: found.comments,
+                        }));
+                        return vec![];
+                    }
+                    if on(row, chip) {
+                        return vec![ChatEffect::Review];
+                    }
+                }
                 if let Some(spot) = self
                     .ask_spots
                     .iter()
@@ -481,6 +499,9 @@ impl ChatView {
         match hit {
             FeedHit::Link(url) => return vec![ChatEffect::OpenUrl(url)],
             FeedHit::Attachment(blob) => return vec![ChatEffect::OpenAttachment(blob)],
+            FeedHit::Round { review, text } => {
+                return vec![ChatEffect::ReviewRound { review, text }];
+            }
             FeedHit::Thumbnail { blob, .. } => {
                 return vec![match state.blob(&blob.hash) {
                     ui_state::BlobStatus::Failed(_) => ChatEffect::RetryBlob(blob.hash),

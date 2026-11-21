@@ -100,8 +100,7 @@ impl Desk {
     /// As an installation set up long ago: setting up dismissed, so bare
     /// `amux` opens on home. The daemon must be running.
     pub async fn set_up(&self) {
-        use client::Installation as _;
-        let door = client::GrpcInstallation::connect(&self.socket)
+        let door = client::Installation::connect(&self.socket, client::Surface::Terminal)
             .await
             .unwrap();
         door.answer_onboarding(wire::AnswerOnboardingRequest {

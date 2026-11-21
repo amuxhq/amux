@@ -437,7 +437,7 @@ fn draft_rows(editor: &Editor, room: usize) -> Vec<Vec<Cell>> {
     let mut at = 0usize;
     // Just after this row's last space: its cells and width to there.
     let mut after_space: Option<(usize, usize)> = None;
-    for segment in segments(editor.text(), editor.attachments()) {
+    for segment in segments(editor.text(), editor.attachments(), &[]) {
         match segment {
             Segment::Text(text) => {
                 for grapheme in text.graphemes(true) {

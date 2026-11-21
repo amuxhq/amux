@@ -14,9 +14,10 @@ forwarder, tickets and early data), `crates/node/src/routing/`
 (adjacency and the routing table), `crates/node/src/pairing/` and
 `crates/node/src/services/pairing.rs` (pairing), `crates/node/src/discovery/`
 (mDNS), `crates/node/src/edge/` (a profile's network edge, the cloud link and
-the relay server), and `crates/node/src/grpc.rs`,
-`crates/node/src/front_door.rs` and `crates/node/src/edge/peer.rs` (the
-services). The protobuf source is in
+the relay server), and `crates/node/src/api/` (the services and who may call
+them), `crates/node/src/carry.rs` (carrying a call to the host it is
+addressed to) and `crates/node/src/front_door.rs` (the installation's front
+door). The protobuf source is in
 [`proto/amux/v1/`](../proto/amux/v1/): link control in
 [`link.proto`](../proto/amux/v1/link.proto), pairing in
 [`pairing_service.proto`](../proto/amux/v1/pairing_service.proto),
@@ -24,9 +25,10 @@ the front door in
 [`installation_service.proto`](../proto/amux/v1/installation_service.proto),
 and each profile's administration in
 [`profile_admin_service.proto`](../proto/amux/v1/profile_admin_service.proto).
-A paired host calls the client services of
-[`agent_service.proto`](../proto/amux/v1/agent_service.proto) and
-[`session_service.proto`](../proto/amux/v1/session_service.proto).
+A paired host carries its people's and agents' calls to the host services
+(such as [`agent_service.proto`](../proto/amux/v1/agent_service.proto)), and
+its daemon asks for itself on
+[`peer_service.proto`](../proto/amux/v1/peer_service.proto).
 
 ## The promises, as properties
 
@@ -129,7 +131,9 @@ streams immediately. Deleting a profile destroys its whole trust store.
 Profiles never inherit another profile's pairing window, pins, routes or
 account.
 
-Trusted peers call the agent operations of `AgentService` and `SessionService`, answered for a peer
+A trusted peer carries its people's and agents' calls to this host's host
+services, answered for this host's own agents, and its daemon asks for itself
+on the peer service
 ([chapter 7](#chapter-7-the-front-door-and-the-amuxv1-services)).
 Installation and profile lifecycle live on the installation front door;
 a profile's trust and pairing-window administration live on that profile's
@@ -490,9 +494,11 @@ finished, gives up after two seconds.
 
 **The early-call rule.** Only reads go in 0-RTT data, because the far end may
 see early data more than once. The channel pool writes early only calls of
-one type (`EarlyCall` in `crates/node/src/link/channels.rs`):
-`SubscribeInventory`, `SubscribeSession`, `ListItems`, `GetBlob` and `GetDiff`. A send, a
-stop or a pairing call has no constructor there, so it cannot be early data.
+one type (`EarlyCall` in `crates/node/src/link/channels.rs`): the peer
+service's two follows, `FollowAgents` and `FollowSession`, which read and
+change nothing. A send, a stop or a pairing call has no constructor there, so
+it cannot be early data, and a call carried for a client rides only a link
+whose handshake has finished.
 If the far end refuses the early data (it lost the ticket, or the ticket was
 spent), the dialler opens the same streams again in the same order, control
 first, and writes the same calls as ordinary data once the handshake
@@ -651,14 +657,16 @@ the host as revoked and offline, and fails the call as `UNAUTHENTICATED`
 The channel pool (`crates/node/src/link/channels.rs`) selects a live link by
 peer and route, dialling one through the forwarder when the route is a
 forwarder's and none is up, opens a stream, and gives it to tonic as one
-HTTP/2 channel. It has two channel classes:
+HTTP/2 channel. A channel's calls name the peer's id as their authority, as a
+call carried there for a client does, so a capture reads the same at both
+ends; nothing on a link routes on it. It has two channel classes:
 
-- `Calls`: one cached channel per peer and route. The inventory subscription,
-  forwarded calls, `ListItems`, `GetBlob`, `GetDiff` and every other one-shot call
-  ride it. A cached channel whose connection ended is dropped, and the next
-  call opens a fresh stream.
+- `Calls`: one cached channel per peer and route. `FollowAgents`, the peer
+  service's one-shot calls (`ListItems`, `GetBlob`, `DeliverReport`) and
+  every call carried for a client ride it. A cached channel whose connection
+  ended is dropped, and the next call opens a fresh stream.
 - `Session`: one cached channel per peer and route for the replica agents'
-  `SubscribeSession` streams, so they neither wait behind nor hold up the host's
+  `FollowSession` streams, so they neither wait behind nor hold up the host's
   calls, and a host with many agents costs one stream, not one per agent.
 
 Separate streams give separate flow control, so a long subscription does not
@@ -667,6 +675,20 @@ queue behind calls at the amux layer. Channel payloads are bounded by
 `ATTACHMENT_SIZE_LIMIT` (64 MiB), with room for the `PutBlobRequest` framing
 around it.
 
+A link allows 64 bidirectional streams (`quic_transport_base` in
+`crates/node/src/identity.rs`), and the two classes use two. A call that
+finds no channel to a host within 10 s (`REACH_PATIENCE` in
+`crates/node/src/reach.rs`) closes the host's links it had to use and
+redials: on a link that looks up but has gone silent, as one does just after
+a laptop sleeps or a phone wakes, that is noticed in 10 s rather than at the
+idle timeout (40 s on a desktop, 80 s on the phone). It is right only because
+opening a stream on a live link never waits. A class that opens a channel per
+call, as a tunnel giving each connection a stream of its own would, must keep
+its streams within a budget below the link's limit and refuse a call past it
+as too busy; a wait for a free stream counted against `REACH_PATIENCE` would
+read a busy host as gone and close every link to it, ending every call on
+them.
+
 ### Compression
 
 Every channel to a paired host is compressed, in both classes, on every
@@ -674,7 +696,7 @@ route: one streaming zstd compressor each way, between HTTP/2 and the stream,
 inside the link's encryption, so a forwarder carries it without knowing it is
 there (`crates/node/src/transport/compress.rs`). The opener wraps its end in
 `ChannelPool::channel_over`; the acceptor wraps its
-end as `TunnelDispatcher` hands a paired host's stream to the agent and session services.
+end as `TunnelDispatcher` hands a paired host's stream to the services a link serves.
 Pairing channels, the link's control stream and local sockets are not
 compressed. Nothing on the wire announces it: both ends always compress.
 
@@ -780,7 +802,8 @@ Chapters 0 to 6 move bytes between hosts. What rides on them, and on the
 daemon's local sockets, is one set of gRPC services in the `amux.v1` protobuf
 package, generated into the `wire` crate. A terminal client, the CLI, an
 agent's tool server and a paired daemon all speak it; the agent process itself
-never does, because its directory and journal are its whole interface (see
+speaks it only to make the spawns its tool server asks it for, because its
+directory and journal are otherwise its whole interface (see
 [the agent process](AGENT_PROCESS.md)).
 
 ### Who listens where
@@ -788,10 +811,10 @@ never does, because its directory and journal are its whole interface (see
 | Endpoint | Services | Who dials it |
 | --- | --- | --- |
 | The installation front door, `<root>/amux.sock` | `InstallationService` | every client on this machine, to find profiles, sign them in and follow them |
-| A profile's client socket, `<data_dir>/profiles/<id>/sock` | `AgentService`, `SessionService`, `ProfileAdminService` | the terminal client, the CLI and third-party clients, at the path the front door reports as `Profile.socket_path` |
-| An agent's `agents/<id>/tools.sock` | `AgentService` and `SessionService`, with that agent as the caller | the agent's MCP tool server and, for the child a spawn asks for, its agent process; nothing else |
+| A profile's client socket, `<data_dir>/profiles/<id>/sock` | The local services (`InventoryService`, `SessionService`, `DraftService`), the host services (`AgentService`, `HostService`, `ReviewService`) and `ProfileAdminService`; a call addressed to another host is carried there | the terminal client, the CLI, the Mac app and third-party clients, at the path the front door reports as `Profile.socket_path` |
+| An agent's `agents/<id>/tools.sock` | The same, without `ProfileAdminService`, with that agent as the caller | the agent's MCP tool server and, for the child a spawn asks for, its agent process; nothing else |
 | A profile's `link.sock` | a link, not a service | `amux internal ssh-link`, carrying an SSH link |
-| A link stream whose handshake presented a pinned key | `AgentService` and `SessionService`, with that host as the caller | paired daemons, including a phone's embedded daemon |
+| A link stream whose handshake presented a pinned key | The host services, for that host's people and agents, and `PeerService`, for its daemon | paired daemons, including a phone's embedded daemon |
 | A link stream admitted by an open pairing window | `PairingService` | a host pairing with this one |
 
 The front door is `amux.sock` in the installation's root (default
@@ -810,7 +833,7 @@ and a remote host has no raw terminal attach.
 
 On a phone the same daemon runs in the app's process (`crates/app-embedded`).
 It serves no sockets: the app calls the profile `Registry`, each profile's
-`Edge` for its pairing and peers, and `ClientApi` in process, and it is an
+`Edge` for its pairing and peers, and its node's services in memory, and it is an
 ordinary peer to the desktops it pairs with.
 
 A client that finds nothing on the front door does not start a daemon itself.
@@ -868,80 +891,87 @@ client retries one of these calls. A call whose reply is lost, which on a
 local socket means the daemon went away, fails, and the person runs the
 command again.
 
-### AgentService and SessionService
+### The services
 
-`AgentService` and `SessionService` are the client-facing surface of one profile. `AgentService` is the fleet and its agents:
+The services are sorted by who answers them, so a client reads from its own
+node and acts on the owner ([the wire](WIRE.md#where-clients-call) has the
+calls in full):
 
-| Call | What it does |
-| --- | --- |
-| `SubscribeInventory` | The host set and every agent row: current state, `CaughtUp`, then deltas. A listing is this stream read to `CaughtUp`. |
-| `ResolveAgent` | A fleet-wide reference to one row: an id with or without dashes, the eight-character short id (or any longer prefix), a name, or `name@host`. `NOT_FOUND`, or `FAILED_PRECONDITION` when a bare name matches agents on several hosts; the message offers the `name@host` forms that pick each. Every other agent call takes an id. |
-| `CreateAgent` | Creates an agent, on this host or on a trusted host named by id or by name. |
-| `RenameAgent`, `FileAgent`, `ResumeAgent`, `DeleteAgent` | Registry operations. `FileAgent` files the agent as the person asked, apart from its lifecycle (see [filing](#filing)): closing ends a live agent now (its turn cancelled the provider's own way) and answers once it has ended; pinning or filing it active answers at once. A delete stops it if live and removes it. Each acts on the named agent alone; its children follow on their own hosts by [the family rule](#the-family-rule), so the answer says nothing of them. |
-| `SendMessage` | A message to an agent, whose sender the daemon stamps from the caller; see [agent tools](AGENT_TOOLS.md). |
-| `PutBlob`, `GetBlob`, `GetDiff` | Bytes in an agent's directory; see [attachments](ATTACHMENTS.md). |
-| `GetCatalogue` | What a provider on a host offers with no agent running, from the host's own copy. What an agent offers is a blob its snapshot names, read with `GetBlob`; see [the wire](WIRE.md). |
-| `PinFolder` | Pins a folder among a host's repositories (the `repositories` setting), or unpins it. The host applies it to its config file and its own entry's `folders` says the change, which every client sees through the inventory. A paired host may pin only on the answering host's own list. |
+| Kind | Services | Answered by | Served on |
+| --- | --- | --- | --- |
+| Local | `InventoryService` (hosts, agent rows, names resolved), `SessionService` (conversations and their files), `DraftService` (unsent drafts) | The node the client is attached to, from what it holds, its own agents and its copies alike, whether or not any other host is reachable | The profile socket, the phone's entry in memory, an agent's tools socket; never a link |
+| Host | `AgentService` (an agent's lifecycle, the delete preview, input, messages, files put), `HostService` (catalogues, pinning folders), `ReviewService` (changes) | The host the call is addressed to, for what it owns, the same however the call arrived apart from the rules about the caller | Every entry; a client's entry carries a call addressed to another host there |
+| Peer | `PeerService` (`FollowAgents`, `FollowSession`, `ListItems`, `GetBlob`, `DeliverReport`) | A host, to a paired daemon asking for itself | Link streams only |
 
-`SessionService` is one agent's conversation:
+Each local read has its feed in the peer service: a node keeps its copy of
+another host's inventory from `FollowAgents`, a conversation from
+`FollowSession`, older pages from `ListItems` and files from `GetBlob`.
+Replication is a daemon calling the peer service of its peer. A page older
+than the copy holds, and a file not fetched yet, make the node ask the owner
+while a client waits; that is the copy filling itself, asked as the node, and
+the client's call is never passed on.
 
-| Call | What it does |
-| --- | --- |
-| `SubscribeSession`, `ListItems`, `GetItem` | An agent's session stream, older pages, and one item; see [the wire](WIRE.md). |
-| `SendInput` | A person's input to an agent; the answer is the interpreter's verdict. |
-| `UpdateDraft`, `GetDraft` | An agent's unsent draft, kept by this machine's daemon for its own clients so it outlives a client closing; never synced, and refused to a paired host. |
-
-The implementation is `ClientApi` in `crates/node/src/grpc.rs`, a thin mapping
-onto the profile runtime. It holds the runtime weakly, so a connection that
+The implementation is the services in `crates/node/src/api`, a thin mapping
+onto the profile runtime: one handler set for each service, mounted on every
+entry that serves it, with the caller settled by the entry and handed to the
+handler as a value. It holds the runtime weakly, so a connection that
 outlives its runtime is answered `UNAVAILABLE` and the client redials.
 
 ### Calls on another host's agents
 
-Only the host that owns an agent can act on it. When a call names an agent
-whose row here is a replica, `ClientApi` makes the same call on the owner's
-daemon through its agent and session services, exactly as a phone would, and answers with what
-the owner answered (`crates/node/src/forward.rs`). A forwarded call fails in
+Only the host that owns an agent can act on it. A client addresses a call on
+another host's agent to that host, by naming the host's id as the call's
+authority (the UUID in its lowercase hyphenated form, the only form that
+addresses a host), and the node it is attached to carries the call there
+unread over the link, unary calls and streams alike, and passes back what the
+owner answered untouched (`crates/node/src/carry.rs`). The router in front of
+a client's entry (the profile socket, an agent's tools socket, the phone's
+entry) makes that choice on the authority alone: another host's id goes to
+the carrier, and anything else is answered here. The carrier knows no
+service, so a call this build has never heard of is carried too. The only
+thing the carrying node adds is who the call is for, in the `amux-caller-bin`
+header, from the caller its entry settled; a client cannot say who it is.
+Each carried call writes one line to the link log when it ends (the host,
+the method, how it ended, its status and how long it took), since it passes
+through no state machine and is seen nowhere else. A carried call fails in
 one of two ways, and they are kept apart because only the second may have
 reached the owner:
 
-- **Not sent.** The call never left: no link to the owner, the owner is not
-  trusted, or no channel opened within 10 seconds. That is
-  reason `HOST_UNREACHABLE` naming the host by the name it was paired under,
-  except for `SendInput`, which answers with a rejected verdict,
-  `REFUSAL_HOST_UNREACHABLE`, so a composer treats it like any other refusal.
-  When only the relay reaches the owner and the account is on the free plan
-  (its subscription lapsed), the relay carries no calls between hosts, and
-  the call is refused at once as that: reason `PAYMENT_REQUIRED` with a
-  sentence naming the lapse, for `SendInput` the same rejected verdict
-  with that sentence as its detail, and for `FileAgent`
-  reason `HOST_UNREACHABLE` with that sentence, so a client holds a close
-  as it holds any close that never left.
-- **Uncertain.** The call went out and its answer did not come back: the
-  link failed under it, or 30 seconds passed (enough for a spawn, which waits
-  for the child's process to start on the far side). That is
-  `ABORTED` for every call, `SendInput` included: the sender holds
-  the input as uncertain and settles it at its next catch-up, and nothing
-  sends it again.
+- **Not sent.** The call never left: no link to the owner, or no channel
+  opened within 10 seconds, is `FAILED_PRECONDITION` with reason
+  `HOST_UNREACHABLE`; the owner no longer trusting this host is
+  `UNAUTHENTICATED`. When only the relay reaches the owner and the account is
+  on the free plan (its subscription lapsed), the relay carries no calls
+  between hosts, and the call is refused at once as `PERMISSION_DENIED` with
+  reason `PAYMENT_REQUIRED`.
+- **Uncertain.** The call went out and no answer began within 30 seconds
+  (enough for a spawn, which waits for the child's process to start on the
+  far side), or the link failed under it, mid-stream included. That is `ABORTED` for every call: the
+  sender holds an input as uncertain and settles it at its next catch-up, and
+  nothing sends it again.
 
-Forwarding goes one hop. To a paired host the services answer only for this
-host's own agents and never pass a call on, so no two hosts can bounce a call between
-them, and no host reaches a third host's agent, or speaks for one, through
-another.
+The shared client runtime holds an input or a close that was not sent
+because the host was unreachable or the plan lapsed, and sends it when the
+host is back; one refused by a host that no longer trusts this machine is
+not held. The owner's own answers pass through as it gave them; a host whose
+build lacks the call answers `UNIMPLEMENTED` with no words, which clients
+read as that host needing an update. A call naming an agent the answering
+host holds only a copy of is `NOT_FOUND`, naming the host that owns it.
 
-`GetBlob` is answered from this host first: a replica's blob that was fetched
-before is read from the replica directory. Otherwise the owner is asked, the
-bytes are checked against their hash, and they are kept under the replica for
-the next reader.
+A carried call goes one hop. A call that arrives on a link is answered by the
+host it arrived at, for its own agents only, and never carried on, so no two
+hosts can bounce a call between them, and no host reaches a third host's
+agent, or speaks for one, through another.
 
-`CreateAgent` whose `host` names another host, by id or by name, becomes the
-same create on that host, its kind's settings passed on as the bytes they came
-as. A name is resolved against this host and the trusted
-hosts, an exact match first and then one ignoring case; no match is
-`NOT_FOUND` listing the known names, and several are `FAILED_PRECONDITION`
-saying how many answer.
+`CreateAgent` names no host: a create is made on the host it is addressed
+to, its kind's settings reaching it as the bytes they were sent as. A name a
+person uses for a host is resolved first, with `InventoryService.ResolveHost`
+against this host and the trusted hosts, an exact match first and then one
+ignoring case; no match is `NOT_FOUND` listing the known names, and several
+are `FAILED_PRECONDITION` saying how many answer. Whether the host runs the
+kind asked for is its own word, checked there.
 
-`CreateAgent` with `new_workspace` (named `new_worktree` until 0.9.1, at the
-same number and type) starts the agent in a new git worktree, made by the
+`CreateAgent` with `new_workspace` starts the agent in a new git worktree, made by the
 agent's host before the agent exists (`crates/node/src/workspaces/git.rs`).
 The client says only yes: the host puts the worktree under its installation
 folder, `worktrees/<repository>/<agent name>`, on a new branch named after the
@@ -989,10 +1019,8 @@ loss. It then holds until the workspace goes or gains an agent, so a parent
 deleted with consent still discards when its child, sharing the folder,
 follows by the family rule without it; a delete with other agents still
 working there agrees to lose none of their work. The removal waits for a
-stop of the workspace still running, whose hook holds it. A delete forwarded to the
-agent's host carries the field, and an older host ignores it and keeps the
-changes. Retention, the family rule and every client before the field never
-discard. The host checks for changes itself when it removes the workspace,
+stop of the workspace still running, whose hook holds it. Retention and the
+family rule never discard. The host checks for changes itself when it removes the workspace,
 whatever the rows said. A wt tree is claimed while one of its
 agents runs, started as the first launches (the launch does not wait for
 its start hook), and stopped once nothing holds it. A tree a person made
@@ -1001,32 +1029,45 @@ Every launch in a wt tree runs the provider in the tree's environment. One
 whose environment does not load launches without it and says so in the
 entry's `problem`. [Workspaces](WORKSPACES.md) has the lifecycle in full.
 
-### The client services on a link
+### On a link
 
-A paired daemon calls the same `AgentService` and `SessionService` over a link
-stream (`PeerApi` in `crates/node/src/edge/peer.rs` serves and answers them,
-apart from the local sockets' `ClientApi`); replication is a daemon being a client of
-its peer. The caller is the host whose pinned key the stream's handshake
-presented, and a call without one is refused as `UNAUTHENTICATED`. Only amux
-daemons call them, and each stamps what it says on behalf of its own callers,
-a message's sender and a create's parent, from those callers; the answering
-daemon takes them as given. A call from a peer differs from a client's in
-these ways:
+A link stream whose handshake presented a trusted key serves the host
+services and the peer service, and no local service
+(`crates/node/src/edge/peer.rs` serves those of `crates/node/src/api` there).
+The calling host is the one the handshake authenticated; a stream not from a
+trusted link is refused `UNAUTHENTICATED`. Whom a call is for, the caller
+header says:
 
-- It answers only for this host's own agents. Its inventory stream carries
+- **With a header**, the call was carried for a person at that host or one
+  of its agents, as the header names them. Only host services answer it. The
+  header never names a host, so a host speaks only for its own people and
+  agents, and its word is taken as given: paired hosts are trusted to say
+  what is true of their own callers.
+- **Without one**, it is that host's daemon asking for itself, which only
+  `PeerService` answers. A host service refuses it, and `PeerService` refuses
+  a call with a header (`PERMISSION_DENIED` both ways), so a client cannot
+  reach the peer service through its node, and a daemon never acts as a
+  person.
+
+What a paired host may reach follows from that, with no list of refusals:
+
+- It is answered only for this host's own agents. `FollowAgents` carries
   this host's entry and this host's agents, never what this host knows of
-  other hosts. Every call that names an agent (`SubscribeSession`, `ListItems`, `GetItem`,
-  `SendInput`, `RenameAgent`, `FileAgent`, `ResumeAgent`, `DeleteAgent`,
-  `PutBlob`, `GetBlob` and `GetDiff`) is `NOT_FOUND` for an agent this host only
-  replicates, even when this host holds that agent's rows or blobs.
-- `SubscribeSession` may ask for what came `after` a revision: that is how a
-  replica catches up from its cursor ([the wire](WIRE.md) describes it). A
-  client's `after` is refused.
-- `SendMessage`'s `Envelope` comes stamped by the calling host's daemon, and
-  its sender is taken as given; a client's sender is always the caller.
-- `PinFolder` answers for this host only.
-- `ResolveAgent` and the drafts are refused: a peer resolves names itself, and
-  a draft stays on the machine it was typed on.
+  other hosts, and a host-service call naming an agent this host only
+  replicates is `NOT_FOUND`, naming its owner, even when this host holds
+  that agent's rows or files.
+- Nothing that arrives on a link is carried on: a link's server has no
+  router.
+- Only `FollowSession` resumes from a cursor (`after` a revision): that is
+  how a replica catches up ([the wire](WIRE.md) describes it). A client's
+  `SubscribeSession` has only a tail.
+- A message's sender and a create's parent are the caller, never the
+  request; a child's report travels on `PeerService.DeliverReport`, which
+  only the child's daemon calls.
+- Names, drafts and other hosts are local services, not served on a link: a
+  peer resolves names itself, and a draft stays on the machine it was typed
+  on.
+- `PinFolder` answers for this host only, and only for a person.
 
 ### Filing
 
@@ -1095,11 +1136,11 @@ host before this host caught up with it may so outlive a parent deleted
 meanwhile: orphans are acceptable. Such a child finishes its work and exits,
 and a later clean-up of leftover agents collects what remains.
 
-A create names its parent (the caller, or for a create forwarded from another
-host, the parent that host stamped). If this host already sees that parent as
-exited, or as deleted (its own agent with no row), the create is refused as
-`FAILED_PRECONDITION`. The parent check and the child's row are written under
-one hold of the store, so a parent that ends after the check finds the child
+A create's parent is its caller: an agent of this host on its tools socket,
+or an agent of a paired host whose call that host carried here. If this host
+already sees that parent as exited, or as deleted (its own agent with no
+row), the create is refused as `FAILED_PRECONDITION`. The parent check and
+the child's row are written under one hold of the store, so a parent that ends after the check finds the child
 and stops it. A parent on another host is checked only against a caught-up
 row: while this host has not caught up with that host's listing since they
 last connected, or holds no row for the parent yet, the create is made, and
@@ -1110,37 +1151,47 @@ the children, which may be on hosts that are away.
 
 ### The tools socket
 
-Each agent's `tools.sock` serves the same `AgentService` and
-`SessionService`, and not `ProfileAdminService`, with one difference: the socket is the caller's identity. The daemon binds it when it
-starts the agent's process, and whatever arrives on it is from that agent, so
-no request carries an agent id or a token claiming one. On that socket:
+Each agent's `tools.sock` serves what the profile socket serves, and not
+`ProfileAdminService`, with one difference: the socket is the caller's
+identity. The daemon binds it when it starts the agent's process, and
+whatever arrives on it is from that agent, so no request carries an agent id
+or a token claiming one. A call it addresses to another host is carried
+there as from that agent, and the agent's own host is never asked to check
+it: the rules about an agent caller are the owner's, so they hold the same
+for an agent here and for one of a paired host.
 
 - `CreateAgent` makes the caller the child's parent, and takes only the
   kind's default settings, as the spawn tool sends them: a permission mode,
   model, effort or provider arguments are refused, being the person's to
-  choose.
-- `SendMessage` stamps the caller as the message's sender.
-- Every call on a named agent (`SendInput`, `FileAgent`, `RenameAgent`,
-  `ResumeAgent`, `DeleteAgent`, the blob, diff, draft and session reads) goes
-  only to one of the caller's own direct children, refused with
-  `PERMISSION_DENIED` otherwise; the stop tool's interrupt is the input an
-  agent sends. `FileAgent` there only closes: pinning and filing open are
-  the person's. An agent reaches any other agent by messaging it.
+  choose. One of this host's agents that names no folder starts its child
+  where it works itself; on another host it names one.
+- `SendMessage`'s sender is the caller, and an agent may message any agent.
+- Every other call naming an agent (`SendInput`, `SetFiling`, `RenameAgent`,
+  `ResumeAgent`, `DeleteAgent`, `PreviewDelete`, `PutBlob`, `GetChanges`)
+  the owner answers only for one of the caller's own direct children,
+  refused with `PERMISSION_DENIED` otherwise, and the node lets an
+  agent read only its own children's conversations, files and drafts. `SetFiling`
+  for an agent only closes: pinning and filing open are the person's, and so
+  is `PinFolder`. An agent reaches any other agent by messaging it.
+- The reviews experiment's `Reviews1` refuses an agent with
+  `PERMISSION_DENIED`, even for its own children: a review is a person's, and an agent reads what it is sent. It is never mounted on an
+  agent's tools socket, so there it answers `UNIMPLEMENTED`.
 
 [Agent tools](AGENT_TOOLS.md) describes the tool server that dials it.
 
 ### Agent messaging across hosts
 
-`SendMessage` carries an `Envelope` whose `to` is a host and an
-agent. The daemon stamps the envelope's sender from the caller
-(the person, or the calling agent with this host's id and its name). When the
-host is another one, it makes the call on the recipient's daemon with that
-envelope. That daemon takes the sender the calling daemon stamped and delivers
-through the recipient's lane exactly as it would for a local sender. A message
-that arrived from a peer for a third host is not passed on. A child's
-"finished" or "failed" report to a parent on another host travels the same
-way, carrying the parent's incarnation so the parent's own daemon can drop it
-for any other incarnation.
+`SendMessage` is addressed to the recipient's host, and names the recipient
+by its id there; a message to an agent on another host is a carried call
+like any other. The recipient's host builds the stored envelope's sender
+from the caller (a person, or the calling agent with its host's id and its
+name), and delivers through the recipient's lane exactly as it would for a
+local sender. A message's attachments name files on the sender's host, which
+the recipient's host fetches with `PeerService.GetBlob` before it hands the
+message over. A child's "finished" or "failed" report to a parent on another
+host is not a message: the child's daemon calls the parent's host's
+`PeerService.DeliverReport` for itself, carrying the parent's incarnation so
+the parent's own daemon can drop it for any other incarnation.
 [Agent tools](AGENT_TOOLS.md#across-hosts) describes the whole path.
 
 ### Errors
@@ -1176,14 +1227,21 @@ person's report around a dump the client took, with the client's
 `report.json` and frame, and sends it to the profile's account service,
 answering where it is kept and the receipt or why it was not sent.
 Diagnostics use the ordinary calls; they create no link messages or
-authority path. [Debugging](DEBUGGING.md) covers reading a report.
+authority path. A call this host carried to another passes through no state
+machine, so the core's record has no trace of it; its line in the link log,
+in the daemon's log, is where it shows. [Debugging](DEBUGGING.md) covers
+reading a report.
 
 ## Chapter 9: Blob routing
 
-`GetBlob`, `PutBlob` and `GetDiff` on another host's agent, and `GetCatalogue` for
-another host's provider, are forwarded calls like any other, on the `Calls`
-channel. The bytes are content-addressed, so a relay never needs to understand
-them and the reader verifies them against the hash it asked for. An agent's
+`PutBlob` for another host's agent, and `GetCatalogue` of
+another host's provider, are carried calls like any other, on the `Calls`
+channel. `GetBlob` is a local read: the node answers from its copy, and
+fetches a file it does not hold yet from the owner's `PeerService.GetBlob`
+as itself, on the same channel, checks it against its hash and keeps it under
+the replica for the next reader. The bytes are content-addressed, so a relay
+never needs to understand them and the reader verifies them against the hash
+it asked for. An agent's
 catalogue is one of its blobs, so it is never decoded on the way and keeps its
 hash through a daemon of any version. Where blobs live and how long they last
 is described in [attachments](ATTACHMENTS.md).

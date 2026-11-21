@@ -18,6 +18,7 @@ base64 = { workspace = true }
 bytes = { workspace = true }
 jiff = { workspace = true }
 clap = { workspace = true }
+client = { workspace = true }
 daemon-core = { workspace = true }
 futures-util = { workspace = true }
 http-body-util = { workspace = true }
@@ -38,7 +39,6 @@ rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 settings = { workspace = true }
-sha2 = { workspace = true }
 shot = { path = "../shot" }
 store = { workspace = true }
 tempfile = { workspace = true }
@@ -51,14 +51,13 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 toml = { workspace = true }
 tui = { workspace = true }
 unicode-width = "0.2"
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
 wire = { workspace = true, features = ["grpc"] }
 zstd = { workspace = true }
 
 [dev-dependencies]
 analytics = { workspace = true }
 app-runtime = { workspace = true }
-client = { workspace = true }
 ui-runtime = { workspace = true }
 ui-state = { workspace = true }
 ui-view = { workspace = true }

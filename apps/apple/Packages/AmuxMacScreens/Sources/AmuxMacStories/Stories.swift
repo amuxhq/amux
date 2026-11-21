@@ -167,7 +167,7 @@ public enum Stories {
             phaseSinceMs: Int64(Date.now.timeIntervalSince1970 * 1000) - ago * 1000,
             host: host, hostReach: reach, children: children, familyAttention: attention,
             members: children + 1, descendants: children, backgroundJobs: 0, closeHeld: false, filing: filing,
-            topLevel: true, native: false, branch: branch, exitCause: exit, repository: repository(cwd), workspaceGoes: nil)
+            topLevel: true, native: false, branch: branch, exitCause: exit, repository: repository(cwd))
     }
 
     /// The repository the runtime would name for a folder under /src, as if
@@ -241,8 +241,7 @@ public enum Stories {
     /// Deleting an agent whose worktree goes, once its host answers with
     /// `answer`; a host that never answers when nil.
     @MainActor private static func deleting(answer: DeleteWarning?) -> some View {
-        var agent = card(12, "Fix the scroll jump", on: machine, .idle, ago: 600)
-        agent.workspaceGoes = WorkspaceGoes(branch: "fix-scroll", branchCommits: nil, uncommitted: nil)
+        let agent = card(12, "Fix the scroll jump", on: machine, .idle, ago: 600)
         return DeleteSheet(card: agent, ask: { _ in
             guard let answer else {
                 try? await Task.sleep(for: .seconds(86_400))
@@ -287,7 +286,7 @@ public enum Stories {
     ) -> HostView {
         HostView(
             hostId: Array(repeating: number, count: 16), name: name, local: local, trusted: true, candidate: false,
-            reach: reach, addrs: [], relayOnly: false, pairingOpen: false, current: true, providers: agents,
+            reach: reach, link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: true, providers: agents,
             lastDialError: nil, platform: platform, signedIn: true, through: nil,
             version: "0.9.0")
     }
@@ -405,7 +404,8 @@ public enum Stories {
     private static func text(_ words: String) -> [Segment] { [.text(words)] }
 
     private static func frame(
-        _ card: FleetCard, _ phase: PhaseView, activity: ActivityKind? = nil, mode: Composer = .send
+        _ card: FleetCard, _ phase: PhaseView, activity: ActivityKind? = nil, mode: Composer = .send,
+        chip: ReviewChip? = nil
     ) -> ChatFrame {
         ChatFrame(
             agent: card.agent, name: card.name,
@@ -429,7 +429,7 @@ public enum Stories {
                 checkout: Checkout(root: card.cwd, main: nil, remote: "github.com/amuxhq/amux"),
                 onBranch: ChangeTotals(files: 3, added: 48, removed: 12),
                 uncommitted: ChangeTotals(files: 2, added: 30, removed: 4)),
-            signIn: nil)
+            reviewChip: chip, signIn: nil)
     }
 
     private static let conversationRows: [Row] = [
@@ -469,7 +469,7 @@ public enum Stories {
     ]
 
     private static let reconnectEdit = FileRow(
-        path: "crates/relay/tests/reconnect.rs", change: .edited, added: 6, removed: 3, line: 41)
+        path: "crates/relay/tests/reconnect.rs", change: .edited, added: 3, removed: 2, line: 40)
 
     private static let workingRows: [Row] = [
         r("r1", .prompt(text: text("Draft the release notes for 0.9.0 from the changelog."), steered: false)),
@@ -505,94 +505,6 @@ public enum Stories {
     } + [
         r("r7", command("cargo test -p relay -- --test-threads 1", .asking), attention: true),
     ]
-
-    private static let review = ReviewDoc(
-        base: "main", head: "relay-flake",
-        files: [
-            ReviewFile(
-                path: "crates/relay/tests/reconnect.rs", status: .modified, added: 6, removed: 3, binary: false,
-                hunks: [
-                    Hunk(
-                        skips: true, scope: "async fn reconnect_after_cut() {",
-                        lines: [
-                            DiffLine(kind: .context, text: "    let relay = Relay::start().await;", comments: [], newLine: 38, oldLine: 38),
-                            DiffLine(kind: .context, text: "    let link = relay.dial(&host).await?;", comments: [], newLine: 39, oldLine: 39),
-                            DiffLine(kind: .removed, text: "    // Give the hello time to land.", comments: [], newLine: nil, oldLine: 40),
-                            DiffLine(kind: .removed, text: "    tokio::time::sleep(Duration::from_millis(50)).await;", comments: [], newLine: nil, oldLine: 41),
-                            DiffLine(kind: .removed, text: "    relay.cut(&link);", comments: [], newLine: nil, oldLine: 42),
-                            DiffLine(kind: .added, text: "    // Cut only once the relay has acknowledged the hello:", comments: [], newLine: 40, oldLine: nil),
-                            DiffLine(kind: .added, text: "    // a slow runner otherwise races the first handshake.", comments: [], newLine: 41, oldLine: nil),
-                            DiffLine(kind: .added, text: "    link.settled().await;", comments: ["Is there a timeout on settled()? A link that never settles would hang the test."], newLine: 42, oldLine: nil),
-                            DiffLine(kind: .added, text: "    relay.cut(&link);", comments: [], newLine: 43, oldLine: nil),
-                            DiffLine(kind: .context, text: "", comments: [], newLine: 44, oldLine: 43),
-                            DiffLine(kind: .context, text: "    let back = link.reconnected().await?;", comments: [], newLine: 45, oldLine: 44),
-                        ]),
-                ],
-                comments: [], oldPath: nil),
-            ReviewFile(
-                path: "crates/relay/src/link.rs", status: .modified, added: 3, removed: 0, binary: false,
-                hunks: [
-                    Hunk(
-                        skips: true, scope: "impl Link {",
-                        lines: [
-                            DiffLine(kind: .context, text: "    /// Resolves once the relay acknowledged the hello.", comments: [], newLine: 120, oldLine: 120),
-                            DiffLine(kind: .added, text: "    pub async fn settled(&self) {", comments: [], newLine: 121, oldLine: nil),
-                            DiffLine(kind: .added, text: "        self.hello.wait().await", comments: [], newLine: 122, oldLine: nil),
-                            DiffLine(kind: .added, text: "    }", comments: [], newLine: 123, oldLine: nil),
-                        ]),
-                ],
-                comments: [], oldPath: nil),
-        ],
-        added: 9, removed: 3)
-
-    private static func line(_ kind: LineKind, _ text: String, old: UInt32?, new: UInt32?, comments: [String] = []) -> DiffLine {
-        DiffLine(kind: kind, text: text, comments: comments, newLine: new, oldLine: old)
-    }
-
-    /// A review of every kind of file a diff holds: changed in two places
-    /// with a comment and a line too long for the column, added, renamed
-    /// with an edit, deleted (folded), and binary.
-    private static let wideReview = ReviewDoc(
-        base: "main", head: "relay-flake",
-        files: review.files + [
-            ReviewFile(
-                path: "crates/relay/src/backoff.rs", status: .added, added: 9, removed: 0, binary: false,
-                hunks: [
-                    Hunk(skips: false, scope: "", lines: [
-                        line(.added, "//! How long a dial waits before it tries again.", old: nil, new: 1),
-                        line(.added, "", old: nil, new: 2),
-                        line(.added, "use std::time::Duration;", old: nil, new: 3),
-                        line(.added, "", old: nil, new: 4),
-                        line(.added, "/// Doubles from 50 ms, capped at 2 s, so a cut link is redialled quickly at first and politely after.", old: nil, new: 5),
-                        line(.added, "pub fn backoff(attempt: u32) -> Duration {", old: nil, new: 6),
-                        line(.added, "    let ms = 50u64.saturating_mul(1 << attempt.min(6));", old: nil, new: 7),
-                        line(.added, "    Duration::from_millis(ms.min(2_000))", old: nil, new: 8),
-                        line(.added, "}", old: nil, new: 9),
-                    ]),
-                ],
-                comments: [], oldPath: nil),
-            ReviewFile(
-                path: "crates/relay/src/dial.rs", status: .renamed, added: 2, removed: 2, binary: false,
-                hunks: [
-                    Hunk(skips: true, scope: "pub async fn dial(&self, host: &Host) -> Result<Link> {", lines: [
-                        line(.context, "    let mut attempt = 0;", old: 31, new: 31),
-                        line(.removed, "    tokio::time::sleep(Duration::from_millis(100)).await;", old: 32, new: nil),
-                        line(.removed, "    attempt += 1;", old: 33, new: nil),
-                        line(.added, "    tokio::time::sleep(backoff(attempt)).await;", old: nil, new: 32,
-                             comments: ["Should the first try wait at all?"]),
-                        line(.added, "    attempt = attempt.saturating_add(1);", old: nil, new: 33),
-                        line(.context, "    self.connect(host).await", old: 34, new: 34),
-                    ]),
-                ],
-                comments: [], oldPath: "crates/relay/src/connect.rs"),
-            ReviewFile(
-                path: "crates/relay/src/legacy_retry.rs", status: .deleted, added: 0, removed: 24, binary: false,
-                hunks: [], comments: [], oldPath: nil),
-            ReviewFile(
-                path: "docs/images/relay-reconnect.png", status: .modified, added: 0, removed: 0, binary: true,
-                hunks: [], comments: [], oldPath: nil),
-        ],
-        added: 20, removed: 29)
 
     // MARK: - Subagents
 
@@ -717,7 +629,7 @@ public enum Stories {
         chatStory("chat.conversation", flaky) {
             StillChat(
                 rows: conversationRows, frame: frame(flaky.card, .idle),
-                changes: ChangeTotals(files: 1, added: 6, removed: 3), settings: claude)
+                changes: ChangeTotals(files: 1, added: 3, removed: 2), settings: claude)
         },
         chatStory("chat.asking", flaky) {
             StillChat(
@@ -735,7 +647,7 @@ public enum Stories {
                     ],
                     questionNote: true, questionSkip: true, questionReply: true, replyInstead: false, stopsTurn: true, defaultToNo: false,
                     state: .open),
-                changes: ChangeTotals(files: 1, added: 6, removed: 3), settings: claude)
+                changes: ChangeTotals(files: 1, added: 3, removed: 2), settings: claude)
         },
         Story("chat.subagents") {
             MainStory(
@@ -767,12 +679,374 @@ public enum Stories {
                 chat: {
                     let chat = StillChat(
                         rows: conversationRows, frame: frame(flaky.card, .idle),
-                        changes: ChangeTotals(files: 1, added: 6, removed: 3), settings: claude)
-                    chat.reviewing = StillReview(doc: review, selected: ReviewSpot(file: 0, hunk: 0, line: 6))
+                        changes: ChangeTotals(files: 3, added: 18, removed: 6), settings: claude)
+                    chat.page = StillReviewPage(page: firstLook())
                     return chat
                 }())
         },
     ]
+
+    // MARK: - The agent's review
+
+    /// The relay flake's chat with its review open in the tool window.
+    private static func reviewStory(
+        _ name: String, rows: [Row] = conversationRows, chip: ReviewChip? = nil,
+        _ page: @escaping @MainActor @Sendable () -> StillReviewPage
+    ) -> Story {
+        Story(name) {
+            MainStory(
+                MainContent(profiles: [signedIn], fleet: busy, hosts: paired, thisMac: thisMac),
+                place: Place(agent: flaky.card.agent, changes: true),
+                chat: {
+                    let chat = StillChat(
+                        rows: rows, frame: frame(flaky.card, .idle, chip: chip),
+                        changes: ChangeTotals(files: 3, added: 18, removed: 6), settings: claude)
+                    chat.page = page()
+                    chat.reviewChip = chip
+                    return chat
+                }())
+        }
+    }
+
+    private static let snapshot = "5e1d0c94b2a7"
+    private static let base = "a41f2b7e9013"
+    private static let lastRound = "c03b9e2d17f4"
+    private static let test = "crates/relay/tests/reconnect.rs"
+    private static let link = "crates/relay/src/link.rs"
+
+    /// The relay flake's fix on a first look, everything against main: the
+    /// lock file folded, the link's new call, and the test's edit with a
+    /// draft on the line that waits for the link to settle.
+    private static func firstLook(banners: [ReviewBanner] = []) -> ReviewPage {
+        ReviewPage(
+            banners: banners,
+            rows: [
+                fileHead("Cargo.lock", added: 12, removed: 4, flags: [.lockfile], folded: true),
+                fileHead(link, added: 3, removed: 0),
+                hunkHead(link, old: 120, new: 120, against: base, scope: ["impl Link"]),
+                kept(link, 120, 120, "    /// Resolves once the relay acknowledged the hello."),
+                put(link, 121, "    pub async fn settled(&self) {"),
+                put(link, 122, "        self.hello.wait().await"),
+                put(link, 123, "    }"),
+                gap(link, "end", hidden: nil, down: (124, 143, nil)),
+                fileHead(test, added: 3, removed: 2, comments: 1),
+                gap(test, "top", hidden: 37, up: (36, 37, "async fn reconnect_after_cut")),
+                hunkHead(test, old: 38, new: 38, against: base, scope: ["async fn reconnect_after_cut"]),
+                kept(test, 38, 38, "    let relay = Relay::start().await;"),
+                kept(test, 39, 39, "    let link = relay.dial(&host).await?;"),
+                cut(test, 40, "    // Give the hello time to land.", changed: ["Give the hello time to land."]),
+                cut(test, 41, "    tokio::time::sleep(Duration::from_millis(50)).await;"),
+                put(test, 40, "    // Cut only once the relay has acknowledged the hello:",
+                    changed: ["Cut only once the relay has acknowledged the hello:"]),
+                put(test, 41, "    // a slow runner otherwise races the first handshake."),
+                put(test, 42, "    link.settled().await;", commented: true),
+                comment(
+                    "draft-settled", test,
+                    "Is there a timeout on settled()? A link that never settles would hang the test.",
+                    .draft, .lines(start: 42, end: 42)),
+                kept(test, 42, 43, "    relay.cut(&link);"),
+                kept(test, 43, 44, ""),
+                kept(test, 44, 45, "    let back = link.reconnected().await?;"),
+                gap(test, "end", hidden: nil, down: (46, 65, "async fn reconnect_after_cut")),
+            ],
+            toFetch: [], opening: false, empty: nil,
+            header: header(view: .all, files: 3, added: 18, removed: 6, drafts: 1, sent: 0))
+    }
+
+    /// The row the second comment on the first look is being written under:
+    /// the test's line after the reconnect.
+    private static var firstLookWriting: Int {
+        firstLook().rows.firstIndex { $0.key == "l/\(test)/44/45" } ?? 0
+    }
+
+    /// The next look, after one round: since the last review the agent put
+    /// a timeout round the wait, so the comment sent on that line is
+    /// outdated and folded, the one sent on the dial sits with its code as
+    /// it was, its code nearby changed, and a new draft is on the new line.
+    private static let sinceLast = ReviewPage(
+        banners: [],
+        rows: [
+            fileHead(test, added: 1, removed: 1, changedSinceLast: true, comments: 3),
+            comment(
+                "sent-settled", test,
+                "Is there a timeout on settled()? A link that never settles would hang the test.",
+                .sent(round: 1), .outdated, scope: ["async fn reconnect_after_cut"],
+                snippet: [
+                    line(test, .added, "    // a slow runner otherwise races the first handshake.", new: 41),
+                    line(test, .added, "    link.settled().await;", new: 42),
+                ],
+                folded: true),
+            gap(test, "top", hidden: 40, up: (21, 40, nil)),
+            comment(
+                "sent-dial", test, "Name the host in the dial, so a failure says which one it was.",
+                .sent(round: 1), .lines(start: 39, end: 39), changedNear: true,
+                scope: ["async fn reconnect_after_cut"],
+                snippet: [
+                    line(test, .context, "async fn reconnect_after_cut() -> Result<()> {", old: 37, new: 37),
+                    line(test, .context, "    let relay = Relay::start().await;", old: 38, new: 38),
+                    line(test, .context, "    let link = relay.dial(&host).await?;", old: 39, new: 39),
+                ]),
+            hunkHead(test, old: 41, new: 41, against: lastRound, scope: ["async fn reconnect_after_cut"]),
+            kept(test, 41, 41, "    // a slow runner otherwise races the first handshake."),
+            cut(test, 42, "    link.settled().await;", changed: ["link.settled()"]),
+            put(test, 42, "    timeout(SETTLE, link.settled()).await??;",
+                changed: ["timeout(SETTLE, link.settled())", "??"], commented: true),
+            comment(
+                "draft-timeout", test, "Good. Say in a comment what SETTLE is sized for.", .draft,
+                .lines(start: 42, end: 42)),
+            kept(test, 43, 43, "    relay.cut(&link);"),
+            kept(test, 44, 44, ""),
+            kept(test, 45, 45, "    let back = link.reconnected().await?;"),
+            gap(test, "end", hidden: nil, down: (46, 65, "async fn reconnect_after_cut")),
+        ],
+        toFetch: [], opening: false, empty: nil,
+        header: header(
+            view: .sinceLast, files: 1, added: 1, removed: 1, drafts: 1, sent: 2, rounds: 1, sinceFiles: 1))
+
+    /// The first round as its chip in the chat opens it: its whole diff,
+    /// from main to the round's snapshot, with the two comments it sent on
+    /// the lines they were written on.
+    private static let sentRound = ReviewPage(
+        banners: [],
+        rows: [
+            fileHead("Cargo.lock", added: 12, removed: 4, flags: [.lockfile], folded: true),
+            fileHead(link, added: 3, removed: 0),
+            hunkHead(link, old: 120, new: 120, against: base, scope: ["impl Link"]),
+            kept(link, 120, 120, "    /// Resolves once the relay acknowledged the hello."),
+            put(link, 121, "    pub async fn settled(&self) {"),
+            put(link, 122, "        self.hello.wait().await"),
+            put(link, 123, "    }"),
+            fileHead(test, added: 3, removed: 2, comments: 2),
+            hunkHead(test, old: 38, new: 38, against: base, scope: ["async fn reconnect_after_cut"]),
+            kept(test, 38, 38, "    let relay = Relay::start().await;"),
+            kept(test, 39, 39, "    let link = relay.dial(&host).await?;", commented: true),
+            comment(
+                "sent-dial", test, "Name the host in the dial, so a failure says which one it was.",
+                .sent(round: 1), .lines(start: 39, end: 39), scope: ["async fn reconnect_after_cut"]),
+            cut(test, 40, "    // Give the hello time to land.", changed: ["Give the hello time to land."]),
+            cut(test, 41, "    tokio::time::sleep(Duration::from_millis(50)).await;"),
+            put(test, 40, "    // Cut only once the relay has acknowledged the hello:",
+                changed: ["Cut only once the relay has acknowledged the hello:"]),
+            put(test, 41, "    // a slow runner otherwise races the first handshake."),
+            put(test, 42, "    link.settled().await;", commented: true),
+            comment(
+                "sent-settled", test,
+                "Is there a timeout on settled()? A link that never settles would hang the test.",
+                .sent(round: 1), .lines(start: 42, end: 42), scope: ["async fn reconnect_after_cut"]),
+            kept(test, 42, 43, "    relay.cut(&link);"),
+            kept(test, 43, 44, ""),
+            kept(test, 44, 45, "    let back = link.reconnected().await?;"),
+        ],
+        toFetch: [], opening: false, empty: nil,
+        header: header(
+            view: .all, files: 3, added: 18, removed: 6, drafts: 0, sent: 2, at: lastRound))
+
+    /// A review with nothing changed and no comments.
+    private static let nothingToReview = ReviewPage(
+        banners: [], rows: [], toFetch: [], opening: false, empty: .nothing,
+        header: header(view: .all, files: 0, added: 0, removed: 0, drafts: 0, sent: 0, allFiles: 0))
+
+    /// The page for an agent whose computer runs no reviews: what the
+    /// runtime hands over once the host answers that it offers none.
+    private static let notOffered = ReviewPage(
+        banners: [.notOffered], rows: [], toFetch: [], opening: false, empty: nil, header: nil)
+
+    private static func header(
+        view: ReviewView, files: UInt32, added: UInt32, removed: UInt32, drafts: UInt32, sent: UInt32,
+        rounds: UInt32 = 0, allFiles: UInt32 = 3, sinceFiles: UInt32 = 0, at: String = snapshot
+    ) -> ReviewHeader {
+        ReviewHeader(
+            baseBranch: "main", baseCommit: base, snapshot: at, view: view,
+            comparedWith: view == .all ? base : lastRound, comparedBase: view == .all ? "" : base,
+            views: [ReviewViewTab(view: .all, files: allFiles)]
+                + (rounds > 0 ? [ReviewViewTab(view: .sinceLast, files: sinceFiles)] : []),
+            rounds: rounds, files: files, added: added, removed: removed, drafts: drafts, sent: sent,
+            discardDrafts: drafts > 0, startOver: true)
+    }
+
+    /// The chat after the first round went: the person's review sent with
+    /// a word, and the agent's answer.
+    private static let reviewedRows: [Row] = conversationRows + [
+        r("r10", .prompt(
+            text: [
+                .text("Two things on the test."),
+                .attachment(.sentReview(
+                    comments: 2,
+                    review: SentReviewRef(
+                        reviewId: Array("review".utf8), round: 1, inputId: Array("r10".utf8)),
+                    text: sentText)),
+            ],
+            steered: false)),
+        r("r11", .prose(text: text("""
+            Both done: the dial names its host in the error, and the wait for the link to settle is \
+            bounded by `SETTLE`, so a link that never settles fails the test instead of hanging it.
+            """), streaming: false, workingNote: false)),
+    ]
+
+    /// What the agent read for the first round.
+    private static let sentText = """
+        2 comments from a review of your changes.
+
+        ## crates/relay/tests/reconnect.rs, line 39, in async fn reconnect_after_cut
+
+        ```diff
+         async fn reconnect_after_cut() -> Result<()> {
+             let relay = Relay::start().await;
+             let link = relay.dial(&host).await?;
+        ```
+
+        Name the host in the dial, so a failure says which one it was.
+
+        ## crates/relay/tests/reconnect.rs, line 42, in async fn reconnect_after_cut
+
+        ```diff
+        +    // a slow runner otherwise races the first handshake.
+        +    link.settled().await;
+        ```
+
+        Is there a timeout on settled()? A link that never settles would hang the test.
+
+        ---
+        Line numbers are those of snapshot \(lastRound), a commit of the working tree taken for this \
+        review and kept outside the repository, so the files may have changed since. Paths are \
+        relative to the repository's top, ~/src/amux. To see what has changed since the snapshot, \
+        untracked files included, run this; it writes nothing, and after the diff it lists the files \
+        made since the snapshot:
+
+        ```sh
+        GIT_INDEX_FILE=~/.amux/agents/flaky/review/index GIT_ALTERNATE_OBJECT_DIRECTORIES=~/.amux/agents/flaky/review/objects git -C ~/src/amux diff \(lastRound) && GIT_INDEX_FILE=~/.amux/agents/flaky/review/index git -C ~/src/amux ls-files --others --exclude-standard
+        ```
+        """
+
+    private static func fileHead(
+        _ path: String, added: UInt32, removed: UInt32, flags: [ReviewFileFlag] = [], folded: Bool = false,
+        changedSinceLast: Bool = false, comments: UInt32 = 0
+    ) -> ReviewRow {
+        ReviewRow(
+            key: "f/\(path)",
+            of: .file(ReviewFileHead(
+                path: path, status: .modified, added: added, removed: removed, binary: false,
+                language: path.hasSuffix(".rs") ? "rust" : "", flags: flags, folded: folded,
+                changedSinceLast: changedSinceLast, inChange: true, comments: comments, outline: [], oldPath: nil)))
+    }
+
+    private static func hunkHead(_ path: String, old: UInt32, new: UInt32, against: String, scope: [String]) -> ReviewRow {
+        ReviewRow(
+            key: "h/\(path)/\(old)/\(new)",
+            of: .hunk(ReviewHunkHead(path: path, oldCommit: against, oldStart: old, newStart: new, scope: scope)))
+    }
+
+    /// Lines of the snapshot not shown: `down` and `up` load from the code
+    /// above and below, each its first and last line and the definition
+    /// whose edge it reaches.
+    private static func gap(
+        _ path: String, _ at: String, hidden: UInt32?, down: (UInt32, UInt32, String?)? = nil,
+        up: (UInt32, UInt32, String?)? = nil
+    ) -> ReviewRow {
+        let ask = { (lines: (UInt32, UInt32, String?)) in
+            ReviewContextAsk(path: path, commit: snapshot, start: lines.0, end: lines.1, definition: lines.2)
+        }
+        return ReviewRow(
+            key: "g/\(path)/\(at)",
+            of: .gap(ReviewGap(path: path, loading: false, down: down.map(ask), hidden: hidden, up: up.map(ask))))
+    }
+
+    private static func comment(
+        _ id: String, _ path: String, _ words: String, _ state: ReviewCommentState, _ at: ReviewCommentAt,
+        changedNear: Bool = false, scope: [String] = [], snippet: [ReviewCodeLine] = [], folded: Bool = false
+    ) -> ReviewRow {
+        ReviewRow(
+            key: "c/\(id)",
+            of: .comment(ReviewCommentRow(
+                id: Array(id.utf8), path: path, text: words, state: state, at: at, changedNear: changedNear,
+                scope: scope, snippet: snippet, folded: folded)))
+    }
+
+    private static func kept(
+        _ path: String, _ old: UInt32, _ new: UInt32, _ code: String, commented: Bool = false
+    ) -> ReviewRow {
+        ReviewRow(
+            key: "l/\(path)/\(old)/\(new)",
+            of: .line(line(path, .context, code, old: old, new: new, commented: commented)))
+    }
+
+    private static func put(
+        _ path: String, _ new: UInt32, _ code: String, changed: [String] = [], commented: Bool = false
+    ) -> ReviewRow {
+        ReviewRow(
+            key: "l/\(path)/+\(new)",
+            of: .line(line(path, .added, code, new: new, changed: changed, commented: commented)))
+    }
+
+    private static func cut(_ path: String, _ old: UInt32, _ code: String, changed: [String] = []) -> ReviewRow {
+        ReviewRow(key: "l/\(path)/-\(old)", of: .line(line(path, .removed, code, old: old, changed: changed)))
+    }
+
+    private static func line(
+        _ path: String, _ kind: LineKind, _ code: String, old: UInt32? = nil, new: UInt32? = nil,
+        changed: [String] = [], commented: Bool = false
+    ) -> ReviewCodeLine {
+        ReviewCodeLine(
+            path: path, kind: kind, text: code, runs: rust(code, changed: changed), commented: commented,
+            extra: false, newLine: new, oldLine: old)
+    }
+
+    private static let keywords: Set<String> = [
+        "as", "async", "await", "fn", "for", "if", "impl", "in", "let", "match", "mut", "pub", "return", "self",
+        "struct", "use",
+    ]
+
+    /// Rust as the host's highlighter would colour it, near enough for a
+    /// story: keywords, calls, types, numbers, strings and comments; the
+    /// stretches in `changed` marked as the words that differ.
+    private static func rust(_ code: String, changed: [String]) -> [ReviewRun] {
+        let chars = Array(code)
+        var kinds = [TokenKind](repeating: .plain, count: chars.count)
+        var at = 0
+        while at < chars.count {
+            let c = chars[at]
+            if c == "/", at + 1 < chars.count, chars[at + 1] == "/" {
+                for i in at..<chars.count { kinds[i] = .comment }
+                break
+            } else if c == "\"" {
+                var end = at + 1
+                while end < chars.count, chars[end] != "\"" { end += 1 }
+                for i in at...min(end, chars.count - 1) { kinds[i] = .string }
+                at = end + 1
+            } else if c.isLetter || c == "_" {
+                var end = at
+                while end < chars.count, chars[end].isLetter || chars[end].isNumber || chars[end] == "_" { end += 1 }
+                let word = String(chars[at..<end])
+                let kind: TokenKind =
+                    keywords.contains(word)
+                    ? .keyword
+                    : (end < chars.count && (chars[end] == "(" || chars[end] == "!"))
+                        ? .function : (c.isUppercase ? .type : .plain)
+                for i in at..<end { kinds[i] = kind }
+                at = end
+            } else if c.isNumber {
+                kinds[at] = .number
+                at += 1
+            } else {
+                at += 1
+            }
+        }
+        var marked = [Bool](repeating: false, count: chars.count)
+        for stretch in changed {
+            guard let range = code.range(of: stretch) else { continue }
+            let start = code.distance(from: code.startIndex, to: range.lowerBound)
+            for i in start..<(start + stretch.count) { marked[i] = true }
+        }
+        var runs: [ReviewRun] = []
+        for (index, char) in chars.enumerated() {
+            if let last = runs.last, last.kind == kinds[index], last.changed == marked[index] {
+                runs[runs.count - 1].text.append(char)
+            } else {
+                runs.append(ReviewRun(text: String(char), kind: kinds[index], changed: marked[index]))
+            }
+        }
+        return runs
+    }
 
     // MARK: - Settings
 
@@ -800,26 +1074,25 @@ public enum Stories {
     }
 
     private static let settings = [
-        Story("review.page") {
-            MainStory(
-                MainContent(profiles: [signedIn], fleet: busy, hosts: paired, thisMac: thisMac),
-                place: Place(agent: flaky.card.agent, changes: true),
-                chat: {
-                    let chat = StillChat(
-                        rows: conversationRows, frame: frame(flaky.card, .idle),
-                        changes: ChangeTotals(files: 6, added: 20, removed: 29), settings: claude)
-                    chat.reviewing = StillReview(doc: wideReview, folded: [0, 1, 4])
-                    return chat
-                }())
+        reviewStory("review.page", chip: ReviewChip(comments: 1, moved: false)) {
+            // A second comment being written under the draft's lines.
+            StillReviewPage(
+                page: firstLook(), selected: firstLookWriting...firstLookWriting,
+                words: "Assert the reconnect lands within the backoff's first step, too.")
         },
-        Story("review.no-changes") {
-            MainStory(
-                MainContent(profiles: [signedIn], fleet: busy, hosts: paired, thisMac: thisMac),
-                place: Place(agent: flaky.card.agent, changes: true),
-                chat: {
-                    let chat = StillChat(rows: conversationRows, frame: frame(flaky.card, .idle), settings: claude)
-                    return chat
-                }())
+        reviewStory("review.since-last", rows: reviewedRows, chip: ReviewChip(comments: 1, moved: false)) {
+            StillReviewPage(page: sinceLast)
+        },
+        reviewStory("review.drafts-stale", chip: ReviewChip(comments: 1, moved: true)) {
+            StillReviewPage(page: firstLook(banners: [.changedSinceYouStarted]))
+        },
+        reviewStory("review.empty") { StillReviewPage(page: nothingToReview) },
+        // A host with no reviews: the page says so, with nothing of the
+        // review to draw.
+        reviewStory("review.not-offered") { StillReviewPage(page: notOffered) },
+        Story("review.round", window: .sheet) {
+            ReviewRoundSheet(
+                round: 1, text: sentText, page: sentRound, read: { sentRound }, openReview: {}, close: {})
         },
         Story("settings.machine", window: .settings) {
             SettingsScreen(state: .ready(machineSettings), account: SettingsAccount(profile: signedIn))

@@ -10,13 +10,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use node::{ClientApi, Daemon, Launch, ProfileRuntime, RegistryError, RelayError};
+use node::{Daemon, Launch, ProfileRuntime, RegistryError, RelayError};
 use store::AgentKey;
 use support::synthetic::*;
 use support::*;
-use tonic::{Code, Request};
-use wire::agent_service_server::AgentService as _;
-use wire::session_service_server::SessionService as _;
+use tonic::Code;
 use wire::{
     AgentRef, ClaudeSdkInput, Envelope, Input, Lifecycle, PromptInput, SendInputRequest,
     SendInputResponse, claude_sdk_input, send_input_response, sender,
@@ -30,6 +28,15 @@ async fn start(install: &Install, boot: &str) -> (Daemon, Arc<ProfileRuntime>) {
     let daemon = install.start(boot, quiet_launch()).await;
     let runtime = runtime(&daemon, install);
     (daemon, runtime)
+}
+
+/// What a closed recipient's refusal of a message says.
+fn closed() -> String {
+    RelayError::Rejected(wire::Rejected {
+        refusal: wire::Refusal::AgentClosed as i32,
+        detail: None,
+    })
+    .to_string()
 }
 
 /// A daemon crash: dropped without shutdown. Returns once nothing of it is
@@ -56,15 +63,6 @@ fn prompt(id: &[u8], text: &str) -> Input {
                 text: text.to_owned(),
                 attachments: Vec::new(),
             })),
-        },
-    )
-}
-
-fn interrupt(id: &[u8]) -> Input {
-    Input::new(
-        id.to_vec(),
-        ClaudeSdkInput {
-            of: Some(claude_sdk_input::Of::Interrupt(wire::Interrupt {})),
         },
     )
 }
@@ -221,125 +219,6 @@ async fn send_input_returns_the_interpreters_verdict_or_answers_for_an_exited_ag
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_sends_input_only_to_its_own_children() {
-    let install = Install::new();
-    let mut caller = SyntheticAgent::new(&install, "caller", SEGMENTS);
-    caller.register(&install);
-    // Live: an exited parent's child is stopped by the family rule.
-    caller.go_live();
-    let mut child = SyntheticAgent::new(&install, "child", SEGMENTS);
-    child.parent = Some(caller.key(&install));
-    child.register(&install);
-    child.go_live();
-    let mut stranger = SyntheticAgent::new(&install, "stranger", SEGMENTS);
-    stranger.register(&install);
-    stranger.go_live();
-    let (daemon, runtime) = start(&install, "boot-1").await;
-    let tools = ClientApi::new(&runtime, Some(caller.id));
-    let send = |agent: &SyntheticAgent, id: &[u8]| {
-        Request::new(SendInputRequest {
-            agent_id: agent.id.as_bytes().to_vec(),
-            input: Some(interrupt(id)),
-        })
-    };
-
-    let refused = tools.send_input(send(&stranger, b"i1")).await.unwrap_err();
-    assert_eq!(refused.code(), Code::PermissionDenied);
-    assert!(stranger.inputs().is_empty(), "nothing reached the stranger");
-
-    let answer = tools.send_input(send(&child, b"i2")).await.unwrap();
-    assert_eq!(verdict(answer.get_ref()), "queued");
-    assert_eq!(child.inputs().len(), 1, "the child's input was relayed");
-
-    // The profile socket is a person's: the same input goes through.
-    let person = ClientApi::new(&runtime, None);
-    let answer = person.send_input(send(&stranger, b"i3")).await.unwrap();
-    assert_eq!(verdict(answer.get_ref()), "queued");
-    assert_eq!(stranger.inputs().len(), 1);
-    crash(daemon, runtime).await;
-}
-
-/// Every call on a named agent from an agent's tools socket reaches only
-/// the caller's own children, and the children it starts take their kind's
-/// defaults: no permission mode or provider arguments of its choosing.
-#[tokio::test(flavor = "multi_thread")]
-async fn an_agent_acts_only_on_its_own_children_and_starts_them_with_defaults() {
-    let install = Install::new();
-    let mut caller = SyntheticAgent::new(&install, "caller", SEGMENTS);
-    caller.register(&install);
-    caller.go_live();
-    let mut stranger = SyntheticAgent::new(&install, "stranger", SEGMENTS);
-    stranger.register(&install);
-    stranger.go_live();
-    let (daemon, runtime) = start(&install, "boot-1").await;
-    let tools = ClientApi::new(&runtime, Some(caller.id));
-    let id = || stranger.id.as_bytes().to_vec();
-
-    let refusals = [
-        tools
-            .rename_agent(Request::new(wire::RenameAgentRequest {
-                agent_id: id(),
-                name: "mine".into(),
-            }))
-            .await
-            .unwrap_err(),
-        tools
-            .resume_agent(Request::new(wire::ResumeAgentRequest {
-                agent_id: id(),
-                ..Default::default()
-            }))
-            .await
-            .unwrap_err(),
-        tools
-            .delete_agent(Request::new(wire::DeleteAgentRequest {
-                agent_id: id(),
-                ..Default::default()
-            }))
-            .await
-            .unwrap_err(),
-        tools
-            .list_items(Request::new(wire::ListItemsRequest {
-                agent_id: id(),
-                ..Default::default()
-            }))
-            .await
-            .unwrap_err(),
-    ];
-    for refused in refusals {
-        assert_eq!(refused.code(), Code::PermissionDenied, "{refused:?}");
-    }
-    let row = |agent_id: Vec<u8>| {
-        let runtime = runtime.clone();
-        async move {
-            runtime
-                .read_store(move |store| store.agent_by_id(&agent_id).unwrap())
-                .await
-                .unwrap()
-        }
-    };
-    assert_eq!(row(id()).await.unwrap().name, "stranger");
-
-    let never_ask = wire::CreateAgentRequest {
-        agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
-        cwd: install.work.display().to_string(),
-        agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
-            wire::ClaudeCreateConfig {
-                permission: Some("bypassPermissions".into()),
-                ..Default::default()
-            },
-        )),
-        ..Default::default()
-    };
-    let refused = tools
-        .create_agent(Request::new(never_ask.clone()))
-        .await
-        .unwrap_err();
-    assert_eq!(refused.code(), Code::PermissionDenied);
-    assert!(row(never_ask.agent_id).await.is_none(), "no child was made");
-    crash(daemon, runtime).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     let install = Install::new();
     let sender = SyntheticAgent::new(&install, "sender", SEGMENTS);
@@ -350,7 +229,7 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     let (daemon, runtime) = start(&install, "boot-1").await;
 
     let envelope = Envelope {
-        id: b"envelope-1".to_vec(),
+        id: b"envelope-1......".to_vec(),
         to: to(&recipient, &install),
         body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: "can you look at the build?".into(),
@@ -362,10 +241,10 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
         .send_message(envelope.clone(), Some(sender.id))
         .await
         .unwrap();
-    assert_eq!(sent.envelope_id, b"envelope-1");
+    assert_eq!(sent.envelope_id, b"envelope-1......");
     let key = recipient.key(&install);
     let accepted = runtime
-        .read_store(move |store| store.item_by_input(&key, b"envelope-1").unwrap())
+        .read_store(move |store| store.item_by_input(&key, b"envelope-1......").unwrap())
         .await
         .unwrap();
     assert!(
@@ -416,7 +295,7 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
     let refused = runtime
         .send_message(
             Envelope {
-                id: b"envelope-2".to_vec(),
+                id: b"envelope-2......".to_vec(),
                 to: to(&recipient, &install),
                 body: Some(wire::envelope::Body::Message(wire::MessageBody {
                     text: "still there?".into(),
@@ -429,175 +308,8 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
         .await
         .unwrap_err();
     assert!(
-        matches!(refused, RelayError::Rejected(ref rejected) if rejected.refusal() == wire::Refusal::AgentClosed)
-    );
-    crash(daemon, runtime).await;
-}
-
-/// A later build's body or attachment arrives here as nothing. Refused in
-/// words, it does not reach the recipient as an empty message.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_message_this_build_cannot_read_is_refused() {
-    let install = Install::new();
-    let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
-    recipient.register(&install);
-    recipient.go_live();
-    let (daemon, runtime) = start(&install, "boot-1").await;
-
-    let api = ClientApi::new(&runtime, None);
-    let cases = [
-        (
-            None,
-            "this host can't read what the message holds; the host needs updating",
-        ),
-        (
-            Some(wire::envelope::Body::Message(wire::MessageBody {
-                text: "see this".into(),
-                attachments: vec![wire::Attachment { of: None }],
-            })),
-            attachments::UNREADABLE,
-        ),
-    ];
-    for (body, words) in cases {
-        let refused = api
-            .send_message(Request::new(wire::SendMessageRequest {
-                envelope: Some(Envelope {
-                    from: None,
-                    id: b"unread".to_vec(),
-                    to: to(&recipient, &install),
-                    body,
-                    context: None,
-                }),
-            }))
-            .await
-            .unwrap_err();
-        assert_eq!(refused.code(), tonic::Code::FailedPrecondition);
-        assert_eq!(refused.message(), words);
-    }
-    crash(daemon, runtime).await;
-}
-
-/// The sender on what the recipient is handed is whoever called: the agent
-/// whose tools socket the call came in on, or the person on the profile
-/// socket. The request has nowhere to name anyone else, and what it sends
-/// is an ordinary message.
-#[tokio::test(flavor = "multi_thread")]
-async fn send_message_sender_is_the_caller() {
-    let install = Install::new();
-    let sender = SyntheticAgent::new(&install, "sender", SEGMENTS);
-    sender.register(&install);
-    let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
-    recipient.register(&install);
-    recipient.go_live();
-    let (daemon, runtime) = start(&install, "boot-1").await;
-
-    let on_tools = ClientApi::new(&runtime, Some(sender.id));
-    let on_profile = ClientApi::new(&runtime, None);
-    for (api, id) in [
-        (&on_tools, b"from-the-agent".as_slice()),
-        (&on_profile, b"from-the-person".as_slice()),
-    ] {
-        let sent = api
-            .send_message(Request::new(wire::SendMessageRequest {
-                envelope: Some(Envelope {
-                    from: None,
-                    id: id.to_vec(),
-                    to: to(&recipient, &install),
-                    body: Some(wire::envelope::Body::Message(wire::MessageBody {
-                        text: "a word".into(),
-                        ..Default::default()
-                    })),
-                    context: None,
-                }),
-            }))
-            .await
-            .unwrap();
-        assert_eq!(sent.get_ref().envelope_id, id);
-    }
-
-    let handed = recipient
-        .inputs()
-        .into_iter()
-        .map(|handed| match handed {
-            Handed::Message(envelope) => *envelope,
-            Handed::Input(input) => panic!("an agent message, not {input:?}"),
-        })
-        .collect::<Vec<_>>();
-    let [from_agent, from_person] = handed.as_slice() else {
-        panic!("two messages, got {handed:?}");
-    };
-    match from_agent
-        .from
-        .as_ref()
-        .and_then(|from| from.value.as_ref())
-    {
-        Some(sender::Value::Agent(from)) => {
-            assert_eq!(
-                from.agent.as_ref().unwrap().agent_id,
-                sender.id.as_bytes().to_vec()
-            );
-            assert_eq!(
-                from.agent.as_ref().unwrap().host_id,
-                host(&install).as_bytes().to_vec()
-            );
-            assert_eq!(from.name, "sender");
-        }
-        other => panic!("the calling agent sent it, not {other:?}"),
-    }
-    assert!(
-        matches!(
-            from_person
-                .from
-                .as_ref()
-                .and_then(|from| from.value.as_ref()),
-            Some(sender::Value::Human(_))
-        ),
-        "the person sent it: {from_person:?}"
-    );
-    for envelope in &handed {
-        assert_eq!(told(envelope).0, Is::Message);
-    }
-    crash(daemon, runtime).await;
-}
-
-/// A caller that resends with the id it chose, as one whose answer was
-/// lost does, makes one item on the recipient and one hand-off.
-#[tokio::test(flavor = "multi_thread")]
-async fn resend_with_same_id_is_one_item() {
-    let install = Install::new();
-    let mut recipient = SyntheticAgent::new(&install, "recipient", SEGMENTS);
-    recipient.register(&install);
-    recipient.go_live();
-    let (daemon, runtime) = start(&install, "boot-1").await;
-    let api = ClientApi::new(&runtime, None);
-    let request = Envelope {
-        from: None,
-        id: b"chosen-by-the-caller".to_vec(),
-        to: to(&recipient, &install),
-        body: Some(wire::envelope::Body::Message(wire::MessageBody {
-            text: "can you look at the build?".into(),
-            ..Default::default()
-        })),
-        context: Some(b"build".to_vec()),
-    };
-    for _ in 0..2 {
-        let sent = api
-            .send_message(Request::new(wire::SendMessageRequest {
-                envelope: Some(request.clone()),
-            }))
-            .await
-            .unwrap();
-        assert_eq!(sent.get_ref().envelope_id, request.id);
-    }
-    assert_eq!(recipient.inputs().len(), 1, "handed over once");
-    let items = items_with_input(&runtime, &recipient.key(&install)).await;
-    assert_eq!(
-        items
-            .iter()
-            .map(|item| item.input_id.as_slice())
-            .collect::<Vec<_>>(),
-        vec![request.id.as_slice()],
-        "one item for the message"
+        refused.code() == Code::FailedPrecondition && refused.message() == closed(),
+        "{refused:?}"
     );
     crash(daemon, runtime).await;
 }
@@ -613,7 +325,7 @@ async fn a_message_waits_for_its_item_to_commit_and_one_envelope_is_handed_over_
     recipient.answer_with(Answer::AcceptWithoutNudge);
     let (daemon, runtime) = start(&install, "boot-1").await;
     let envelope = Envelope {
-        id: b"envelope-1".to_vec(),
+        id: b"envelope-1......".to_vec(),
         to: to(&recipient, &install),
         body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: "can you look at the build?".into(),
@@ -691,7 +403,7 @@ async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
     .unwrap();
     let runtime = runtime(&daemon, &install);
     let envelope = Envelope {
-        id: b"envelope-1".to_vec(),
+        id: b"envelope-1......".to_vec(),
         to: to(&recipient, &install),
         body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: "can you look at the build?".into(),
@@ -715,7 +427,10 @@ async fn a_retry_after_reply_patience_is_concluded_by_the_verdict_that_comes() {
     // it wrote it, which only the test moves.
     clock.set(T0 + REPLY_MS + 1);
     let first = first.await.unwrap();
-    assert!(matches!(first, Err(RelayError::Lost)), "{first:?}");
+    assert!(
+        matches!(&first, Err(status) if status.code() == Code::Aborted),
+        "{first:?}"
+    );
     until(
         "the first write to stop waiting for its verdict",
         || async {
@@ -773,7 +488,7 @@ async fn connect_patience_running_out_behind_the_hello_does_not_lose_the_message
     recipient.hold_lock();
     let (daemon, runtime) = start(&install, "boot-1").await;
     let envelope = Envelope {
-        id: b"envelope-1".to_vec(),
+        id: b"envelope-1......".to_vec(),
         to: to(&recipient, &install),
         body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: "can you look at the build?".into(),
@@ -851,7 +566,7 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
     let (daemon, runtime) = start_resuming(&install).await;
 
     let envelope = Envelope {
-        id: b"wrap-up".to_vec(),
+        id: b"wrap-up.........".to_vec(),
         to: to(&child, &install),
         body: Some(wire::envelope::Body::Message(wire::MessageBody {
             text: "wrap up and report".into(),
@@ -878,7 +593,7 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
     let first = spec.bootstrap.expect("the message starts the incarnation");
     match first.of {
         Some(wire::bootstrap::Of::AgentMessage(message)) => {
-            assert_eq!(message.id, b"wrap-up");
+            assert_eq!(message.id, b"wrap-up.........");
             assert_eq!(
                 told(&message),
                 (Is::Message, "wrap up and report".to_owned())
@@ -889,7 +604,10 @@ async fn a_child_answering_exiting_to_its_parents_message_is_resumed_with_it() {
     let key = child.key(&install);
     assert!(
         runtime
-            .read_store(move |store| store.item_by_input(&key, b"wrap-up").unwrap().is_some())
+            .read_store(move |store| store
+                .item_by_input(&key, b"wrap-up.........")
+                .unwrap()
+                .is_some())
             .await
             .unwrap(),
         "the new incarnation accepted it"
@@ -1024,7 +742,7 @@ async fn a_delivery_waiting_on_its_parents_lane_is_dropped_when_the_parent_resum
     let held = tokio::spawn({
         let runtime = runtime.clone();
         let envelope = Envelope {
-            id: b"hold".to_vec(),
+            id: b"hold............".to_vec(),
             to: to(&parent, &install),
             body: Some(wire::envelope::Body::Message(wire::MessageBody {
                 text: "a word".into(),
@@ -1465,7 +1183,7 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
         .unwrap();
 
     let envelope = Envelope {
-        id: b"follow-up".to_vec(),
+        id: b"follow-up.......".to_vec(),
         to: Some(AgentRef {
             host_id: runtime.host().as_bytes().to_vec(),
             agent_id: child.as_bytes().to_vec(),
@@ -1490,7 +1208,7 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
         runtime
             .read_store(move |store| {
                 store
-                    .item_by_input(&child_key, b"follow-up")
+                    .item_by_input(&child_key, b"follow-up.......")
                     .unwrap()
                     .is_some()
             })
@@ -1519,7 +1237,7 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
     let refused = runtime
         .send_message(
             Envelope {
-                id: b"stranger".to_vec(),
+                id: b"stranger........".to_vec(),
                 to: Some(AgentRef {
                     host_id: runtime.host().as_bytes().to_vec(),
                     agent_id: child.as_bytes().to_vec(),
@@ -1535,7 +1253,8 @@ async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again
         .await
         .unwrap_err();
     assert!(
-        matches!(refused, RelayError::Rejected(ref rejected) if rejected.refusal() == wire::Refusal::AgentClosed)
+        refused.code() == Code::FailedPrecondition && refused.message() == closed(),
+        "{refused:?}"
     );
 
     kill_all(&runtime).await;

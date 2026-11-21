@@ -22,7 +22,7 @@ use tokio::task::JoinHandle;
 use crate::activation::{ActivationError, ActivationPipe};
 use crate::edge::EdgeOptions;
 use crate::generation::{self, Generation};
-use crate::grpc::{self, ClientApi};
+use crate::grpc;
 use crate::install::{InstallationLock, LockError, REPORTS, STORE, private_dir};
 use crate::outbox::PushSender;
 use crate::profiles::{self, PROFILE_SOCKET, ProfileEntry, ProfileId};
@@ -344,8 +344,9 @@ impl Drop for Hosted {
 
 impl Installation {
     /// Opens a profile's store and its runtime. Writes nothing but the
-    /// store: a new one, or the migrations an existing one lacks, which
-    /// only add, so the previous binary still reads it after a rollback.
+    /// store (a new one, or the migrations an existing one lacks, which
+    /// only add, so the previous binary still reads it after a rollback)
+    /// and what an experiment it does not run leaves beside it.
     fn open(&self, profile: ProfileId) -> Result<Arc<ProfileRuntime>, StartError> {
         let dir = profiles::profile_dir(&self.data_dir, profile);
         // The profile's id is its host id, the one its peers know it by.
@@ -366,6 +367,7 @@ impl Installation {
                 error: error.into(),
             })?;
         let launch = self.launch.lock().unwrap().clone();
+        crate::reviews::cleanup::on_open(&dir, &store, &launch);
         let workspaces = std::sync::Arc::new(crate::workspaces::Workspaces::new(
             profile,
             self.data_dir.join(crate::workspaces::WORKTREES),
@@ -411,7 +413,8 @@ impl Installation {
         })?;
         Ok(Some(grpc::serve_client(
             listener,
-            ClientApi::new(runtime, None).opened_as(analytics::Client::Terminal),
+            Arc::downgrade(runtime),
+            crate::api::Entry::Profile,
             Some(
                 crate::ProfileAdmin::new(
                     crate::Registry::new(Arc::downgrade(self)),

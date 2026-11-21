@@ -62,11 +62,9 @@ pub struct HostSet {
     providers: BTreeMap<HostId, Providers>,
     /// Which Claude a new agent on each trusted host runs, as its own entry
     /// said.
-    #[serde(default)]
     claude_kinds: BTreeMap<HostId, i32>,
     /// Where each trusted host offers to start an agent, as its own entry
     /// said.
-    #[serde(default)]
     folders: BTreeMap<HostId, Folders>,
     /// The set as last published, by host id.
     #[serde(with = "codec::messages")]

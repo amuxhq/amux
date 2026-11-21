@@ -6,7 +6,6 @@ use support::synthetic::*;
 use support::*;
 use tonic::Request;
 use wire::UpdateSettingsRequest;
-use wire::agent_service_server::AgentService as _;
 use wire::installation_service_server::InstallationService as _;
 
 use crate::support;
@@ -306,11 +305,12 @@ async fn a_paired_host_learns_the_claude_kind_a_host_publishes() {
     laptop_daemon.shutdown().await.unwrap();
 }
 
-/// A paired laptop pins a folder on the desk: the desk keeps it among its
-/// repositories, in its config file, and its entry in the laptop's inventory
-/// lists it as pinned, with its working tree; unpinned, it goes.
+/// A person on the laptop pins a folder on the desk: the call is addressed
+/// to the desk and carried there, the desk keeps the folder among its
+/// repositories, in its config file, and its entry in the laptop's
+/// inventory lists it as pinned, with its working tree; unpinned, it goes.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_paired_host_pins_a_folder_and_sees_the_desks_entry_say_it() {
+async fn a_paired_hosts_person_pins_a_folder_and_sees_the_desks_entry_say_it() {
     let desk = Install::new();
     let (desk_daemon, file) = desk_with_file(&desk, "").await;
     let desk_runtime = runtime(&desk_daemon, &desk);
@@ -327,16 +327,17 @@ async fn a_paired_host_pins_a_folder_and_sees_the_desks_entry_say_it() {
     let _link = laptop_edge.link_in_process(&desk_edge).unwrap();
     assert!(wait_for_route(&laptop_edge, desk_host, PATIENCE).await);
 
-    let from_laptop = node::ClientApi::new(&laptop_runtime, None);
+    // The laptop's own entry, as its apps call it, addressed to the desk.
+    let entrance = laptop_daemon.registry().routes(laptop.profile).unwrap();
+    let origin = format!("http://{}", wire::authority(&desk_host))
+        .parse()
+        .unwrap();
+    let mut on_desk = wire::host_service_client::HostServiceClient::with_origin(entrance, origin);
     let pin = |pinned: bool| wire::PinFolderRequest {
-        host_id: Some(desk_host.as_bytes().to_vec()),
         path: app.to_str().unwrap().to_owned(),
         pinned,
     };
-    from_laptop
-        .pin_folder(Request::new(pin(true)))
-        .await
-        .unwrap();
+    on_desk.pin_folder(pin(true)).await.unwrap();
     let pinned = |want: bool| {
         let laptop_runtime = laptop_runtime.clone();
         let app = app.clone();
@@ -372,18 +373,90 @@ async fn a_paired_host_pins_a_folder_and_sees_the_desks_entry_say_it() {
         std::slice::from_ref(&app),
         "the desk keeps the pin in its config file"
     );
+    assert!(
+        laptop_runtime
+            .host_entry()
+            .folders
+            .iter()
+            .all(|folder| folder.kind() != wire::FolderKind::Pinned),
+        "the laptop pinned nothing of its own"
+    );
 
-    from_laptop
-        .pin_folder(Request::new(pin(false)))
-        .await
-        .unwrap();
+    on_desk.pin_folder(pin(false)).await.unwrap();
     until("the laptop to see the desk's unpin", pinned(false))
         .await
         .unwrap();
 
+    drop(on_desk);
     drop((desk_edge, laptop_edge, desk_runtime, laptop_runtime));
     desk_daemon.shutdown().await.unwrap();
     laptop_daemon.shutdown().await.unwrap();
+}
+
+/// The pinned folders are the host's `repositories` setting, which is its
+/// person's to change: an agent asking to pin is refused, whether it is
+/// one of the host's own on its tools socket or a paired host's carried
+/// over the link, and the setting stays as it was.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_may_not_pin_a_folder() {
+    use node::harness::{Calling, Served, served_as};
+
+    let desk = Install::new();
+    let (desk_daemon, file) = desk_with_file(&desk, "").await;
+    let desk_runtime = runtime(&desk_daemon, &desk);
+    let app = desk.work.join("app");
+    std::fs::create_dir_all(&app).unwrap();
+    let here = desk_runtime.host();
+    let elsewhere = node::HostId::from_u128(0x0192_f0c8_7a51_7c3e_9d2f_0000_0000_0002);
+    let agent = node::AgentId::from_u128(0x0192_f0c8_7a51_7c3e_9d2f_0000_0000_0003);
+    for (served, host) in [(Served::Tools(agent), here), (Served::Link, elsewhere)] {
+        let calling = Calling::Agent {
+            host,
+            agent,
+            name: "coder".into(),
+        };
+        let refused = wire::host_service_client(served_as(&desk_runtime, served, calling))
+            .pin_folder(wire::PinFolderRequest {
+                path: app.to_str().unwrap().to_owned(),
+                pinned: true,
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(
+            refused.code(),
+            tonic::Code::PermissionDenied,
+            "{served:?}: {refused:?}"
+        );
+    }
+    assert!(
+        settings::InstallationConfig::from_file(&file)
+            .unwrap()
+            .repositories
+            .is_empty(),
+        "nothing was pinned"
+    );
+
+    // A person here may.
+    wire::host_service_client(served_as(
+        &desk_runtime,
+        Served::Profile,
+        Calling::PersonHere(analytics::Client::Terminal),
+    ))
+    .pin_folder(wire::PinFolderRequest {
+        path: app.to_str().unwrap().to_owned(),
+        pinned: true,
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        settings::InstallationConfig::from_file(&file)
+            .unwrap()
+            .repositories,
+        std::slice::from_ref(&app.canonicalize().unwrap()),
+    );
+
+    drop(desk_runtime);
+    desk_daemon.shutdown().await.unwrap();
 }
 
 /// Under `keep_awake` the daemon keeps the machine awake while one of its
@@ -524,7 +597,11 @@ async fn several_switches_in_a_row_want_one_restart_once_they_stay_put() {
     let settings = switch(&daemon, &["workspaces", "suspension"]).await;
     assert_eq!(
         experiments(&settings),
-        [("workspaces", true, true), ("suspension", true, true)]
+        [
+            ("workspaces", true, true),
+            ("suspension", true, true),
+            ("reviews", false, false)
+        ]
     );
 
     let wanted = tokio::time::timeout(PATIENCE, &mut restart)
@@ -561,7 +638,11 @@ async fn a_switch_flipped_back_or_an_unknown_name_wants_no_restart() {
     let settings = switch(&daemon, &[]).await;
     assert_eq!(
         experiments(&settings),
-        [("workspaces", false, false), ("suspension", false, false)]
+        [
+            ("workspaces", false, false),
+            ("suspension", false, false),
+            ("reviews", false, false)
+        ]
     );
     // A name another build has, as `amux config set` or an editor writes it;
     // the daemon reads the file again within its poll.
@@ -582,7 +663,11 @@ async fn a_switch_flipped_back_or_an_unknown_name_wants_no_restart() {
         .unwrap();
     assert_eq!(
         experiments(&settings),
-        [("workspaces", false, false), ("suspension", false, false)]
+        [
+            ("workspaces", false, false),
+            ("suspension", false, false),
+            ("reviews", false, false)
+        ]
     );
 
     // A hand edit that does switch one on is noticed like a client's switch.
@@ -636,9 +721,14 @@ async fn a_running_experiments_own_settings_want_a_restart_as_its_module_reads_t
             .settings
             .unwrap();
         let listed = experiments(&settings);
-        (listed == [("workspaces", false, false), ("suspension", true, true)])
-            .then_some(())
-            .ok_or(format!("{listed:?}"))
+        (listed
+            == [
+                ("workspaces", false, false),
+                ("suspension", true, true),
+                ("reviews", false, false),
+            ])
+        .then_some(())
+        .ok_or(format!("{listed:?}"))
     })
     .await
     .unwrap();

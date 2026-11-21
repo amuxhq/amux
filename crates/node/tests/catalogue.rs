@@ -1,22 +1,19 @@
 //! An agent's catalogue is a blob of its directory, read with GetBlob under
-//! the hash its snapshot names. A paired host forwards a read for its
-//! peer's agent to that peer and keeps the exact bytes, so it answers again
+//! the hash its snapshot names. A paired host fetches a file of its peer's
+//! agent from that peer's own peer service and keeps the exact bytes, so it answers again
 //! with the peer away and a catalogue it cannot fully decode keeps its
 //! hash; a hash that changes mid-session is read anew; replica retention
 //! never evicts the catalogue a replica's current snapshot names.
 
 use std::path::{Path, PathBuf};
 
+use node::harness::{Calling, InMemory, Served, served_as};
 use prost::Message as _;
 use sha2::{Digest as _, Sha256};
 use support::synthetic::*;
 use support::*;
 use tonic::Code;
-use wire::agent_service_server::AgentService as _;
-use wire::{
-    BlobRef, Catalogue, GetBlobRequest, GetCatalogueRequest, OfferedModel, Phase, SessionEvent,
-    session_event,
-};
+use wire::{BlobRef, Catalogue, GetBlobRequest, OfferedModel, Phase, SessionEvent, session_event};
 
 use crate::support;
 
@@ -59,8 +56,18 @@ fn blob(agent: &SyntheticAgent, hash: &[u8]) -> tonic::Request<GetBlobRequest> {
     })
 }
 
-async fn read(api: &node::ClientApi, agent: &SyntheticAgent, hash: &[u8]) -> Vec<u8> {
-    api.get_blob(blob(agent, hash))
+/// The node's services as a person on its profile's socket reaches them.
+fn person(runtime: &std::sync::Arc<node::ProfileRuntime>) -> InMemory {
+    served_as(
+        runtime,
+        Served::Profile,
+        Calling::PersonHere(analytics::Client::Terminal),
+    )
+}
+
+async fn read(api: &InMemory, agent: &SyntheticAgent, hash: &[u8]) -> Vec<u8> {
+    wire::session_service_client(api.clone())
+        .get_blob(blob(agent, hash))
         .await
         .unwrap()
         .into_inner()
@@ -182,11 +189,11 @@ async fn a_paired_host_reads_its_peers_catalogue_keeps_a_copy_and_follows_a_new_
     let mut pair = Pair::start(&mut agent, desk, laptop_launch).await;
 
     // The agent's own host reads the blob its snapshot names.
-    let on_desk = node::ClientApi::new(&pair.desk_runtime, None);
+    let on_desk = person(&pair.desk_runtime);
     assert_eq!(read(&on_desk, &agent, &first.0).await, first.1);
 
     pair.until_named("the first catalogue", &first.0).await;
-    let on_laptop = node::ClientApi::new(&pair.laptop_runtime, None);
+    let on_laptop = person(&pair.laptop_runtime);
     assert_eq!(
         read(&on_laptop, &agent, &first.0).await,
         first.1,
@@ -217,7 +224,7 @@ async fn a_paired_host_reads_its_peers_catalogue_keeps_a_copy_and_follows_a_new_
     );
     assert_eq!(read(&on_laptop, &agent, &first.0).await, first.1);
     // A hash the laptop never read has no answer with the desk away.
-    on_laptop
+    wire::session_service_client(on_laptop.clone())
         .get_blob(blob(&agent, &offering("gpt-3").0))
         .await
         .unwrap_err();
@@ -246,7 +253,7 @@ async fn catalogue_with_unknown_field_keeps_its_hash_through_a_replica() {
     let mut pair = Pair::start(&mut agent, desk, laptop_launch).await;
 
     pair.until_named("the newer catalogue", &newer.0).await;
-    let on_laptop = node::ClientApi::new(&pair.laptop_runtime, None);
+    let on_laptop = person(&pair.laptop_runtime);
     let fetched = read(&on_laptop, &agent, &newer.0).await;
     assert_eq!(fetched, newer.1, "the bytes pass through unchanged");
     assert_eq!(Sha256::digest(&fetched).to_vec(), newer.0);
@@ -278,12 +285,12 @@ async fn current_catalogue_is_pinned() {
     let mut launch = laptop.launch("idle", Vec::new());
     launch.replica_blob_budget_bytes = 0;
     let mut pair = Pair::start(&mut agent, desk, launch).await;
-    let on_desk = node::ClientApi::new(&pair.desk_runtime, None);
-    let on_laptop = node::ClientApi::new(&pair.laptop_runtime, None);
+    let on_desk = person(&pair.desk_runtime);
+    let on_laptop = person(&pair.laptop_runtime);
 
     pair.until_named("the first catalogue", &first.0).await;
     read(&on_laptop, &agent, &first.0).await;
-    let attachment: BlobRef = on_desk
+    let attachment: BlobRef = wire::agent_service_client(on_desk.clone())
         .put_blob(tonic::Request::new(wire::PutBlobRequest {
             agent_id: agent.id.as_bytes().to_vec(),
             name: "notes.txt".into(),
@@ -342,14 +349,14 @@ async fn an_unknown_catalogue_is_not_found() {
     offer(&mut agent, &named, 1_000);
     let daemon = install.start("boot-1", quiet_launch()).await;
     let runtime = runtime(&daemon, &install);
-    let api = node::ClientApi::new(&runtime, None);
+    let api = person(&runtime);
 
-    let unknown = api
+    let unknown = wire::session_service_client(api.clone())
         .get_blob(blob(&agent, &offering("gpt-2").0))
         .await
         .unwrap_err();
     assert_eq!(unknown.code(), Code::NotFound, "{unknown:?}");
-    let no_agent = api
+    let no_agent = wire::session_service_client(api.clone())
         .get_blob(tonic::Request::new(GetBlobRequest {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             hash: named.0.clone(),
@@ -357,15 +364,9 @@ async fn an_unknown_catalogue_is_not_found() {
         .await
         .unwrap_err();
     assert_eq!(no_agent.code(), Code::NotFound, "{no_agent:?}");
-    let no_host = api
-        .get_catalogue(tonic::Request::new(GetCatalogueRequest::default()))
-        .await
-        .unwrap_err();
-    assert_eq!(no_host.code(), Code::InvalidArgument, "{no_host:?}");
-    let host = api
-        .get_catalogue(tonic::Request::new(GetCatalogueRequest {
-            host_id: runtime.host().as_bytes().to_vec(),
-            provider_id: "codex".to_owned(),
+    let host = wire::host_service_client(api.clone())
+        .get_catalogue(tonic::Request::new(wire::GetCatalogueRequest {
+            provider: "codex".to_owned(),
         }))
         .await
         .unwrap_err();

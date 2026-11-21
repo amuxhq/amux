@@ -3,6 +3,12 @@
 //! process's own socket, the retry over an update window, and the whole
 //! path from a provider's call through the harness's launch of
 //! `<install path> mcp <dir>` to the item the interpreter draws.
+//!
+//! The stand-in serves what the daemon serves an agent: the inventory,
+//! answered by the daemon itself, and the agent service, answered for the
+//! host each call is addressed to. It records each call's address, and
+//! answers for every host as the daemon and the host it passes a call to
+//! would, between them.
 
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -16,13 +22,13 @@ use provider_fakes::{Step, Tool, ToolClass};
 use serde_json::{Value, json};
 use support::*;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
+use tonic::codegen::http;
 use tonic::{Request, Response, Status};
 use wire::agent_service_server::AgentService;
-use wire::session_service_server::SessionService;
+use wire::inventory_service_server::InventoryService;
 use wire::{
-    Agent as Row, AgentRef, AgentSpec, CreateAgentRequest, Envelope, HostEntry, InventoryEvent,
-    Kind, Lifecycle, Phase, SendInputRequest, SendInputResponse, SendMessageResponse,
-    create_agent_request, inventory_event,
+    Agent as Row, AgentRef, AgentSpec, CreateAgentRequest, HostEntry, InventoryEvent, Kind,
+    Lifecycle, Phase, SendMessageRequest, SetFilingRequest, create_agent_request,
 };
 
 use crate::support;
@@ -33,16 +39,28 @@ const CHILD: [u8; 16] = [0xc3; 16];
 const HERE: [u8; 16] = [0x01; 16];
 const STUDIO: [u8; 16] = [0x02; 16];
 
+/// The authority a call to `host` is made with.
+fn to(host: [u8; 16]) -> String {
+    wire::authority(&uuid::Uuid::from_bytes(host))
+}
+
 // --- the stand-in daemon ---------------------------------------------------
 
-/// What the tool server asked the daemon, in order.
+/// The authority a call arrived with, which the stand-in's layer puts in
+/// each request.
+#[derive(Clone, Debug)]
+struct Authority(String);
+
+/// What the tool server asked the daemon, in order, with the authority
+/// each act was addressed to.
 #[derive(Clone, Debug)]
 enum Call {
     Inventory,
     Resolve(String),
-    Send(Envelope),
-    Create(Box<CreateAgentRequest>),
-    Stop(wire::FileAgentRequest),
+    ResolveHost(String),
+    Send(String, SendMessageRequest),
+    Create(String, Box<CreateAgentRequest>),
+    Stop(String, SetFilingRequest),
 }
 
 #[derive(Clone, Default)]
@@ -53,7 +71,7 @@ struct Fleet {
     ambiguous: Vec<String>,
     /// The reason SendMessage refuses with, if it does.
     refuse_send: Option<Status>,
-    /// The reason StopAgent refuses with, if it does.
+    /// The reason SetFiling refuses with, if it does.
     refuse_stop: Option<Status>,
     /// Set, a send, spawn or stop is taken and then its connection is
     /// dropped before the daemon answers.
@@ -86,15 +104,28 @@ impl Fleet {
     }
 }
 
+/// The authority `request` arrived with.
+fn authority<T>(request: &Request<T>) -> String {
+    request
+        .extensions()
+        .get::<Authority>()
+        .map(|authority| authority.0.clone())
+        .unwrap_or_default()
+}
+
+/// The host a call is answered for: the one its authority names, else the
+/// daemon's own.
+fn answering(authority: &str) -> Vec<u8> {
+    wire::host_of_authority(authority)
+        .map_or_else(|| HERE.to_vec(), |host| host.as_bytes().to_vec())
+}
+
 type Events = Pin<
     Box<dyn futures_util::Stream<Item = Result<wire::SubscribeInventoryResponse, Status>> + Send>,
 >;
-type Sessions = Pin<
-    Box<dyn futures_util::Stream<Item = Result<wire::SubscribeSessionResponse, Status>> + Send>,
->;
 
 #[tonic::async_trait]
-impl AgentService for Fleet {
+impl InventoryService for Fleet {
     type SubscribeInventoryStream = Events;
 
     async fn subscribe_inventory(
@@ -106,9 +137,14 @@ impl AgentService for Fleet {
             .hosts
             .iter()
             .cloned()
-            .map(inventory_event::Of::Host)
-            .chain(self.agents.iter().cloned().map(inventory_event::Of::Agent))
-            .chain([inventory_event::Of::CaughtUp(Default::default())])
+            .map(wire::inventory_event::Of::Host)
+            .chain(
+                self.agents
+                    .iter()
+                    .cloned()
+                    .map(wire::inventory_event::Of::Agent),
+            )
+            .chain([wire::inventory_event::Of::CaughtUp(Default::default())])
             .map(|of| {
                 Ok(wire::SubscribeInventoryResponse {
                     event: Some(InventoryEvent { of: Some(of) }),
@@ -148,44 +184,47 @@ impl AgentService for Fleet {
             .ok_or_else(|| Status::not_found(format!("no agent named {name}")))
     }
 
-    async fn send_message(
+    /// Among this host and the trusted ones, an exact match first, then
+    /// one ignoring case, as the daemon resolves a host.
+    async fn resolve_host(
         &self,
-        request: Request<wire::SendMessageRequest>,
-    ) -> Result<Response<SendMessageResponse>, Status> {
-        let envelope = request
-            .into_inner()
-            .envelope
-            .expect("the request holds an envelope");
-        self.record(Call::Send(envelope.clone()));
-        self.severed().await?;
-        if let Some(status) = &self.refuse_send {
-            return Err(status.clone());
-        }
-        Ok(Response::new(SendMessageResponse {
-            envelope_id: envelope.id,
-        }))
+        request: Request<wire::ResolveHostRequest>,
+    ) -> Result<Response<wire::ResolveHostResponse>, Status> {
+        let name = request.into_inner().name;
+        self.record(Call::ResolveHost(name.clone()));
+        let trusted = || self.hosts.iter().filter(|host| host.trusted().is_some());
+        trusted()
+            .find(|host| host.name() == name)
+            .or_else(|| trusted().find(|host| host.name().eq_ignore_ascii_case(&name)))
+            .cloned()
+            .map(|host| Response::new(wire::ResolveHostResponse { host: Some(host) }))
+            .ok_or_else(|| {
+                Status::not_found(format!(
+                    "no trusted host is named {name}; trusted hosts: laptop, Studio"
+                ))
+            })
     }
+}
 
+#[tonic::async_trait]
+impl AgentService for Fleet {
+    /// Made on the host the call is addressed to, which refuses a child of
+    /// another host's agent that names no folder, as an owner does.
     async fn create_agent(
         &self,
         request: Request<CreateAgentRequest>,
     ) -> Result<Response<wire::CreateAgentResponse>, Status> {
+        let to = authority(&request);
         let request = request.into_inner();
-        self.record(Call::Create(Box::new(request.clone())));
+        self.record(Call::Create(to.clone(), Box::new(request.clone())));
         self.severed().await?;
-        // The daemon resolves a host name against the hosts it trusts.
-        let host = match request.host.as_ref().and_then(|host| host.of.as_ref()) {
-            Some(wire::host_ref::Of::Name(name)) if name.eq_ignore_ascii_case("studio") => {
-                STUDIO.to_vec()
-            }
-            Some(wire::host_ref::Of::Name(name)) => {
-                return Err(Status::not_found(format!(
-                    "no trusted host is named {name}; trusted hosts: laptop, Studio"
-                )));
-            }
-            Some(wire::host_ref::Of::HostId(host)) => host.clone(),
-            None => HERE.to_vec(),
-        };
+        let host = answering(&to);
+        if host != HERE && request.cwd.is_empty() {
+            return Err(Status::invalid_argument(
+                "starting an agent on Studio needs a folder there: pass cwd as a path on \
+                 Studio, asking the person which one if you do not know one",
+            ));
+        }
         let name = request.name.clone().unwrap_or_else(|| "quiet-otter".into());
         Ok(Response::new(wire::CreateAgentResponse {
             agent: Some(row(&request.agent_id, &host, &name)),
@@ -199,15 +238,15 @@ impl AgentService for Fleet {
         Err(Status::unimplemented("rename"))
     }
 
-    async fn file_agent(
+    async fn set_filing(
         &self,
-        request: Request<wire::FileAgentRequest>,
-    ) -> Result<Response<wire::FileAgentResponse>, Status> {
-        self.record(Call::Stop(request.into_inner()));
+        request: Request<SetFilingRequest>,
+    ) -> Result<Response<wire::SetFilingResponse>, Status> {
+        self.record(Call::Stop(authority(&request), request.into_inner()));
         self.severed().await?;
         match &self.refuse_stop {
             Some(status) => Err(status.clone()),
-            None => Ok(Response::new(wire::FileAgentResponse {
+            None => Ok(Response::new(wire::SetFilingResponse {
                 agent: Some(Row::default()),
             })),
         }
@@ -227,87 +266,42 @@ impl AgentService for Fleet {
         Err(Status::unimplemented("delete"))
     }
 
+    async fn preview_delete(
+        &self,
+        _: Request<wire::PreviewDeleteRequest>,
+    ) -> Result<Response<wire::PreviewDeleteResponse>, Status> {
+        Err(Status::unimplemented("preview_delete"))
+    }
+
+    async fn send_input(
+        &self,
+        _: Request<wire::SendInputRequest>,
+    ) -> Result<Response<wire::SendInputResponse>, Status> {
+        // No tool sends a person's input: the stop tool stops.
+        Err(Status::unimplemented("send_input"))
+    }
+
+    async fn send_message(
+        &self,
+        request: Request<SendMessageRequest>,
+    ) -> Result<Response<wire::SendMessageResponse>, Status> {
+        let to = authority(&request);
+        let request = request.into_inner();
+        self.record(Call::Send(to, request.clone()));
+        self.severed().await?;
+        if let Some(status) = &self.refuse_send {
+            return Err(status.clone());
+        }
+        Ok(Response::new(wire::SendMessageResponse {
+            envelope_id: request.id,
+        }))
+    }
+
     async fn put_blob(
         &self,
         _: Request<wire::PutBlobRequest>,
     ) -> Result<Response<wire::PutBlobResponse>, Status> {
         Err(Status::unimplemented("put_blob"))
-    }
-
-    async fn get_blob(
-        &self,
-        _: Request<wire::GetBlobRequest>,
-    ) -> Result<Response<wire::GetBlobResponse>, Status> {
-        Err(Status::unimplemented("get_blob"))
-    }
-
-    async fn get_diff(
-        &self,
-        _: Request<wire::GetDiffRequest>,
-    ) -> Result<Response<wire::GetDiffResponse>, Status> {
-        Err(Status::unimplemented("diff"))
-    }
-
-    async fn get_catalogue(
-        &self,
-        _: Request<wire::GetCatalogueRequest>,
-    ) -> Result<Response<wire::GetCatalogueResponse>, Status> {
-        Err(Status::unimplemented("get_catalogue"))
-    }
-
-    async fn pin_folder(
-        &self,
-        _: Request<wire::PinFolderRequest>,
-    ) -> Result<Response<wire::PinFolderResponse>, Status> {
-        Err(Status::unimplemented("pin_folder"))
-    }
-}
-
-#[tonic::async_trait]
-impl SessionService for Fleet {
-    type SubscribeSessionStream = Sessions;
-
-    async fn send_input(
-        &self,
-        _: Request<SendInputRequest>,
-    ) -> Result<Response<SendInputResponse>, Status> {
-        // No tool sends a person's input: the stop tool stops.
-        Err(Status::unimplemented("send_input"))
-    }
-
-    async fn subscribe_session(
-        &self,
-        _: Request<wire::SubscribeSessionRequest>,
-    ) -> Result<Response<Sessions>, Status> {
-        Err(Status::unimplemented("subscribe"))
-    }
-
-    async fn list_items(
-        &self,
-        _: Request<wire::ListItemsRequest>,
-    ) -> Result<Response<wire::ListItemsResponse>, Status> {
-        Err(Status::unimplemented("fetch"))
-    }
-
-    async fn get_item(
-        &self,
-        _: Request<wire::GetItemRequest>,
-    ) -> Result<Response<wire::GetItemResponse>, Status> {
-        Err(Status::unimplemented("get"))
-    }
-
-    async fn update_draft(
-        &self,
-        _: Request<wire::UpdateDraftRequest>,
-    ) -> Result<Response<wire::UpdateDraftResponse>, Status> {
-        Err(Status::unimplemented("save_draft"))
-    }
-
-    async fn get_draft(
-        &self,
-        _: Request<wire::GetDraftRequest>,
-    ) -> Result<Response<wire::GetDraftResponse>, Status> {
-        Err(Status::unimplemented("get_draft"))
     }
 }
 
@@ -387,10 +381,23 @@ impl Daemon {
                 Some((accepted, listener))
             }
         });
+        // Each call's authority, for the handlers to record: a tonic
+        // request keeps the HTTP request's extensions but not its address.
+        let addressed =
+            tower::util::MapRequestLayer::new(|mut request: http::Request<tonic::body::Body>| {
+                let authority = request
+                    .uri()
+                    .authority()
+                    .map(|authority| authority.as_str().to_owned())
+                    .unwrap_or_default();
+                request.extensions_mut().insert(Authority(authority));
+                request
+            });
         let task = tokio::spawn(async move {
             let _ = tonic::transport::Server::builder()
-                .add_service(wire::agent_service_server(fleet.clone()))
-                .add_service(wire::session_service_server(fleet))
+                .layer(addressed)
+                .add_service(wire::inventory_service_server(fleet.clone()))
+                .add_service(wire::agent_service_server(fleet))
                 .serve_with_incoming(incoming)
                 .await;
         });
@@ -696,10 +703,11 @@ async fn hosts_lists_trusted_hosts_and_this_one() {
     );
 }
 
-/// The envelope carries no sender: the daemon fills it from the socket the
-/// call arrived on. The model is answered the envelope's id.
+/// The message goes to the recipient's host, by its id, and carries no
+/// sender: the caller is the agent the socket serves. The model is
+/// answered the message's id.
 #[tokio::test(flavor = "multi_thread")]
-async fn send_resolves_the_recipient_and_answers_the_envelope_id() {
+async fn send_resolves_the_recipient_and_addresses_its_host() {
     let mut mcp = Mcp::start().await;
     let fleet = fleet();
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
@@ -710,26 +718,22 @@ async fn send_resolves_the_recipient_and_answers_the_envelope_id() {
         )
         .await;
     let calls = fleet.calls();
-    let [Call::Resolve(name), Call::Send(request)] = calls.as_slice() else {
+    let [Call::Resolve(name), Call::Send(addressed, request)] = calls.as_slice() else {
         panic!("resolve then send, got {calls:?}");
     };
     assert_eq!(name, "reviewer");
+    assert_eq!(*addressed, to(STUDIO), "sent to the recipient's host");
+    assert_eq!(request.agent_id, REVIEWER.to_vec());
+    assert_eq!(request.id.len(), 16);
     assert_eq!(sent, json!({ "id": interpret::to_hex(&request.id) }));
     assert_eq!(
-        request.body.as_ref().and_then(|body| match body {
-            wire::envelope::Body::Message(message) => Some(message.text.as_str()),
-            _ => None,
-        }),
+        request
+            .message
+            .as_ref()
+            .map(|message| message.text.as_str()),
         Some("Please review.")
     );
     assert_eq!(request.context.as_deref(), Some(b"parser".as_slice()));
-    assert_eq!(
-        request.to,
-        Some(AgentRef {
-            host_id: STUDIO.to_vec(),
-            agent_id: REVIEWER.to_vec(),
-        })
-    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -761,9 +765,12 @@ async fn send_says_plainly_when_the_name_or_the_delivery_fails() {
     );
 }
 
-/// With no host named the child is created on the daemon the call reached,
-/// which is the parent's own, in the parent's directory; a named host is
-/// looked up among the trusted ones and the directory is left to it.
+/// With no host named the child is created by the daemon the call reached,
+/// which is the parent's own, in the parent's directory. A named host is
+/// resolved among this host and the trusted ones, and the create is
+/// addressed to its id with the directory left to it: this host places the
+/// child where the parent works, and another host is given a folder there
+/// or refuses.
 #[tokio::test(flavor = "multi_thread")]
 async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
     let mut mcp = Mcp::start().await;
@@ -777,17 +784,17 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
         )
         .await;
     let calls = fleet.calls();
-    let [Call::Create(here)] = calls.as_slice() else {
+    let [Call::Create(addressed, here)] = calls.as_slice() else {
         panic!("one create, got {calls:?}");
     };
     assert_eq!(
         spawned,
         json!({ "name": "tester", "id": interpret::to_hex(&here.agent_id) })
     );
-    assert_eq!(here.host, None, "the daemon that took the call places it");
     assert_eq!(
-        here.parent, None,
-        "the daemon sets the parent from the caller"
+        wire::host_of_authority(addressed),
+        None,
+        "the daemon that took the call makes it: {addressed}"
     );
     assert_eq!(here.cwd, mcp.cwd.display().to_string());
     assert_eq!(
@@ -801,26 +808,50 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
     assert_eq!(prompt.prompt.unwrap().text, "Write the tests.");
     assert!(!prompt.input_id.is_empty());
 
+    let spawned = mcp
+        .ok(
+            "spawn",
+            json!({ "kind": "claude", "prompt": "Review it.", "host": "studio", "cwd": "~/src/app" }),
+        )
+        .await;
+    let calls = fleet.calls();
+    let [_, Call::ResolveHost(name), Call::Create(addressed, there)] = calls.as_slice() else {
+        panic!("the host resolved, then a second create, got {calls:?}");
+    };
+    assert_eq!(name, "studio");
+    assert_eq!(*addressed, to(STUDIO), "the create goes to the host's id");
+    assert_eq!(there.cwd, "~/src/app");
+    assert_eq!(
+        there.agent,
+        Some(create_agent_request::Agent::ClaudeSdk(Default::default()))
+    );
+    assert_eq!(spawned["name"], "quiet-otter", "{spawned}");
+
     mcp.ok(
         "spawn",
-        json!({ "kind": "claude", "prompt": "Review it.", "host": "studio" }),
+        json!({ "kind": "codex", "prompt": "Look here.", "host": "laptop" }),
     )
     .await;
     let calls = fleet.calls();
-    let [_, Call::Create(there)] = calls.as_slice() else {
-        panic!("a second create, got {calls:?}");
+    let [.., Call::Create(addressed, named_here)] = calls.as_slice() else {
+        panic!("a third create, got {calls:?}");
     };
+    assert_eq!(*addressed, to(HERE));
     assert_eq!(
-        there.host,
-        Some(wire::HostRef::named("studio")),
-        "the daemon resolves the name"
-    );
-    assert_eq!(there.cwd, "", "a path here means nothing there");
-    assert_eq!(
-        there.agent.as_ref().map(create_agent_request::Agent::kind),
-        Some(Kind::ClaudeSdk)
+        named_here.cwd, "",
+        "a named host places the child itself: here, where the parent works"
     );
 
+    assert_eq!(
+        mcp.refused(
+            "spawn",
+            json!({ "kind": "codex", "prompt": "x", "host": "Studio" })
+        )
+        .await,
+        "starting an agent on Studio needs a folder there: pass cwd as a path on Studio, \
+         asking the person which one if you do not know one",
+        "a path here means nothing there, so none is sent, and the host asks for one"
+    );
     assert_eq!(
         mcp.refused(
             "spawn",
@@ -837,9 +868,14 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
     )
     .await;
     let calls = fleet.calls();
-    let Some(Call::Create(acp)) = calls.last() else {
+    let Some(Call::Create(addressed, acp)) = calls.last() else {
         panic!("a create, got {calls:?}");
     };
+    assert_eq!(
+        wire::host_of_authority(addressed),
+        None,
+        "no host named: the daemon that took the call makes it"
+    );
     assert_eq!(
         acp.agent,
         Some(create_agent_request::Agent::Acp(wire::AcpCreateConfig {
@@ -853,10 +889,10 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
             .await,
         "no agent \"Gemini CLI\"; use claude, codex or another agent a host offers, by the id hosts lists"
     );
-    assert_eq!(
-        fleet.calls().len(),
-        4,
-        "the daemon refused the stranger and the malformed id never reached it"
+    let calls = fleet.calls();
+    assert!(
+        matches!(calls.as_slice(), [.., Call::Create(_, last)] if last == acp),
+        "the malformed id never reached the daemon: {calls:?}"
     );
 }
 
@@ -876,7 +912,7 @@ async fn a_spawn_goes_through_the_agent_process_which_asks_the_daemon_once() {
         )
         .await;
     let calls = fleet.calls();
-    let [Call::Create(created)] = calls.as_slice() else {
+    let [Call::Create(_, created)] = calls.as_slice() else {
         panic!("one create, got {calls:?}");
     };
     assert_eq!(
@@ -891,12 +927,13 @@ async fn a_spawn_goes_through_the_agent_process_which_asks_the_daemon_once() {
 
     mcp.refused(
         "spawn",
-        json!({ "kind": "codex", "prompt": "x", "host": "stranger" }),
+        json!({ "kind": "codex", "prompt": "x", "host": "studio" }),
     )
     .await;
     assert_eq!(
         mcp.spawns.lock().unwrap()[2..],
-        [Spawn::Requested, Spawn::Refused]
+        [Spawn::Requested, Spawn::Refused],
+        "the host refused a child with no folder there"
     );
     daemon.stop().await;
 
@@ -950,51 +987,78 @@ async fn a_spawn_whose_agent_process_is_not_listening_is_refused_plainly() {
 
 /// An ask of a kind the agent process does not know, as a later build's
 /// tool server would send an earlier agent process, is refused in words:
-/// nothing is told to the core and nothing goes to the daemon.
+/// nothing is told to the core and nothing goes to the daemon. So is a
+/// spawn from a tool server built before the create took its host from the
+/// call's address, which this build reads as an ask of no kind.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_ask_the_agent_process_does_not_know_is_refused_in_words() {
+    use prost::Message as _;
+    /// A spawn as those builds asked for it, at the field this build
+    /// leaves reserved.
+    #[derive(Clone, PartialEq, prost::Message)]
+    struct OldAsk {
+        #[prost(bytes = "vec", tag = "1")]
+        spawn: Vec<u8>,
+    }
+    let old = OldAsk {
+        spawn: CreateAgentRequest {
+            agent_id: vec![1; 16],
+            ..Default::default()
+        }
+        .encode_to_vec(),
+    };
+    let old = wire::AgentAsk::decode(old.encode_to_vec().as_slice()).unwrap();
+    assert_eq!(old.of, None);
     let mcp = Mcp::start().await;
     let fleet = fleet();
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
-    let answer = agent_dir::agent_sock::ask(&mcp.dir, &wire::AgentAsk { of: None })
-        .await
-        .unwrap();
-    assert_eq!(
-        answer.of,
-        Some(wire::agent_answer::Of::Refused(
-            agent_dir::agent_sock::UNKNOWN_ASK.to_owned()
-        ))
-    );
+    for ask in [wire::AgentAsk::default(), old] {
+        let answer = agent_dir::agent_sock::ask(&mcp.dir, &ask).await.unwrap();
+        assert_eq!(
+            answer.of,
+            Some(wire::agent_answer::Of::Refused(
+                agent_dir::agent_sock::UNKNOWN_ASK.to_owned()
+            ))
+        );
+    }
     assert!(mcp.spawns.lock().unwrap().is_empty());
     assert!(fleet.calls().is_empty(), "{:?}", fleet.calls());
 }
 
-/// The stop tool stops, as a person's stop does: the daemon ends the child
-/// now and its descendants with it. It is not an interrupt.
+/// The stop tool stops, as a person's stop does: the child's host ends it
+/// now and its descendants with it. It is not an interrupt. The stop goes
+/// to the child's host, which refuses an agent that is not its parent.
 #[tokio::test(flavor = "multi_thread")]
-async fn stop_stops_the_named_child_through_the_daemon() {
+async fn stop_closes_the_named_child_on_its_host() {
     let mut mcp = Mcp::start().await;
     let fleet = fleet();
-    let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
+    let daemon = Daemon::listen(&mcp.dir, fleet.clone());
     assert_eq!(mcp.ok("stop", json!({ "name": "helper" })).await, json!({}));
     let calls = fleet.calls();
-    let [Call::Resolve(_), Call::Stop(request)] = calls.as_slice() else {
+    let [Call::Resolve(_), Call::Stop(addressed, request)] = calls.as_slice() else {
         panic!("resolve then stop, got {calls:?}");
     };
+    assert_eq!(*addressed, to(HERE), "the child's host");
     assert_eq!(request.agent_id, CHILD.to_vec());
+    assert_eq!(request.filing(), wire::Filing::Closed);
+    daemon.stop().await;
 
-    let mut fleet = fleet.clone();
-    fleet.refuse_stop = Some(Status::permission_denied(
-        "an agent stops only its own children",
-    ));
-    fleet.calls = Default::default();
-    let mcp_dir = mcp.dir.clone();
-    _daemon.stop().await;
-    let _daemon = Daemon::listen(&mcp_dir, fleet);
+    let fleet = Fleet {
+        refuse_stop: Some(Status::permission_denied(
+            "an agent settles only its own children",
+        )),
+        ..self::fleet()
+    };
+    let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
     assert_eq!(
         mcp.refused("stop", json!({ "name": "reviewer" })).await,
-        "reviewer did not stop: an agent stops only its own children"
+        "reviewer did not stop: an agent settles only its own children"
     );
+    let calls = fleet.calls();
+    let [Call::Resolve(_), Call::Stop(addressed, _)] = calls.as_slice() else {
+        panic!("resolve then stop, got {calls:?}");
+    };
+    assert_eq!(*addressed, to(STUDIO), "the owner refused it");
 }
 
 /// status and attach never dial: here no daemon exists at all.
@@ -1036,6 +1100,7 @@ async fn attach_stores_the_file_by_its_hash_and_answers_the_element() {
             mime: "image/png".into(),
             size: bytes.len() as u64,
         })),
+        ..Default::default()
     };
     assert_eq!(element, attachments::element(&expected, Some(&stored)));
     let parsed = attachments::parse(&element);
@@ -1150,6 +1215,7 @@ async fn send_refuses_an_attachment_stored_over_the_limit() {
                 mime: "application/octet-stream".into(),
                 size: 10,
             })),
+            ..Default::default()
         },
         Some(&stored),
     );
@@ -1167,7 +1233,7 @@ async fn send_refuses_an_attachment_stored_over_the_limit() {
         !fleet
             .calls()
             .iter()
-            .any(|call| matches!(call, Call::Send(_))),
+            .any(|call| matches!(call, Call::Send(..))),
         "nothing was sent"
     );
 }
@@ -1238,9 +1304,9 @@ async fn a_call_the_daemon_may_have_taken_is_never_made_again() {
             .calls()
             .iter()
             .filter_map(|call| match call {
-                Call::Send(_) => Some("send"),
-                Call::Create(_) => Some("create"),
-                Call::Stop(_) => Some("stop"),
+                Call::Send(..) => Some("send"),
+                Call::Create(..) => Some("create"),
+                Call::Stop(..) => Some("stop"),
                 _ => None,
             })
             .collect();
@@ -1293,15 +1359,12 @@ async fn the_harness_runs_the_tool_server_from_the_install_path(kind: Kind) {
         .calls()
         .into_iter()
         .find_map(|call| match call {
-            Call::Send(envelope) => Some(envelope),
+            Call::Send(_, request) => Some(request),
             _ => None,
         })
         .expect("the daemon took a message");
     assert_eq!(
-        sent.body.as_ref().and_then(|body| match body {
-            wire::envelope::Body::Message(message) => Some(message.text.as_str()),
-            _ => None,
-        }),
+        sent.message.as_ref().map(|message| message.text.as_str()),
         Some("Ready for review.")
     );
     let messages = log
@@ -1417,14 +1480,39 @@ async fn a_sub_agent_stays_for_the_child_it_spawned_before_its_daemon_names_it()
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 }
 
-/// A spawn the daemon refused made no child, and the sub-agent's turn end
-/// is its last.
+/// A sub-agent that spawns a child on another host stays for it too: its
+/// process carried the create to that host and heard the child was made,
+/// and the daemon here hears of the child only once that host's rows are
+/// copied to it, if before the turn ends at all.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sub_agent_stays_for_a_child_it_spawned_on_another_host() {
+    let (agent, mut daemon, fleet, _tools) = a_one_shot_agent_that_spawns(
+        json!({ "kind": "codex", "prompt": "Write the tests.", "host": "Studio", "cwd": "~/src/app" }),
+    )
+    .await;
+    let calls = fleet.calls();
+    let [Call::ResolveHost(_), Call::Create(addressed, _)] = calls.as_slice() else {
+        panic!("the host resolved, then the create, got {calls:?}");
+    };
+    assert_eq!(*addressed, to(STUDIO));
+    assert_eq!(marked_last(&agent), [false], "its child still works");
+    assert!(!agent.finished());
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}
+
+/// A spawn the child's host refused made no child, and the sub-agent's
+/// turn end is its last.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_sub_agent_whose_spawn_was_refused_finishes_at_its_turns_end() {
     let (agent, _daemon, fleet, _tools) =
-        a_one_shot_agent_that_spawns(json!({ "kind": "codex", "prompt": "x", "host": "stranger" }))
+        a_one_shot_agent_that_spawns(json!({ "kind": "codex", "prompt": "x", "host": "Studio" }))
             .await;
-    assert_eq!(fleet.calls().len(), 1, "{:?}", fleet.calls());
+    let calls = fleet.calls();
+    assert!(
+        matches!(calls.as_slice(), [Call::ResolveHost(_), Call::Create(..)]),
+        "{calls:?}"
+    );
     assert_eq!(agent.exit().await, ExitCause::Finished);
     assert_eq!(marked_last(&agent), [true]);
 }

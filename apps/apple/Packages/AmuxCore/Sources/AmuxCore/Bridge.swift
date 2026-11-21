@@ -1,5 +1,6 @@
 import AmuxApp
 import AmuxValues
+import AmuxWords
 import Foundation
 
 extension Bridge {
@@ -68,5 +69,26 @@ extension Bridge {
     /// follows.
     public static func pastesAsAttachment(_ text: String) -> Bool {
         text.withCString { amux_pastes_as_attachment($0) }
+    }
+}
+
+extension CodeHighlighting {
+    /// Code coloured by the shared view, through the bridge: what the app
+    /// puts in every screen's environment.
+    public static let bridge = CodeHighlighting { request in
+        switch request {
+        case .block(let code, let info, let streaming):
+            code.withCString { code in
+                info.withCString { info in
+                    Bridge.read(HighlightedCode.self, amux_highlight_block(code, info, streaming))
+                }
+            }
+        case .patch(let path, let hunks):
+            path.withCString { path in
+                Bridge.json(hunks).withCString { hunks in
+                    Bridge.read(HighlightedCode.self, amux_highlight_patch(path, hunks))
+                }
+            }
+        }
     }
 }

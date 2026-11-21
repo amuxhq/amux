@@ -13,13 +13,14 @@ use ui_view::{
     AskCard, Comparison, FormValue, Overview, QuestionResponse, Row, SettingChange, SettingsView,
     ToolRows,
 };
-use wire::{BlobRef, send_input_response};
+use wire::{BlobRef, GetChangesResponse, send_input_response};
 
 use crate::coalesce::{Coalescer, WakeFn};
 use crate::delta::Sent;
+use crate::review::ReviewSession;
 use crate::values::{
-    ActOutcome, AskMoved, ChatDelta, ChatFrame, CommandOutcome, Draft, FrozenReview, PageOutcome,
-    ProviderLabel, SendOutcome,
+    ActOutcome, AskMoved, ChatDelta, ChatFrame, CommandOutcome, Draft, PageOutcome, ProviderLabel,
+    ReviewChange, ReviewOutcome, SendOutcome,
 };
 
 /// An open chat. The host hears what moved as [`ChatDelta`]s: the window's
@@ -35,7 +36,7 @@ pub struct Chat {
     watcher: JoinHandle<()>,
     clock: Arc<dyn client::Clock>,
     /// The changed files the overview last fetched.
-    changed_files: Mutex<Option<wire::Diff>>,
+    changed_files: Mutex<Option<GetChangesResponse>>,
     /// The runs the reader opened, each held by one of its steps: rows
     /// fold every other run to its newest step.
     open_runs: Mutex<HashSet<Key>>,
@@ -50,6 +51,8 @@ pub struct Chat {
     /// What the host was last handed; None until its model opens on the
     /// chat, and no delta is computed before.
     sent: Mutex<Option<Sent>>,
+    /// The review page open on the chat.
+    review: Mutex<Option<Arc<ReviewSession>>>,
 }
 
 impl Chat {
@@ -129,6 +132,7 @@ impl Chat {
             open_turns: Mutex::new(HashSet::new()),
             kept,
             sent: Mutex::new(None),
+            review: Mutex::new(None),
         })
     }
 
@@ -264,17 +268,18 @@ impl Chat {
         ui_view::overview(&self.session.state(), files.as_ref())
     }
 
-    /// Fetches the files changed for `comparison`, without a patch, and
-    /// answers the overview with them. A branch with no known base has no
-    /// changes to list.
+    /// Asks the agent's host which files changed for `comparison`, and
+    /// answers the overview with them: the uncommitted work against HEAD,
+    /// or everything on the branch from the base the host's own rule picks.
+    /// A provider subagent, which has no folder of its own, lists none.
     pub async fn open_overview(
         &self,
         comparison: Comparison,
     ) -> Result<Overview, client::RpcError> {
-        let base = ui_view::diff_base(&self.session.state(), comparison);
-        let files = match base {
-            Some(base) => Some(self.session.changed_files(base).await?),
-            None => None,
+        let files = if ui_view::lists_changes(&self.session.state()) {
+            Some(self.session.changes(comparison.base()).await?)
+        } else {
+            None
         };
         *self.changed_files.lock().unwrap() = files;
         Ok(self.overview())
@@ -298,7 +303,9 @@ impl Chat {
         let mut sent = self.sent.lock().unwrap();
         let sent = sent.insert(Sent::default());
         let batch = self.changes.take();
-        self.moved(sent, true, &batch.keys)
+        let mut opening = self.moved(sent, true, &batch.keys);
+        opening.review = self.review_page().and_then(|review| review.hand_over(true));
+        opening
     }
 
     /// What moved since the host last heard, or None when nothing did or
@@ -308,14 +315,18 @@ impl Chat {
         let mut sent = self.sent.lock().unwrap();
         let sent = sent.as_mut()?;
         let batch = self.changes.take();
-        let delta = self.moved(sent, batch.reloaded, &batch.keys);
+        let mut delta = self.moved(sent, batch.reloaded, &batch.keys);
+        delta.review = self
+            .review_page()
+            .and_then(|review| review.hand_over(false));
         let moved = delta.keys.is_some()
             || !delta.rows.is_empty()
             || delta.frame.is_some()
             || delta.ask.is_some()
             || delta.overview.is_some()
             || delta.settings.is_some()
-            || delta.agents.is_some();
+            || delta.agents.is_some()
+            || delta.review.is_some();
         moved.then_some(delta)
     }
 
@@ -369,6 +380,7 @@ impl Chat {
                 Some(fleet) => ui_view::chat_agents(&state, &fleet.state()),
                 None => ui_view::ChatAgents::default(),
             }),
+            review: None,
         }
     }
 
@@ -388,6 +400,105 @@ impl Chat {
         SendOutcome {
             input_id: sent.id,
             state,
+        }
+    }
+
+    /// Sends `draft` with the review's drafts after its words: the review's
+    /// text attachment, naming exactly the comments its text holds, each at
+    /// the revision it holds, so the agent's host marks those sent when the
+    /// agent takes the message and no draft written or edited meanwhile.
+    /// Until then they are still drafts there. The review is read again
+    /// first, without changing it, so what is sent is what the host holds;
+    /// nothing is sent when it cannot be read or holds no drafts.
+    pub async fn send_with_review(&self, draft: &Draft) -> Result<SendOutcome, String> {
+        let review = self.reviews();
+        let summary = review.read().await.map_err(|error| error.to_string())?;
+        let (text, attachments) = with_review(draft, &summary)?;
+        let sent = self.session.send_prompt(&text, attachments).await;
+        let state = self
+            .session
+            .state()
+            .input_state(&sent.id)
+            .unwrap_or_else(|| outcome_state(&sent.outcome));
+        Ok(SendOutcome {
+            input_id: sent.id,
+            state,
+        })
+    }
+
+    /// Opens the agent's review page on the chat, or opens the open one
+    /// again: `base_branch` picks its base anew, and `refresh` takes a
+    /// snapshot even with drafts, moving them onto it. The page follows
+    /// the agent's row from then until it closes, and moves in the chat's
+    /// deltas.
+    pub async fn open_review(
+        self: &Arc<Self>,
+        base_branch: Option<String>,
+        refresh: bool,
+    ) -> ReviewOutcome {
+        let page = {
+            let mut open = self.review.lock().unwrap();
+            open.get_or_insert_with(|| {
+                let session = self.session.clone();
+                let watched = Arc::downgrade(self);
+                ReviewSession::start(
+                    Arc::new(self.session.reviews()),
+                    self.session.changed(),
+                    Arc::new(move || wire::Agent {
+                        experimental: session.state().agent().experimental.clone(),
+                        ..wire::Agent::default()
+                    }),
+                    Arc::new(move || {
+                        if let Some(chat) = watched.upgrade() {
+                            chat.changes.push(Vec::new(), false, true);
+                        }
+                    }),
+                )
+            })
+            .clone()
+        };
+        page.open(base_branch, refresh).await
+    }
+
+    /// The review page open on the chat.
+    pub fn review_page(&self) -> Option<Arc<ReviewSession>> {
+        self.review.lock().unwrap().clone()
+    }
+
+    /// Closes the review page: it stops following the agent's row, and no
+    /// delta carries it again.
+    pub fn close_review(&self) {
+        drop(self.review.lock().unwrap().take());
+    }
+
+    /// Makes `changes` to the agent's review, all of them or none: on the
+    /// open page, or with none open, as the chip's ✕ discards drafts.
+    pub async fn edit_review(&self, changes: Vec<ReviewChange>) -> ReviewOutcome {
+        match self.review_page() {
+            Some(page) => page.edit(changes).await,
+            None => crate::review::edit_closed(&self.session.reviews(), changes).await,
+        }
+    }
+
+    /// The page of the round a sent review in the chat closed, named by its
+    /// review and the input that sent it: its whole diff and the comments
+    /// it sent. None when that input closed no round, or the agent's host
+    /// no longer holds it, and the chat shows the text the agent read
+    /// instead. It is read apart from the review page open on the chat, so
+    /// the snapshot that page shows never moves under it.
+    pub async fn review_round(
+        &self,
+        review_id: &[u8],
+        input_id: &[u8],
+    ) -> Option<ui_view::ReviewPage> {
+        crate::review::round_page(&self.session.reviews(), review_id, input_id).await
+    }
+
+    /// The agent's review: the open page's, or one read for a send.
+    fn reviews(&self) -> Arc<ui_runtime::review::Review> {
+        match self.review_page() {
+            Some(page) => page.review().clone(),
+            None => Arc::new(self.session.reviews()),
         }
     }
 
@@ -614,17 +725,6 @@ impl Chat {
         }
     }
 
-    /// The agent's diff for `comparison` and its patch, frozen for a
-    /// review. A branch with no known base is reviewed as its uncommitted
-    /// work.
-    pub async fn review(&self, comparison: Comparison) -> Result<FrozenReview, client::RpcError> {
-        let base = ui_view::diff_base(&self.session.state(), comparison)
-            .or_else(|| ui_view::diff_base(&self.session.state(), Comparison::Uncommitted))
-            .expect("the working tree is always a base");
-        let (diff, patch) = self.session.review(base).await?;
-        Ok(FrozenReview { diff, patch })
-    }
-
     /// Why an attachment would be refused before anything of it is read or
     /// stored, in words naming the file: over the size every host takes, or
     /// a picture or file the agent takes none of, which would have the
@@ -666,6 +766,7 @@ impl Chat {
 impl Drop for Chat {
     fn drop(&mut self) {
         self.watcher.abort();
+        self.close_review();
         if let Some(fleet) = self.fleet.upgrade() {
             fleet.close(&self.agent);
         }
@@ -711,6 +812,7 @@ pub(crate) fn frame(state: &SessionState, now_ms: i64, ended: Option<String>) ->
         ask_input: ui_view::ask_card(state)
             .and_then(|card| state.answering(&card.key).map(|sent| sent.id.clone())),
         ended,
+        review_chip: ui_view::review_chip(agent),
     }
 }
 
@@ -771,6 +873,20 @@ fn provider_label(state: &SessionState) -> ProviderLabel {
     }
 }
 
+/// The prompt that sends `draft` with the drafts of `summary` after its
+/// words, as the review's text attachment.
+fn with_review(
+    draft: &Draft,
+    summary: &wire::experimental::ReviewSummary,
+) -> Result<(String, Vec<wire::Attachment>), String> {
+    let review = crate::review::sent_review(summary)
+        .ok_or_else(|| "the review holds no drafts to send".to_owned())?;
+    let (mut text, mut attachments) = draft.to_prompt();
+    text.push(ui_view::PLACEHOLDER);
+    attachments.push(review);
+    Ok((text, attachments))
+}
+
 fn outcome_state(outcome: &InputOutcome) -> InputState {
     match outcome {
         InputOutcome::Lost => InputState::Uncertain,
@@ -798,4 +914,87 @@ fn acted(result: Result<(), InputError>) -> ActOutcome {
 /// The ask the person answered is no longer the one waiting: it closed.
 fn moved_on() -> ActOutcome {
     ActOutcome::Rejected(Refusal::of(wire::Refusal::ClosedAsk))
+}
+
+#[cfg(test)]
+mod tests {
+    use wire::experimental::{REVIEW_ROW, ReviewRowEntry, ReviewSummary, ReviewerComment};
+
+    use super::*;
+    use crate::values::{DraftAttachment, DraftPart};
+
+    /// A send with the review puts its attachment after the draft's words
+    /// and attachments, each in its place; with no drafts there is nothing
+    /// to send.
+    #[test]
+    fn a_send_with_the_review_puts_it_after_the_draft() {
+        let draft = Draft {
+            parts: vec![
+                DraftPart::Text("look at ".into()),
+                DraftPart::Attachment(DraftAttachment::Text {
+                    name: "log".into(),
+                    text: "failed".into(),
+                }),
+                DraftPart::Text(" and the review".into()),
+            ],
+        };
+        let mut summary = ReviewSummary {
+            id: b"review".to_vec(),
+            snapshot: "5".repeat(40),
+            ..ReviewSummary::default()
+        };
+        assert!(with_review(&draft, &summary).is_err());
+        summary.comments.push(ReviewerComment {
+            id: b"one".to_vec(),
+            text: "Keep it.".into(),
+            ..ReviewerComment::default()
+        });
+        let (text, attachments) = with_review(&draft, &summary).unwrap();
+        let placeholder = ui_view::PLACEHOLDER;
+        assert_eq!(
+            text,
+            format!("look at {placeholder} and the review{placeholder}")
+        );
+        assert_eq!(attachments.len(), 2);
+        let entry = ui_view::sent_review::entry(&attachments[1]).expect("the review last");
+        assert_eq!(
+            entry
+                .comments
+                .iter()
+                .map(|comment| comment.id.clone())
+                .collect::<Vec<_>>(),
+            vec![b"one".to_vec()]
+        );
+    }
+
+    /// The composer's chip comes from the review's entry on the agent's
+    /// row, with the frame: there while drafts wait, gone with them.
+    #[test]
+    fn the_chip_comes_with_the_frame_from_the_agents_row() {
+        let mut agent = wire::Agent {
+            agent_id: b"agent".to_vec(),
+            kind: wire::Kind::Codex as i32,
+            ..wire::Agent::default()
+        };
+        let entry = |drafts| ReviewRowEntry {
+            drafts,
+            counter: 4,
+            moved: true,
+            review_id: b"review".to_vec(),
+        };
+        REVIEW_ROW.put(&mut agent.experimental, &entry(3));
+        let chip = frame(&SessionState::new(agent.clone(), 3), 0, None).review_chip;
+        assert_eq!(
+            chip,
+            Some(ui_view::ReviewChip {
+                comments: 3,
+                moved: true
+            })
+        );
+        REVIEW_ROW.put(&mut agent.experimental, &entry(0));
+        assert_eq!(
+            frame(&SessionState::new(agent, 3), 0, None).review_chip,
+            None
+        );
+    }
 }

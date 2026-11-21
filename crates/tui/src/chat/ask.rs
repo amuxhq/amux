@@ -11,8 +11,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ui_view::{
-    AskBody, AskCard, CardState, Choice, ChoiceOutcome, EditLine, FieldProblem, FileChangeView,
-    FileRow, FormField as Field, FormFieldKind as FieldKind, FormValue, LineKind, PermissionGrant,
+    AskBody, AskCard, CardState, Choice, ChoiceOutcome, FieldProblem, FileChangeView, FileRow,
+    FormField as Field, FormFieldKind as FieldKind, FormValue, LineKind, PermissionGrant,
     QuestionResponse, QuestionView, Scope, answer_input, form_answer, form_problems,
     question_answer, reply_answer,
 };
@@ -865,7 +865,7 @@ impl AskUi {
             AskBody::Edit {
                 path,
                 files,
-                lines: patch,
+                patch,
                 line: first,
                 reason,
                 ..
@@ -902,18 +902,23 @@ impl AskUi {
                 // line beside the path says where its change starts, so the
                 // hunks' starts are not drawn. A patch of several files names
                 // each file where its lines start.
-                let lines: Vec<(char, Style, String)> = patch
-                    .iter()
-                    .filter_map(|line| match line {
-                        EditLine::Line(line) => Some(match line.kind {
-                            LineKind::Added => ('+', theme.diff_added(), line.text.clone()),
-                            LineKind::Removed => ('-', theme.diff_removed(), line.text.clone()),
-                            LineKind::Context => (' ', theme.diff_context(), line.text.clone()),
-                        }),
-                        EditLine::File(file) => Some((' ', theme.code(), file_words(file))),
-                        EditLine::Hunk { .. } => None,
-                    })
-                    .collect();
+                // Each file's code is coloured as that file is, hunk by hunk.
+                let mut lines: Vec<(char, Style, crate::code::Runs)> = Vec::new();
+                for file in patch {
+                    if let Some(row) = &file.file {
+                        lines.push((' ', theme.code(), vec![(file_words(row), theme.code())]));
+                    }
+                    let at = file.file.as_ref().map_or(path.as_str(), |row| &row.path);
+                    let code = crate::code::patch(at, &file.hunks);
+                    for (line, runs) in file.hunks.iter().flat_map(|hunk| &hunk.lines).zip(code) {
+                        let (mark, style) = match line.kind {
+                            LineKind::Added => ('+', theme.diff_added()),
+                            LineKind::Removed => ('-', theme.diff_removed()),
+                            LineKind::Context => (' ', theme.diff_context()),
+                        };
+                        lines.push((mark, style, crate::code::diff_runs(&runs, style, theme)));
+                    }
+                }
                 // Opened ([Full Diff] or f), the whole patch shows in the
                 // box, which grows to fill the chat and scrolls (wheel,
                 // PgUp/PgDn) when even that is too little.
@@ -950,12 +955,8 @@ impl AskUi {
                 for (mark, style, body) in lines.iter().skip(scroll).take(take) {
                     let (mark, style) = (*mark, *style);
                     let mut row = Line::default();
-                    push(
-                        &mut row,
-                        format!("{mark} {}", text::ellipsize(body, width.saturating_sub(2))),
-                        style,
-                        width,
-                    );
+                    push(&mut row, format!("{mark} "), style, width);
+                    text::push_runs(&mut row, body, width);
                     text::fill(&mut row, style, width);
                     out.lines.push(row);
                 }

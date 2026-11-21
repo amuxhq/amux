@@ -11,7 +11,7 @@
 ## 37 recorded 36: fact Rpc method=session/request_permission
   ask ask-1 -> "tool:call_267669133306129084" 1/1 Open
     choices AllowOnce*, Deny+note
-    body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 1, lines: [Line(PatchLine { number: None, kind: Removed, text: "hello" }), Line(PatchLine { number: None, kind: Added, text: "goodbye" })], line: None, reason: "", created: Some(false) }
+    body Edit { path: "<MACHINE_PATH>", files: 1, added: 1, removed: 1, patch: [FilePatch { file: None, hunks: [PatchHunk { start: None, lines: [PatchLine { number: None, kind: Removed, text: "hello" }, PatchLine { number: None, kind: Added, text: "goodbye" }] }] }], line: None, reason: "", created: Some(false) }
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 38 recorded 37: input p1-4
   ask none

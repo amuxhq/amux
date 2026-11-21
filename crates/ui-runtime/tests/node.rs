@@ -1,13 +1,13 @@
 //! The drivers against a real node in process, running a real agent on a
-//! fake provider, through both clients: the in-process call the phone makes
-//! and gRPC over the profile socket the terminal dials.
+//! fake provider, through both transports: the node's entry called in
+//! memory, as the phone calls it, and gRPC over the profile socket the
+//! terminal dials.
 
 #![cfg(unix)]
 
-use std::sync::Arc;
 use std::time::Duration;
 
-use client::{Client, GrpcClient, SystemClock};
+use client::{Client, Surface, SystemClock};
 use provider_fakes::script::Step;
 use support::until_within;
 use testnet::{AgentDecl, FakeKind, Net, Topology};
@@ -42,7 +42,7 @@ fn topology() -> Topology {
     )
 }
 
-async fn grpc(net: &Net) -> GrpcClient {
+async fn grpc(net: &Net) -> Client {
     let profiles = net
         .front_door("desk")
         .await
@@ -52,7 +52,7 @@ async fn grpc(net: &Net) -> GrpcClient {
         .unwrap()
         .into_inner()
         .profiles;
-    GrpcClient::connect(profiles[0].socket_path.as_ref())
+    Client::connect(profiles[0].socket_path.as_ref(), Surface::Terminal)
         .await
         .expect("the profile socket answers")
 }
@@ -103,7 +103,7 @@ fn compact(trace: &ui_runtime::DriverTrace<ui_state::SessionState, ui_state::Msg
 
 /// The fleet lists the agent, a session opens on it, a prompt lands and
 /// is answered, and history pages in from below.
-async fn drive(client: Arc<dyn Client>, net: &Net) {
+async fn drive(client: Client, net: &Net) {
     let fleet = Fleet::connect(client, SystemClock).await.unwrap();
     assert!(fleet.state().caught_up());
     let worker = net.agent("worker").unwrap().id;
@@ -170,7 +170,7 @@ async fn drive(client: Arc<dyn Client>, net: &Net) {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_session_and_the_fleet_run_over_the_profile_socket_against_a_real_node() {
     let net = Net::start(topology()).await.unwrap();
-    let client: Arc<dyn Client> = Arc::new(grpc(&net).await);
+    let client = grpc(&net).await;
     drive(client, &net).await;
     net.shutdown().await.unwrap();
 }
@@ -192,7 +192,7 @@ async fn a_session_over_the_socket_reconnects_across_a_daemon_restart() {
     )
     .await
     .unwrap();
-    let client: Arc<dyn Client> = Arc::new(grpc(&net).await);
+    let client = grpc(&net).await;
     let fleet = Fleet::connect(client, SystemClock).await.unwrap();
     let worker = net.agent("worker").unwrap().id;
     let agent = fleet
@@ -244,17 +244,11 @@ async fn a_session_over_the_socket_reconnects_across_a_daemon_restart() {
 
 /// The text of the draft desk's daemon keeps for `agent`, once it reads
 /// `wanted`.
-async fn kept_reads(client: &dyn Client, agent: &[u8], wanted: &str) {
+async fn kept_reads(client: &Client, agent: &[u8], wanted: &str) {
     let mut last = String::new();
     let reached = tokio::time::timeout(PATIENCE, async {
         loop {
-            last = client
-                .get_draft(wire::GetDraftRequest {
-                    agent_id: agent.to_vec(),
-                })
-                .await
-                .unwrap()
-                .text;
+            last = client.drafts().get(agent).await.unwrap().text;
             if last == wanted {
                 return;
             }
@@ -294,7 +288,7 @@ async fn a_prompt_for_an_unreachable_host_is_refused_and_goes_only_when_sent_aga
     .await
     .unwrap();
     net.settle("far").await.unwrap();
-    let client: Arc<dyn Client> = Arc::new(client::InProcess::new(net.client("desk").unwrap()));
+    let client = Client::in_memory(net.entrance("desk").unwrap(), Surface::Ios);
     let fleet = Fleet::connect(client.clone(), SystemClock).await.unwrap();
     let far = net.agent("far").unwrap().id;
     let agent = until_within(PATIENCE, fleet.changed(), || {
@@ -332,7 +326,7 @@ async fn a_prompt_for_an_unreachable_host_is_refused_and_goes_only_when_sent_aga
             attachments: Vec::new(),
         },
     );
-    kept_reads(&*client, far.as_bytes(), "Run the tests.").await;
+    kept_reads(&client, far.as_bytes(), "Run the tests.").await;
 
     net.restore_link("desk", "laptop").await.unwrap();
     until_within(PATIENCE, session.changed(), || {
@@ -360,7 +354,7 @@ async fn a_prompt_for_an_unreachable_host_is_refused_and_goes_only_when_sent_aga
         .filter(|held| held.item.text.contains("Run the tests."))
         .count();
     assert_eq!(prompts, 1, "the prompt reached the agent once");
-    kept_reads(&*client, far.as_bytes(), "").await;
+    kept_reads(&client, far.as_bytes(), "").await;
     fleet.close(&agent);
     drop(session);
     drop(fleet);
@@ -404,7 +398,7 @@ async fn no_report_carries_a_word_of_the_chat_on_screen() {
     )
     .await
     .unwrap();
-    let client: Arc<dyn Client> = Arc::new(grpc(&net).await);
+    let client = grpc(&net).await;
     let fleet = Fleet::connect(client.clone(), SystemClock).await.unwrap();
     let worker = net.agent(&format!("worker-{MARKER}")).unwrap().id;
     let agent = fleet
@@ -446,6 +440,7 @@ async fn no_report_carries_a_word_of_the_chat_on_screen() {
         let records = fleet.on_screen_records();
         assert_eq!(records.len(), 1, "the one chat on screen");
         let bundle = client
+            .admin()
             .dump(wire::DumpRequest {
                 reason: format!("asked by {check}"),
                 automatic,

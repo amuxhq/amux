@@ -39,7 +39,7 @@ pub(crate) use calls::{Answers, Delivered};
 use calls::{CallTable, Carried};
 use core_ring::{DumpKind, DumpLimit, Ring};
 use daemon_core::payload::{
-    Answer, BlobRefusal, CallError, ChannelError, ClientRequest, JobResult, PeerFailure, PeerReply,
+    Answer, BlobRefusal, CallError, ChannelError, ClientRequest, JobResult, PeerFailure, PeerRead,
     PeerRequest, Response, Status,
 };
 use daemon_core::{
@@ -95,14 +95,7 @@ pub(crate) enum Fed {
     PeerCall {
         from: HostId,
         call: CallId,
-        request: PeerRequest,
-    },
-    /// A client call forwarded to the host that owns its agent, complete
-    /// as it arrives.
-    Forward {
-        call: CallId,
-        host: HostId,
-        request: PeerRequest,
+        request: PeerRead,
     },
     /// A nudge from someone who waits for the journal to be read to its
     /// end: told the frames committed meanwhile, or why ingest failed.
@@ -334,26 +327,10 @@ impl Driver {
     }
 
     /// Hands a paired host's call to the core and returns its answers.
-    pub(crate) async fn peer_call(
-        &self,
-        from: HostId,
-        request: PeerRequest,
-        room: usize,
-    ) -> Answers {
+    pub(crate) async fn peer_call(&self, from: HostId, request: PeerRead, room: usize) -> Answers {
         self.open(room, |call| Fed::PeerCall {
             from,
             call,
-            request,
-        })
-        .await
-    }
-
-    /// Hands the core a client's call on an agent `host` owns, to be made
-    /// of that host, and returns its answer.
-    pub(crate) async fn forward(&self, host: HostId, request: PeerRequest) -> Answers {
-        self.open(1, |call| Fed::Forward {
-            call,
-            host,
             request,
         })
         .await
@@ -515,7 +492,7 @@ impl Drop for Driver {
 /// A call as the core thread takes it, before its request is completed.
 enum Arriving {
     Client(CallId, Ask),
-    Peer(HostId, CallId, Box<PeerRequest>),
+    Peer(HostId, CallId, Box<PeerRead>),
 }
 
 /// The core's newest checkpoint and the ring's lines since, as written.
@@ -718,18 +695,6 @@ impl CoreThread {
                 }
                 return true;
             }
-            Fed::Forward {
-                call,
-                host,
-                request,
-            } => {
-                let request = ClientRequest::Forward {
-                    host,
-                    request: Box::new(request),
-                };
-                self.step(&runtime, Input::ClientCall { call, request }, &mut out);
-                return true;
-            }
             Fed::Wake => {
                 self.fire_due(&runtime, &mut out);
                 return true;
@@ -788,7 +753,6 @@ impl CoreThread {
             | Fed::Stop
             | Fed::Channel { .. }
             | Fed::Resumed { .. }
-            | Fed::Forward { .. }
             | Fed::Look(_)
             | Fed::Read(_)
             | Fed::Capture { .. } => None,
@@ -806,9 +770,9 @@ impl CoreThread {
             Some(Arriving::Peer(from, call, request)) => {
                 let request = *request;
                 let stream = match &request {
-                    PeerRequest::SubscribeInventory => Some("inventory"),
-                    PeerRequest::SubscribeSession(_) => Some("session"),
-                    _ => None,
+                    PeerRead::FollowAgents => Some("inventory"),
+                    PeerRead::FollowSession(_) => Some("session"),
+                    PeerRead::ListItems(_) => None,
                 };
                 if let Some(stream) = stream {
                     tracing::debug!(
@@ -1228,14 +1192,11 @@ impl CoreThread {
                 host,
                 call,
                 request,
-                absorbed,
             } => {
                 let runtime = Arc::downgrade(runtime);
-                let reports = self.reports.clone();
                 let inputs = self.inputs.clone();
                 let task = match request {
-                    request @ (PeerRequest::SubscribeSession(_)
-                    | PeerRequest::SubscribeInventory) => {
+                    request @ (PeerRequest::FollowSession(_) | PeerRequest::FollowAgents) => {
                         tokio::spawn(origin::stream(runtime, host, call, request, inputs))
                     }
                     request => tokio::spawn(async move {
@@ -1249,16 +1210,7 @@ impl CoreThread {
                         let Some(answer) = answer else {
                             return;
                         };
-                        let answered = Input::PeerAnswer { call, answer };
-                        if absorbed {
-                            return feed(&inputs, answered).await;
-                        }
-                        // A reply that is not absorbed reads nothing of the
-                        // store: it waits on nobody's writes.
-                        reports.lock().unwrap().push_back(Report::Input(answered));
-                        if let Some(inputs) = inputs.upgrade() {
-                            let _ = inputs.try_send(Fed::Wake);
-                        }
+                        feed(&inputs, Input::PeerAnswer { call, answer }).await;
                     }),
                 };
                 self.outgoing
@@ -1476,8 +1428,9 @@ impl CoreThread {
 /// ends its agent as could not start, a hook stops halfway, a resume or a
 /// delete is left for the next daemon to find half done. A release of a
 /// workspace claim is done at once and never answered, so it holds nothing.
-/// The rest (checkpoints, blobs, pushes, credentials, comparisons, kills)
-/// are quick or done again by the next daemon.
+/// The rest (checkpoints, blobs, pushes, credentials, comparisons, kills,
+/// reviews' reads of their trees) are quick or done again by the next
+/// daemon.
 fn holds_a_restart(op: &Job) -> bool {
     use daemon_core::workspaces::WorkspaceJob;
     match op {
@@ -1493,7 +1446,7 @@ fn holds_a_restart(op: &Job) -> bool {
         | Job::RefreshToken { .. }
         | Job::SendPush(_)
         | Job::KillAgent { .. }
-        | Job::Compare { .. } => false,
+        | Job::Review(_) => false,
     }
 }
 
@@ -1571,6 +1524,10 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
         }
         // Carried out by the driver itself, between the core's outputs.
         Job::Workspace(_) => return,
+        Job::Review(job) => match crate::reviews::run_job(runtime, job).await {
+            Some(result) => result,
+            None => return,
+        },
         Job::SendPush(push) => {
             let Some(runtime) = runtime.upgrade() else {
                 return;
@@ -1607,11 +1564,6 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
                 }
             }
         }
-        Job::Compare {
-            cwd,
-            base,
-            with_patch,
-        } => crate::blobs::compare(&cwd, base, with_patch).await,
         Job::NextSpec {
             agent,
             bootstrap,
@@ -1678,22 +1630,26 @@ async fn send_file(
             let start = usize::try_from(range.start.min(size)).unwrap_or(usize::MAX);
             let end = usize::try_from(range.end.min(size)).unwrap_or(usize::MAX);
             let bytes = bytes.get(start..end).unwrap_or_default().to_vec();
-            let reply = PeerReply::GetBlob(wire::GetBlobResponse { bytes });
-            calls.answer(call, Response::Peer(Box::new(reply)));
+            calls.answer(call, Response::Bytes(bytes));
             calls.end(call, Status::Ok);
         }
         Err(error) => calls.end(call, failed(error)),
     }
 }
 
-/// Makes a call the core asked for of a peer, unless the profile is gone.
+/// Makes a unary call the core asked for of a peer's peer service, unless
+/// the profile is gone.
 async fn call_peer(
     runtime: Weak<ProfileRuntime>,
     host: HostId,
     request: PeerRequest,
 ) -> Option<Answer> {
     let runtime = runtime.upgrade()?;
-    Some(runtime.call_peer(host_from_core(host), request).await)
+    Some(
+        runtime
+            .call_peer_service(host_from_core(host), request)
+            .await,
+    )
 }
 
 /// The fsync job: replaces the file at `path` with `bytes` so that a crash

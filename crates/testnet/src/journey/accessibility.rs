@@ -25,7 +25,7 @@ use crate::door::Control;
 
 /// The desk and its agents: one that has answered, one that keeps a
 /// recovery turn, one asking a question, and a terminal Claude whose tool
-/// server opens a dialog the phone cannot answer.
+/// server asks for a form.
 const TOPOLOGY: &str = "journeys/topologies/phone-audit.json";
 const AUDIT_OUTPUT: &str = "target/ios/accessibility";
 const AUDIT_TEST: &str = "AmuxUITests/AccessibilityAuditTests";
@@ -240,9 +240,10 @@ impl Walk {
         self.back()
     }
 
-    /// Terminal Claude's tool-server dialog is an ask the phone cannot
-    /// answer; its card offers the way out.
-    fn escape(&mut self) -> Result<(), String> {
+    /// Terminal Claude's tool-server form, asked through its hooks while
+    /// nobody watches its terminal: the phone draws the form's own fields,
+    /// with Submit and Decline.
+    fn tool_server_form(&mut self) -> Result<(), String> {
         self.journey.request(
             Control::Send {
                 agent: "dialog".to_owned(),
@@ -258,10 +259,10 @@ impl Walk {
         )?;
         self.open(
             "dialog",
-            |drawn| drawn.has("ask") && drawn.has("chat.row.unanswerable"),
-            "the unanswerable card",
+            |drawn| drawn.has("ask") && drawn.has("ask.field.name") && drawn.has("ask.submit"),
+            "the tool server's form",
         )?;
-        self.audit("ask-escape")?;
+        self.audit("tool-server-form")?;
         self.back()
     }
 
@@ -333,8 +334,8 @@ impl Walk {
 
     /// Every page a person reads, in an order that reaches each in the
     /// state it needs: pairing, the hosts, the fleet, an answered chat, a
-    /// question, the way out of an ask the phone cannot answer, a draft
-    /// holding files, Settings and New Agent.
+    /// question, a tool server's form, a draft holding files, Settings and
+    /// New Agent.
     fn the_audited_way(&mut self) -> Result<(), String> {
         self.prepare_the_desk()?;
         self.pairing()?;
@@ -342,7 +343,7 @@ impl Walk {
         self.fleet()?;
         self.chat_turn()?;
         self.question()?;
-        self.escape()?;
+        self.tool_server_form()?;
         self.composer_chips()?;
         self.you()?;
         self.new_agent()

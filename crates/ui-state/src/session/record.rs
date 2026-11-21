@@ -210,13 +210,6 @@ fn attachment(held: Attachment, hashes: &mut Hashes) -> Attachment {
             Of::Image(held) => Of::Image(blob(held)),
             Of::File(held) => Of::File(blob(held)),
             Of::Text(_) => Of::Text(Default::default()),
-            Of::Review(review) => Of::Review(wire::Review {
-                diff: review.diff.map(|diff| wire::Diff {
-                    patch: diff.patch.map(blob),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }),
             Of::Page(page) => Of::Page(wire::PageReview {
                 comments: page
                     .comments
@@ -229,6 +222,12 @@ fn attachment(held: Attachment, hashes: &mut Hashes) -> Attachment {
                 ..Default::default()
             }),
         }),
+        // What an attachment draws as can come from an experiment's entry
+        // (a sent review is text with an entry beside it), so the entries
+        // are kept for the record to draw alike. An attachment's entry
+        // names ids and commits, never what anybody wrote, so the record
+        // still holds no text, name or path.
+        experimental: held.experimental,
     }
 }
 
@@ -440,5 +439,67 @@ fn blob(held: ClientBlob, hashes: &mut Hashes) -> ClientBlob {
         hash: hashes.alias(held.hash),
         failed: String::new(),
         ..held
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wire::experimental::{SENT_REVIEW, SentReview};
+
+    use super::*;
+
+    /// A sent review is text with an entry beside it: the record empties
+    /// the text and keeps the entry, so it still draws as a review.
+    #[test]
+    fn a_recorded_attachment_keeps_its_experimental_map() {
+        let sent = SentReview {
+            review_id: b"review".to_vec(),
+            round: 1,
+            snapshot: "4f2a".into(),
+            base_commit: "9c1e".into(),
+            comments: vec![wire::experimental::ReviewSentComment {
+                id: b"first".to_vec(),
+                revision: 1,
+                anchor: None,
+            }],
+        };
+        let mut held = Attachment {
+            of: Some(attachment::Of::Text(wire::InlineText {
+                name: "review".into(),
+                text: "src/lib.rs:4 Rename this.".into(),
+            })),
+            ..Default::default()
+        };
+        SENT_REVIEW.put(&mut held.experimental, &sent);
+        let item = Item {
+            key: "said".into(),
+            text: "Have a look.".into(),
+            attachments: vec![held.clone()],
+            ..Default::default()
+        };
+        let whole = ClientSessionHistory {
+            agent_id: b"agent".to_vec(),
+            start: Some(ClientSession {
+                transcript: Some(ClientTranscript {
+                    items: vec![item],
+                    exhausted: true,
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let recorded = record(whole);
+        let items = &recorded.start.unwrap().transcript.unwrap().items;
+        let [attachment] = items[0].attachments.as_slice() else {
+            panic!("one attachment: {items:?}");
+        };
+        assert_eq!(
+            attachment.of,
+            Some(attachment::Of::Text(Default::default())),
+            "its text is emptied"
+        );
+        assert_eq!(attachment.experimental, held.experimental);
+        assert_eq!(SENT_REVIEW.get(&attachment.experimental), Some(sent));
     }
 }

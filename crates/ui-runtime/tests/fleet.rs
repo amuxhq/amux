@@ -37,7 +37,7 @@ async fn the_fleet_opens_at_caught_up_and_relists_after_a_reconnect() {
     assert!(fleet.state().caught_up());
     assert_eq!(fleet.state().agents().count(), 2);
     let key = |id: &[u8]| AgentKey {
-        host: b"host-a".to_vec(),
+        host: HOST_A.to_vec(),
         agent: id.to_vec(),
     };
     assert_eq!(fleet.take_changed(), [key(b"a"), key(b"b")]);
@@ -167,7 +167,7 @@ async fn the_fleet_dump_part_writes_no_names_paths_or_status_text() {
     };
     use wire::host_entry::Standing;
     feed.send(host(
-        b"host-a",
+        HOST_A,
         HOST,
         Standing::Trusted(wire::Trusted {
             reach: Some(wire::trusted::Reach::Offline(wire::Offline {
@@ -178,12 +178,12 @@ async fn the_fleet_dump_part_writes_no_names_paths_or_status_text() {
         }),
     ));
     feed.send(host(
-        b"host-b",
+        HOST_B,
         HOST,
         Standing::Candidate(wire::Candidate {
             addrs: vec![CANDIDATE_ADDR.into()],
             announced_by: vec![wire::Host {
-                host_id: b"host-a".to_vec(),
+                host_id: HOST_A.to_vec(),
                 name: NEIGHBOUR.into(),
                 ..Default::default()
             }],
@@ -223,13 +223,16 @@ async fn the_fleet_dump_part_writes_no_names_paths_or_status_text() {
         "{state}"
     );
     let trace = String::from_utf8(part.files[1].contents.clone()).unwrap();
-    assert!(trace.contains("Agent 686f73742d61/61 Codex"), "{trace}");
+    assert!(
+        trace.contains("Agent 686f73742d6100000000000000000000/61 Codex"),
+        "{trace}"
+    );
     assert!(trace.contains("CaughtUp rev=0"), "{trace}");
 }
 
 fn key(id: &[u8]) -> AgentKey {
     AgentKey {
-        host: b"host-a".to_vec(),
+        host: HOST_A.to_vec(),
         agent: id.to_vec(),
     }
 }
@@ -246,9 +249,7 @@ impl Streams {
     /// other stream open. Returns the agent and the tail it asked for.
     async fn answer(&mut self, calls: &mut Calls) -> (Vec<u8>, u32) {
         let (request, feed) = calls.subscribe_session().await;
-        let Some(wire::subscribe_session_request::From::Tail(tail)) = request.from else {
-            panic!("a client asks for a tail, got {:?}", request.from);
-        };
+        let tail = request.tail;
         let agent = request.agent_id;
         assert_eq!(
             self.open(&agent),
@@ -697,7 +698,7 @@ async fn a_catalogue_its_host_could_not_give_is_fetched_once_the_chat_catches_up
 fn inventory_host(reach: wire::trusted::Reach) -> wire::InventoryEvent {
     wire::InventoryEvent {
         of: Some(wire::inventory_event::Of::Host(
-            wire::HostEntry::trusted_host(b"host-a".to_vec(), "desk", reach),
+            wire::HostEntry::trusted_host(HOST_A.to_vec(), "desk", reach),
         )),
     }
 }
@@ -720,7 +721,7 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
     let mut streams = Streams::default();
     streams.answer(&mut calls).await;
     let key = AgentKey {
-        host: b"host-a".to_vec(),
+        host: HOST_A.to_vec(),
         agent: b"a".to_vec(),
     };
     let stopping = tokio::spawn({
@@ -778,4 +779,71 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
     )));
     calls.none().await;
     assert!(!fleet.state().close_held(&key));
+}
+
+/// A close is held for either reason it never left for the agent's host:
+/// no link reached the host, or only the relay does and the plan lapsed.
+/// One the node carried there and lost the answer to may have landed, and
+/// one the host refused because it no longer trusts this one will not land
+/// later, so neither is held: each fails with its reason. Every close is
+/// addressed to the agent's host, named by its key.
+#[tokio::test]
+async fn a_close_is_held_only_when_it_never_left_for_its_host() {
+    for (why, error, held) in [
+        ("unreachable", host_unreachable(), true),
+        ("lapsed", lapsed(), true),
+        ("lost on the way", aborted(), false),
+        (
+            "revoked",
+            client::RpcError::Refused(wire::Error::new(
+                wire::ErrorCode::Unauthenticated,
+                "this host's trust was revoked",
+            )),
+            false,
+        ),
+    ] {
+        let (client, mut calls) = runtime();
+        let open = tokio::spawn(Fleet::connect(client, ManualClock::new(0)));
+        let feed = calls.inventory().await;
+        feed.send(inventory_host(wire::trusted::Reach::Online(
+            wire::RouteKind::Direct as i32,
+        )));
+        feed.send(inventory_agent(named(b"a")));
+        feed.send(inventory_caught_up());
+        let fleet = Arc::new(open.await.unwrap().expect("the fleet opens"));
+        let mut streams = Streams::default();
+        streams.answer(&mut calls).await;
+        let key = AgentKey {
+            host: HOST_A.to_vec(),
+            agent: b"a".to_vec(),
+        };
+        let closing = tokio::spawn({
+            let fleet = fleet.clone();
+            let key = key.clone();
+            async move { fleet.close_agent(&key).await }
+        });
+        let (request, reply) = calls.close_agent().await;
+        assert_eq!(request.agent_id, b"a", "{why}");
+        assert_eq!(request.filing, wire::Filing::Closed as i32, "{why}");
+        let words = error.to_string();
+        reply.send(Err(error)).ok();
+        let closed = closing.await.unwrap();
+        if held {
+            assert_eq!(closed, Ok(ui_runtime::Close::Held), "{why}");
+        } else {
+            assert_eq!(
+                closed.map_err(|error| error.to_string()),
+                Err(words),
+                "{why}"
+            );
+        }
+        assert_eq!(fleet.state().close_held(&key), held, "{why}");
+        let host = uuid::Uuid::from_slice(HOST_A).unwrap();
+        assert_eq!(
+            calls.addressed("SetFiling"),
+            [wire::authority(&host)],
+            "{why}: the close is addressed to the agent's host"
+        );
+        drop(feed);
+    }
 }

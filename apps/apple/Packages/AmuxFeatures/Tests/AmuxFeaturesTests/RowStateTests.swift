@@ -25,7 +25,7 @@ final class RowStateTests: XCTestCase {
                 kind: kind, provider: kind == .codex ? "codex" : "claude", providerName: kind == .codex ? "Codex" : "Claude",
                 attachable: kind == .codex || kind == .claudePty, attention: attention, cwd: "~/src/amux", phaseSinceMs: 0,
                 host: "Studio.local", hostReach: reach, children: 0,
-                familyAttention: attention, members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: filing, topLevel: true, native: false, branch: nil, exitCause: exitCause, repository: nil, workspaceGoes: nil),
+                familyAttention: attention, members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: filing, topLevel: true, native: false, branch: nil, exitCause: exitCause, repository: nil),
             depth: 0, expanded: false, secondLine: .blank, loud: nil)
     }
 

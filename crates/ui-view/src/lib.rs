@@ -10,6 +10,8 @@
 //! edges.
 
 mod ask;
+mod changed_words;
+mod code;
 mod composer;
 mod fleet;
 mod form;
@@ -17,7 +19,7 @@ mod inputs;
 mod onboarding;
 mod overview;
 mod repository;
-mod review;
+mod review_page;
 mod rows;
 mod run;
 mod segments;
@@ -32,6 +34,9 @@ pub use ask::{
 };
 /// The character that marks an attachment's place in text.
 pub use attachments::PLACEHOLDER;
+pub use attachments::sent_review;
+pub use changed_words::*;
+pub use code::{CodeRun, HighlightedCode, LineKind, TokenKind};
 pub use composer::{
     CONTEXT_NEAR_FULL_PERCENT, CommandMatch, ComposerView, ContextView, Lands, PASTE_CHARS,
     PASTE_LINES, QueuedRow, RefusedPrompt, SentPrompt, SignInView, Underway, Untaken,
@@ -51,20 +56,20 @@ pub use form::{
 pub use inputs::{Act, act_input, create_config};
 pub use onboarding::{OnboardingView, SetupStep, next_step, onboarding_view, step_open};
 pub use overview::{
-    ChangeTotals, ChangedFile, Changes, Comparison, Folder, JobRow, JobStop, Overview, ServerView,
-    TaskLine, TaskMark, TasksView, UsageLabel, UsageView, UsageWindowView, changes, diff_base,
-    overview, usage_windows,
+    ChangeTotals, ChangedFile, Changes, Comparison, FileStatus, Folder, JobRow, JobStop, Overview,
+    ServerView, TaskLine, TaskMark, TasksView, UsageLabel, UsageView, UsageWindowView, changes,
+    lists_changes, overview, usage_windows,
 };
 pub use repository::{REPOSITORY_TINTS, Repository};
-pub use review::{DiffLine, FileStatus, Hunk, LineKind, ReviewDoc, ReviewFile, review_doc};
+pub use review_page::*;
 pub use rows::{
-    AnswerView, AskRow, CONTINUED_WORDS, CallPhase, ChildAction, Decision, DecisionView, EditLine,
-    ExploreVerb, FileChangeView, FileRow, Granted, NoticeReason, NoticeSeverity, OUTPUT_HEAD_LINES,
-    PatchHead, PatchLine, PermissionGrant, PlanVerdict, Resolution, Row, RowKind, ToolRows,
-    chat_rows_for, patch_head,
+    AnswerView, AskRow, CONTINUED_WORDS, CallPhase, ChildAction, Decision, DecisionView,
+    ExploreVerb, FileChangeView, FilePatch, FileRow, Granted, HunkStart, NoticeReason,
+    NoticeSeverity, OUTPUT_HEAD_LINES, PatchHead, PatchHunk, PatchLine, PermissionGrant,
+    PlanVerdict, Resolution, Row, RowKind, ToolRows, chat_rows_for, patch_head,
 };
 pub use run::{Run, RunCounts, keep_open_runs, run_is_open, toggle_run};
-pub use segments::{AttachmentView, Segment, THUMBNAIL_SIZE_LIMIT, segments};
+pub use segments::{AttachmentView, Segment, SentReviewRef, THUMBNAIL_SIZE_LIMIT, segments};
 pub use settings::{
     Changeability, Changeable, ClientCommand, CommandView, ControlsSummary, EffortChoice,
     ModeChoice, ModelChoice, NewAgentChoices, NewAgentPick, PermissionChoice, SettingChange,

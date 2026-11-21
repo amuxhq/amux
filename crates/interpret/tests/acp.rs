@@ -964,6 +964,7 @@ fn image_prompt(id: &str) -> Event {
                         mime: "image/png".into(),
                         size: 8,
                     })),
+                    ..Default::default()
                 }],
             })),
         },

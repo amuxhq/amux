@@ -8,12 +8,13 @@ use ui_state::{Held, SessionState};
 use wire::{AcpToolKind, acp_item};
 
 use super::{
-    AskRow, CallPhase, Decision, EditLine, ExploreVerb, FileChangeView, FileRow, NoticeReason,
-    NoticeSeverity, PatchLine, RowKind, agent_message, amux_call, ask_row, boundary, call_phase,
-    chat_segments, compaction, continued, counts, decision_view, duration, error, explore_result,
-    first_change, output_head, output_tail, prose, thinking, turn_row, unrecognized,
+    AskRow, CallPhase, Decision, ExploreVerb, FileChangeView, FileRow, HunkStart, NoticeReason,
+    NoticeSeverity, PatchHunk, PatchLine, RowKind, agent_message, amux_call, ask_row, boundary,
+    call_phase, chat_segments, compaction, continued, counts, decision_view, duration, error,
+    explore_result, first_change, output_head, output_tail, prose, thinking, turn_row,
+    unrecognized,
 };
-use crate::review::LineKind;
+use crate::code::LineKind;
 use crate::text::{terminal_text, within};
 
 /// The row kind, the decision meta, and whether it failed.
@@ -247,14 +248,14 @@ fn file_rows(cwd: &str, tool: &wire::AcpTool, view: CallPhase) -> Vec<FileRow> {
         .collect()
 }
 
-/// A change an ACP agent gives, as patch lines ([`diff_lines`]), numbered
+/// A change an ACP agent gives, as one hunk ([`diff_lines`]), numbered
 /// from where its texts start in the file when the agent says.
-pub(crate) fn diff_patch(diff: &wire::AcpDiff) -> Vec<EditLine> {
+pub(crate) fn diff_patch(diff: &wire::AcpDiff) -> Vec<PatchHunk> {
     let starts = diff.old_line.zip(diff.new_line);
     diff_lines(diff.old_text.as_deref(), &diff.new_text, starts)
 }
 
-/// A change an ACP agent gives as text before and after, as patch lines:
+/// A change an ACP agent gives as text before and after, as one hunk:
 /// what the two share at their start and end is left out, and what lies
 /// between is removed then added. A new file's every line is added.
 ///
@@ -265,7 +266,7 @@ pub(crate) fn diff_patch(diff: &wire::AcpDiff) -> Vec<EditLine> {
 /// file's lines have a known place, from its first line, and a change whose
 /// agent said beside ACP where its texts start (`starts`, the old line and
 /// the new); any other change's lines go unnumbered and claim no line.
-fn diff_lines(old: Option<&str>, new: &str, starts: Option<(u32, u32)>) -> Vec<EditLine> {
+fn diff_lines(old: Option<&str>, new: &str, starts: Option<(u32, u32)>) -> Vec<PatchHunk> {
     let created = old.is_none();
     let old: Vec<&str> = old.map(|old| old.lines().collect()).unwrap_or_default();
     let new: Vec<&str> = new.lines().collect();
@@ -284,21 +285,12 @@ fn diff_lines(old: Option<&str>, new: &str, starts: Option<(u32, u32)>) -> Vec<E
     let first = starts
         .or(created.then_some((1, 1)))
         .map(|(old, new)| (old + start as u32, new + start as u32));
-    let line = |from: Option<u32>, offset: usize, kind, text: &str| {
-        EditLine::Line(PatchLine {
-            number: from.map(|from| from + offset as u32),
-            kind,
-            text: text.to_owned(),
-        })
+    let line = |from: Option<u32>, offset: usize, kind, text: &str| PatchLine {
+        number: from.map(|from| from + offset as u32),
+        kind,
+        text: text.to_owned(),
     };
-    // Where the change starts, so a removal alone still says its line.
-    let mut lines: Vec<EditLine> = first
-        .map(|(old_start, new_start)| EditLine::Hunk {
-            old_start,
-            new_start,
-        })
-        .into_iter()
-        .collect();
+    let mut lines = Vec::new();
     for (offset, text) in old[start..old.len() - end].iter().enumerate() {
         lines.push(line(
             first.map(|(old, _)| old),
@@ -315,7 +307,14 @@ fn diff_lines(old: Option<&str>, new: &str, starts: Option<(u32, u32)>) -> Vec<E
             text,
         ));
     }
-    lines
+    if lines.is_empty() {
+        return Vec::new();
+    }
+    // Where the change starts, so a removal alone still says its line.
+    vec![PatchHunk {
+        start: first.map(|(old, new)| HunkStart { old, new }),
+        lines,
+    }]
 }
 
 /// The command a call runs and what the agent said it is for. Agents name
@@ -390,7 +389,7 @@ pub(super) fn subject(tool: &wire::AcpTool) -> String {
 }
 
 /// The first lines of the patch a landed change made: its first file's.
-pub(super) fn patch(tool: &wire::AcpTool) -> Option<Vec<EditLine>> {
+pub(super) fn patch(tool: &wire::AcpTool) -> Option<Vec<PatchHunk>> {
     let diff = tool.diffs.first()?;
     Some(diff_patch(diff))
 }
@@ -399,13 +398,11 @@ pub(super) fn patch(tool: &wire::AcpTool) -> Option<Vec<EditLine>> {
 mod tests {
     use super::*;
 
-    fn kinds(lines: &[EditLine]) -> Vec<(Option<u32>, LineKind, String)> {
-        lines
+    fn kinds(hunks: &[PatchHunk]) -> Vec<(Option<u32>, LineKind, String)> {
+        hunks
             .iter()
-            .filter_map(|line| match line {
-                EditLine::Line(line) => Some((line.number, line.kind, line.text.clone())),
-                _ => None,
-            })
+            .flat_map(|hunk| &hunk.lines)
+            .map(|line| (line.number, line.kind, line.text.clone()))
             .collect()
     }
 

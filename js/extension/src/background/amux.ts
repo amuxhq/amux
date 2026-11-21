@@ -11,7 +11,7 @@ import {
   type PendingReview,
   type Reach,
 } from "../shared/messages.ts";
-import { Bridge, CallError, UNAVAILABLE } from "./bridge.ts";
+import { Bridge, CallError, FRAMING, NODE, UNAVAILABLE } from "./bridge.ts";
 import { core } from "./core.ts";
 
 interface Profile {
@@ -65,6 +65,8 @@ export class Amux {
 
   reach(): Reach {
     if (this.bridge.unreachable === "not-installed") return { status: "not-installed" };
+    // An amux older than this extension serves none of the calls it makes.
+    if (this.bridge.framing !== null && this.bridge.framing < FRAMING) return { status: "not-installed" };
     if (this.daemon === "not-running") return { status: "not-running" };
     if (this.bridge.unreachable === "stopped" && this.daemon !== "answering") {
       return { status: "stopped", detail: this.stopDetail };
@@ -115,7 +117,7 @@ export class Amux {
     if (!this.watching) return;
     let listed: Array<{ id: string; label: string }>;
     try {
-      const message = await this.bridge.unary("installation", "/amux.v1.InstallationService/ListProfiles", "");
+      const message = await this.bridge.unary("installation", NODE, "/amux.v1.InstallationService/ListProfiles", "");
       listed = await core({ op: "profiles", message });
       this.daemon = "answering";
     } catch (error) {
@@ -152,7 +154,8 @@ export class Amux {
     this.profiles.set(id, profile);
     profile.cancel = this.bridge.stream(
       id,
-      "/amux.v1.AgentService/SubscribeInventory",
+      NODE,
+      "/amux.v1.InventoryService/SubscribeInventory",
       "",
       (message) => {
         void core({ op: "fleetApply", fleet, message })
@@ -239,13 +242,16 @@ export class Amux {
         agent,
         cwd: destination.cwd,
       });
-      await this.bridge.unary(profile.id, "/amux.v1.AgentService/CreateAgent", request);
+      await this.bridge.unary(profile.id, await this.authority(host), "/amux.v1.AgentService/CreateAgent", request);
       created({ kind: "agent", profile: profile.id, host, agent });
       await this.until(profile, host, agent);
     } else {
       host = destination.host;
       agent = destination.agent;
     }
+    // Every act on the agent goes to the host that owns it, which may be a
+    // paired one the profile's node carries the call to.
+    const authority = await this.authority(host);
 
     const pages = [];
     for (const page of byPage(review.comments)) {
@@ -253,7 +259,7 @@ export class Amux {
       for (const [index, comment] of page.comments.entries()) {
         // Named by its pin's number on its page.
         const name = `region-${index + 1}.png`;
-        comments.push(await this.anchored(profile.id, agent, comment, images.get(comment.id), name));
+        comments.push(await this.anchored(profile.id, authority, agent, comment, images.get(comment.id), name));
       }
       pages.push({ url: page.url, title: page.title, comments });
     }
@@ -270,7 +276,7 @@ export class Amux {
       pages,
       texts: review.snippets.map(({ name, text }) => ({ name, text })),
     });
-    const answer = await this.bridge.unary(profile.id, "/amux.v1.SessionService/SendInput", request);
+    const answer = await this.bridge.unary(profile.id, authority, "/amux.v1.AgentService/SendInput", request);
     const verdict = await core<{ accepted: boolean; refusal?: string; detail?: string }>({
       op: "verdict",
       message: answer,
@@ -285,6 +291,7 @@ export class Amux {
   /** A comment as the wire carries it, its screenshot stored with the agent first. */
   private async anchored(
     profile: string,
+    authority: string,
     agent: string,
     comment: PendingReview["comments"][number],
     shot: Image | undefined,
@@ -299,16 +306,21 @@ export class Amux {
         mime: "image/png",
         bytes: toBase64(shot.png),
       });
-      const stored = await this.bridge.unary(profile, "/amux.v1.AgentService/PutBlob", request);
+      const stored = await this.bridge.unary(profile, authority, "/amux.v1.AgentService/PutBlob", request);
       image = await core({ op: "blob", message: stored });
     }
     return { text: comment.text, element: comment.element, quote: comment.quote, image };
   }
 
+  /** The authority a call to `host` (an id in hex) is made with. */
+  private async authority(host: string): Promise<string> {
+    return core<string>({ op: "authority", host });
+  }
+
   /** This machine's host id in a profile, or empty when amux does not say. */
   private async localHost(profile: string): Promise<string> {
     try {
-      const message = await this.bridge.unary(profile, "/amux.v1.ProfileAdminService/GetDeviceIdentity", "");
+      const message = await this.bridge.unary(profile, NODE, "/amux.v1.ProfileAdminService/GetDeviceIdentity", "");
       return (await core<{ hostId: string }>({ op: "deviceIdentity", message })).hostId;
     } catch {
       return "";

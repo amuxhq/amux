@@ -4,12 +4,12 @@ use std::ffi::{CString, c_char};
 use std::sync::Arc;
 
 use app_runtime::Chat;
-use app_runtime::values::{ChatAct, Draft, FrozenReview};
+use app_runtime::values::{ChatAct, Draft};
 use ui_state::{AgentKey, Key};
 use ui_view::Comparison;
 
 use crate::helpers::{
-    Answered, act, answer, fail, guard, held_chat, input_id, live_profile, owned, parse, read, text,
+    Answered, act, answer, fail, guard, held_chat, input_id, live_profile, parse, read, text,
 };
 use crate::outbox::View;
 use crate::{AmuxBytes, AmuxChat, AmuxProfile};
@@ -235,6 +235,9 @@ pub unsafe extern "C" fn amux_session_act(chat: *const AmuxChat, act: *const c_c
 async fn acted(chat: &Chat, act: ChatAct) -> serde_json::Value {
     match act {
         ChatAct::Send(draft) => answer(Answered::Ok(chat.send(&draft).await)),
+        ChatAct::SendWithReview(draft) => {
+            answer(Answered::from(chat.send_with_review(&draft).await))
+        }
         ChatAct::Command(draft) => answer(chat.command(&draft).await),
         ChatAct::Answer { ask, choice, note } => {
             answer(chat.answer_choice(&ask, choice as usize, &note).await)
@@ -289,9 +292,9 @@ pub unsafe extern "C" fn amux_session_discard(chat: *const AmuxChat, input_id: *
     let _ = unsafe { read(chat, |chat| chat.discard(&id)) };
 }
 
-/// Fetches the files changed for `comparison` (a JSON `Comparison`), with
-/// no patch, as the overview opens; the ticket answers `{"Ok": Overview}` or
-/// `{"Err": ..}`.
+/// Asks the agent's host which files changed for `comparison` (a JSON
+/// `Comparison`), as the overview opens; the ticket answers
+/// `{"Ok": Overview}` or `{"Err": ..}`.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`; `comparison` is a C string.
@@ -308,48 +311,6 @@ pub unsafe extern "C" fn amux_session_open_overview(
             Answered::from(chat.open_overview(comparison).await)
         })
     }
-}
-
-/// Asks the agent's host for its diff for `comparison` (a JSON
-/// `Comparison`, or null for the uncommitted work) and the patch it names;
-/// the ticket answers `{"Ok": FrozenReview}` or `{"Err": ..}`.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`; `comparison` is a C string or null.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_session_review(
-    chat: *const AmuxChat,
-    comparison: *const c_char,
-) -> u64 {
-    // SAFETY: the caller's contract.
-    let comparison: Comparison = unsafe { parse(comparison) }.unwrap_or_default();
-    // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, move |chat| async move {
-            Answered::from(chat.review(comparison).await)
-        })
-    }
-}
-
-/// The review page's document: a `FrozenReview`'s patch parsed into files
-/// and hunks, with `comments` (a JSON array of `ReviewComment`) placed on
-/// their lines. Null when either argument does not parse.
-///
-/// # Safety
-/// The strings are NUL-terminated.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_review_doc(
-    review: *const c_char,
-    comments: *const c_char,
-) -> *mut c_char {
-    // SAFETY: the caller's contract.
-    let review: Option<FrozenReview> = unsafe { parse(review) };
-    // SAFETY: the caller's contract.
-    let comments: Option<Vec<_>> = unsafe { parse(comments) };
-    guard(std::ptr::null_mut(), || match (review, comments) {
-        (Some(review), Some(comments)) => owned(&review.doc(&comments)),
-        _ => std::ptr::null_mut(),
-    })
 }
 
 /// Why an attachment of `size` bytes would be refused before anything of

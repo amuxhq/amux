@@ -191,12 +191,12 @@ pub unsafe extern "C" fn amux_profile_offer_sign_in(
         };
         // SAFETY: the caller's contract.
         let host_id: Option<Vec<u8>> = unsafe { parse(host_id) };
-        let client = profile.app.client().clone();
+        let admin = profile.app.client().admin();
         profile.act(async move {
             let Some(host_id) = host_id else {
                 return Answered::Err("the host id is not a byte array".into());
             };
-            Answered::from(client.offer_sign_in(host_id).await)
+            Answered::from(admin.offer_sign_in(host_id).await)
         })
     })
 }
@@ -224,12 +224,12 @@ pub unsafe extern "C" fn amux_profile_answer_sign_in_offer(
         };
         // SAFETY: the caller's contract.
         let answer: Option<SignInAnswer> = unsafe { parse(answer) };
-        let client = profile.app.client().clone();
+        let admin = profile.app.client().admin();
         profile.act(async move {
             let Some(answer) = answer else {
                 return Answered::Err("the answer is not a SignInAnswer".into());
             };
-            let answered = client
+            let answered = admin
                 .answer_sign_in_offer(wire::AnswerSignInOfferRequest {
                     host_id: answer.host_id,
                     accept: answer.accept,
@@ -345,12 +345,12 @@ pub unsafe extern "C" fn amux_profile_open_pairing(
         let Some(profile) = (unsafe { live_profile(profile) }) else {
             return 0;
         };
-        let client = profile.app.client().clone();
+        let admin = profile.app.client().admin();
         {
             let mut watch = profile.pairing.lock().unwrap_or_else(|p| p.into_inner());
             if watch.is_none() {
                 let (watching, outbox, fleet) =
-                    (client.clone(), profile.shared.outbox.clone(), profile.fleet);
+                    (admin.clone(), profile.shared.outbox.clone(), profile.fleet);
                 *watch = Some(profile.shared.handle().spawn(async move {
                     follow(
                         || watching.subscribe_pairing(),
@@ -365,9 +365,9 @@ pub unsafe extern "C" fn amux_profile_open_pairing(
         profile.act(async move {
             // One window is open at a time: a renewal replaces the one
             // before, which may already have ended.
-            let _ = client.cancel_pairing().await;
+            let _ = admin.cancel_pairing().await;
             Answered::from(
-                client
+                admin
                     .start_pairing(wire::StartPairingRequest {
                         method: Some(wire::start_pairing_request::Method::PinOrQr(wire::Empty {})),
                         ttl_seconds: (ttl_seconds > 0).then_some(ttl_seconds),
@@ -399,8 +399,8 @@ pub unsafe extern "C" fn amux_profile_close_pairing(profile: *const AmuxProfile)
         {
             watch.abort();
         }
-        let client = profile.app.client().clone();
-        profile.act(async move { Answered::from(client.cancel_pairing().await) })
+        let admin = profile.app.client().admin();
+        profile.act(async move { Answered::from(admin.cancel_pairing().await) })
     })
 }
 
@@ -639,9 +639,9 @@ pub unsafe extern "C" fn amux_profile_agent_act(
 }
 
 /// What deleting an agent, named by its `AgentKey` as JSON, does to its
-/// workspace, once current: the ticket answers `{"Ok": DeleteWarning}`,
-/// `{"Ok": null}` when the workspace stays, or `{"Err": ..}`. For an agent
-/// with no process it asks the agent's host first.
+/// workspace, as the agent's host previews it: the ticket answers
+/// `{"Ok": DeleteWarning}` (`Unknown` when the host could not be asked),
+/// or `{"Ok": null}` when the workspace stays.
 ///
 /// # Safety
 /// `profile` is from `amux_profile_open`; the string is NUL-terminated.

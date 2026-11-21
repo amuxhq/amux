@@ -14,10 +14,11 @@ use ratatui::Frame as Paint;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use tokio::sync::mpsc;
+use ui_runtime::review::{Comparison, Followed, Review, ReviewError, RowMark, Unavailable};
 use ui_runtime::{Fleet, InputError, Session, Window, inputs};
 use ui_state::{AgentKey, Composer, PhaseView};
 use ui_view::family_header;
-use wire::{Agent, Attachment, DeleteAgentRequest, Diff, RenameAgentRequest};
+use wire::{Agent, AgentRef, Attachment};
 
 mod desk;
 pub use desk::DeskConfig;
@@ -191,6 +192,97 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Hands the open chat's review page what the review holds now: its
+/// summary, the bodies fetched for each view, and the answers to the
+/// page's asks for more context.
+fn sync_review_page(chat: &mut OpenChat) {
+    let (Some(link), Some(page)) = (&chat.review, &mut chat.view.review_page) else {
+        return;
+    };
+    let review = &link.review;
+    let summary = review.summary();
+    let fetched = |view| {
+        summary
+            .as_deref()
+            .and_then(|summary| Comparison::shown(summary, view))
+            .map(|comparison| review.fetched(&comparison))
+            .unwrap_or_default()
+    };
+    let context = page
+        .asks()
+        .iter()
+        .filter_map(|ask| {
+            let lines = wire::experimental::ReviewLineRange {
+                start: ask.start,
+                end: ask.end,
+            };
+            let held = review.context_held(&ask.commit, &ask.path, lines)?;
+            Some((ask.clone(), held.to_vec()))
+        })
+        .collect();
+    let unavailable = review.unavailable();
+    page.notice(
+        ui_view::ReviewNotice::NotOffered,
+        unavailable == Some(Unavailable::NotOffered),
+    );
+    page.notice(
+        ui_view::ReviewNotice::NotARepository,
+        unavailable == Some(Unavailable::NotARepository),
+    );
+    page.update(crate::chat::review::Fetched {
+        all: fetched(wire::experimental::ReviewView::All),
+        since_last: fetched(wire::experimental::ReviewView::SinceLast),
+        summary,
+        context,
+    });
+}
+
+use ui_runtime::review::unreachable;
+
+/// Sends a prompt carrying the review's drafts: read from the agent's host
+/// as they are now, so exactly those are named and the host marks those
+/// sent. A review that cannot be read sends nothing, and the words go back
+/// to the composer.
+async fn send_with_review(
+    session: &Session,
+    review: &Review,
+    agent_id: Vec<u8>,
+    text: String,
+    mut attachments: Vec<Attachment>,
+) -> Option<AppEvent> {
+    let summary = match review.read().await {
+        Ok(summary) => summary,
+        Err(error) => {
+            return Some(AppEvent::Restore {
+                agent_id,
+                text,
+                attachments,
+                notice: Some(format!(
+                    "not sent: could not read the review's drafts: {error}"
+                )),
+            });
+        }
+    };
+    let drafts: Vec<wire::experimental::ReviewerComment> = summary
+        .comments
+        .iter()
+        .filter(|comment| comment.round.is_none())
+        .cloned()
+        .collect();
+    if !drafts.is_empty() {
+        attachments.push(ui_view::sent_review::attachment(&summary, &drafts));
+    }
+    if text.trim().is_empty() && attachments.is_empty() {
+        return None;
+    }
+    let sent = session.send_prompt(&text, attachments).await;
+    // A send that may not have landed leaves the drafts the chip's: the
+    // round closes only when the agent takes the message, and until then
+    // they are drafts on the agent's host either way.
+    matches!(sent.outcome, ui_state::InputOutcome::Lost)
+        .then_some(AppEvent::ReviewUnsent { agent_id })
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tone {
     Info,
@@ -241,25 +333,69 @@ pub enum AppEvent {
     },
     /// Creating an agent from home's draft failed; the draft is kept.
     StartFailed(String),
-    /// A working-tree diff frozen for this agent's review page.
-    Review {
+    /// The agent's review answered an open: the first, which decides
+    /// which page shows, or one made from the page.
+    ReviewOpened {
         agent_id: Vec<u8>,
-        diff: Diff,
-        patch: String,
+        result: Result<(), ReviewError>,
         /// The file to open the page at.
         at: Option<String>,
+        first: bool,
+    },
+    /// What the agent's review page draws from changed.
+    ReviewChanged {
+        agent_id: Vec<u8>,
+    },
+    /// Edits to the agent's review landed, or did not; `reopen` opens it
+    /// again after them.
+    ReviewEdited {
+        agent_id: Vec<u8>,
+        result: Result<(), ReviewError>,
+        reopen: bool,
+    },
+    /// A fetch of the review page's file bodies ended.
+    ReviewFetched {
+        agent_id: Vec<u8>,
+        view: ui_view::ReviewView,
+        comparison: Comparison,
+        result: Result<(), ReviewError>,
+    },
+    /// More context on the review page was read, or could not be.
+    ReviewContext {
+        agent_id: Vec<u8>,
+        ask: ui_view::ReviewContextAsk,
+        result: Result<(), ReviewError>,
+    },
+    /// A sent review's round read from the agent's review: none when its
+    /// host holds none of it; `unreachable` when the host was out of reach
+    /// and the round comes from what was loaded of it.
+    ReviewRound {
+        agent_id: Vec<u8>,
+        review: ui_view::SentReviewRef,
+        text: String,
+        round: Box<Result<Option<ui_runtime::review::Round>, ReviewError>>,
+    },
+    /// A send carrying the review's drafts may not have landed: the chip
+    /// shows them again.
+    ReviewUnsent {
+        agent_id: Vec<u8>,
+    },
+    /// Following the agent's row read the review again, or could not.
+    ReviewFollowed {
+        agent_id: Vec<u8>,
+        result: Result<Followed, ReviewError>,
     },
     /// The changed files of one comparison, for the chat's overview.
     Changes {
         agent_id: Vec<u8>,
         key: crate::chat::FetchKey,
-        diff: Diff,
+        changes: wire::GetChangesResponse,
     },
-    /// What an agent's workspace holds against HEAD, or why its host could
-    /// not say, for home's delete confirmation.
-    DeleteChecked {
+    /// What deleting an agent takes with it, as its host previewed it, or
+    /// why it could not be asked, for home's delete confirmation.
+    DeletePreviewed {
         agent: AgentKey,
-        compared: Result<Diff, String>,
+        preview: Result<wire::PreviewDeleteResponse, String>,
     },
     /// Onboarding's and the settings screen's calls came back.
     Desk(desk::DeskEvent),
@@ -291,6 +427,22 @@ pub struct OpenChat {
     /// The tool server failures this chat has shown, so it can tell when
     /// one of them recovers.
     servers_shown: tool_servers::Shown,
+    /// The agent's review, made when its page or its chip first needs it.
+    review: Option<ReviewLink>,
+}
+
+/// An open chat's hold on its agent's review: the calls in flight, and the
+/// row entry last followed.
+struct ReviewLink {
+    review: Arc<Review>,
+    /// The row's mark as last handed to the review; None until a row is.
+    followed: Option<Option<RowMark>>,
+    following: bool,
+    /// The bodies being fetched now.
+    fetching: bool,
+    /// The comparison a fetch failed for: not asked again until the page
+    /// shows another, or is opened again.
+    fetch_failed: Option<Comparison>,
 }
 
 impl OpenChat {
@@ -303,7 +455,9 @@ impl OpenChat {
 }
 
 pub struct App {
-    client: Arc<dyn Client>,
+    /// The node the terminal is attached to: its reads, and every act
+    /// addressed through it to the host that owns what it acts on.
+    client: Client,
     pub fleet: Arc<Fleet>,
     pub home: Home,
     pub chat: Option<OpenChat>,
@@ -357,6 +511,14 @@ pub(crate) fn terminal_refusal(
     })
 }
 
+/// The agent a fleet key names, as a call to its host is addressed.
+fn agent_ref(key: &AgentKey) -> AgentRef {
+    AgentRef {
+        host_id: key.host.clone(),
+        agent_id: key.agent.clone(),
+    }
+}
+
 /// Why `agent` has no terminal on this machine at all, running or not.
 fn terminal_elsewhere(
     fleet: &ui_state::FleetState,
@@ -379,38 +541,19 @@ fn terminal_elsewhere(
     }
 }
 
-/// A composer's words and attachments, as the daemon keeps them.
-/// How long a new agent's first file waits to be taken: an agent on another
-/// host reaches this daemon's list a moment after its create call returns.
-const STORE_TRIES: u32 = 8;
-
-/// Stores a file with its new agent. Refused as an unknown agent, it tries
-/// again while the agent's row is on its way.
+/// Stores a file with its new agent. The call goes to the host that made
+/// the agent, which holds it from the moment its create answered.
 async fn store_file(
-    client: &dyn Client,
-    agent_id: &[u8],
+    client: &Client,
+    agent: &Agent,
     file: crate::home::HeldFile,
 ) -> Result<(), String> {
-    let request = wire::PutBlobRequest {
-        agent_id: agent_id.to_vec(),
-        name: file.blob.name.clone(),
-        mime: file.blob.mime.clone(),
-        bytes: file.bytes,
-    };
-    let mut wait = Duration::from_millis(100);
-    for attempt in 1..=STORE_TRIES {
-        match client.put_blob(request.clone()).await {
-            Ok(_) => return Ok(()),
-            Err(error)
-                if error.code() == Some(wire::ErrorCode::NotFound) && attempt < STORE_TRIES =>
-            {
-                tokio::time::sleep(wait).await;
-                wait *= 2;
-            }
-            Err(error) => return Err(error.to_string()),
-        }
-    }
-    Err("its agent never appeared".to_owned())
+    client
+        .agent(agent)
+        .put_blob(&file.blob.name, &file.blob.mime, file.bytes)
+        .await
+        .map(drop)
+        .map_err(|error| error.to_string())
 }
 
 /// A new agent whose first prompt carries files: created without the
@@ -419,20 +562,22 @@ async fn store_file(
 /// the second value says why and holds the draft for its composer, less any
 /// file that was not stored.
 async fn start_with_files(
-    client: &dyn Client,
+    client: &Client,
     setup: &crate::setup::Setup,
     text: &str,
     attachments: Vec<wire::Attachment>,
     files: Vec<crate::home::HeldFile>,
 ) -> Result<(wire::Agent, Option<(String, wire::Draft)>), String> {
     let agent = client
-        .create_agent(setup.request(inputs::input_id(), None))
+        .host(&setup.host)
+        .agents()
+        .create(setup.request(inputs::input_id(), None))
         .await
         .map_err(|error| error.to_string())?;
     let mut failed: Vec<(Vec<u8>, String, String)> = Vec::new();
     for file in files {
         let (hash, name) = (file.blob.hash.clone(), file.blob.name.clone());
-        if let Err(why) = store_file(client, &agent.agent_id, file).await {
+        if let Err(why) = store_file(client, &agent, file).await {
             failed.push((hash, name, why));
         }
     }
@@ -452,11 +597,8 @@ async fn start_with_files(
         let why = "your first message could not be sent; it is in the composer".to_owned();
         return Ok((agent, Some((why, kept))));
     };
-    let request = wire::SendInputRequest {
-        agent_id: agent.agent_id.clone(),
-        input: Some(input),
-    };
-    let trouble = first_message_trouble(client.send_input(request).await).map(|why| (why, kept));
+    let sent = client.agent(&agent).send_input(input).await;
+    let trouble = first_message_trouble(sent).map(|why| (why, kept));
     Ok((agent, trouble))
 }
 
@@ -536,7 +678,9 @@ fn plain(error: InputError) -> String {
 }
 
 impl App {
-    pub fn new(client: Arc<dyn Client>, fleet: Fleet, config: TuiConfig) -> App {
+    /// The terminal client on `client`'s node, its fleet `fleet` read
+    /// from the same node.
+    pub fn new(client: Client, fleet: Fleet, config: TuiConfig) -> App {
         let (events, receiver) = mpsc::unbounded_channel();
         let home = Home::new(Place {
             version: config.version.clone(),
@@ -667,9 +811,10 @@ impl App {
         if let Some(renew) = self.desk_next_tick() {
             at(renew);
         }
-        // Code drawn plain while the grammars load is drawn again once
-        // they arrive.
-        if crate::highlight::loading() {
+        // Code drawn before it was coloured as far as it will be (a grammar
+        // still building, a streaming block's lines not yet passed over) is
+        // drawn again soon, within the streaming highlighter's interval.
+        if crate::code::drew_unsettled() {
             at(Instant::now() + Duration::from_millis(50));
         }
         next
@@ -759,6 +904,7 @@ impl App {
                             view,
                             agent,
                             servers_shown: tool_servers::Shown::default(),
+                            review: None,
                         });
                     }
                     Err(error) => {
@@ -767,9 +913,8 @@ impl App {
                 }
             }
             AppEvent::Notice(words, tone) => self.notice(words, tone),
-            AppEvent::DeleteChecked { agent, compared } => {
-                self.home
-                    .changes_checked(&agent, compared.as_ref().map_err(Clone::clone));
+            AppEvent::DeletePreviewed { agent, preview } => {
+                self.home.delete_previewed(&agent, preview.as_ref());
             }
             AppEvent::Desk(event) => self.desk_event(event),
             AppEvent::Restore {
@@ -786,7 +931,7 @@ impl App {
                     .as_mut()
                     .filter(|chat| chat.view.agent_id == agent_id)
                 {
-                    chat.view.editor.restore(&text, attachments);
+                    chat.view.take_back(&text, attachments);
                 }
             }
             AppEvent::Thumbnail {
@@ -833,33 +978,119 @@ impl App {
                 }
                 self.notice(format!("could not attach {name}: {why}"), Tone::Warn);
             }
-            AppEvent::Review {
+            AppEvent::ReviewOpened {
                 agent_id,
-                diff,
-                patch,
+                result,
                 at,
+                first,
+            } => self.review_opened(&agent_id, result, at, first),
+            AppEvent::ReviewRound {
+                agent_id,
+                review,
+                text,
+                round,
             } => {
-                if let Some(chat) = self
-                    .chat
-                    .as_mut()
-                    .filter(|chat| chat.view.agent_id == agent_id)
+                if let Some(chat) = self.review_chat(&agent_id) {
+                    chat.view.round_read(&review, *round, &text);
+                }
+            }
+            AppEvent::ReviewUnsent { agent_id } => {
+                if let Some(chat) = self.review_chat(&agent_id) {
+                    chat.view.review_unsent();
+                }
+            }
+            AppEvent::ReviewChanged { agent_id } => {
+                if let Some(chat) = self.review_chat(&agent_id) {
+                    sync_review_page(chat);
+                }
+            }
+            AppEvent::ReviewEdited {
+                agent_id,
+                result,
+                reopen,
+            } => self.review_edited(&agent_id, result, reopen),
+            AppEvent::ReviewFetched {
+                agent_id,
+                view,
+                comparison,
+                result,
+            } => {
+                let Some(chat) = self.review_chat(&agent_id) else {
+                    return Flow::Continue;
+                };
+                let Some(link) = &mut chat.review else {
+                    return Flow::Continue;
+                };
+                link.fetching = false;
+                if let Err(error) = result {
+                    link.fetch_failed = Some(comparison);
+                    if let Some(page) = &mut chat.view.review_page {
+                        // The host answers NOT_FOUND for a snapshot it no
+                        // longer keeps, and DATA_LOSS for one whose commits
+                        // can no longer be read. Since the last review, that
+                        // is the last round's: its comments show with the
+                        // code saved with them. Of all changes, it is the
+                        // page's own, which a refresh replaces.
+                        let gone = matches!(&error, ReviewError::Rpc(rpc) if matches!(rpc.code(), Some(wire::ErrorCode::NotFound | wire::ErrorCode::DataLoss)));
+                        match view {
+                            ui_view::ReviewView::SinceLast if gone => {
+                                page.notice(ui_view::ReviewNotice::RoundGone, true)
+                            }
+                            ui_view::ReviewView::All if gone => page.notice(
+                                ui_view::ReviewNotice::SnapshotFailed {
+                                    message: "this snapshot is gone from the agent's computer"
+                                        .into(),
+                                },
+                                true,
+                            ),
+                            _ => {}
+                        }
+                        page.notice(ui_view::ReviewNotice::Unreachable, unreachable(&error));
+                    }
+                    self.notice(format!("could not read the files: {error}"), Tone::Warn);
+                }
+            }
+            AppEvent::ReviewContext {
+                agent_id,
+                ask,
+                result,
+            } => {
+                if let Some(chat) = self.review_chat(&agent_id) {
+                    match result {
+                        Ok(()) => sync_review_page(chat),
+                        Err(error) => {
+                            if let Some(page) = &mut chat.view.review_page {
+                                page.unask(&ask);
+                            }
+                            self.notice(format!("could not read more lines: {error}"), Tone::Warn);
+                        }
+                    }
+                }
+            }
+            AppEvent::ReviewFollowed { agent_id, result } => {
+                if let Some(chat) = self.review_chat(&agent_id)
+                    && let Some(link) = &mut chat.review
                 {
-                    chat.view.open_review_at(diff, patch, at.as_deref());
-                    // The page answers "reading the changes…".
-                    self.notice = None;
+                    link.following = false;
+                    match result {
+                        Ok(Followed::Same) => {}
+                        Ok(Followed::Reread | Followed::Stale) => sync_review_page(chat),
+                        // Not read: the next row entry asks again.
+                        Err(_) => link.followed = None,
+                    }
                 }
             }
             AppEvent::Changes {
                 agent_id,
                 key,
-                diff,
+                changes,
             } => {
                 if let Some(chat) = self
                     .chat
                     .as_mut()
                     .filter(|chat| chat.view.agent_id == agent_id)
                 {
-                    chat.view.changes_fetched(key, diff);
+                    chat.view.changes_fetched(key, changes);
                 }
             }
             AppEvent::HostOffer {
@@ -1260,26 +1491,14 @@ impl App {
         Flow::Continue
     }
 
-    /// `<leader> r`, or a `[diff]` clicked: the review page over the
-    /// agent's working tree, or back to the one already in the draft.
-    /// The review page, at the file `at` when one is named.
+    /// `<leader> r`, or a `[diff]` clicked: the agent's review page, at the
+    /// file `at` when one is named. Where the agent's host does not run
+    /// reviews, the page says so.
     fn review(&mut self, at: Option<String>) {
         let Some(chat) = &mut self.chat else {
             return;
         };
-        if chat.view.resume_review() {
-            if let Some(path) = &at {
-                chat.view.review_file(path);
-            }
-            return;
-        }
-        let state = chat.session.state();
-        let writable = matches!(state.composer(), Composer::Send | Composer::Resume);
-        let agent_id = chat.view.agent_id.clone();
-        // The page reads the changes the header counts.
-        let base = ui_view::diff_base(&state, chat.view.comparison);
-        let native = matches!(state.composer(), Composer::Native { .. });
-        drop(state);
+        let native = matches!(chat.session.state().composer(), Composer::Native { .. });
         // A subagent works in its parent's folder: the changes are the
         // parent's to review.
         if native {
@@ -1289,49 +1508,216 @@ impl App {
             );
             return;
         }
-        if !writable {
-            self.notice("review waits until the chat is current", Tone::Warn);
-            return;
+        let first = chat.view.review_page.is_none();
+        if first {
+            self.notice("opening the review…", Tone::Info);
+        } else {
+            let page = chat.view.open_review_page(at.as_deref());
+            page.notice(ui_view::ReviewNotice::Unreachable, false);
         }
-        let Some(base) = base else {
-            self.notice("no base branch to compare with", Tone::Info);
+        self.open_review(false, at, first);
+    }
+
+    /// Opens the agent's review at its host; `first` decides from the
+    /// answer which page shows.
+    fn open_review(&mut self, refresh: bool, at: Option<String>, first: bool) {
+        let Some(review) = self.review_link().map(|link| link.review.clone()) else {
             return;
         };
-        {
-            let client = self.client.clone();
-            self.notice("reading the changes…", Tone::Info);
-            self.spawn(async move {
-                Some(
-                    match ui_runtime::review::review(client.as_ref(), &agent_id, base).await {
-                        // The host's list of changed files is its word on
-                        // whether anything changed; an empty patch beside
-                        // a list was not read whole, and is no reason to
-                        // say nothing changed.
-                        Ok((diff, patch)) if patch.trim().is_empty() => {
-                            if diff.files.is_empty() {
-                                AppEvent::Notice("no changes to review".into(), Tone::Info)
-                            } else {
-                                AppEvent::Notice(
-                                    "could not read the changes: the host's patch is missing \
-                                     the files it lists"
-                                        .into(),
-                                    Tone::Warn,
-                                )
-                            }
-                        }
-                        Ok((diff, patch)) => AppEvent::Review {
-                            agent_id,
-                            diff,
-                            patch,
-                            at,
-                        },
-                        Err(error) => AppEvent::Notice(
-                            format!("could not read the changes: {error}"),
-                            Tone::Warn,
-                        ),
-                    },
-                )
+        let agent_id = self.chat.as_ref().map(|chat| chat.view.agent_id.clone());
+        let Some(agent_id) = agent_id else {
+            return;
+        };
+        if let Some(link) = self.chat.as_mut().and_then(|chat| chat.review.as_mut()) {
+            link.fetch_failed = None;
+        }
+        self.spawn(async move {
+            let result = review.open(None, refresh).await.map(drop);
+            Some(AppEvent::ReviewOpened {
+                agent_id,
+                result,
+                at,
+                first,
+            })
+        });
+    }
+
+    /// The open chat's hold on its agent's review, made on first use, with
+    /// a task telling the loop each time what its page draws from changes.
+    fn review_link(&mut self) -> Option<&mut ReviewLink> {
+        let events = self.events.clone();
+        let chat = self.chat.as_mut()?;
+        if chat.review.is_none() {
+            let review = Arc::new(chat.session.reviews());
+            let mut changed = review.changed();
+            let agent_id = chat.view.agent_id.clone();
+            // Ends when the review goes with the chat.
+            tokio::spawn(async move {
+                while changed.changed().await.is_ok() {
+                    let event = AppEvent::ReviewChanged {
+                        agent_id: agent_id.clone(),
+                    };
+                    if events.send(event).is_err() {
+                        break;
+                    }
+                }
             });
+            chat.review = Some(ReviewLink {
+                review,
+                followed: None,
+                following: false,
+                fetching: false,
+                fetch_failed: None,
+            });
+        }
+        chat.review.as_mut()
+    }
+
+    /// The open chat, when it is `agent_id`'s.
+    fn review_chat(&mut self, agent_id: &[u8]) -> Option<&mut OpenChat> {
+        self.chat
+            .as_mut()
+            .filter(|chat| chat.view.agent_id == agent_id)
+    }
+
+    fn review_opened(
+        &mut self,
+        agent_id: &[u8],
+        result: Result<(), ReviewError>,
+        at: Option<String>,
+        first: bool,
+    ) {
+        let Some(chat) = self
+            .chat
+            .as_mut()
+            .filter(|chat| chat.view.agent_id == agent_id)
+        else {
+            return;
+        };
+        let held = chat
+            .review
+            .as_ref()
+            .is_some_and(|link| link.review.summary().is_some());
+        if let Err(ReviewError::Rpc(error)) = &result
+            && first
+            && !held
+        {
+            self.notice(format!("could not open the review: {error}"), Tone::Warn);
+            return;
+        }
+        if first {
+            chat.view.open_review_page(at.as_deref());
+            self.notice = None;
+        }
+        let Some(page) = &mut chat.view.review_page else {
+            return;
+        };
+        let unreachable = result.as_ref().is_err_and(unreachable);
+        page.notice(ui_view::ReviewNotice::Unreachable, unreachable);
+        let failed = match &result {
+            Err(ReviewError::Rpc(error)) if !unreachable => Some(error.to_string()),
+            _ => None,
+        };
+        let stale: Vec<ui_view::ReviewNotice> = page
+            .state()
+            .notices
+            .iter()
+            .filter(|notice| matches!(notice, ui_view::ReviewNotice::SnapshotFailed { .. }))
+            .cloned()
+            .collect();
+        for notice in stale {
+            page.notice(notice, false);
+        }
+        if let Some(message) = failed {
+            page.notice(ui_view::ReviewNotice::SnapshotFailed { message }, true);
+        }
+        sync_review_page(chat);
+        if first
+            && let Some(path) = at.as_deref()
+            && let Some(page) = &mut chat.view.review_page
+        {
+            page.show_file(path);
+        }
+    }
+
+    fn review_edited(&mut self, agent_id: &[u8], result: Result<(), ReviewError>, reopen: bool) {
+        let Some(chat) = self.review_chat(agent_id) else {
+            return;
+        };
+        if let Some(page) = &mut chat.view.review_page {
+            page.edited(result.clone().map_err(|error| error.to_string()));
+            page.notice(
+                ui_view::ReviewNotice::Unreachable,
+                result.as_ref().is_err_and(unreachable),
+            );
+        }
+        match result {
+            Ok(()) => {
+                // Starting over answers a review with nothing in it, which
+                // the page shows until the first look it reopens on: no
+                // earlier round is left to be gone.
+                if reopen && let Some(page) = &mut chat.view.review_page {
+                    page.notice(ui_view::ReviewNotice::RoundGone, false);
+                }
+                sync_review_page(chat);
+                if reopen {
+                    self.open_review(false, None, false);
+                }
+            }
+            Err(error) => self.notice(format!("the review did not change: {error}"), Tone::Warn),
+        }
+    }
+
+    /// Keeps the open review page fed: follows the agent's row as its
+    /// review entry moves, and fetches the bodies its view still needs.
+    fn feed_review_page(&mut self) {
+        let Some(chat) = &mut self.chat else {
+            return;
+        };
+        let Some(page) = &chat.view.review_page else {
+            return;
+        };
+        let Some(link) = &mut chat.review else {
+            return;
+        };
+        let agent_id = chat.view.agent_id.clone();
+        let mark = RowMark::of(chat.session.state().agent());
+        let mut tasks: Vec<std::pin::Pin<Box<dyn Future<Output = Option<AppEvent>> + Send>>> =
+            Vec::new();
+        if !link.following && link.followed.as_ref() != Some(&mark) {
+            link.followed = Some(mark);
+            link.following = true;
+            let review = link.review.clone();
+            let row = chat.session.state().agent().clone();
+            let agent_id = agent_id.clone();
+            tasks.push(Box::pin(async move {
+                let result = review.follow(&row).await;
+                Some(AppEvent::ReviewFollowed { agent_id, result })
+            }));
+        }
+        let comparison = page.page().header.as_ref().map(Comparison::of_page);
+        if !link.fetching
+            && !page.to_fetch().is_empty()
+            && let Some(comparison) = comparison
+            && link.fetch_failed.as_ref() != Some(&comparison)
+        {
+            link.fetching = true;
+            link.fetch_failed = None;
+            let review = link.review.clone();
+            let view = page.view();
+            let paths = page.to_fetch().to_vec();
+            tasks.push(Box::pin(async move {
+                let result = review.files(&comparison, &paths).await.map(drop);
+                Some(AppEvent::ReviewFetched {
+                    agent_id,
+                    view,
+                    comparison,
+                    result,
+                })
+            }));
+        }
+        for task in tasks {
+            self.spawn(task);
         }
     }
 
@@ -1396,7 +1782,7 @@ impl App {
                 let events = self.events.clone();
                 self.spawn(async move {
                     let (agent, trouble) =
-                        match start_with_files(&*client, &setup, &text, attachments, files).await {
+                        match start_with_files(&client, &setup, &text, attachments, files).await {
                             Ok(started) => started,
                             Err(error) => return Some(AppEvent::StartFailed(error)),
                         };
@@ -1430,7 +1816,8 @@ impl App {
                         Some(inputs::submission(&text, attachments))
                     };
                     let request = setup.request(inputs::input_id(), prompt);
-                    Some(match client.create_agent(request).await {
+                    let created = client.host(&setup.host).agents().create(request).await;
+                    Some(match created {
                         Ok(agent) => AppEvent::Started {
                             agent: Box::new(agent),
                             open,
@@ -1440,17 +1827,12 @@ impl App {
                     })
                 });
             }
-            FleetEffect::Rename { agent, name } => {
-                self.spawn(async move {
-                    let request = RenameAgentRequest {
-                        agent_id: agent.agent,
-                        name,
-                    };
-                    client.rename_agent(request).await.err().map(|error| {
-                        AppEvent::Notice(format!("could not rename: {error}"), Tone::Warn)
-                    })
-                })
-            }
+            FleetEffect::Rename { agent, name } => self.spawn(async move {
+                let renamed = client.agent(&agent_ref(&agent)).rename(&name).await;
+                renamed
+                    .err()
+                    .map(|error| AppEvent::Notice(format!("could not rename: {error}"), Tone::Warn))
+            }),
             FleetEffect::CancelClose(agent) => self.fleet.cancel_close(&agent),
             FleetEffect::Close(agent) => {
                 let fleet = self.fleet.clone();
@@ -1468,22 +1850,17 @@ impl App {
             }
             FleetEffect::Pin(agent) => self.file(agent, wire::Filing::Pinned, "pin"),
             FleetEffect::Unpin(agent) => self.file(agent, wire::Filing::Open, "unpin"),
-            FleetEffect::CheckChanges(agent) => self.spawn(async move {
-                let head = wire::DiffBase {
-                    base: Some(wire::diff_base::Base::Head(wire::Empty {})),
-                };
-                let compared =
-                    ui_runtime::review::changed_files(client.as_ref(), &agent.agent, head)
-                        .await
-                        .map_err(|error| error.to_string());
-                Some(AppEvent::DeleteChecked { agent, compared })
+            FleetEffect::PreviewDelete(agent) => self.spawn(async move {
+                let preview = client
+                    .agent(&agent_ref(&agent))
+                    .preview_delete()
+                    .await
+                    .map_err(|error| error.to_string());
+                Some(AppEvent::DeletePreviewed { agent, preview })
             }),
             FleetEffect::Delete(agent, discard) => self.spawn(async move {
-                let request = DeleteAgentRequest {
-                    agent_id: agent.agent,
-                    discard_workspace_changes: discard,
-                };
-                Some(match client.delete_agent(request).await {
+                let deleted = client.agent(&agent_ref(&agent)).delete(discard).await;
+                Some(match deleted {
                     Ok(_) => AppEvent::Notice("deleted".into(), Tone::Info),
                     Err(error) => {
                         AppEvent::Notice(format!("could not delete: {error}"), Tone::Warn)
@@ -1617,14 +1994,10 @@ impl App {
             // Refused by the host (the name taken, the host away), the
             // command goes back to the composer to fix, with why.
             ChatEffect::Rename(name) => {
-                let client = self.client.clone();
+                let agent = self.client.agent(&agent_ref(&chat.agent));
                 self.spawn(async move {
-                    let request = RenameAgentRequest {
-                        agent_id: agent_id.clone(),
-                        name: name.clone(),
-                    };
-                    client
-                        .rename_agent(request)
+                    agent
+                        .rename(&name)
                         .await
                         .err()
                         .map(|error| AppEvent::Restore {
@@ -1668,10 +2041,69 @@ impl App {
             }
             ChatEffect::Review => self.review(None),
             ChatEffect::ReviewAt(path) => self.review(Some(path)),
+            ChatEffect::ReviewOpen { refresh } => self.open_review(refresh, None, false),
+            ChatEffect::ReviewEdit { edits, reopen } => {
+                let review = self.review_link().map(|link| link.review.clone())?;
+                self.spawn(async move {
+                    let result = review.edit(edits).await.map(drop);
+                    Some(AppEvent::ReviewEdited {
+                        agent_id,
+                        result,
+                        reopen,
+                    })
+                });
+            }
+            ChatEffect::ReviewContext(ask) => {
+                let comparison = chat
+                    .view
+                    .review_page
+                    .as_ref()
+                    .and_then(|page| page.page().header.as_ref())
+                    .map(Comparison::of_page)?;
+                let review = self.review_link().map(|link| link.review.clone())?;
+                self.spawn(async move {
+                    let lines = wire::experimental::ReviewLineRange {
+                        start: ask.start,
+                        end: ask.end,
+                    };
+                    let result = review
+                        .context(&comparison, &ask.commit, &ask.path, lines)
+                        .await
+                        .map(drop);
+                    Some(AppEvent::ReviewContext {
+                        agent_id,
+                        ask,
+                        result,
+                    })
+                });
+            }
+            ChatEffect::PromptWithReview { text, attachments } => {
+                self.fleet
+                    .keep_draft(&chat.agent, composer_draft(&chat.view.editor));
+                let review = self.review_link().map(|link| link.review.clone())?;
+                self.spawn(async move {
+                    send_with_review(&session, &review, agent_id, text, attachments).await
+                });
+            }
             ChatEffect::OpenUrl(url) => {
                 if let Err(error) = open_url(&url) {
                     self.notice(format!("could not open the link: {error}"), Tone::Warn);
                 }
+            }
+            ChatEffect::ReviewRound { review, text } => {
+                chat.view.open_round(&review);
+                // Read apart from the review page's own review, so the
+                // snapshot that page shows never moves under it.
+                let reviews = chat.session.reviews();
+                self.spawn(async move {
+                    let round = Box::new(reviews.round(&review.review_id, &review.input_id).await);
+                    Some(AppEvent::ReviewRound {
+                        agent_id,
+                        review,
+                        text,
+                        round,
+                    })
+                });
             }
             ChatEffect::OpenAttachment(blob) => {
                 self.notice(format!("opening {}…", blob.name), Tone::Info);
@@ -1838,19 +2270,18 @@ impl App {
             self.notice = Some((words, Tone::Warn, Instant::now()));
         }
         if let Some((key, base)) = wanted {
-            let client = self.client.clone();
+            let session = chat.session.clone();
             let agent_id = chat.view.agent_id.clone();
             self.spawn(async move {
-                let diff = ui_runtime::review::changed_files(client.as_ref(), &agent_id, base)
-                    .await
-                    .ok()?;
+                let changes = session.changes(base).await.ok()?;
                 Some(AppEvent::Changes {
                     agent_id,
                     key,
-                    diff,
+                    changes,
                 })
             });
         }
+        self.feed_review_page();
     }
 
     /// While a new agent is being set up: the folders its host offers, as
@@ -1922,16 +2353,12 @@ impl App {
             .unwrap_or_else(|| "this computer".to_owned());
         drop(fleet);
         for (provider, name, chosen) in asks {
-            let client = self.client.clone();
+            let desk = self.client.host(&host);
             let host = host.clone();
             let host_name = host_name.clone();
             self.spawn(async move {
-                let request = wire::GetCatalogueRequest {
-                    host_id: host.clone(),
-                    provider_id: provider.clone(),
-                };
-                let answer = client
-                    .get_catalogue(request)
+                let answer = desk
+                    .catalogue(&provider)
                     .await
                     .map_err(|error| error.to_string());
                 let decoded = answer.and_then(|blob| {
@@ -1987,6 +2414,7 @@ impl App {
     /// Paints the screen and asks for an older page when the reader is
     /// within one of the oldest held row.
     pub fn draw(&mut self, paint: &mut Paint<'_>) {
+        crate::code::begin_frame();
         self.keep_layout();
         let area = paint.area();
         let theme = self.theme();
@@ -2083,11 +2511,11 @@ impl App {
     /// chat on screen, started as the screen freezes so it is ready by the
     /// time the note is.
     fn start_dump(&self) -> crate::report::Dump {
-        let client = self.client.clone();
+        let admin = self.client.admin();
         let parts = [self.fleet.dump_part()];
         let sessions = self.fleet.on_screen_records();
         tokio::spawn(async move {
-            let response = client
+            let response = admin
                 .dump(wire::DumpRequest {
                     reason: "report a problem".to_owned(),
                     sessions,
@@ -2112,11 +2540,11 @@ impl App {
         let Some(report) = self.report.take() else {
             return;
         };
-        let client = self.client.clone();
+        let admin = self.client.admin();
         let build = self.config.version.clone();
         self.notice("sending the report…", Tone::Info);
         self.spawn(async move {
-            Some(match report.submit(client, build).await {
+            Some(match report.submit(admin, build).await {
                 Ok(done) if done.not_sent.is_empty() => AppEvent::Notice(
                     format!("report sent; a copy is in {}", done.report_path),
                     Tone::Info,

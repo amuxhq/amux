@@ -112,13 +112,14 @@ fn is_word(character: char) -> bool {
 
 /// Relative ages (`just now`, `3m ago`), a prompt's time of day at its
 /// row's right edge, when a limit resets, the fleet's compact ages and the
-/// served net's random scratch suffixes: everything in a frame that moves
-/// with the clock or the run.
+/// served net's random scratch suffixes, and a review's snapshot id:
+/// everything in a frame that moves with the clock or the run.
 pub(crate) fn normalize(text: &str) -> String {
     let lines: Vec<String> = text
         .split('\n')
         .map(|line| {
-            let line = clock_at_end(line);
+            let line = snapshot_id(line);
+            let line = clock_at_end(&line);
             let line = resets(&line);
             let line = ages(&line);
             let line = fleet_ages(&line);
@@ -127,6 +128,26 @@ pub(crate) fn normalize(text: &str) -> String {
         })
         .collect();
     lines.join("\n")
+}
+
+/// `xxxxxxx` for the short id after a review page's `review · … at `: the
+/// snapshot is a commit taken when the page opened, so its id moves with
+/// the clock.
+fn snapshot_id(line: &str) -> String {
+    let Some(from) = line.find("review · ").and_then(|start| {
+        line[start..]
+            .find(" at ")
+            .map(|at| start + at + " at ".len())
+    }) else {
+        return line.to_owned();
+    };
+    let id = &line.as_bytes()[from..];
+    let hex = |byte: &u8| byte.is_ascii_hexdigit();
+    if id.len() >= 7 && id[..7].iter().all(hex) && !id.get(7).is_some_and(hex) {
+        format!("{}xxxxxxx{}", &line[..from], &line[from + 7..])
+    } else {
+        line.to_owned()
+    }
 }
 
 /// `hh:mm` for a time of day a space before the line's end.
@@ -523,6 +544,19 @@ mod tests {
         assert_eq!(
             normalize("/tmp/testnetAbc…de/work"),
             "/tmp/testnetxxx…xx/work"
+        );
+        assert_eq!(
+            normalize("w  review · since main at 3d9a1d7 │ 1 file"),
+            "w  review · since main at xxxxxxx │ 1 file"
+        );
+        assert_eq!(
+            normalize("review · round 1 at 4ad3b6b │ 1 comment"),
+            "review · round 1 at xxxxxxx │ 1 comment"
+        );
+        // Words after "at" are no id.
+        assert_eq!(
+            normalize("review · since main at decade"),
+            "review · since main at decade"
         );
     }
 

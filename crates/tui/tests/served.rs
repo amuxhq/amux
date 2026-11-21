@@ -22,6 +22,20 @@ fn theme() -> Theme {
     Theme::dark(ColorMode::TrueColor)
 }
 
+/// A client of `host`'s node in memory, through its router and carrier, as
+/// the fleet and its chats call it.
+fn node(net: &Net, host: &str) -> client::Client {
+    client::Client::in_memory(net.entrance(host).unwrap(), client::Surface::Terminal)
+}
+
+/// `agent` on desk, as an act on it is addressed: to desk, by its id there.
+fn desks(net: &Net, agent: &[u8]) -> wire::AgentRef {
+    wire::AgentRef {
+        host_id: net.host("desk").unwrap().host_id.as_bytes().to_vec(),
+        agent_id: agent.to_vec(),
+    }
+}
+
 /// A desk and a laptop that reach each other.
 fn topology() -> Topology {
     Topology::new()
@@ -79,8 +93,7 @@ async fn a_draft_left_in_a_chat_is_in_its_composer_when_the_chat_opens_again() {
     .unwrap();
     net.settle("worker").await.unwrap();
     let worker = net.agent("worker").unwrap().id;
-    let client: std::sync::Arc<dyn client::Client> =
-        std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
+    let client = node(&net, "desk");
     let fleet = ui_runtime::Fleet::connect(client.clone(), client::SystemClock)
         .await
         .unwrap();
@@ -141,7 +154,7 @@ async fn a_draft_left_in_a_chat_is_in_its_composer_when_the_chat_opens_again() {
 // --- the client closing, and a chat closing under the person ----------------
 
 /// A served net of idle headless Claude agents on desk, and a client of desk.
-async fn desk_of(names: &[&str]) -> (Net, std::sync::Arc<dyn client::Client>, tui::TuiConfig) {
+async fn desk_of(names: &[&str]) -> (Net, client::Client, tui::TuiConfig) {
     let mut topology = Topology::new().host("desk");
     for name in names {
         topology = topology.agent(
@@ -155,8 +168,6 @@ async fn desk_of(names: &[&str]) -> (Net, std::sync::Arc<dyn client::Client>, tu
     for name in names {
         net.settle(name).await.unwrap();
     }
-    let client: std::sync::Arc<dyn client::Client> =
-        std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
     let config = tui::TuiConfig {
         working_dir: "/".into(),
         leader: 'a',
@@ -168,19 +179,16 @@ async fn desk_of(names: &[&str]) -> (Net, std::sync::Arc<dyn client::Client>, tu
         chat_in: settings::ChatInSetting::Amux,
         system_clipboard: false,
     };
-    (net, client, config)
+    let node = node(&net, "desk");
+    (net, node, config)
 }
 
-/// A client of desk whose fleet lists every one of `ids`.
-async fn app_listing(
-    client: std::sync::Arc<dyn client::Client>,
-    config: tui::TuiConfig,
-    ids: &[&[u8]],
-) -> tui::App {
-    let fleet = ui_runtime::Fleet::connect(client.clone(), client::SystemClock)
+/// The terminal client on `node`, once its fleet lists every one of `ids`.
+async fn app_listing(node: client::Client, config: tui::TuiConfig, ids: &[&[u8]]) -> tui::App {
+    let fleet = ui_runtime::Fleet::connect(node.clone(), client::SystemClock)
         .await
         .unwrap();
-    let app = tui::App::new(client, fleet, config);
+    let app = tui::App::new(node, fleet, config);
     let mut changed = app.fleet.changed();
     while ids.iter().any(|id| app.fleet.state().find(id).is_none()) {
         tokio::time::timeout(PATIENCE, changed.changed())
@@ -201,9 +209,9 @@ fn press(app: &mut tui::App, code: crossterm::event::KeyCode) {
 /// were held only in the client's memory and lost.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_draft_outlives_the_terminal_client_closing() {
-    let (net, client, config) = desk_of(&["worker"]).await;
+    let (net, node, config) = desk_of(&["worker"]).await;
     let worker = net.agent("worker").unwrap().id;
-    let mut app = app_listing(client.clone(), config.clone(), &[worker.as_bytes()]).await;
+    let mut app = app_listing(node.clone(), config.clone(), &[worker.as_bytes()]).await;
     open_chat(&mut app, worker.as_bytes()).await;
     for c in "important unsent draft".chars() {
         press(&mut app, crossterm::event::KeyCode::Char(c));
@@ -212,7 +220,7 @@ async fn a_draft_outlives_the_terminal_client_closing() {
     app.keep_drafts().await;
     drop(app);
 
-    let mut app = app_listing(client, config, &[worker.as_bytes()]).await;
+    let mut app = app_listing(node, config, &[worker.as_bytes()]).await;
     open_chat(&mut app, worker.as_bytes()).await;
     assert_eq!(
         app.chat.as_ref().unwrap().view.editor.text(),
@@ -226,155 +234,85 @@ async fn a_draft_outlives_the_terminal_client_closing() {
         .unwrap();
 }
 
-/// A client of the daemon whose saves of an emptied draft wait while
-/// `hold` is set: the clearing a person did is still on its way. It notes
-/// the agent of every draft saved.
+/// The daemon's drafts as the fleet reaches them, with its saves of an
+/// emptied draft waiting while `hold` is set: the clearing a person did is
+/// still on its way. It notes the agent of every draft saved.
+#[derive(Clone)]
 struct SlowClearing {
-    inner: std::sync::Arc<dyn client::Client>,
-    hold: tokio::sync::watch::Sender<bool>,
-    saved: std::sync::Mutex<Vec<Vec<u8>>>,
+    inner: client::Client,
+    hold: std::sync::Arc<tokio::sync::watch::Sender<bool>>,
+    saved: std::sync::Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
 }
 
-#[async_trait::async_trait]
-impl client::Client for SlowClearing {
+impl SlowClearing {
+    fn new(inner: client::Client, held: bool) -> SlowClearing {
+        SlowClearing {
+            inner,
+            hold: std::sync::Arc::new(tokio::sync::watch::Sender::new(held)),
+            saved: Default::default(),
+        }
+    }
+
+    /// A client of `net`'s desk whose drafts go through this, and every
+    /// other call to the desk's node as it is.
+    fn client(&self, net: &Net) -> client::Client {
+        use tonic::codegen::http;
+        use tower::ServiceExt as _;
+        type Server = wire::draft_service_server::DraftServiceServer<SlowClearing>;
+        let prefix = format!("/{}/", <Server as tonic::server::NamedService>::NAME);
+        let drafts = tonic::service::Routes::new(wire::draft_service_server(self.clone()));
+        let rest = net.entrance("desk").unwrap();
+        let split = tower::service_fn(move |request: http::Request<tonic::body::Body>| {
+            let (drafts, rest) = (drafts.clone(), rest.clone());
+            let ours = request.uri().path().starts_with(&prefix);
+            async move {
+                if ours {
+                    drafts.oneshot(request).await
+                } else {
+                    rest.oneshot(request).await
+                }
+            }
+        });
+        client::Client::in_memory(split, client::Surface::Terminal)
+    }
+}
+
+#[tonic::async_trait]
+impl wire::draft_service_server::DraftService for SlowClearing {
     async fn update_draft(
         &self,
-        request: wire::UpdateDraftRequest,
-    ) -> Result<wire::Draft, client::RpcError> {
+        request: tonic::Request<wire::UpdateDraftRequest>,
+    ) -> Result<tonic::Response<wire::UpdateDraftResponse>, tonic::Status> {
+        let request = request.into_inner();
         self.saved.lock().unwrap().push(request.agent_id.clone());
-        let empty = request
-            .draft
-            .as_ref()
-            .is_none_or(|draft| draft.text.is_empty() && draft.attachments.is_empty());
-        if empty {
+        let draft = request.draft.unwrap_or_default();
+        if draft.text.is_empty() && draft.attachments.is_empty() {
             let _ = self.hold.subscribe().wait_for(|held| !*held).await;
         }
-        self.inner.update_draft(request).await
+        let kept = self
+            .inner
+            .drafts()
+            .update(&request.agent_id, draft)
+            .await
+            .map_err(client::RpcError::into_status)?;
+        Ok(tonic::Response::new(wire::UpdateDraftResponse {
+            draft: Some(kept),
+        }))
     }
+
     async fn get_draft(
         &self,
-        request: wire::GetDraftRequest,
-    ) -> Result<wire::Draft, client::RpcError> {
-        self.inner.get_draft(request).await
-    }
-    async fn sign_out(&self) -> Result<(), client::RpcError> {
-        self.inner.sign_out().await
-    }
-    async fn get_device_identity(&self) -> Result<wire::DeviceIdentity, client::RpcError> {
-        self.inner.get_device_identity().await
-    }
-    async fn subscribe_inventory(
-        &self,
-    ) -> Result<client::EventStream<wire::InventoryEvent>, client::RpcError> {
-        self.inner.subscribe_inventory().await
-    }
-    async fn resolve_agent(
-        &self,
-        request: wire::ResolveAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        self.inner.resolve_agent(request).await
-    }
-    async fn subscribe_session(
-        &self,
-        request: wire::SubscribeSessionRequest,
-    ) -> Result<client::EventStream<wire::SessionEvent>, client::RpcError> {
-        self.inner.subscribe_session(request).await
-    }
-    async fn list_items(
-        &self,
-        request: wire::ListItemsRequest,
-    ) -> Result<wire::ListItemsResponse, client::RpcError> {
-        self.inner.list_items(request).await
-    }
-    async fn get_item(
-        &self,
-        request: wire::GetItemRequest,
-    ) -> Result<wire::Item, client::RpcError> {
-        self.inner.get_item(request).await
-    }
-    async fn send_input(
-        &self,
-        request: wire::SendInputRequest,
-    ) -> Result<wire::SendInputResponse, client::RpcError> {
-        self.inner.send_input(request).await
-    }
-    async fn create_agent(
-        &self,
-        request: wire::CreateAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        self.inner.create_agent(request).await
-    }
-    async fn rename_agent(
-        &self,
-        request: wire::RenameAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        self.inner.rename_agent(request).await
-    }
-    async fn file_agent(
-        &self,
-        request: wire::FileAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        self.inner.file_agent(request).await
-    }
-    async fn resume_agent(
-        &self,
-        request: wire::ResumeAgentRequest,
-    ) -> Result<wire::Agent, client::RpcError> {
-        self.inner.resume_agent(request).await
-    }
-    async fn delete_agent(
-        &self,
-        request: wire::DeleteAgentRequest,
-    ) -> Result<(), client::RpcError> {
-        self.inner.delete_agent(request).await
-    }
-    async fn send_message(
-        &self,
-        request: wire::Envelope,
-    ) -> Result<wire::SendMessageResponse, client::RpcError> {
-        self.inner.send_message(request).await
-    }
-    async fn put_blob(
-        &self,
-        request: wire::PutBlobRequest,
-    ) -> Result<wire::BlobRef, client::RpcError> {
-        self.inner.put_blob(request).await
-    }
-    async fn get_blob(
-        &self,
-        request: wire::GetBlobRequest,
-    ) -> Result<wire::GetBlobResponse, client::RpcError> {
-        self.inner.get_blob(request).await
-    }
-    async fn get_diff(
-        &self,
-        request: wire::GetDiffRequest,
-    ) -> Result<wire::Diff, client::RpcError> {
-        self.inner.get_diff(request).await
-    }
-    async fn get_catalogue(
-        &self,
-        request: wire::GetCatalogueRequest,
-    ) -> Result<wire::GetCatalogueResponse, client::RpcError> {
-        self.inner.get_catalogue(request).await
-    }
-    async fn pin_folder(
-        &self,
-        request: wire::PinFolderRequest,
-    ) -> Result<wire::PinFolderResponse, client::RpcError> {
-        self.inner.pin_folder(request).await
-    }
-    async fn dump(
-        &self,
-        request: wire::DumpRequest,
-    ) -> Result<wire::DumpResponse, client::RpcError> {
-        self.inner.dump(request).await
-    }
-    async fn submit_report(
-        &self,
-        request: wire::SubmitReportRequest,
-    ) -> Result<wire::SubmitReportResponse, client::RpcError> {
-        self.inner.submit_report(request).await
+        request: tonic::Request<wire::GetDraftRequest>,
+    ) -> Result<tonic::Response<wire::GetDraftResponse>, tonic::Status> {
+        let kept = self
+            .inner
+            .drafts()
+            .get(&request.into_inner().agent_id)
+            .await
+            .map_err(client::RpcError::into_status)?;
+        Ok(tonic::Response::new(wire::GetDraftResponse {
+            draft: Some(kept),
+        }))
     }
 }
 
@@ -386,26 +324,19 @@ async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     let (net, daemon, config) = desk_of(&["worker"]).await;
     let worker = net.agent("worker").unwrap().id;
-    let stale = || wire::GetDraftRequest {
-        agent_id: worker.as_bytes().to_vec(),
-    };
     daemon
-        .update_draft(wire::UpdateDraftRequest {
-            agent_id: worker.as_bytes().to_vec(),
-            draft: Some(wire::Draft {
+        .drafts()
+        .update(
+            worker.as_bytes(),
+            wire::Draft {
                 text: "kept from before".into(),
                 attachments: Vec::new(),
-            }),
-        })
+            },
+        )
         .await
         .unwrap();
-    let slow = std::sync::Arc::new(SlowClearing {
-        inner: daemon.clone(),
-        hold: tokio::sync::watch::Sender::new(true),
-        saved: Default::default(),
-    });
-    let client: std::sync::Arc<dyn client::Client> = slow.clone();
-    let mut app = app_listing(client, config, &[worker.as_bytes()]).await;
+    let slow = SlowClearing::new(daemon.clone(), true);
+    let mut app = app_listing(slow.client(&net), config, &[worker.as_bytes()]).await;
     let home = |app: &mut tui::App| {
         app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
         press(app, KeyCode::Char('s'));
@@ -436,7 +367,7 @@ async fn a_cleared_draft_stays_cleared_before_the_daemon_hears_of_it() {
     tokio::time::timeout(PATIENCE, app.keep_drafts())
         .await
         .expect("the quit's save lands");
-    let left = daemon.get_draft(stale()).await.unwrap();
+    let left = daemon.drafts().get(worker.as_bytes()).await.unwrap();
     assert!(
         left.text.is_empty(),
         "the daemon still keeps {:?} after the client quit",
@@ -458,23 +389,16 @@ async fn a_deleted_agents_chat_keeps_no_draft() {
     use crossterm::event::KeyCode;
     let (net, daemon, config) = desk_of(&["doomed"]).await;
     let doomed = net.agent("doomed").unwrap().id;
-    let recording = std::sync::Arc::new(SlowClearing {
-        inner: daemon.clone(),
-        hold: tokio::sync::watch::Sender::new(false),
-        saved: Default::default(),
-    });
-    let client: std::sync::Arc<dyn client::Client> = recording.clone();
-    let mut app = app_listing(client, config, &[doomed.as_bytes()]).await;
+    let recording = SlowClearing::new(daemon.clone(), false);
+    let mut app = app_listing(recording.client(&net), config, &[doomed.as_bytes()]).await;
     open_chat(&mut app, doomed.as_bytes()).await;
     for c in "half a thought".chars() {
         press(&mut app, KeyCode::Char(c));
     }
 
     daemon
-        .delete_agent(wire::DeleteAgentRequest {
-            agent_id: doomed.as_bytes().to_vec(),
-            ..Default::default()
-        })
+        .agent(&desks(&net, doomed.as_bytes()))
+        .delete(false)
         .await
         .unwrap();
     tokio::time::timeout(PATIENCE, async {
@@ -497,12 +421,7 @@ async fn a_deleted_agents_chat_keeps_no_draft() {
             .contains(&doomed.as_bytes().to_vec()),
         "the deleted agent's draft was saved"
     );
-    let left = daemon
-        .get_draft(wire::GetDraftRequest {
-            agent_id: doomed.as_bytes().to_vec(),
-        })
-        .await
-        .unwrap();
+    let left = daemon.drafts().get(doomed.as_bytes()).await.unwrap();
     assert!(left.text.is_empty(), "the daemon keeps {:?}", left.text);
     drop(app);
     tokio::time::timeout(Duration::from_secs(60), net.shutdown())
@@ -537,10 +456,8 @@ async fn words_typed_into_a_chat_that_closes_under_the_person_end_no_other_agent
     open_chat(&mut app, doomed.as_bytes()).await;
 
     client
-        .delete_agent(wire::DeleteAgentRequest {
-            agent_id: doomed.as_bytes().to_vec(),
-            ..Default::default()
-        })
+        .agent(&desks(&net, doomed.as_bytes()))
+        .delete(false)
         .await
         .unwrap();
     tokio::time::timeout(PATIENCE, async {
@@ -593,9 +510,9 @@ async fn words_typed_into_a_chat_that_closes_under_the_person_end_no_other_agent
 #[tokio::test(flavor = "multi_thread")]
 async fn the_leader_then_x_settles_the_chats_agent_and_goes_home() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    let (net, client, config) = desk_of(&["finished"]).await;
+    let (net, node, config) = desk_of(&["finished"]).await;
     let finished = net.agent("finished").unwrap().id;
-    let mut app = app_listing(client, config, &[finished.as_bytes()]).await;
+    let mut app = app_listing(node, config, &[finished.as_bytes()]).await;
     open_chat(&mut app, finished.as_bytes()).await;
     let mut changed = app.fleet.changed();
     app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
@@ -649,8 +566,6 @@ async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
     .unwrap();
     net.settle("far").await.unwrap();
     let far = net.agent("far").unwrap().id;
-    let client: std::sync::Arc<dyn client::Client> =
-        std::sync::Arc::new(client::InProcess::new(net.client("laptop").unwrap()));
     let config = tui::TuiConfig {
         working_dir: "/".into(),
         leader: 'a',
@@ -662,7 +577,7 @@ async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
         chat_in: settings::ChatInSetting::Amux,
         system_clipboard: false,
     };
-    let mut app = app_listing(client, config, &[far.as_bytes()]).await;
+    let mut app = app_listing(node(&net, "laptop"), config, &[far.as_bytes()]).await;
     open_chat(&mut app, far.as_bytes()).await;
     app.key(crossterm::event::KeyEvent::new(
         crossterm::event::KeyCode::Char('a'),
@@ -690,14 +605,6 @@ async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
 /// desk's client with `name`'s chat open, `name` a terminal-less agent on
 /// laptop, the two linked.
 async fn far_chat(name: &str) -> (Net, tui::App) {
-    far_chat_via(name, |client| client).await
-}
-
-/// [`far_chat`], its client reaching the daemon through `via`.
-async fn far_chat_via(
-    name: &str,
-    via: impl FnOnce(std::sync::Arc<dyn client::Client>) -> std::sync::Arc<dyn client::Client>,
-) -> (Net, tui::App) {
     let net = Net::start(
         topology().agent(
             AgentDecl::new(name, "laptop")
@@ -710,9 +617,6 @@ async fn far_chat_via(
     .unwrap();
     net.settle(name).await.unwrap();
     let id = net.agent(name).unwrap().id;
-    let client: std::sync::Arc<dyn client::Client> =
-        std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
-    let client = via(client);
     let config = tui::TuiConfig {
         working_dir: "/".into(),
         leader: 'a',
@@ -724,7 +628,7 @@ async fn far_chat_via(
         chat_in: settings::ChatInSetting::Amux,
         system_clipboard: false,
     };
-    let mut app = app_listing(client, config, &[id.as_bytes()]).await;
+    let mut app = app_listing(node(&net, "desk"), config, &[id.as_bytes()]).await;
     open_chat(&mut app, id.as_bytes()).await;
     (net, app)
 }
@@ -777,8 +681,7 @@ async fn a_prompt_for_a_host_that_cannot_be_reached_stays_in_the_composer_and_th
     use crossterm::event::KeyCode;
     let (mut net, mut app) = far_chat("far").await;
     let id = net.agent("far").unwrap().id;
-    let daemon: std::sync::Arc<dyn client::Client> =
-        std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
+    let daemon = node(&net, "desk");
     net.sever_link("desk", "laptop").unwrap();
     tokio::time::timeout(PATIENCE, async {
         loop {
@@ -810,12 +713,7 @@ async fn a_prompt_for_a_host_that_cannot_be_reached_stays_in_the_composer_and_th
             let screen = screen_text(terminal.backend().buffer());
             let chat = app.chat.as_ref().unwrap();
             let underway = ui_view::prompts_underway(&chat.session.state());
-            let kept = daemon
-                .get_draft(wire::GetDraftRequest {
-                    agent_id: id.as_bytes().to_vec(),
-                })
-                .await
-                .unwrap();
+            let kept = daemon.drafts().get(id.as_bytes()).await.unwrap();
             if chat.view.editor.text() == "race A"
                 && underway.is_empty()
                 && screen.contains("away")
@@ -865,30 +763,42 @@ async fn a_chat_on_an_agent_deleted_on_its_far_host_never_offers_to_resume_it() 
         .unwrap();
 }
 
-/// A file pasted into a new agent's first message waits with the draft, and
-/// reaches the agent with the words once the agent exists.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_file_pasted_into_a_new_agents_first_message_reaches_it() {
-    use crossterm::event::KeyCode;
-
-    let (net, client, config) = desk_of(&[]).await;
-    let host = config.local_host.clone();
-    let fleet = ui_runtime::Fleet::connect(client.clone(), client::SystemClock)
+/// The terminal client on `node`, once its fleet lists `host`.
+async fn app_seeing(node: client::Client, config: tui::TuiConfig, host: &[u8]) -> tui::App {
+    let fleet = ui_runtime::Fleet::connect(node.clone(), client::SystemClock)
         .await
         .unwrap();
-    let mut app = tui::App::new(client.clone(), fleet, config);
+    let mut app = tui::App::new(node, fleet, config);
     tokio::time::timeout(PATIENCE, async {
-        while app.fleet.state().host(&host).is_none() {
+        while app.fleet.state().host(host).is_none() {
             next_app_event(&mut app).await;
         }
     })
     .await
     .expect("the fleet lists the host");
+    app
+}
+
+/// Starts a new agent from home, on `host` when one is named, its first
+/// message "look at this" with a pasted image, and waits for the message to
+/// reach the agent's chat: the agent's id, and the image's bytes and hash.
+async fn start_with_a_file(app: &mut tui::App, host: Option<&[u8]>) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+    use crossterm::event::KeyCode;
+    use tui::setup::Item;
 
     let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap();
-    press(&mut app, KeyCode::Char('n'));
+    press(app, KeyCode::Char('n'));
     // The draft takes its settings from the defaults as it first shows.
     terminal.draw(|frame| app.draw(frame)).unwrap();
+    if let Some(host) = host {
+        // As the host choice's value names a host: its id in hex. A folder
+        // names a place on one machine, so another host's is chosen again.
+        let value: String = host.iter().map(|byte| format!("{byte:02x}")).collect();
+        let setup = app.home.open_setup().expect("a new agent is being set up");
+        setup.pick(Item::Host, &value);
+        setup.pick(Item::Folder, "/");
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+    }
     let bytes = b"\x89PNG\r\n\x1a\nnot really an image".to_vec();
     app.home
         .paste_clipboard(tui::clipboard::ClipboardContent::Image {
@@ -897,9 +807,9 @@ async fn a_file_pasted_into_a_new_agents_first_message_reaches_it() {
         })
         .unwrap();
     for c in "look at this".chars() {
-        press(&mut app, KeyCode::Char(c));
+        press(app, KeyCode::Char(c));
     }
-    press(&mut app, KeyCode::Enter);
+    press(app, KeyCode::Enter);
 
     let prompt = tokio::time::timeout(PATIENCE, async {
         loop {
@@ -932,14 +842,103 @@ async fn a_file_pasted_into_a_new_agents_first_message_reaches_it() {
     else {
         panic!("the image is not on the message: {prompt:?}");
     };
-    let stored = client
-        .get_blob(wire::GetBlobRequest {
-            agent_id: agent,
-            hash: blob.hash,
-        })
+    (agent, bytes, blob.hash)
+}
+
+/// A file pasted into a new agent's first message waits with the draft, and
+/// reaches the agent with the words once the agent exists.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_pasted_into_a_new_agents_first_message_reaches_it() {
+    let (net, node, config) = desk_of(&[]).await;
+    let host = config.local_host.clone();
+    let mut app = app_seeing(node.clone(), config, &host).await;
+    let (agent, bytes, hash) = start_with_a_file(&mut app, None).await;
+    let stored = node
+        .sessions()
+        .get_blob(&agent, &hash)
         .await
         .expect("the file is stored with the agent");
-    assert_eq!(stored.bytes, bytes);
+    assert_eq!(stored, bytes);
+
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
+/// Every call a client made through its node, as its method and the
+/// authority it was addressed to.
+type Calls = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
+
+/// A client of `host`'s node that notes every call it makes in [`Calls`].
+fn noting(net: &Net, host: &str) -> (client::Client, Calls) {
+    use tonic::codegen::http;
+    use tower::ServiceExt as _;
+    let calls = Calls::default();
+    let noted = calls.clone();
+    let node = net.entrance(host).unwrap();
+    let service = tower::service_fn(move |request: http::Request<tonic::body::Body>| {
+        let authority = request
+            .uri()
+            .authority()
+            .map_or_else(String::new, |authority| authority.to_string());
+        noted
+            .lock()
+            .unwrap()
+            .push((request.uri().path().to_owned(), authority));
+        node.clone().oneshot(request)
+    });
+    (
+        client::Client::in_memory(service, client::Surface::Terminal),
+        calls,
+    )
+}
+
+/// A new agent the laptop's terminal starts on desk is made by desk: the
+/// create, the file its first message carries and the message itself are
+/// each addressed to desk by its id, so laptop's node passes them on over
+/// the link unread, and desk holds the agent, its file and its message.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_agent_on_another_host_and_its_first_message_are_addressed_to_that_host() {
+    let net = Net::start(topology()).await.unwrap();
+    let desk = net.host("desk").unwrap().host_id;
+    let (laptop, calls) = noting(&net, "laptop");
+    let config = tui::TuiConfig {
+        working_dir: "/".into(),
+        leader: 'a',
+        theme: theme(),
+        initial_chat: None,
+        version: String::new(),
+        local_host: net.host("laptop").unwrap().host_id.as_bytes().to_vec(),
+        layout: None,
+        chat_in: settings::ChatInSetting::Amux,
+        system_clipboard: false,
+    };
+    let mut app = app_seeing(laptop, config, desk.as_bytes()).await;
+    let (agent, bytes, hash) = start_with_a_file(&mut app, Some(desk.as_bytes())).await;
+
+    let row = app.fleet.state().find(&agent).cloned().expect("listed");
+    assert_eq!(row.host_id, desk.as_bytes(), "the agent is desk's");
+    let held = node(&net, "desk")
+        .sessions()
+        .get_blob(&agent, &hash)
+        .await
+        .expect("desk holds the file");
+    assert_eq!(held, bytes);
+    let calls = calls.lock().unwrap().clone();
+    for method in ["CreateAgent", "PutBlob", "SendInput"] {
+        let to: Vec<&str> = calls
+            .iter()
+            .filter(|(path, _)| path.ends_with(&format!("AgentService/{method}")))
+            .map(|(_, authority)| authority.as_str())
+            .collect();
+        assert!(
+            !to.is_empty() && to.iter().all(|to| *to == wire::authority(&desk)),
+            "{method} was addressed to {to:?}, not desk ({}): {calls:?}",
+            wire::authority(&desk)
+        );
+    }
 
     drop(app);
     tokio::time::timeout(Duration::from_secs(60), net.shutdown())
@@ -982,8 +981,6 @@ async fn a_message_typed_to_a_suspended_agent_wakes_it_and_never_reads_stopped()
     .await
     .unwrap();
     let id = net.agent("napper").unwrap().id;
-    let client: std::sync::Arc<dyn client::Client> =
-        std::sync::Arc::new(client::InProcess::new(net.client("desk").unwrap()));
     let config = tui::TuiConfig {
         working_dir: "/".into(),
         leader: 'a',
@@ -995,7 +992,7 @@ async fn a_message_typed_to_a_suspended_agent_wakes_it_and_never_reads_stopped()
         chat_in: settings::ChatInSetting::Amux,
         system_clipboard: false,
     };
-    let mut app = app_listing(client, config, &[id.as_bytes()]).await;
+    let mut app = app_listing(node(&net, "desk"), config, &[id.as_bytes()]).await;
     open_chat(&mut app, id.as_bytes()).await;
     let suspended = |app: &tui::App| {
         app.fleet
@@ -1066,6 +1063,484 @@ async fn a_message_typed_to_a_suspended_agent_wakes_it_and_never_reads_stopped()
             agent.incarnation,
         );
     });
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
+// --- an agent's review from another computer ---------------------------------
+
+/// The store the desk's repository holds when the net starts: ten lines,
+/// committed.
+const STORE: &str = "\
+pub struct Store {
+    file: File,
+}
+
+impl Store {
+    pub fn open(path: &Path) -> Store {
+        let file = File::open(path).unwrap();
+        Store { file }
+    }
+}
+";
+
+/// A desk running the reviews experiment with `worker` in its repository
+/// `site`, and a laptop linked to it, without the experiment, whose
+/// terminal client has the worker's chat open.
+async fn review_from_the_laptop() -> (Net, tui::App, std::path::PathBuf) {
+    review_from_the_laptop_with(true).await
+}
+
+/// [`review_from_the_laptop`], with the desk running the reviews
+/// experiment only when `reviews`.
+async fn review_from_the_laptop_with(reviews: bool) -> (Net, tui::App, std::path::PathBuf) {
+    use std::sync::Arc;
+
+    let topology = Topology::new()
+        .host_decl(testnet::HostDecl {
+            name: "desk".to_owned(),
+            repositories: vec!["site".to_owned()],
+            files: [("site/src/store.rs".to_owned(), STORE.to_owned())].into(),
+            ..testnet::HostDecl::default()
+        })
+        .host("laptop")
+        .link("desk", "laptop")
+        .agent(testnet::AgentDecl {
+            repository: Some("site".to_owned()),
+            ..AgentDecl::new("worker", "desk")
+                .kind(FakeKind::ClaudeSdk)
+                .steps(vec![
+                    text("Ready."),
+                    Step::TurnEnd,
+                    text("Read it."),
+                    Step::TurnEnd,
+                ])
+                .prompt("go")
+        });
+    let options = testnet::NetOptions {
+        launch: Some(Arc::new(move |host: &str, launch: &mut node::Launch| {
+            if host == "desk" && reviews {
+                launch.experiments =
+                    settings::experiments::Enabled::of(&[&settings::experiments::REVIEWS]);
+            }
+        })),
+        ..testnet::NetOptions::default()
+    };
+    let net = Net::start_with(topology, options).await.unwrap();
+    net.settle("worker").await.unwrap();
+    let site = net
+        .host("desk")
+        .unwrap()
+        .work
+        .with_file_name("repositories")
+        .join("site");
+    // The agent's change: the open no longer unwraps.
+    std::fs::write(
+        site.join("src/store.rs"),
+        STORE.replace(
+            "File::open(path).unwrap();",
+            "File::open(path).expect(\"the store opens\");",
+        ),
+    )
+    .unwrap();
+    let id = net.agent("worker").unwrap().id;
+    let config = tui::TuiConfig {
+        working_dir: "/".into(),
+        leader: 'a',
+        theme: theme(),
+        initial_chat: None,
+        version: String::new(),
+        local_host: net.host("laptop").unwrap().host_id.as_bytes().to_vec(),
+        layout: None,
+        chat_in: settings::ChatInSetting::Amux,
+        system_clipboard: false,
+    };
+    let mut app = app_listing(node(&net, "laptop"), config, &[id.as_bytes()]).await;
+    open_chat(&mut app, id.as_bytes()).await;
+    (net, app, site)
+}
+
+/// Runs the client as its loop does, housekeeping, drawing and applying
+/// what its tasks answer, until `done` holds of it and its screen.
+async fn until(app: &mut tui::App, what: &str, done: impl Fn(&tui::App, &str) -> bool) -> String {
+    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+    let deadline = tokio::time::Instant::now() + PATIENCE;
+    loop {
+        app.housekeep();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let screen = screen_text(terminal.backend().buffer());
+        if done(app, &screen) {
+            return screen;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "waited for {what}; the screen:\n{screen}"
+        );
+        if let Ok(Some(event)) =
+            tokio::time::timeout(Duration::from_millis(50), app.receiver.recv()).await
+        {
+            app.event(event);
+        }
+    }
+}
+
+fn review_page(app: &tui::App) -> Option<&tui::chat::review::Page> {
+    let chat = app.chat.as_ref()?;
+    chat.view
+        .review_page
+        .as_ref()
+        .filter(|_| chat.view.review_page_open)
+}
+
+/// The sent round open over the chat.
+fn round_page(app: &tui::App) -> Option<&tui::chat::review::Page> {
+    let chat = app.chat.as_ref()?;
+    chat.view.round.as_ref().map(|(_, page)| page)
+}
+
+/// Clicks the sent review's chip in the chat's feed, where `screen` drew
+/// it.
+fn click_sent_review(app: &mut tui::App, screen: &str) {
+    use crossterm::event::{Event, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+    let (row, column) = screen
+        .lines()
+        .enumerate()
+        .find_map(|(row, line)| {
+            let at = line.find("[review · 1 comment]")?;
+            Some((row, line[..at].chars().count()))
+        })
+        .unwrap_or_else(|| panic!("no sent review in the feed:\n{screen}"));
+    for kind in [
+        MouseEventKind::Down(MouseButton::Left),
+        MouseEventKind::Up(MouseButton::Left),
+    ] {
+        app.input(Event::Mouse(MouseEvent {
+            kind,
+            column: column as u16 + 2,
+            row: row as u16,
+            modifiers: KeyModifiers::NONE,
+        }));
+    }
+}
+
+fn row_key(app: &tui::App) -> String {
+    let page = review_page(app).expect("the page is open");
+    page.page().rows[page.cursor()].key.clone()
+}
+
+fn drafts(app: &tui::App) -> Vec<String> {
+    review_page(app)
+        .and_then(|page| page.fetched().summary.clone())
+        .map(|summary| {
+            summary
+                .comments
+                .iter()
+                .filter(|comment| comment.round.is_none())
+                .map(|comment| comment.text.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// docs/guide/use/terminal.md, "Reviewing changes": a person on the laptop
+/// opens the review of an agent on the desk, carried to the desk like any
+/// host service, reads its files, loads more lines, comments on a changed
+/// line and sees the draft; the laptop's copy of the agent's row carries
+/// the drafts to the composer's chip, and sending carries them to the
+/// agent. The sent review in the chat opens the round it closed, its
+/// comment on its file; starting over leaves a first look, and the sent
+/// review then opens the text the agent read.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_person_on_the_laptop_reviews_the_desks_agent() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let (net, mut app, _site) = review_from_the_laptop().await;
+    // The leader, then `r`.
+    app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+    press(&mut app, KeyCode::Char('r'));
+
+    // Open, then GetFiles: the file's change, under where it sits.
+    let screen = until(&mut app, "the review's files", |app, _| {
+        review_page(app).is_some_and(|page| {
+            page.page()
+                .rows
+                .iter()
+                .any(|row| row.key == "l/src/store.rs/0/7")
+        })
+    })
+    .await;
+    assert!(screen.contains("src/store.rs"), "{screen}");
+    assert!(
+        screen.contains("File::open(path).expect(\"the store opens\");"),
+        "{screen}"
+    );
+    assert!(screen.contains("1 file · +1 −1"), "{screen}");
+
+    // More lines below the change, read from the snapshot.
+    for _ in 0..20 {
+        if row_key(&app).starts_with("g/src/store.rs/") && row_key(&app) != "g/src/store.rs/0" {
+            break;
+        }
+        press(&mut app, KeyCode::Char('j'));
+    }
+    let gap = row_key(&app);
+    assert!(
+        gap.starts_with("g/"),
+        "the cursor reached the gap below: {gap}"
+    );
+    press(&mut app, KeyCode::Char('e'));
+    until(&mut app, "the lines below the change", |app, _| {
+        review_page(app).is_some_and(|page| {
+            page.page()
+                .rows
+                .iter()
+                .any(|row| row.key.starts_with("l/src/store.rs/") && row.key.ends_with("/10"))
+        })
+    })
+    .await;
+
+    // A comment on the changed line.
+    for _ in 0..40 {
+        if row_key(&app) == "l/src/store.rs/0/7" {
+            break;
+        }
+        press(&mut app, KeyCode::Char('k'));
+    }
+    assert_eq!(row_key(&app), "l/src/store.rs/0/7");
+    press(&mut app, KeyCode::Char('c'));
+    for c in "say why the store must open".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+    let screen = until(&mut app, "the draft on the page", |app, screen| {
+        drafts(app) == ["say why the store must open"] && !screen.contains("saving…")
+    })
+    .await;
+    assert!(screen.contains("│ Draft"), "{screen}");
+    assert!(screen.contains("│ say why the store must open"), "{screen}");
+
+    // Back in the chat, the chip comes from the laptop's copy of the row.
+    press(&mut app, KeyCode::Char('q'));
+    until(&mut app, "the review chip", |_, screen| {
+        screen.contains("[review · 1 comment ✕]")
+    })
+    .await;
+
+    // Sending carries exactly the draft, as the agent reads it.
+    for c in "have a look".chars() {
+        press(&mut app, KeyCode::Char(c));
+    }
+    press(&mut app, KeyCode::Enter);
+    let sent = |app: &tui::App| {
+        let chat = app.chat.as_ref()?;
+        let state = chat.session.state();
+        state.inputs().iter().find_map(|input| match &input.what {
+            ui_state::InputWhat::Prompt { text, attachments } if text == "have a look" => {
+                attachments.iter().find_map(|attachment| {
+                    Some((ui_view::sent_review::entry(attachment)?, attachment.clone()))
+                })
+            }
+            _ => None,
+        })
+    };
+    until(&mut app, "the prompt carrying the review", |app, _| {
+        sent(app).is_some()
+    })
+    .await;
+    let (entry, attachment) = sent(&app).unwrap();
+    assert_eq!(entry.comments.len(), 1);
+    assert_eq!(entry.round, 1);
+    let Some(wire::attachment::Of::Text(read)) = &attachment.of else {
+        panic!("a sent review is text the agent reads");
+    };
+    assert!(
+        read.text.contains("## src/store.rs, line 7"),
+        "{}",
+        read.text
+    );
+    assert!(
+        read.text.contains("say why the store must open"),
+        "{}",
+        read.text
+    );
+
+    // The sent review in the chat opens its round, read from the desk:
+    // the comment, sent in round 1, on its file, to read only. The agent's
+    // reply says the desk accepted the message and closed the round.
+    let screen = until(&mut app, "the sent review in the feed", |_, screen| {
+        screen.contains("have a look [review · 1 comment]") && screen.contains("Read it.")
+    })
+    .await;
+    click_sent_review(&mut app, &screen);
+    let screen = until(&mut app, "the round", |app, _| {
+        round_page(app).is_some_and(|page| {
+            page.page().rows.iter().any(|row| {
+                matches!(&row.of, ui_view::ReviewRowOf::Comment(comment)
+                    if comment.text == "say why the store must open"
+                        && comment.state == ui_view::ReviewCommentState::Sent { round: 1 })
+            })
+        })
+    })
+    .await;
+    assert!(screen.contains("review · round 1 at"), "{screen}");
+    assert!(screen.contains("src/store.rs"), "{screen}");
+    assert!(screen.contains("│ say why the store must open"), "{screen}");
+    assert!(
+        !screen.contains("delete"),
+        "a round is read only:\n{screen}"
+    );
+    press(&mut app, KeyCode::Char('c'));
+    assert!(
+        round_page(&app).is_some_and(|page| !page.editing()),
+        "a round takes no comment"
+    );
+    press(&mut app, KeyCode::Char('q'));
+    until(&mut app, "the chat again", |app, screen| {
+        round_page(app).is_none() && screen.contains("have a look [review · 1 comment]")
+    })
+    .await;
+
+    // Starting over: asked first, then a first look again.
+    app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+    press(&mut app, KeyCode::Char('r'));
+    until(&mut app, "the page again", |app, _| {
+        review_page(app).is_some()
+    })
+    .await;
+    let before = review_page(&app)
+        .and_then(|page| page.fetched().summary.clone())
+        .map(|summary| summary.id.clone())
+        .expect("a review");
+    press(&mut app, KeyCode::Char('S'));
+    press(&mut app, KeyCode::Enter);
+    let screen = until(&mut app, "a first look after starting over", |app, _| {
+        review_page(app)
+            .and_then(|page| page.fetched().summary.clone())
+            .is_some_and(|summary| {
+                !summary.id.is_empty()
+                    && summary.id != before
+                    && summary.comments.is_empty()
+                    && summary.rounds.is_empty()
+                    && !summary.files.is_empty()
+            })
+    })
+    .await;
+    assert!(!screen.contains("Draft"), "{screen}");
+
+    // The round went with the review: the sent review shows what the agent
+    // read.
+    press(&mut app, KeyCode::Char('q'));
+    let screen = until(&mut app, "the chat after starting over", |_, screen| {
+        screen.contains("have a look [review · 1 comment]")
+    })
+    .await;
+    click_sent_review(&mut app, &screen);
+    let screen = until(&mut app, "the text the agent read", |_, screen| {
+        screen.contains("no longer holds this round")
+    })
+    .await;
+    assert!(screen.contains("## src/store.rs, line 7"), "{screen}");
+    assert!(screen.contains("say why the store must open"), "{screen}");
+
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
+/// An agent whose computer runs no reviews: the review page opens and says
+/// so, with nothing of a review to draw, and asking again keeps it open.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_desk_without_reviews_has_the_page_say_so() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let (net, mut app, _site) = review_from_the_laptop_with(false).await;
+    let open_review = |app: &mut tui::App| {
+        app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        press(app, KeyCode::Char('r'));
+    };
+    open_review(&mut app);
+    let offered_none = |app: &tui::App, screen: &str| {
+        review_page(app).is_some_and(|page| page.page().rows.is_empty())
+            && screen.contains("Reviews aren't offered on this agent's computer")
+    };
+    let screen = until(&mut app, "the page saying reviews are off", offered_none).await;
+    assert!(!screen.contains("src/store.rs"), "{screen}");
+
+    press(&mut app, KeyCode::Char('q'));
+    assert!(review_page(&app).is_none(), "q goes back to the chat");
+    open_review(&mut app);
+    until(&mut app, "the page again", offered_none).await;
+
+    drop(app);
+    tokio::time::timeout(Duration::from_secs(60), net.shutdown())
+        .await
+        .expect("the net shuts down")
+        .unwrap();
+}
+
+/// Following the agent's row: the agent changing code after the page
+/// opened marks it stale, without the page changing under the reader, and
+/// `r` refreshes onto the code as it is now.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_open_review_follows_the_agents_row() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let (net, mut app, site) = review_from_the_laptop().await;
+    app.key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+    press(&mut app, KeyCode::Char('r'));
+    until(&mut app, "the review's files", |app, _| {
+        review_page(app)
+            .is_some_and(|page| page.to_fetch().is_empty() && page.page().header.is_some())
+    })
+    .await;
+    let first = review_page(&app)
+        .and_then(|page| page.fetched().summary.clone())
+        .unwrap()
+        .snapshot
+        .clone();
+
+    // The agent changes more and ends a turn: its row says the tree moved.
+    std::fs::write(site.join("src/new.rs"), "pub fn new() {}\n").unwrap();
+    let worker = net.agent("worker").unwrap();
+    net.person("desk")
+        .await
+        .unwrap()
+        .agent(worker)
+        .send_input(testnet::prompt(worker.kind, b"again-1", "again"))
+        .await
+        .unwrap();
+    let screen = until(&mut app, "the page marked stale", |_, screen| {
+        screen.contains("The agent changed code since this snapshot")
+    })
+    .await;
+    assert!(
+        !screen.contains("src/new.rs"),
+        "nothing changes under the reader:\n{screen}"
+    );
+    assert_eq!(
+        review_page(&app)
+            .and_then(|page| page.fetched().summary.clone())
+            .unwrap()
+            .snapshot,
+        first
+    );
+
+    press(&mut app, KeyCode::Char('r'));
+    let screen = until(&mut app, "the refreshed page", |app, screen| {
+        screen.contains("src/new.rs")
+            && review_page(app)
+                .and_then(|page| page.fetched().summary.clone())
+                .is_some_and(|summary| summary.snapshot != first)
+    })
+    .await;
+    assert!(!screen.contains("changed code since"), "{screen}");
+
     drop(app);
     tokio::time::timeout(Duration::from_secs(60), net.shutdown())
         .await

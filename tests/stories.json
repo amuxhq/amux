@@ -477,10 +477,29 @@
       "clients": ["phone", "terminal", "mac"]
     },
     {
-      "name": "review.no-changes",
-      "shows": "The review page for an agent with nothing changed.",
-      "clients": ["phone", "mac"],
-      "why": "The terminal says there is nothing to review on its notice line instead of opening the page."
+      "name": "review.since-last",
+      "shows": "The review page's next look, on Since your last review: the two views to switch between, earlier comments sent, outdated and folded, and a draft on a new line.",
+      "clients": ["phone", "terminal", "mac"]
+    },
+    {
+      "name": "review.drafts-stale",
+      "shows": "The review page held on its drafts' snapshot after the agent changed code, offering to refresh, which moves the drafts.",
+      "clients": ["phone", "terminal", "mac"]
+    },
+    {
+      "name": "review.empty",
+      "shows": "The review page with nothing left to review.",
+      "clients": ["phone", "terminal", "mac"]
+    },
+    {
+      "name": "review.not-offered",
+      "shows": "The review page for an agent whose computer does not run reviews: it says so, with nothing of the review to draw.",
+      "clients": ["phone", "terminal", "mac"]
+    },
+    {
+      "name": "review.round",
+      "shows": "What a review sent into the chat opens: the round it closed, its whole diff from the base to the round's snapshot with each comment it sent on its lines, and a way to the review as it is now.",
+      "clients": ["phone", "terminal", "mac"]
     },
     {
       "name": "settings.signed-in",

@@ -416,6 +416,9 @@ private fun MarkdownListBlockView(
             }
         }
     }
+    // A task's glyph says nothing spoken, so it is read as words.
+    val doneLabel = stringResource(R.string.markdown_task_done)
+    val openLabel = stringResource(R.string.markdown_task_not_done)
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val column = remember(markers, typography.body, density) {
@@ -436,7 +439,15 @@ private fun MarkdownListBlockView(
                     style = typography.body,
                     color = colors.inkFaint,
                     textAlign = TextAlign.End,
-                    modifier = Modifier.width(column),
+                    modifier = Modifier
+                        .width(column)
+                        .then(
+                            when (item.task) {
+                                true -> Modifier.semantics { contentDescription = doneLabel }
+                                false -> Modifier.semantics { contentDescription = openLabel }
+                                null -> Modifier
+                            },
+                        ),
                 )
                 Column(
                     modifier = Modifier

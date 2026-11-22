@@ -233,7 +233,7 @@ public final class StoreBundle {
     private func model(_ agent: AgentKey) throws(RuntimeFailure) -> ChatModel {
         if let open = models[agent] { return open.model }
         let chat = try openChat(agent) { [weak self] in self?.models[agent]?.model.apply($0) }
-        let model = ChatModel(source: chat)
+        let model = ChatModel(source: chat, openingInBackground: true)
         if let kept = chat.keptDraft() { model.reopen(kept) }
         model.keeping = { chat.keep($0) }
         models[agent] = (chat, model)

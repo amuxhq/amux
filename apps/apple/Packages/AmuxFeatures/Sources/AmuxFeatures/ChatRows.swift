@@ -1158,6 +1158,7 @@ private struct ProseBlockView: View {
                         Text(markers[index])
                             .foregroundStyle(design.inkFaint.color)
                             .gridColumnAlignment(.trailing)
+                            .accessibilityLabel(Self.taskLabel(item.task) ?? markers[index])
                         ProseBlocks(blocks: item.blocks, muted: muted || item.task == true, streaming: streaming, spacing: 6)
                     }
                 }
@@ -1191,6 +1192,15 @@ private struct ProseBlockView: View {
             .scrollIndicators(.hidden)
         case .rule:
             Rectangle().fill(design.hairline.color).frame(height: design.metrics.hairline)
+        }
+    }
+
+    /// A task's glyph read as words; nil for any other item's marker.
+    private static func taskLabel(_ task: Bool?) -> String? {
+        switch task {
+        case .some(true): String(localized: "Done")
+        case .some(false): String(localized: "Not done")
+        case .none: nil
         }
     }
 

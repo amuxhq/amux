@@ -4,6 +4,8 @@
     <string name="markdown_copy_code">Copy Code</string>
     <string name="markdown_code_copied">Copied</string>
     <string name="markdown_streaming">Streaming</string>
+    <string name="markdown_task_done">Done</string>
+    <string name="markdown_task_not_done">Not done</string>
 
     <!-- ChatRows: shared -->
     <string name="chat_row_expand">Expand</string>

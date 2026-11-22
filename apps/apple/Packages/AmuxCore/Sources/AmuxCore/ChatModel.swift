@@ -339,6 +339,12 @@ public final class ChatModel {
     /// then, and again when the comparison or its totals move.
     @ObservationIgnored private var overviewShown = false
     @ObservationIgnored private var listed: Listed?
+    /// Whether the opening is in; deltas before it wait in `early`.
+    @ObservationIgnored private var openingIn = true
+    @ObservationIgnored private var early: [ChatDelta] = []
+    /// The latest read of rows away from the main actor, for a test to
+    /// wait on.
+    @ObservationIgnored var reading: Task<Void, Never>?
     /// The agent's review page while it is open on the chat: the review
     /// read and written at the agent's host, which every client of the
     /// agent sees.
@@ -354,14 +360,38 @@ public final class ChatModel {
     /// The last paste taken out of the draft, where the field still shows it.
     @ObservationIgnored private var pasted: (at: Int, text: [Character])?
 
-    /// - Parameter loadingHintAfter: how long an empty chat waits before
-    ///   saying it is loading; zero says so from the first frame.
-    public init(source: ChatSource, loadingHintAfter: Duration = ChatModel.loadingHintDelay) {
+    /// - Parameters:
+    ///   - loadingHintAfter: how long an empty chat waits before saying it
+    ///     is loading; zero says so from the first frame.
+    ///   - openingInBackground: read the chat's opening off the main actor.
+    ///     The runtime builds the rows it hands over, parsing their
+    ///     markdown, so the app's chats open this way; a delta arriving
+    ///     first waits for the opening it follows.
+    public init(
+        source: ChatSource, loadingHintAfter: Duration = ChatModel.loadingHintDelay,
+        openingInBackground: Bool = false
+    ) {
         self.source = source
-        let opening = source.opening()
+        guard openingInBackground else {
+            open(source.opening())
+            if ids.isEmpty { waitForRows(loadingHintAfter) }
+            return
+        }
+        openingIn = false
+        waitForRows(loadingHintAfter)
+        reading = Task { [weak self] in
+            let opening = await Task.detached { source.opening() }.value
+            self?.open(opening)
+        }
+    }
+
+    private func open(_ opening: ChatDelta) {
         if case .reload(let keys)? = opening.keys { hold(keys: keys) }
         show(opening)
-        if ids.isEmpty { waitForRows(loadingHintAfter) }
+        openingIn = true
+        let early = self.early
+        self.early = []
+        early.forEach(apply)
     }
 
     // MARK: - Reading
@@ -370,6 +400,10 @@ public final class ChatModel {
     /// edges or whole, the rows that changed, and the frame, the card and
     /// the strip where they moved.
     public func apply(_ delta: ChatDelta) {
+        guard openingIn else {
+            early.append(delta)
+            return
+        }
         if delta.keys != nil || !delta.rows.isEmpty {
             Signposts.emit(.transcriptCommit)
         }
@@ -385,7 +419,12 @@ public final class ChatModel {
         if !delta.rows.isEmpty { openIfLanded() }
     }
 
-    /// The cell for a key, its row read now if it never was.
+    /// The cell for a key, its row read now if it never was. This read is
+    /// on the main actor on purpose: the list lays a cell out the moment it
+    /// asks, and a row arriving after would be measured empty and then
+    /// jump. Rows a delta handed over were built, and their markdown
+    /// parsed, off the main actor, and the runtime keeps those parses, so
+    /// the rows read here are mostly ones it parsed already.
     public func cell(for id: String) -> RowCell {
         if let cell = cells[id] { return cell }
         let cell = RowCell(
@@ -603,18 +642,31 @@ public final class ChatModel {
         if empty != ids.isEmpty { empty = ids.isEmpty }
     }
 
-    /// Reads every held cell again in place and stamps it, so the list
-    /// measures it again: after a swap, what each kept key draws may have
-    /// moved.
+    /// Reads every held cell again and stamps it, so the list measures it
+    /// again: after a swap, what each kept key draws may have moved. The
+    /// rows are read off the main actor, since reading them builds them
+    /// and parses their markdown, and each cell keeps its row until they
+    /// come; a cell a delta handed a newer row meanwhile keeps that one.
     private func refresh(_ keys: [String]) {
         guard !keys.isEmpty else { return }
-        let rows = source.rows(for: keys)
-        revision += 1
-        for row in rows {
-            guard let cell = cells[row.id] else { continue }
-            cell.row = row
-            cell.revision = revision
+        let asked = revision
+        let source = self.source
+        reading = Task { [weak self] in
+            let rows = await Task.detached { source.rows(for: keys) }.value
+            self?.refreshed(rows, askedAt: asked)
         }
+    }
+
+    private func refreshed(_ rows: [Row], askedAt asked: Int) {
+        let next = revision + 1
+        var moved = false
+        for row in rows {
+            guard let cell = cells[row.id], cell.revision <= asked else { continue }
+            cell.row = row
+            cell.revision = next
+            moved = true
+        }
+        if moved { revision = next }
     }
 
     /// Rows a delta handed over, each into its cell if it was drawn; a

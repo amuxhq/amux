@@ -62,6 +62,7 @@ private struct Block: View {
                         Text(markers[index])
                             .foregroundStyle(Palette.textSecondary)
                             .gridColumnAlignment(.trailing)
+                            .accessibilityLabel(Self.taskLabel(item.task) ?? markers[index])
                         Blocks(blocks: item.blocks, streaming: streaming)
                             .fixedSize(horizontal: false, vertical: true)
                             .modifier(DoneTask(done: item.task == true))
@@ -94,6 +95,15 @@ private struct Block: View {
             .font(.ui(.meta))
         case .rule:
             Divider()
+        }
+    }
+
+    /// A task's glyph read as words; nil for any other item's marker.
+    private static func taskLabel(_ task: Bool?) -> String? {
+        switch task {
+        case .some(true): String(localized: "Done")
+        case .some(false): String(localized: "Not done")
+        case .none: nil
         }
     }
 

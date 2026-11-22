@@ -472,7 +472,7 @@ final class ChatModelTests: XCTestCase {
     }
 
 
-    func testAResetSwapsTheWholeSequenceInAtOnceAndFollowsTheNewestRow() {
+    func testAResetSwapsTheWholeSequenceInAtOnceAndFollowsTheNewestRow() async {
         let source = FakeChat(rows: [row("a", 1), row("b", 2)], frame: frame())
         let model = ChatModel(source: source)
         let b = model.cell(for: "b")
@@ -483,9 +483,24 @@ final class ChatModelTests: XCTestCase {
         source.deliver(to: model)
         XCTAssertEqual(model.ids, ["b", "x", "y"])
         XCTAssertTrue(model.cell(for: "b") === b, "a kept key keeps its cell")
+        // The kept cells are read again away from the main actor.
+        await model.reading?.value
         XCTAssertEqual(model.cell(for: "b").row?.order, 20, "and the cell holds the new row")
         XCTAssertEqual(model.toNewest, before + 1)
         XCTAssertFalse(model.newActivity)
+    }
+
+    /// The app's chats read their opening off the main actor, since the
+    /// rows it hands over are built and parsed there; the chat fills when
+    /// it comes, and what arrived since lands after it.
+    func testAChatOpenedInTheBackgroundFillsWhenItsOpeningComes() async {
+        let source = FakeChat(rows: [row("a", 1), row("b", 2)], frame: frame())
+        let model = ChatModel(source: source, loadingHintAfter: .zero, openingInBackground: true)
+        await model.reading?.value
+        XCTAssertEqual(model.ids, ["a", "b"])
+        source.arrive([row("c", 3)])
+        source.deliver(to: model)
+        XCTAssertEqual(model.ids, ["a", "b", "c"])
     }
 
     func testAResetInHistoryFollowsTheNewestRowAgain() {

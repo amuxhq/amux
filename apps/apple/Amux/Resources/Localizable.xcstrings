@@ -3458,7 +3458,7 @@
       }
     },
     "Done" : {
-      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift.",
+      "comment" : "English app copy. Used in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/HostsTab.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/NewAgent.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Pairing.swift, ios/Packages/AmuxFeatures/Sources/AmuxFeatures/Paywall.swift. Also read aloud in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatRows.swift for a task list item that is done.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -11997,6 +11997,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add Comment"
+          }
+        }
+      }
+    },
+    "Not done" : {
+      "comment" : "English app copy. Read aloud in ios/Packages/AmuxFeatures/Sources/AmuxFeatures/ChatRows.swift for a task list item that is not done.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not done"
           }
         }
       }

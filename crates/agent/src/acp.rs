@@ -338,6 +338,20 @@ pub fn kill_tree(pid: u32) {
         .status();
 }
 
+/// Starts `taskkill /F /T` on `pid` without waiting for it, for a caller
+/// that must not be held up while it runs; None when it could not start.
+#[cfg(windows)]
+pub fn start_killing_tree(pid: u32) -> Option<tokio::process::Child> {
+    tokio::process::Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(false)
+        .spawn()
+        .ok()
+}
+
 /// The program to start for `command`. On Windows a bare name is looked up
 /// on the PATH under each of PATHEXT's extensions, as a shell would: an
 /// agent installed by npm is a `.cmd` shim, which starting the name alone

@@ -53,6 +53,11 @@ const CODEX_INITIALIZE: &str = "agent-initialize";
 const CODEX_THREAD: &str = interpret::codex::THREAD_REQUEST;
 /// The longest a starting Codex server is waited for to listen.
 const CODEX_LISTEN_WAIT: Duration = Duration::from_secs(30);
+/// How long a kill on Windows waits for the child to have gone: well
+/// inside the 2 s the daemon gives the agent process to exit once it has
+/// asked it to die, and far longer than termination takes.
+#[cfg(windows)]
+const GONE_WAIT: Duration = Duration::from_millis(1_000);
 /// How long the `taskkill /T` of an ACP agent behind a Windows shim has to
 /// end its tree before the shim is killed regardless.
 #[cfg(windows)]
@@ -218,14 +223,21 @@ impl Process {
         }
     }
 
-    /// Ends the process now, without waiting for it.
+    /// Ends the process, and returns once it has gone or [`GONE_WAIT`] has
+    /// passed. Termination finishes after TerminateProcess returns, and
+    /// until it does the process still has its working folder open, which
+    /// on Windows keeps that folder from being removed: a delete that
+    /// follows this agent's exit would find the workspace still in use.
     #[cfg(windows)]
     fn terminate(&self) {
         use std::os::windows::io::AsRawHandle as _;
+
+        use windows_sys::Win32::System::Threading::{TerminateProcess, WaitForSingleObject};
         if let Some(handle) = &self.0 {
             // SAFETY: the handle is this value's own, open until it drops.
             unsafe {
-                windows_sys::Win32::System::Threading::TerminateProcess(handle.as_raw_handle(), 1);
+                TerminateProcess(handle.as_raw_handle(), 1);
+                WaitForSingleObject(handle.as_raw_handle(), GONE_WAIT.as_millis() as u32);
             }
         }
     }
@@ -1478,7 +1490,9 @@ impl Provider {
             // process exits right after a kill, which can drop the task
             // waiting on the child before that task has killed it, and the
             // child would outlive the agent, holding its folder and the
-            // handles it inherited. The task then sees it exit.
+            // handles it inherited. It has gone by the time the agent's exit
+            // is seen, so a delete that follows can remove its folder. The
+            // task then sees it exit.
             #[cfg(windows)]
             self.process.terminate();
             let _ = kill.send(());

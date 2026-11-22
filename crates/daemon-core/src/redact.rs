@@ -34,6 +34,17 @@ pub(crate) enum Opaque {
 }
 
 thread_local! {
+    // The initializer is already `const`, but on the Android target Clippy
+    // reads the macro's expansion there and asks for it anyway. `expect`
+    // rather than `allow`, so the attribute fails once Clippy stops misreading
+    // it.
+    #[cfg_attr(
+        target_os = "android",
+        expect(
+            clippy::missing_const_for_thread_local,
+            reason = "Clippy misreads the Android expansion of an initializer that is already const"
+        )
+    )]
     static NEXT: Cell<Option<Opaque>> = const { Cell::new(None) };
 }
 

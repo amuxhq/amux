@@ -20,15 +20,11 @@ if [ -z "${JAVA_HOME:-}" ]; then
 fi
 
 if [ -z "${ANDROID_HOME:-}" ]; then
-    for candidate in \
-            "${ANDROID_SDK_ROOT:-}" \
-            "$HOME/Library/Android/sdk" \
-            "$HOME/Android/Sdk"; do
-        if [ -n "$candidate" ] && [ -d "$candidate" ]; then
-            export ANDROID_HOME="$candidate"
-            break
-        fi
-    done
+    # android_sdk.py is where every Android script finds the SDK. When it
+    # finds none, ANDROID_HOME stays unset and Gradle says what is missing.
+    if sdk=$("$repo_root/scripts/py" -B "$repo_root/apps/android/tools/android_sdk.py" sdk); then
+        export ANDROID_HOME="$sdk"
+    fi
 fi
 
 cd "$repo_root/apps/android"

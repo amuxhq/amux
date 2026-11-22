@@ -30,7 +30,11 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
+import sys
 from types import ModuleType
+
+sys.path.insert(0, str(Path(__file__).parent))
+import android_sdk  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CRATE = "app-jni"
@@ -119,41 +123,15 @@ def find_cargo_ndk() -> str:
 
 
 def find_android_ndk() -> str | None:
-    for var in ("ANDROID_NDK_HOME", "ANDROID_NDK_ROOT"):
-        value = os.environ.get(var)
-        if value and Path(value).is_dir():
-            return value
-    sdk_candidates = [
-        os.environ.get("ANDROID_HOME"),
-        os.environ.get("ANDROID_SDK_ROOT"),
-        str(Path.home() / "Library" / "Android" / "sdk"),
-        str(Path.home() / "Android" / "Sdk"),
-    ]
-    for sdk in sdk_candidates:
-        if not sdk:
-            continue
-        ndk_root = Path(sdk) / "ndk"
-        if ndk_root.is_dir():
-            versions = sorted((p for p in ndk_root.iterdir() if p.is_dir()), reverse=True)
-            if versions:
-                return str(versions[0])
-    return None
+    found = android_sdk.ndk()
+    return str(found) if found is not None else None
 
 
 def find_llvm_strip(ndk_path: str | None) -> str:
-    if ndk_path:
-        prebuilt = Path(ndk_path) / "toolchains" / "llvm" / "prebuilt"
-        if prebuilt.is_dir():
-            for host_dir in sorted(prebuilt.iterdir()):
-                candidate = host_dir / "bin" / "llvm-strip"
-                if candidate.is_file() and os.access(candidate, os.X_OK):
-                    return str(candidate)
-    found = shutil.which("llvm-strip")
+    found = android_sdk.ndk_tool(Path(ndk_path) if ndk_path else None, "llvm-strip")
     if found:
         return found
-    raise RuntimeError(
-        "llvm-strip was not found in the Android NDK prebuilt toolchain or on PATH"
-    )
+    raise RuntimeError("llvm-strip was not found in the Android NDK's prebuilt toolchain")
 
 
 def strip_debug_sections(so_path: Path, strip_bin: str) -> None:

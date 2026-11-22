@@ -5,16 +5,16 @@ Invoked via `just android scope-audit`. By default this script:
 1. Builds the shipping Rust JNI bridge (`android-rust.py --release`, without
    `debug-tools`).
 2. Builds the Release Android APK (`:app:assembleRelease --no-daemon`).
-3. Inspects the APK's DEX files (via Android SDK `dexdump` when available, with
-   a pure-Python DEX header/string-table parser fallback) and proves no debug
-   or test-support classes ship (`DoorServer`, `DoorHost`, `StorybookActivity`,
-   `sh/amux/testsupport/`, `ScriptedChat`, `ScriptedCloudService`,
-   `ScriptedBillingStoreFront`).
-4. Extracts `lib/<abi>/libamux_app.so` from the APK and inspects it with NDK
-   `llvm-readelf` / `llvm-nm` (falling back to `readelf` / `nm` / `strings`) to
-   prove zero `debug-tools` / `amux_debug` / `testnet` symbols are present and
-   SQLite is statically linked (no `libsqlite*.so` in `DT_NEEDED`, with static
-   SQLite symbols/linkage present).
+3. Reads R8's `mapping.txt` for the release build, which names every class
+   that survived shrinking by its source name, and proves no debug or
+   test-support class ships (`DoorServer`, `DoorHost`, `StorybookActivity`,
+   `sh.amux.testsupport`, `ScriptedChat`, `ScriptedCloudService`,
+   `ScriptedBillingStoreFront`). The DEX itself names classes as R8 renamed
+   them, so a renamed debug class would pass a look at the DEX.
+4. Extracts `lib/<abi>/libamux_app.so` from the APK and inspects it with the
+   NDK's `llvm-readelf` and `llvm-nm` to prove no `debug-tools`,
+   `amux_debug` or `testnet` symbol is present and SQLite is statically
+   linked (no `libsqlite*.so` in `DT_NEEDED`, and `sqlite3_*` defined).
 """
 
 from __future__ import annotations
@@ -24,12 +24,13 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import re
-import shutil
-import struct
 import subprocess
 import sys
 import tempfile
 import zipfile
+
+sys.path.insert(0, str(Path(__file__).parent))
+import android_sdk  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ANDROID_RUST = REPO_ROOT / "apps" / "android" / "tools" / "android-rust.py"
@@ -37,21 +38,26 @@ GRADLE_WRAPPER = REPO_ROOT / "apps" / "android" / "tools" / "gradle-run.sh"
 PYTHON = REPO_ROOT / "scripts" / "py"
 RELEASE_APK_DIR = REPO_ROOT / "apps" / "android" / "app" / "build" / "outputs" / "apk" / "release"
 APK_CANDIDATES = ("app-release.apk", "app-release-unsigned.apk")
+RELEASE_MAPPING = (
+    REPO_ROOT / "apps" / "android" / "app" / "build" / "outputs" / "mapping" / "release" / "mapping.txt"
+)
 LIB_NAME = "libamux_app.so"
 
-FORBIDDEN_DEX_PATTERNS: tuple[str, ...] = (
+FORBIDDEN_CLASS_PATTERNS: tuple[str, ...] = (
     "DoorServer",
     "DoorHost",
     "StorybookActivity",
-    "sh/amux/testsupport/",
+    "sh.amux.testsupport.",
     "ScriptedChat",
     "ScriptedCloudService",
     "ScriptedBillingStoreFront",
 )
 
-REQUIRED_DEX_DESCRIPTORS: tuple[str, ...] = (
-    "Lsh/amux/android/MainActivity;",
-    "Lsh/amux/core/runtime/NativeBridge;",
+# Classes the release build must hold, so an empty or unrelated mapping fails
+# rather than passes.
+REQUIRED_CLASSES: tuple[str, ...] = (
+    "sh.amux.android.MainActivity",
+    "sh.amux.core.runtime.NativeBridge",
 )
 
 FORBIDDEN_NATIVE_SYMBOL_PATTERNS: tuple[str, ...] = (
@@ -71,17 +77,17 @@ SQLITE_DEFINED_SYMBOLS: tuple[str, ...] = (
     "sqlite3_prepare_v2",
 )
 
-DEX_CLASS_DESCRIPTOR_RE = re.compile(r"Class descriptor\s*:\s*'([^']+)'")
+# A class line in R8's mapping: `original.Name -> renamed.Name:`, unindented;
+# its members follow indented.
+MAPPING_CLASS_RE = re.compile(r"^(\S+) -> (\S+):$")
 DT_NEEDED_RE = re.compile(r"\(NEEDED\)\s+Shared library:\s*\[([^\]]+)\]")
 ELF_SECTION_NAME_RE = re.compile(r"^\s*\[\s*\d+\]\s+(\S+)", re.MULTILINE)
 SQLITE_LIB_RE = re.compile(r"libsqlite", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
-class DexAuditResult:
-    dex_files: tuple[str, ...]
-    descriptor_count: int
-    tool: str
+class ClassAuditResult:
+    class_count: int
     forbidden_hits: tuple[str, ...]
 
 
@@ -94,188 +100,50 @@ class NativeAuditResult:
     forbidden_hits: tuple[str, ...]
 
 
-def find_android_sdk() -> Path | None:
-    candidates = [
-        os.environ.get("ANDROID_HOME"),
-        os.environ.get("ANDROID_SDK_ROOT"),
-        str(Path.home() / "Library" / "Android" / "sdk"),
-        str(Path.home() / "Android" / "Sdk"),
-    ]
-    for candidate in candidates:
-        if candidate and Path(candidate).is_dir():
-            return Path(candidate)
-    return None
+def mapped_classes(mapping_text: str) -> set[str]:
+    """The source names of the classes R8 kept, from its mapping file."""
+    classes: set[str] = set()
+    for line in mapping_text.splitlines():
+        if line.startswith(("#", " ", "\t")):
+            continue
+        match = MAPPING_CLASS_RE.match(line)
+        if match:
+            classes.add(match.group(1))
+    return classes
 
 
-def find_android_ndk() -> Path | None:
-    for var in ("ANDROID_NDK_HOME", "ANDROID_NDK_ROOT"):
-        value = os.environ.get(var)
-        if value and Path(value).is_dir():
-            return Path(value)
-    sdk = find_android_sdk()
-    if sdk is None:
-        return None
-    ndk_root = sdk / "ndk"
-    if ndk_root.is_dir():
-        versions = sorted((p for p in ndk_root.iterdir() if p.is_dir()), reverse=True)
-        if versions:
-            return versions[0]
-    return None
-
-
-def find_dexdump() -> str | None:
-    sdk = find_android_sdk()
-    if sdk is not None:
-        build_tools = sdk / "build-tools"
-        if build_tools.is_dir():
-            versions = sorted((p for p in build_tools.iterdir() if p.is_dir()), reverse=True)
-            for version_dir in versions:
-                candidate = version_dir / "dexdump"
-                if candidate.is_file() and os.access(candidate, os.X_OK):
-                    return str(candidate)
-    return shutil.which("dexdump")
-
-
-def find_ndk_tool(name: str, fallbacks: tuple[str, ...] = ()) -> str | None:
-    ndk = find_android_ndk()
-    if ndk is not None:
-        prebuilt = ndk / "toolchains" / "llvm" / "prebuilt"
-        if prebuilt.is_dir():
-            for host_dir in sorted(prebuilt.iterdir()):
-                candidate = host_dir / "bin" / name
-                if candidate.is_file() and os.access(candidate, os.X_OK):
-                    return str(candidate)
-    for candidate_name in (name, *fallbacks):
-        found = shutil.which(candidate_name)
-        if found:
-            return found
-    return None
-
-
-def _read_uleb128(data: bytes, offset: int) -> tuple[int, int]:
-    result = 0
-    shift = 0
-    while offset < len(data):
-        byte = data[offset]
-        offset += 1
-        result |= (byte & 0x7F) << shift
-        if (byte & 0x80) == 0:
-            return result, offset
-        shift += 7
-        if shift > 35:
-            raise ValueError("invalid ULEB128 sequence in DEX string table")
-    raise ValueError("unexpected EOF reading ULEB128 in DEX string table")
-
-
-def parse_dex_descriptors(data: bytes) -> set[str]:
-    """Pure-Python DEX parser extracting all defined and referenced type descriptors."""
-    if len(data) < 112:
-        raise ValueError(f"DEX file too short ({len(data)} bytes)")
-    if data[:4] != b"dex\n" or data[7:8] != b"\x00":
-        raise ValueError(f"invalid DEX magic: {data[:8]!r}")
-
-    string_ids_size, string_ids_off = struct.unpack_from("<II", data, 56)
-    type_ids_size, type_ids_off = struct.unpack_from("<II", data, 64)
-    class_defs_size, class_defs_off = struct.unpack_from("<II", data, 96)
-
-    def read_string(string_idx: int) -> str:
-        if string_idx >= string_ids_size:
-            raise ValueError(f"DEX string index {string_idx} out of range ({string_ids_size})")
-        (string_data_off,) = struct.unpack_from("<I", data, string_ids_off + string_idx * 4)
-        _, text_start = _read_uleb128(data, string_data_off)
-        text_end = data.find(b"\x00", text_start)
-        if text_end == -1:
-            raise ValueError(f"unterminated DEX string at offset {string_data_off}")
-        return data[text_start:text_end].decode("utf-8", errors="replace")
-
-    descriptors: set[str] = set()
-    type_strings: list[str] = []
-    for i in range(type_ids_size):
-        (descriptor_idx,) = struct.unpack_from("<I", data, type_ids_off + i * 4)
-        desc = read_string(descriptor_idx)
-        type_strings.append(desc)
-        if desc.startswith("L") and desc.endswith(";"):
-            descriptors.add(desc)
-
-    for i in range(class_defs_size):
-        (class_idx,) = struct.unpack_from("<I", data, class_defs_off + i * 32)
-        if class_idx < len(type_strings):
-            descriptors.add(type_strings[class_idx])
-
-    return descriptors
-
-
-def extract_dex_descriptors_dexdump(dex_paths: list[Path], dexdump: str) -> set[str]:
-    descriptors: set[str] = set()
-    for dex_path in dex_paths:
-        proc = subprocess.run(
-            [dexdump, str(dex_path)],
-            check=True,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=120,
-        )
-        for match in DEX_CLASS_DESCRIPTOR_RE.finditer(proc.stdout):
-            descriptors.add(match.group(1))
-    return descriptors
-
-
-def find_forbidden_dex_descriptors(descriptors: set[str]) -> list[str]:
+def find_forbidden_classes(classes: set[str]) -> list[str]:
     hits: list[str] = []
-    for desc in sorted(descriptors):
-        for pattern in FORBIDDEN_DEX_PATTERNS:
-            if pattern in desc:
-                hits.append(f"{desc} (matched {pattern!r})")
+    for name in sorted(classes):
+        for pattern in FORBIDDEN_CLASS_PATTERNS:
+            if pattern in name:
+                hits.append(f"{name} (matched {pattern!r})")
                 break
     return hits
 
 
-def audit_apk_dex(
-    apk_path: Path,
-    *,
-    dexdump: str | None = None,
-    require_app_classes: bool = True,
-) -> DexAuditResult:
-    with zipfile.ZipFile(apk_path, "r") as zf:
-        dex_names = sorted(
-            name for name in zf.namelist()
-            if re.fullmatch(r"classes\d*\.dex", name)
+def audit_classes(mapping_path: Path) -> ClassAuditResult:
+    if not mapping_path.is_file():
+        raise RuntimeError(
+            f"R8 mapping not found at {mapping_path}; the release build must be minified"
         )
-        if not dex_names:
-            raise RuntimeError(f"APK {apk_path} contains no classes*.dex entries")
-
-        descriptors: set[str] = set()
-        tool = "python-dex-parser"
-        with tempfile.TemporaryDirectory(prefix="amux-dex-audit-") as tmp:
-            tmp_dir = Path(tmp)
-            dex_paths: list[Path] = []
-            for name in dex_names:
-                raw = zf.read(name)
-                descriptors.update(parse_dex_descriptors(raw))
-                dex_file = tmp_dir / name
-                dex_file.write_bytes(raw)
-                dex_paths.append(dex_file)
-
-            if dexdump:
-                descriptors.update(extract_dex_descriptors_dexdump(dex_paths, dexdump))
-                tool = f"dexdump+python ({Path(dexdump).name})"
-
-    if require_app_classes:
-        missing = [desc for desc in REQUIRED_DEX_DESCRIPTORS if desc not in descriptors]
-        if missing:
-            raise RuntimeError(
-                f"APK {apk_path} is missing expected app DEX descriptors: {', '.join(missing)}"
-            )
-
-    forbidden = tuple(find_forbidden_dex_descriptors(descriptors))
-    return DexAuditResult(
-        dex_files=tuple(dex_names),
-        descriptor_count=len(descriptors),
-        tool=tool,
-        forbidden_hits=forbidden,
+    classes = mapped_classes(mapping_path.read_text(encoding="utf-8", errors="replace"))
+    missing = [name for name in REQUIRED_CLASSES if name not in classes]
+    if missing:
+        raise RuntimeError(
+            f"R8 mapping {mapping_path} is missing expected app classes: {', '.join(missing)}"
+        )
+    return ClassAuditResult(
+        class_count=len(classes),
+        forbidden_hits=tuple(find_forbidden_classes(classes)),
     )
+
+
+def ndk_tool(name: str) -> str:
+    found = android_sdk.ndk_tool(android_sdk.ndk(), name)
+    if not found:
+        raise RuntimeError(f"{name} was not found in the Android NDK's prebuilt toolchain")
+    return found
 
 
 def parse_dt_needed(readelf_output: str) -> list[str]:
@@ -311,12 +179,8 @@ def inspect_native_library(
     if size == 0:
         raise RuntimeError(f"native library is empty: {so_path}")
 
-    readelf_bin = readelf or find_ndk_tool("llvm-readelf", ("readelf",))
-    if not readelf_bin:
-        raise RuntimeError("neither NDK llvm-readelf nor system readelf was found")
-    nm_bin = nm or find_ndk_tool("llvm-nm", ("nm",))
-    if not nm_bin:
-        raise RuntimeError("neither NDK llvm-nm nor system nm was found")
+    readelf_bin = readelf or ndk_tool("llvm-readelf")
+    nm_bin = nm or ndk_tool("llvm-nm")
 
     dynamic_out = subprocess.run(
         [readelf_bin, "-d", str(so_path)],
@@ -407,9 +271,10 @@ def inspect_native_library(
     if b"+debug-tools" in raw_bytes:
         forbidden_hits.append("rodata contains '+debug-tools' version marker")
 
-    # Verify SQLite is statically linked: no undefined sqlite3_* imports AND defined
-    # sqlite3_open / sqlite3_open_v2 / sqlite3_prepare_v2 (or embedded SQLite signature
-    # if symbols were stripped).
+    # SQLite is statically linked when no sqlite3_* symbol is left for the
+    # loader to find and the engine's own entry points are defined here. The
+    # release library is stripped of debug sections only, so its symbol table
+    # still names them.
     undefined_sqlite = [
         name for sym_type, name in symbols
         if sym_type.upper() == "U" and name.startswith("sqlite3_")
@@ -424,15 +289,11 @@ def inspect_native_library(
         name for sym_type, name in symbols
         if sym_type.upper() != "U" and name in SQLITE_DEFINED_SYMBOLS
     })
-    if defined_sqlite:
-        sqlite_evidence = f"defined static symbols: {', '.join(defined_sqlite)}"
-    elif b"SQLite format 3\x00" in raw_bytes and b"sqlite_master" in raw_bytes:
-        sqlite_evidence = "stripped static SQLite engine present (no DT_NEEDED libsqlite, no undefined sqlite3_*)"
-    else:
+    if not defined_sqlite:
         raise RuntimeError(
-            f"{so_path} shows neither defined sqlite3_open/sqlite3_prepare_v2 symbols "
-            "nor embedded static SQLite engine markers"
+            f"{so_path} defines none of {', '.join(SQLITE_DEFINED_SYMBOLS)}"
         )
+    sqlite_evidence = f"defined static symbols: {', '.join(defined_sqlite)}"
 
     # Deduplicate forbidden hits while preserving order.
     deduped_hits = tuple(dict.fromkeys(forbidden_hits))
@@ -445,23 +306,15 @@ def inspect_native_library(
     )
 
 
-def audit_apk(
+def audit_native_libraries(
     apk_path: Path,
     *,
     abis: list[str],
-    dexdump: str | None = None,
     readelf: str | None = None,
     nm: str | None = None,
-    require_app_classes: bool = True,
-) -> tuple[DexAuditResult, list[NativeAuditResult]]:
+) -> list[NativeAuditResult]:
     if not apk_path.is_file():
         raise FileNotFoundError(f"Release APK not found at {apk_path}")
-
-    dex_result = audit_apk_dex(
-        apk_path,
-        dexdump=dexdump,
-        require_app_classes=require_app_classes,
-    )
 
     native_results: list[NativeAuditResult] = []
     with zipfile.ZipFile(apk_path, "r") as zf:
@@ -485,7 +338,7 @@ def audit_apk(
                     )
                 )
 
-    return dex_result, native_results
+    return native_results
 
 
 def locate_release_apk(apk_dir: Path = RELEASE_APK_DIR) -> Path:
@@ -521,6 +374,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Path to an existing Release APK to audit (implies --skip-build).",
     )
     parser.add_argument(
+        "--mapping",
+        type=Path,
+        default=RELEASE_MAPPING,
+        help="R8's mapping.txt for that APK (defaults to the release build's).",
+    )
+    parser.add_argument(
         "--skip-build",
         action="store_true",
         help="Audit the already-built Release APK without running Cargo or Gradle.",
@@ -550,17 +409,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         apk_path = build_release_artifacts(abis, no_daemon=not args.allow_daemon)
 
-    dexdump = find_dexdump()
-    dex_result, native_results = audit_apk(
-        apk_path,
-        abis=abis,
-        dexdump=dexdump,
-    )
+    class_result = audit_classes(args.mapping.resolve())
+    native_results = audit_native_libraries(apk_path, abis=abis)
 
     print(
         f"scope-audit: APK {apk_path.name} ({apk_path.stat().st_size:,} bytes): "
-        f"{len(dex_result.dex_files)} DEX file(s), {dex_result.descriptor_count} class descriptors "
-        f"[{dex_result.tool}]",
+        f"{class_result.class_count} classes kept by R8",
         flush=True,
     )
     for nr in native_results:
@@ -571,8 +425,8 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     failures: list[str] = []
-    for hit in dex_result.forbidden_hits:
-        failures.append(f"DEX forbidden class: {hit}")
+    for hit in class_result.forbidden_hits:
+        failures.append(f"forbidden class: {hit}")
     for nr in native_results:
         for hit in nr.forbidden_hits:
             failures.append(f"lib/{nr.abi}/{LIB_NAME} forbidden native marker: {hit}")

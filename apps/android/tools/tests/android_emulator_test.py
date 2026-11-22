@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-import tempfile
 import unittest
 
 TOOLS_DIR = Path(__file__).resolve().parents[1]
@@ -71,13 +70,6 @@ R5CR123456\tdevice
                 "auto",
             ],
         )
-
-    def test_find_android_home_prefers_env(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            sdk = Path(tmp) / "sdk"
-            sdk.mkdir()
-            found = self.mod.find_android_home({"ANDROID_HOME": str(sdk)})
-            self.assertEqual(found, sdk)
 
 
 if __name__ == "__main__":

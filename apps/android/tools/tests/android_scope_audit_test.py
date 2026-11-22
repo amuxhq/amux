@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-import struct
 import sys
 import tempfile
 import unittest
@@ -22,67 +21,31 @@ sys.modules[SPEC.name] = audit
 SPEC.loader.exec_module(audit)
 
 
-def _encode_uleb128(value: int) -> bytes:
-    out = bytearray()
-    while True:
-        byte = value & 0x7F
-        value >>= 7
-        if value:
-            out.append(byte | 0x80)
-        else:
-            out.append(byte)
-            return bytes(out)
-
-
-def build_minimal_dex(class_descriptors: list[str]) -> bytes:
-    """Build a valid minimal DEX 035 binary containing the given class descriptors."""
-    strings = sorted(set(class_descriptors))
-    header_size = 112
-    string_ids_off = header_size
-    type_ids_off = string_ids_off + len(strings) * 4
-    class_defs_off = type_ids_off + len(strings) * 4
-    data_off = class_defs_off + len(strings) * 32
-
-    string_data = bytearray()
-    string_offsets: list[int] = []
-    for text in strings:
-        string_offsets.append(data_off + len(string_data))
-        encoded = text.encode("utf-8")
-        string_data.extend(_encode_uleb128(len(text)))
-        string_data.extend(encoded)
-        string_data.append(0)
-
-    total_size = data_off + len(string_data)
-    buf = bytearray(total_size)
-    buf[0:8] = b"dex\n035\x00"
-    struct.pack_into("<I", buf, 32, total_size)
-    struct.pack_into("<I", buf, 36, header_size)
-    struct.pack_into("<I", buf, 40, 0x12345678)
-    struct.pack_into("<II", buf, 56, len(strings), string_ids_off)
-    struct.pack_into("<II", buf, 64, len(strings), type_ids_off)
-    struct.pack_into("<II", buf, 96, len(strings), class_defs_off)
-
-    for idx, off in enumerate(string_offsets):
-        struct.pack_into("<I", buf, string_ids_off + idx * 4, off)
-        struct.pack_into("<I", buf, type_ids_off + idx * 4, idx)
-        struct.pack_into("<I", buf, class_defs_off + idx * 32, idx)
-
-    buf[data_off:] = string_data
-    return bytes(buf)
-
-
 def build_fake_apk(
     path: Path,
     *,
-    dex_classes: list[str],
     so_bytes: bytes | None = b"\x7fELFfake-release-so",
     abi: str = "arm64-v8a",
 ) -> Path:
     with zipfile.ZipFile(path, "w") as zf:
-        zf.writestr("classes.dex", build_minimal_dex(dex_classes))
+        zf.writestr("classes.dex", b"dex\n035\x00")
         if so_bytes is not None:
             zf.writestr(f"lib/{abi}/libamux_app.so", so_bytes)
     return path
+
+
+def write_mapping(path: Path, classes: list[str]) -> Path:
+    """A mapping in R8's shape: a header, then each class with a member under it."""
+    lines = ["# compiler: R8", "# pg_map_id: 0123456"]
+    for index, name in enumerate(classes):
+        lines.append(f"{name} -> a{index}:")
+        lines.append("    void <init>() -> <init>")
+        lines.append("    1:1:void run():12:12 -> a")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+APP_CLASSES = ["sh.amux.android.MainActivity", "sh.amux.core.runtime.NativeBridge"]
 
 
 CLEAN_SECTIONS_OUT = (
@@ -95,71 +58,58 @@ CLEAN_SECTIONS_OUT = (
 
 
 class AndroidScopeAuditTest(unittest.TestCase):
-    def test_pure_python_dex_parser_extracts_class_descriptors(self):
-        dex = build_minimal_dex([
-            "Lsh/amux/android/MainActivity;",
-            "Lsh/amux/core/runtime/NativeBridge;",
-            "Lsh/amux/android/DoorServer;",
-        ])
-        descriptors = audit.parse_dex_descriptors(dex)
+    def test_mapping_lists_source_names_not_members_or_comments(self):
+        text = (
+            "# compiler: R8\n"
+            "sh.amux.android.MainActivity -> sh.amux.android.MainActivity:\n"
+            "    sh.amux.android.DoorServer door -> a\n"
+            "sh.amux.features.AgentsHomeKt -> b.c:\n"
+            "# {\"id\":\"sourceFile\",\"fileName\":\"AgentsHome.kt\"}\n"
+        )
         self.assertEqual(
-            descriptors,
-            {
-                "Lsh/amux/android/MainActivity;",
-                "Lsh/amux/core/runtime/NativeBridge;",
-                "Lsh/amux/android/DoorServer;",
-            },
+            audit.mapped_classes(text),
+            {"sh.amux.android.MainActivity", "sh.amux.features.AgentsHomeKt"},
         )
 
-    def test_audit_apk_dex_passes_for_clean_release_classes(self):
+    def test_audit_classes_passes_for_clean_release_classes(self):
         with tempfile.TemporaryDirectory() as tmp:
-            apk = build_fake_apk(
-                Path(tmp) / "app-release.apk",
-                dex_classes=[
-                    "Lsh/amux/android/MainActivity;",
-                    "Lsh/amux/core/runtime/NativeBridge;",
-                    "Lsh/amux/features/AgentsHomeKt;",
-                ],
+            mapping = write_mapping(
+                Path(tmp) / "mapping.txt",
+                APP_CLASSES + ["sh.amux.features.AgentsHomeKt", "sh.amux.push.SealedPush"],
             )
-            result = audit.audit_apk_dex(apk, dexdump=None)
+            result = audit.audit_classes(mapping)
             self.assertEqual(result.forbidden_hits, ())
-            self.assertEqual(result.dex_files, ("classes.dex",))
-            self.assertEqual(result.tool, "python-dex-parser")
+            self.assertEqual(result.class_count, 4)
 
-    def test_audit_apk_dex_catches_every_forbidden_debug_or_test_class(self):
+    def test_audit_classes_catches_every_forbidden_debug_or_test_class_even_renamed(self):
         forbidden_samples = [
-            "Lsh/amux/android/DoorServer;",
-            "Lsh/amux/android/DoorHost;",
-            "Lsh/amux/android/StorybookActivity;",
-            "Lsh/amux/testsupport/Stories;",
-            "Lsh/amux/testsupport/ScriptedChat;",
-            "Lsh/amux/testsupport/ScriptedCloudService;",
-            "Lsh/amux/testsupport/ScriptedBillingStoreFront;",
+            "sh.amux.android.DoorServer",
+            "sh.amux.android.DoorHost",
+            "sh.amux.android.StorybookActivity",
+            "sh.amux.testsupport.Stories",
+            "sh.amux.testsupport.ScriptedChat",
+            "sh.amux.testsupport.ScriptedCloudService",
+            "sh.amux.testsupport.ScriptedBillingStoreFront",
         ]
         with tempfile.TemporaryDirectory() as tmp:
             for sample in forbidden_samples:
-                apk = build_fake_apk(
-                    Path(tmp) / "bad.apk",
-                    dex_classes=[
-                        "Lsh/amux/android/MainActivity;",
-                        "Lsh/amux/core/runtime/NativeBridge;",
-                        sample,
-                    ],
-                )
-                result = audit.audit_apk_dex(apk, dexdump=None)
+                mapping = write_mapping(Path(tmp) / "mapping.txt", APP_CLASSES + [sample])
+                result = audit.audit_classes(mapping)
                 self.assertTrue(
                     result.forbidden_hits,
-                    f"Expected forbidden DEX class {sample} to be rejected",
+                    f"Expected forbidden class {sample} to be rejected",
                 )
 
-    def test_audit_apk_dex_fails_when_expected_app_classes_missing(self):
+    def test_audit_classes_fails_when_expected_app_classes_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
-            apk = build_fake_apk(
-                Path(tmp) / "empty-classes.apk",
-                dex_classes=["Lcom/example/Other;"],
-            )
-            with self.assertRaisesRegex(RuntimeError, "missing expected app DEX descriptors"):
-                audit.audit_apk_dex(apk, dexdump=None)
+            mapping = write_mapping(Path(tmp) / "mapping.txt", ["com.example.Other"])
+            with self.assertRaisesRegex(RuntimeError, "missing expected app classes"):
+                audit.audit_classes(mapping)
+
+    def test_audit_classes_fails_without_a_mapping(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(RuntimeError, "must be minified"):
+                audit.audit_classes(Path(tmp) / "mapping.txt")
 
     def test_inspect_native_library_passes_with_static_sqlite_and_clean_symbols(self):
         readelf_out = (
@@ -277,7 +227,7 @@ class AndroidScopeAuditTest(unittest.TestCase):
                         nm="nm",
                     )
 
-    def test_inspect_native_library_allows_stripped_full_symbols_when_dynamic_nm_succeeds(self):
+    def test_inspect_native_library_refuses_sqlite_it_cannot_see_defined(self):
         readelf_out = " 0x0000000000000001 (NEEDED) Shared library: [libc.so]\n"
         dyn_nm_out = "0000000000123456 T Java_sh_amux_core_runtime_NativeBridge_version\n"
         with tempfile.TemporaryDirectory() as tmp:
@@ -294,14 +244,13 @@ class AndroidScopeAuditTest(unittest.TestCase):
                 return mock.Mock(returncode=1, stdout="", stderr="no symbols")
 
             with mock.patch.object(audit.subprocess, "run", side_effect=fake_run):
-                result = audit.inspect_native_library(
-                    so,
-                    abi="arm64-v8a",
-                    readelf="llvm-readelf",
-                    nm="llvm-nm",
-                )
-            self.assertEqual(result.forbidden_hits, ())
-            self.assertIn("stripped static SQLite engine present", result.sqlite_evidence)
+                with self.assertRaisesRegex(RuntimeError, "defines none of"):
+                    audit.inspect_native_library(
+                        so,
+                        abi="arm64-v8a",
+                        readelf="llvm-readelf",
+                        nm="llvm-nm",
+                    )
 
     def test_inspect_native_library_rejects_dwarf_debug_sections(self):
         readelf_out = " 0x0000000000000001 (NEEDED) Shared library: [libc.so]\n"
@@ -336,18 +285,11 @@ class AndroidScopeAuditTest(unittest.TestCase):
             self.assertIn(".debug_info", joined)
             self.assertIn(".debug_line", joined)
 
-    def test_audit_apk_fails_when_native_library_is_missing(self):
+    def test_audit_native_libraries_fails_when_native_library_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
-            apk = build_fake_apk(
-                Path(tmp) / "no-so.apk",
-                dex_classes=[
-                    "Lsh/amux/android/MainActivity;",
-                    "Lsh/amux/core/runtime/NativeBridge;",
-                ],
-                so_bytes=None,
-            )
+            apk = build_fake_apk(Path(tmp) / "no-so.apk", so_bytes=None)
             with self.assertRaisesRegex(RuntimeError, "missing required native library"):
-                audit.audit_apk(apk, abis=["arm64-v8a"], dexdump=None)
+                audit.audit_native_libraries(apk, abis=["arm64-v8a"])
 
     def test_locate_release_apk_picks_newest_candidate(self):
         with tempfile.TemporaryDirectory() as tmp:

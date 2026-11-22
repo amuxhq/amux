@@ -12,8 +12,8 @@
 #   * android.widget.Toast (or wildcard android.widget.*)
 #   * CircularProgressIndicator / LinearProgressIndicator
 #
-# It checks itself first against fixtures written to break every rule, so a
-# check that stops catching violations fails loudly instead of passing.
+# tests/feature_lint_test.py holds it to every rule with sources written to
+# break each one.
 
 set -eu
 
@@ -202,55 +202,6 @@ EOF
 
     [ "$complaints" -eq 0 ]
 }
-
-self_test() {
-    fixtures=$(mktemp -d)
-    trap 'rm -rf "$fixtures"' EXIT
-
-    printf 'import android.app.Activity\nclass BadActivity\n' > "$fixtures/BadActivity.kt"
-    printf 'import android.app.*\nclass BadAppWildcard\n' > "$fixtures/BadAppWildcard.kt"
-    printf 'import androidx.navigation.NavController\nclass BadNav\n' > "$fixtures/BadNav.kt"
-    printf 'import androidx.navigation.*\nclass BadNavWildcard\n' > "$fixtures/BadNavWildcard.kt"
-    printf 'import okhttp3.OkHttpClient\nclass BadHttp\n' > "$fixtures/BadHttp.kt"
-    printf 'import okhttp3.*\nclass BadHttpWildcard\n' > "$fixtures/BadHttpWildcard.kt"
-    printf 'import android.widget.Toast\nclass BadToast\n' > "$fixtures/BadToast.kt"
-    printf 'import android.widget.*\nclass BadWidgetWildcard\n' > "$fixtures/BadWidgetWildcard.kt"
-    printf 'fun BadToastFqn() { android.widget.Toast.makeText(null, "", 0) }\n' > "$fixtures/BadToastFqn.kt"
-    printf 'fun BadActivityFqn(a: android.app.Activity) {}\n' > "$fixtures/BadActivityFqn.kt"
-    printf 'fun BadSpin() { CircularProgressIndicator() }\n' > "$fixtures/BadCircular.kt"
-    printf 'fun BadSpinFqn() { androidx.compose.material3.CircularProgressIndicator() }\n' > "$fixtures/BadCircularFqn.kt"
-    printf 'fun BadBar() { LinearProgressIndicator() }\n' > "$fixtures/BadLinear.kt"
-
-    found=$(scan "$fixtures" || true)
-    for expected in \
-            BadActivity.kt BadAppWildcard.kt \
-            BadNav.kt BadNavWildcard.kt \
-            BadHttp.kt BadHttpWildcard.kt \
-            BadToast.kt BadWidgetWildcard.kt \
-            BadToastFqn.kt BadActivityFqn.kt \
-            BadCircular.kt BadCircularFqn.kt BadLinear.kt; do
-        case $found in
-            *"$expected"*) ;;
-            *)
-                echo "feature-lint cannot catch $expected any more; the rule it breaks is not working" >&2
-                exit 1
-                ;;
-        esac
-    done
-
-    rm -f "$fixtures"/*.kt
-    printf 'package sh.amux.features\n/* Never use android.widget.Toast or CircularProgressIndicator() */\nimport androidx.compose.material3.Text\nfun Fine() { Text("ok") }\n' \
-        > "$fixtures/Fine.kt"
-    if ! scan "$fixtures" > /dev/null; then
-        echo "feature-lint complains about sources that break none of its rules" >&2
-        exit 1
-    fi
-
-    rm -rf "$fixtures"
-    trap - EXIT
-}
-
-self_test
 
 if [ ! -d "$package" ]; then
     echo "no sources at $package; run this from the checkout root" >&2

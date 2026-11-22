@@ -1915,7 +1915,7 @@ class ChatModelTest {
         )
         source.deliver(model)
         assertEquals("Look at these.", model.draft)
-        assertEquals("Not sent: its host is away", model.snapshot.notice)
+        assertEquals("Not sent: its device is away", model.snapshot.notice)
         assertEquals("the drafts are the chip's again", chip, model.reviewChip)
 
         source.withReview = null

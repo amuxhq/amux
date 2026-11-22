@@ -3,7 +3,7 @@ chat |  | planner-pty | 0,116,402,724
 chat.row.prompt | Move the journal. |  | 16,124,370,40
 chat.prose.render |  | rendered | 245,134,127,20
 chat.row.plan | Plan proposed, Move the journal |  | 16,176,370,160
-chat.prose.render |  | rendered | 58,215,316,109
+chat.prose.render |  | rendered | 58,215,316,180
 ask | Plan ready | open | 12,664,378,166
 ask.more | More |  | 338,672,44,44
 ask.plan.auto |  | off | 28,720,346,38

@@ -1,9 +1,9 @@
 shell |  | hosts | 0,62,402,778
 home |  | signed-out | 0,196,402,595
 hosts |  | 1 reachable | 0,196,402,595
-hosts.row.<desk> | desk, macOS, connected, direct | on-this-network | 16,202,370,65
+hosts.row.<desk> | desk, macOS, connected, local | on-this-network | 16,202,370,65
 hosts.subtitle |  | 1 reachable | 16,166,370,22
- | desk, macOS, connected, direct |  | 16,202,370,65
+ | desk, macOS, connected, local |  | 16,202,370,65
  | Devices |  | 16,127,127,42
  | 1 reachable |  | 16,170,77,18
  | Agents |  | 111,795,94,54

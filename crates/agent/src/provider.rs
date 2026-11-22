@@ -53,6 +53,10 @@ const CODEX_INITIALIZE: &str = "agent-initialize";
 const CODEX_THREAD: &str = interpret::codex::THREAD_REQUEST;
 /// The longest a starting Codex server is waited for to listen.
 const CODEX_LISTEN_WAIT: Duration = Duration::from_secs(30);
+/// How long the `taskkill /T` of an ACP agent behind a Windows shim has to
+/// end its tree before the shim is killed regardless.
+#[cfg(windows)]
+const TREE_KILL_WAIT: Duration = Duration::from_secs(5);
 /// How long an ACP agent has to answer each request of its handshake:
 /// long enough for an agent that loads a lot at its start, or reaches a
 /// slow network for its sign-in.
@@ -176,6 +180,11 @@ pub struct Provider {
     /// handshake sent it, which the interpreter has sent again once a
     /// person may have signed in ([`Effect::AcpReopen`]).
     acp_opening: Option<Arc<std::sync::Mutex<Option<Vec<u8>>>>>,
+    /// The child is a Windows batch file, as npm's `.cmd` shim is: the
+    /// shell running it runs the program as its own child, so a kill ends
+    /// the whole tree.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    behind_shim: bool,
 }
 
 /// Asked of headless Claude so a command's row can open on what it is for
@@ -338,6 +347,7 @@ impl Provider {
             census: Vec::new(),
             takes: None,
             acp_opening: None,
+            behind_shim: false,
         };
         // Claude reports nothing until it is asked; its answer is what says
         // it takes input. amux's interrupt ends the turn and leaves
@@ -616,6 +626,7 @@ impl Provider {
             census: Vec::new(),
             takes: None,
             acp_opening: None,
+            behind_shim: false,
         })
     }
 
@@ -664,10 +675,14 @@ impl Provider {
             folders: vec![blobs.display().to_string()],
             tool_server: tool_server(spec, dir),
         };
-        let mut command = tokio::process::Command::new(crate::acp::program(
-            &spec.provider_command,
-            &spec.provider_env,
-        ));
+        let program = crate::acp::program(&spec.provider_command, &spec.provider_env);
+        let behind_shim = program
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
+            });
+        let mut command = tokio::process::Command::new(program);
         command
             .args(&spec.provider_args)
             .current_dir(&spec.cwd)
@@ -846,6 +861,7 @@ impl Provider {
             census: Vec::new(),
             takes: Some(takes),
             acp_opening: Some(opening_sent),
+            behind_shim,
         })
     }
 
@@ -1000,6 +1016,7 @@ impl Provider {
             census: Vec::new(),
             takes: None,
             acp_opening: None,
+            behind_shim: false,
         })
     }
 
@@ -1383,22 +1400,30 @@ impl Provider {
                 libc::killpg(pid as libc::pid_t, libc::SIGKILL);
             }
         }
-        // Windows has no process groups: the child's tree is killed here,
-        // before this returns, as killpg does above. Not in the task that
-        // waits on the child: the agent process exits right after a kill,
-        // which drops that task, and a child it had not killed yet would
-        // outlive the agent, holding its folder and the handles it
-        // inherited. The tree, not the child alone: an ACP agent npm
-        // installed runs behind a `.cmd` shim whose shell runs the agent as
-        // its child.
-        #[cfg(windows)]
-        if self.kill.is_some()
-            && let Some(pid) = self.pid
-        {
-            crate::acp::kill_tree(pid);
-        }
         #[cfg(not(unix))]
         if let Some(kill) = self.kill.take() {
+            // Windows has no process groups. An ACP agent npm installed
+            // runs behind a `.cmd` shim whose shell runs the agent as its
+            // child, so killing the shim alone would leave the agent
+            // running: that tree is ended by `taskkill /T`, started here
+            // and not waited for, since the stop the daemon asked waits on
+            // this agent process's exit within seconds and taskkill can take
+            // that long on a loaded machine. The shim itself is killed only
+            // once taskkill is done (or has had its time), since a tree
+            // whose root has gone can no longer be found from it. Started,
+            // taskkill runs on even if this process ends first. Any other
+            // child is killed at once by the task waiting on it.
+            #[cfg(windows)]
+            if self.behind_shim
+                && let Some(pid) = self.pid
+                && let Some(mut tree) = crate::acp::start_killing_tree(pid)
+            {
+                tokio::spawn(async move {
+                    let _ = tokio::time::timeout(TREE_KILL_WAIT, tree.wait()).await;
+                    let _ = kill.send(());
+                });
+                return;
+            }
             let _ = kill.send(());
         }
     }

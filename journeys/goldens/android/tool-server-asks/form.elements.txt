@@ -8,14 +8,14 @@ chat.row.toolu_fake<run>0000000000000003 |  |  | 16,182,379,48
 chat.row.run | Used 1 tool |  | 16,182,379,48
 chat.row.ask:<id> |  |  | 16,230,379,48
 chat.row.kind.form | linear needs details |  | 16,230,379,48
-ask | linear needs details, More, Linear needs a few details before it can create the issue., Title *, One line, as it will read in the backlog., Title, Team *, Estimate, Submit, Decline |  | 12,450,387,439
+ask | linear needs details, More, Linear needs a few details before it can create the issue., Title *, One line, as it will read in the backlog., Team *, Estimate, Submit, Decline |  | 12,450,387,439
 ask.more | More |  | 345,456,48,48
-ask.field.title | Title *, Title |  | 28,601,355,46
+ask.field.title | Title * |  | 28,601,355,46
 ask.field.team | Team * |  | 28,683,355,48
 ask.field.estimate | Estimate |  | 28,766,355,46
 ask.submit | Submit |  | 28,827,173,44 (disabled)
 ask.choice.1 | Decline |  | 210,827,173,44
-chat.topBar | Back, filer, /p/t/a/n/d/work · desk, Open Overview, filer, More |  | 0,0,411,118
+chat.topBar | Back, filer, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | filer | filer | 56,62,299,48
 chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16

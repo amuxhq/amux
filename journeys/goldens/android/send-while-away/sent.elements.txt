@@ -9,13 +9,13 @@ chat.row.kind.prose |  |  | 16,182,379,20
 markdown.root | Last night's backup finished with no errors. |  | 16,182,379,20
 chat.row.turn:1 | Worked for <t> |  | 16,214,379,30
 chat.row.turn-end | <volatile>
-chat.composer | Reply, Attach, Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium, Dictate, Send |  | 12,796,387,94
+chat.composer | Reply, Attach, Chat Settings, claude-fake-1 · medium, Dictate, Send |  | 12,796,387,94
 chat.field | Reply |  | 28,796,355,36
 chat.attach | Attach |  | 21,837,48,48
-chat.model | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 70,837,177,48
+chat.model | Chat Settings, claude-fake-1 · medium |  | 70,837,177,48
 chat.dictate | Dictate |  | 287,837,48,48
 chat.send | Send |  | 342,837,48,48 (disabled)
-chat.topBar | Back, backups, /p/t/a/n/c/work · cabin, Open Overview, backups, More |  | 0,0,411,118
+chat.topBar | Back, backups, /p/t/a/n/c/work · cabin, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | backups | backups | 56,62,299,48
 chat.header | /p/t/a/n/c/work · cabin | live | 56,88,132,16

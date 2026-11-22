@@ -12,7 +12,7 @@ ask.subject | deploy --check |  | 40,704,331,18
 ask.choice.1 | Allow access for this session, in /private/tmp/amux-android-journey/net/desk/work |  | 28,742,355,71
 ask.choice.0 | Allow |  | 28,827,173,44
 ask.deny | Deny… |  | 210,827,173,44
-chat.topBar | Back, decision-pty, /p/t/a/n/d/work · desk, Open Overview, decision-pty, More |  | 0,0,411,118
+chat.topBar | Back, decision-pty, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | decision-pty | decision-pty | 56,62,299,48
 chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16

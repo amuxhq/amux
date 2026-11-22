@@ -1,14 +1,14 @@
 shell |  |  | 0,0,411,923
-review | Line 1, Line 1: #!/bin/sh, 1, #!/bin/sh, Line 2: echo deploying, 2, echo deploying, Line 3, removed: rsync build/ prod:/srv, 3, −, rsync build/ prod:/srv, Line 3, added: rsync --delete build/ prod:/srv, +, rsync --delete build/ prod:/srv, Draft, Why --delete here?, Line 4, added: echo done, 4, echo done, Done · 1 draft, Back, Review, Since main, 1 file · +2 −1 · 1 draft, Since main, +2, −1, Files, More |  | 0,0,411,923
-review.file | deploy.sh, 1, +2, −1 |  | 0,118,411,48
-review.line.l/deploy.sh/1/1 | Line 1: #!/bin/sh, 1, #!/bin/sh |  | 0,193,411,19
-review.line.l/deploy.sh/2/2 | Line 2: echo deploying, 2, echo deploying |  | 0,211,411,19
-review.line.l/deploy.sh/3/0 | Line 3, removed: rsync build/ prod:/srv, 3, −, rsync build/ prod:/srv |  | 0,230,411,19
-review.line.l/deploy.sh/0/3 | Line 3, added: rsync --delete build/ prod:/srv, 3, +, rsync --delete build/ prod:/srv | commented | 0,249,411,19
+review | Line 1, Line 1: #!/bin/sh, Line 2: echo deploying, Line 3, removed: rsync build/ prod:/srv, Line 3, added: rsync --delete build/ prod:/srv, Draft, Why --delete here?, Line 4, added: echo done, Done · 1 draft, Back, Review, Since main, 1 file · +2 −1 · 1 draft, Files, More |  | 0,0,411,923
+review.file | deploy.sh |  | 0,118,411,48
+review.line.l/deploy.sh/1/1 | Line 1: #!/bin/sh |  | 0,193,411,19
+review.line.l/deploy.sh/2/2 | Line 2: echo deploying |  | 0,211,411,19
+review.line.l/deploy.sh/3/0 | Line 3, removed: rsync build/ prod:/srv |  | 0,230,411,19
+review.line.l/deploy.sh/0/3 | Line 3, added: rsync --delete build/ prod:/srv | commented | 0,249,411,19
 review.comment | Draft, Why --delete here? | Draft | 0,267,411,58
-review.line.l/deploy.sh/0/4 | Line 4, added: echo done, 4, +, echo done |  | 0,325,411,19
+review.line.l/deploy.sh/0/4 | Line 4, added: echo done |  | 0,325,411,19
 review.done | Done · 1 draft |  | 16,843,379,48
 review.back | Back |  | 8,66,40,40
-review.summary | Since main, 1 file · +2 −1 · 1 draft, Since main, +2, −1 |  | 56,88,98,16
+review.summary | Since main, 1 file · +2 −1 · 1 draft |  | 56,88,98,16
 review.files | Files |  | 315,66,40,40
 review.more | More |  | 363,66,40,40

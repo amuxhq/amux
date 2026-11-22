@@ -17,13 +17,13 @@ chat.row.kind.prose |  |  | 16,296,379,20
 markdown.root | Only this account reaches me. |  | 16,296,379,20
 chat.row.turn:2 | Worked for <t> |  | 16,328,379,30
 chat.row.turn-end | Worked for <t> |  | 16,328,81,16
-chat.composer | This phone is signed out · your draft is kept, Attach, Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium, Dictate, Send |  | 12,796,387,94
+chat.composer | This phone is signed out · your draft is kept, Attach, Chat Settings, claude-fake-1 · medium, Dictate, Send |  | 12,796,387,94
 chat.field | This phone is signed out · your draft is kept | Still there? | 28,796,355,36
 chat.attach | Attach |  | 21,837,48,48
-chat.model | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 70,837,177,48
+chat.model | Chat Settings, claude-fake-1 · medium |  | 70,837,177,48
 chat.dictate | Dictate |  | 287,837,48,48
 chat.send | Send |  | 342,837,48,48 (disabled)
-chat.topBar | Back, guarded, desk · this phone is signed out, Open Overview, guarded, More |  | 0,0,411,118
+chat.topBar | Back, guarded, desk · this phone is signed out, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | guarded | guarded | 56,62,299,48
 chat.header | desk · this phone is signed out | detached | 56,88,190,16

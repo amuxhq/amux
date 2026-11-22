@@ -12,15 +12,15 @@ chat.row.kind.prose |  |  | 16,275,379,20
 markdown.root | I read the review. |  | 16,275,379,20
 chat.row.turn:1 | Worked for <t> |  | 16,307,379,30
 chat.row.turn-end | <volatile>
-chat.composer | Reply, Attach, Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium, Dictate, Send |  | 12,796,387,94
+chat.composer | Reply, Attach, Chat Settings, claude-fake-1 · medium, Dictate, Send |  | 12,796,387,94
 chat.field | Reply |  | 28,796,355,36
 chat.attach | Attach |  | 21,837,48,48
-chat.model | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 70,837,177,48
+chat.model | Chat Settings, claude-fake-1 · medium |  | 70,837,177,48
 chat.dictate | Dictate |  | 287,837,48,48
 chat.send | Send |  | 342,837,48,48 (disabled)
-chat.topBar | Back, reviewer, /p/t/a/n/d/work · desk, Open Overview, reviewer, 1 file, 2 added, 1 removed, +2, −1, More |  | 0,0,411,118
+chat.topBar | Back, reviewer, /p/t/a/n/d/work · desk, Open Overview, 1 file, 2 added, 1 removed, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | reviewer | reviewer | 56,62,241,48
 chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
-chat.changes | 1 file, 2 added, 1 removed, +2, −1 |  | 302,72,58,29
+chat.changes | 1 file, 2 added, 1 removed |  | 302,72,58,29
 chat.more | More |  | 363,66,40,40

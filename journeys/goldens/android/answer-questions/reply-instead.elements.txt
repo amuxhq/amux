@@ -21,7 +21,7 @@ ask.more | More |  | 345,639,48,48
 ask.reply.back | Back |  | 325,693,58,40
 ask.reply.text | Reply in your own words | Let me see both palettes on the desk first. | 28,749,355,64
 ask.reply.send | Send Reply |  | 28,827,355,44
-chat.topBar | Back, asker, /p/t/a/n/d/work · desk, Open Overview, asker, More |  | 0,0,411,118
+chat.topBar | Back, asker, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | asker | asker | 56,62,299,48
 chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16

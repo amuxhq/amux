@@ -14,7 +14,7 @@ ask.subject | https://grafana.example.com/login |  | 40,727,331,18
 ask.open | Open Link |  | 28,767,355,44
 ask.choice.0 | I’m done |  | 28,827,173,44
 ask.choice.1 | Decline |  | 210,827,173,44
-chat.topBar | Back, linker, /p/t/a/n/d/work · desk, Open Overview, linker, More |  | 0,0,411,118
+chat.topBar | Back, linker, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | linker | linker | 56,62,299,48
 chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16

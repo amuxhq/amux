@@ -12,7 +12,7 @@ ask.subject | deploy --check |  | 40,721,331,18
 ask.choice.1 | Always allow Bash, In this project, from now on |  | 28,759,355,54
 ask.choice.0 | Allow |  | 28,827,173,44
 ask.deny | Deny… |  | 210,827,173,44
-chat.topBar | Back, decision-sdk, /p/t/a/n/d/work · desk, Open Overview, decision-sdk, More |  | 0,0,411,118
+chat.topBar | Back, decision-sdk, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | decision-sdk | decision-sdk | 56,62,299,48
 chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16

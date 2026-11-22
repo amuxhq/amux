@@ -13,7 +13,7 @@ ask.more | More |  | 345,715,48,48
 ask.plan.auto | Switch to Accept edits, As the work starts |  | 28,765,355,48
 ask.approve | Approve |  | 28,827,173,44
 ask.choice.2 | Send back… |  | 210,827,173,44
-chat.topBar | Back, planner-pty, /p/t/a/n/d/work · desk, Open Overview, planner-pty, More |  | 0,0,411,118
+chat.topBar | Back, planner-pty, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | planner-pty | planner-pty | 56,62,299,48
 chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16

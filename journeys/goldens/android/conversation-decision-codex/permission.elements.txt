@@ -12,7 +12,7 @@ ask.subject | deploy --check |  | 40,696,331,18
 ask.choice.1 | Allow for this session |  | 28,765,355,48
 ask.choice.0 | Allow |  | 28,827,173,44
 ask.deny | Deny… |  | 210,827,173,44
-chat.topBar | Back, decision-codex, /p/t/a/n/d/work · desk, Open Overview, decision-codex, More |  | 0,0,411,118
+chat.topBar | Back, decision-codex, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | decision-codex | decision-codex | 56,62,299,48
 chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16

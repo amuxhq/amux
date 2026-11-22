@@ -33,7 +33,7 @@ chat.row.turn-end | Worked for <t> |  | 16,727,81,16
 ask | Plan ready, Approve, Send back… |  | 12,773,387,116
 ask.approve | Approve |  | 28,827,173,44
 ask.choice.1 | Send back… |  | 210,827,173,44
-chat.topBar | Back, planner-codex, /p/t/a/n/d/work · desk, Open Overview, planner-codex, More |  | 0,0,411,118
+chat.topBar | Back, planner-codex, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | planner-codex | planner-codex | 56,62,299,48
 chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16

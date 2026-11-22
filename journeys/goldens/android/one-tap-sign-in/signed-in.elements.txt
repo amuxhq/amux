@@ -1,6 +1,6 @@
 shell |  |  | 0,0,411,923
 you | Back, Settings | ada@example.com | 0,0,411,923
-settings.scroll | ACCOUNTS, ada, 1 device, AD, ada, 1 device, Add Account, ADA, Pro, Subscribed, Sign Out, Remove from This Phone, Delete Account, THIS PHONE, Share Usage, Counts and choices, never what you type, Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names., Name, <device>, Fingerprint, Tap to copy, <key>, Version, 0.1.0, HELP, Contact Support, Report a Problem, Export Diagnostics, A report includes a screenshot and this phone’s diagnostic dump. |  | 0,118,411,781
+settings.scroll | ACCOUNTS, ada, 1 device, Add Account, ADA, Pro, Subscribed, Sign Out, Remove from This Phone, Delete Account, THIS PHONE, Share Usage, Counts and choices, never what you type, Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names., Name, <device>, Fingerprint, Tap to copy, <key>, Version, 0.1.0, HELP, Contact Support, Report a Problem, Export Diagnostics, A report includes a screenshot and this phone’s diagnostic dump. |  | 0,118,411,781
 account.ada@example.com | ada, 1 device | selected | 16,168,379,62
 you.add | Add Account |  | 16,231,379,58
 settings.account.subscription | Pro, Subscribed |  | 16,338,379,48

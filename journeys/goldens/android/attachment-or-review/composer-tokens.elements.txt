@@ -1,7 +1,7 @@
 shell |  |  | 0,0,411,923
 chat |  |  | 0,0,411,923
 chat.feed |  |  | 0,118,411,533
-chat.composer | Reply, Attach, Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium, Dictate, Send |  | 12,655,387,234
+chat.composer | Reply, Attach, Chat Settings, claude-fake-1 · medium, Dictate, Send |  | 12,655,387,234
 chat.attachments | Pasted text · 12 lines, Review · 1 comment, Discard Drafts |  | 28,669,355,110
 chat.attachment | Pasted text · 12 lines |  | 28,669,203,56
 chat.attachment.remove | Remove Attachment |  | 185,678,40,40
@@ -9,12 +9,12 @@ chat.review.chip | Review · 1 comment |  | 28,732,146,48
 chat.review.discard | Discard Drafts |  | 179,736,40,40
 chat.field | Reply | Please checkagainst | 28,784,355,48
 chat.attach | Attach |  | 21,837,48,48
-chat.model | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 70,837,177,48
+chat.model | Chat Settings, claude-fake-1 · medium |  | 70,837,177,48
 chat.dictate | Dictate |  | 287,837,48,48
 chat.send | Send |  | 342,837,48,48
-chat.topBar | Back, reviewer, /p/t/a/n/d/work · desk, Open Overview, reviewer, 1 file, 2 added, 1 removed, +2, −1, More |  | 0,0,411,118
+chat.topBar | Back, reviewer, /p/t/a/n/d/work · desk, Open Overview, 1 file, 2 added, 1 removed, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | reviewer | reviewer | 56,62,241,48
 chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
-chat.changes | 1 file, 2 added, 1 removed, +2, −1 |  | 302,72,58,29
+chat.changes | 1 file, 2 added, 1 removed |  | 302,72,58,29
 chat.more | More |  | 363,66,40,40

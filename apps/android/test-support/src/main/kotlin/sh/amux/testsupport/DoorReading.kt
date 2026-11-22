@@ -40,17 +40,26 @@ object DoorReading {
         return if (node.config.getOrNull(SemanticsProperties.Selected) == true) "selected" else null
     }
 
-    /** The element's own description and text, each once. */
+    /** Every word the element holds, its description and its text alike. */
+    fun words(node: SemanticsNode): List<String> =
+        node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() +
+            node.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
+
+    /**
+     * What TalkBack says for the element: its description where it has one,
+     * which TalkBack speaks in place of the text merged up from inside it,
+     * else that text. A row that describes itself reads once, as heard.
+     */
     fun parts(node: SemanticsNode): List<String> {
-        val parts = mutableListOf<String>()
-        node.config.getOrNull(SemanticsProperties.ContentDescription)
+        val described = node.config.getOrNull(SemanticsProperties.ContentDescription)
             ?.filter { it.isNotBlank() }
-            ?.let { parts.addAll(it) }
-        node.config.getOrNull(SemanticsProperties.Text)
+            .orEmpty()
+        if (described.isNotEmpty()) return described.distinct()
+        return node.config.getOrNull(SemanticsProperties.Text)
             ?.map { it.text }
             ?.filter { it.isNotBlank() }
-            ?.let { parts.addAll(it) }
-        return parts.distinct()
+            .orEmpty()
+            .distinct()
     }
 
     private fun collectDescendantText(

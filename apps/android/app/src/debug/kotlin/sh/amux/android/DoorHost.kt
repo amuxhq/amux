@@ -674,7 +674,7 @@ internal object DoorHost {
                     DoorReading.label(node) == label &&
                     pressable(node) != null
             } ?: findNodeInSubtree(root) { node ->
-                DoorReading.parts(node).contains(label) && pressable(node) != null
+                DoorReading.words(node).contains(label) && pressable(node) != null
             } ?: continue
             val press = pressable(target)!!
             if (SemanticsProperties.Disabled in press.config) {

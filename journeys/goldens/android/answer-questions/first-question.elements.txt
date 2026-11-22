@@ -22,7 +22,7 @@ ask.addNote.0 | Add a note |  | 28,701,89,40
 ask.next | Next |  | 28,767,173,44 (disabled)
 ask.skip | Skip |  | 210,767,173,44
 ask.reply | Reply instead |  | 28,830,110,40
-chat.topBar | Back, asker, /p/t/a/n/d/work · desk, Open Overview, asker, More |  | 0,0,411,118
+chat.topBar | Back, asker, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | asker | asker | 56,62,299,48
 chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16

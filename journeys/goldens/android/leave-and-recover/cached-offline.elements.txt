@@ -9,13 +9,13 @@ chat.row.kind.prose |  |  | 16,182,379,20
 markdown.root | The recovery state is safely stored. |  | 16,182,379,20
 chat.row.turn:1 | Worked for <t> |  | 16,214,379,30
 chat.row.turn-end | <volatile>
-chat.composer | desk is out of reach · your draft is kept, Attach, Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium, Dictate, Send |  | 12,796,387,94
+chat.composer | desk is out of reach · your draft is kept, Attach, Chat Settings, claude-fake-1 · medium, Dictate, Send |  | 12,796,387,94
 chat.field | desk is out of reach · your draft is kept | Pick up where we left off. | 28,796,355,36
 chat.attach | Attach |  | 21,837,48,48
-chat.model | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 70,837,177,48
+chat.model | Chat Settings, claude-fake-1 · medium |  | 70,837,177,48
 chat.dictate | Dictate |  | 287,837,48,48
 chat.send | Send |  | 342,837,48,48 (disabled)
-chat.topBar | Back, keeper, desk · away, Open Overview, keeper, More |  | 0,0,411,118
+chat.topBar | Back, keeper, desk · away, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | keeper | keeper | 56,62,299,48
 chat.header | desk · away | detached | 56,88,80,16

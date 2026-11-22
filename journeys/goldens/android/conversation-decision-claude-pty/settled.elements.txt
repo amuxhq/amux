@@ -11,13 +11,13 @@ chat.row.kind.prose |  |  | 16,230,379,20
 markdown.root | The deploy check passed. |  | 16,230,379,20
 chat.row.turn:1 | Worked for <t> |  | 16,262,379,30
 chat.row.turn-end | <volatile>
-chat.composer | Reply, Attach, Chat Settings, Fake 1 · medium, Fake 1 · medium, Dictate, Send |  | 12,796,387,94
+chat.composer | Reply, Attach, Chat Settings, Fake 1 · medium, Dictate, Send |  | 12,796,387,94
 chat.field | Reply |  | 28,796,355,36
 chat.attach | Attach |  | 21,837,48,48
-chat.model | Chat Settings, Fake 1 · medium, Fake 1 · medium |  | 70,837,133,48
+chat.model | Chat Settings, Fake 1 · medium |  | 70,837,133,48
 chat.dictate | Dictate |  | 287,837,48,48
 chat.send | Send |  | 342,837,48,48 (disabled)
-chat.topBar | Back, decision-pty, /p/t/a/n/d/work · desk, Open Overview, decision-pty, More |  | 0,0,411,118
+chat.topBar | Back, decision-pty, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | decision-pty | decision-pty | 56,62,299,48
 chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16

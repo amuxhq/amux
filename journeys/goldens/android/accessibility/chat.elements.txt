@@ -1,13 +1,13 @@
 shell |  |  | 0,0,411,923
 chat |  |  | 0,0,411,923
 chat.feed |  |  | 0,118,411,619
-chat.composer | Reply, Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium, Attach, Dictate, Send |  | 12,741,387,149
+chat.composer | Reply, Chat Settings, claude-fake-1 · medium, Attach, Dictate, Send |  | 12,741,387,149
 chat.field | Reply |  | 28,741,355,44
-chat.model | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 28,791,249,48
+chat.model | Chat Settings, claude-fake-1 · medium |  | 28,791,249,48
 chat.attach | Attach |  | 21,837,48,48
 chat.dictate | Dictate |  | 287,837,48,48
 chat.send | Send |  | 342,837,48,48 (disabled)
-chat.topBar | Back, decision-sdk, /p/t/a/n/d/work · desk, Open Overview, decision-sdk, More |  | 0,0,411,118
+chat.topBar | Back, decision-sdk, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
 nav.back | Back |  | 8,66,40,40
 chat.title | decision-sdk | decision-sdk | 56,61,299,51
 chat.header | /p/t/a/n/d/work · desk | live | 56,89,148,18

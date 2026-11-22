@@ -1,5 +1,7 @@
 package sh.amux.features
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertContentDescriptionContains
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -14,6 +16,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Appearance
+import sh.amux.testsupport.DoorReading
 import sh.amux.values.HostView
 import sh.amux.values.Offline
 import sh.amux.values.Platform
@@ -126,5 +129,27 @@ class HostsTabTest {
             .assertContentDescriptionContains("studio, macOS, connected, direct")
         composeRule.onNodeWithTag(TestTags.hostsRow(build.hostId))
             .assertContentDescriptionContains("build, macOS, connected, relayed")
+    }
+
+    /**
+     * A device row says itself once: its description is what TalkBack
+     * speaks in place of the name and status text merged up from inside it,
+     * and the journeys' door reads the row as TalkBack does.
+     */
+    @Test
+    fun aDeviceRowIsHeardAndReadOnce() {
+        val desk = host(1, "desk", Reach.Online(RouteKind.Direct), sameNetwork = true)
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                HostsTab(state = HostsTabState(hosts = listOf(desk)), onAction = {})
+            }
+        }
+
+        val row = composeRule.onNodeWithTag(TestTags.hostsRow(desk.hostId)).fetchSemanticsNode()
+        assertEquals(
+            listOf("desk, macOS, connected, local"),
+            row.config.getOrNull(SemanticsProperties.ContentDescription),
+        )
+        assertEquals("desk, macOS, connected, local", DoorReading.label(row))
     }
 }

@@ -7,7 +7,7 @@ markdown.root | File the reconnect flake. |  | 208,140,174,20
 chat.row.toolu_fake<run>0000000000000003 |  |  | 16,182,379,48
 chat.row.run | Used 1 tool |  | 16,182,379,48
 chat.row.ask:<id> |  |  | 16,230,379,48
-chat.row.kind.form | Sent 3 fields to, linear, title, team, estimate |  | 16,230,379,48
+chat.row.kind.form | Sent 3 fields to, linear, Title, Team, Estimate |  | 16,230,379,48
 chat.row.msg_fake<run>0000000000000005:0 |  |  | 16,278,379,32
 chat.row.kind.prose |  |  | 16,278,379,20
 markdown.root | Filed it in Linear. |  | 16,278,379,20

@@ -1,6 +1,7 @@
 //! The daemon's agent registry, generation file and startup path, against
 //! real `amux agent` processes on the scripted fake providers.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use daemon_core::Filing;
@@ -390,7 +391,12 @@ async fn an_acp_agent_is_created_by_its_agents_id() {
     let spec = spec(&install.agent_dir(id), 1);
     assert_eq!(spec.kind(), wire::Kind::Acp);
     assert_eq!(spec.provider, "mine");
-    assert_eq!(spec.provider_command, launch.agents[0].command);
+    // The program as the host found it: an absolute path in the platform's
+    // own spelling, which on Windows is not the `/`-joined path configured.
+    assert_eq!(
+        Some(PathBuf::from(&spec.provider_command)),
+        launch.agents[0].find(&launch.provider_env)
+    );
     assert_eq!(spec.provider_args, ["acp"]);
     assert_eq!(
         spec.provider_env.get(provider_fakes::acp::SESSIONS_ENV),

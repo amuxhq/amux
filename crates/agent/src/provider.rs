@@ -312,13 +312,6 @@ impl Provider {
             let status = tokio::select! {
                 status = child.wait() => status,
                 _ = killed => {
-                    // An agent npm installed runs behind a `.cmd` shim, whose
-                    // shell runs the agent as its child: killing the shim
-                    // alone would leave the agent running.
-                    #[cfg(windows)]
-                    if let Some(pid) = pid {
-                        crate::acp::kill_tree(pid).await;
-                    }
                     let _ = child.start_kill();
                     child.wait().await
                 }
@@ -1389,6 +1382,20 @@ impl Provider {
             unsafe {
                 libc::killpg(pid as libc::pid_t, libc::SIGKILL);
             }
+        }
+        // Windows has no process groups: the child's tree is killed here,
+        // before this returns, as killpg does above. Not in the task that
+        // waits on the child: the agent process exits right after a kill,
+        // which drops that task, and a child it had not killed yet would
+        // outlive the agent, holding its folder and the handles it
+        // inherited. The tree, not the child alone: an ACP agent npm
+        // installed runs behind a `.cmd` shim whose shell runs the agent as
+        // its child.
+        #[cfg(windows)]
+        if self.kill.is_some()
+            && let Some(pid) = self.pid
+        {
+            crate::acp::kill_tree(pid);
         }
         #[cfg(not(unix))]
         if let Some(kill) = self.kill.take() {

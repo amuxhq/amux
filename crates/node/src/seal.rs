@@ -179,8 +179,8 @@ mod tests {
         assert_eq!(open(&sealed, &private)["notice"]["Ask"]["why"], "");
     }
 
-    /// The file the phone's own tests open, so one fixture holds the sealing
-    /// here and the opening there to the same format.
+    /// The file the iPhone's and Android's own tests open, so one fixture
+    /// holds the sealing here and the opening there to the same format.
     fn fixture_path() -> std::path::PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
             "../../apps/apple/Packages/AmuxPush/Tests/AmuxPushTests/Fixtures/sealed-pushes.json",

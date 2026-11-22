@@ -15,8 +15,8 @@ draws before any machine answers.
 The Rust side of that, and how Kotlin reaches it, is on the
 [embedded runtime page](EMBEDDED.md). This page covers the Android app: how the
 modules and JNI bridge are put together, what the app does with accounts, the
-network, system integrations and the store, what is intentionally deferred behind
-interfaces in v1, and how the app is built, driven and tested. Everything lives
+network, system integrations and the store, what is still behind a stand-in,
+how the app is built, driven and tested, and what a first release still needs. Everything lives
 under `apps/android/`, and every command goes through `just android <recipe>`
 (`just --list android`).
 
@@ -70,7 +70,7 @@ Retrofit), with OkHttp and `kotlinx.serialization` behind plain interfaces.
 | --- | --- | --- |
 | `:core:values` | Pure JVM | Generated `Values.kt` mirroring every Rust value that crosses the bridge, produced by `cargo run -p ios-tools -- kotlin-types`; never edited by hand, zero Android imports |
 | `:core:words` | Pure JVM | Wording (`ChatWords`, `FleetWords`, `FleetRow`, `DeleteWords`, `SignInWords`, `PlaceNames`, `Elapsed`, `OpenableLink`, `RowState`, `RunPlacement`, `Subagents`); zero Android imports, runs on the JVM. It parses no markdown: prose arrives parsed from the shared view layer as `Markdown` blocks and inline runs, which `:features`' `MarkdownView` draws |
-| `:push` | Pure JVM | Generated `Said.kt`, `OpenedPush`, `PushWords` and `PushAlert`; its test fixtures hold the HPKE opener (`X25519` + `HKDF-SHA256` + `ChaCha20-Poly1305`, info `amux push 1`) and key store, which only the debug door and tests link; zero Rust and zero Android UI |
+| `:push` | Pure JVM | Generated `Said.kt`, `OpenedPush`, `PushWords`, `PushAlert`, the HPKE opener (`Hpke`, `SealedPush`: `X25519` + `HKDF-SHA256` + `ChaCha20-Poly1305`, info `amux push 1`) and `PushKeyStore`; its tests open the sealed pushes the daemon's tests write (`apps/apple/Packages/AmuxPush/Tests/AmuxPushTests/Fixtures/sealed-pushes.json`, shared with the iPhone's); zero Rust and zero Android UI |
 | `:core:runtime` | Android library | JNI `NativeBridge`, `CoreLoop`, `Runtime`, `Profile`, `Chat`, `RuntimeCoordinator`, `StoreBundle`, `ChatModel`, `ReviewSession`, `FleetStore`, `HostsStore`, `PairingStore`, `NewAgentStore`, `AccountRegistry`, `SignInStore`, `SignInOffers`, `RemovalStore`, `DeletionStore`, `EntitlementWatch`, `AndroidLocalDiscovery`, `AndroidNetworkWatch`, `AppLifecycleObserver`, `AmuxCloudService`, `ReportStore` / `ReportAssembly`, and the `PushRegistrar` and `BillingStoreFront` seams |
 | `:design` | Android library (Compose) | Light and dark neutral grey ramp (`ground`, `raised`, `sunken`, `hairline`, `ink`, `inkMuted`, `inkFaint`), single chromatic accent, muted diff tones, bundled `InstrumentSans` and `GeistMono` fonts, tonal surfaces with `1.dp` hairlines (Material You Dynamic Color explicitly disabled), spacing, motion and 48 dp touch-target helpers (`thumbTarget`, `edgeTarget`, `spillTarget`) |
 | `:features` | Android library (Compose) | Pure `@Composable` screens and components (`AgentsHome`, `FirstRun`, `HostsTab`, `HostPage`, `PairingSheet`, `ChatScreen`, `ChatRows`, `ChatComposer`, `AskCardView`, `ChatOverviewSheet`, `ChatSettingsSheet`, `ReviewScreen`, `ReviewRows`, `ReviewRoundSheet`, `NewAgentScreen`, `AgentDialogs`, `SettingsScreen`, `PaywallScreen`, `AccountSheets`, `ReportSheet`, `StoreFailureScreen`) taking immutable state and action callbacks, and `CodeHighlighting`, the shared view's code colours fetched off the main thread and kept by content |
@@ -78,7 +78,7 @@ Retrofit), with OkHttp and `kotlinx.serialization` behind plain interfaces.
 | `:test-support` | Android library (debug/test only) | `Door` NDJSON protocol, `ScriptedChat`, `ScriptedCloudService`, `ScriptedBillingStoreFront` and `Stories` aligned with `tests/stories.json`; never linked into `release` |
 | `:app` | Android application | `AmuxApplication`, edge-to-edge portrait `MainActivity`, `Composition.kt`, `ReportFreezer`, `FileProvider`; under `src/debug/`: `DoorServer`, `DoorHost`, `StorybookActivity` and debug hooks; under `src/release/`: no-op hooks |
 
-`just android lint` runs four checks:
+`just android lint` runs three checks:
 
 - `apps/android/tools/feature-lint.sh` holds `:features` to pure state and
   callbacks: no `Activity`, `androidx.navigation`, `okhttp3` or `Toast` imports
@@ -93,8 +93,11 @@ Retrofit), with OkHttp and `kotlinx.serialization` behind plain interfaces.
   [the copy standard](IOS_COPY.md), checks for duplicate or empty keys, and
   flags unreviewed raw UI literals in `:features` unless justified in
   `apps/android/tools/noncopy.json`.
-- `cargo run --locked -p ios-tools -- kotlin-types --check` verifies that the
-  committed `Values.kt` and `Said.kt` match the Rust definitions.
+
+`tests/` beside them holds each script to its rules with sources written to
+break each one (`just android script-tests`). The committed `Values.kt` and
+`Said.kt` are held to the Rust definitions by `ios-tools`' own tests, which
+`just premerge` runs.
 
 ## From the runtime to a screen
 
@@ -178,8 +181,8 @@ Platform chrome follows Android conventions:
   Pin/Unpin, Rename, Settle/Un-settle and Delete. Destructive confirmations use
   `AlertDialog`.
 - **Edge-to-edge and IME:** `MainActivity` runs edge-to-edge with
-  `windowSoftInputMode="adjustResize"`, and `ChatScreen` tracks the soft
-  keyboard cleanly via `WindowInsets.navigationBars.union(WindowInsets.ime)`.
+  `windowSoftInputMode="adjustResize"`, and `ChatScreen` follows the soft
+  keyboard through `WindowInsets.navigationBars.union(WindowInsets.ime)`.
 - **Touch targets:** every control answers to at least 48 dp, but is drawn
   at its own size: Material controls reserve the room themselves, and
   `thumbTarget()` does the same for custom ones. `edgeTarget()` and
@@ -216,7 +219,7 @@ so device keys and refresh tokens never leave the phone through cloud backup or
 device-to-device transfer.
 
 `AppLifecycleObserver` wires `ProcessLifecycleOwner` into runtime lifecycle
-inputs (`Foreground`, `Background`, and `Suspending`, which closes links cleanly
+inputs (`Foreground`, `Background`, and `Suspending`, which closes links
 and checkpoints every profile's SQLite WAL before returning). `AndroidNetworkWatch`
 registers a `ConnectivityManager.NetworkCallback` and feeds `NetworkChanged`
 whenever connectivity or link properties move, suppressing initial registration
@@ -239,8 +242,8 @@ re-read its credential whenever entitlement changes.
   Tabs (`androidx.browser:browser`, reusing `amux.sh` client `mobile` and
   redirect `amux://callback`). Sends `prompt=select_account` (and `login_hint`
   when signing back into a listed account). `MainActivity` uses
-  `android:launchMode="singleTask"` so the redirect clears Custom Tabs cleanly
-  without stacking duplicate activities. A sign-in returning a different account
+  `android:launchMode="singleTask"` so the redirect closes the Custom Tab
+  without stacking a second activity. A sign-in returning a different account
   opens a confirmation dialog before binding any token.
 - **App Links (`DeepLink`):** `MainActivity` claims `https://amux.sh/p` with
   `android:autoVerify="true"` for both cold and warm launches. Invitation
@@ -253,7 +256,7 @@ re-read its credential whenever entitlement changes.
 - **Report a Problem (`ReportFreezer`, `ReportSheet`, `ReportStore`):**
   `MainActivity` registers API 34's `Activity.ScreenCaptureCallback`
   (`DETECT_SCREEN_CAPTURE`). Taking a screenshot freezes the window via
-  `PixelCopy` (with race-free bitmap ownership, `View.draw` fallback,
+  `PixelCopy` (one owner for each bitmap at a time, a `View.draw` fallback,
   `WindowInspector` overlay compositing and off-main-thread PNG encoding), starts
   the profile's diagnostic dump bound to the active account/profile ID, and shows
   a dismissible banner offering to open **Report a Problem** (also reachable from
@@ -284,21 +287,21 @@ The store is the workspace's `store` crate with SQLite statically bundled into
 `libsqlite*.so`. If the installation cannot start or its store cannot be opened,
 the shell is replaced by `StoreFailureScreen` with a single **Relaunch** action.
 
-## Intentional v1 deferrals
+## Push and billing
 
-Two cloud features are deliberately deferred in v1 behind tested interfaces so
-wiring them later requires no structural refactor or server changes:
-
-- **Background push delivery (`PushRegistrar` / `NoOpPushRegistrar`):**
-  The pure-JVM `:push` module (HPKE decryption, `Said.kt`, `PushWords`,
-  `PushAlert`) and `NotificationChannels` (`POST_NOTIFICATIONS`) are built and
-  verified on device against Conscrypt, while `Composition` wires
-  `NoOpPushRegistrar` so v1 pulls in no Firebase/FCM dependency.
+- **Push delivery (`PushRegistrar`):** when the build carries a
+  `google-services.json`, `Composition` wires `FcmPushRegistrar`: each
+  profile's key lives in `AndroidPushKeyStore` (Android Keystore AES-GCM under
+  the backup-excluded `amux/installation/push-keys`), the FCM token is
+  registered with `amux.sh`, and `AmuxMessagingService` opens each push with
+  `SealedPush` and posts it on a `NotificationChannels` channel
+  (`POST_NOTIFICATIONS`). Without the file, the Gradle build skips the
+  google-services plugin and `NoOpPushRegistrar` takes its place.
 - **Google Play Billing (`BillingStoreFront` / `StubBillingStoreFront`):**
-  `PaywallStore` and `PaywallScreen` speak only to `BillingStoreFront`. In v1
-  `StubBillingStoreFront` reports in-app purchases unavailable while preserving
-  active Pro/trial entitlements read from `amux.sh` and directing users to
-  subscribe or manage their plan on `amux.sh`.
+  `PaywallStore` and `PaywallScreen` speak only to `BillingStoreFront`.
+  `StubBillingStoreFront` reports in-app purchases unavailable while keeping
+  the Pro and trial entitlements read from `amux.sh`, and sends people to
+  `amux.sh` to subscribe or manage their plan.
 
 ## Building
 
@@ -308,7 +311,7 @@ platform-tools and emulator), Rust with `aarch64-linux-android` (and optionally
 
 ```sh
 just android check         # cargo-ndk check of the provider-free graph
-just android lint          # feature, test-wait, string/copy and Kotlin-mirror checks
+just android lint          # feature, test-wait and string/copy checks
 just android graph-check   # prove app-jni carries no provider, host, schema or test crate
 just android unit          # host JNI build + all JVM and Robolectric unit suites
 just android build         # arm64-v8a debug JNI library + debug APK
@@ -339,14 +342,15 @@ Use the cheapest check that catches the regression:
 
 | Layer | What it holds | Recipe |
 | --- | --- | --- |
-| Lints & scripts | Feature purity, no test sleeps, copy/strings inventory, generated Kotlin mirrors and tool script tests | `just android lint`, `just android script-tests` |
+| Lints & scripts | Feature purity, no test sleeps, copy/strings inventory and tool script tests | `just android lint`, `just android script-tests` |
 | Graph check | `app-jni` carries no provider, host, schema or test crate on Android | `just android graph-check` |
-| Unit suites | Pure JVM (`:core:values`, `:core:words`, `:push`), real host-JNI bridge (`:core:runtime`), Robolectric Compose (`:design`, `:features`, `:shell`, `:app`) and `:test-support` | `just android unit` |
+| Unit suites | Pure JVM (`:core:words`, `:push`), real host-JNI bridge (`:core:runtime`), Robolectric Compose (`:design`, `:features`, `:shell`, `:app`, which includes the accessibility audit) and `:test-support` | `just android unit` |
 | Headless storybook | Robolectric + Roborazzi PNG gallery (light and dark) with a geometry report of alignment near-misses per story at `target/android/storybook/index.html` for visual inspection — never a pixel-diff CI gate; also interactive via debug `StorybookActivity` | `just android storybook` |
-| Accessibility audit | Robolectric Compose semantics sweep verifying TalkBack names, unclipped horizontal bounds, ≥ 48 dp touch targets, headings and static WCAG contrast tokens across every registered story (`AccessibilityAuditTest`) | `just android accessibility` |
-| Release scope audit | Builds `assembleRelease` with shipping `libamux_app.so` and verifies no `DoorServer`, `StorybookActivity`, `:test-support` or `debug-tools` symbols appear, and SQLite is statically linked | `just android scope-audit` |
+| Accessibility audit | Robolectric Compose semantics sweep verifying TalkBack names, unclipped horizontal bounds, ≥ 48 dp touch targets, headings and static WCAG contrast tokens across every registered story (`AccessibilityAuditTest`); also part of `unit` | `just android accessibility` |
+| Release scope audit | Builds `assembleRelease` with shipping `libamux_app.so`, reads R8's `mapping.txt` to prove no `DoorServer`, `StorybookActivity` or `:test-support` class survived (the DEX holds only R8's new names), and checks the library for `debug-tools` symbols and static SQLite | `just android scope-audit` |
+| Release launch | On the minified release APK, in the app's process on an emulator or phone: the runtime starts, takes the step that lists its profiles, answers an act, and the bridge's refusal arrives as `BridgeException` (`ReleaseLaunchTest`), which is what proves the R8 rules | `just android release-smoke` |
 | Journeys | Real daemons and relay (`testnet journey android`) driving the debug APK on the pinned AVD (`amux-android-1`) through `DoorServer`, asserting backend state and geometry goldens under `journeys/goldens/android/<story>/` | `just android journey` |
-| Full verifier | Ordered verification sequence (lint, script tests, graph check, host + Android builds, unit suites, storybook smoke, release scope audit, journeys and accessibility) | `just android verify` |
+| Full verifier | In order: lint, graph check, script tests, unit suites (with the accessibility audit), one storybook story, release scope audit, release launch, journeys | `just android verify` |
 
 ### Headless storybook
 
@@ -422,3 +426,26 @@ Before a release, verify on a physical Android phone running a Release APK:
   back gesture, and system photo/document pickers.
 - Local-network discovery (`NsdManager`) on real Wi-Fi and roaming between
   Wi-Fi and cellular (`ConnectivityManager` network change recovery).
+
+## Before the first release
+
+The app has not been released. `just android release` and `deploy` exist
+([Releasing](RELEASE.md#the-android-app) has the pipeline and the one-time
+setup); what is still missing is outside this repository or waits on it:
+
+- **Signing.** No upload key exists yet, and `sh.amux.android` is not yet in
+  Play Console. Without the key a release build is unsigned
+  (`app-release-unsigned.apk`); only `just android release-smoke` signs its
+  build with the debug key, so it installs on an emulator.
+- **The version.** `versionName` and `versionCode` in
+  `apps/android/app/build.gradle.kts` (`0.1.0` and `1`) stand in until the
+  first `just android release` writes them from its tags. Like the iPhone
+  app's, they are numbered apart from the workspace's crates. What the app's
+  runtime says of itself to the machines it pairs with is the workspace's
+  version (`NativeBridge.version()`), which the crates' release cut sets.
+- **App links.** `MainActivity` claims `https://amux.sh/p` with
+  `autoVerify`, but Android only opens the app for it once amux.sh serves
+  `/.well-known/assetlinks.json` naming `sh.amux.android` and the SHA-256
+  fingerprint of Play's app signing key (Play Console, App integrity). Until
+  then an invitation link opens in the browser, and the `/p` page there says
+  there is no Android app yet.

@@ -15,7 +15,7 @@ app layer splits those across five crates:
 | `app-jni` | The JNI facade over `app-bridge` for the Android app and host JVM tests: monotonic 64-bit handle tables, a poll over the wake descriptor and a stop latch, `BridgeException` translation, and the `cdylib` (`libamux_app.so`) |
 
 The [iPhone app](IOS.md) and the [Android app](ANDROID.md) both build on this
-exact same embedded daemon (`app-embedded`) and session runtime (`app-runtime`),
+same embedded daemon (`app-embedded`) and session runtime (`app-runtime`),
 differing only in their thin language facade (`app-ffi` vs `app-jni`).
 
 ## The dependency rule
@@ -209,7 +209,7 @@ cargo run -p ios-tools -- kotlin-types --check # fail when Kotlin differs
 
 `crates/ios-tools/src/swift_types.rs` lists the root types, from `ui-state`'s
 shared values, `ui-view` and `app-runtime::values`; `kotlin_types.rs` reads
-that exact same list, and everything they hold comes along. The schemas come
+the same list, and everything they hold comes along. The schemas come
 from `schemars`. A struct becomes a Swift struct or `@Serializable` Kotlin
 `data class` with the Rust field names as coding keys; a string-only enum
 becomes a raw-value or `@Serializable` enum; any other enum is serde's

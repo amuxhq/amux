@@ -38,8 +38,8 @@ class SealedPushTests {
 
     private fun loadFixture(): Fixture {
         val stream = requireNotNull(
-            javaClass.classLoader.getResourceAsStream("fixtures/sealed-pushes.json"),
-        ) { "missing fixtures/sealed-pushes.json" }
+            javaClass.classLoader.getResourceAsStream("sealed-pushes.json"),
+        ) { "missing sealed-pushes.json" }
         return stream.bufferedReader(Charsets.UTF_8).use { reader ->
             json.decodeFromString(Fixture.serializer(), reader.readText())
         }

@@ -344,22 +344,24 @@ no-update-flags:
 # The quick checks a change passes before it reaches main: the ones that
 # take seconds, Clippy, and the terminal journeys, whose goldens any change
 # to what the terminal client draws can leave behind. A minute and a half on a
-# warm tree. Of the workspace's tests only the four crates' whose fixtures
-# and goldens other crates' changes move are here: run the touched crates'
-# too (`just test-crate`), and leave the whole suite, the phone's snapshots
-# and the other platforms to CI (docs/CI.md, "`just premerge`").
+# warm tree. Of the workspace's tests only the five crates' whose fixtures,
+# goldens and generated phone mirrors other crates' changes move are here:
+# run the touched crates' too (`just test-crate`), and leave the whole suite,
+# the phone's snapshots and the other platforms to CI (docs/CI.md,
+# "`just premerge`").
 # Run the quick checks a change passes before it reaches main.
 premerge: no-update-flags fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests lint
     {{just_executable()}} ios lint
     {{just_executable()}} ios script-tests
     {{just_executable()}} android lint
     {{just_executable()}} android script-tests
-    {{just_executable()}} test -- -p interpret -p replay-support -p tui -p ui-view
+    {{just_executable()}} test -- -p interpret -p replay-support -p tui -p ui-view -p ios-tools
     {{just_executable()}} journey terminal all
     if git diff --quiet "$(git merge-base HEAD origin/main)" -- js; then echo "js: unchanged since main"; else {{just_executable()}} browser check; fi
 
 # Run the same task sequence exercised across continuous-integration jobs.
 ci: no-update-flags lint fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check mobile-check
+    {{just_executable()}} android check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,

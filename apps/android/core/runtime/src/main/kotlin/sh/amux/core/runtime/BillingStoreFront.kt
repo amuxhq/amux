@@ -70,8 +70,8 @@ class StoreException(val error: StoreError) : Exception(
 )
 
 /**
- * Storefront billing seam (Play Billing in future releases, [StubBillingStoreFront]
- * in v1, `ScriptedBillingStoreFront` in tests).
+ * Storefront billing seam: [StubBillingStoreFront] until Google Play Billing is
+ * wired, `ScriptedBillingStoreFront` in tests.
  */
 interface BillingStoreFront {
     @Throws(StoreException::class)
@@ -94,9 +94,9 @@ interface BillingStoreFront {
 }
 
 /**
- * Default v1 storefront used while Google Play Billing is deferred: cleanly
- * reports in-app purchases unavailable so the paywall directs users to manage
- * their subscription on `amux.sh`.
+ * The storefront while Google Play Billing is not wired: it reports in-app
+ * purchases unavailable, so the paywall sends people to `amux.sh` to manage
+ * their subscription.
  */
 class StubBillingStoreFront(
     val unavailableMessage: String = DEFAULT_UNAVAILABLE_MESSAGE,

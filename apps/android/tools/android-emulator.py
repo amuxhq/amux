@@ -12,12 +12,14 @@ machine-parseable summary line containing the adb serial (`emulator-5554`).
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import time
+
+sys.path.insert(0, str(Path(__file__).parent))
+import android_sdk  # noqa: E402
 
 PINNED_AVD = "amux-android-1"
 # What the AVD is made from. Journey goldens are geometry in dp on this
@@ -27,23 +29,6 @@ PINNED_DEVICE = "pixel_9"
 PACKAGE_ID = "sh.amux.android"
 DEFAULT_GPU = "auto"
 DEFAULT_BOOT_TIMEOUT_SECONDS = 240
-
-
-def find_android_home(env: dict[str, str] | None = None) -> Path:
-    """Locate the Android SDK root from environment variables or standard Mac/Linux paths."""
-    lookup = os.environ if env is None else env
-    candidates = [
-        lookup.get("ANDROID_HOME"),
-        lookup.get("ANDROID_SDK_ROOT"),
-        str(Path.home() / "Library" / "Android" / "sdk"),
-        str(Path.home() / "Android" / "Sdk"),
-    ]
-    for candidate in candidates:
-        if candidate and Path(candidate).is_dir():
-            return Path(candidate)
-    raise RuntimeError(
-        "Android SDK not found; set ANDROID_HOME or install the SDK under ~/Library/Android/sdk"
-    )
 
 
 def find_tool(sdk_root: Path, relative: str, fallback_name: str) -> str:
@@ -258,7 +243,7 @@ def ensure_booted(
     timeout: int = DEFAULT_BOOT_TIMEOUT_SECONDS,
     log_dir: Path | None = None,
 ) -> str:
-    sdk_root = find_android_home()
+    sdk_root = android_sdk.require_sdk()
     adb = adb_path(sdk_root)
     emulator = emulator_path(sdk_root)
 
@@ -293,7 +278,7 @@ def ensure_booted(
 
 
 def shutdown(avd: str = PINNED_AVD, *, timeout: int = 60) -> bool:
-    sdk_root = find_android_home()
+    sdk_root = android_sdk.require_sdk()
     adb = adb_path(sdk_root)
     running = find_running_avd(adb, avd)
     if running is None:
@@ -347,7 +332,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.serial:
-        sdk_root = find_android_home()
+        sdk_root = android_sdk.require_sdk()
         running = find_running_avd(adb_path(sdk_root), args.avd)
         if running is None:
             return 1

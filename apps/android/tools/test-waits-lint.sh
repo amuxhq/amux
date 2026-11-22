@@ -8,7 +8,7 @@
 #
 #     delay(100) // test-wait-exempt: explains why
 #
-# It checks itself first against fixtures written to fail and pass.
+# tests/test_waits_lint_test.py holds it to these rules.
 
 set -eu
 
@@ -55,39 +55,6 @@ list_test_files() {
         find apps/android -type f -name '*.kt' \( -path '*/src/test/*' -o -path '*/src/androidTest/*' \) | sort
     fi
 }
-
-self_test() {
-    probe=$(mktemp -d)
-    trap 'rm -rf "$probe"' EXIT
-
-    printf 'fun badSleep() { Thread.sleep(50) }\n' > "$probe/BadSleep.kt"
-    printf 'suspend fun badDelay() { delay(50) }\n' > "$probe/BadDelay.kt"
-    printf 'suspend fun emptyExempt() {\n    delay(50) // test-wait-exempt:   \n}\n' > "$probe/EmptyExempt.kt"
-    printf 'suspend fun okDelay() {\n    delay(50) // test-wait-exempt: virtual clock test\n}\n' > "$probe/OkDelay.kt"
-    printf 'fun okOther() { customDelay(50) }\n' > "$probe/OkOther.kt"
-
-    found=$(find "$probe" -type f -name '*.kt' | sort | scan_files || true)
-    for expected in BadSleep.kt BadDelay.kt EmptyExempt.kt; do
-        case $found in
-            *"$expected"*) ;;
-            *)
-                echo "test-waits-lint: failed to catch $expected in self-test" >&2
-                exit 1
-                ;;
-        esac
-    done
-    case $found in
-        *OkDelay.kt*|*OkOther.kt*)
-            echo "test-waits-lint: false positive in self-test" >&2
-            exit 1
-            ;;
-    esac
-
-    rm -rf "$probe"
-    trap - EXIT
-}
-
-self_test
 
 files=$(list_test_files)
 if printf '%s\n' "$files" | scan_files; then

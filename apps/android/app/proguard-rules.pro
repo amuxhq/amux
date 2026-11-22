@@ -12,24 +12,7 @@
     public <init>(java.lang.String);
 }
 
-# Guard kotlinx.serialization generated serializers and sealed/enum descriptors under R8 full mode.
--keepattributes *Annotation*, InnerClasses
--dontnote kotlinx.serialization.AnnotationsKt
-
--keepclassmembers class kotlinx.serialization.json.** {
-    *** Companion;
-}
--keepclasseswithmembers class kotlinx.serialization.json.** {
-    kotlinx.serialization.KSerializer serializer(...);
-}
--keep,includedescriptorclasses class sh.amux.**$$serializer { *; }
--keepclassmembers class sh.amux.** {
-    *** Companion;
-}
--keepclasseswithmembers class sh.amux.** {
-    kotlinx.serialization.KSerializer serializer(...);
-}
--keep enum sh.amux.** {
-    public static **[] values();
-    public static ** valueOf(java.lang.String);
-}
+# kotlinx.serialization ships its own R8 rules for the serializers its plugin
+# generates, and the default optimize rules keep enums' values() and valueOf(),
+# so the values crossing the bridge need nothing here. The release launch smoke
+# test (`just android release-smoke`) decodes them on the minified build.

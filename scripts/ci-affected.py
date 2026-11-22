@@ -8,10 +8,11 @@ GitHub reads as a job's outputs:
   tests       Clippy, formatting and the workspace tests. Runs for any Rust
               change or a file a Rust test reads, not for documentation,
               phone-app-only edits, or unrelated workflows/manual scripts.
-  ios_tools   The ios-tools crate's tests alone, when only the iOS or Android
-              app changed (Swift and Kotlin mirrors and verification CLI),
-              leaving the full workspace tests unrun and the apps' rest to
-              their own gates.
+  mirrors     The ios-tools crate's tests alone, when only the iOS or Android
+              app changed: the generated Swift and Kotlin mirrors, the
+              markdown fixtures and the iOS verification CLI. The full
+              workspace tests stay unrun and the apps' rest is left to their
+              own gates.
   product     The terminal journeys, the simulated stories and doctests:
               a crate amux or testnet is built from (not leaf tools like
               ios-tools, browser-core, qualification or xtask).
@@ -20,8 +21,8 @@ GitHub reads as a job's outputs:
               those are built from, which is nearly every crate: the
               sanitizers are there for the unsafe code in the crates
               themselves, and a nightly run covers the rest.
-  bridge      The pointer checks and the iOS target check: a crate the
-              phone's bridge is built from.
+  bridge      The pointer checks and the iOS and Android target checks: a
+              crate either phone's bridge is built from.
   browser     The browser extension's checks and its end-to-end test: its
               TypeScript under js/, a crate its WebAssembly is built from,
               or the amux binary, whose bridge it starts.
@@ -55,7 +56,7 @@ except ModuleNotFoundError:  # Apple's command-line tools still ship Python 3.9.
     from pip._vendor import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-GROUPS = ["tests", "ios_tools", "product", "models", "sanitizers", "bridge", "browser"]
+GROUPS = ["tests", "mirrors", "product", "models", "sanitizers", "bridge", "browser"]
 
 # Documentation: nothing built or tested reads it, but for READS.
 DOCS = ("docs/", "images/", "marketing/")
@@ -96,7 +97,7 @@ JS = "js/"
 
 PRODUCT = ["amux", "testnet"]
 MODELS = ["models"]
-BRIDGE = ["app-ffi", "app-bridge"]
+BRIDGE = ["app-ffi", "app-bridge", "app-jni"]
 BROWSER = ["browser-core"]
 
 
@@ -187,7 +188,7 @@ def affected(files: list[str], crates: dict[str, dict], sanitizers: list[str]) -
 
     return {
         "tests": tests,
-        "ios_tools": (phone or android) and not tests,
+        "mirrors": (phone or android) and not tests,
         "product": reaches(PRODUCT),
         "models": reaches(MODELS),
         "sanitizers": everything or bool(changed & set(sanitizers)),

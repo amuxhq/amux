@@ -49,9 +49,9 @@ every other job but the policy job runs only if the change can reach it:
 | --- | --- |
 | Documentation, another workflow or a manual script (`docs/`, `images/`, `marketing/`, top-level `*.md`, non-CI workflows, manual scripts) | The policy job, which holds the documentation and script checks: about a minute |
 | The phone app only (`apps/apple/`) | Only `ios-tools` tests (Swift mirrors and verification CLI) unless a fixture read by another Rust test changed; the iOS gate judges the rest |
-| The Android app only (`apps/android/`) | Only `ios-tools` tests (Kotlin mirror parity); the Android gate judges the rest |
+| The Android app only (`apps/android/`) | Only `ios-tools` tests (Kotlin mirror and markdown fixture parity); the Android gate judges the rest |
 | The browser extension only (`js/`) | The browser extension's job |
-| A crate | Format, Clippy and the workspace tests; the journeys and simulated stories when `amux` or `testnet` is built from that crate; the models when the models crate is built from that crate; the pointer checks and the iOS target check when the bridge is; the sanitizers when it is one of the crates whose tests they run; the browser extension's job when its WebAssembly is built from the crate, or the crate is the `amux` binary, whose bridge the extension starts |
+| A crate | Format, Clippy and the workspace tests; the journeys and simulated stories when `amux` or `testnet` is built from that crate; the models when the models crate is built from that crate; the pointer checks and the iOS and Android target checks when either phone's bridge is; the sanitizers when it is one of the crates whose tests they run; the browser extension's job when its WebAssembly is built from the crate, or the crate is the `amux` binary, whose bridge the extension starts |
 | Anything else: a manifest, a CI script, `ci.yml`, a journey, a schema | Every job |
 
 Which crates a crate is built from is read from the manifests. A newer push
@@ -84,6 +84,7 @@ takes seconds shares a job, and the models run a few to a job.
 | Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why |
 | Sanitizers | `ubuntu-latest`, one job for each of `address` and `thread` | `just sanitize <kind>`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race |
 | iOS target check | `macos-latest` | `just mobile-check` |
+| Android target check | `ubuntu-latest` | `cargo-ndk` and the runner's Android NDK, then `just android check`: the provider-free graph and `app-jni` compiled for `aarch64-linux-android`, which no other job builds |
 | Browser extension | `ubuntu-latest` | Node 24 and Playwright's Chromium; an audit of the dependencies the extension ships for known vulnerabilities; then `just browser test`: Biome's format and lint, the overlay's and extension's types and unit tests, and the extension in Chromium against the built `amux` and the fake providers |
 
 The test job runs nextest's `ci` profile, which does not stop at the first
@@ -263,11 +264,15 @@ and `just ios shipping` run those halves alone.
 
 The Android gate ([`android.yml`](../.github/workflows/android.yml)) is its own
 workflow on `ubuntu-latest` so that it runs only when a push or pull request
-touches Android or its bridge: `apps/android`, `crates/app-jni`,
+touches a file its steps read: `apps/android`, `crates/app-jni`,
 `crates/app-bridge`, `crates/app-embedded`, `crates/app-runtime`,
-`crates/ios-tools`, the Cargo manifests, the toolchain pin, the shared runner
-scripts (`scripts/bounded`, `scripts/no-update-flags.sh`, `scripts/py`), the
-`setup-just` and `setup-rust` actions, or `android.yml` itself.
+`crates/ios-tools`, the files the app's tests share with the iPhone's (the
+markdown fixtures and sealed pushes under `apps/apple/Packages`, and
+`tests/stories.json`), the Cargo manifests and `.cargo/`, the toolchain pin,
+the shared runner scripts (`scripts/bounded`, `scripts/no-update-flags.sh`,
+`scripts/py`), the `setup-just` and `setup-rust` actions, or `android.yml`
+itself. The rest of the bridge's Rust graph is the workspace tests' to judge,
+and the Android target check in `ci.yml` compiles it for Android.
 
 The job installs the pinned Rust toolchain with `aarch64-linux-android` through
 `.github/actions/setup-rust`, sets up Temurin JDK 21 with Gradle caching, and
@@ -276,7 +281,9 @@ restores the host JNI bridge from the Actions cache keyed by
 transitive workspace crate closure, so Kotlin-only or unrelated-crate edits
 skip compiling Rust). It then runs `just android lint`,
 `just android script-tests`, `just android graph-check`, and
-`just android unit --no-daemon`.
+`just android unit --no-daemon`. Its 30-minute bound comes from a local run
+of those steps (three minutes on a 12-core Mac with no Rust built), scaled to a
+four-core runner with cold caches and doubled; the workflow says how.
 
 ### iOS captures
 
@@ -331,10 +338,11 @@ tests), Clippy, the iOS and Android writing lints and script tests, and every te
 journey. The journeys run several at once, each in a scratch folder of its
 own, and share those folders with every other checkout on the machine.
 
-It also runs the tests of four crates, `interpret`, `replay-support`, `tui`
-and `ui-view`, because they read fixtures and goldens that a change
-elsewhere moves: a provider fixture added in one crate needs its view golden
-in another.
+It also runs the tests of five crates, `interpret`, `replay-support`, `tui`,
+`ui-view` and `ios-tools`, because they read fixtures, goldens and generated
+files that a change elsewhere moves: a provider fixture added in one crate
+needs its view golden in another, and a value added to the bridge needs its
+Swift and Kotlin mirrors and the markdown fixtures regenerated.
 
 It leaves out what is slow. The whole workspace's tests take a quarter of an
 hour; run the touched crates' with `just test-crate`. The phone's unit suites
@@ -366,6 +374,7 @@ stopping at the first failure:
 | `doctest` | Documentation tests |
 | `release-check` | The shipping binary builds and passes the release policy check |
 | `mobile-check` | The provider-free graph for iOS devices and simulators |
+| `android check` | The same graph and `app-jni` for Android phones (`cargo-ndk` and the NDK) |
 
 The terminal journeys are in `ci.yml` but not in `just ci`, and neither is the iOS gate.
 

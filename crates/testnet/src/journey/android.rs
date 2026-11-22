@@ -211,11 +211,11 @@ fn find_adb() -> Result<PathBuf, String> {
 fn boot_emulator() -> Result<String, String> {
     let mut command = Command::new(root().join("scripts/py"));
     command
-        .args(["-B", "apps/android/tools/android_emulator.py"])
+        .args(["-B", "apps/android/tools/android-emulator.py"])
         .current_dir(root());
     let said = run_within(command, Duration::from_secs(300))?;
     parse_emulator_serial(&said)
-        .ok_or_else(|| format!("android_emulator.py named no serial for {PINNED_AVD}: {said}"))
+        .ok_or_else(|| format!("android-emulator.py named no serial for {PINNED_AVD}: {said}"))
 }
 
 fn parse_emulator_serial(output: &str) -> Option<String> {

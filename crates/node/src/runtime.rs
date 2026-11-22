@@ -311,6 +311,10 @@ pub enum RegistryError {
     /// authority than its own, or a setting that is the person's to choose.
     #[error("{0}")]
     NotYours(String),
+    /// What only an agent starting a subagent may ask, asked by a person;
+    /// the words say what instead.
+    #[error("{0}")]
+    ForAgents(&'static str),
 }
 
 /// What [`ProfileRuntime::ingest`] committed.
@@ -367,7 +371,8 @@ impl RegistryError {
             | Self::NoKind
             | Self::BadCwd(_)
             | Self::NoFarCwd(_)
-            | Self::BadName(_) => ErrorCode::InvalidArgument,
+            | Self::BadName(_)
+            | Self::ForAgents(_) => ErrorCode::InvalidArgument,
             Self::KindNotRun { .. }
             | Self::UnknownAgent(_)
             | Self::AgentNotInstalled { .. }
@@ -1112,7 +1117,10 @@ impl ProfileRuntime {
         let mut request = request;
         let delegated = match caller {
             Caller::Agent { agent, .. } => Some(self.delegate(&mut request, *agent).await?),
-            Caller::Person { .. } => None,
+            Caller::Person { .. } => {
+                person_picks(&request)?;
+                None
+            }
         };
         let Some(agent) = request.agent else {
             return Err(RegistryError::NoKind);
@@ -2369,6 +2377,25 @@ fn acp_reopens(body: Option<&[u8]>) -> bool {
             snapshot.reopen(),
             wire::AcpReopen::Resume | wire::AcpReopen::Load
         )
+}
+
+/// Refuses what only an agent starting a subagent asks: a person has no
+/// conversation to fork, and picks the provider's own permission rather
+/// than a level to be capped.
+fn person_picks(request: &wire::CreateAgentRequest) -> Result<(), RegistryError> {
+    if request.fork {
+        return Err(RegistryError::ForAgents(
+            "fork copies the calling agent's conversation, and a person's create has none; \
+             leave fork unset",
+        ));
+    }
+    if request.permission_level() != wire::PermissionLevel::Unspecified {
+        return Err(RegistryError::ForAgents(
+            "permission_level is for an agent starting a subagent; a person names the \
+             provider's own permission in the config",
+        ));
+    }
+    Ok(())
 }
 
 /// The model a creation's config names, after the host's remembered picks.

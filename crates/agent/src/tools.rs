@@ -546,10 +546,9 @@ impl Server {
                 Some(_) => self.own_level().await,
                 None => level,
             },
-            asked => {
-                self.takes_levels(host.as_ref(), &provider).await?;
-                asked
-            }
+            // The child's host refuses a level its provider cannot be
+            // held to, in words, from what it offers.
+            asked => asked,
         };
         let cwd = optional(arguments, "cwd").unwrap_or_else(|| match host {
             // A named host may be this one or another, and the host decides:
@@ -623,34 +622,6 @@ impl Server {
             .map_or(wire::PermissionLevel::Unspecified, |settings| {
                 settings.permission_level()
             })
-    }
-
-    /// Refuses a permission for an agent whose permissions have no level
-    /// amux knows (an ACP agent a person added): its subagent can only
-    /// start on the agent's own default. A host whose catalogue cannot be
-    /// read now is left to the daemon.
-    async fn takes_levels(&self, host: Option<&Uuid>, provider: &str) -> Result<(), Refusal> {
-        let Ok((hosts, agents)) = self.inventory().await else {
-            return Ok(());
-        };
-        let host_id = match host {
-            Some(host) => host.as_bytes().to_vec(),
-            None => match agents.iter().find(|agent| agent.agent_id == self.me) {
-                Some(me) => me.host_id.clone(),
-                None => return Ok(()),
-            },
-        };
-        let name = hosts
-            .iter()
-            .find(|entry| entry.host_id() == host_id.as_slice())
-            .map_or_else(|| "that host".to_owned(), |entry| entry.name().to_owned());
-        let catalogue = self.catalogue(&host_id, provider).await;
-        if wire::levels::offered(provider, catalogue.as_ref()).is_empty() {
-            return Err(Refusal(format!(
-                "{provider} on {name} has no permission levels amux knows; leave permission out and it starts on its own default"
-            )));
-        }
-        Ok(())
     }
 
     /// A real stop, as a person's close: the child ends now, filed away as

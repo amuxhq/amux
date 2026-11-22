@@ -1251,7 +1251,8 @@ impl ::prost::Name for Lagged {
 /// How much an agent may do without asking, on one scale for every
 /// provider, narrowest first. Each provider's permissions (an ACP agent's
 /// modes) map onto it in its catalogue. An agent starting a subagent may
-/// give it its own level or a narrower one, never a wider one.
+/// give it its own level or a narrower one, never a wider one; an agent
+/// whose own level is not known may give read-only only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum PermissionLevel {
@@ -9197,17 +9198,22 @@ pub struct CreateAgentRequest {
     #[prost(bool, tag = "10")]
     pub remember_effort: bool,
     /// Start the agent from a copy of its parent's conversation, with
-    /// initial_prompt as its next prompt. Refused for a create with no
-    /// calling agent, on a host other than the parent's, of a provider other
-    /// than the parent's, and for a provider that cannot fork
+    /// initial_prompt as its next prompt. Refused with INVALID_ARGUMENT from
+    /// a person, who has no conversation to copy; refused for a calling agent
+    /// on a host other than the parent's, of a provider other than the
+    /// parent's, and for a provider that cannot fork
     /// (AgentCapabilities.forks). False starts a new conversation, as builds
     /// before it did.
     #[prost(bool, tag = "12")]
     pub fork: bool,
-    /// The permission by amux's level, mapped by the host onto the widest
-    /// permission its provider offers at or below that level; the config's
-    /// own permission is then left unset. Unspecified leaves the config's
-    /// permission as it is.
+    /// For a calling agent only: the subagent's permission by amux's level,
+    /// mapped by the host onto the widest permission its provider offers at
+    /// or below that level. Unspecified is the parent's own level, or
+    /// read-only when the parent's has none. Wider than the parent's is
+    /// refused with PERMISSION_DENIED; so is any level but full for a
+    /// provider whose permissions have no level, since nothing could hold it
+    /// there. Refused with INVALID_ARGUMENT from a person, who picks the
+    /// provider's own permission in the config.
     #[prost(enumeration = "PermissionLevel", tag = "13")]
     pub permission_level: i32,
     /// Which interpreter, with that kind's settings. The host refuses a kind

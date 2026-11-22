@@ -32,19 +32,25 @@ fn not_yours(words: impl Into<String>) -> RegistryError {
 
 /// The level a subagent starts at: the one asked for, or its parent's.
 /// Asking for a wider one than the parent's is refused, naming the
-/// parent's. A parent whose own permission has no level (an ACP agent a
-/// person added) can still ask for read-only, the narrowest there is.
+/// parent's. A parent whose own level is not known (its permission has
+/// none, as an ACP agent a person added, or its row has no settings yet)
+/// gets read-only, the narrowest there is, and may ask for nothing wider.
 pub(crate) fn ceiling(
     asked: PermissionLevel,
     parent: PermissionLevel,
 ) -> Result<PermissionLevel, RegistryError> {
     let word = |level: PermissionLevel| level.word().unwrap_or("unknown");
     match (asked, parent) {
+        // A parent whose own level is not known could be exceeded by any
+        // level but the narrowest.
+        (PermissionLevel::Unspecified, PermissionLevel::Unspecified) => {
+            Ok(PermissionLevel::ReadOnly)
+        }
         (PermissionLevel::Unspecified, parent) => Ok(parent),
         (asked, PermissionLevel::Unspecified) if asked == PermissionLevel::ReadOnly => Ok(asked),
         (asked, PermissionLevel::Unspecified) => Err(not_yours(format!(
             "your own permission has no level amux knows, so a subagent can be asked only for \
-             read-only, or left to start on its own default; {} is refused",
+             read-only, which is what it gets when none is asked; {} is refused",
             word(asked)
         ))),
         (asked, parent) if asked as i32 > parent as i32 => Err(not_yours(format!(
@@ -99,8 +105,8 @@ pub(crate) struct Fitted {
 /// it exists. Left out, they are the ones this host starts a new agent on,
 /// where its catalogue names them. A level maps onto the widest permission at or below it; a
 /// provider with no permission that narrow is refused. A provider whose
-/// permissions have no level at all (an ACP agent a person added) starts on
-/// its own default.
+/// permissions have no level at all (an ACP agent a person added) is
+/// refused for every level but full, which its own default cannot exceed.
 pub(crate) fn fit(
     agent: &mut create_agent_request::Agent,
     level: PermissionLevel,
@@ -195,7 +201,17 @@ pub(crate) fn fit(
     let offered = wire::levels::offered(&provider, catalogue);
     let mapped = match level {
         PermissionLevel::Unspecified => None,
-        _ if offered.is_empty() => None,
+        // A provider whose permissions have no level cannot be held below
+        // anything, so only a parent at full, which nothing exceeds, may
+        // start one on its own default.
+        PermissionLevel::Full if offered.is_empty() => None,
+        level if offered.is_empty() => {
+            return Err(not_yours(format!(
+                "{provider} on {host} has no permission levels amux knows, so it cannot be \
+                 held to {}: only an agent with full permission starts it as a subagent",
+                level.word().unwrap_or("your level")
+            )));
+        }
         level => Some(wire::levels::at(&offered, level).ok_or_else(|| {
             let words: Vec<&str> = wire::levels::levels(&offered)
                 .into_iter()
@@ -276,8 +292,12 @@ impl ProfileRuntime {
             // A paired host's agent this host holds no copy of yet, such as
             // one that started a moment ago: its tool server names the
             // parent's own level when the parent asks for none, and a
-            // paired host is trusted to keep to the protocol.
-            None => request.permission_level(),
+            // paired host is trusted to keep to the protocol. Naming none,
+            // the parent's level is not known, so the child is read-only.
+            None => match request.permission_level() {
+                PermissionLevel::Unspecified => PermissionLevel::ReadOnly,
+                named => named,
+            },
         };
         request.set_permission_level(level);
         let here = self
@@ -387,8 +407,8 @@ mod tests {
     use super::*;
 
     /// A subagent gets its parent's level, or a narrower one asked for;
-    /// a wider one is refused naming the parent's. A parent with no level
-    /// can still ask for read-only.
+    /// a wider one is refused naming the parent's. A parent whose level is
+    /// not known gets read-only, and can ask for nothing wider.
     #[test]
     fn the_parents_level_is_the_default_and_the_ceiling() {
         assert_eq!(
@@ -406,10 +426,12 @@ mod tests {
             ceiling(Level::ReadOnly, Level::Unspecified).unwrap(),
             Level::ReadOnly
         );
-        assert!(ceiling(Level::Ask, Level::Unspecified).is_err());
+        let unknown = ceiling(Level::Ask, Level::Unspecified).unwrap_err();
+        assert!(matches!(unknown, RegistryError::NotYours(_)), "{unknown}");
         assert_eq!(
             ceiling(Level::Unspecified, Level::Unspecified).unwrap(),
-            Level::Unspecified
+            Level::ReadOnly,
+            "an unknown level never leaves the child on its provider's default"
         );
     }
 
@@ -571,9 +593,9 @@ mod tests {
     }
 
     /// An agent with nothing as narrow as the level is refused; one whose
-    /// permissions have no level starts on its own default.
+    /// permissions have no level is refused below full.
     #[test]
-    fn a_level_nothing_offered_fits_is_refused_and_no_levels_means_the_default() {
+    fn a_level_nothing_offered_fits_is_refused_and_no_levels_only_under_full() {
         let mut opencode = Agent::Acp(wire::AcpCreateConfig {
             agent: "opencode".into(),
             ..Default::default()
@@ -604,15 +626,37 @@ mod tests {
             "{refused}"
         );
 
-        let mut added = Agent::Acp(wire::AcpCreateConfig {
-            agent: "my-agent".into(),
-            ..Default::default()
-        });
-        let fitted = fit(&mut added, Level::ReadOnly, None, "laptop").unwrap();
-        let Agent::Acp(config) = &added else {
+        // An agent a person added has no levels: nothing could hold it to
+        // any level below full, so only a parent at full starts it, on its
+        // own default.
+        let added = || {
+            Agent::Acp(wire::AcpCreateConfig {
+                agent: "my-agent".into(),
+                ..Default::default()
+            })
+        };
+        for level in [Level::ReadOnly, Level::Ask, Level::Auto] {
+            let refused = fit(&mut added(), level, None, "laptop").err().unwrap();
+            assert!(matches!(refused, RegistryError::NotYours(_)), "{level:?}");
+            assert!(
+                refused
+                    .to_string()
+                    .contains("my-agent on laptop has no permission levels"),
+                "{refused}"
+            );
+        }
+        let mut full = added();
+        let fitted = fit(&mut full, Level::Full, None, "laptop").unwrap();
+        let Agent::Acp(config) = &full else {
             unreachable!()
         };
         assert_eq!(config.mode, None);
         assert_eq!(fitted.settings.permission_level(), Level::Unspecified);
+        // Grok, a built-in whose modes are not permissions, likewise.
+        let mut grok = Agent::Acp(wire::AcpCreateConfig {
+            agent: "grok".into(),
+            ..Default::default()
+        });
+        assert!(fit(&mut grok, Level::ReadOnly, None, "laptop").is_err());
     }
 }

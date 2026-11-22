@@ -905,3 +905,125 @@ async fn a_delete_preview_is_answered_to_whoever_may_delete() {
     }
     host.stop().await;
 }
+
+/// What an agent may ask for its subagent is settled on the create itself:
+/// the ceiling is read from the parent's row (here, this host's copy of a
+/// paired host's agent at auto), a parent whose level is not known gets
+/// read-only and nothing wider, a fork needs a conversation to copy, and a
+/// person can ask for neither a fork nor a level.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_subagents_authority_is_settled_against_its_parents_row() {
+    let setup = Setup::new();
+    let host = setup.start().await;
+    host.settled().await;
+    let work = host.install.work.clone();
+    let level = |made: &wire::Agent| {
+        made.settings
+            .as_ref()
+            .map(|settings| (settings.permission.clone(), settings.permission_level()))
+    };
+
+    // The paired host's agent, as this host's copy holds it, runs at auto.
+    let mut there = AgentRow::new(
+        AgentKey::new(peer().as_bytes().to_vec(), host.there.as_bytes().to_vec()),
+        wire::Kind::ClaudeSdk,
+        "/",
+    );
+    there.name = "caller-there".to_owned();
+    there.settings = Some(wire::AgentSettings {
+        permission: Some("acceptEdits".into()),
+        permission_level: wire::PermissionLevel::Auto as i32,
+        ..Default::default()
+    });
+    host.install.store().put_agent(&there).unwrap();
+    let wider = wire::CreateAgentRequest {
+        permission_level: wire::PermissionLevel::Full as i32,
+        ..create(&work, "wider", None)
+    };
+    let refused = host
+        .agents(Who::AgentThere)
+        .create_agent(wider)
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::PermissionDenied);
+    assert!(
+        refused.message().contains("full is wider than yours, auto"),
+        "{refused:?}"
+    );
+    let made = host
+        .agents(Who::AgentThere)
+        .create_agent(create(&work, "same", None))
+        .await
+        .unwrap()
+        .into_inner()
+        .agent
+        .unwrap();
+    assert_eq!(
+        level(&made),
+        Some((Some("acceptEdits".into()), wire::PermissionLevel::Auto)),
+        "the parent's own level by default"
+    );
+
+    // This host's caller has reported no settings, so its level is not
+    // known: its child is read-only, and asking wider is refused.
+    let made = host
+        .agents(Who::AgentHere)
+        .create_agent(create(&work, "unknown", None))
+        .await
+        .unwrap()
+        .into_inner()
+        .agent
+        .unwrap();
+    assert_eq!(
+        level(&made),
+        Some((Some("plan".into()), wire::PermissionLevel::ReadOnly))
+    );
+    let ask = wire::CreateAgentRequest {
+        permission_level: wire::PermissionLevel::Ask as i32,
+        ..create(&work, "unknown-ask", None)
+    };
+    let refused = host
+        .agents(Who::AgentHere)
+        .create_agent(ask)
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::PermissionDenied, "{refused:?}");
+
+    // A fork copies the caller's conversation, which it does not have yet.
+    let fork = wire::CreateAgentRequest {
+        fork: true,
+        ..create(&work, "fork", None)
+    };
+    let refused = host
+        .agents(Who::AgentHere)
+        .create_agent(fork.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::FailedPrecondition, "{refused:?}");
+    assert!(
+        refused.message().contains("has not started yet"),
+        "{refused:?}"
+    );
+    let id = uuid::Uuid::from_slice(&fork.agent_id).unwrap();
+    assert!(host.row(id).await.is_none(), "no child was made");
+
+    // A person has no conversation to fork and no level to be held to.
+    for asked in [
+        wire::CreateAgentRequest {
+            fork: true,
+            ..create(&work, "person-fork", None)
+        },
+        wire::CreateAgentRequest {
+            permission_level: wire::PermissionLevel::ReadOnly as i32,
+            ..create(&work, "person-level", None)
+        },
+    ] {
+        let refused = host
+            .agents(Who::PersonHere)
+            .create_agent(asked)
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code(), Code::InvalidArgument, "{refused:?}");
+    }
+    host.stop().await;
+}

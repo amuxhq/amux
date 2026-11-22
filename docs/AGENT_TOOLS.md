@@ -228,7 +228,10 @@ What a parent may choose is kept in three kinds, because they differ:
   `permission_level`: left out, it is unspecified and the child's host
   reads the parent's level from its row for the parent, except that a start
   on a named host carries the parent's own level, since that host may not
-  have copied the parent's row yet. The child's host maps it onto the widest
+  have copied the parent's row yet. A parent whose own level is not known
+  (its permission has no level, or it has not reported its settings yet)
+  gets a `read-only` child, and may ask for nothing wider: any other default
+  could exceed it. The child's host maps it onto the widest
   permission its provider offers at or below it, preferring the provider's
   ordinary one at a tie; a provider with nothing that narrow is refused,
   naming what it offers. The ceiling binds only the parent's request: the
@@ -256,11 +259,10 @@ Codex's `auto`. OpenCode's `build` runs tools as the person's OpenCode config
 allows, which by default is everything, so it counts as `full`. Codex's
 plan and default modes are a separate axis from its permissions and stay out
 of a start. Grok's modes choose how hard it thinks, so Grok, like an ACP
-agent a person added, has no levels: `permission` is refused for it in words
-saying so, and its subagent starts on its own default, as every subagent did
-before levels; such an agent's subagent is the one place a child may run
-with more than its parent. A parent whose own permission has no level may
-still ask for `read-only`. The interpreters write each value's level into the
+agent a person added, has no levels. Nothing could hold such an agent to a
+level, so a subagent of it is started only by a parent at `full`, which its
+own default cannot exceed, and starts on that default; from any other
+parent the start is refused in words saying why. The interpreters write each value's level into the
 catalogue (`OfferedPermission.level`, and `OfferedMode.level` for an ACP
 agent, whose modes are its permissions), and `wire::levels` holds the table
 the daemon maps with; a built-in ACP agent whose catalogue has not listed its

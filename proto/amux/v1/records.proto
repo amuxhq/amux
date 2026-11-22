@@ -299,7 +299,8 @@ message AgentSettings {
 // How much an agent may do without asking, on one scale for every
 // provider, narrowest first. Each provider's permissions (an ACP agent's
 // modes) map onto it in its catalogue. An agent starting a subagent may
-// give it its own level or a narrower one, never a wider one.
+// give it its own level or a narrower one, never a wider one; an agent
+// whose own level is not known may give read-only only.
 enum PermissionLevel {
   // Not known, or not on the scale.
   PERMISSION_LEVEL_UNSPECIFIED = 0;

@@ -11,13 +11,14 @@
 //!
 //! Rows are built again whenever their item changes, and the terminal
 //! builds the rows it draws on every frame, so a parse is kept by its
-//! source: a reply is parsed once for each revision of its text.
+//! source and shared: a reply is parsed once for each revision of its
+//! text, and drawing it again copies no blocks.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
 use std::sync::{Arc, LazyLock, Mutex};
 
-use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -29,7 +30,9 @@ pub struct Markdown {
     /// The text as the agent or person wrote it, for copying and for
     /// reading aloud.
     pub source: String,
-    pub blocks: Vec<ProseBlock>,
+    // Shared with the parse kept for this source, so a row built again
+    // copies no blocks.
+    pub blocks: Arc<Vec<ProseBlock>>,
 }
 
 /// One block of prose.
@@ -169,14 +172,14 @@ impl Markdown {
     pub fn parse(source: &str, streaming: bool) -> Markdown {
         Markdown {
             source: source.to_owned(),
-            blocks: kept(source, streaming).as_ref().clone(),
+            blocks: kept(source, streaming),
         }
     }
 
     /// The text of every block, without its markup, one block to a line.
     pub fn plain_text(&self) -> String {
         let mut out = Vec::new();
-        for block in &self.blocks {
+        for block in self.blocks.iter() {
             block_text(block, &mut out);
         }
         out.join("\n")
@@ -202,6 +205,11 @@ pub fn inline_runs(source: &str) -> Vec<InlineRun> {
             }
             runs.extend(text);
         }
+    }
+    // Whatever else the label could have read as, its words are never
+    // lost.
+    if runs.is_empty() && !source.trim().is_empty() {
+        return vec![InlineRun::plain(source)];
     }
     coalesce(runs)
 }
@@ -263,7 +271,7 @@ fn escape_block_start(line: &str) -> String {
         // A fence; a code span opens with fewer.
         '`' | '~' => line.starts_with(&first.to_string().repeat(3)),
         _ => false,
-    };
+    } || is_delimiter_prefix(line);
     if opens {
         return format!("\\{line}");
     }
@@ -274,47 +282,70 @@ fn escape_block_start(line: &str) -> String {
     line.to_owned()
 }
 
-/// Parses kept, newest first, by source: two generations, so a source read
-/// within the last few hundred parses is found again, and the oldest go a
-/// generation at a time.
+/// Parses kept by source. Finished text is kept in two generations, so a
+/// source read within the last few hundred parses is found again and the
+/// oldest go a generation at a time. Text still streaming is kept apart
+/// and only its latest few revisions: a long reply arriving in a thousand
+/// pieces is a thousand sources, each read once or, by the terminal, for
+/// the frames until the next piece, and keeping them all would hold the
+/// reply many times over and push finished parses out.
 struct Kept {
-    now: HashMap<(String, bool), Arc<Vec<ProseBlock>>>,
-    before: HashMap<(String, bool), Arc<Vec<ProseBlock>>>,
+    now: HashMap<String, Arc<Vec<ProseBlock>>>,
+    before: HashMap<String, Arc<Vec<ProseBlock>>>,
+    /// The latest streaming revisions, newest last.
+    streaming: VecDeque<(String, Arc<Vec<ProseBlock>>)>,
 }
 
 const KEPT_PER_GENERATION: usize = 512;
+
+/// Enough for every reply streaming at once in the chats a client shows.
+const KEPT_STREAMING: usize = 8;
 
 static KEPT: LazyLock<Mutex<Kept>> = LazyLock::new(|| {
     Mutex::new(Kept {
         now: HashMap::new(),
         before: HashMap::new(),
+        streaming: VecDeque::new(),
     })
 });
 
 fn kept(source: &str, streaming: bool) -> Arc<Vec<ProseBlock>> {
-    let key = (source.to_owned(), streaming);
     {
         let mut kept = KEPT.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some(blocks) = kept.now.get(&key) {
-            return blocks.clone();
-        }
-        if let Some(blocks) = kept.before.remove(&key) {
-            kept.now.insert(key, blocks.clone());
-            return blocks;
+        if streaming {
+            if let Some((_, blocks)) = kept.streaming.iter().find(|(kept, _)| kept == source) {
+                return blocks.clone();
+            }
+        } else {
+            if let Some(blocks) = kept.now.get(source) {
+                return blocks.clone();
+            }
+            if let Some((source, blocks)) = kept.before.remove_entry(source) {
+                kept.now.insert(source, blocks.clone());
+                return blocks;
+            }
         }
     }
     let text = normalized(source);
     let text = if streaming {
-        without_unsettled_header(&text)
+        without_unsettled_table(&text)
     } else {
         &text
     };
     let blocks = Arc::new(parse(text));
     let mut kept = KEPT.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if kept.now.len() >= KEPT_PER_GENERATION {
-        kept.before = std::mem::take(&mut kept.now);
+    if streaming {
+        if kept.streaming.len() >= KEPT_STREAMING {
+            kept.streaming.pop_front();
+        }
+        kept.streaming
+            .push_back((source.to_owned(), blocks.clone()));
+    } else {
+        if kept.now.len() >= KEPT_PER_GENERATION {
+            kept.before = std::mem::take(&mut kept.now);
+        }
+        kept.now.insert(source.to_owned(), blocks.clone());
     }
-    kept.now.insert(key, blocks.clone());
     blocks
 }
 
@@ -328,24 +359,103 @@ fn normalized(source: &str) -> String {
     }
 }
 
-/// Text still streaming, less a last line of pipes that no table holds
-/// yet: until the delimiter row under it arrives, it would read as a
-/// paragraph.
-fn without_unsettled_header(source: &str) -> &str {
-    let trimmed = source.trim_end_matches([' ', '\t']);
-    let body = trimmed.trim_end_matches('\n');
-    let start = body.rfind('\n').map_or(0, |at| at + 1);
-    let last = &body[start..];
-    let pipe_row = last.trim_start().starts_with('|');
-    // A row under a delimiter row belongs to a table already drawn.
-    let before = &body[..start.saturating_sub(1).min(body.len())];
-    let previous = before.rsplit('\n').next().unwrap_or("").trim();
-    let in_table = previous.starts_with('|');
-    if pipe_row && !in_table {
-        &source[..start]
-    } else {
-        source
+/// Text still streaming, less what could still become a table but is not
+/// one yet: a last line starting with a pipe that no table holds, which
+/// the next line may make a table's header, and a line with a pipe in it
+/// with a delimiter row still being written under it (`|-`, `|---|` under
+/// two columns, `--|`). Drawn as they arrive, they would read as a
+/// paragraph of pipes or a heading and then jump into a table. A last line
+/// with a pipe only inside it is drawn: agents write a paragraph as one
+/// line, and holding every one that mentions `a | b` would hide it for as
+/// long as it streams.
+fn without_unsettled_table(source: &str) -> &str {
+    let body = source.trim_end();
+    let mut starts = vec![0];
+    starts.extend(body.match_indices('\n').map(|(at, _)| at + 1));
+    let lines: Vec<&str> = starts
+        .iter()
+        .enumerate()
+        .map(|(n, &start)| {
+            let end = starts.get(n + 1).map_or(body.len(), |next| next - 1);
+            &body[start..end]
+        })
+        .collect();
+    let last = lines.len() - 1;
+    let fences = lines[..last]
+        .iter()
+        .filter(|line| {
+            let line = line.trim_start();
+            line.starts_with("```") || line.starts_with("~~~")
+        })
+        .count();
+    // Pipes in code being written are code; a row under a table's
+    // delimiter row is that table's.
+    if fences % 2 == 1 || !lines[last].contains('|') && !is_delimiter_prefix(lines[last]) {
+        return source;
     }
+    if in_table(&lines, last) {
+        return source;
+    }
+    if last > 0
+        && is_delimiter_prefix(lines[last])
+        && lines[last - 1].contains('|')
+        && !in_table(&lines, last - 1)
+    {
+        return &source[..starts[last - 1]];
+    }
+    if lines[last].trim_start().starts_with('|') {
+        return &source[..starts[last]];
+    }
+    source
+}
+
+/// Whether line `at` belongs to a table: a line of its run of piped lines,
+/// at or above it, is a delimiter row under a header with as many cells.
+/// A header alone, with no delimiter row yet, is no table.
+fn in_table(lines: &[&str], at: usize) -> bool {
+    let mut line = at;
+    while line > 0 && lines[line].contains('|') {
+        let header = lines[line - 1];
+        if is_delimiter(lines[line])
+            && header.contains('|')
+            && cells(header).len() == cells(lines[line]).len()
+        {
+            return true;
+        }
+        line -= 1;
+    }
+    false
+}
+
+/// A row's cells: between its pipes, less one leading and one trailing.
+fn cells(line: &str) -> Vec<&str> {
+    let line = line.trim();
+    let line = line.strip_prefix('|').unwrap_or(line);
+    let line = line.strip_suffix('|').unwrap_or(line);
+    line.split('|').collect()
+}
+
+/// A complete delimiter row: a pipe, and every cell dashes with an
+/// optional colon at either end.
+fn is_delimiter(line: &str) -> bool {
+    line.contains('|')
+        && cells(line).iter().all(|cell| {
+            let cell = cell.trim();
+            let cell = cell.strip_prefix(':').unwrap_or(cell);
+            let cell = cell.strip_suffix(':').unwrap_or(cell);
+            !cell.is_empty() && cell.chars().all(|c| c == '-')
+        })
+}
+
+/// A line that could be a delimiter row still being written: only pipes,
+/// dashes, colons and spaces, with a dash or a pipe among them.
+fn is_delimiter_prefix(line: &str) -> bool {
+    let line = line.trim();
+    !line.is_empty()
+        && line.contains(['-', '|'])
+        && line
+            .chars()
+            .all(|c| matches!(c, '|' | '-' | ':' | ' ' | '\t'))
 }
 
 fn options() -> Options {
@@ -353,6 +463,8 @@ fn options() -> Options {
 }
 
 fn parse(source: &str) -> Vec<ProseBlock> {
+    let linked = with_bare_urls_linked(source);
+    let source = linked.as_deref().unwrap_or(source);
     let mut builder = Builder::default();
     let mut fences = Fences::new(source);
     for (event, range) in Parser::new_ext(source, options()).into_offset_iter() {
@@ -362,6 +474,76 @@ fn parse(source: &str) -> Vec<ProseBlock> {
         builder.event(event);
     }
     builder.finish()
+}
+
+/// The source with each bare web address in its prose written as an
+/// autolink (`<https://…>`), or `None` when it has none.
+///
+/// GitHub reads a bare address before emphasis, so `_`, `~` and `(` inside
+/// one are the address's. The parser reads emphasis first and splits its
+/// text at each of them, and `https://x/__init__.py` would read as strong
+/// words; finding addresses in its text events would see them cut. So the
+/// addresses are found in the source, where the parser's first reading
+/// says the text is prose: not code, not a link's own text or target, not
+/// HTML. An address ends at whitespace or `<`, within its paragraph, cell
+/// or heading, less the punctuation after it, as GitHub's does.
+fn with_bare_urls_linked(source: &str) -> Option<String> {
+    if !source.contains("http://") && !source.contains("https://") {
+        return None;
+    }
+    let mut prose: Vec<Range<usize>> = Vec::new();
+    let mut blocks: Vec<Range<usize>> = Vec::new();
+    let mut inside = 0usize;
+    let mut code = 0usize;
+    for (event, range) in Parser::new_ext(source, options()).into_offset_iter() {
+        match event {
+            Event::Start(Tag::Paragraph | Tag::Heading { .. } | Tag::TableCell) => {
+                blocks.push(range);
+            }
+            Event::Start(Tag::Link { .. } | Tag::Image { .. }) => inside += 1,
+            Event::End(TagEnd::Link | TagEnd::Image) => inside = inside.saturating_sub(1),
+            Event::Start(Tag::CodeBlock(_)) => code += 1,
+            Event::End(TagEnd::CodeBlock) => code = code.saturating_sub(1),
+            Event::Text(_) if inside == 0 && code == 0 => prose.push(range),
+            _ => {}
+        }
+    }
+    let mut out = String::with_capacity(source.len() + 16);
+    let mut copied = 0;
+    let mut from = 0;
+    while let Some(at) = find_url(&source[from..]).map(|at| from + at) {
+        let in_prose = prose.iter().any(|text| text.contains(&at));
+        let block_end = blocks
+            .iter()
+            .filter(|block| block.contains(&at))
+            .map(|block| block.end)
+            .min()
+            .unwrap_or(source.len());
+        let follows = source[..at].chars().next_back();
+        let starts_word = matches!(
+            follows,
+            None | Some(' ' | '\t' | '\n' | '*' | '_' | '~' | '(' | '"' | '\'')
+        );
+        let end = at + url_end(&source[at..block_end]);
+        let scheme = if source[at..].starts_with("https://") {
+            8
+        } else {
+            7
+        };
+        if in_prose && starts_word && end > at + scheme {
+            out.push_str(&source[copied..at]);
+            out.push('<');
+            out.push_str(&source[at..end]);
+            out.push('>');
+            copied = end;
+        }
+        from = end.max(at + 1);
+    }
+    if copied == 0 {
+        return None;
+    }
+    out.push_str(&source[copied..]);
+    Some(out)
 }
 
 /// Follows the parser's events for the fenced code block the source leaves
@@ -459,8 +641,10 @@ struct Builder {
     strong: usize,
     emphasis: usize,
     strikethrough: usize,
-    link: Option<String>,
     heading: Option<u32>,
+    /// Where the links open now go, innermost last. An image's words link
+    /// where the link around it goes, as a badge's do, else to the image.
+    links: Vec<String>,
     /// The code block being gathered: its language and its code.
     code: Option<(String, String, bool)>,
     /// The code block ending next is unclosed.
@@ -502,17 +686,22 @@ impl Builder {
         });
     }
 
-    /// Inline text, with bare web addresses linked to themselves.
-    fn text(&mut self, text: &str) {
-        if self.link.is_some() {
-            self.run(text, false, self.link.clone());
+    fn link(&self) -> Option<String> {
+        self.links.last().cloned()
+    }
+
+    /// HTML kept as its words, with the web addresses in it linked; those
+    /// in prose came as autolinks.
+    fn html(&mut self, text: &str) {
+        if self.links.last().is_some() {
+            self.run(text, false, self.link());
             return;
         }
         let mut rest = text;
         while let Some(at) = find_url(rest) {
             let (before, from) = rest.split_at(at);
             self.run(before, false, None);
-            let end = url_end(from);
+            let end = url_end(from).max(1);
             let url = &from[..end];
             self.run(url, false, Some(url.to_owned()));
             rest = &from[end..];
@@ -534,11 +723,11 @@ impl Builder {
         match event {
             Event::Start(tag) => self.start(tag),
             Event::End(tag) => self.end(tag),
-            Event::Text(text) => self.text(&text),
-            Event::Code(code) => self.run(&code, true, self.link.clone()),
+            Event::Text(text) => self.run(&text, false, self.link()),
+            Event::Code(code) => self.run(&code, true, self.link()),
             Event::SoftBreak | Event::HardBreak => self.runs.push(InlineRun::plain("\n")),
             // Markup amux does not draw is kept as its words.
-            Event::Html(html) | Event::InlineHtml(html) => self.text(&html),
+            Event::Html(html) | Event::InlineHtml(html) => self.html(&html),
             Event::Rule => {
                 self.flush();
                 self.push_block(ProseBlock::Rule);
@@ -548,7 +737,7 @@ impl Builder {
                     *task = Some(done);
                 }
             }
-            Event::FootnoteReference(name) => self.text(&format!("[{name}]")),
+            Event::FootnoteReference(name) => self.run(&format!("[{name}]"), false, self.link()),
             Event::InlineMath(text) | Event::DisplayMath(text) => self.run(&text, true, None),
         }
     }
@@ -619,9 +808,19 @@ impl Builder {
             Tag::Emphasis => self.emphasis += 1,
             Tag::Strong => self.strong += 1,
             Tag::Strikethrough => self.strikethrough += 1,
-            // An image is drawn as its words, linking to it.
-            Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. } => {
-                self.link = Some(dest_url.into_string());
+            // An address in angle brackets that is an email address is
+            // written to send mail to it.
+            Tag::Link {
+                link_type: LinkType::Email,
+                dest_url,
+                ..
+            } => self.links.push(format!("mailto:{dest_url}")),
+            Tag::Link { dest_url, .. } => self.links.push(dest_url.into_string()),
+            // An image is drawn as its words, linking where the link
+            // around it goes, else to the image.
+            Tag::Image { dest_url, .. } => {
+                let target = self.link().unwrap_or_else(|| dest_url.into_string());
+                self.links.push(target);
             }
             _ => {}
         }
@@ -710,7 +909,9 @@ impl Builder {
             TagEnd::Emphasis => self.emphasis = self.emphasis.saturating_sub(1),
             TagEnd::Strong => self.strong = self.strong.saturating_sub(1),
             TagEnd::Strikethrough => self.strikethrough = self.strikethrough.saturating_sub(1),
-            TagEnd::Link | TagEnd::Image => self.link = None,
+            TagEnd::Link | TagEnd::Image => {
+                self.links.pop();
+            }
             _ => {}
         }
     }
@@ -744,12 +945,30 @@ fn find_url(text: &str) -> Option<usize> {
         .min()
 }
 
-/// How far a bare web address at the start of `text` runs: to whitespace,
-/// less the sentence's punctuation after it.
+/// How far a bare web address at the start of `text` runs: to whitespace
+/// or `<`, less the sentence's punctuation after it. A closing parenthesis
+/// is the address's while it closes one the address opened, as in
+/// `wiki/Rust_(lang)`, and the sentence's when it does not, as in
+/// `(see https://x)`.
 fn url_end(text: &str) -> usize {
-    let end = text.find(char::is_whitespace).unwrap_or(text.len());
-    let trimmed = text[..end].trim_end_matches(['.', ',', ';', ':', '!', '?', ')', '\'', '"']);
-    trimmed.len()
+    let end = text
+        .find(|c: char| c.is_whitespace() || c == '<')
+        .unwrap_or(text.len());
+    let mut url = &text[..end];
+    loop {
+        let trimmed =
+            url.trim_end_matches(['.', ',', ';', ':', '!', '?', '*', '_', '~', '\'', '"']);
+        let unbalanced =
+            trimmed.ends_with(')') && trimmed.matches(')').count() > trimmed.matches('(').count();
+        url = if unbalanced {
+            &trimmed[..trimmed.len() - 1]
+        } else {
+            trimmed
+        };
+        if !unbalanced {
+            return url.len();
+        }
+    }
 }
 
 #[cfg(test)]

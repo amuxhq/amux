@@ -4,7 +4,35 @@
 use super::*;
 
 fn blocks(source: &str) -> Vec<ProseBlock> {
-    Markdown::parse(source, false).blocks
+    Markdown::parse(source, false).blocks.as_ref().clone()
+}
+
+fn streamed(source: &str) -> Vec<ProseBlock> {
+    Markdown::parse(source, true).blocks.as_ref().clone()
+}
+
+/// Every link in `source` read whole: each run's text with its target.
+fn links(source: &str) -> Vec<(String, String)> {
+    fn walk(blocks: &[ProseBlock], out: &mut Vec<(String, String)>) {
+        for block in blocks {
+            match block {
+                ProseBlock::Heading { text, .. } | ProseBlock::Paragraph { text } => out.extend(
+                    text.iter()
+                        .filter_map(|run| Some((run.text.clone(), run.link.clone()?))),
+                ),
+                ProseBlock::Quote { blocks } => walk(blocks, out),
+                ProseBlock::List { items, .. } => {
+                    for item in items {
+                        walk(&item.blocks, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&blocks(source), &mut out);
+    out
 }
 
 fn text(runs: &[InlineRun]) -> String {
@@ -330,7 +358,7 @@ fn pipes_without_a_delimiter_row_are_a_paragraph() {
 fn a_streaming_table_header_waits_for_its_delimiter_row() {
     let header = "Here:\n\n| a | b |";
     assert_eq!(
-        Markdown::parse(header, true).blocks,
+        streamed(header),
         vec![ProseBlock::Paragraph {
             text: vec![InlineRun::plain("Here:")]
         }]
@@ -674,4 +702,174 @@ fn the_blocks_cross_as_json() {
         r##"{"source":"# Hi\n\n- [x] `a`","blocks":[{"Heading":{"level":1,"text":[{"text":"Hi","strong":false,"emphasis":false,"strikethrough":false,"code":false,"link":null}]}},{"List":{"ordered":false,"start":1,"depth":0,"items":[{"task":true,"blocks":[{"Paragraph":{"text":[{"text":"a","strong":false,"emphasis":false,"strikethrough":false,"code":true,"link":null}]}}]}]}}]}"##
     );
     assert_eq!(serde_json::from_str::<Markdown>(&json).unwrap(), parsed);
+}
+
+/// A streaming reply keeps only its latest revisions, so a long one
+/// arriving in many pieces neither holds every revision nor pushes out the
+/// finished parses other rows share.
+#[test]
+fn streaming_one_long_reply_keeps_finished_parses_and_little_else() {
+    let settled = Markdown::parse("A finished reply, read before the stream.", false);
+    let mut reply = String::new();
+    for piece in 0..1000 {
+        reply.push_str(&format!("Piece {piece} of a long answer. "));
+        let _ = Markdown::parse(&reply, true);
+    }
+    let again = Markdown::parse("A finished reply, read before the stream.", false);
+    assert!(
+        Arc::ptr_eq(&settled.blocks, &again.blocks),
+        "the finished parse was pushed out"
+    );
+    let kept = KEPT.lock().unwrap();
+    assert!(kept.streaming.len() <= KEPT_STREAMING);
+    let held: usize = kept.streaming.iter().map(|(source, _)| source.len()).sum();
+    assert!(
+        held <= KEPT_STREAMING * reply.len(),
+        "streaming revisions held {held} bytes"
+    );
+    // The latest revision is the one found again, shared.
+    drop(kept);
+    assert!(Arc::ptr_eq(
+        &Markdown::parse(&reply, true).blocks,
+        &Markdown::parse(&reply, true).blocks
+    ));
+}
+
+/// A bare address is read before emphasis, as GitHub reads it: the
+/// characters the parser splits its text at stay the address's.
+#[test]
+fn a_bare_address_is_whole_where_the_parser_splits_its_text() {
+    for url in [
+        "https://nextjs.org/docs/_next/static",
+        "https://en.wikipedia.org/wiki/Rust_(lang)",
+        "https://example.com/~user/page",
+        "https://github.com/a/b/blob/main/__init__.py",
+    ] {
+        let source = format!("See {url} for it.");
+        assert_eq!(
+            links(&source),
+            [(url.to_owned(), url.to_owned())],
+            "{source}"
+        );
+        assert!(
+            paragraph(&blocks(&source)[0])
+                .iter()
+                .all(|run| !run.strong && !run.emphasis),
+            "{source} gained emphasis"
+        );
+    }
+    // A parenthesis the address did not open is the sentence's.
+    assert_eq!(
+        links("(see https://example.com/a)"),
+        [(
+            "https://example.com/a".to_owned(),
+            "https://example.com/a".to_owned()
+        )]
+    );
+    // Emphasis around an address is still emphasis.
+    let strong = blocks("**https://example.com**");
+    let runs = paragraph(&strong[0]);
+    assert_eq!(runs.len(), 1);
+    assert!(runs[0].strong);
+    assert_eq!(runs[0].link.as_deref(), Some("https://example.com"));
+    // Code and a link's own words are left as they are.
+    assert_eq!(links("`https://example.com/_x_`"), []);
+    assert_eq!(
+        links("[the docs https://example.com](https://example.org)"),
+        [(
+            "the docs https://example.com".to_owned(),
+            "https://example.org".to_owned()
+        )]
+    );
+}
+
+/// An email address in angle brackets is written to send mail, so a
+/// client that opens only web and mail links opens it.
+#[test]
+fn an_email_autolink_sends_mail() {
+    assert_eq!(
+        links("Write to <ada@example.com>."),
+        [(
+            "ada@example.com".to_owned(),
+            "mailto:ada@example.com".to_owned()
+        )]
+    );
+}
+
+/// A badge is an image inside a link: its words link where the link goes,
+/// not to the picture.
+#[test]
+fn an_image_inside_a_link_links_where_the_link_goes() {
+    assert_eq!(
+        links("[![build passing](https://ci.example.com/badge.svg)](https://ci.example.com/run)"),
+        [(
+            "build passing".to_owned(),
+            "https://ci.example.com/run".to_owned()
+        )]
+    );
+    assert_eq!(
+        links("![chart](https://example.com/chart.png)"),
+        [(
+            "chart".to_owned(),
+            "https://example.com/chart.png".to_owned()
+        )]
+    );
+}
+
+/// While a table's delimiter row is still being written, neither it nor
+/// its header draws: either would read as a paragraph or a heading first.
+#[test]
+fn a_streaming_table_waits_for_its_whole_delimiter_row() {
+    let intro = vec![ProseBlock::Paragraph {
+        text: vec![InlineRun::plain("Here:")],
+    }];
+    for partial in [
+        "Here:\n\n| a | b |",
+        "Here:\n\n| a | b |\n",
+        "Here:\n\n| a | b |\n|",
+        "Here:\n\n| a | b |\n|-",
+        "Here:\n\n| a | b |\n|---|",
+        "Here:\n\na | b\n--",
+        "Here:\n\na | b\n--|",
+    ] {
+        assert_eq!(streamed(partial), intro, "{partial:?}");
+    }
+    for whole in [
+        "Here:\n\n| a | b |\n|---|---|",
+        // Two cells of dashes are a whole delimiter row already.
+        "Here:\n\n| a | b |\n|---|-",
+        "Here:\n\n| a | b |\n|---|---|\n| 1",
+        "Here:\n\na | b\n--|--",
+    ] {
+        assert!(
+            matches!(streamed(whole).last(), Some(ProseBlock::Table { .. })),
+            "{whole:?}"
+        );
+    }
+    // A paragraph that only mentions a pipe draws as it streams.
+    assert_eq!(
+        streamed("Run `a | b` first"),
+        vec![ProseBlock::Paragraph {
+            text: vec![
+                InlineRun::plain("Run "),
+                InlineRun {
+                    code: true,
+                    ..InlineRun::plain("a | b")
+                },
+                InlineRun::plain(" first"),
+            ],
+        }]
+    );
+    // Pipes in a code block being written are its code.
+    assert!(matches!(
+        streamed("```\n| a | b |")[..],
+        [ProseBlock::Code { .. }]
+    ));
+}
+
+/// A label that reads as a table keeps its words.
+#[test]
+fn a_label_that_looks_like_a_table_keeps_its_words() {
+    assert_eq!(runs_text(&inline_runs("a | b\n--|--")), "a | b\n--|--");
+    assert_eq!(runs_text(&inline_runs("| a |\n|---|")), "| a |\n|---|");
 }

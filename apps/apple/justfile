@@ -34,10 +34,13 @@ tools:
 
 # The rules the screens package is written to: SwiftUI only outside a
 # registered leaf, no platform conditionals, no spinners. Pure text, so it runs
-# before anything is compiled and says which line is wrong.
+# before anything is compiled and says which line is wrong. Then the generated
+# Swift mirror against the Rust it mirrors: premerge runs this recipe and
+# nothing else of the Apple side's, so a stale mirror would otherwise pass.
 # Check the Swift sources against the screens package's writing rules.
 lint:
     {{bounded}} 300 sh -c 'sh apps/apple/Tools/feature-lint.sh && sh apps/apple/Tools/test-waits-lint.sh && apps/apple/Tools/strings-lint.sh'
+    {{bounded}} 300 cargo run --locked -p ios-tools -- swift-types --check
 
 # The bridge slice a development build links: the simulator, with the
 # driving tools, under the `phone-dev` profile (release without LTO), and with

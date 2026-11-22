@@ -185,6 +185,50 @@ pub struct Provider {
     /// the whole tree.
     #[cfg_attr(not(windows), allow(dead_code))]
     behind_shim: bool,
+    /// The plain child's own process, for a kill that ends it at once.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    process: Process,
+}
+
+/// A plain child's process, held for [`Provider::kill`]. On Windows, a
+/// handle of its own to the child's process, duplicated from the child's,
+/// so it stays valid after the task waiting on the child has reaped and
+/// dropped it: terminating a process that has already exited through it
+/// does nothing. Elsewhere nothing: a kill there signals the child's group.
+#[derive(Default)]
+struct Process(#[cfg(windows)] Option<std::os::windows::io::OwnedHandle>);
+
+impl Process {
+    fn of(child: &tokio::process::Child) -> Self {
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::BorrowedHandle;
+            Self(child.raw_handle().and_then(|raw| {
+                // SAFETY: the child is alive and owns this handle for the
+                // length of the borrow, which only duplicates it.
+                unsafe { BorrowedHandle::borrow_raw(raw) }
+                    .try_clone_to_owned()
+                    .ok()
+            }))
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = child;
+            Self()
+        }
+    }
+
+    /// Ends the process now, without waiting for it.
+    #[cfg(windows)]
+    fn terminate(&self) {
+        use std::os::windows::io::AsRawHandle as _;
+        if let Some(handle) = &self.0 {
+            // SAFETY: the handle is this value's own, open until it drops.
+            unsafe {
+                windows_sys::Win32::System::Threading::TerminateProcess(handle.as_raw_handle(), 1);
+            }
+        }
+    }
 }
 
 /// Asked of headless Claude so a command's row can open on what it is for
@@ -285,6 +329,7 @@ impl Provider {
             source,
         })?;
         let pid = child.id();
+        let process = Process::of(&child);
         // Claude finishes its turn after its input closes: tethered, it is
         // asked to finish when the agent dies instead.
         #[cfg(unix)]
@@ -348,6 +393,7 @@ impl Provider {
             takes: None,
             acp_opening: None,
             behind_shim: false,
+            process,
         };
         // Claude reports nothing until it is asked; its answer is what says
         // it takes input. amux's interrupt ends the turn and leaves
@@ -410,6 +456,7 @@ impl Provider {
             }
         })?;
         let pid = child.id();
+        let process = Process::of(&child);
         #[cfg(unix)]
         let tether = match &listen {
             crate::codex::Listen::Unix(_) => match pty_host::Tether::new(&child) {
@@ -627,6 +674,7 @@ impl Provider {
             takes: None,
             acp_opening: None,
             behind_shim: false,
+            process,
         })
     }
 
@@ -698,6 +746,7 @@ impl Provider {
             source,
         })?;
         let pid = child.id();
+        let process = Process::of(&child);
         // An agent may run on after its input closes: tethered, it is asked
         // to finish when the agent process dies instead.
         #[cfg(unix)]
@@ -862,6 +911,7 @@ impl Provider {
             takes: Some(takes),
             acp_opening: Some(opening_sent),
             behind_shim,
+            process,
         })
     }
 
@@ -1017,6 +1067,7 @@ impl Provider {
             takes: None,
             acp_opening: None,
             behind_shim: false,
+            process: Process::default(),
         })
     }
 
@@ -1411,8 +1462,7 @@ impl Provider {
             // that long on a loaded machine. The shim itself is killed only
             // once taskkill is done (or has had its time), since a tree
             // whose root has gone can no longer be found from it. Started,
-            // taskkill runs on even if this process ends first. Any other
-            // child is killed at once by the task waiting on it.
+            // taskkill runs on even if this process ends first.
             #[cfg(windows)]
             if self.behind_shim
                 && let Some(pid) = self.pid
@@ -1424,6 +1474,13 @@ impl Provider {
                 });
                 return;
             }
+            // Any other child ends here, before this returns: the agent
+            // process exits right after a kill, which can drop the task
+            // waiting on the child before that task has killed it, and the
+            // child would outlive the agent, holding its folder and the
+            // handles it inherited. The task then sees it exit.
+            #[cfg(windows)]
+            self.process.terminate();
             let _ = kill.send(());
         }
     }

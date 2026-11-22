@@ -1618,6 +1618,12 @@ const FIRST: &str = "The recovery state is safely stored.";
 const SECOND: &str = "A second turn arrived while you were away.";
 const THIRD: &str = "Back after the restart.";
 const DRAFT: &str = "Pick up where we left off.";
+/// How long a desk keeps its agents with its daemon stopped, in the
+/// topologies whose stories stop it and wait for it to come back:
+/// `agent_grace_secs` in phone-stories.json and phone-push.json. It is longer
+/// than a phone's dial to a gone desk takes to fail and the acts a story
+/// makes meanwhile, and the stories say so plainly when an outage outgrows it.
+const DESK_GRACE: Duration = Duration::from_secs(120);
 
 /// The open chat says the desk is out of reach: its own field and header.
 /// Any label saying so is not enough, as the fleet under the chat still
@@ -1626,6 +1632,12 @@ const DRAFT: &str = "Pick up where we left off.";
 fn desk_out_of_reach(drawn: &Drawn) -> bool {
     drawn.label("chat.field") == "desk is out of reach · your draft is kept"
         && drawn.label("chat.header") == "desk · away"
+}
+
+/// The open chat's header says the desk is away, its link not up: what a
+/// chat whose composer an ask has taken shows of the desk being gone.
+fn desk_away(drawn: &Drawn) -> bool {
+    drawn.label("chat.header") == "desk · away" && drawn.value("chat.header") == "detached"
 }
 
 /// The open chat's own head says its agent stopped while amux was stopped.
@@ -1703,7 +1715,18 @@ fn leave_and_recover<D: Driver>(journey: &mut D) -> Proved {
     );
 
     // The desk comes back: the missed turn appends once, and the chat says
-    // it is current only once it has.
+    // it is current only once it has. Its agents outlive its daemon by the
+    // grace its topology gives them, which is longer than the phone's dial
+    // timeout and the acts above take; an outage past it ends the agent,
+    // and the chat would rightly never offer Send, so it is said plainly.
+    let outage = away.elapsed();
+    if outage >= DESK_GRACE {
+        return Err(format!(
+            "the desk was away {}s, past the {}s its agents outlive its daemon",
+            outage.as_secs(),
+            DESK_GRACE.as_secs()
+        ));
+    }
     journey.request(restart_daemon("desk"), None)?;
     let deadline = Instant::now() + Duration::from_secs(60);
     let drawn = loop {
@@ -1715,7 +1738,16 @@ fn leave_and_recover<D: Driver>(journey: &mut D) -> Proved {
             break drawn;
         }
         if Instant::now() > deadline {
-            return Err("the chat did not come back after the desk did".to_owned());
+            let desk = journey.request(
+                Control::Inventory {
+                    host: "desk".to_owned(),
+                },
+                Some("desk-after-return"),
+            )?;
+            return Err(format!(
+                "the chat did not come back after the desk did; the desk lists {}",
+                desk["agents"]
+            ));
         }
         std::thread::sleep(Duration::from_millis(100));
     };
@@ -2832,6 +2864,7 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
         Duration::from_secs(120),
     )?;
     journey.app(json!({"kind": "awaitBackground", "seconds": 10}))?;
+    let away = Instant::now();
     journey
         .record()
         .actions
@@ -2856,6 +2889,23 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
         |chat| phase(chat) == "NEEDS_YOU",
         "asker-needs-you",
     )?;
+
+    // The push names the asker. Handled in the background, it brings that
+    // one chat current and nothing else. It is handed over as soon as the
+    // asker needs the person: the background time the app holds is the
+    // system's to end, about half a minute after the app went away, and an
+    // app it ends cannot answer its door.
+    let payload = needs_you_push(journey, "asker")?;
+    let handed = Instant::now();
+    push_to_handler(journey, &payload)?;
+    journey.record().observations.insert(
+        "push-seconds".to_owned(),
+        json!({
+            "away-before-push": (handed.duration_since(away).as_secs_f64() * 10.0).round() / 10.0,
+            "handling": (handed.elapsed().as_secs_f64() * 10.0).round() / 10.0,
+        }),
+    );
+    // The bystander answers while the app is away all the same.
     journey.wait_chat(
         "desk",
         "bystander",
@@ -2863,13 +2913,9 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
         "bystander-answered",
     )?;
 
-    // The push names the asker. Handled in the background, it brings that
-    // one chat current and nothing else.
-    let payload = needs_you_push(journey, "asker")?;
-    push_to_handler(journey, &payload)?;
-
     // With the desk gone, what the phone holds is what the push fetched.
     journey.request(stop_daemon("desk"), None)?;
+    let gone = Instant::now();
     simctl(
         &["launch", &journey.udid, BUNDLE_ID],
         Duration::from_secs(120),
@@ -2896,16 +2942,18 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
         "the desk offline on the phone",
     )?;
     journey.tap(&asker_row)?;
+    // The chat opens dialling the desk and reads it away once the dial
+    // fails; it is photographed at rest, away.
     journey.wait(
-        |drawn| drawn.has("ask") && labelled(drawn, "deploy --prod"),
-        "the asker's ask, fetched by the push",
+        |drawn| drawn.has("ask") && labelled(drawn, "deploy --prod") && desk_away(drawn),
+        "the asker's ask, fetched by the push, with the desk away",
     )?;
     journey.screen("warmed", &["chat.row.turn-end"])?;
     back_to_fleet(journey)?;
     journey.tap(&bystander_row)?;
     let drawn = journey.wait(
-        |drawn| labelled(drawn, "Watching the logs.") && drawn.has("chat.field"),
-        "the bystander's chat",
+        |drawn| labelled(drawn, "Watching the logs.") && desk_out_of_reach(drawn),
+        "the bystander's chat, with the desk away",
     )?;
     if labelled(&drawn, "The logs are quiet.") {
         return Err(
@@ -2917,6 +2965,18 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
 
     // In the foreground every agent is listed again: the desk back, the
     // bystander's answer arrives, and the ask is answered from the phone.
+    let outage = gone.elapsed();
+    journey.record().observations.insert(
+        "seconds-desk-stopped".to_owned(),
+        json!((outage.as_secs_f64() * 10.0).round() / 10.0),
+    );
+    if outage >= DESK_GRACE {
+        return Err(format!(
+            "the desk was stopped {}s, past the {}s its agents outlive its daemon",
+            outage.as_secs(),
+            DESK_GRACE.as_secs()
+        ));
+    }
     journey.request(restart_daemon("desk"), None)?;
     journey.tap(&bystander_row)?;
     journey.wait_within(
@@ -2941,8 +3001,12 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
         |chat| phase(chat) == "IDLE" && super::holds(chat, "Deployed to production."),
         "asker-answered",
     )?;
+    // Opened again, the chat dials the desk afresh and reads it away until
+    // the link is up; it is photographed once the desk reads live.
     reopen(journey, &asker, |drawn| {
-        labelled(drawn, "Deployed to production.") && drawn.has("chat.row.turn-end")
+        labelled(drawn, "Deployed to production.")
+            && drawn.has("chat.row.turn-end")
+            && drawn.value("chat.header") == "live"
     })?;
     // The command row's duration is how long the ask waited on the phone.
     journey.screen("answered", &["chat.row.turn-end", "chat.row.command"])?;
@@ -3359,6 +3423,19 @@ mod tests {
             Ok(stories().iter().map(|(id, _)| (*id).to_owned()).collect())
         );
         assert!(selected(false, vec!["no-such-story".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn the_desk_outlives_its_daemon_by_the_grace_its_topology_gives() {
+        for topology in ["phone-stories.json", "phone-push.json"] {
+            let topology = read_json(&root().join("journeys/topologies").join(topology))
+                .expect("the topology");
+            let desk = topology["hosts"]
+                .as_array()
+                .and_then(|hosts| hosts.iter().find(|host| host["name"] == "desk"))
+                .expect("a desk");
+            assert_eq!(desk["agent_grace_secs"], DESK_GRACE.as_secs());
+        }
     }
 
     #[test]

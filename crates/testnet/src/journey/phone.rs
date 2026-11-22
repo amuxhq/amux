@@ -1393,8 +1393,12 @@ pub(crate) fn ask(
     request: &Value,
     timeout: Duration,
 ) -> Result<Value, AppError> {
-    let unreachable =
-        |error: std::io::Error| AppError::Unreachable(format!("the app's door: {error}"));
+    // Which request went unanswered is half of what a failure says: a read
+    // that times out reads "Resource temporarily unavailable" on its own.
+    let kind = request["kind"].as_str().unwrap_or("request").to_owned();
+    let unreachable = |error: std::io::Error| {
+        AppError::Unreachable(format!("the app's door, asked {kind:?}: {error}"))
+    };
     let mut stream = TcpStream::connect_timeout(&address, timeout).map_err(unreachable)?;
     stream
         .set_read_timeout(Some(timeout))

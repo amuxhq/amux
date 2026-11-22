@@ -1,7 +1,7 @@
 {
   "scope": "phone-push",
   "hosts": [
-    {"name": "desk", "lan": true, "bonjour": true}
+    {"name": "desk", "lan": true, "bonjour": true, "agent_grace_secs": 120}
   ],
   "settle": true,
   "agents": [

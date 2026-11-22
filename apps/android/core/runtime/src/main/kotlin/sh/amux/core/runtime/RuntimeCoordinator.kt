@@ -7,14 +7,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import sh.amux.values.Found
 import sh.amux.values.ProfileView
 import sh.amux.values.StartConfig
@@ -118,6 +117,7 @@ class RuntimeCoordinator(
     private var openingGeneration: Int = 0
     private var launchGeneration: Int = 0
     private var startingJob: Job? = null
+    private var nativeStart: Job? = null
     private var lastFedJob: Job? = null
     private var opening: Job? = null
     private var openingTarget: Pair<String, StoreBundle>? = null
@@ -171,36 +171,21 @@ class RuntimeCoordinator(
         )
         val job = scope.launch(start = CoroutineStart.LAZY) {
             teardown?.join()
-            var startedRuntime: Runtime? = null
-            try {
-                val result: Result<Runtime> = withContext(ioDispatcher) {
-                    try {
-                        dir.mkdirs()
-                        val created = starter.start(
-                            config,
-                            dispatch,
-                            { listed -> profilesMoved(listed, expectedLaunch) },
-                            { reason -> stoppedByItself(reason, expectedLaunch) },
-                        )
-                        startedRuntime = created
-                        Result.success(created)
-                    } catch (f: RuntimeFailure) {
-                        Result.failure(f)
-                    } catch (t: Throwable) {
-                        Result.failure(RuntimeFailure(t.message ?: t.toString()))
-                    }
-                }
-                if (onStarted(result, expectedLaunch)) {
-                    startedRuntime = null
-                }
-            } finally {
-                val orphan = startedRuntime
-                if (orphan != null) {
-                    withContext(NonCancellable + ioDispatcher) {
-                        orphan.stop()
-                    }
-                }
+            // The native start runs on its own job, off [scope]: a stop waits
+            // for it and nothing else, so a stop made on the main thread that
+            // blocks until the runtime is down never waits on the main thread.
+            val native = teardownScope.async(start = CoroutineStart.LAZY) {
+                startNative(config, dir, expectedLaunch)
             }
+            val current = synchronized(waiterLock) {
+                (expectedLaunch == launchGeneration).also { if (it) nativeStart = native }
+            }
+            if (!current) {
+                native.cancel()
+                return@launch
+            }
+            native.start()
+            native.await()?.let { onStarted(it, expectedLaunch) }
         }
         val shouldStart = synchronized(waiterLock) {
             if (expectedLaunch == launchGeneration && runtime == null) {
@@ -218,6 +203,41 @@ class RuntimeCoordinator(
     }
 
     /**
+     * Starts the native runtime and, while this launch is still the current
+     * one, makes it this coordinator's, so a stop from then on stops it. A
+     * launch a stop has superseded stops what it started itself, before its
+     * job ends, and returns null.
+     */
+    private fun startNative(config: StartConfig, dir: File, expectedLaunch: Int): Result<Runtime>? {
+        val result = try {
+            dir.mkdirs()
+            Result.success(
+                starter.start(
+                    config,
+                    dispatch,
+                    { listed -> profilesMoved(listed, expectedLaunch) },
+                    { reason -> stoppedByItself(reason, expectedLaunch) },
+                ),
+            )
+        } catch (f: RuntimeFailure) {
+            Result.failure(f)
+        } catch (t: Throwable) {
+            Result.failure(RuntimeFailure(t.message ?: t.toString()))
+        }
+        val created = result.getOrNull()
+        val owned = synchronized(waiterLock) {
+            (expectedLaunch == launchGeneration).also { current ->
+                if (current && created != null) runtime = created
+            }
+        }
+        if (!owned) {
+            created?.stop()
+            return null
+        }
+        return result
+    }
+
+    /**
      * Hands a freshly started [Runtime] to this coordinator.
      *
      * Returns `true` if ownership transferred to `this.runtime` (or no runtime was
@@ -229,6 +249,7 @@ class RuntimeCoordinator(
                 return false
             }
             startingJob = null
+            nativeStart = null
             result.getOrNull()?.let { runtime = it }
         }
         result.fold(
@@ -292,11 +313,14 @@ class RuntimeCoordinator(
     fun stop(): Job {
         closeProfile()
         val jobToCancel: Job?
+        val startToAwait: Job?
         val runtimeToStop: Runtime?
         synchronized(waiterLock) {
             launchGeneration += 1
             jobToCancel = startingJob
             startingJob = null
+            startToAwait = nativeStart
+            nativeStart = null
             runtimeToStop = runtime
             runtime = null
         }
@@ -308,10 +332,10 @@ class RuntimeCoordinator(
         val previous = teardown
         val job = teardownScope.launch {
             previous?.join()
-            // A start cancelled here may still hand back a runtime, which its
-            // own job then stops; waiting for that job keeps a later start
-            // from opening the installation while that runtime still holds it.
-            jobToCancel?.join()
+            // A native start under way when this stop came stops what it
+            // started itself; waiting for it keeps a later start from opening
+            // the installation while that runtime still holds it.
+            startToAwait?.join()
             runtimeToStop?.stop()
         }
         teardown = job

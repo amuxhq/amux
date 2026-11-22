@@ -2,6 +2,7 @@ package sh.amux.core.runtime
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import sh.amux.push.PushKeyFailure
@@ -92,7 +93,12 @@ class FcmPushRegistrar(
     private fun settle() {
         unsettled = true
         if (settling != null) return
-        settling = scope.launch {
+        // Started only once it is held in [settling]: on an immediate main
+        // dispatcher a pass with nothing to wait for runs to its end inside
+        // launch, and its finally would clear [settling] before the
+        // assignment then held a finished job there for good, so that
+        // [settled] spun on the main thread forever.
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 while (unsettled) {
                     unsettled = false
@@ -105,6 +111,8 @@ class FcmPushRegistrar(
                 settling = null
             }
         }
+        settling = job
+        job.start()
     }
 
     private suspend fun settle(account: PushAccount) {

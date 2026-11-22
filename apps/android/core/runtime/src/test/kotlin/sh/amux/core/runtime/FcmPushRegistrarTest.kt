@@ -1,7 +1,13 @@
 package sh.amux.core.runtime
 
 import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -198,5 +204,32 @@ class FcmPushRegistrarTest {
 
         assertEquals(firstKey, keys.key(hostId.toString()))
         assertEquals(listOf("fcm-tok-1", "fcm-tok-2"), cloud.registered.map { it.third.token })
+    }
+
+    @Test
+    fun aPassThatFinishesWhereItStartsLeavesNothingToWaitFor() {
+        // The app's scope dispatches immediately on the main thread, so a
+        // pass with nothing to suspend on runs to its end inside settle();
+        // waiting for it afterwards must return, as signing out waits on it.
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val registrar = FcmPushRegistrar(
+            keys = InMemoryPushKeyStore(),
+            cloud = RecordingCloud(),
+            environment = PushDevice.Environment.Production,
+            scope = scope,
+            host = { null },
+            say = { _, _ -> true },
+        )
+        try {
+            runBlocking {
+                withTimeout(5_000L) {
+                    registrar.updateAccounts(listOf(PushAccount(account, "prof-1", wanted = false)))
+                    registrar.withdraw(account)
+                    registrar.settled()
+                }
+            }
+        } finally {
+            scope.cancel()
+        }
     }
 }

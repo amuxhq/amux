@@ -443,4 +443,73 @@ class RuntimeCoordinatorTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun aStopTheMainThreadBlocksOnFinishesWhileAStartIsStillOpening() {
+        // What replaces a composition (the debug door, tests) stops its
+        // runtime on the main thread and blocks until it is down; a start
+        // still opening must not need that thread to finish.
+        val tempDir = Files.createTempDirectory("amux-coordinator-blocked-stop").toFile()
+        val mainExecutor = Executors.newSingleThreadExecutor { r ->
+            Thread(r, "test-blocked-main").apply { isDaemon = true }
+        }
+        val mainDispatcher = mainExecutor.asCoroutineDispatcher()
+        val scope = CoroutineScope(SupervisorJob() + mainDispatcher)
+        val dispatch: (() -> Unit) -> Unit = { block -> mainExecutor.execute(block) }
+
+        val stopped = java.util.Collections.synchronizedList(mutableListOf<Long>())
+        val rang = java.util.concurrent.CountDownLatch(1)
+        val bridge = object : CoreLoopBridge {
+            override fun runtimeStart(configJson: String): Long = 1
+            override fun runtimeStop(handle: Long) { stopped.add(handle) }
+            override fun runtimeWaitWake(handle: Long, timeoutMs: Int): Int {
+                rang.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                return -1
+            }
+            override fun runtimeInterruptWake(handle: Long) = rang.countDown()
+            override fun runtimeStep(handle: Long): String? = null
+        }
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val coordinator = RuntimeCoordinator(
+            registry = AccountRegistry(makeStores = { id -> StoreBundle(account = id, scope = scope) }),
+            installationDir = tempDir,
+            deviceName = "Blocked Stop Test",
+            signedOutStores = StoreBundle(account = AccountId("signed-out"), scope = scope),
+            scope = scope,
+            ioDispatcher = Dispatchers.IO,
+            dispatch = dispatch,
+            options = RuntimeCoordinator.Options(lan = false),
+            starter = RuntimeStarter { config, disp, onProfilesMoved, onStopped ->
+                entered.countDown()
+                release.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                Runtime.start(
+                    config,
+                    CoreLoop(dispatch = disp, onProfilesMoved = onProfilesMoved, onStopped = onStopped, bridge = bridge),
+                )
+            },
+        )
+
+        try {
+            mainExecutor.submit { coordinator.start() }.get(5, java.util.concurrent.TimeUnit.SECONDS)
+            assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            val finished = mainExecutor.submit<Boolean> {
+                val stopping = coordinator.stop()
+                release.countDown()
+                // Blocks this thread, the coordinator's main thread, as
+                // Composition.shutdown does.
+                runBlocking { withTimeout(10_000L) { stopping.join() } }
+                true
+            }
+            assertTrue(finished.get(15, java.util.concurrent.TimeUnit.SECONDS))
+            assertEquals("the runtime the start opened is stopped", listOf(1L), stopped.toList())
+            assertNull(coordinator.runtime)
+        } finally {
+            release.countDown()
+            runBlocking { coordinator.stop().join() }
+            scope.cancel()
+            mainExecutor.shutdownNow()
+            tempDir.deleteRecursively()
+        }
+    }
 }

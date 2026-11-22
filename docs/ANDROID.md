@@ -421,9 +421,9 @@ The app has not been released. `just android release` and `deploy` exist
 setup); what is still missing is outside this repository or waits on it:
 
 - **Signing.** No upload key exists yet, and `sh.amux.android` is not yet in
-  Play Console. Until there is a key, the release build is signed with the
-  debug key so that `just android release-smoke` can install it; Google Play
-  refuses that signature.
+  Play Console. Without the key a release build is unsigned
+  (`app-release-unsigned.apk`); only `just android release-smoke` signs its
+  build with the debug key, so it installs on an emulator.
 - **The version.** `versionName` and `versionCode` in
   `apps/android/app/build.gradle.kts` (`0.1.0` and `1`) stand in until the
   first `just android release` writes them from its tags. Like the iPhone

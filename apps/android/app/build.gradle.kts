@@ -56,13 +56,15 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            // Without the upload key, the release build is signed with the
-            // debug key so it installs on an emulator for the launch smoke
-            // test. Google Play refuses that signature, so it cannot ship.
-            signingConfig = if (releaseStoreFile != null) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            // Signed with the upload key when one is given. Only the launch
+            // smoke test's run (`just android release-smoke`, which sets
+            // amux.releaseSmoke) signs with the debug key, so the APK installs
+            // on an emulator; any other release build without the upload key
+            // stays unsigned, so a missing key shows here and not at Play.
+            signingConfig = when {
+                releaseStoreFile != null -> signingConfigs.getByName("release")
+                releaseSmoke -> signingConfigs.getByName("debug")
+                else -> null
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

@@ -111,9 +111,9 @@ can always reply in your own words instead.
 Open an agent's changes from its chat: the changes count at the top, **Review
 Changes** in the **⋮** menu, the overview's **Review changes**, or the review
 chip in the message box. Reviews need the reviews experiment on the agent's
-computer; [Reviewing changes](reviews.md) explains how to switch it on, and how
+device; [Reviewing changes](reviews.md) explains how to switch it on, and how
 comments, rounds and **Since your last review** work. Without it, the review
-says the computer doesn't offer reviews. On the phone:
+says the device doesn't offer reviews. On the phone:
 
 - **Reading:** the review holds still while you read. If the agent changes
   code meanwhile, the page says so and **Refresh** brings it up to date;

@@ -18,10 +18,11 @@ object NewAgentMappers {
         hosts = state.hosts,
         selectedHostId = state.machine?.bytes,
         connectingHostIds = connecting.map { it.bytes }.toSet(),
-        provider = state.provider.wire,
-        availableProviders = state.availableProviders.map { it.wire },
-        offer = when (state.offers[state.provider]) {
-            is OfferState.Offered -> NewAgentOfferUi.Offered
+        provider = state.provider,
+        availableProviders = state.availableProviders,
+        offer = when (val offer = state.offer) {
+            is OfferState.Offered ->
+                if (offer.catalogue.models.isEmpty()) NewAgentOfferUi.OwnModel else NewAgentOfferUi.Offered
             OfferState.Unavailable -> NewAgentOfferUi.Unavailable
             OfferState.Asking, null -> NewAgentOfferUi.Asking
         },

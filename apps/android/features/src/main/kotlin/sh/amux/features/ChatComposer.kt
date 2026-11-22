@@ -133,7 +133,6 @@ import sh.amux.values.ControlsSummary
 import sh.amux.values.ExitCause
 import sh.amux.values.GroupState
 import sh.amux.values.JobStop
-import sh.amux.values.Kind
 import sh.amux.values.PhaseView
 import sh.amux.values.QueuedRow
 import sh.amux.values.Reach
@@ -195,6 +194,7 @@ object ChatComposerTags {
     const val DICTATION_SETTINGS: String = "chat.dictationSettings"
     const val ACTIVITY: String = "chat.activity"
     const val EXITED_HEAD: String = "chat.exited"
+    const val ENDED: String = "chat.ended"
     const val SWITCHED_AWAY: String = "chat.switchedAway"
     const val SWITCH_BACK: String = "chat.switchBack"
     const val SIGN_IN_NOTICE: String = "chat.foot.sign-in"
@@ -247,7 +247,8 @@ data class ChatComposerState(
     val reach: Reach = Reach.Online(RouteKind.Direct),
     val connecting: Boolean = false,
     val phase: PhaseView = PhaseView.Idle,
-    val kind: Kind? = null,
+    /** The agent's program as its host names it ("Claude", "OpenCode"); null when not known. */
+    val provider: String? = null,
     val settled: Boolean = false,
     val canSend: Boolean = true,
     val canResume: Boolean = true,
@@ -344,6 +345,7 @@ fun ChatComposer(
     clock: ElapsedClock = ElapsedClock.Still,
 ) {
     val nativeMode = state.composer.mode as? Composer.Native
+    val ended = state.composer.mode == Composer.Ended
 
     Column(
         modifier = modifier
@@ -353,11 +355,11 @@ fun ChatComposer(
     ) {
         // A sign-in problem stands above a composer that still sends:
         // sending is how someone who signed in elsewhere tries again. A
-        // provider subagent takes no messages, so it has no notice.
-        if (state.signIn != null && nativeMode == null) {
+        // provider subagent takes no messages, so it has no notice, nor
+        // has an agent nothing resumes.
+        if (state.signIn != null && nativeMode == null && !ended) {
             SignInNoticeCard(
                 signIn = state.signIn,
-                kind = state.kind,
                 host = state.host,
             )
         }
@@ -377,10 +379,23 @@ fun ChatComposer(
                 activity = state.composer.activity,
                 activitySubject = state.activitySubject,
                 liveSubagents = state.liveSubagents,
-                kind = state.kind,
+                provider = state.provider,
                 phase = state.phase,
                 clock = clock,
                 onStop = callbacks.onStopNative,
+            )
+        } else if (ended) {
+            // Its program cannot reopen the conversation: there is nowhere
+            // to type, only what says so.
+            val words = remember(state.provider) { ChatWords.endedForGood(state.provider.orEmpty()) }
+            Text(
+                text = words,
+                style = AmuxTheme.typography.detail,
+                color = AmuxTheme.colors.inkMuted,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Space.l, vertical = Space.m + Space.xxs)
+                    .testTag(ChatComposerTags.ENDED),
             )
         } else {
             StandardComposerCard(
@@ -426,13 +441,12 @@ internal fun SwitchedAwayBanner(onSwitchBack: () -> Unit) {
 @Composable
 private fun SignInNoticeCard(
     signIn: SignInView,
-    kind: Kind?,
     host: String,
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
-    val title = remember(kind) { ChatWords.needsSignIn(kind) }
-    val detail = remember(signIn, kind, host) { ChatWords.signInDetail(signIn, kind = kind, host = host) }
+    val title = remember(signIn.providerName) { ChatWords.needsSignIn(signIn.providerName) }
+    val detail = remember(signIn, host) { ChatWords.signInDetail(signIn, host = host) }
 
     AmuxChrome(
         modifier = Modifier
@@ -1561,14 +1575,14 @@ private fun NativeSubagentComposerCard(
     activity: Activity?,
     activitySubject: String?,
     liveSubagents: GroupState,
-    kind: Kind?,
+    provider: String?,
     phase: PhaseView,
     clock: ElapsedClock,
     onStop: (key: String) -> Unit,
 ) {
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
-    val runnerTitle = remember(kind) { ChatWords.nativeRunner(kind) }
+    val runnerTitle = remember(provider) { ChatWords.nativeRunner(provider) }
     val subtitle = remember(phase) {
         val exited = phase as? PhaseView.Exited
         if (exited != null) ChatWords.exited(exited.cause) else ChatWords.nativeTakesNoMessages

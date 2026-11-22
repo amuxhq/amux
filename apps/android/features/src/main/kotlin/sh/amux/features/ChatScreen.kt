@@ -828,7 +828,7 @@ private fun ChatScreenContent(
         ChatSettingsModalSheet(
             state = ChatSettingsState(
                 settings = currentSettings,
-                kind = state.frame?.kind,
+                provider = state.frame?.provider?.name,
                 context = state.frame?.context,
             ),
             onChange = callbacks.onChangeSetting,

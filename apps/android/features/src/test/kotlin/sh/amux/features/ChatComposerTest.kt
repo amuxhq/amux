@@ -261,7 +261,7 @@ class ChatComposerTest {
                 ),
                 switchedAway = false,
             ),
-            kind = Kind.Codex,
+            provider = "Codex",
             phase = PhaseView.Working,
         )
 
@@ -395,8 +395,8 @@ class ChatComposerTest {
         val state = ChatComposerState(
             composer = ComposerView(mode = Composer.Send, switchedAway = false),
             host = "studio",
-            kind = Kind.ClaudePty,
-            signIn = SignInView(state = SignInState.SignedOut, account = "ada@example.com", message = "Session expired."),
+            provider = "Claude",
+            signIn = SignInView(state = SignInState.SignedOut, account = "ada@example.com", message = "Session expired.", providerName = "Claude", hint = "Run claude and sign in with /login."),
             attachments = listOf(ComposerAttachmentUi(id = "att-1", view = AttachmentView.Image(blob))),
             controls = ControlsSummary(model = "Sonnet 4.6", effort = "high"),
             tasks = TasksView(

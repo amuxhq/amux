@@ -44,7 +44,6 @@ import sh.amux.design.AmuxTheme
 import sh.amux.design.Space
 import sh.amux.values.HostView
 import sh.amux.values.Offline
-import sh.amux.values.Provider
 import sh.amux.values.Reach
 import sh.amux.words.Elapsed
 
@@ -74,7 +73,7 @@ object HostPageTags {
     const val REVOKE_CONFIRM: String = "host.revoke.confirm"
     const val REVOKE_CANCEL: String = "host.revoke.cancel"
 
-    fun providerRow(name: String): String = "host.provider.${name.lowercase()}"
+    fun providerRow(id: String): String = "host.provider.$id"
     fun addressRow(index: Int): String = "host.address.$index"
 }
 
@@ -242,17 +241,17 @@ fun HostPage(
                                 modifier = Modifier.testTag(HostPageTags.FACT_VERSION),
                             )
                         }
-                        for (signIn in host.providers.filter { it.provider != Provider.Unspecified }) {
+                        // Keyed by the provider's id, which no two rows
+                        // share; the name is only the label, and a person's
+                        // own agents may share one. Only an agent the host
+                        // has asked says whether it is signed in.
+                        for (offered in host.providers.filter { it.provider.isNotEmpty() }) {
+                            val signedIn = offered.signedIn ?: continue
                             rule()
-                            val name = if (signIn.provider == Provider.Codex) {
-                                stringResource(R.string.new_agent_provider_codex)
-                            } else {
-                                stringResource(R.string.new_agent_provider_claude)
-                            }
                             HostFactRow(
-                                label = name,
+                                label = offered.name,
                                 value = stringResource(
-                                    if (signIn.signedIn) {
+                                    if (signedIn) {
                                         R.string.host_page_provider_signed_in
                                     } else {
                                         R.string.host_page_provider_not_signed_in
@@ -260,7 +259,7 @@ fun HostPage(
                                 ),
                                 monoValue = false,
                                 isLargeText = isLargeText,
-                                modifier = Modifier.testTag(HostPageTags.providerRow(name)),
+                                modifier = Modifier.testTag(HostPageTags.providerRow(offered.provider)),
                             )
                         }
                         if (!host.isOnline &&

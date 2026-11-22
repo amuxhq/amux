@@ -5,7 +5,6 @@ import sh.amux.values.Composer
 import sh.amux.values.ExitCause
 import sh.amux.values.GroupState
 import sh.amux.values.JobStop
-import sh.amux.values.Kind
 import sh.amux.values.OpenedAgent
 import sh.amux.values.PhaseView
 
@@ -136,11 +135,8 @@ fun ChatWords.subagentGroupStanding(state: GroupState): AgentStanding = when {
  * which has no text box because the provider lets only the parent's model
  * talk to it.
  */
-fun ChatWords.nativeRunner(kind: Kind?): String = when (kind) {
-    Kind.ClaudeSdk, Kind.ClaudePty -> "Claude runs this subagent"
-    Kind.Codex -> "Codex runs this subagent"
-    Kind.Unspecified, null -> "Its provider runs this subagent"
-}
+fun ChatWords.nativeRunner(provider: String?): String =
+    if (provider.isNullOrEmpty()) "Its provider runs this subagent" else "$provider runs this subagent"
 
 /** Under the head: why there is nowhere to type. */
 const val NATIVE_TAKES_NO_MESSAGES: String = "It takes no messages."

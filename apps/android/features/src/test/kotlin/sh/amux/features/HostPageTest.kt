@@ -19,10 +19,10 @@ import sh.amux.design.Appearance
 import sh.amux.values.HostView
 import sh.amux.values.Offline
 import sh.amux.values.Platform
-import sh.amux.values.Provider
-import sh.amux.values.ProviderSignIn
 import sh.amux.values.Reach
 import sh.amux.values.RouteKind
+import sh.amux.testsupport.FixtureProviders
+import sh.amux.values.HostProvider
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w412dp-h915dp-xxhdpi")
@@ -33,9 +33,9 @@ class HostPageTest {
     private fun host(
         reach: Reach = Reach.Online(RouteKind.Direct),
         addrs: List<String> = listOf("192.168.1.10:4433", "fe80::1:4433"),
-        providers: List<ProviderSignIn> = listOf(
-            ProviderSignIn(Provider.Claude, signedIn = true),
-            ProviderSignIn(Provider.Codex, signedIn = false),
+        providers: List<HostProvider> = listOf(
+            FixtureProviders.claude(true),
+            FixtureProviders.codex(false),
         ),
         lastDialError: String? = null,
         sameNetwork: Boolean = false,

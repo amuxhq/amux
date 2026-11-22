@@ -58,6 +58,7 @@ class ScriptedChatTest {
                 questionNote = false,
                 questionSkip = false,
                 questionReply = false,
+                replyInstead = false,
                 stopsTurn = true,
                 defaultToNo = true,
                 state = CardState.Open,

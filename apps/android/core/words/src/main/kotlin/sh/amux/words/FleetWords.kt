@@ -5,7 +5,6 @@ import sh.amux.push.Said
 import sh.amux.values.ActivityKind
 import sh.amux.values.ActivityLine
 import sh.amux.values.ExitCause
-import sh.amux.values.Kind
 import sh.amux.values.RelayLink
 import sh.amux.values.SecondLine
 import java.time.Instant
@@ -44,7 +43,7 @@ object FleetWords {
      */
     fun secondLine(
         line: SecondLine,
-        kind: Kind,
+        provider: String,
         now: Instant = Instant.now(),
         backgroundJobs: Int = 0,
         zone: ZoneId = ZoneId.systemDefault(),
@@ -74,7 +73,7 @@ object FleetWords {
                 Line(
                     PushWords.body(
                         line.value,
-                        provider = provider(kind),
+                        provider = provider,
                         now = now,
                         zone = zone,
                         locale = locale,
@@ -109,13 +108,6 @@ object FleetWords {
             subject = null,
             subagents = line.subagents,
         ).words
-    }
-
-    /** The provider a sign-in belongs to. */
-    fun provider(kind: Kind): String = when (kind) {
-        Kind.ClaudeSdk, Kind.ClaudePty -> "Claude"
-        Kind.Codex -> "Codex"
-        Kind.Unspecified -> "the provider"
     }
 
     /** What home says under its title: who needs you, else how many work. */

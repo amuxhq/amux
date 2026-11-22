@@ -35,7 +35,6 @@ import sh.amux.values.Changeable
 import sh.amux.values.CommandView
 import sh.amux.values.ContextView
 import sh.amux.values.EffortChoice
-import sh.amux.values.Kind
 import sh.amux.values.ModeChoice
 import sh.amux.values.ModelChoice
 import sh.amux.values.PermissionChoice
@@ -47,7 +46,8 @@ import sh.amux.words.ChatWords
 @Immutable
 data class ChatSettingsState(
     val settings: SettingsView,
-    val kind: Kind? = null,
+    /** The agent's program as its host names it, for the permissions heading. */
+    val provider: String? = null,
     val context: ContextView? = null,
 )
 
@@ -145,7 +145,7 @@ fun ChatSettingsSheetContent(
         if (view.permissions.isNotEmpty() || view.changeable.permission == Changeable.Cycle) {
             PermissionsSection(
                 permissions = view.permissions,
-                kind = state.kind,
+                provider = state.provider,
                 changeable = view.changeable.permission,
                 onPick = { onChange(SettingChange.Permission(it)) },
                 onCycle = { onChange(SettingChange.CyclePermission) },
@@ -299,7 +299,7 @@ private fun EffortsSection(
 @Composable
 private fun PermissionsSection(
     permissions: List<PermissionChoice>,
-    kind: Kind?,
+    provider: String?,
     changeable: Changeable,
     onPick: (String) -> Unit,
     onCycle: () -> Unit,
@@ -311,7 +311,7 @@ private fun PermissionsSection(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(Space.xs),
     ) {
-        AmuxSectionHeader(title = ChatWords.permissionsHeading(kind))
+        AmuxSectionHeader(title = ChatWords.permissionsHeading(provider))
         when (changeable) {
             Changeable.Pick -> {
                 val pickable = permissions.filter { it.settable || it.current }

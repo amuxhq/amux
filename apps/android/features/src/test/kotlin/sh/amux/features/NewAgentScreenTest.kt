@@ -33,11 +33,11 @@ import sh.amux.values.NewAgentPick
 import sh.amux.values.Offline
 import sh.amux.values.PermissionChoice
 import sh.amux.values.Platform
-import sh.amux.values.Provider
-import sh.amux.values.ProviderSignIn
 import sh.amux.values.Reach
 import sh.amux.values.RouteKind
 import sh.amux.values.SettingsView
+import sh.amux.testsupport.FixtureProviders
+import sh.amux.values.HostProvider
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w412dp-h915dp-xxhdpi")
@@ -49,9 +49,9 @@ class NewAgentScreenTest {
         index: Int,
         name: String,
         reach: Reach = Reach.Online(RouteKind.Direct),
-        providers: List<ProviderSignIn> = listOf(
-            ProviderSignIn(Provider.Claude, signedIn = true),
-            ProviderSignIn(Provider.Codex, signedIn = true),
+        providers: List<HostProvider> = listOf(
+            FixtureProviders.claude(true),
+            FixtureProviders.codex(true),
         ),
     ): HostView = HostView(
         hostId = List(16) { index },
@@ -158,7 +158,8 @@ class NewAgentScreenTest {
                     state = NewAgentScreenState(
                         hosts = listOf(desk, studio, offline),
                         selectedHostId = desk.hostId,
-                        provider = Provider.Codex,
+                        provider = "codex",
+                        availableProviders = desk.providers,
                         offer = NewAgentOfferUi.Offered,
                         settings = sampleSettings,
                         listing = NewAgentListingUi.Ready,
@@ -186,8 +187,8 @@ class NewAgentScreenTest {
 
         // Switch provider from the Agent list.
         composeRule.onNodeWithTag(NewAgentTags.PROVIDER_ROW).performScrollTo().performClick()
-        composeRule.onNodeWithTag(NewAgentTags.providerChip(Provider.Claude)).performClick()
-        assertEquals(NewAgentAction.SelectProvider(Provider.Claude), actions.last())
+        composeRule.onNodeWithTag(NewAgentTags.providerChip("claude")).performClick()
+        assertEquals(NewAgentAction.SelectProvider("claude"), actions.last())
 
         // Pick model via M3 bottom sheet picker.
         composeRule.onNodeWithTag(NewAgentTags.MODEL_ROW).performScrollTo().performClick()

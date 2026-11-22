@@ -17,8 +17,6 @@ import sh.amux.values.FleetSection
 import sh.amux.values.HostView
 import sh.amux.values.Kind
 import sh.amux.values.Platform
-import sh.amux.values.Provider
-import sh.amux.values.ProviderSignIn
 import sh.amux.values.Reach
 import sh.amux.values.RouteKind
 import sh.amux.values.SecondLine
@@ -202,8 +200,8 @@ internal object StoryFleet {
         pairingOpen = pairingOpen,
         current = true,
         providers = listOf(
-            ProviderSignIn(Provider.Claude, signedIn = true),
-            ProviderSignIn(Provider.Codex, signedIn = true),
+            FixtureProviders.claude(true),
+            FixtureProviders.codex(true),
         ),
         platform = platform,
     )
@@ -233,6 +231,9 @@ internal object StoryFleet {
             name = name,
             handle = handle ?: name,
             kind = kind,
+            provider = FixtureProviders.of(kind).first.provider,
+            providerName = FixtureProviders.of(kind).first.name,
+            attachable = FixtureProviders.of(kind).second.attachable,
             attention = attention,
             cwd = if (native) "" else "/Users/ada/src/$name",
             phaseSinceMs = NOW_MS - minutes * MINUTE_MS,

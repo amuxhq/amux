@@ -1,7 +1,6 @@
 package sh.amux.words
 
 import sh.amux.values.ClientCommand
-import sh.amux.values.Kind
 import sh.amux.values.Refusal
 import sh.amux.values.RefusalReason
 
@@ -47,10 +46,10 @@ object ChatNotices {
         command: String,
         offered: List<String>,
         hint: String? = null,
-        kind: Kind? = null,
+        agent: String? = null,
     ): String {
         val name = if (command.startsWith("/")) command else "/$command"
-        val agent = if (kind == Kind.Codex) "Codex" else "This agent"
+        val agent = agent?.takeIf { it.isNotEmpty() } ?: "This agent"
         if (hint != null) {
             return "$agent takes a skill as a mention: type $hint."
         }

@@ -132,7 +132,6 @@ import sh.amux.values.PairedPeer
 import sh.amux.values.PhaseView
 import sh.amux.values.Platform
 import sh.amux.values.ProfileView
-import sh.amux.values.Provider
 import sh.amux.values.QuestionResponse
 import sh.amux.values.Reach
 import sh.amux.values.RelayLink
@@ -152,6 +151,7 @@ import sh.amux.values.ReviewOutcome
 import sh.amux.words.EMPTY_GROUP_STATE
 import sh.amux.values.ProsePart
 import sh.amux.testsupport.plainMarkdown
+import sh.amux.testsupport.FixtureProviders
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -393,6 +393,9 @@ class ShellTest {
                 name = "desk-work",
                 handle = "desk-work",
                 kind = Kind.ClaudeSdk,
+                provider = "claude",
+                providerName = "Claude",
+                attachable = false,
                 attention = Attention.Idle,
                 cwd = "/Users/ada/source/amux",
                 phaseSinceMs = 1_000L,
@@ -495,6 +498,7 @@ class ShellTest {
             questionNote = false,
             questionSkip = false,
             questionReply = false,
+            replyInstead = false,
             stopsTurn = true,
             defaultToNo = false,
             state = sh.amux.values.CardState.Open,
@@ -536,7 +540,7 @@ class ShellTest {
             relayOnly = false,
             pairingOpen = false,
             current = true,
-            providers = emptyList(),
+            providers = listOf(FixtureProviders.claude(true), FixtureProviders.codex(true)),
             platform = Platform.Macos,
         )
         return hostId to desk
@@ -548,6 +552,9 @@ class ShellTest {
             name = name,
             handle = name,
             kind = Kind.ClaudeSdk,
+            provider = "claude",
+            providerName = "Claude",
+            attachable = false,
             attention = Attention.Idle,
             cwd = "/Users/ada/source/amux",
             phaseSinceMs = 1_000L,
@@ -834,6 +841,7 @@ class ShellTest {
             questionNote = false,
             questionSkip = false,
             questionReply = false,
+            replyInstead = false,
             stopsTurn = true,
             defaultToNo = false,
             state = sh.amux.values.CardState.Open,
@@ -890,7 +898,7 @@ class ShellTest {
             hosts = listOf(desk),
         )
         val fakeNewAgentSource = object : NewAgentSource {
-            override suspend fun hostCatalogue(host: HostId, provider: Provider): Result<Catalogue> =
+            override suspend fun hostCatalogue(host: HostId, provider: String): Result<Catalogue> =
                 Result.success(Catalogue(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), null))
 
             override suspend fun directories(host: HostId, query: String, limit: Int): Result<Directories> =
@@ -1431,7 +1439,8 @@ class ShellTest {
         private val initialFrame = ChatFrame(
             agent = agent,
             name = "desk-work",
-            kind = Kind.ClaudeSdk,
+            provider = FixtureProviders.of(Kind.ClaudeSdk).first,
+            capabilities = FixtureProviders.of(Kind.ClaudeSdk).second,
             phase = PhaseView.Idle,
             composer = ComposerView(mode = Composer.Send, switchedAway = false, activity = null),
             controls = ControlsSummary(effort = null, mode = null, model = "Opus 4.6", permission = null),

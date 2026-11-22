@@ -71,7 +71,7 @@ class ChatSettingsSheetTest {
                 ChatSettingsSheetContent(
                     state = ChatSettingsState(
                         settings = settings,
-                        kind = Kind.Codex,
+                        provider = "Codex",
                         context = ContextView(usedTokens = 90_000L, nearFull = false, percent = 45L, windowTokens = 200_000L),
                     ),
                     onChange = { changes += it },
@@ -125,7 +125,7 @@ class ChatSettingsSheetTest {
         composeRule.setContent {
             AmuxTheme(appearance = Appearance.Light, photographed = true) {
                 ChatSettingsSheetContent(
-                    state = ChatSettingsState(settings = settings, kind = Kind.ClaudePty),
+                    state = ChatSettingsState(settings = settings, provider = "Claude"),
                     onChange = { changes += it },
                     onDismiss = {},
                 )

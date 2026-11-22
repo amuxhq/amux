@@ -15,12 +15,11 @@ import sh.amux.values.Catalogue
 import sh.amux.values.Directories
 import sh.amux.values.Directory
 import sh.amux.values.FleetRow
+import sh.amux.values.HostProvider
 import sh.amux.values.HostView
-import sh.amux.values.Kind
 import sh.amux.values.NewAgent
 import sh.amux.values.NewAgentChoices
 import sh.amux.values.NewAgentPick
-import sh.amux.values.Provider
 import sh.amux.values.SettingsView
 
 /**
@@ -29,7 +28,7 @@ import sh.amux.values.SettingsView
  * wiring.
  */
 interface NewAgentSource {
-    suspend fun hostCatalogue(host: HostId, provider: Provider): Result<Catalogue>
+    suspend fun hostCatalogue(host: HostId, provider: String): Result<Catalogue>
     suspend fun directories(host: HostId, query: String, limit: Int): Result<Directories>
     suspend fun pinFolder(host: HostId, path: String, pinned: Boolean): Result<Unit>
     suspend fun createAgent(agent: NewAgent): Result<AgentKey>
@@ -37,7 +36,7 @@ interface NewAgentSource {
 
 /** Wraps a live [Profile] as a [NewAgentSource]. */
 fun Profile.asNewAgentSource(): NewAgentSource = object : NewAgentSource {
-    override suspend fun hostCatalogue(host: HostId, provider: Provider): Result<Catalogue> =
+    override suspend fun hostCatalogue(host: HostId, provider: String): Result<Catalogue> =
         this@asNewAgentSource.hostCatalogue(host, provider)
 
     override suspend fun directories(host: HostId, query: String, limit: Int): Result<Directories> =
@@ -75,44 +74,6 @@ object NativeNewAgentBridge : NewAgentBridge {
         Bridge.agentNameProblem(name)
 }
 
-/** The provider a person can start an agent with from the phone. */
-enum class NewAgentProvider(
-    val wire: Provider,
-    val title: String,
-    val wireName: String,
-) {
-    Claude(Provider.Claude, "Claude", "claude"),
-    Codex(Provider.Codex, "Codex", "codex"),
-    ;
-
-    /**
-     * The kind an agent of this provider starts as on a host whose settings
-     * resolve Claude to [claude]. A host that has not said defaults to the SDK
-     * driver, which carries every row the phone draws.
-     */
-    fun kind(claude: Kind?): Kind = when (this) {
-        Claude -> when (claude) {
-            Kind.ClaudePty -> Kind.ClaudePty
-            Kind.ClaudeSdk, Kind.Codex, Kind.Unspecified, null -> Kind.ClaudeSdk
-        }
-        Codex -> Kind.Codex
-    }
-
-    companion object {
-        fun fromKind(kind: Kind): NewAgentProvider? = when (kind) {
-            Kind.ClaudePty, Kind.ClaudeSdk -> Claude
-            Kind.Codex -> Codex
-            Kind.Unspecified -> null
-        }
-
-        fun fromWire(provider: Provider): NewAgentProvider? = when (provider) {
-            Provider.Claude -> Claude
-            Provider.Codex -> Codex
-            Provider.Unspecified -> null
-        }
-    }
-}
-
 /** What the chosen host said a provider offers. */
 sealed interface OfferState {
     data object Asking : OfferState
@@ -132,7 +93,6 @@ enum class ListingState {
 data class NewAgentState(
     val hosts: List<HostView> = emptyList(),
     val machine: HostId? = null,
-    val claudeKind: Kind? = null,
     val listing: ListingState = ListingState.None,
     val repositories: List<Directory> = emptyList(),
     val recent: List<Directory> = emptyList(),
@@ -142,8 +102,10 @@ data class NewAgentState(
     val query: String = "",
     val typed: String = "",
     val browsing: Boolean = false,
-    val provider: NewAgentProvider = NewAgentProvider.Claude,
-    val offers: Map<NewAgentProvider, OfferState> = emptyMap(),
+    /** The chosen agent's id; null while the host lists none. */
+    val provider: String? = null,
+    /** What the chosen host offers, per agent id, once asked. */
+    val offers: Map<String, OfferState> = emptyMap(),
     val chosen: NewAgentChoices = NewAgentChoices(),
     val settings: SettingsView? = null,
     val newWorktree: Boolean = false,
@@ -157,21 +119,22 @@ data class NewAgentState(
         get() = machine?.let { id -> hosts.firstOrNull { it.id == id } }
 
     /**
-     * Providers offered by the chosen host, falling back to all known
-     * providers until the host reports its list.
+     * The agents the chosen host offers, in its order, named as it names
+     * them, a person's own among them; empty until it has said.
      */
-    val availableProviders: List<NewAgentProvider>
-        get() {
-            val advertised = selectedHost
-                ?.providers
-                ?.mapNotNull { NewAgentProvider.fromWire(it.provider) }
-                ?.distinct()
-                .orEmpty()
-            return if (advertised.isNotEmpty()) advertised else NewAgentProvider.entries
-        }
+    val availableProviders: List<HostProvider>
+        get() = selectedHost?.providers.orEmpty().filter { it.provider.isNotEmpty() }
+
+    /** The chosen agent as the host lists it. */
+    val chosenAgent: HostProvider?
+        get() = availableProviders.firstOrNull { it.provider == provider }
+
+    /** What the host said the chosen agent offers; null before it was asked. */
+    val offer: OfferState?
+        get() = provider?.let { offers[it] }
 
     val catalogue: Catalogue?
-        get() = (offers[provider] as? OfferState.Offered)?.catalogue
+        get() = (offer as? OfferState.Offered)?.catalogue
 
     val model: String?
         get() = chosen.model
@@ -219,21 +182,25 @@ data class NewAgentState(
             val host = machine ?: return false
             val view = hosts.firstOrNull { it.id == host }
             if (view != null && !view.online) return false
-            return directory.isNotEmpty() && nameProblem == null && !starting
+            return provider != null && directory.isNotEmpty() && nameProblem == null && !starting
         }
 
     /** Payload sent to the host when starting the agent; `null` until [ready]. */
     val request: NewAgent?
         get() {
             val host = machine ?: return null
+            val provider = provider ?: return null
             if (!ready) return null
+            // Only what the person picked from what the agent offers:
+            // anything else is the host's remembered pick or the agent's
+            // own default.
             return NewAgent(
                 hostId = host.bytes,
-                kind = provider.kind(claudeKind),
+                provider = provider,
                 cwd = directory,
                 name = chosenName,
                 effort = effort,
-                mode = if (provider == NewAgentProvider.Codex) mode else null,
+                mode = mode,
                 model = model,
                 newWorktree = if (newWorktree) true else null,
                 permission = permission,
@@ -270,13 +237,15 @@ class NewAgentStore(
     private var unfilteredListing: UnfilteredListing? = null
     private var directoryGeneration: Int = 0
     private var offerGeneration: Int = 0
-    private val offerAsked: MutableMap<NewAgentProvider, Int> = mutableMapOf()
+    private val offerAsked: MutableMap<String, Int> = mutableMapOf()
     private var machineOnline: Boolean? = null
     private var providerPicked: Boolean = false
-    private var providerSeeded: Boolean = false
+
+    /** The agent most recently at work in the fleet: the one to start with wherever the host offers it. */
+    private var usual: String? = null
     private var directoryJob: Job? = null
     private var searchJob: Job? = null
-    private val offerJobs: MutableMap<NewAgentProvider, Job> = mutableMapOf()
+    private val offerJobs: MutableMap<String, Job> = mutableMapOf()
 
     /**
      * Opens a fresh New Agent flow. Automatically selects [initialHost] if
@@ -294,13 +263,12 @@ class NewAgentStore(
         val hostView = chosenHost?.let { id -> hosts.firstOrNull { it.id == id } }
         machineOnline = hostView?.online
         providerPicked = false
-        providerSeeded = false
+        usual = null
         unfilteredListing = null
 
         _state.value = NewAgentState(
             hosts = hosts,
             machine = chosenHost,
-            claudeKind = hostView?.claudeKind,
         )
 
         if (rows.isNotEmpty()) {
@@ -315,11 +283,11 @@ class NewAgentStore(
     }
 
     /**
-     * Updates the known host list while the screen is open: refreshes the
-     * selected host's `claudeKind`, clears transient unreachable errors when
-     * the host comes back online, reloads missing or failed directories and
-     * catalogues on reconnect, and auto-selects a ready host if none is
-     * chosen yet.
+     * Updates the known host list while the screen is open: follows the
+     * agents the selected host lists, asks each newly listed one what it
+     * offers, clears transient unreachable errors when the host comes back
+     * online, reloads missing or failed directories and catalogues on
+     * reconnect, and auto-selects a ready host if none is chosen yet.
      */
     fun syncHosts(hosts: List<HostView>) {
         val current = _state.value
@@ -327,24 +295,24 @@ class NewAgentStore(
         val selected = currentMachine?.let { id -> hosts.firstOrNull { it.id == id } }
         if (currentMachine == null) {
             val auto = pickInitialHost(hosts, initialHost = null)
-            val autoView = auto?.let { id -> hosts.firstOrNull { it.id == id } }
             _state.update { it.copy(hosts = hosts) }
             if (auto != null) {
                 selectHost(auto)
-            } else if (autoView != null) {
-                _state.update { it.copy(claudeKind = autoView.claudeKind) }
             }
             return
         }
 
-        _state.update { state ->
-            state.copy(
-                hosts = hosts,
-                claudeKind = selected?.claudeKind ?: state.claudeKind,
-            )
-        }
+        _state.update { state -> state.copy(hosts = hosts) }
+        reconcileProviderForHost(selected)
         if (selected != null) {
             machineReached(selected.online)
+            // A host lists each agent once it has asked it: ask the ones
+            // listed since the host was chosen what they offer.
+            if (source != null && selected.online) {
+                for (offered in _state.value.availableProviders) {
+                    if (offerAsked[offered.provider] == null) fetchOffer(currentMachine, offered.provider)
+                }
+            }
         }
     }
 
@@ -369,46 +337,33 @@ class NewAgentStore(
             val query = if (current.searchesTheMachine) current.query.trim() else ""
             fetchDirectories(host, query = query, quiet = false)
         }
-        for (provider in current.availableProviders) {
-            val offer = current.offers[provider]
+        for (offered in current.availableProviders) {
+            val offer = current.offers[offered.provider]
             if (offer !is OfferState.Offered) {
-                fetchOffer(host, provider)
+                fetchOffer(host, offered.provider)
             }
         }
     }
 
-    /** Updates which Claude driver the chosen host starts. */
-    fun machineStarts(claude: Kind?) {
-        _state.update { it.copy(claudeKind = claude) }
-    }
-
     /**
-     * Remembers recent directories per host and seeds the initial provider
-     * from fleet activity once, before the person picks a provider or edits
-     * any provider-specific setting.
+     * Remembers recent directories per host and the agent to start with:
+     * the one most recently at work, since with several to choose from that
+     * is the one most often wanted again. It is chosen only where the host
+     * offers it, and only before the person picks an agent or any of its
+     * settings.
      */
     fun remember(rows: List<FleetRow>) {
         val sorted = rows.sortedByDescending { it.lastActivityMs }
-        if (!providerPicked && !providerSeeded) {
-            val latest = sorted
-                .firstOrNull { NewAgentProvider.fromKind(it.card.kind) != null }
-                ?.let { NewAgentProvider.fromKind(it.card.kind) }
-            if (latest != null) {
-                providerSeeded = true
-                val allowed = _state.value.availableProviders
-                if (latest in allowed) {
-                    _state.update { state ->
-                        if (state.chosen != NewAgentChoices()) {
-                            state
-                        } else {
-                            val cat = (state.offers[latest] as? OfferState.Offered)?.catalogue
-                            state.copy(
-                                provider = latest,
-                                settings = cat?.let { bridge.newAgentSettings(it, state.chosen) },
-                            )
-                        }
-                    }
-                }
+        val latest = sorted.firstOrNull { it.card.provider.isNotEmpty() }?.card?.provider
+        if (latest != null) {
+            usual = latest
+            val state = _state.value
+            if (!providerPicked &&
+                state.provider != latest &&
+                state.chosen == NewAgentChoices() &&
+                state.availableProviders.any { it.provider == latest }
+            ) {
+                useProvider(latest)
             }
         }
 
@@ -436,7 +391,6 @@ class NewAgentStore(
         _state.update { state ->
             state.copy(
                 machine = host,
-                claudeKind = hostView?.claudeKind,
                 listing = ListingState.None,
                 repositories = emptyList(),
                 recent = emptyList(),
@@ -458,23 +412,32 @@ class NewAgentStore(
         }
     }
 
-    /** Switches provider, clearing provider-specific model/effort/permission/mode picks. */
-    fun selectProvider(provider: NewAgentProvider) {
+    /**
+     * Switches to the agent the host lists as [provider], by its id; its
+     * model, effort, permission and mode start afresh, as they do not carry
+     * across agents.
+     */
+    fun selectProvider(provider: String) {
         providerPicked = true
-        val current = _state.value
-        if (current.provider == provider) return
+        if (_state.value.provider == provider) return
+        useProvider(provider)
+        _state.update { it.copy(failure = null) }
+    }
+
+    /** Makes [provider] the chosen agent with its settings afresh, asking the host what it offers if not yet asked. */
+    private fun useProvider(provider: String?) {
         val freshChoices = NewAgentChoices()
-        val cat = (current.offers[provider] as? OfferState.Offered)?.catalogue
         _state.update { state ->
+            val cat = provider?.let { (state.offers[it] as? OfferState.Offered)?.catalogue }
             state.copy(
                 provider = provider,
                 chosen = freshChoices,
                 settings = cat?.let { bridge.newAgentSettings(it, freshChoices) },
-                failure = null,
             )
         }
         val host = _state.value.machine
-        if (host != null && source != null && _state.value.offers[provider] == null) {
+        // A host out of reach is asked once it comes back (machineReached).
+        if (provider != null && host != null && source != null && machineOnline != false && offerAsked[provider] == null) {
             fetchOffer(host, provider)
         }
     }
@@ -654,19 +617,28 @@ class NewAgentStore(
         if (initialHost != null) return initialHost
         val online = hosts.filter { it.online && !it.local }
         val withProviders = online.firstOrNull { host ->
-            host.providers.any { it.provider != Provider.Unspecified }
+            host.providers.any { it.provider.isNotEmpty() }
         }
         return (withProviders ?: online.firstOrNull())?.id
     }
 
+    /**
+     * Follows the agents the chosen host lists. Until the person picks one,
+     * the agent is the one most recently at work, where the host offers it,
+     * else the host's first; a pick the host stops offering gives way the
+     * same way.
+     */
     private fun reconcileProviderForHost(hostView: HostView?) {
         if (hostView == null) return
-        val advertised = hostView.providers
-            .mapNotNull { NewAgentProvider.fromWire(it.provider) }
-            .distinct()
-        if (advertised.isNotEmpty() && _state.value.provider !in advertised) {
-            _state.update { it.copy(provider = advertised.first()) }
+        val ids = hostView.providers.map { it.provider }.filter { it.isNotEmpty() }
+        fun offering(id: String?): String? = id?.takeIf { it in ids }
+        val current = _state.value.provider
+        val wanted = if (providerPicked) {
+            offering(current) ?: offering(usual) ?: ids.firstOrNull()
+        } else {
+            offering(usual) ?: offering(current) ?: ids.firstOrNull()
         }
+        if (wanted != current) useProvider(wanted)
     }
 
     private fun fetchDirectories(host: HostId, query: String, quiet: Boolean) {
@@ -763,12 +735,12 @@ class NewAgentStore(
     }
 
     private fun fetchAllOffers(host: HostId) {
-        for (provider in _state.value.availableProviders) {
-            fetchOffer(host, provider)
+        for (offered in _state.value.availableProviders) {
+            if (offerAsked[offered.provider] == null) fetchOffer(host, offered.provider)
         }
     }
 
-    private fun fetchOffer(host: HostId, provider: NewAgentProvider) {
+    private fun fetchOffer(host: HostId, provider: String) {
         val runtimeSource = source ?: return
         offerJobs.remove(provider)?.cancel()
         offerGeneration += 1
@@ -779,7 +751,7 @@ class NewAgentStore(
         }
         offerJobs[provider] = scope.launch {
             val result = try {
-                runtimeSource.hostCatalogue(host, provider.wire)
+                runtimeSource.hostCatalogue(host, provider)
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
@@ -791,7 +763,7 @@ class NewAgentStore(
 
     private fun applyOffer(
         host: HostId,
-        provider: NewAgentProvider,
+        provider: String,
         result: Result<Catalogue>,
         generation: Int,
     ) {

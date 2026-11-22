@@ -17,6 +17,7 @@ import sh.amux.values.BlobRef
 import sh.amux.values.Changes
 import sh.amux.values.ChatAgents
 import sh.amux.values.ChatDelta
+import sh.amux.values.CallPhase
 import sh.amux.values.ChatFrame
 import sh.amux.values.CommandOutcome
 import sh.amux.values.Comparison
@@ -747,7 +748,8 @@ class ScriptedChat(
         ): ChatFrame = ChatFrame(
             agent = agent,
             name = name,
-            kind = kind,
+            provider = FixtureProviders.of(kind).first,
+            capabilities = FixtureProviders.of(kind).second,
             phase = phase,
             composer = ComposerView(
                 mode = mode,
@@ -940,6 +942,16 @@ class ScriptedChat(
             )
         }
 
+        private fun deniedStep(kind: RowKind): Boolean = when (kind) {
+            is RowKind.ToolCall -> kind.state == CallPhase.Denied
+            is RowKind.Child -> kind.state == CallPhase.Denied
+            is RowKind.Subagent -> kind.state == CallPhase.Denied
+            is RowKind.FileChange -> kind.state == CallPhase.Denied
+            is RowKind.Command -> kind.state == CallPhase.Denied
+            is RowKind.Explore -> kind.state == CallPhase.Denied
+            else -> false
+        }
+
         private fun counted(steps: List<Row>): RunCounts {
             var commands = 0
             var edits = 0
@@ -949,9 +961,16 @@ class ScriptedChat(
             var fetches = 0
             var subagents = 0
             var other = 0
+            var denied = 0
             val editedPaths = mutableSetOf<String>()
             val readSubjects = mutableSetOf<String>()
             for (step in steps) {
+                // A step refused before it ran, which the shared fold counts
+                // as denied and not as what it would have done.
+                if (deniedStep(step.kind)) {
+                    denied += 1
+                    continue
+                }
                 when (val k = step.kind) {
                     is RowKind.Command, is RowKind.Background -> commands += 1
                     is RowKind.FileChange -> {
@@ -979,6 +998,7 @@ class ScriptedChat(
                 fetches = fetches,
                 subagents = subagents,
                 other = other,
+                denied = denied,
             )
         }
     }

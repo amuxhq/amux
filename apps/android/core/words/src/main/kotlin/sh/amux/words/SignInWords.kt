@@ -1,6 +1,5 @@
 package sh.amux.words
 
-import sh.amux.values.Kind
 import sh.amux.values.SignInView
 
 /**
@@ -17,7 +16,7 @@ val ChatWords.signInRetry: String
  * The sign-in notice's lines under its title: the account and what went wrong,
  * how to sign in on the agent's host, and that sending retries.
  */
-fun ChatWords.signInDetail(view: SignInView, kind: Kind?, host: String): String =
-    listOf(signIn(view), view.message, signInSteps(kind, host = host), signInRetry)
+fun ChatWords.signInDetail(view: SignInView, host: String): String =
+    listOf(signIn(view), view.message, signInSteps(view.hint, host = host), signInRetry)
         .filter { it.isNotEmpty() }
         .joinToString("\n")

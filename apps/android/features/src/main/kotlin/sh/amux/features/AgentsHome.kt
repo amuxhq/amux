@@ -795,7 +795,7 @@ private fun AgentListRow(
     } else {
         FleetWords.secondLine(
             line = row.secondLine,
-            kind = row.card.kind,
+            provider = row.card.providerName,
             now = now,
             backgroundJobs = row.card.backgroundJobs,
         ) ?: fallbackPreview(rowState)

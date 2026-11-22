@@ -24,6 +24,8 @@ import sh.amux.values.Directory
 import sh.amux.values.Filing
 import sh.amux.values.FleetCard
 import sh.amux.values.FleetRow
+import sh.amux.values.Capabilities
+import sh.amux.values.HostProvider
 import sh.amux.values.HostView
 import sh.amux.values.Kind
 import sh.amux.values.NewAgent
@@ -33,8 +35,6 @@ import sh.amux.values.OfferedModel
 import sh.amux.values.OfferedPermission
 import sh.amux.values.Offline
 import sh.amux.values.Platform
-import sh.amux.values.Provider
-import sh.amux.values.ProviderSignIn
 import sh.amux.values.Reach
 import sh.amux.values.RouteKind
 import sh.amux.values.SecondLine
@@ -146,11 +146,7 @@ class NewAgentStoreTest {
         id: HostId,
         name: String,
         reach: Reach = Reach.Online(RouteKind.Direct),
-        providers: List<ProviderSignIn> = listOf(
-            ProviderSignIn(Provider.Claude, signedIn = true),
-            ProviderSignIn(Provider.Codex, signedIn = true),
-        ),
-        claudeKind: Kind? = null,
+        providers: List<HostProvider> = listOf(offered("claude", "Claude"), offered("codex", "Codex")),
     ): HostView = HostView(
         hostId = id.bytes,
         link = 0L,
@@ -165,8 +161,26 @@ class NewAgentStoreTest {
         pairingOpen = false,
         current = true,
         providers = providers,
-        claudeKind = claudeKind,
         platform = Platform.Macos,
+    )
+
+    /** An agent a host lists, by its id and the name the host gives it. */
+    private fun offered(provider: String, name: String, signedIn: Boolean? = true): HostProvider = HostProvider(
+        provider = provider,
+        name = name,
+        signInHint = "",
+        version = "",
+        capabilities = Capabilities(
+            stopsJob = true,
+            switchesBack = false,
+            attachable = false,
+            resumable = true,
+            sendsNow = true,
+            images = true,
+            files = true,
+            passesUnknownCommands = true,
+        ),
+        signedIn = signedIn,
     )
 
     private fun fleetRow(
@@ -181,6 +195,9 @@ class NewAgentStoreTest {
             name = name,
             handle = name,
             kind = kind,
+            provider = if (kind == Kind.Codex) "codex" else "claude",
+            providerName = if (kind == Kind.Codex) "Codex" else "Claude",
+            attachable = false,
             attention = Attention.Idle,
             cwd = cwd,
             phaseSinceMs = phaseSinceMs,
@@ -202,7 +219,7 @@ class NewAgentStoreTest {
     )
 
     private class FakeNewAgentSource : NewAgentSource {
-        var catalogueHandler: suspend (HostId, Provider) -> Result<Catalogue> =
+        var catalogueHandler: suspend (HostId, String) -> Result<Catalogue> =
             { _, _ -> Result.failure(RuntimeFailure("no catalogue")) }
         var directoriesHandler: suspend (HostId, String, Int) -> Result<Directories> =
             { _, _, _ -> Result.failure(RuntimeFailure("no directories")) }
@@ -215,7 +232,7 @@ class NewAgentStoreTest {
         val pinCalls = mutableListOf<Triple<HostId, String, Boolean>>()
         val createdRequests = mutableListOf<NewAgent>()
 
-        override suspend fun hostCatalogue(host: HostId, provider: Provider): Result<Catalogue> =
+        override suspend fun hostCatalogue(host: HostId, provider: String): Result<Catalogue> =
             catalogueHandler(host, provider)
 
         override suspend fun directories(host: HostId, query: String, limit: Int): Result<Directories> {
@@ -240,9 +257,9 @@ class NewAgentStoreTest {
             directoriesHandler = { _, _, _ -> Result.success(sampleDirectories) }
             catalogueHandler = { _, provider ->
                 when (provider) {
-                    Provider.Claude -> Result.success(claudeCatalogue)
-                    Provider.Codex -> Result.success(codexCatalogue)
-                    Provider.Unspecified -> Result.failure(RuntimeFailure("unknown"))
+                    "claude" -> Result.success(claudeCatalogue)
+                    "codex" -> Result.success(codexCatalogue)
+                    else -> Result.failure(RuntimeFailure("unknown"))
                 }
             }
         }
@@ -251,7 +268,7 @@ class NewAgentStoreTest {
         store.open(
             hosts = listOf(
                 hostView(awayId, "away-box", reach = Reach.Away),
-                hostView(deskId, "desk", claudeKind = Kind.ClaudePty),
+                hostView(deskId, "desk"),
                 hostView(studioId, "studio"),
             ),
         )
@@ -270,7 +287,7 @@ class NewAgentStoreTest {
         assertEquals(
             NewAgent(
                 hostId = deskId.bytes,
-                kind = Kind.ClaudePty,
+                provider = "claude",
                 cwd = "/src/relay",
                 name = "",
                 effort = null,
@@ -289,14 +306,14 @@ class NewAgentStoreTest {
         val source = FakeNewAgentSource().apply {
             directoriesHandler = { _, _, _ -> Result.success(sampleDirectories) }
             catalogueHandler = { _, provider ->
-                if (provider == Provider.Codex) Result.success(codexCatalogue) else Result.success(claudeCatalogue)
+                if (provider == "codex") Result.success(codexCatalogue) else Result.success(claudeCatalogue)
             }
         }
         val store = NewAgentStore(source = source, scope = this)
         store.open(hosts = listOf(hostView(deskId, "desk")))
         advanceUntilIdle()
 
-        store.selectProvider(NewAgentProvider.Codex)
+        store.selectProvider("codex")
         assertEquals(codexCatalogue, store.snapshot.catalogue)
 
         // Before picking a model, permissions scoped to a specific model are withheld and unsettable ones omitted.
@@ -320,7 +337,7 @@ class NewAgentStoreTest {
         assertEquals(
             NewAgent(
                 hostId = deskId.bytes,
-                kind = Kind.Codex,
+                provider = "codex",
                 cwd = "/src/relay",
                 name = "",
                 effort = "high",
@@ -342,7 +359,7 @@ class NewAgentStoreTest {
         assertNull(store.snapshot.mode)
 
         // Switching to Claude resets provider-specific choices and strips mode from request.
-        store.selectProvider(NewAgentProvider.Claude)
+        store.selectProvider("claude")
         assertNull(store.snapshot.model)
         assertNull(store.snapshot.effort)
         assertNull(store.snapshot.permission)
@@ -417,7 +434,7 @@ class NewAgentStoreTest {
         advanceUntilIdle()
         assertEquals(studioId, store.snapshot.machine)
         assertEquals("/studio/app", store.snapshot.directory)
-        assertEquals(OfferState.Offered(claudeCatalogue), store.snapshot.offers[NewAgentProvider.Claude])
+        assertEquals(OfferState.Offered(claudeCatalogue), store.snapshot.offers["claude"])
 
         // Late responses from desk must not overwrite studio's state.
         staleDirs.complete(Result.success(sampleDirectories))
@@ -426,7 +443,7 @@ class NewAgentStoreTest {
 
         assertEquals(studioId, store.snapshot.machine)
         assertEquals("/studio/app", store.snapshot.directory)
-        assertEquals(OfferState.Offered(claudeCatalogue), store.snapshot.offers[NewAgentProvider.Claude])
+        assertEquals(OfferState.Offered(claudeCatalogue), store.snapshot.offers["claude"])
         store.close()
     }
 
@@ -598,7 +615,7 @@ class NewAgentStoreTest {
         )
         advanceUntilIdle()
         assertEquals(ListingState.Unavailable, fallbackStore.snapshot.listing)
-        assertEquals(NewAgentProvider.Codex, fallbackStore.snapshot.provider)
+        assertEquals("codex", fallbackStore.snapshot.provider)
         assertEquals("/Users/ada/work/api", fallbackStore.snapshot.directory)
 
         fallbackStore.updateTypedPath("  ~/custom/path  ")
@@ -716,7 +733,7 @@ class NewAgentStoreTest {
             catalogueHandler = { _, provider ->
                 if (!online) {
                     Result.failure(RuntimeFailure("offline"))
-                } else if (provider == Provider.Codex) {
+                } else if (provider == "codex") {
                     Result.success(codexCatalogue)
                 } else {
                     Result.success(claudeCatalogue)
@@ -740,8 +757,8 @@ class NewAgentStoreTest {
         advanceUntilIdle()
         assertEquals(ListingState.Ready, store.snapshot.listing)
         assertEquals("/src/relay", store.snapshot.directory)
-        assertEquals(OfferState.Offered(claudeCatalogue), store.snapshot.offers[NewAgentProvider.Claude])
-        assertEquals(OfferState.Offered(codexCatalogue), store.snapshot.offers[NewAgentProvider.Codex])
+        assertEquals(OfferState.Offered(claudeCatalogue), store.snapshot.offers["claude"])
+        assertEquals(OfferState.Offered(codexCatalogue), store.snapshot.offers["codex"])
         store.close()
     }
 
@@ -750,13 +767,13 @@ class NewAgentStoreTest {
         val source = FakeNewAgentSource().apply {
             directoriesHandler = { _, _, _ -> Result.success(sampleDirectories) }
             catalogueHandler = { _, provider ->
-                if (provider == Provider.Codex) Result.success(codexCatalogue) else Result.success(claudeCatalogue)
+                if (provider == "codex") Result.success(codexCatalogue) else Result.success(claudeCatalogue)
             }
         }
         val store = NewAgentStore(source = source, scope = this)
         store.open(hosts = listOf(hostView(deskId, "desk")))
         advanceUntilIdle()
-        assertEquals(NewAgentProvider.Claude, store.snapshot.provider)
+        assertEquals("claude", store.snapshot.provider)
 
         // Edit a Claude setting without tapping the provider picker.
         store.pick(NewAgentPick.Model("claude-sonnet"))
@@ -766,7 +783,7 @@ class NewAgentStoreTest {
         store.remember(
             listOf(fleetRow(deskId, "codex-1", "/src/codex", kind = Kind.Codex, phaseSinceMs = 99_999L)),
         )
-        assertEquals(NewAgentProvider.Claude, store.snapshot.provider)
+        assertEquals("claude", store.snapshot.provider)
         assertEquals("claude-sonnet", store.snapshot.model)
         store.close()
     }
@@ -827,6 +844,6 @@ class NewAgentStoreTest {
         store.close()
         advanceUntilIdle()
         assertEquals(ListingState.Asking, store.snapshot.listing)
-        assertEquals(OfferState.Asking, store.snapshot.offers[NewAgentProvider.Claude])
+        assertEquals(OfferState.Asking, store.snapshot.offers["claude"])
     }
 }

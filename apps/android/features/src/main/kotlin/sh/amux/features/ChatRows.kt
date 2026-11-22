@@ -29,6 +29,8 @@ import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.ReportProblem
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.FrontHand
@@ -78,6 +80,7 @@ import sh.amux.values.DecisionView
 import sh.amux.values.EnvelopeKind
 import sh.amux.values.FileRow
 import sh.amux.values.GroupState
+import sh.amux.values.NoticeSeverity
 import sh.amux.values.OpenedAgent
 import sh.amux.values.Row
 import sh.amux.values.RowKind
@@ -615,6 +618,28 @@ private fun ChatRowKindView(
                 detail = if (expanded && kind.rationale.isNotEmpty()) kind.rationale else null,
                 detailMono = false,
                 opens = kind.rationale.isNotEmpty(),
+                open = expanded,
+                onClick = { callbacks.onToggleExpand(row.id) },
+            )
+        }
+        is RowKind.Notice -> {
+            // The agent's own words, in plain ink: a notice names no
+            // command or path for the code face a step's subject takes.
+            val said = remember(kind) { ChatWords.notice(kind.reason, title = kind.title, text = kind.text) }
+            GridRow(
+                kindTag = "notice",
+                glyph = when (kind.severity) {
+                    NoticeSeverity.Error -> Icons.Outlined.ErrorOutline
+                    NoticeSeverity.Warning -> Icons.Outlined.ReportProblem
+                    NoticeSeverity.Info -> Icons.Outlined.Info
+                },
+                failed = kind.severity == NoticeSeverity.Error,
+                rail = rail,
+                verb = said.first,
+                detail = said.second.ifEmpty { null },
+                detailMono = false,
+                detailMaxLines = if (expanded) Int.MAX_VALUE else 3,
+                opens = said.second.isNotEmpty(),
                 open = expanded,
                 onClick = { callbacks.onToggleExpand(row.id) },
             )

@@ -28,8 +28,8 @@ class FleetWordsTest {
     private val zone = ZoneOffset.UTC
     private val locale = Locale.US
 
-    private fun said(line: SecondLine, kind: Kind = Kind.ClaudeSdk): String? =
-        FleetWords.secondLine(line, kind = kind, now = now, zone = zone, locale = locale)?.text
+    private fun said(line: SecondLine, provider: String = "Claude"): String? =
+        FleetWords.secondLine(line, provider = provider, now = now, zone = zone, locale = locale)?.text
 
     private fun asks(wants: Wants, more: Int = 0): SecondLine =
         SecondLine.Said(Said.Ask(key = "k", wants = wants, why = "", more = more))
@@ -50,14 +50,14 @@ class FleetWordsTest {
         assertEquals("linear: Sign in", said(asks(Wants.Other("linear", "Sign in\nnow"))))
         assertEquals(
             FleetWords.Ink.Ask,
-            FleetWords.secondLine(asks(Wants.Plan("")), kind = Kind.Codex, now = now)?.ink,
+            FleetWords.secondLine(asks(Wants.Plan("")), provider = "Codex", now = now)?.ink,
         )
     }
 
     @Test
     fun backgroundJobsLeadTheLine() {
         fun withJobs(line: SecondLine, jobs: Int): String? =
-            FleetWords.secondLine(line, kind = Kind.Codex, now = now, backgroundJobs = jobs)?.text
+            FleetWords.secondLine(line, provider = "Codex", now = now, backgroundJobs = jobs)?.text
 
         assertEquals("1 background job · Started the server.", withJobs(SecondLine.LastSaid("Started the server."), 1))
         assertEquals("3 background jobs running", withJobs(SecondLine.Blank, 3))
@@ -101,18 +101,18 @@ class FleetWordsTest {
 
     @Test
     fun aStuckAgentWarnsAndSaysWhenItCanGoOn() {
-        val signedOut = FleetWords.secondLine(SecondLine.Said(Said.SignedOut), kind = Kind.Codex, now = now)
+        val signedOut = FleetWords.secondLine(SecondLine.Said(Said.SignedOut), provider = "Codex", now = now)
         assertEquals("Signed out of Codex", signedOut?.text)
         assertEquals(FleetWords.Ink.Warning, signedOut?.ink)
         assertEquals("Signed out of Claude", said(SecondLine.Said(Said.SignedOut)))
-        assertEquals("Signed out of the provider", said(SecondLine.Said(Said.SignedOut), kind = Kind.Unspecified))
+        assertEquals("Signed out of OpenCode", said(SecondLine.Said(Said.SignedOut), provider = "OpenCode"))
         assertEquals("Usage limit reached", said(SecondLine.Said(Said.UsageLimit(null))))
         assertEquals("Usage limit reached", said(SecondLine.Said(Said.UsageLimit(nowMs - 1L))))
         assertTrue(said(SecondLine.Said(Said.UsageLimit(nowMs + 3_600_000L)))!!.startsWith("Usage limit reached · resets "))
-        val failed = FleetWords.secondLine(SecondLine.Said(Said.Failed("Connection refused\nretry")), kind = Kind.Codex, now = now)
+        val failed = FleetWords.secondLine(SecondLine.Said(Said.Failed("Connection refused\nretry")), provider = "Codex", now = now)
         assertEquals("Connection refused", failed?.text)
         assertEquals(FleetWords.Ink.Warning, failed?.ink)
-        val revoked = FleetWords.secondLine(SecondLine.HostRevoked, kind = Kind.ClaudeSdk, now = now)
+        val revoked = FleetWords.secondLine(SecondLine.HostRevoked, provider = "Claude", now = now)
         assertEquals("Unpaired by its device · pair again to reach it", revoked?.text)
         assertEquals(FleetWords.Ink.Warning, revoked?.ink)
     }
@@ -123,7 +123,7 @@ class FleetWordsTest {
         assertNull(said(SecondLine.Exited(ExitCause.Ended)))
         assertNull(said(SecondLine.Blank))
         assertNull(said(SecondLine.LastSaid("")))
-        val failed = FleetWords.secondLine(SecondLine.Exited(ExitCause.Failed("code 1")), kind = Kind.Codex, now = now)
+        val failed = FleetWords.secondLine(SecondLine.Exited(ExitCause.Failed("code 1")), provider = "Codex", now = now)
         assertEquals("Stopped · code 1", failed?.text)
         assertEquals(FleetWords.Ink.Error, failed?.ink)
         assertEquals("Done: the tests pass.", said(SecondLine.LastSaid("Done: the tests pass.")))

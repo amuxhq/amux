@@ -29,13 +29,13 @@ import sh.amux.values.FileRow
 import sh.amux.values.FleetCard
 import sh.amux.values.GroupState
 import sh.amux.values.JobRow
-import sh.amux.values.Kind
 import sh.amux.values.LineKind
 import sh.amux.values.ModeChoice
 import sh.amux.values.Offline
 import sh.amux.values.PermissionChoice
 import sh.amux.values.PermissionGrant
 import sh.amux.values.PhaseView
+import sh.amux.values.NoticeReason
 import sh.amux.values.QueuedRow
 import sh.amux.values.Reach
 import sh.amux.values.Resolution
@@ -186,6 +186,7 @@ object ChatWords {
             fetches = 0,
             subagents = 0,
             other = 0,
+            denied = 0,
         )
         // "1+ files": a count that is a floor may be more than one.
         fun part(count: Int, verb: String, one: String, many: String): String? {
@@ -207,6 +208,7 @@ object ChatWords {
             part(c.fetches, "fetched", "page", "pages"),
             part(c.other, "used", "tool", "tools"),
             part(c.subagents, "started", "subagent", "subagents"),
+            part(c.denied, "denied", "step", "steps"),
         )
         val words = if (parts.isEmpty()) {
             part(run.steps, "took", "step", "steps") ?: ""
@@ -623,8 +625,37 @@ object ChatWords {
                     else -> "$host is out of reach · your draft is kept"
                 }
             }
-            is Composer.Native -> ""
+            // A provider subagent's chat, and an agent that cannot be
+            // resumed, draw no field to say anything in.
+            is Composer.Native, Composer.Ended -> ""
         }
+    }
+
+    /**
+     * Where an agent that cannot be resumed has its composer: its program
+     * cannot reopen the conversation, so nothing more goes to it. Named by
+     * its provider, as the terminal names it.
+     */
+    fun endedForGood(provider: String): String = "Ended · $provider can\u2019t reopen this conversation"
+
+    /**
+     * What an agent's notice says: its own title, else its words' first
+     * line, else what cut the turn short; and what is left of its words.
+     */
+    fun notice(reason: NoticeReason, title: String, text: String): Pair<String, String> {
+        if (title.isNotEmpty()) return title to text.trim()
+        if (text.isBlank()) {
+            val said = when (reason) {
+                NoticeReason.Agent -> ""
+                NoticeReason.Refusal -> "The model refused to go on"
+                NoticeReason.MaxTokens -> "The turn reached the model\u2019s token limit"
+                NoticeReason.MaxTurnRequests -> "The turn reached its limit on model requests"
+            }
+            return said to ""
+        }
+        val first = text.substringBefore('\n')
+        val rest = if ('\n' in text) text.substringAfter('\n').trim() else ""
+        return first to rest
     }
 
     fun queued(row: QueuedRow): String = when {
@@ -1132,8 +1163,9 @@ object ChatWords {
         "Terminal Claude changes permission only by cycling through its permissions."
 
     /** The permissions card's heading, by the agent's kind. */
-    fun permissionsHeading(kind: Kind?): String =
-        if (kind == Kind.Codex) "CODEX PERMISSIONS" else "CLAUDE PERMISSIONS"
+    /** The settings sheet's permissions heading, naming the agent's program as its host names it. */
+    fun permissionsHeading(provider: String?): String =
+        if (provider.isNullOrEmpty()) "PERMISSIONS" else "${provider.uppercase()} PERMISSIONS"
 
     /** A command as TalkBack speaks it: its name, then where it comes from. */
     fun command(command: CommandView): String =
@@ -1146,16 +1178,30 @@ object ChatWords {
     }
 
     /** Who must be signed in again, for the card that stands in the composer's place. */
-    fun needsSignIn(kind: Kind?): String =
-        if (kind == Kind.Codex) "Codex needs you to sign in" else "Claude needs you to sign in"
+    fun needsSignIn(provider: String): String = "$provider needs you to sign in"
 
-    /** Where and how to sign in again: on the agent's own host. */
-    fun signInSteps(kind: Kind?, host: String): String =
-        if (kind == Kind.Codex) {
-            "Run codex login on $host."
-        } else {
-            "Run claude and sign in with /login on $host."
-        }
+    /**
+     * Where and how to sign in again: on the agent's own host, since that is
+     * where the program keeps its credential, in the program's own words for
+     * what to do ("Run codex login."), which the host gives as plain text and
+     * which are shown as given.
+     */
+    fun signInSteps(hint: String, host: String): String {
+        val steps = signInHint(hint)
+        return if (steps.isEmpty()) "Sign it in on $host." else "$steps on $host."
+    }
+
+    /** The same steps after a sentence that has already named the host, so the host isn't said twice. */
+    fun signInStepsThere(hint: String): String {
+        val steps = signInHint(hint)
+        return if (steps.isEmpty()) "Sign it in there." else "$steps there."
+    }
+
+    /**
+     * The program's own words for signing in, as a sentence's start with no
+     * stop, where the device goes without saying; empty when it gave none.
+     */
+    fun signInHint(hint: String): String = hint.trim().trimEnd('.')
 
     fun signIn(view: SignInView): String {
         val head = if (view.state == SignInState.Failed) "Sign-in failed" else "Signed out"
@@ -1232,6 +1278,8 @@ object ChatWords {
             ChoiceOutcome.OpenLink -> "I\u2019m done"
             ChoiceOutcome.GrantForTurn -> "Grant"
             ChoiceOutcome.GrantForSession -> "Grant"
+            // The agent's own words for what it keeps deciding itself.
+            is ChoiceOutcome.Offered -> outcome.name
         }
         return if (choice.takesNote) "$label\u2026" else label
     }

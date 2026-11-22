@@ -99,7 +99,6 @@ import sh.amux.values.Kind
 import sh.amux.values.LineKind
 import sh.amux.values.OpenedAgent
 import sh.amux.values.PhaseView
-import sh.amux.values.Provider
 import sh.amux.values.Reach
 import sh.amux.values.RouteKind
 import sh.amux.values.Row
@@ -502,7 +501,7 @@ object Stories {
                 ChatSettingsSheetContent(
                     state = ChatSettingsState(
                         settings = F.settingsClaudePty,
-                        kind = chat.state.frame?.kind,
+                        provider = chat.state.frame?.provider?.name,
                         context = chat.state.frame?.context,
                     ),
                     onChange = {},
@@ -1621,8 +1620,8 @@ object Stories {
     private fun newAgentState(): NewAgentScreenState = NewAgentScreenState(
         hosts = F.newAgentHosts,
         selectedHostId = F.newAgentHosts.first().hostId,
-        provider = Provider.Claude,
-        availableProviders = listOf(Provider.Claude, Provider.Codex),
+        provider = "claude",
+        availableProviders = F.newAgentHosts.first().providers,
         offer = NewAgentOfferUi.Offered,
         settings = F.claudeCatalogue,
         listing = NewAgentListingUi.Ready,

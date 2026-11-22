@@ -1591,7 +1591,7 @@ class ChatModel(
                         command = outcome.command,
                         offered = outcome.offered,
                         hint = outcome.hint,
-                        kind = frame?.kind,
+                        agent = frame?.provider?.name,
                     )
                 }
                 is CommandOutcome.Unknown -> {

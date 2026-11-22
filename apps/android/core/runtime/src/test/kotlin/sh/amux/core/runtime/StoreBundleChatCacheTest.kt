@@ -17,6 +17,8 @@ import sh.amux.values.AgentAct
 import sh.amux.values.AgentKey
 import sh.amux.values.ChatDelta
 import sh.amux.values.ChatFrame
+import sh.amux.values.Capabilities
+import sh.amux.values.ProviderLabel
 import sh.amux.values.Comparison
 import sh.amux.values.Composer
 import sh.amux.values.ComposerView
@@ -97,7 +99,17 @@ class StoreBundleChatCacheTest {
     private fun makeFrame(agent: AgentKey, caughtUp: Boolean): ChatFrame = ChatFrame(
         agent = agent,
         name = "agent",
-        kind = Kind.ClaudeSdk,
+        provider = ProviderLabel("claude", "Claude"),
+        capabilities = Capabilities(
+            stopsJob = true,
+            switchesBack = false,
+            attachable = false,
+            resumable = true,
+            sendsNow = true,
+            images = true,
+            files = true,
+            passesUnknownCommands = true,
+        ),
         phase = PhaseView.Idle,
         composer = ComposerView(mode = Composer.Send, switchedAway = false),
         controls = ControlsSummary(),

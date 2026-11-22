@@ -168,6 +168,7 @@ class ChatRowsTest {
             fetches = 0,
             subagents = 0,
             other = 0,
+            denied = 0,
         )
         val foldedRun = Run(
             first = "e1",

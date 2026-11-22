@@ -35,6 +35,8 @@ import sh.amux.values.Changes
 import sh.amux.values.ChatAgents
 import sh.amux.values.ChatDelta
 import sh.amux.values.ChatFrame
+import sh.amux.values.Capabilities
+import sh.amux.values.ProviderLabel
 import sh.amux.values.ClientCommand
 import sh.amux.values.CommandOutcome
 import sh.amux.values.CommandView
@@ -579,7 +581,17 @@ class ChatModelTest {
     ): ChatFrame = ChatFrame(
         agent = AgentKey(host = listOf(1), agent = listOf(2)),
         name = "a",
-        kind = kind,
+        provider = if (kind == Kind.Codex) ProviderLabel("codex", "Codex") else ProviderLabel("claude", "Claude"),
+        capabilities = Capabilities(
+            stopsJob = true,
+            switchesBack = kind == Kind.ClaudePty,
+            attachable = kind != Kind.ClaudeSdk,
+            resumable = true,
+            sendsNow = true,
+            images = true,
+            files = true,
+            passesUnknownCommands = kind != Kind.Codex,
+        ),
         phase = phase,
         composer = ComposerView(mode = mode, switchedAway = switchedAway, activity = null),
         controls = ControlsSummary(),
@@ -773,7 +785,7 @@ class ChatModelTest {
             liveShown = false,
             unresolvedFailure = false,
             open = false,
-            counts = RunCounts(0, 0, 300, 0, 0, 0, 0, 0),
+            counts = RunCounts(0, 0, 300, 0, 0, 0, 0, 0, 0),
         )
         val runSource = FakeChat(listOf(proseRow("r", 5, run = bigRun), proseRow("s", 6)), chatFrame(hasOlder = true))
         val runModel = ChatModel(source = runSource, scope = this, loadingHintAfterMs = -1L)
@@ -993,6 +1005,7 @@ class ChatModelTest {
             questionNote = true,
             questionSkip = true,
             questionReply = true,
+            replyInstead = false,
             stopsTurn = true,
             defaultToNo = false,
             state = CardState.Open,
@@ -1287,6 +1300,7 @@ class ChatModelTest {
             questionNote = true,
             questionSkip = true,
             questionReply = true,
+            replyInstead = false,
             stopsTurn = true,
             defaultToNo = false,
             state = CardState.Open,

@@ -166,6 +166,7 @@ class ChatWordsTest {
                 fetches = 0,
                 subagents = 0,
                 other = 0,
+                denied = 0,
             ),
             hidden = null,
             recent = null,
@@ -173,7 +174,7 @@ class ChatWordsTest {
         assertEquals("Read 4 files, searched 2 times", ChatWords.run(run, counts = run.counts))
 
         val singleSearch = run.copy(
-            counts = RunCounts(0, 0, 1, 1, 0, 0, 0, 0),
+            counts = RunCounts(0, 0, 1, 1, 0, 0, 0, 0, 0),
         )
         assertEquals("Read 1 file, searched once", ChatWords.run(singleSearch, counts = singleSearch.counts))
 
@@ -195,6 +196,7 @@ class ChatWordsTest {
                 fetches = 0,
                 subagents = 0,
                 other = 1,
+                denied = 0,
             ),
             hidden = null,
             recent = null,
@@ -205,8 +207,8 @@ class ChatWordsTest {
 
     @Test
     fun runPlacementHandlesOwnOpenLiveFoldedAndFailed() {
-        val counts = RunCounts(commands = 1, edits = 0, reads = 2, searches = 0, lists = 0, fetches = 0, subagents = 0, other = 0)
-        val hiddenCounts = RunCounts(commands = 0, edits = 0, reads = 1, searches = 0, lists = 0, fetches = 0, subagents = 0, other = 0)
+        val counts = RunCounts(commands = 1, edits = 0, reads = 2, searches = 0, lists = 0, fetches = 0, subagents = 0, other = 0, denied = 0)
+        val hiddenCounts = RunCounts(commands = 0, edits = 0, reads = 1, searches = 0, lists = 0, fetches = 0, subagents = 0, other = 0, denied = 0)
 
         assertEquals(RunPlacement.Own, RunPlacement.of(row(RowKind.Stopped), open = false) { null })
 
@@ -672,26 +674,44 @@ class ChatWordsTest {
 
     @Test
     fun signingInIsAskedForOnTheAgentsHost() {
-        assertEquals("Claude needs you to sign in", ChatWords.needsSignIn(Kind.ClaudeSdk))
-        assertEquals("Run claude and sign in with /login on desk.", ChatWords.signInSteps(Kind.ClaudeSdk, host = "desk"))
-        assertEquals("Codex needs you to sign in", ChatWords.needsSignIn(Kind.Codex))
-        assertEquals("Run codex login on desk.", ChatWords.signInSteps(Kind.Codex, host = "desk"))
+        assertEquals("Claude needs you to sign in", ChatWords.needsSignIn("Claude"))
+        assertEquals(
+            "Run claude and sign in with /login on desk.",
+            ChatWords.signInSteps("Run claude and sign in with /login.", host = "desk"),
+        )
+        assertEquals("OpenCode needs you to sign in", ChatWords.needsSignIn("OpenCode"))
+        assertEquals("Run codex login on desk.", ChatWords.signInSteps("Run codex login.", host = "desk"))
+        // A host that gives no words for it still says where.
+        assertEquals("Sign it in on desk.", ChatWords.signInSteps("", host = "desk"))
+        assertEquals("Run codex login there.", ChatWords.signInStepsThere("Run codex login."))
     }
 
     @Test
     fun theSignInNoticeEndsSayingSendingTriesAgain() {
-        val failed = SignInView(state = SignInState.Failed, account = "ada@example.com", message = "OAuth token has expired.")
+        val failed = SignInView(
+            state = SignInState.Failed,
+            account = "ada@example.com",
+            message = "OAuth token has expired.",
+            providerName = "Claude",
+            hint = "Run claude and sign in with /login.",
+        )
         assertEquals(
             "Sign-in failed · ada@example.com\n" +
                 "OAuth token has expired.\n" +
                 "Run claude and sign in with /login on desk.\n" +
                 "Signed in elsewhere? Send a message to try again.",
-            ChatWords.signInDetail(failed, kind = Kind.ClaudeSdk, host = "desk"),
+            ChatWords.signInDetail(failed, host = "desk"),
         )
-        val signedOut = SignInView(state = SignInState.SignedOut, account = "", message = "")
+        val signedOut = SignInView(
+            state = SignInState.SignedOut,
+            account = "",
+            message = "",
+            providerName = "Codex",
+            hint = "Run codex login.",
+        )
         assertEquals(
             "Signed out\nRun codex login on desk.\nSigned in elsewhere? Send a message to try again.",
-            ChatWords.signInDetail(signedOut, kind = Kind.Codex, host = "desk"),
+            ChatWords.signInDetail(signedOut, host = "desk"),
         )
     }
 
@@ -884,6 +904,7 @@ class ChatWordsTest {
             questionNote = false,
             questionSkip = false,
             questionReply = false,
+            replyInstead = false,
             stopsTurn = false,
             defaultToNo = false,
             state = CardState.Open,
@@ -948,10 +969,10 @@ class ChatWordsTest {
 
     @Test
     fun aSubagentsComposerNamesWhoRunsIt() {
-        assertEquals("Claude runs this subagent", ChatWords.nativeRunner(Kind.ClaudeSdk))
-        assertEquals("Claude runs this subagent", ChatWords.nativeRunner(Kind.ClaudePty))
-        assertEquals("Codex runs this subagent", ChatWords.nativeRunner(Kind.Codex))
+        assertEquals("Claude runs this subagent", ChatWords.nativeRunner("Claude"))
+        assertEquals("Codex runs this subagent", ChatWords.nativeRunner("Codex"))
         assertEquals("Its provider runs this subagent", ChatWords.nativeRunner(null))
+        assertEquals("Its provider runs this subagent", ChatWords.nativeRunner(""))
         assertEquals("It takes no messages.", ChatWords.nativeTakesNoMessages)
         assertEquals(
             "",
@@ -992,8 +1013,9 @@ class ChatWordsTest {
         )
         assertEquals(ChatWords.AttachmentKind.Empty, ChatWords.chipKind(AttachmentView.Empty))
         assertEquals("Replied instead", ChatWords.resolution(Resolution.Replied, "Done"))
-        assertEquals("CODEX PERMISSIONS", ChatWords.permissionsHeading(Kind.Codex))
-        assertEquals("CLAUDE PERMISSIONS", ChatWords.permissionsHeading(Kind.ClaudeSdk))
+        assertEquals("CODEX PERMISSIONS", ChatWords.permissionsHeading("Codex"))
+        assertEquals("OPENCODE PERMISSIONS", ChatWords.permissionsHeading("OpenCode"))
+        assertEquals("PERMISSIONS", ChatWords.permissionsHeading(null))
         assertEquals(
             "/review, from user",
             ChatWords.command(CommandView("/review", "Review code", "", "user", "/", false)),
@@ -1003,6 +1025,9 @@ class ChatWordsTest {
             name = "child",
             handle = "child",
             kind = Kind.Codex,
+            provider = "codex",
+            providerName = "Codex",
+            attachable = false,
             attention = Attention.Working,
             cwd = "~/src",
             phaseSinceMs = 0L,

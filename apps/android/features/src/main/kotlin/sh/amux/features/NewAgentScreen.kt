@@ -65,9 +65,9 @@ import sh.amux.design.Space
 import sh.amux.values.AgentNameProblem
 import sh.amux.values.Changeable
 import sh.amux.values.Directory
+import sh.amux.values.HostProvider
 import sh.amux.values.HostView
 import sh.amux.values.NewAgentPick
-import sh.amux.values.Provider
 import sh.amux.values.SettingsView
 import sh.amux.words.ChatWords
 import sh.amux.words.PlaceNames
@@ -102,13 +102,15 @@ object NewAgentTags {
     const val NAME_ERROR: String = "new-agent.name.error"
     const val OFFER_ASKING: String = "new-agent.offer.asking"
     const val OFFER_UNAVAILABLE: String = "new-agent.offer.unavailable"
+    const val OFFER_OWN: String = "new-agent.offer.own"
+    const val AGENTS_ASKING: String = "new-agent.agents.asking"
     const val SIGNED_OUT_WARNING: String = "new-agent.signed-out"
     const val FAILURE: String = "new-agent.refusal"
     const val START_BUTTON: String = "new-agent.start"
 
     fun hostOption(name: String): String = "new-agent.host.$name"
-    /** A provider's choice in the Agent list. */
-    fun providerChip(provider: Provider): String = "new-agent.provider.${provider.name.lowercase()}"
+    /** An agent's choice in the Agent list, by the id its host lists it by. */
+    fun providerChip(provider: String): String = "new-agent.provider.$provider"
     fun recentChip(name: String): String = "new-agent.recent.$name"
     fun browseDirectory(name: String): String = "new-agent.repository.$name"
     fun browsePin(name: String): String = "new-agent.pin.$name"
@@ -127,6 +129,12 @@ enum class NewAgentListingUi {
 enum class NewAgentOfferUi {
     Asking,
     Offered,
+
+    /**
+     * Offered, with no models listed yet, as for an agent that names its
+     * models only once a conversation has started there.
+     */
+    OwnModel,
     Unavailable,
 }
 
@@ -136,8 +144,10 @@ data class NewAgentScreenState(
     val hosts: List<HostView> = emptyList(),
     val selectedHostId: List<Int>? = null,
     val connectingHostIds: Set<List<Int>> = emptySet(),
-    val provider: Provider = Provider.Claude,
-    val availableProviders: List<Provider> = listOf(Provider.Claude, Provider.Codex),
+    /** The chosen agent's id; null while the host lists none. */
+    val provider: String? = null,
+    /** The agents the chosen host offers, named as it names them. */
+    val availableProviders: List<HostProvider> = emptyList(),
     val offer: NewAgentOfferUi = NewAgentOfferUi.Asking,
     val settings: SettingsView? = null,
     val listing: NewAgentListingUi = NewAgentListingUi.None,
@@ -172,8 +182,12 @@ data class NewAgentScreenState(
     val likely: List<Directory>
         get() = recent + repositories
 
+    /** The chosen agent as the host lists it. */
+    val chosenAgent: HostProvider?
+        get() = availableProviders.firstOrNull { it.provider == provider }
+
     val providerSignedIn: Boolean?
-        get() = selectedHost?.providers?.firstOrNull { it.provider == provider }?.signedIn
+        get() = chosenAgent?.signedIn
 
     fun isPinned(path: String): Boolean = repositories.any { it.path == path }
 
@@ -182,7 +196,7 @@ data class NewAgentScreenState(
             val hostId = selectedHostId ?: return false
             val host = hosts.firstOrNull { it.hostId == hostId }
             if (host != null && !host.isOnline) return false
-            return directory.isNotEmpty() && nameProblem == null && !starting
+            return provider != null && directory.isNotEmpty() && nameProblem == null && !starting
         }
 }
 
@@ -190,7 +204,7 @@ data class NewAgentScreenState(
 sealed interface NewAgentAction {
     data object Back : NewAgentAction
     data class SelectHost(val hostId: List<Int>) : NewAgentAction
-    data class SelectProvider(val provider: Provider) : NewAgentAction
+    data class SelectProvider(val provider: String) : NewAgentAction
     data class SetBrowsing(val open: Boolean) : NewAgentAction
     data class ChooseDirectory(val path: String) : NewAgentAction
     data class UpdateQuery(val query: String) : NewAgentAction
@@ -230,7 +244,7 @@ fun NewAgentScreen(
     val scroll = rememberScrollState()
 
     val hostName = state.selectedHost?.name ?: stringResource(R.string.new_agent_host_fallback)
-    val providerTitle = providerLabel(state.provider)
+    val providerTitle = state.chosenAgent?.name ?: stringResource(R.string.new_agent_provider_choose)
 
     AmuxGround(
         modifier = modifier.testTag(NewAgentTags.SCREEN),
@@ -379,8 +393,8 @@ fun NewAgentScreen(
                     AmuxSectionHeader(title = stringResource(R.string.new_agent_section_agent))
                     AmuxRowCard(modifier = Modifier.padding(horizontal = Space.margin)) {
                         // A row that opens a list rather than a chip for each:
-                        // more agents than two are coming, and the list says
-                        // which one is not signed in on the computer.
+                        // a host offers as many agents as its person set up,
+                        // and the list says which one is not signed in there.
                         NewAgentFieldRow(
                             label = stringResource(R.string.new_agent_provider_label),
                             value = providerTitle,
@@ -391,7 +405,7 @@ fun NewAgentScreen(
                             onClick = { activePicker = ActiveNewAgentPicker.Provider },
                             // The provider's id, as the other clients report it.
                             modifier = Modifier
-                                .semantics { reportedValue = state.provider.name.lowercase() }
+                                .semantics { reportedValue = state.provider.orEmpty() }
                                 .testTag(NewAgentTags.PROVIDER_ROW),
                         )
                         var hasPrecedingRow = true
@@ -471,13 +485,16 @@ fun NewAgentScreen(
                         )
                     }
 
-                    if (state.providerSignedIn == false) {
+                    val chosenAgent = state.chosenAgent
+                    if (chosenAgent != null && chosenAgent.signedIn == false) {
+                        // In the agent's own words for what to do, on the
+                        // device where it keeps its credential.
                         Text(
                             text = stringResource(
                                 R.string.new_agent_provider_signed_out,
-                                providerTitle,
+                                chosenAgent.name,
                                 hostName,
-                            ),
+                            ) + " " + ChatWords.signInStepsThere(chosenAgent.signInHint),
                             style = AmuxTheme.typography.detail,
                             color = colors.accent,
                             modifier = Modifier
@@ -486,9 +503,28 @@ fun NewAgentScreen(
                         )
                     }
 
-                    if (state.selectedHostId != null) {
+                    if (state.selectedHostId != null && chosenAgent == null) {
+                        Text(
+                            text = stringResource(R.string.new_agent_agents_asking, hostName),
+                            style = AmuxTheme.typography.detail,
+                            color = colors.inkMuted,
+                            modifier = Modifier
+                                .padding(horizontal = Space.margin)
+                                .testTag(NewAgentTags.AGENTS_ASKING),
+                        )
+                    } else if (state.selectedHostId != null) {
                         when (state.offer) {
                             NewAgentOfferUi.Offered -> Unit
+                            NewAgentOfferUi.OwnModel -> {
+                                Text(
+                                    text = stringResource(R.string.new_agent_offer_own, providerTitle),
+                                    style = AmuxTheme.typography.detail,
+                                    color = colors.inkMuted,
+                                    modifier = Modifier
+                                        .padding(horizontal = Space.margin)
+                                        .testTag(NewAgentTags.OFFER_OWN),
+                                )
+                            }
                             NewAgentOfferUi.Asking -> {
                                 Text(
                                     text = stringResource(
@@ -591,28 +627,22 @@ fun NewAgentScreen(
                     val notSignedIn = stringResource(R.string.new_agent_provider_not_signed_in, hostName)
                     ChoicePickerSheetContent(
                         title = stringResource(R.string.new_agent_provider_label),
-                        options = state.availableProviders.filter { it != Provider.Unspecified }.map { provider ->
-                            val signedIn = state.selectedHost?.providers?.firstOrNull { it.provider == provider }?.signedIn
+                        options = state.availableProviders.map { offered ->
                             PickerOptionUi(
-                                value = provider.name,
-                                title = providerLabel(provider),
-                                detail = if (signedIn == false) notSignedIn else "",
-                                current = provider == state.provider,
+                                value = offered.provider,
+                                title = offered.name,
+                                detail = if (offered.signedIn == false) notSignedIn else "",
+                                current = offered.provider == state.provider,
                                 warn = false,
                                 enabled = true,
                             )
                         },
                         onSelect = { value ->
                             activePicker = null
-                            Provider.entries.firstOrNull { it.name == value }?.let {
-                                onAction(NewAgentAction.SelectProvider(it))
-                            }
+                            onAction(NewAgentAction.SelectProvider(value))
                         },
                         onDismiss = { activePicker = null },
-                        tagOf = { value ->
-                            Provider.entries.firstOrNull { it.name == value }
-                                ?.let(NewAgentTags::providerChip) ?: NewAgentTags.pickerOption(value)
-                        },
+                        tagOf = NewAgentTags::providerChip,
                     )
                 }
                 ActiveNewAgentPicker.Model -> {
@@ -1312,12 +1342,6 @@ private fun PickerSheetHeader(
     onDismiss: () -> Unit,
 ) {
     AmuxSheetHeader(title = title, onClose = onDismiss)
-}
-
-@Composable
-private fun providerLabel(provider: Provider): String = when (provider) {
-    Provider.Codex -> stringResource(R.string.new_agent_provider_codex)
-    Provider.Claude, Provider.Unspecified -> stringResource(R.string.new_agent_provider_claude)
 }
 
 @Composable

@@ -134,7 +134,7 @@ internal fun ChatBottomDock(
                 reach = state.subject.reach,
                 connecting = state.subject.connecting,
                 phase = frame?.phase ?: PhaseView.Idle,
-                kind = frame?.kind,
+                provider = frame?.provider?.name,
                 settled = state.subject.filing == Filing.Closed,
                 canSend = state.canSend,
                 canResume = state.canResume,

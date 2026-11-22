@@ -44,6 +44,7 @@ import sh.amux.values.FormFieldKind
 import sh.amux.values.FormValue
 import sh.amux.values.Git
 import sh.amux.values.GroupState
+import sh.amux.values.HostProvider
 import sh.amux.values.HostView
 import sh.amux.values.JobRow
 import sh.amux.values.JobStop
@@ -61,8 +62,6 @@ import sh.amux.values.PermissionGrant
 import sh.amux.values.PhaseView
 import sh.amux.values.PlanVerdict
 import sh.amux.values.Platform
-import sh.amux.values.Provider
-import sh.amux.values.ProviderSignIn
 import sh.amux.values.QuestionView
 import sh.amux.values.QueuedRow
 import sh.amux.values.Reach
@@ -218,7 +217,13 @@ internal object CatalogFixtures {
         QueuedRow(listOf(3), listOf(Segment.Text("worker-2 finished the specs.")), steered = false, canWithdraw = false, canSendNow = true, fromAgent = "worker-2"),
     )
 
-    val failedSignIn = SignInView(state = SignInState.Failed, account = "ada@example.com", message = "OAuth token has expired.")
+    val failedSignIn = SignInView(
+        state = SignInState.Failed,
+        account = "ada@example.com",
+        message = "OAuth token has expired.",
+        providerName = "Claude",
+        hint = "Run claude and sign in with /login.",
+    )
 
     private fun r(
         id: String,
@@ -459,6 +464,9 @@ internal object CatalogFixtures {
             name = "pairing-audit",
             handle = "pairing-audit",
             kind = Kind.ClaudeSdk,
+            provider = "claude",
+            providerName = "Claude",
+            attachable = false,
             attention = Attention.Working,
             cwd = "/Users/ada/src/amux",
             phaseSinceMs = 0L,
@@ -505,6 +513,9 @@ internal object CatalogFixtures {
         name = name,
         handle = name,
         kind = kind,
+        provider = FixtureProviders.of(kind).first.provider,
+        providerName = FixtureProviders.of(kind).first.name,
+        attachable = FixtureProviders.of(kind).second.attachable,
         attention = attention,
         cwd = "",
         phaseSinceMs = 0L,
@@ -607,6 +618,7 @@ internal object CatalogFixtures {
         questionNote = kind != Kind.ClaudePty,
         questionSkip = kind != Kind.ClaudePty,
         questionReply = true,
+        replyInstead = false,
         stopsTurn = true,
         defaultToNo = false,
         state = state,
@@ -847,9 +859,9 @@ internal object CatalogFixtures {
         relayOnly: Boolean = false,
         pairingOpen: Boolean = false,
         version: String? = "0.8.0",
-        providers: List<ProviderSignIn> = listOf(
-            ProviderSignIn(Provider.Claude, signedIn = true),
-            ProviderSignIn(Provider.Codex, signedIn = false),
+        providers: List<HostProvider> = listOf(
+            FixtureProviders.claude(true),
+            FixtureProviders.codex(false),
         ),
     ): HostView = HostView(
         hostId = List(16) { index },
@@ -937,8 +949,8 @@ internal object CatalogFixtures {
             pairingOpen = false,
             current = true,
             providers = listOf(
-                ProviderSignIn(Provider.Claude, signedIn = true),
-                ProviderSignIn(Provider.Codex, signedIn = true),
+                FixtureProviders.claude(true),
+                FixtureProviders.codex(true),
             ),
             platform = Platform.Macos,
         ),

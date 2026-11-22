@@ -68,6 +68,7 @@ import sh.amux.values.ProsePart
 import sh.amux.testsupport.plainMarkdown
 import sh.amux.testsupport.prosePart
 import sh.amux.testsupport.MarkdownFixtures
+import sh.amux.testsupport.FixtureProviders
 
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -89,7 +90,8 @@ class ChatScreenTest {
     ): ChatFrame = ChatFrame(
         agent = agentKey,
         name = name,
-        kind = Kind.ClaudeSdk,
+        provider = FixtureProviders.of(Kind.ClaudeSdk).first,
+        capabilities = FixtureProviders.of(Kind.ClaudeSdk).second,
         phase = phase,
         composer = ComposerView(mode = mode, switchedAway = false, activity = null),
         controls = ControlsSummary(effort = null, mode = null, model = "Opus 4.6", permission = null),
@@ -151,6 +153,9 @@ class ChatScreenTest {
         name = name,
         handle = name,
         kind = Kind.ClaudeSdk,
+        provider = "claude",
+        providerName = "Claude",
+        attachable = false,
         attention = attention,
         cwd = "/Users/ada/source/amux",
         phaseSinceMs = 1_000L,
@@ -430,6 +435,7 @@ class ChatScreenTest {
             questionNote = false,
             questionSkip = false,
             questionReply = false,
+            replyInstead = false,
             stopsTurn = true,
             defaultToNo = false,
             state = CardState.Open,
@@ -481,6 +487,7 @@ class ChatScreenTest {
         questionNote = false,
         questionSkip = false,
         questionReply = false,
+        replyInstead = false,
         stopsTurn = true,
         defaultToNo = false,
         state = CardState.Open,

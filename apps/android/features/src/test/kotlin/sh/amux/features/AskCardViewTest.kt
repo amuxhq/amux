@@ -91,6 +91,7 @@ class AskCardViewTest {
         questionNote = questionNote,
         questionSkip = questionSkip,
         questionReply = questionReply,
+        replyInstead = false,
         stopsTurn = stopsTurn,
         defaultToNo = false,
         state = state,

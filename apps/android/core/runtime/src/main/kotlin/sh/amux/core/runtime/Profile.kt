@@ -20,7 +20,6 @@ import sh.amux.values.OnboardingState
 import sh.amux.values.PairRequest
 import sh.amux.values.PairingWindowView
 import sh.amux.values.PendingPair
-import sh.amux.values.Provider
 import sh.amux.values.ReportSent
 import sh.amux.values.Roster
 import sh.amux.values.SignInAnswer
@@ -168,7 +167,8 @@ class Profile internal constructor(
         return act { live -> NativeBridge.profileCreateAgent(live, agentJson) }
     }
 
-    suspend fun hostCatalogue(host: HostId, provider: Provider): Result<Catalogue> {
+    /** What an agent, by the id the host lists it by, offers on a host with no agent running there. */
+    suspend fun hostCatalogue(host: HostId, provider: String): Result<Catalogue> {
         val hostJson = AmuxJson.json.encodeToString(host.bytes)
         val providerJson = AmuxJson.json.encodeToString(provider)
         return act { live -> NativeBridge.profileHostCatalogue(live, hostJson, providerJson) }

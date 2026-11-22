@@ -9,7 +9,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import sh.amux.core.runtime.HostId
 import sh.amux.core.runtime.NewAgentBridge
-import sh.amux.core.runtime.NewAgentProvider
 import sh.amux.core.runtime.NewAgentSource
 import sh.amux.core.runtime.NewAgentStore
 import sh.amux.core.runtime.StoreBundle
@@ -79,9 +78,7 @@ internal fun NewAgentRoute(
                 is NewAgentAction.SelectHost -> {
                     HostId.fromBytes(action.hostId)?.let(store::selectHost)
                 }
-                is NewAgentAction.SelectProvider -> {
-                    NewAgentProvider.fromWire(action.provider)?.let(store::selectProvider)
-                }
+                is NewAgentAction.SelectProvider -> store.selectProvider(action.provider)
                 is NewAgentAction.SetBrowsing -> store.setBrowsing(action.open)
                 is NewAgentAction.ChooseDirectory -> store.chooseDirectory(action.path)
                 is NewAgentAction.UpdateQuery -> store.updateQuery(action.query)

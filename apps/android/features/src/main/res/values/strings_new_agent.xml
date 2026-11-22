@@ -22,10 +22,11 @@
     <string name="new_agent_recent_spoken">Start in %1$s</string>
     <string name="new_agent_provider_label">Agent</string>
     <string name="new_agent_provider_not_signed_in">Not signed in on %1$s</string>
-    <string name="new_agent_provider_claude">Claude</string>
-    <string name="new_agent_provider_codex">Codex</string>
+    <string name="new_agent_provider_choose">Choose</string>
     <string name="new_agent_provider_signed_out">%1$s is not signed in on %2$s. Its agents can’t work there until it is.</string>
     <string name="new_agent_offer_asking">Asking %1$s what %2$s offers…</string>
+    <string name="new_agent_offer_own">%1$s starts on its own model and settings.</string>
+    <string name="new_agent_agents_asking">Asking %1$s which agents it runs…</string>
     <string name="new_agent_offer_unavailable">%1$s could not say what %2$s offers. The agent starts with the device’s defaults.</string>
     <string name="new_agent_model_label">Model</string>
     <string name="new_agent_effort_label">Effort</string>

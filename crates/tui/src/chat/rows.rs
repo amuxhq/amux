@@ -5,8 +5,8 @@
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ui_view::{
-    AttachmentView, CallPhase, ExploreVerb, LineKind, NoticeReason, NoticeSeverity, PatchHead, Row,
-    RowKind, Segment,
+    AttachmentView, CallPhase, ExploreVerb, LineKind, NoticeReason, NoticeSeverity, PatchHead,
+    ProsePart, Row, RowKind, Segment,
 };
 use wire::{BoundaryKind, EnvelopeKind, SendState};
 
@@ -196,13 +196,13 @@ pub(crate) type LinkedLine = (Line<'static>, Vec<Link>, (usize, Join, bool));
 /// its words and how it continues the one before when copied. `streaming`
 /// is for words still being written.
 pub(crate) fn markdown_linked(
-    source: &str,
+    markdown: &ui_view::Markdown,
     streaming: bool,
     width: usize,
     theme: Theme,
 ) -> Vec<LinkedLine> {
     crate::markdown::markdown_lines(
-        source,
+        markdown,
         streaming,
         width.saturating_sub(INDENT).max(1),
         theme,
@@ -319,6 +319,17 @@ pub fn segment_lines(
 
 /// [`segment_lines`], each with how it reads when copied. A line starting
 /// `>` is a quote: on a rail in the quieter ink, as the composer shows it.
+/// A row's words and attachments as the segments they were parsed from.
+pub(crate) fn segments_of(parts: &[ProsePart]) -> Vec<Segment> {
+    parts
+        .iter()
+        .map(|part| match part {
+            ProsePart::Text(text) => Segment::Text(text.source.clone()),
+            ProsePart::Attachment(view) => Segment::Attachment(view.clone()),
+        })
+        .collect()
+}
+
 pub(crate) fn segment_rows(
     segments: &[Segment],
     width: usize,
@@ -619,9 +630,9 @@ fn body(row: &Row, state: RowState, width: usize, theme: Theme) -> Vec<Line<'sta
             // Its attachments as chips where they stand, as in a prompt.
             let body: String = body
                 .iter()
-                .map(|segment| match segment {
-                    Segment::Text(text) => text.clone(),
-                    Segment::Attachment(view) => chip(view),
+                .map(|part| match part {
+                    ProsePart::Text(text) => text.source.clone(),
+                    ProsePart::Attachment(view) => chip(view),
                 })
                 .collect();
             lines.extend(detail(body.trim(), width, theme.text(), limit, theme));

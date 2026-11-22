@@ -80,6 +80,13 @@ targets:
       # rest of the fixtures.
       - path: Packages/AmuxTestSupport/Sources/AmuxTestSupport/Resources
         buildPhase: resources
+      # Prose the Rust parser read for the catalogue's rows, compiled and
+      # bundled the same way, so a release carries none of it.
+      - path: Packages/AmuxCore/Sources/AmuxFixtures
+        excludes:
+          - "Fixtures/**"
+      - path: Packages/AmuxCore/Sources/AmuxFixtures/Fixtures
+        buildPhase: resources
       - path: Amux/Resources
         buildPhase: resources
       # The app icon. One 1024x1024 image; the catalog compiler derives every
@@ -209,7 +216,7 @@ targets:
           # are not compiled at all, so a door symbol or a fixture cannot
           # reach a shipped binary by way of a stray reference outside a
           # conditional. `just ios scope-audit` checks the built binary.
-          EXCLUDED_SOURCE_FILE_NAMES: "$(SRCROOT)/Amux/Debug/* $(SRCROOT)/Packages/AmuxTestSupport/Sources/AmuxTestSupport/* $(SRCROOT)/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Resources/*"
+          EXCLUDED_SOURCE_FILE_NAMES: "$(SRCROOT)/Amux/Debug/* $(SRCROOT)/Packages/AmuxTestSupport/Sources/AmuxTestSupport/* $(SRCROOT)/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Resources/* $(SRCROOT)/Packages/AmuxCore/Sources/AmuxFixtures/* $(SRCROOT)/Packages/AmuxCore/Sources/AmuxFixtures/Fixtures/*"
           # The bridge's static library marks thousands of Rust symbols
           # global, and the linker treats every exported symbol as live, so
           # it could neither drop their export table nor dead-strip the code

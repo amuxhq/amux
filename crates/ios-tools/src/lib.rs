@@ -1,4 +1,6 @@
 pub mod ios_verify;
+pub mod kotlin_types;
+pub mod markdown_fixtures;
 pub mod swift_types;
 
 /// The repository's wall-clock bound wrapper (`scripts/bounded`), addressed

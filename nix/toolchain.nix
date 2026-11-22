@@ -36,6 +36,9 @@ in
   pkgs.tmux
   # The browser extension under js/: its build scripts, npm and its tests.
   pkgs.nodejs_24
+  # The Android app under apps/android/: Gradle/Kotlin builds, JVM tests and Rust JNI cross-compilation.
+  pkgs.jdk21
+  pkgs.cargo-ndk
 ]
 # A C compiler for the crates that build C: ring, and SQLite where it is
 # bundled. Linux only. On macOS the iPhone bridge needs Apple's own toolchain

@@ -1,0 +1,15 @@
+shell | Agents, Devices |  | 0,0,411,923
+home | Agents, Nothing needs you, Search, Switch Account, New Agent |  | 0,0,411,818
+home.list |  |  | 0,0,411,818
+home.row.<desk-work> | desk-work, Idle, desk, /private/tmp/amux-android-journey/net/desk/work, <age> |  | 0,122,411,64
+home.subtitle | Nothing needs you |  | 16,94,112,16
+home.search.toggle | Search |  | 315,66,40,40
+home.accounts | Switch Account | ada | 367,70,32,32
+home.newAgent | New Agent |  | 240,746,155,56
+tab.agents | Agents | selected | 0,819,202,80
+tab.hosts | Devices |  | 210,819,202,80
+report.screen | Close, Report a Problem |  | 0,0,411,923
+report.cancel | Close |  | 8,66,40,40
+report.sent | Report sent | report-1 | 16,134,379,749
+report.receipt.id | report-1 |  | 16,216,67,18
+report.receipt.copy | Copy Reference |  | 95,202,130,48

@@ -828,6 +828,7 @@ impl SingleDaemon {
             link,
             peer: PEER,
             kind: CarrierKind::Direct,
+            lan: false,
             resumed: Some(peer_key()),
         };
         let (_, out) = self.step_reading(next, input, false);

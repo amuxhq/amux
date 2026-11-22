@@ -64,7 +64,7 @@ fn a_session_grows_a_net_drives_it_and_keeps_the_evidence() {
     let status = said(&ctl(folder, &["status"]));
     assert!(
         status.contains("agents outlive a stopped daemon by 20s"),
-        "the status names the net's agent grace: {status}"
+        "the status names each host's agent grace: {status}"
     );
     assert!(said(&ctl(folder, &["link", "desk", "laptop"])).contains("up"));
     let spawned = said(&ctl(

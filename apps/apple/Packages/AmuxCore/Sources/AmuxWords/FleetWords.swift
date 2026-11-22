@@ -43,7 +43,7 @@ public enum FleetWords {
         case .lastSaid(let said): return said.isEmpty ? nil : (said, .quiet)
         case .exited(.failed(let cause)): return (String(localized: "Stopped · \(cause)"), .error)
         case .hostRevoked:
-            return (String(localized: "Unpaired by its computer · pair again to reach it"), .warning)
+            return (String(localized: "Unpaired by its device · pair again to reach it"), .warning)
         case .exited(.finished), .exited(.ended), .blank: return nil
         }
     }

@@ -33,6 +33,7 @@ use serde::ser::{SerializeMap as _, Serializer};
 use serde_json::{Value, json};
 
 use super::device::{self, Phone};
+use super::driver::{Driver, Tab};
 use super::phone::{
     BUNDLE_ID, Launch, Launcher, PhoneJourney, SCRATCH_DIR, Setup, Target, ask, golden_device,
 };
@@ -845,7 +846,7 @@ impl Run {
         let row = format!("home.row.{}", self.journey.agent_id(STREAM_AGENT));
         // Frames only while tapping: the app is measured as it ships.
         self.journey.geometry(true)?;
-        self.journey.tab("Agents")?;
+        self.journey.tab(Tab::Agents)?;
         self.journey.wait_for(&[&row])?;
         self.journey.tap(&row)?;
         self.journey.wait_for(&["chat.field"])?;
@@ -949,7 +950,7 @@ impl Run {
         const PRESS_AFTER: f64 = 0.6;
         let row = format!("home.row.{}", self.journey.agent_id(STREAM_AGENT));
         self.journey.geometry(true)?;
-        self.journey.tab("Agents")?;
+        self.journey.tab(Tab::Agents)?;
         for attempt in 0..=SAMPLES {
             self.journey.wait_for(&[&row])?;
             std::thread::sleep(Duration::from_secs(2));

@@ -1,3 +1,4 @@
+import AmuxFixtures
 import AmuxCore
 import AmuxWords
 import XCTest
@@ -147,7 +148,7 @@ final class ChatWordsTests: XCTestCase {
 
     func testTheRailRunsBetweenGridRowsAndBreaksAtProse() {
         let tool = row(.background(command: "npm run dev", description: "", running: true, durationMs: nil))
-        let prose = row(.prose(text: [.text("Done.")], streaming: false, workingNote: false))
+        let prose = row(.prose(text: [.text(Markdown(words: "Done."))], streaming: false, workingNote: false))
         XCTAssertEqual(RailJoin.of(tool, next: tool), RailJoin(continues: true))
         XCTAssertEqual(RailJoin.of(tool, next: prose), RailJoin(continues: false))
         XCTAssertEqual(RailJoin.of(tool, next: nil), RailJoin(continues: false))

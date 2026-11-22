@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- New Agent screen -->
+    <string name="new_agent_title">New Agent</string>
+    <string name="new_agent_section_where">Where</string>
+    <string name="new_agent_section_agent">Agent</string>
+    <string name="new_agent_section_name">Name</string>
+    <string name="new_agent_no_hosts">Pair a device before starting an agent.</string>
+    <string name="new_agent_host_label">Device</string>
+    <string name="new_agent_host_sheet_title">Choose Device</string>
+    <string name="new_agent_host_choose">Choose</string>
+    <string name="new_agent_host_fallback">the device</string>
+    <string name="new_agent_host_away">Away</string>
+    <string name="new_agent_host_offline">Offline</string>
+    <string name="new_agent_host_connecting">Connecting</string>
+    <string name="new_agent_host_local">Local</string>
+    <string name="new_agent_host_direct">Direct</string>
+    <string name="new_agent_host_relayed">Relayed</string>
+    <string name="new_agent_directory_label">Directory</string>
+    <string name="new_agent_directory_choose">Choose</string>
+    <string name="new_agent_directory_unavailable">%1$s could not list its repositories. Choose where its agents work, or type a path.</string>
+    <string name="new_agent_recent_spoken">Start in %1$s</string>
+    <string name="new_agent_provider_label">Agent</string>
+    <string name="new_agent_provider_not_signed_in">Not signed in on %1$s</string>
+    <string name="new_agent_provider_choose">Choose</string>
+    <string name="new_agent_provider_signed_out">%1$s is not signed in on %2$s. Its agents can’t work there until it is.</string>
+    <string name="new_agent_offer_asking">Asking %1$s what %2$s offers…</string>
+    <string name="new_agent_offer_own">%1$s starts on its own model and settings.</string>
+    <string name="new_agent_agents_asking">Asking %1$s which agents it runs…</string>
+    <string name="new_agent_offer_unavailable">%1$s could not say what %2$s offers. The agent starts with the device’s defaults.</string>
+    <string name="new_agent_model_label">Model</string>
+    <string name="new_agent_effort_label">Effort</string>
+    <string name="new_agent_effort_default">Default</string>
+    <string name="new_agent_permission_label">Permission</string>
+    <string name="new_agent_mode_label">Mode</string>
+    <string name="new_agent_unnamed_value">…</string>
+    <string name="new_agent_worktree_title">New worktree</string>
+    <string name="new_agent_worktree_detail">A worktree of its own, made from the directory’s repository</string>
+    <string name="new_agent_name_placeholder">Optional</string>
+    <string name="new_agent_name_label">Name</string>
+    <string name="new_agent_start_button">Start</string>
+    <string name="new_agent_start_on">Start on %1$s</string>
+    <string name="new_agent_starting">Starting…</string>
+
+    <!-- New Agent directory browser -->
+    <string name="new_agent_browse_title">Directory</string>
+    <string name="new_agent_browse_done">Done</string>
+    <string name="new_agent_browse_search_placeholder">Search folders</string>
+    <string name="new_agent_browse_search_clear">Clear Search</string>
+    <string name="new_agent_browse_section_found">Found</string>
+    <string name="new_agent_browse_section_repositories">Repositories</string>
+    <string name="new_agent_browse_section_recent">Recent</string>
+    <string name="new_agent_browse_section_history">From Claude Code and Codex</string>
+    <string name="new_agent_browse_section_typed">Or a path</string>
+    <string name="new_agent_browse_no_matches">No matching folders on this device.</string>
+    <string name="new_agent_browse_empty">Nothing has started on this device yet. Type a path below.</string>
+    <string name="new_agent_browse_reading">Reading this device’s repositories…</string>
+    <string name="new_agent_browse_unavailable">This device could not list its repositories.</string>
+    <string name="new_agent_browse_pin_add">Keep in Repositories</string>
+    <string name="new_agent_browse_pin_remove">Remove from Repositories</string>
+    <string name="new_agent_browse_typed_placeholder">~/somewhere/else</string>
+    <string name="new_agent_browse_typed_use">Use</string>
+    <string name="new_agent_browse_typed_use_spoken">Use This Path</string>
+
+</resources>

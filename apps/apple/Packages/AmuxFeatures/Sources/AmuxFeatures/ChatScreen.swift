@@ -595,7 +595,7 @@ struct FeedNotice: Hashable, Sendable {
 /// will stand once the agent has it, with how it is on its way under it.
 struct FeedLanding: Hashable, Sendable {
     let id: String
-    let text: [Segment]
+    let text: [ProsePart]
     let state: String
 }
 

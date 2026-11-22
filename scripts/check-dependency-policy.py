@@ -92,12 +92,16 @@ ALLOWED_LOCAL = {
     "app-runtime": {"client", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The daemon's profile runtime hosted in the phone's process.
     "app-embedded": {"analytics", "app-runtime", "client", "log-file", "node", "wire"},
-    # The C ABI over both.
+    # The language-neutral bridge over both.
     # The installer only off the phone, for a desktop app's first call.
-    "app-ffi": {
+    "app-bridge": {
         "app-embedded", "app-runtime", "client", "installer", "node", "ui-code", "ui-state", "ui-view",
         "wire",
     },
+    # The C ABI facade over the bridge.
+    "app-ffi": {"app-bridge"},
+    # The JNI facade over the bridge.
+    "app-jni": {"app-bridge"},
     # The terminal client composes the views over the drivers' state.
     "tui": {"attachments", "client", "settings", "ui-code", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The bounded ring of a core's inputs since its last checkpoint, in
@@ -128,7 +132,7 @@ CORES_ALLOWED_LOCAL = {
 # The UI library and the clients built on it reach the daemon only through
 # the client seam: none of them may link, directly or through another crate,
 # the daemon, its store, the interpreters or a provider. The phone bridge
-# (app-ffi, app-embedded) hosts the runtime in process and is not one of them.
+# (app-bridge, app-ffi, app-jni, app-embedded) hosts the runtime in process and is not one of them.
 UI_CRATES = {"client", "ui-state", "ui-view", "ui-code", "ui-runtime", "tui", "app-runtime"}
 FORBIDDEN_FOR_UI = {
     "node", "store", "interpret", "agent", "acp-protocol", "claude-protocol", "codex-protocol",

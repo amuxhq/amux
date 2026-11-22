@@ -98,9 +98,9 @@ struct ReviewPagePane: View {
     /// Why no review opened, as the bar says it.
     static func unopened(_ banners: [ReviewBanner]) -> String {
         switch banners.first {
-        case .notOffered?: "Reviews are off on this computer"
+        case .notOffered?: "Reviews are off on this device"
         case .notARepository?: "Not a git repository"
-        case .unreachable?: "The computer can’t be reached"
+        case .unreachable?: "The device can’t be reached"
         case .snapshotFailed?: "No snapshot of the changes"
         default: "No review"
         }

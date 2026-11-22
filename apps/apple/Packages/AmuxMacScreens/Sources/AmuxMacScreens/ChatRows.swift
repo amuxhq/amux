@@ -140,10 +140,10 @@ struct ChatRow: View {
     @ViewBuilder private var kind: some View {
         switch row.kind {
         case .prompt(let text, let steered):
-            PromptBubble(segments: text, steered: steered)
+            PromptBubble(segments: text.map(\.segment), steered: steered)
                 .padding(.bottom, 14)
         case .prose(let text, let streaming, let workingNote):
-            ProseView(source: ChatWords.text(of: text), streaming: streaming, quiet: workingNote)
+            ProseParts(parts: text, streaming: streaming, quiet: workingNote)
                 .padding(.bottom, 14)
         case .thinking(let text, let open, let durationMs):
             GridLine(
@@ -358,7 +358,7 @@ struct ChatRow: View {
                     glyph: "list-checks", accented: verdict == .open, rail: rail,
                     verb: Self.planVerb(verdict), subject: title ?? "", meta: writing ? "writing" : "",
                     note: note)
-                ProseView(source: body, streaming: writing, quiet: false)
+                ProseView(markdown: body, streaming: writing, quiet: false)
                     .padding(12)
                     .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(Palette.well))
                     .padding(.leading, GridLine.text)
@@ -622,6 +622,31 @@ struct GridLine: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).fill(Palette.inset))
                 .overlay(RoundedRectangle(cornerRadius: Radius.well, style: .continuous).strokeBorder(Palette.line))
+        }
+    }
+}
+
+/// The agent's words and what it attached, in reading order: each stretch
+/// of words as its markdown, each attachment as its chip's words.
+private struct ProseParts: View {
+    let parts: [ProsePart]
+    let streaming: Bool
+    let quiet: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
+                switch part {
+                case .text(let markdown):
+                    // Only the last of a streaming message's words are still
+                    // arriving.
+                    ProseView(markdown: markdown, streaming: streaming && index == parts.count - 1, quiet: quiet)
+                case .attachment(let view):
+                    Text("[\(ChatWords.chip(view))]")
+                        .font(.ui(.meta))
+                        .foregroundStyle(Palette.textSecondary)
+                }
+            }
         }
     }
 }

@@ -27,6 +27,7 @@ use regex::Regex;
 use serde_json::{Value, json};
 
 use super::device::Phone;
+use super::driver::{Client, Driver, Tab};
 use super::{Record, Story, door, line_diff, root};
 use crate::Binaries;
 use crate::ctl::session::pin_in;
@@ -743,220 +744,6 @@ impl PhoneJourney {
         })
     }
 
-    // --- the served net --------------------------------------------------
-
-    pub(crate) fn request(
-        &mut self,
-        request: Control,
-        label: Option<&str>,
-    ) -> Result<Value, String> {
-        self.record.actions.push(format!(
-            "net {}",
-            serde_json::to_string(&request).unwrap_or_default()
-        ));
-        let reply = door(self.ready.control, &request, Duration::from_secs(90))?;
-        if let Some(label) = label {
-            self.record
-                .observations
-                .insert(label.to_owned(), reply.clone());
-        }
-        Ok(reply)
-    }
-
-    pub(crate) fn chat(&mut self, host: &str, agent: &str, label: &str) -> Result<Value, String> {
-        self.request(
-            Control::Chat {
-                host: host.to_owned(),
-                agent: agent.to_owned(),
-            },
-            Some(label),
-        )
-    }
-
-    pub(crate) fn wait_chat(
-        &mut self,
-        host: &str,
-        agent: &str,
-        ready: impl Fn(&Value) -> bool,
-        description: &str,
-    ) -> Result<Value, String> {
-        let control = self.ready.control;
-        let request = Control::Chat {
-            host: host.to_owned(),
-            agent: agent.to_owned(),
-        };
-        match super::poll(
-            Duration::from_secs(60),
-            Duration::from_millis(200),
-            || door(control, &request, Duration::from_secs(90)),
-            |chat| ready(chat),
-        ) {
-            Ok(chat) => {
-                self.record
-                    .observations
-                    .insert(description.to_owned(), chat.clone());
-                self.record
-                    .actions
-                    .push(format!("observed at {host}: {description}"));
-                Ok(chat)
-            }
-            Err((last, why)) => Err(format!(
-                "timed out waiting for {description} ({why}); {host} holds {}",
-                last.unwrap_or_default()
-            )),
-        }
-    }
-
-    pub(crate) fn wait_inventory(
-        &mut self,
-        host: &str,
-        ready: impl Fn(&[Value]) -> bool,
-        description: &str,
-    ) -> Result<Vec<Value>, String> {
-        let control = self.ready.control;
-        let request = Control::Inventory {
-            host: host.to_owned(),
-        };
-        match super::poll(
-            Duration::from_secs(60),
-            Duration::from_millis(200),
-            || {
-                door(control, &request, Duration::from_secs(90))
-                    .map(|reply| reply["agents"].as_array().cloned().unwrap_or_default())
-            },
-            |agents| ready(agents),
-        ) {
-            Ok(agents) => {
-                self.record
-                    .observations
-                    .insert(description.to_owned(), Value::Array(agents.clone()));
-                self.record
-                    .actions
-                    .push(format!("observed at {host}: {description}"));
-                Ok(agents)
-            }
-            Err((last, why)) => Err(format!(
-                "timed out waiting for {description} ({why}); {host} lists {}",
-                Value::Array(last.unwrap_or_default())
-            )),
-        }
-    }
-
-    pub(crate) fn provider_input(
-        &mut self,
-        agent: &str,
-        label: &str,
-    ) -> Result<Vec<String>, String> {
-        let reply = self.request(
-            Control::ProviderInput {
-                agent: agent.to_owned(),
-            },
-            Some(label),
-        )?;
-        Ok(reply["lines"]
-            .as_array()
-            .map(|lines| {
-                lines
-                    .iter()
-                    .filter_map(|line| line.as_str().map(str::to_owned))
-                    .collect()
-            })
-            .unwrap_or_default())
-    }
-
-    pub(crate) fn host_id(&self, host: &str) -> String {
-        self.ready
-            .hosts
-            .iter()
-            .find(|ready| ready.name == host)
-            .map(|ready| ready.host_id.to_string())
-            .unwrap_or_default()
-    }
-
-    /// The id of the agent the topology declared as `name`.
-    pub(crate) fn agent_id(&self, name: &str) -> String {
-        self.ready
-            .agents
-            .iter()
-            .find(|agent| agent.name == name)
-            .map(|agent| agent.id.to_string())
-            .unwrap_or_default()
-    }
-
-    fn config(&self, host: &str) -> PathBuf {
-        self.ready
-            .hosts
-            .iter()
-            .find(|ready| ready.name == host)
-            .map(|ready| ready.config.clone())
-            .unwrap_or_default()
-    }
-
-    /// `amux` on a served machine, as a person at that machine types it;
-    /// what it prints, line by line.
-    pub(crate) fn amux(&mut self, host: &str, args: &[&str]) -> Result<Printing, String> {
-        self.record
-            .actions
-            .push(format!("at {host}: amux {}", args.join(" ")));
-        let scratch = Path::new(SCRATCH_DIR);
-        let mut child = Command::new(self.binaries.amux())
-            .arg("--config")
-            .arg(self.config(host))
-            .args(args)
-            .env_remove("AMUX_LOG")
-            .env_remove("AMUX_CONFIG")
-            .env("TMPDIR", scratch)
-            .env("TMP", scratch)
-            .env("TEMP", scratch)
-            .env("AMUX_TEST_DISCOVERY_MODE", "disabled")
-            .env("RUST_LOG", rust_log())
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| format!("amux: {error}"))?;
-        let (sent, lines) = mpsc::channel();
-        for pipe in [
-            child
-                .stdout
-                .take()
-                .map(|pipe| Box::new(pipe) as Box<dyn std::io::Read + Send>),
-            child
-                .stderr
-                .take()
-                .map(|pipe| Box::new(pipe) as Box<dyn std::io::Read + Send>),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            let sent = sent.clone();
-            std::thread::spawn(move || {
-                for line in BufReader::new(pipe).lines().map_while(Result::ok) {
-                    if sent.send(line).is_err() {
-                        break;
-                    }
-                }
-            });
-        }
-        Ok(Printing { child, lines })
-    }
-
-    /// The link `amux pair --qr --print-link` prints on `host`; the process
-    /// stays open, as the machine keeps offering it.
-    pub(crate) fn pairing_link(&mut self, host: &str) -> Result<(Printing, String), String> {
-        let mut process = self.amux(host, &["pair", "--qr", "--print-link"])?;
-        match process.find(Duration::from_secs(60), |line| {
-            line.strip_prefix("Pairing link: ")
-                .map(|link| link.trim().to_owned())
-        }) {
-            Some(link) => Ok((process, link)),
-            None => {
-                process.kill();
-                Err(format!("{host} printed no pairing link"))
-            }
-        }
-    }
-
     // --- the phone -------------------------------------------------------
 
     /// The app, installed fresh so no earlier run's identity or trust is on
@@ -1170,15 +957,6 @@ impl PhoneJourney {
         .is_ok_and(|listed| listed.contains(BUNDLE_ID))
     }
 
-    /// One request to the app's door; its reply.
-    pub(crate) fn app(&self, request: Value) -> Result<Value, AppError> {
-        self.app_within(request, Duration::from_secs(90))
-    }
-
-    pub(crate) fn app_within(&self, request: Value, timeout: Duration) -> Result<Value, AppError> {
-        ask(self.door(), &request, timeout)
-    }
-
     /// Where the app's door listens, for a request made off this driver's
     /// thread.
     pub(crate) fn door(&self) -> SocketAddr {
@@ -1186,65 +964,6 @@ impl PhoneJourney {
             Some(phone) => phone.door(self.port),
             None => SocketAddr::from(([127, 0, 0, 1], self.port)),
         }
-    }
-
-    pub(crate) fn query(&self) -> Result<Value, String> {
-        Ok(self.app(json!({"kind": "query"}))?["state"].take())
-    }
-
-    /// The system photographs the app, as a person's screenshot does.
-    pub(crate) fn system_screenshot(&mut self) -> Result<(), String> {
-        self.app(json!({"kind": "screenshot"}))?;
-        self.record
-            .actions
-            .push("the system took a screenshot".to_owned());
-        Ok(())
-    }
-
-    pub(crate) fn elements(&self) -> Result<Drawn, String> {
-        Ok(Drawn::of(elements_of(&self.query()?)))
-    }
-
-    /// Until what is drawn satisfies `ready`, by element name.
-    pub(crate) fn wait(
-        &mut self,
-        ready: impl Fn(&Drawn) -> bool,
-        description: &str,
-    ) -> Result<Drawn, String> {
-        self.wait_within(ready, description, Duration::from_secs(60))
-    }
-
-    pub(crate) fn wait_within(
-        &mut self,
-        ready: impl Fn(&Drawn) -> bool,
-        description: &str,
-        timeout: Duration,
-    ) -> Result<Drawn, String> {
-        let deadline = Instant::now() + timeout;
-        let mut last = Drawn::default();
-        while Instant::now() < deadline {
-            last = self.elements()?;
-            if ready(&last) {
-                self.record.actions.push(format!("reached {description}"));
-                return Ok(last);
-            }
-            std::thread::sleep(Duration::from_millis(200));
-        }
-        let drawn: Vec<String> = last
-            .iter()
-            .map(|(name, element)| format!("{name} | {} | {}", element["label"], element["value"]))
-            .collect();
-        Err(format!(
-            "timed out waiting for {description}; the phone draws:\n{}",
-            drawn.join("\n")
-        ))
-    }
-
-    pub(crate) fn wait_for(&mut self, names: &[&str]) -> Result<Drawn, String> {
-        self.wait(
-            |drawn| names.iter().all(|name| drawn.has(name)),
-            &format!("{names:?}"),
-        )
     }
 
     /// A tap as a person makes one, as `ctl phone tap` does: on a control
@@ -1288,77 +1007,6 @@ impl PhoneJourney {
             if on { "on" } else { "off" }
         ));
         Ok(())
-    }
-
-    /// The item a person reads as `label` in a menu the app presented, once
-    /// the menu is drawn.
-    pub(crate) fn choose(&mut self, label: &str) -> Result<(), String> {
-        self.wait(
-            |drawn| drawn.iter().any(|(_, element)| element["label"] == label),
-            &format!("{label:?} presented"),
-        )?;
-        self.app(json!({"kind": "choose", "label": label}))?;
-        self.record.actions.push(format!("choose {label:?}"));
-        Ok(())
-    }
-
-    /// Back from a pushed page by the system bar's back button, which the
-    /// system draws with no name of its own to tap it by.
-    pub(crate) fn back(&mut self) -> Result<(), String> {
-        self.app(json!({"kind": "back"}))?;
-        self.record.actions.push("back".to_owned());
-        Ok(())
-    }
-
-    /// The tab reading `title` in the system's tab bar, whose tabs carry
-    /// their titles and no names of their own.
-    pub(crate) fn tab(&mut self, title: &str) -> Result<(), String> {
-        self.choose(title)
-    }
-
-    /// Settings, as a person reaches them: the account disc on the agent
-    /// list, then Settings in its menu. They open as a sheet over the tabs.
-    pub(crate) fn settings(&mut self) -> Result<(), String> {
-        self.tab("Agents")?;
-        self.wait_for(&["home.accounts"])?;
-        self.tap("home.accounts")?;
-        self.choose("Settings")?;
-        self.wait_for(&["you"])?;
-        Ok(())
-    }
-
-    /// An element's named accessibility action, as VoiceOver offers it.
-    pub(crate) fn perform(&mut self, name: &str, action: &str) -> Result<(), String> {
-        self.app(json!({"kind": "perform", "identifier": name, "action": action}))?;
-        self.record.actions.push(format!("{action} on {name}"));
-        Ok(())
-    }
-
-    pub(crate) fn type_text(&mut self, name: &str, text: &str) -> Result<(), String> {
-        self.app(json!({"kind": "type", "identifier": name, "text": text}))?;
-        self.record
-            .actions
-            .push(format!("type {text:?} into {name}"));
-        Ok(())
-    }
-
-    pub(crate) fn paste(&mut self, name: &str, text: &str) -> Result<(), String> {
-        self.app(json!({"kind": "paste", "identifier": name, "text": text}))?;
-        self.record
-            .actions
-            .push(format!("paste {} lines into {name}", text.lines().count()));
-        Ok(())
-    }
-
-    /// The link the machine printed, as a scanned code hands it over; the
-    /// host that answered.
-    pub(crate) fn pair(&mut self, link: &str) -> Result<String, AppError> {
-        let reply = self.app(json!({"kind": "pair", "qr": link}))?;
-        let host = reply["host"].as_str().unwrap_or_default().to_owned();
-        self.record
-            .actions
-            .push(format!("pair by the link, answered by {host}"));
-        Ok(host)
     }
 
     // --- screens ---------------------------------------------------------
@@ -1527,6 +1175,87 @@ impl PhoneJourney {
     }
 }
 
+impl Driver for PhoneJourney {
+    const CLIENT: Client = Client::Iphone;
+
+    fn ready(&self) -> &Readiness {
+        &self.ready
+    }
+    fn record(&mut self) -> &mut Record {
+        &mut self.record
+    }
+    fn output(&self) -> &Path {
+        &self.output
+    }
+    fn binaries(&self) -> &Binaries {
+        &self.binaries
+    }
+    fn scratch(&self) -> &Path {
+        Path::new(SCRATCH_DIR)
+    }
+    fn launch(&mut self, launch: Launch) -> Result<(), String> {
+        PhoneJourney::launch(self, launch)
+    }
+    fn relaunch(&mut self, launch: Launch) -> Result<(), String> {
+        PhoneJourney::relaunch(self, launch)
+    }
+    fn quit(&mut self) -> Result<(), String> {
+        PhoneJourney::quit(self)
+    }
+    fn app_within(&self, request: Value, timeout: Duration) -> Result<Value, AppError> {
+        ask(self.door(), &request, timeout)
+    }
+    fn screen(&mut self, label: &str, volatile: &[&str]) -> Result<(), String> {
+        PhoneJourney::screen(self, label, volatile)
+    }
+    fn tap(&mut self, name: &str) -> Result<(), String> {
+        PhoneJourney::tap(self, name)
+    }
+    fn type_text(&mut self, name: &str, text: &str) -> Result<(), String> {
+        self.app(json!({"kind": "type", "identifier": name, "text": text}))?;
+        self.record
+            .actions
+            .push(format!("type {text:?} into {name}"));
+        Ok(())
+    }
+    /// The system's tab bar names its tabs by title alone.
+    fn tab(&mut self, tab: Tab) -> Result<(), String> {
+        self.choose(tab.title())
+    }
+    /// The account disc on the agent list, then Settings in its menu. They
+    /// open as a sheet over the tabs.
+    fn settings(&mut self) -> Result<(), String> {
+        self.tab(Tab::Agents)?;
+        self.wait_for(&["home.accounts"])?;
+        self.tap("home.accounts")?;
+        self.choose("Settings")?;
+        self.wait_for(&["you"])?;
+        Ok(())
+    }
+    fn close_settings(&mut self) -> Result<(), String> {
+        self.tap("you.close")?;
+        self.wait(|drawn| !drawn.has("you"), "Settings put away")?;
+        Ok(())
+    }
+    /// The activity bar slides while a turn runs; under reduced motion it
+    /// stands still. Transparency stays reduced, as every launch has it.
+    fn reduce_motion(&mut self, on: bool) -> Result<(), String> {
+        self.app(json!({"kind": "assist", "motion": on, "transparency": true}))?;
+        Ok(())
+    }
+    fn large_text(&mut self) -> Result<String, String> {
+        self.app(json!({"kind": "dynamicType", "size": ACCESSIBLE_SIZE}))?;
+        let size = self.query()?["typeSize"].clone();
+        if size != ACCESSIBLE_SIZE {
+            return Err(format!("the app says it draws at {size}"));
+        }
+        Ok(ACCESSIBLE_SIZE.to_owned())
+    }
+}
+
+/// The largest of iOS's accessibility text sizes the journeys read at.
+const ACCESSIBLE_SIZE: &str = "accessibility3";
+
 /// How a launch is told to start, beyond the net it is launched against.
 #[derive(Default)]
 pub(crate) struct Launch {
@@ -1557,6 +1286,10 @@ pub(crate) struct Printing {
 }
 
 impl Printing {
+    pub(crate) fn new(child: Child, lines: mpsc::Receiver<String>) -> Self {
+        Self { child, lines }
+    }
+
     /// The first printed line `matches` reads something from, within
     /// `timeout`; None once the command ends or the time is up.
     pub(crate) fn find<T>(
@@ -1648,7 +1381,7 @@ fn truthy(value: &Value) -> bool {
 
 /// The served machines' and the phone's log filter: the caller's own, else
 /// the links' and streams' debug lines.
-fn rust_log() -> String {
+pub(crate) fn rust_log() -> String {
     std::env::var("RUST_LOG").unwrap_or_else(|_| RUST_LOG.to_owned())
 }
 
@@ -1660,8 +1393,12 @@ pub(crate) fn ask(
     request: &Value,
     timeout: Duration,
 ) -> Result<Value, AppError> {
-    let unreachable =
-        |error: std::io::Error| AppError::Unreachable(format!("the app's door: {error}"));
+    // Which request went unanswered is half of what a failure says: a read
+    // that times out reads "Resource temporarily unavailable" on its own.
+    let kind = request["kind"].as_str().unwrap_or("request").to_owned();
+    let unreachable = |error: std::io::Error| {
+        AppError::Unreachable(format!("the app's door, asked {kind:?}: {error}"))
+    };
     let mut stream = TcpStream::connect_timeout(&address, timeout).map_err(unreachable)?;
     stream
         .set_read_timeout(Some(timeout))

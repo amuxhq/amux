@@ -1,0 +1,30 @@
+shell |  |  | 0,0,411,923
+chat |  |  | 0,0,411,923
+chat.feed |  |  | 0,118,411,470
+chat.row.<id> |  |  | 16,130,379,52
+chat.row.kind.prompt |  |  | 16,130,379,40
+markdown.root | Tidy the pairing section. |  | 207,140,174,20
+chat.row.msg_fake<run>0000000000000002:0 |  |  | 16,182,379,32
+chat.row.kind.prose |  |  | 16,182,379,20
+markdown.root | Tidied. |  | 16,182,379,20
+chat.row.turn:1 | Worked for <t> |  | 16,214,379,30
+chat.row.turn-end | <volatile>
+chat.row.<id> |  |  | 16,244,379,52
+chat.row.kind.prompt |  |  | 16,244,379,40
+markdown.root | Check the links. |  | 266,254,115,20
+chat.row.<id> | Expand |  | 16,296,379,121
+chat.row.error | Expand |  | 16,296,379,107
+chat.row.turn:2 | Worked for <t> · failed |  | 16,417,379,30
+chat.row.turn-end | <volatile>
+chat.composer | Reply, Attach, Chat Settings, claude-fake-1 · medium, Dictate, Send |  | 12,592,387,297
+chat.foot.sign-in | Claude needs you to sign in | Sign-in failed · fake@example.com\nFailed to authenticate. API Error: 401 OAuth token has expired. Please obtain a new token or refresh your existing token.\nRun claude and sign in with /login on desk.\nSigned in elsewhere? Send a message to try again. | 12,592,387,195
+chat.field | Reply |  | 28,796,355,36
+chat.attach | Attach |  | 21,837,48,48
+chat.model | Chat Settings, claude-fake-1 · medium |  | 70,837,177,48
+chat.dictate | Dictate |  | 287,837,48,48
+chat.send | Send |  | 342,837,48,48 (disabled)
+chat.topBar | Back, expired, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
+nav.back | Back |  | 8,66,40,40
+chat.title | expired | expired | 56,62,299,48
+chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
+chat.more | More |  | 363,66,40,40

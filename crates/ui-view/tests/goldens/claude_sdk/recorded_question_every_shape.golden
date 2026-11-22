@@ -5,7 +5,7 @@
 ## 172 recorded 171: fact Stream type=control_request
   ask 4c51bde9-c32f-4719-bd3b-2d2384cae9e1 -> "toolu_01Ei1M1GbMjw96MWUkuN9at4" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Which tools do you need?", multi_select: …
+    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", header_runs: ["Color"], question_runs: ["Which color do you prefer?"], multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false, label_runs: ["Red"], description_runs: ["Red"] }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false, labe…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 180 recorded 179: input stdin-4
   ask none
@@ -20,7 +20,7 @@
      1 boundary:1 Hidden collapsed
      2 71f3ee9c-3d5c-4372-925c-0b45a98f8810 Prompt { text: [Text("Use exactly one AskUserQuestion call containing exactly four questions, in this order. 1: header Color, question 'Which color do you prefer?', single-select, options Red and Blue. 2: header Tools, question 'Which tools do you need?', multiSelect true, options Hammer, Saw and Drill. 3: header Layout, question 'Which layout should the p…
      3 7509f719-9667-4702-8c8c-ffe849831c27 Hidden collapsed
-     4 toolu_01Ei1M1GbMjw96MWUkuN9at4 [Answered: Color = Blue; Tools = Hammer, Drill; Layout = Grid; Snack = "Whatever is fresh" skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", …
+     4 toolu_01Ei1M1GbMjw96MWUkuN9at4 [Answered: Color = Blue; Tools = Hammer, Drill; Layout = Grid; Snack = "Whatever is fresh" skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", header_runs: ["Color"], question_runs: ["Which color do you prefer?"], multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", …
      5 0878274a-4506-46f0-bb75-31d27e6c7776 Hidden collapsed
      6 msg_011CgZjnf65Re2jSmvX9Yu6X:0 Thinking { text: "", open: false, duration_ms: Some(2581) }
      7 msg_011CgZjnf65Re2jSmvX9Yu6X:1 Prose { text: [Text("Your answers:\n\n1. **Color:** Blue\n2. **Tools:** Hammer, Drill\n3. **Layout:** Grid\n4. **Snack:** Whatever is fresh (this was not one of the listed options, so I'm quoting your custom answer as given)")], streaming: false, working_note: false }

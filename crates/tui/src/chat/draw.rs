@@ -234,7 +234,7 @@ impl ChatView {
         let host = state
             .host()
             .map(|host| host.name().to_owned())
-            .unwrap_or_else(|| "its computer".into());
+            .unwrap_or_else(|| "its device".into());
 
         let overview = self.overview(state);
         let sign_in = ui_view::sign_in(state);
@@ -1854,7 +1854,7 @@ fn empty_feed(
     let words = if state.has_snapshot() && state.caught_up() {
         Some("Nothing here yet.")
     } else if away {
-        Some("Its computer is away, and nothing of this chat is held here yet.")
+        Some("Its device is away, and nothing of this chat is held here yet.")
     } else if waited_ms >= LOADING_HINT_MS {
         Some("Loading…")
     } else {

@@ -79,7 +79,7 @@ pub struct LinkLiveness {
 mod liveness_tests {
     /// A desktop notices a silently dead link within forty seconds: its
     /// keepalive and idle timeout sum to that bound.
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     #[test]
     fn a_desktop_notices_a_dead_link_within_forty_seconds() {
         let liveness = super::LinkLiveness::default();
@@ -95,9 +95,9 @@ impl Default for LinkLiveness {
     /// and costs a few packets a minute. A phone keeps a longer pair for
     /// its battery.
     fn default() -> Self {
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         let (keep_alive, idle_timeout) = (20, 60);
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         let (keep_alive, idle_timeout) = (10, 30);
         Self {
             keep_alive: std::time::Duration::from_secs(keep_alive),
@@ -611,15 +611,51 @@ pub(crate) fn create_private_file(path: &Path, bytes: &[u8]) -> Result<(), Ident
     file.write_all(bytes)?;
     file.sync_all()?;
     drop(file);
-    match fs::hard_link(&tmp, path) {
-        Ok(()) => {
-            let _ = fs::remove_file(&tmp);
-            Ok(())
-        }
+    match publish_new_file(&tmp, path) {
+        Ok(()) => Ok(()),
         Err(error) => {
             let _ = fs::remove_file(&tmp);
             Err(IdentityError::Io(error))
         }
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn publish_new_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
+    fs::hard_link(tmp, path)?;
+    let _ = fs::remove_file(tmp);
+    Ok(())
+}
+
+/// Android SELinux denies `link(2)` (`fs::hard_link`) on `app_data_file` for
+/// untrusted apps, so publish the synced temporary file with `renameat2`
+/// (`RENAME_NOREPLACE`) to keep atomic create-without-overwrite semantics.
+/// Bionic has exported `renameat2` since API 30, below the app's minimum SDK.
+#[cfg(target_os = "android")]
+fn publish_new_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let nul = |what| std::io::Error::new(std::io::ErrorKind::InvalidInput, what);
+    let from =
+        CString::new(tmp.as_os_str().as_bytes()).map_err(|_| nul("interior NUL in temp path"))?;
+    let to = CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| nul("interior NUL in target path"))?;
+    // SAFETY: `from` and `to` are NUL-terminated strings that outlive the call,
+    // and `AT_FDCWD` resolves both relative to the working directory.
+    let rc = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            from.as_ptr(),
+            libc::AT_FDCWD,
+            to.as_ptr(),
+            libc::RENAME_NOREPLACE as _,
+        )
+    };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
     }
 }
 

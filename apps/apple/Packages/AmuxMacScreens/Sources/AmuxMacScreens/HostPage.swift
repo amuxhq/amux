@@ -212,6 +212,7 @@ extension HostWords {
         case .linux: "Linux"
         case .windows: "Windows"
         case .ios: "iOS"
+        case .android: "Android"
         case .unspecified, nil: nil
         }
     }
@@ -221,7 +222,7 @@ extension HostWords {
         switch host.reach {
         case .online: nil
         case .away:
-            "It’s online, but the free plan doesn’t connect computers to each other over the internet. Reaching it from here needs Pro."
+            "It’s online, but only a relayed connection reaches it from here, and relayed connections need Pro."
         case .offline(.revoked): "It unpaired this Mac. Pair again to reach it."
         case .offline: host.local ? nil : "Its agents’ status updates when it’s back online."
         }

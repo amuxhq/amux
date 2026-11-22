@@ -1,0 +1,18 @@
+shell | Agents, Devices |  | 0,0,411,923
+home | Agents, Switch Account |  | 0,0,411,818
+home.list | Pair your first device, amux runs agents on your devices. Pair one and its agents appear here., Have an amux account?, Sign In |  | 0,0,411,818
+home.empty.first-run | Pair your first device |  | 16,142,240,32
+home.found.<desk> | Pair with desk?, Enter the code amux shows there, Pair |  | 16,244,379,60
+home.pair.<desk> | Pair with desk?, Enter the code amux shows there, Pair |  | 16,244,379,60
+home.empty.sign-in | Sign In |  | 183,314,64,48
+home.accounts | Switch Account |  | 367,70,32,32
+tab.agents | Agents | selected | 0,819,202,80
+tab.hosts | Devices |  | 210,819,202,80
+pair-confirm | Pair desk, Local, Close, You’ll see its agents here and can start new ones, which run on that device as you. Pair only with your own devices. This invitation expires in <t>., Fingerprint, <key>, Pair, Not Now | desk | 0,460,411,415
+pair.close | Close |  | 363,464,48,48
+pair-confirm.name | Local | desk | 16,532,179,56
+pair-confirm.title | Pair with desk? | Pair with desk? | 16,532,179,32
+pair-confirm.expiry | <volatile>
+pair-confirm.fingerprint | <volatile>
+pair-confirm.trust | Pair |  | 16,753,379,44
+pair-confirm.abandon | Not Now |  | 16,813,379,44

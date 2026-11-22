@@ -38,7 +38,7 @@ use uuid::Uuid;
 use crate::plain_paths::canonical;
 
 pub(crate) mod git;
-#[cfg(all(unix, not(target_os = "ios")))]
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 pub(crate) mod wt;
 
 pub use git::WORKTREES;
@@ -114,7 +114,7 @@ pub(crate) trait Holder: Send + Sync {
 /// One profile's backends.
 pub(crate) struct Workspaces {
     git: git::GitBackend,
-    #[cfg(all(unix, not(target_os = "ios")))]
+    #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
     wt: wt::WtBackend,
 }
 
@@ -123,11 +123,11 @@ impl Workspaces {
     /// repository then name, and wt trees from wt's home at `wt_home`, or
     /// wt's own default (`$WT_HOME`, else `~/.wt`).
     pub fn new(host: Uuid, worktrees: PathBuf, wt_home: Option<PathBuf>) -> Self {
-        #[cfg(not(all(unix, not(target_os = "ios"))))]
+        #[cfg(not(all(unix, not(any(target_os = "ios", target_os = "android")))))]
         let _ = wt_home;
         Self {
             git: git::GitBackend::new(host, worktrees),
-            #[cfg(all(unix, not(target_os = "ios")))]
+            #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
             wt: wt::WtBackend::new(host, wt_home),
         }
     }
@@ -141,9 +141,9 @@ impl Workspaces {
         match kind {
             Kind::Folder => None,
             Kind::Git => Some(&self.git),
-            #[cfg(all(unix, not(target_os = "ios")))]
+            #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
             Kind::Wt => Some(&self.wt),
-            #[cfg(not(all(unix, not(target_os = "ios"))))]
+            #[cfg(not(all(unix, not(any(target_os = "ios", target_os = "android")))))]
             Kind::Wt => None,
         }
     }
@@ -152,9 +152,9 @@ impl Workspaces {
         match kind {
             Kind::Folder => None,
             Kind::Git => Some(&self.git),
-            #[cfg(all(unix, not(target_os = "ios")))]
+            #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
             Kind::Wt => Some(&self.wt),
-            #[cfg(not(all(unix, not(target_os = "ios"))))]
+            #[cfg(not(all(unix, not(any(target_os = "ios", target_os = "android")))))]
             Kind::Wt => None,
         }
     }
@@ -168,7 +168,7 @@ impl Workspaces {
                 format!("{} is not in a git repository", folder.display()),
             ));
         }
-        #[cfg(all(unix, not(target_os = "ios")))]
+        #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
         if let Some(planned) = self.wt.plan(folder, name)? {
             return Ok(planned);
         }
@@ -188,7 +188,7 @@ impl Workspaces {
                 made_here: false,
             };
         };
-        #[cfg(all(unix, not(target_os = "ios")))]
+        #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
         if let Some(resolved) = self.wt.resolve(&canonical) {
             return resolved;
         }
@@ -210,7 +210,7 @@ impl Workspaces {
     /// Every workspace this host made, of every kind.
     pub fn owned(&self) -> Vec<Key> {
         let owned = self.git.owned();
-        #[cfg(all(unix, not(target_os = "ios")))]
+        #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
         let owned = owned.into_iter().chain(self.wt.owned()).collect();
         owned
     }
@@ -362,7 +362,7 @@ pub(crate) fn canonical_beyond(path: &Path) -> PathBuf {
 /// is not the repository's default branch, which a new branch instead
 /// takes as freshly fetched. A repository with no `origin` has no default
 /// to fetch, so a new branch starts from the folder's commit.
-#[cfg(all(unix, not(target_os = "ios")))]
+#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
 pub(crate) fn branch_start(folder: &Path) -> (Option<String>, Option<String>) {
     let branch = git(folder, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok();
     let default = git(

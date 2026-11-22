@@ -13,7 +13,7 @@ public enum PushWords {
             return more > 0 ? String(localized: "\(words) · \(more) more") : words
         case .signedOut:
             return provider.map { String(localized: "Signed out of \($0)") }
-                ?? String(localized: "Signed out of its provider · sign in on its host")
+                ?? String(localized: "Signed out of its provider · sign in on its device")
         case .usageLimit(let resetsAtMs):
             guard let resetsAtMs else { return String(localized: "Usage limit reached") }
             let at = Date(timeIntervalSince1970: TimeInterval(resetsAtMs) / 1000)

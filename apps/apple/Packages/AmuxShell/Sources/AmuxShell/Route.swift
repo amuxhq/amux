@@ -11,7 +11,7 @@ public enum Tab: String, Hashable, Sendable, CaseIterable, Codable {
     public var title: String {
         switch self {
         case .agents: "Agents"
-        case .hosts: "Computers"
+        case .hosts: "Devices"
         case .you: "Settings"
         }
     }

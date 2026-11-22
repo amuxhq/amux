@@ -31,7 +31,7 @@ final class ChatFeedTests: XCTestCase {
             let words = "message \(n): the agent reports progress on its task"
                 + String(repeating: " and then some more", count: n % 4 * 3)
             return ScriptedChat.row(
-                "m\(n)", UInt64(n), .prose(text: [.text(words)], streaming: false, workingNote: false))
+                "m\(n)", UInt64(n), .prose(text: [.text(Markdown(words: words))], streaming: false, workingNote: false))
         }
     }
 
@@ -235,7 +235,7 @@ final class ChatFeedTests: XCTestCase {
         let path = IndexPath(item: 37, section: 0)
         let before = try XCTUnwrap(list.cellForItem(at: path)).bounds.height
         let longer = "message 38: " + String(repeating: "a much longer reply that runs on ", count: 12)
-        source.revise([ScriptedChat.row("m38", 38, .prose(text: [.text(longer)], streaming: true, workingNote: false))])
+        source.revise([ScriptedChat.row("m38", 38, .prose(text: [.text(Markdown(words: longer))], streaming: true, workingNote: false))])
         source.deliver(to: model)
         await spin()
         let cell = try XCTUnwrap(list.cellForItem(at: path))

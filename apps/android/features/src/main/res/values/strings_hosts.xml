@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Device detail page -->
+    <string name="host_page_title_fallback">Device</string>
+    <string name="host_page_gone">This device is no longer paired with this phone.</string>
+    <string name="host_page_reach_local">Connected · Local</string>
+    <string name="host_page_reach_direct">Connected · Direct</string>
+    <string name="host_page_reach_relay">Connected · Relayed</string>
+    <string name="host_page_reach_away">Away on the free plan</string>
+    <string name="host_page_reach_revoked">Offline · it unpaired this phone</string>
+    <string name="host_page_reach_signed_out">Offline while this phone is signed out</string>
+    <string name="host_page_reach_connecting">Connecting</string>
+    <string name="host_page_reach_offline_for">Offline for %1$s</string>
+    <string name="host_page_reach_offline">Offline</string>
+    <string name="host_page_meaning_away">It’s online, but only a relayed connection reaches it, and relayed connections need Pro.</string>
+    <string name="host_page_meaning_unreachable">Its agents report their state as unknown. It is on this network and will not answer, which a network that blocks amux would explain.</string>
+    <string name="host_page_meaning_offline">Its agents report their state as unknown until it is back.</string>
+    <string name="host_page_section_addresses">Addresses</string>
+    <string name="host_page_section_fingerprint">Fingerprint</string>
+    <string name="host_page_fact_platform">Platform</string>
+    <string name="host_page_fact_version">Version</string>
+    <string name="host_page_fact_last_try">Last try</string>
+    <string name="host_page_fact_could_not_connect">Could not connect</string>
+    <string name="host_page_provider_signed_in">Signed in</string>
+    <string name="host_page_provider_not_signed_in">Not signed in</string>
+    <string name="host_page_copied">Copied</string>
+    <string name="host_page_copy_address_spoken">Copy address %1$s</string>
+    <string name="host_page_copy_fingerprint_spoken">Copy fingerprint</string>
+    <string name="host_page_subscribe">Subscribe</string>
+    <string name="host_page_subscribe_spoken">Subscribe to reach %1$s</string>
+    <string name="host_page_offer_sign_in">Offer Your Account</string>
+    <string name="host_page_offer_sign_in_spoken">Offer your account to %1$s</string>
+    <string name="host_page_offering_sign_in">Offering sign-in…</string>
+    <string name="host_page_pair_again">Pair Again</string>
+    <string name="host_page_pair_again_spoken">Pair Again with %1$s</string>
+    <string name="host_page_revoke">Unpair This Device</string>
+    <string name="host_page_revoke_spoken">Unpair %1$s</string>
+    <string name="host_page_revoke_title">Unpair %1$s?</string>
+    <string name="host_page_revoke_detail">This phone stops reaching it and its agents leave this phone’s list. Only pairing again brings it back.</string>
+    <string name="host_page_revoke_confirm">Unpair</string>
+</resources>

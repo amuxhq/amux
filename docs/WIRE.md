@@ -1029,7 +1029,12 @@ still listed, naming that route; `away` while the relay refuses its channel
 because the account's free plan carries no connection between hosts; and
 `offline` otherwise, carrying the last dial error and whether the host said it
 no longer trusts this machine (`revoked`). `current` says whether this
-machine's copy of the host's agents has caught up. A host whose route has just
+machine's copy of the host's agents has caught up. `same_network` says the
+`online` route is a direct path on a network both machines are on (a LAN
+path), which clients word as Local; it is a field beside `online` rather than
+a new `RouteKind` because a reader that predates it decodes an unknown route
+kind as unspecified, where it should read direct, which the path also is. A
+host whose route has just
 come up keeps its reach until the first channel on it opens or fails
 ([presence](PROTOCOL.md#chapter-3-presence)).
 

@@ -15,8 +15,9 @@ schema = ["dep:schemars", "ui-state/schema", "wire/schema"]
 [dependencies]
 attachments = { workspace = true }
 preview = { workspace = true }
+pulldown-cmark = { workspace = true }
 schemars = { workspace = true, optional = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["rc"] }
 serde_json = { workspace = true }
 ui-state = { workspace = true }
 wire = { workspace = true }

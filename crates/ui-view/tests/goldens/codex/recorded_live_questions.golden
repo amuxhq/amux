@@ -5,7 +5,7 @@
 ## 40 recorded 39: fact Rpc method=item/tool/requestUserInput
   ask 0 -> "ask:0" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Size", question: "Which size?", multi_select: false, options: [OptionVie…
+    body Question([QuestionView { header: "Colour", question: "Which colour?", header_runs: ["Colour"], question_runs: ["Which colour?"], multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false, label_runs: ["Red"], description_runs: ["Red"] }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false, label_runs: ["Blue"], descri…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 42 recorded 41: input stdin-9
   ask none
@@ -13,7 +13,7 @@
 ## 50 recorded 49: fact Rpc method=item/tool/requestUserInput
   ask 1 -> "ask:1" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Circle", preview: "", recommended: false }, OptionView { label: "Square", description: "Square", preview: "", recommended: false }], allow_other: true, secret: false }])
+    body Question([QuestionView { header: "Shape", question: "Which shape?", header_runs: ["Shape"], question_runs: ["Which shape?"], multi_select: false, options: [OptionView { label: "Circle", description: "Circle", preview: "", recommended: false, label_runs: ["Circle"], description_runs: ["Circle"] }, OptionView { label: "Square", description: "Square", preview: "", recommended: false, label_runs: ["Sq…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 52 recorded 51: input 0x9ae0ce9f0ea64a848b7de25b4826ae48
   ask none
@@ -25,8 +25,8 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 prompt:003e7d5f656d41c29028d65d2d2d3d4e Prompt { text: [Text("Use your tool for asking the user questions once, asking me two questions in that one call: 'Which colour?' with the options Red and Blue, and 'Which size?' with the options Small and Large. After I answer, use it once more to ask me one question, 'Which shape?' with the options Circle and Square. Then reply with the single word do…
-     3 ask:0 [Answered: Colour = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false }, OptionView { label: "Blue", description: "Blue", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView…
-     4 ask:1 [Replied: Shape = (skipped) skipped=1 reply="Never mind the shape. Reply with the single word done and nothing else."] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", multi_select: false, options: [OptionView { label: "Circle", description: "Circle", preview: "", recommended: false }, OptionView { label: "Square", description: "Square", preview: "",…
+     3 ask:0 [Answered: Colour = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Colour", question: "Which colour?", header_runs: ["Colour"], question_runs: ["Which colour?"], multi_select: false, options: [OptionView { label: "Red", description: "Red", preview: "", recommended: false, label_runs: ["Red"], description_runs: ["Red"] }, OptionView { label: "Blue"…
+     4 ask:1 [Replied: Shape = (skipped) skipped=1 reply="Never mind the shape. Reply with the single word done and nothing else."] Ask(Questions { questions: [QuestionView { header: "Shape", question: "Which shape?", header_runs: ["Shape"], question_runs: ["Which shape?"], multi_select: false, options: [OptionView { label: "Circle", description: "Circle", preview: "", recommended: false, label_runs…
      5 turn:1 TurnEnd { duration_ms: Some(7101), failed: false }
      6 prompt:9ae0ce9f0ea64a848b7de25b4826ae48 Prompt { text: [Text("Never mind the shape. Reply with the single word done and nothing else.")], steered: false }
      7 msg_0f54218eddf6a768016ae5d7108c108191a39d499a786fe094 Prose { text: [Text("done")], streaming: false, working_note: false }

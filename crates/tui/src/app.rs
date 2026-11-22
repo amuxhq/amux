@@ -530,7 +530,7 @@ fn terminal_elsewhere(
         // Its parent's provider runs it inside the parent's own process.
         Some("a subagent has no terminal of its own".to_owned())
     } else if agent.host_id != config.local_host {
-        Some("its terminal is on another computer".to_owned())
+        Some("its terminal is on another device".to_owned())
     } else if !ui_state::offered_capabilities(host, agent).attachable {
         Some(format!(
             "{} has no terminal here",
@@ -1038,8 +1038,7 @@ impl App {
                             }
                             ui_view::ReviewView::All if gone => page.notice(
                                 ui_view::ReviewNotice::SnapshotFailed {
-                                    message: "this snapshot is gone from the agent's computer"
-                                        .into(),
+                                    message: "this snapshot is gone from the agent's device".into(),
                                 },
                                 true,
                             ),
@@ -2217,15 +2216,14 @@ impl App {
             .host()
             .map(|host| host.name().to_owned())
             .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| "its computer".to_owned());
+            .unwrap_or_else(|| "its device".to_owned());
         let not_found = ended
             .as_ref()
             .is_some_and(|error| error.code() == Some(wire::ErrorCode::NotFound));
         let (why, deleted) = match ended {
-            _ if !linked && (dropped || not_found) => (
-                format!("{host} is no longer linked to this computer"),
-                false,
-            ),
+            _ if !linked && (dropped || not_found) => {
+                (format!("{host} is no longer linked to this device"), false)
+            }
             _ if dropped || not_found => (format!("{} was deleted", state.agent().name), true),
             Some(error) => (error.to_string(), false),
             None => return None,
@@ -2350,7 +2348,7 @@ impl App {
             .host(&host)
             .map(|entry| entry.name().to_owned())
             .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| "this computer".to_owned());
+            .unwrap_or_else(|| "this device".to_owned());
         drop(fleet);
         for (provider, name, chosen) in asks {
             let desk = self.client.host(&host);
@@ -2524,7 +2522,7 @@ impl App {
                 .await
                 .map_err(|error| format!("amux could not dump: {error}"))?;
             if response.report_path.is_empty() {
-                return Err("amux wrote its dump on another computer".to_owned());
+                return Err("amux wrote its dump on another device".to_owned());
             }
             let bundle = std::path::PathBuf::from(response.report_path);
             for part in &parts {
@@ -2773,7 +2771,7 @@ pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'
         ("r", "review changes; comments go in the draft"),
         ("c", "count changes: uncommitted or on this branch"),
         ("t", "tool steps: collapse, show all or hide"),
-        ("a", "attach to the agent's own terminal (this computer)"),
+        ("a", "attach to the agent's own terminal (this device)"),
         (
             "x",
             "settle the agent; asks before cutting work short or ending it for good",

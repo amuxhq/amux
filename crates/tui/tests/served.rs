@@ -588,7 +588,7 @@ async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
     terminal.draw(|frame| app.draw(frame)).unwrap();
     let screen = screen_text(terminal.backend().buffer());
     assert!(
-        screen.contains("another computer"),
+        screen.contains("another device"),
         "the chat says the terminal is elsewhere:\n{screen}"
     );
     assert!(
@@ -1070,7 +1070,7 @@ async fn a_message_typed_to_a_suspended_agent_wakes_it_and_never_reads_stopped()
         .unwrap();
 }
 
-// --- an agent's review from another computer ---------------------------------
+// --- an agent's review from another device ---------------------------------
 
 /// The store the desk's repository holds when the net starts: ten lines,
 /// committed.
@@ -1467,7 +1467,7 @@ async fn a_desk_without_reviews_has_the_page_say_so() {
     open_review(&mut app);
     let offered_none = |app: &tui::App, screen: &str| {
         review_page(app).is_some_and(|page| page.page().rows.is_empty())
-            && screen.contains("Reviews aren't offered on this agent's computer")
+            && screen.contains("Reviews aren't offered on this agent's device")
     };
     let screen = until(&mut app, "the page saying reviews are off", offered_none).await;
     assert!(!screen.contains("src/store.rs"), "{screen}");

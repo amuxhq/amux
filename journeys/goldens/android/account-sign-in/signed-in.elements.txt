@@ -1,0 +1,24 @@
+shell |  |  | 0,0,411,923
+you | Back, Settings | ada@example.com | 0,0,411,923
+settings.scroll | ACCOUNTS, ada, ada@example.com, Add Account, ADA, Pro, Subscribed, Sign Out, Remove from This Phone, Delete Account, THIS PHONE, Share Usage, Counts and choices, never what you type, Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names., Name, <device>, Fingerprint, Tap to copy, <key>, Version, 0.1.0, HELP, Contact Support, Report a Problem, Export Diagnostics, A report includes a screenshot and this phone’s diagnostic dump. |  | 0,118,411,781
+account.ada@example.com | ada, ada@example.com | selected | 16,168,379,62
+you.add | Add Account |  | 16,231,379,58
+settings.account.subscription | Pro, Subscribed |  | 16,338,379,48
+you.signOut | Sign Out |  | 16,387,379,48
+settings.account.remove | Remove from This Phone |  | 16,436,379,48
+settings.account.delete | Delete Account |  | 16,485,379,48
+you.appearance | Appearance, Light, Dark, System | system | 32,585,347,48
+you.appearance.light | Light |  | 141,585,78,48
+you.appearance.dark | Dark |  | 220,585,79,48
+you.appearance.system | System | selected | 299,585,79,48
+settings.privacy.share-usage | Share Usage, Counts and choices, never what you type |  | 16,638,379,64
+settings.privacy.auto-reports | Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names. |  | 16,704,379,85
+settings.notifications | Notifications, Off |  | 16,790,379,48
+settings.notifications.action | Notifications, Off |  | 16,790,379,48
+you.name | <volatile>
+you.fingerprint | <volatile>
+you.version | <volatile>
+settings.diagnostics.support | Contact Support |  | 0,0,0,0
+settings.diagnostics.report | Report a Problem |  | 0,0,0,0
+settings.diagnostics.export | Export Diagnostics |  | 0,0,0,0
+nav.back | Back |  | 8,66,40,40

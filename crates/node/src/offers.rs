@@ -38,13 +38,13 @@ use crate::runtime::{Launch, ProfileRuntime};
 #[derive(Debug, thiserror::Error)]
 pub enum CatalogueError {
     /// No built-in agent and no `[agents.<id>]` entry has the id.
-    #[error("this computer knows no agent {0:?}")]
+    #[error("this device knows no agent {0:?}")]
     NoAgent(String),
     /// The request names no provider id.
     #[error("the request names no provider")]
     NoProvider,
     /// The agent's command is not found where agents are started from.
-    #[error("{0} is not installed on this computer")]
+    #[error("{0} is not installed on this device")]
     NotInstalled(String),
     #[error("asking the provider what it offers: {0}")]
     Helper(String),

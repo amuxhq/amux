@@ -8,10 +8,10 @@ chat.row.command | Soak, scripts/soak --for <t>, running |  | 16,207,370,40
 chat.row.meta.volatile | <volatile>
 chat.dock |  | folded | 12,571,378,120
 chat.queued.0 | Also log the peak. | queued | 12,571,378,60
-chat.queued.0.sendNow | Send now |  | 304,579,40,44
+chat.queued.0.sendNow | Send Now |  | 304,579,40,44
 chat.queued.0.withdraw | Withdraw |  | 344,579,40,44
 chat.queued.1 | And email me. | queued | 12,631,378,60
-chat.queued.1.sendNow | Send now |  | 304,639,40,44
+chat.queued.1.sendNow | Send Now |  | 304,639,40,44
 chat.queued.1.withdraw | Withdraw |  | 344,639,40,44
 chat.activity | <volatile>
 chat.field | Queue a message |  | 28,750,346,24
@@ -25,12 +25,12 @@ chat.title | worker | worker | 76,66,165,36
  | Clock |  | 30,594,14,14
  | Also log the peak. |  | 58,582,129,20
  | queued |  | 58,604,46,16
- | Send now |  | 304,579,40,44
+ | Send Now |  | 304,579,40,44
  | Withdraw |  | 344,579,40,44
  | Clock |  | 30,654,14,14
  | And email me. |  | 58,642,105,20
  | queued |  | 58,664,46,16
- | Send now |  | 304,639,40,44
+ | Send Now |  | 304,639,40,44
  | Withdraw |  | 344,639,40,44
  | Running Soak · <t> |  | 28,713,346,27
  | Attach |  | 23,779,44,44

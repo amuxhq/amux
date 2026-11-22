@@ -1,5 +1,6 @@
 import AppKit
 import AmuxMacScreens
+import AmuxFixtures
 import AmuxValues
 import Foundation
 import SwiftUI
@@ -286,7 +287,7 @@ public enum Stories {
     ) -> HostView {
         HostView(
             hostId: Array(repeating: number, count: 16), name: name, local: local, trusted: true, candidate: false,
-            reach: reach, link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: true, providers: agents,
+            reach: reach, sameNetwork: false, link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: true, providers: agents,
             lastDialError: nil, platform: platform, signedIn: true, through: nil,
             version: "0.9.0")
     }
@@ -401,7 +402,7 @@ public enum Stories {
             durationMs: state == .running ? nil : ms, exitCode: state == .running ? nil : exit)
     }
 
-    private static func text(_ words: String) -> [Segment] { [.text(words)] }
+    private static func text(_ words: String) -> [ProsePart] { [.fixture(words)] }
 
     private static func frame(
         _ card: FleetCard, _ phase: PhaseView, activity: ActivityKind? = nil, mode: Composer = .send,
@@ -869,7 +870,7 @@ public enum Stories {
     private static let reviewedRows: [Row] = conversationRows + [
         r("r10", .prompt(
             text: [
-                .text("Two things on the test."),
+                .fixture("Two things on the test."),
                 .attachment(.sentReview(
                     comments: 2,
                     review: SentReviewRef(

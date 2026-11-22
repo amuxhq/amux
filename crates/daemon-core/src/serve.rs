@@ -696,6 +696,7 @@ mod tests {
                     wire::RouteKind::Unspecified as i32,
                 )),
                 current: true,
+                same_network: false,
             })),
             ..Default::default()
         };

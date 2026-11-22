@@ -1751,7 +1751,7 @@ impl Net {
                 .collect();
             launch.agents.extend(machine);
         }
-        launch.agent.grace_secs = AGENT_GRACE_SECS;
+        launch.agent.grace_secs = own.decl.agent_grace_secs.unwrap_or(AGENT_GRACE_SECS);
         launch.agent.drain_secs = 5;
         if let Some(mib) = self.facts_ring_mib {
             launch.agent.facts_ring_mib = mib;
@@ -1954,9 +1954,10 @@ impl Net {
                 .scope
                 .clone()
                 .unwrap_or_else(|| self.topology.scope.clone());
+            let grace = decl.agent_grace_secs.unwrap_or(AGENT_GRACE_SECS);
             text.push_str(&format!(
                 "[discovery]\nscope = {scope:?}\n\
-                 [agent]\ngrace_secs = {AGENT_GRACE_SECS}\ndrain_secs = 5\n"
+                 [agent]\ngrace_secs = {grace}\ndrain_secs = 5\n"
             ));
             if let Some(mib) = self.facts_ring_mib {
                 text.push_str(&format!("facts_ring_mib = {mib}\n"));

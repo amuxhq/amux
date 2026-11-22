@@ -9,7 +9,7 @@
 ## 6 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"","label":"Red"},{"description":"","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick tools"},{"…
   ask ask:1 -> "" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "", preview: "", recommended: false }, OptionView { label: "Blue", description: "", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [OptionView { label:…
+    body Question([QuestionView { header: "Color", question: "Pick a color", header_runs: ["Color"], question_runs: ["Pick a color"], multi_select: false, options: [OptionView { label: "Red", description: "", preview: "", recommended: false, label_runs: ["Red"], description_runs: [] }, OptionView { label: "Blue", description: "", preview: "", recommended: false, label_runs: ["Blue"], description_runs: [] }…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 7 input {"answer":{"answer":{"selected":[1,null,0]},"ask":"ask:1"},"id":"a1"}
   ask none
@@ -21,7 +21,7 @@
 ## 11 fact {"channel":"hook","json":{"amux_reply":2,"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Ship","multiSelect":false,"options":[{"description":"","label":"Yes"},{"description":"","label":"No"}],"question":"Ship it now?"}]},"tool_name":"AskUserQuestion"}}
   ask ask:2 -> "" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Ship", question: "Ship it now?", multi_select: false, options: [OptionView { label: "Yes", description: "", preview: "", recommended: false }, OptionView { label: "No", description: "", preview: "", recommended: false }], allow_other: true, secret: false }])
+    body Question([QuestionView { header: "Ship", question: "Ship it now?", header_runs: ["Ship"], question_runs: ["Ship it now?"], multi_select: false, options: [OptionView { label: "Yes", description: "", preview: "", recommended: false, label_runs: ["Yes"], description_runs: [] }, OptionView { label: "No", description: "", preview: "", recommended: false, label_runs: ["No"], description_runs: [] }], all…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 12 input {"answer":{"answer":{"selected":[null]},"ask":"ask:2"},"id":"a2"}
   ask none
@@ -29,7 +29,7 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("test it")], steered: false }
-     3 t1 [Answered: Color = Blue; Tools = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "", preview: "", recommended: false }, OptionView { label: "Blue", description: "", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionVie…
+     3 t1 [Answered: Color = Blue; Tools = (skipped); Size = Small skipped=1] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", header_runs: ["Color"], question_runs: ["Pick a color"], multi_select: false, options: [OptionView { label: "Red", description: "", preview: "", recommended: false, label_runs: ["Red"], description_runs: [] }, OptionView { label: "Blue", …
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None
 == settings

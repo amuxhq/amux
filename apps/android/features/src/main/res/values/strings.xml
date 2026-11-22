@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Navigation & common controls -->
+    <string name="tab_agents">Agents</string>
+    <string name="tab_computers">Devices</string>
+    <string name="action_back">Back</string>
+    <string name="action_close">Close</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_more">More</string>
+
+    <!-- Agents home -->
+    <string name="home_title">Agents</string>
+    <string name="home_settled_title">Settled</string>
+    <string name="home_subtitle_nothing">Nothing needs you</string>
+    <string name="home_subtitle_needs_you">%1$d need you</string>
+    <string name="home_new_agent">New Agent</string>
+    <string name="home_search_button">Search</string>
+    <string name="home_search_placeholder">Search</string>
+    <string name="home_search_close">Close Search</string>
+    <string name="fold_state_open">Open</string>
+    <string name="fold_state_folded">Folded</string>
+    <string name="home_search_clear">Clear Search</string>
+    <string name="home_filter_all">All</string>
+    <string name="home_filter_needs_you">Needs you</string>
+    <string name="home_filter_needs_you_count">Needs you %1$d</string>
+    <string name="home_filter_working">Working</string>
+    <string name="home_section_settled">Settled</string>
+    <string name="home_row_spoken_pinned">pinned</string>
+    <string name="home_row_spoken_member_needs_you">a subagent needs you</string>
+    <string name="home_row_spoken_ago">%1$s ago</string>
+    <string name="home_settled_row">Settled, %1$d</string>
+    <string name="home_row_settle_held">Settle held · sends when %1$s is back</string>
+    <string name="home_family_show">Show %1$d started by %2$s</string>
+    <string name="home_family_hide">Hide %1$d started by %2$s</string>
+    <string name="home_no_matches_title">No agents match</string>
+    <string name="home_no_matches_detail">Try other words, or another scope.</string>
+    <string name="home_settled_empty_title">Nothing settled</string>
+    <string name="home_settled_empty_detail">Hold an agent to settle it once you are done with it.</string>
+    <string name="home_no_agents_title">No agents yet</string>
+    <string name="home_no_agents_detail">Start an agent on a device and it appears here.</string>
+
+    <!-- Row actions sheet & dialogs -->
+    <string name="home_action_pin">Pin</string>
+    <string name="home_action_unpin">Unpin</string>
+    <string name="home_action_rename">Rename</string>
+    <string name="home_action_settle">Settle</string>
+    <string name="home_action_unsettle">Un-settle</string>
+    <string name="home_action_cancel_settle">Cancel Settle</string>
+    <string name="home_action_delete_agent">Delete Agent</string>
+    <string name="home_action_delete">Delete</string>
+
+    <!-- Callouts & offers -->
+    <string name="callout_away_title">%1$s is away</string>
+    <string name="callout_away_detail">Relayed connections need Pro</string>
+    <string name="callout_subscribe">Subscribe</string>
+    <string name="callout_unreachable_title">%1$s is out of reach</string>
+    <string name="callout_unreachable_detail">Sign in to reach it through the relay</string>
+    <string name="callout_sign_in">Sign In</string>
+    <string name="callout_signing_in">Signing in…</string>
+    <string name="callout_notifications_title">Get notified</string>
+    <string name="callout_notifications_detail">When an agent needs you</string>
+    <string name="callout_notifications_turn_on">Turn On</string>
+    <string name="callout_dismiss">Dismiss</string>
+
+    <!-- First run -->
+    <string name="first_run_title">Pair your first device</string>
+    <string name="first_run_explain">amux runs agents on your devices. Pair one and its agents appear here.</string>
+    <string name="first_run_looking">Looking on this network…</string>
+    <string name="network_unseen_title">amux can’t see this network</string>
+    <string name="network_unseen_no_wifi_title">This phone isn’t on Wi-Fi</string>
+    <string name="network_unseen_no_wifi">Join the Wi-Fi your device is on, and amux looks for it there.</string>
+    <string name="network_unseen_refused">Android didn’t let amux look for devices on this network. Try again, or join another Wi-Fi.</string>
+    <string name="network_unseen_open_wifi">Open Wi-Fi Settings</string>
+    <string name="network_unseen_try_again">Try Again</string>
+    <string name="first_run_step_1_number">1</string>
+    <string name="first_run_step_1">Get amux on the device your agents will run on.</string>
+    <string name="first_run_send_link">Send Link</string>
+    <string name="first_run_step_2_number">2</string>
+    <string name="first_run_step_2">Open amux there, and this phone offers to pair.</string>
+    <string name="first_run_have_account">Have an amux account?</string>
+
+    <!-- Account switcher -->
+    <string name="accounts_switch_label">Switch Account</string>
+    <string name="accounts_sheet_title">Accounts</string>
+    <string name="accounts_add">Add Account</string>
+    <string name="accounts_sign_in">Sign In</string>
+    <string name="accounts_settings">Settings</string>
+    <string name="accounts_signed_out_tap">Signed out · tap to sign in</string>
+    <string name="accounts_selected">Selected</string>
+
+    <!-- Pair offer cards -->
+    <string name="pair_offer_window_open_title">Pair with %1$s?</string>
+    <string name="pair_offer_window_open_detail">Enter the code amux shows there</string>
+    <string name="pair_offer_nearby_title">%1$s is nearby</string>
+    <string name="pair_offer_nearby_detail">Open amux on %1$s to pair</string>
+    <string name="pair_offer_online_title">%1$s is online</string>
+    <string name="pair_offer_through_detail">Pair it through %1$s</string>
+    <string name="pair_offer_relay_free_detail">Relayed connections need Pro</string>
+    <string name="pair_offer_relay_detail">Pair it over a relayed connection</string>
+    <string name="pair_offer_generic_title">%1$s can be paired</string>
+    <string name="pair_offer_generic_detail">Pair it to see its agents here</string>
+    <string name="pair_offer_button_pair">Pair</string>
+    <string name="pair_offer_button_subscribe">Subscribe</string>
+
+    <!-- Devices tab -->
+    <string name="hosts_title">Devices</string>
+    <string name="hosts_subtitle_reachable">%1$d reachable</string>
+    <string name="hosts_subtitle_away">%1$d away</string>
+    <string name="hosts_subtitle_offline">%1$d offline</string>
+    <string name="hosts_spoken_local">connected, local</string>
+    <string name="hosts_spoken_direct">connected, direct</string>
+    <string name="hosts_spoken_relay">connected, relayed</string>
+    <string name="hosts_spoken_away">away</string>
+    <string name="hosts_spoken_away_needs_pro">relayed connections need Pro</string>
+    <string name="hosts_spoken_connecting">connecting</string>
+    <string name="hosts_spoken_revoked">it unpaired this phone, pair again to reach it</string>
+    <string name="hosts_spoken_not_answering">found on this network and not answering</string>
+    <string name="hosts_spoken_signed_out">offline while this phone is signed out</string>
+    <string name="hosts_spoken_offline_for">offline for %1$s</string>
+    <string name="hosts_spoken_offline">offline</string>
+    <string name="hosts_spoken_unknown">its agents’ state is unknown</string>
+    <string name="hosts_status_local">Local</string>
+    <string name="hosts_status_direct">Direct</string>
+    <string name="hosts_status_relay">Relayed</string>
+    <string name="hosts_status_away">away on the free plan</string>
+    <string name="hosts_status_connecting">connecting</string>
+    <string name="hosts_status_revoked">unpaired this phone</string>
+    <string name="hosts_status_not_answering">found, not answering</string>
+    <string name="hosts_status_signed_out">offline, this phone is signed out</string>
+    <string name="hosts_status_offline_for">offline for %1$s</string>
+    <string name="hosts_status_offline">offline</string>
+    <string name="hosts_empty_title">No devices yet</string>
+    <string name="hosts_empty_detail">A device running amux on this network appears here, ready to pair.</string>
+    <string name="hosts_empty_hint">Open amux on a device on this network to pair it, or scan the code it shows with the camera.</string>
+
+    <!-- Pairing sheet -->
+    <string name="pairing_title_generic">Pair a Device</string>
+    <string name="pairing_title_host">Pair %1$s</string>
+    <string name="pairing_route_local">Local</string>
+    <string name="pairing_route_direct">Direct</string>
+    <string name="pairing_route_relay">Relayed</string>
+    <string name="pairing_route_ssh">Over SSH</string>
+    <string name="pairing_headline_code">Enter the code</string>
+    <string name="pairing_headline_host">Pair with %1$s?</string>
+    <string name="pairing_instruction_open">Enter the code amux shows on %1$s.</string>
+    <string name="pairing_instruction_command_literal">amux pair</string>
+    <string name="pairing_instruction_command_generic">Run %1$s on the device to get one.</string>
+    <string name="pairing_instruction_command_host">Run %1$s on %2$s to get one.</string>
+    <string name="pairing_code_label">Code</string>
+    <string name="pairing_code_empty">empty</string>
+    <string name="pairing_checking">Checking…</string>
+    <string name="pairing_checking_title">Checking the invitation…</string>
+    <string name="pairing_checking_detail">Nothing is paired yet.</string>
+    <string name="pairing_expiry_generic">The code expires %1$s after the device prints it.</string>
+    <string name="pairing_expiry_host">The code expires %1$s after %2$s prints it.</string>
+    <string name="pairing_refused_generic">That code didn’t work. Get a new one from the device.</string>
+    <string name="pairing_refused_host">That code didn’t work. Get a new one from %1$s.</string>
+    <string name="pairing_refused_invitation_title">That invitation didn’t work</string>
+    <string name="pairing_refused_not_paired_title">Not paired</string>
+    <string name="pairing_refused_invitation_detail">Get a new one from the device.</string>
+    <string name="pairing_confirm_route_local">Local</string>
+    <string name="pairing_confirm_route_direct">Direct</string>
+    <string name="pairing_confirm_route_relay">Relayed</string>
+    <string name="pairing_confirm_route_ssh">over SSH</string>
+    <string name="pairing_confirm_explain">You’ll see its agents here and can start new ones, which run on that device as you. Pair only with your own devices. This invitation expires %1$s.</string>
+    <string name="pairing_confirm_expires_in">in %1$s</string>
+    <string name="pairing_confirm_expires_shortly">shortly</string>
+    <string name="pairing_fingerprint_label">Fingerprint</string>
+    <string name="pairing_button_pair">Pair</string>
+    <string name="pairing_button_not_now">Not Now</string>
+    <string name="pairing_trusted_title">%1$s is paired</string>
+    <string name="pairing_trusted_detail">Its agents are on the Agents tab.</string>
+    <string name="pairing_subscribe_title">Relayed connections need Pro</string>
+    <string name="pairing_subscribe_detail_generic">Pro relays connections when this phone and this device aren’t on the same network. Devices on this network connect without it.</string>
+    <string name="pairing_subscribe_detail_host">Pro relays connections when this phone and %1$s aren’t on the same network. Devices on this network connect without it.</string>
+    <string name="pairing_needs_account_title">That device is not on this network</string>
+    <string name="pairing_needs_account_detail">Its invitation names no address here, so only a relayed connection reaches it. Sign in and this phone can take it up.</string>
+    <string name="pairing_needs_account_kept">The invitation is kept until then.</string>
+
+    <!-- Store failure -->
+    <string name="store_failure_title">Store unavailable</string>
+    <string name="store_failure_cause">amux stopped because it can’t use this account’s store.</string>
+    <string name="store_failure_relaunch">Relaunch</string>
+</resources>

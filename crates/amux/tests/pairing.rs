@@ -88,7 +88,7 @@ async fn pairing_mode_closes_however_amux_pair_ends() {
     let said = String::from_utf8_lossy(&refused.stderr);
     assert!(
         said.contains(
-            "Pairing is already open on this host; finish it or press Ctrl+C where it runs."
+            "Pairing is already open on this device; finish it or press Ctrl+C where it runs."
         ),
         "{said}"
     );

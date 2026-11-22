@@ -44,6 +44,9 @@ mod ios 'apps/apple/justfile'
 # The Mac app's recipes: `just mac build`, `just mac run` (`just --list mac`).
 mod mac 'apps/apple/Mac/justfile'
 
+# The Android app's recipes: `just android build`, `just android unit`, ... (`just --list android`).
+mod android 'apps/android/justfile'
+
 # The browser extension's recipes: `just browser build`, `just browser test`, ... (`just --list browser`).
 mod browser 'js/extension/justfile'
 
@@ -147,10 +150,10 @@ release-check *ARGS:
 hooks:
     scripts/hooks/install
 
-# Check the provider-free graph for iOS devices and simulators.
+# Check the provider-free graph for iOS.
 mobile-check:
-    {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded --target aarch64-apple-ios
-    {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded --target aarch64-apple-ios-sim
+    {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded -p app-bridge --target aarch64-apple-ios
+    {{bounded}} 1200 cargo check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded -p app-bridge --target aarch64-apple-ios-sim
 
 # Run workspace tests with isolated user configuration and no external network,
 # on Linux, through sudo. The workspace test script bounds its own compile and
@@ -269,7 +272,8 @@ shear:
     {{bounded}} 300 cargo shear --locked --deny-warnings
 
 # Prune dead incremental caches and cap Cargo deps in target/ (and
-# target/ios/rust-cargo when present) without evicting active build caches.
+# target/ios/rust-cargo and target/android/rust-cargo when present) without
+# evicting active build caches.
 # Pass `--cold` (as .wt.toml's stop hook does on suspend) to drop incremental/
 # completely, or `--dry-run` to preview. Needs `cargo install --locked
 # cargo-sweep@0.8.0` for the deps pass; incremental pruning still runs without it.
@@ -345,20 +349,24 @@ no-update-flags:
 # The quick checks a change passes before it reaches main: the ones that
 # take seconds, Clippy, and the terminal journeys, whose goldens any change
 # to what the terminal client draws can leave behind. A minute and a half on a
-# warm tree. Of the workspace's tests only the four crates' whose fixtures
-# and goldens other crates' changes move are here: run the touched crates'
-# too (`just test-crate`), and leave the whole suite, the phone's snapshots
-# and the other platforms to CI (docs/CI.md, "`just premerge`").
+# warm tree. Of the workspace's tests only the five crates' whose fixtures,
+# goldens and generated phone mirrors other crates' changes move are here:
+# run the touched crates' too (`just test-crate`), and leave the whole suite,
+# the phone's snapshots and the other platforms to CI (docs/CI.md,
+# "`just premerge`").
 # Run the quick checks a change passes before it reaches main.
 premerge: no-update-flags fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check client-kind-check docs-check tests-check script-tests lint
     {{just_executable()}} ios lint
     {{just_executable()}} ios script-tests
-    {{just_executable()}} test -- -p interpret -p replay-support -p tui -p ui-view
+    {{just_executable()}} android lint
+    {{just_executable()}} android script-tests
+    {{just_executable()}} test -- -p interpret -p replay-support -p tui -p ui-view -p ios-tools
     {{just_executable()}} journey terminal all
     if git diff --quiet "$(git merge-base HEAD origin/main)" -- js; then echo "js: unchanged since main"; else {{just_executable()}} browser check; fi
 
 # Run the same task sequence exercised across continuous-integration jobs.
 ci: no-update-flags lint fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check client-kind-check docs-check tests-check script-tests test doctest release-check mobile-check
+    {{just_executable()}} android check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,

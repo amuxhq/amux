@@ -373,8 +373,8 @@ fn answer(request: Request) -> Result<Value, String> {
                 Some((offered.provider_id.clone(), offered.kind()))
             })?;
             let (provider, kind) = offered.ok_or_else(|| match &provider {
-                Some(provider) => format!("this computer does not offer {provider}"),
-                None => "this computer offers no agent yet".to_owned(),
+                Some(provider) => format!("this device does not offer {provider}"),
+                None => "this device offers no agent yet".to_owned(),
             })?;
             let config =
                 ui_view::create_config(kind, &provider, &ui_view::NewAgentChoices::default())

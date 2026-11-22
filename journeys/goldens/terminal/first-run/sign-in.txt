@@ -1,5 +1,5 @@
 
-  Reach it from anywhere                                                                     setting up amux
+  Reach it through the relay                                                                 setting up amux
 
   Sign in to reach desk from your phone when you are away from this network.
 

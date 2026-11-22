@@ -16,8 +16,8 @@ This script handles both:
 2. Measures what `cargo-sweep` does not manage (remaining `incremental/`, `ios/`,
    `mac/`, etc.) and passes `--maxsize <unmanaged + DEPS_BUDGET>` so `deps/` and
    `.fingerprint/` stay bounded without evicting active third-party crates.
-3. Sweeps `target/ios/rust-cargo` separately through `CARGO_TARGET_DIR` when
-   present.
+3. Sweeps `target/ios/rust-cargo` and `target/android/rust-cargo/{host,android}`
+   separately through `CARGO_TARGET_DIR` when present.
 
 With `--check`, performs a fast (<1 ms) check on `target/debug/incremental`,
 `target/debug/deps`, and free disk space, printing a single warning on stderr
@@ -46,9 +46,15 @@ INCREMENTAL_BUDGET = 4 * GIB
 # Cap for Cargo-managed artifacts (deps/, .fingerprint/, build/, examples/) in
 # the main target/ directory: enough for warm debug + release deps.
 DEPS_BUDGET = 12 * GIB
-# Separate budgets for apps/apple's nested Cargo target dir when present.
+# Separate budgets for apps/apple's and apps/android's nested Cargo target dirs.
 IOS_INCREMENTAL_BUDGET = 1 * GIB
 IOS_DEPS_BUDGET = 2 * GIB
+ANDROID_INCREMENTAL_BUDGET = 1 * GIB
+ANDROID_DEPS_BUDGET = 2 * GIB
+ANDROID_RUST_SUBDIRS = ("host", "android")
+# Top-level target/ subdirectories that own their own Cargo target directories
+# and are swept separately rather than counted as managed outer target dirs.
+NESTED_TARGET_ROOTS = frozenset({"ios", "android"})
 
 # Fast --check thresholds (single flat scandir + statvfs, never a recursive du).
 # A clean 4-command working set is ~110 incremental dirs (~5.6 GiB) and ~5,100
@@ -113,8 +119,8 @@ def incremental_roots(target: Path) -> list[Path]:
     """Find `incremental/` directories under Cargo profile dirs of `target`.
 
     Checks `target/<profile>/incremental` and `target/<triple>/<profile>/incremental`,
-    skipping `target/ios/rust-cargo` which is a separate Cargo target directory
-    swept on its own.
+    skipping `target/ios/` and `target/android/` which own separate Cargo target
+    directories swept on their own.
     """
     if not target.is_dir():
         return []
@@ -130,7 +136,7 @@ def incremental_roots(target: Path) -> list[Path]:
         inc = p / "incremental"
         if inc.is_dir() and not inc.is_symlink():
             roots.append(inc)
-        if entry.name == "ios":
+        if entry.name in NESTED_TARGET_ROOTS:
             continue
         try:
             sub = list(os.scandir(p))
@@ -211,27 +217,29 @@ def unmanaged_bytes(target: Path) -> int:
     if not target.is_dir():
         return 0
     total = 0
-    # Stack holds (path, depth_from_target). Managed dirs live at depth 2
-    # (`target/<profile>/deps`) or depth 3 (`target/<triple>/<profile>/deps`),
-    # except under `target/ios/rust-cargo` which is unmanaged from the outer
-    # target's perspective.
+    # Stack holds (path, depth_from_target, in_nested_root). Managed dirs live
+    # at depth 2 (`target/<profile>/deps`) or depth 3
+    # (`target/<triple>/<profile>/deps`), except under `target/ios/` and
+    # `target/android/` which are unmanaged from the outer target's perspective.
     stack: list[tuple[Path, int, bool]] = [(target, 0, False)]
     while stack:
-        current, depth, in_ios = stack.pop()
+        current, depth, in_nested = stack.pop()
         try:
             with os.scandir(current) as it:
                 for entry in it:
                     try:
                         if entry.is_dir(follow_symlinks=False):
                             child_depth = depth + 1
-                            child_in_ios = in_ios or (depth == 0 and entry.name == "ios")
+                            child_in_nested = in_nested or (
+                                depth == 0 and entry.name in NESTED_TARGET_ROOTS
+                            )
                             if (
-                                not child_in_ios
+                                not child_in_nested
                                 and child_depth in (2, 3)
                                 and entry.name in CARGO_MANAGED_DIRS
                             ):
                                 continue
-                            stack.append((Path(entry.path), child_depth, child_in_ios))
+                            stack.append((Path(entry.path), child_depth, child_in_nested))
                         else:
                             total += _entry_bytes(entry.stat(follow_symlinks=False))
                     except OSError:
@@ -285,6 +293,8 @@ def sweep(
     deps_budget: int = DEPS_BUDGET,
     ios_incremental_budget: int = IOS_INCREMENTAL_BUDGET,
     ios_deps_budget: int = IOS_DEPS_BUDGET,
+    android_incremental_budget: int = ANDROID_INCREMENTAL_BUDGET,
+    android_deps_budget: int = ANDROID_DEPS_BUDGET,
     which: Callable[[str], str | None] = shutil.which,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> int:
@@ -332,6 +342,36 @@ def sweep(
             which=which,
             runner=runner,
         )
+        if code != 0:
+            return code
+
+    android_root = target / "android" / "rust-cargo"
+    if android_root.is_dir():
+        android_inc_budget = 0 if cold else android_incremental_budget
+        for sub_name in ANDROID_RUST_SUBDIRS:
+            android_target = android_root / sub_name
+            if not android_target.is_dir():
+                continue
+            android_kept, android_kept_bytes, android_removed = prune_incremental(
+                android_target, android_inc_budget, dry_run=dry_run
+            )
+            if android_removed:
+                print(
+                    f"android/{sub_name} incremental: {verb.lower()} {android_removed} dirs "
+                    f"(kept {android_kept}, {_format_gib(android_kept_bytes)}) from {android_target}"
+                )
+            code = sweep_cargo(
+                root,
+                android_target,
+                android_deps_budget,
+                dry_run=dry_run,
+                extra_env={"CARGO_TARGET_DIR": str(android_target)},
+                which=which,
+                runner=runner,
+            )
+            if code != 0:
+                return code
+
     return code
 
 

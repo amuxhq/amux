@@ -5,16 +5,18 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::{CStr, CString, c_char};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use app_runtime::values::{ActOutcome, CommandOutcome, PageOutcome};
+use node::SourcePolicy;
 use node::link_log::LinkTransition;
 use provider_fakes::script::{Ask, Question, Step, Tool, ToolClass};
 use serde_json::{Value, json};
 use testnet::{AgentDecl, FakeKind, HostDecl, Net, Topology};
 use wire::{Empty, StartPairingRequest, start_pairing_request};
 
-use super::review::*;
 use super::*;
 
 const PATIENCE: Duration = Duration::from_secs(30);
@@ -1178,74 +1180,6 @@ fn outcome<T: serde::de::DeserializeOwned>(value: Value) -> T {
     serde_json::from_value(value).unwrap()
 }
 
-/// An outbox on its own, counting its rings.
-fn outbox() -> (Arc<Outbox>, Arc<AtomicU64>) {
-    let rang = Arc::new(AtomicU64::new(0));
-    let ringing = rang.clone();
-    let outbox = Arc::new(Outbox {
-        tickets: AtomicU64::new(0),
-        fleets: AtomicU64::new(0),
-        waiting: Mutex::new(Waiting::default()),
-        open: Mutex::new(HashMap::new()),
-        ring: Box::new(move || {
-            ringing.fetch_add(1, Ordering::SeqCst);
-        }),
-    });
-    (outbox, rang)
-}
-
-#[test]
-#[cfg_attr(
-    miri,
-    ignore = "drives a tokio runtime, whose I/O driver Miri cannot run on every host"
-)]
-fn an_act_dropped_by_the_transports_shutdown_answers_that_the_runtime_stopped() {
-    let transport = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .enable_all()
-        .build()
-        .unwrap();
-    let (outbox, rang) = outbox();
-    let ticket = outbox.act(transport.handle(), std::future::pending::<()>());
-    std::thread::sleep(Duration::from_millis(200));
-    assert!(
-        outbox.take().answers.is_empty(),
-        "nothing answers while it runs"
-    );
-
-    transport.shutdown_timeout(Duration::from_secs(5));
-
-    let answers = outbox.take().answers;
-    assert_eq!(answers.len(), 1, "answered once");
-    assert_eq!(answers[0].ticket, ticket);
-    assert_eq!(answers[0].json, r#"{"Err":"the runtime has stopped"}"#);
-    assert_eq!(rang.load(Ordering::SeqCst), 1, "and rang for its step");
-}
-
-#[test]
-#[cfg_attr(
-    miri,
-    ignore = "drives a tokio runtime, whose I/O driver Miri cannot run on every host"
-)]
-fn an_act_that_finishes_answers_once_with_its_result() {
-    let transport = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .enable_all()
-        .build()
-        .unwrap();
-    let (outbox, rang) = outbox();
-    let ticket = outbox.act(transport.handle(), async { 7u8 });
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while rang.load(Ordering::SeqCst) == 0 {
-        assert!(Instant::now() < deadline, "the act never answered");
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    transport.shutdown_timeout(Duration::from_secs(5));
-    let answers = outbox.take().answers;
-    assert_eq!(answers.len(), 1, "the drop does not answer again");
-    assert_eq!((answers[0].ticket, answers[0].json.as_str()), (ticket, "7"));
-}
-
 /// What the loop's shape promises: the cores step on the app's queue and
 /// nowhere else, and nothing calls into the app.
 mod confinement {
@@ -1295,8 +1229,6 @@ mod confinement {
             unsafe { CStr::from_ptr(error) }
         });
         let queue = std::thread::current().id();
-        // SAFETY: the runtime is live for the test.
-        let shared = unsafe { live_runtime(runtime) }.unwrap().shared.clone();
         // SAFETY: the runtime is live.
         let fd = unsafe { amux_runtime_wake_fd(runtime) };
         let readable = |within: i32| {
@@ -1334,8 +1266,14 @@ mod confinement {
 
         // Another thread posts work onto the profile's core and waits on it.
         let (stepped_on, stepped) = std::sync::mpsc::channel();
-        let embedded = shared.embedded().expect("hosted").clone();
-        let handle = shared.handle().clone();
+        // SAFETY: the runtime is live for the test.
+        let (embedded, handle) = {
+            let live = unsafe { live_runtime(runtime) }.unwrap();
+            (
+                live.embedded().expect("hosted").clone(),
+                live.handle().clone(),
+            )
+        };
         let poster = std::thread::spawn(move || {
             handle.spawn(async move {
                 let ran_on = embedded
@@ -1361,7 +1299,6 @@ mod confinement {
         };
         assert_eq!(ran_on.unwrap(), queue);
         poster.join().unwrap();
-        drop(shared);
         // SAFETY: from `amux_runtime_start`, not used again.
         unsafe { amux_runtime_stop(runtime) };
     }

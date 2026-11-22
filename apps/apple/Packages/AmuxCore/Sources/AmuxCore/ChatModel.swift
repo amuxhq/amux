@@ -159,7 +159,7 @@ public enum ChatAsk: Equatable, Sendable {
 extension Row {
     /// It shows an attachment whose bytes it may be waiting on.
     fileprivate var holdsAttachment: Bool {
-        let isAttachment: (Segment) -> Bool = {
+        let isAttachment: (ProsePart) -> Bool = {
             if case .attachment = $0 { true } else { false }
         }
         return switch kind {
@@ -305,11 +305,29 @@ public final class ChatModel {
     /// or the reader asking.
     public private(set) var toNewest = 0
     public var draft = "" {
-        didSet { if draft != oldValue { keepDraft() } }
+        didSet {
+            let edit = editing
+            editing = nil
+            guard draft != oldValue, !regathering else { return }
+            movePlaces(from: oldValue, to: draft, by: edit)
+            keepDraft()
+        }
     }
+    /// The edit the field made, as `type` worked it out, for the draft's
+    /// next change to move the placed attachments by.
+    @ObservationIgnored private var editing: DraftEdit?
     public private(set) var attachments: [DraftAttachment] = [] {
-        didSet { if attachments != oldValue { keepDraft() } }
+        didSet { if attachments != oldValue, !regathering { keepDraft() } }
     }
+    /// Where each of `attachments` sits among the draft's characters, in the
+    /// same order: a paste goes where the cursor was, as the terminal and
+    /// Android place it, and the sent text marks it there. Nil for one that
+    /// follows every word: a photo or file, which has no place in the field.
+    /// The chips themselves sit above the field in this order.
+    @ObservationIgnored private var attachmentPlaces: [Int?] = []
+    /// Set while the draft, its attachments and their places change together,
+    /// so none of them is read half changed.
+    @ObservationIgnored private var regathering = false
     /// Told the draft as it stands each time it changes, so it can be kept
     /// past the session and the app: the phone's drafts live with its own
     /// daemon.
@@ -327,6 +345,12 @@ public final class ChatModel {
     /// then, and again when the comparison or its totals move.
     @ObservationIgnored private var overviewShown = false
     @ObservationIgnored private var listed: Listed?
+    /// Whether the opening is in; deltas before it wait in `early`.
+    @ObservationIgnored private var openingIn = true
+    @ObservationIgnored private var early: [ChatDelta] = []
+    /// The latest read of rows away from the main actor, for a test to
+    /// wait on.
+    @ObservationIgnored var reading: Task<Void, Never>?
     /// The agent's review page while it is open on the chat: the review
     /// read and written at the agent's host, which every client of the
     /// agent sees.
@@ -342,14 +366,38 @@ public final class ChatModel {
     /// The last paste taken out of the draft, where the field still shows it.
     @ObservationIgnored private var pasted: (at: Int, text: [Character])?
 
-    /// - Parameter loadingHintAfter: how long an empty chat waits before
-    ///   saying it is loading; zero says so from the first frame.
-    public init(source: ChatSource, loadingHintAfter: Duration = ChatModel.loadingHintDelay) {
+    /// - Parameters:
+    ///   - loadingHintAfter: how long an empty chat waits before saying it
+    ///     is loading; zero says so from the first frame.
+    ///   - openingInBackground: read the chat's opening off the main actor.
+    ///     The runtime builds the rows it hands over, parsing their
+    ///     markdown, so the app's chats open this way; a delta arriving
+    ///     first waits for the opening it follows.
+    public init(
+        source: ChatSource, loadingHintAfter: Duration = ChatModel.loadingHintDelay,
+        openingInBackground: Bool = false
+    ) {
         self.source = source
-        let opening = source.opening()
+        guard openingInBackground else {
+            open(source.opening())
+            if ids.isEmpty { waitForRows(loadingHintAfter) }
+            return
+        }
+        openingIn = false
+        waitForRows(loadingHintAfter)
+        reading = Task { [weak self] in
+            let opening = await Task.detached { source.opening() }.value
+            self?.open(opening)
+        }
+    }
+
+    private func open(_ opening: ChatDelta) {
         if case .reload(let keys)? = opening.keys { hold(keys: keys) }
         show(opening)
-        if ids.isEmpty { waitForRows(loadingHintAfter) }
+        openingIn = true
+        let early = self.early
+        self.early = []
+        early.forEach(apply)
     }
 
     // MARK: - Reading
@@ -358,6 +406,10 @@ public final class ChatModel {
     /// edges or whole, the rows that changed, and the frame, the card and
     /// the strip where they moved.
     public func apply(_ delta: ChatDelta) {
+        guard openingIn else {
+            early.append(delta)
+            return
+        }
         if delta.keys != nil || !delta.rows.isEmpty {
             Signposts.emit(.transcriptCommit)
         }
@@ -373,7 +425,12 @@ public final class ChatModel {
         if !delta.rows.isEmpty { openIfLanded() }
     }
 
-    /// The cell for a key, its row read now if it never was.
+    /// The cell for a key, its row read now if it never was. This read is
+    /// on the main actor on purpose: the list lays a cell out the moment it
+    /// asks, and a row arriving after would be measured empty and then
+    /// jump. Rows a delta handed over were built, and their markdown
+    /// parsed, off the main actor, and the runtime keeps those parses, so
+    /// the rows read here are mostly ones it parsed already.
     public func cell(for id: String) -> RowCell {
         if let cell = cells[id] { return cell }
         let cell = RowCell(
@@ -591,18 +648,31 @@ public final class ChatModel {
         if empty != ids.isEmpty { empty = ids.isEmpty }
     }
 
-    /// Reads every held cell again in place and stamps it, so the list
-    /// measures it again: after a swap, what each kept key draws may have
-    /// moved.
+    /// Reads every held cell again and stamps it, so the list measures it
+    /// again: after a swap, what each kept key draws may have moved. The
+    /// rows are read off the main actor, since reading them builds them
+    /// and parses their markdown, and each cell keeps its row until they
+    /// come; a cell a delta handed a newer row meanwhile keeps that one.
     private func refresh(_ keys: [String]) {
         guard !keys.isEmpty else { return }
-        let rows = source.rows(for: keys)
-        revision += 1
-        for row in rows {
-            guard let cell = cells[row.id] else { continue }
-            cell.row = row
-            cell.revision = revision
+        let asked = revision
+        let source = self.source
+        reading = Task { [weak self] in
+            let rows = await Task.detached { source.rows(for: keys) }.value
+            self?.refreshed(rows, askedAt: asked)
         }
+    }
+
+    private func refreshed(_ rows: [Row], askedAt asked: Int) {
+        let next = revision + 1
+        var moved = false
+        for row in rows {
+            guard let cell = cells[row.id], cell.revision <= asked else { continue }
+            cell.row = row
+            cell.revision = next
+            moved = true
+        }
+        if moved { revision = next }
     }
 
     /// Rows a delta handed over, each into its cell if it was drawn; a
@@ -862,11 +932,10 @@ public final class ChatModel {
         return chip
     }
 
-    /// The draft as it is sent. The chips sit apart from the field, and a
-    /// sent message draws attachments after its words, so that is where
-    /// they go.
+    /// The draft as it is sent: each paste where it was pasted among the
+    /// words, and the photos and files after them.
     private var composed: Draft {
-        Draft(words: draft, attachments: attachments)
+        Draft(words: draft, attachments: attachments, places: attachmentPlaces)
     }
 
     /// Something a command the client runs asked the screen to open; the
@@ -1043,32 +1112,37 @@ public final class ChatModel {
     /// leaves the draft and joins it as one inline text attachment. Only
     /// the person's typing comes through here, so words put back into the
     /// draft stay words.
-    public func type(_ text: String) {
+    ///
+    /// - Parameter caret: where the field's caret stands after the edit,
+    ///   among `text`'s characters, when it knows. What was typed ends
+    ///   there, which says which of a run of repeated characters it was;
+    ///   without it, or with a caret the field has yet to move, the edit is
+    ///   read from the two texts alone.
+    public func type(_ text: String, caret: Int? = nil) {
         var new = Array(
             text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n"))
+        var caret = new.count == text.count ? caret : nil
         // The field goes on showing a paste after the draft takes it out,
         // and sends it back with its echo of the paste and with the next
         // keystroke; it is taken out again until the field has redrawn.
         if let pasted, new.count >= pasted.at + pasted.text.count,
            Array(new[pasted.at..<(pasted.at + pasted.text.count)]) == pasted.text {
             new.removeSubrange(pasted.at..<(pasted.at + pasted.text.count))
+            caret = nil
             redrawField()
         } else {
             pasted = nil
         }
         let old = Array(draft)
-        var head = 0
-        while head < old.count, head < new.count, old[head] == new[head] { head += 1 }
-        var tail = 0
-        while tail < old.count - head, tail < new.count - head,
-              old[old.count - 1 - tail] == new[new.count - 1 - tail] { tail += 1 }
-        var inserted = Array(new[head..<(new.count - tail)])
+        let edit = caret.flatMap { DraftEdit(endingAt: $0, from: old, to: new) } ?? DraftEdit(from: old, to: new)
+        var inserted = Array(new[edit.start..<edit.insertedEnd])
         guard Bridge.pastesAsAttachment(String(inserted)) else {
+            editing = edit
             draft = String(new)
             return
         }
-        var before = Array(new[..<head])
-        var after = Array(new[(new.count - tail)...])
+        var before = Array(new[..<edit.start])
+        var after = Array(new[edit.insertedEnd...])
         // Pasting beside a word, the text view adds a space to keep the
         // words apart; the space belongs to the sentence, not to the paste.
         if inserted.first == " ", before.last.map({ !$0.isWhitespace }) ?? false {
@@ -1079,9 +1153,18 @@ public final class ChatModel {
             inserted.removeLast()
             after.insert(" ", at: 0)
         }
+        // The paste leaves the draft: what it replaced goes, and a space
+        // kept to part it from a word stays as the edit's own.
+        let kept = before.count + after.count
+        editing = DraftEdit(start: edit.start, removedEnd: edit.removedEnd, insertedEnd: kept - (old.count - edit.removedEnd))
         draft = String(before + after)
-        attachments.append(.text(name: String(localized: "Pasted text"), text: String(inserted)))
-        pasted = (at: before.count, text: inserted)
+        // In place order, ahead of the first one after the cursor and of
+        // the photos and files that follow every word.
+        let at = before.count
+        let index = attachmentPlaces.firstIndex { $0.map { $0 > at } ?? true } ?? attachmentPlaces.count
+        attachmentPlaces.insert(at, at: index)
+        attachments.insert(.text(name: String(localized: "Pasted text"), text: String(inserted)), at: index)
+        pasted = (at: at, text: inserted)
         redrawField()
     }
 
@@ -1109,8 +1192,11 @@ public final class ChatModel {
     }
 
     public func clearDraft() {
-        draft = ""
-        attachments = []
+        let held = !draft.isEmpty || !attachments.isEmpty
+        regathering = true
+        (draft, attachmentPlaces, attachments) = ("", [], [])
+        regathering = false
+        if held { keepDraft() }
     }
 
     /// Puts back a draft kept from an earlier session, ahead of anything
@@ -1120,16 +1206,48 @@ public final class ChatModel {
     }
 
     private func keepDraft() {
-        keeping?(Draft(words: draft, attachments: attachments))
+        keeping?(composed)
     }
 
     /// Puts a draft's words and attachments back ahead of what the composer
-    /// holds.
+    /// holds, each paste where it was among its words.
     private func restore(_ sent: Draft) {
         let words = sent.words
         let joined =
             if draft.isEmpty { words } else if words.isEmpty { draft } else { words + "\n" + draft }
-        (draft, attachments) = (joined, (sent.attachments ?? []) + attachments)
+        // What the composer holds moves down past the words put back ahead
+        // of it, and past the line break that parts them from its own words.
+        // With words or a placed paste in the composer, the photos and files
+        // put back stay with their own words rather than falling to the end
+        // of everything.
+        let ahead = words.isEmpty ? 0 : draft.isEmpty ? words.count : words.count + 1
+        let anchored = !draft.isEmpty || attachmentPlaces.contains { $0 != nil }
+        let returned: [Int?] = sent.places.map { place in anchored ? Optional(place ?? words.count) : place }
+        regathering = true
+        draft = joined
+        attachmentPlaces = returned + attachmentPlaces.map { $0.map { $0 + ahead } }
+        attachments = (sent.attachments ?? []) + attachments
+        regathering = false
+        keepDraft()
+    }
+
+    /// Moves each placed attachment with the words around it as the draft
+    /// goes from `old` to `new`: one before the change stays, one after it
+    /// moves by what the change added or took away, and one inside words
+    /// that were replaced goes to the end of what replaced them. The change
+    /// is the field's own edit when `type` knew it; otherwise it is read
+    /// from the two texts, which cannot tell which of a run of repeated
+    /// characters changed.
+    private func movePlaces(from old: String, to new: String, by known: DraftEdit?) {
+        guard attachmentPlaces.contains(where: { $0 != nil }) else { return }
+        let (a, b) = (Array(old), Array(new))
+        let edit = known.flatMap { $0.fits(a, b) ? $0 : nil } ?? DraftEdit(from: a, to: b)
+        attachmentPlaces = attachmentPlaces.map { place in
+            guard let place else { return nil }
+            if place <= edit.start { return place }
+            if place >= edit.removedEnd { return min(max(place + b.count - a.count, 0), b.count) }
+            return edit.insertedEnd
+        }
     }
 
     /// Whether the shared layer refuses an attachment before anything of it
@@ -1155,7 +1273,9 @@ public final class ChatModel {
             let stored = await source.putBlob(data, name: name, mime: mime)
             uploading -= 1
             switch stored {
-            case .success(let blob): attachments.append(image ? .image(blob) : .file(blob))
+            case .success(let blob):
+                attachmentPlaces.append(nil)
+                attachments.append(image ? .image(blob) : .file(blob))
             case .failure(let failure):
                 notice = String(localized: "\(name) is not attached: \(failure.description)")
             }
@@ -1211,6 +1331,7 @@ public final class ChatModel {
 
     public func removeAttachment(at index: Int) {
         guard attachments.indices.contains(index) else { return }
+        attachmentPlaces.remove(at: index)
         attachments.remove(at: index)
     }
 
@@ -1275,8 +1396,8 @@ public final class ChatModel {
         case .exited: String(localized: "it had exited")
         case .exiting: String(localized: "it was exiting")
         case .agentClosed: String(localized: "it is settled")
-        case .draining: String(localized: "its host is shutting down")
-        case .hostUnreachable: String(localized: "its host is away")
+        case .draining: String(localized: "its device is shutting down")
+        case .hostUnreachable: String(localized: "its device is away")
         case .unsupported: String(localized: "this agent can’t take it")
         case .closedAsk: String(localized: "the ask had already closed")
         case .notQueued: String(localized: "it was no longer queued")
@@ -1433,10 +1554,51 @@ public struct QuestionDraft: Equatable, Sendable {
 }
 
 extension Draft {
-    /// Words followed by attachments: the composer's shape, whose chips sit
-    /// beside the field rather than among the words.
+    /// Words followed by attachments.
     public init(words: String, attachments: [DraftAttachment]) {
         self.init(parts: (words.isEmpty ? [] : [.text(words)]) + attachments.map(DraftPart.attachment))
+    }
+
+    /// Words with each attachment at its place among their characters, in
+    /// order, and those placed nowhere after every word.
+    public init(words: String, attachments: [DraftAttachment], places: [Int?]) {
+        let characters = Array(words)
+        var parts: [DraftPart] = []
+        var trailing: [DraftAttachment] = []
+        var cursor = 0
+        for (attachment, place) in zip(attachments, places) {
+            guard let place else {
+                trailing.append(attachment)
+                continue
+            }
+            let at = min(max(place, cursor), characters.count)
+            if at > cursor {
+                parts.append(.text(String(characters[cursor..<at])))
+                cursor = at
+            }
+            parts.append(.attachment(attachment))
+        }
+        if cursor < characters.count { parts.append(.text(String(characters[cursor...]))) }
+        self.init(parts: parts + trailing.map(DraftPart.attachment))
+    }
+
+    /// Each attachment's place among the words' characters, in order; nil
+    /// for a photo or file after every word, so words typed later go before
+    /// it. A paste keeps its place wherever it is, so words typed after it
+    /// go after it as they did before it was put back.
+    public var places: [Int?] {
+        let lastWords = parts.lastIndex { if case .text = $0 { true } else { false } }
+        var count = 0
+        var places: [Int?] = []
+        for (index, part) in parts.enumerated() {
+            switch part {
+            case .text(let words): count += words.count
+            case .attachment(let attachment):
+                let pasted = if case .text = attachment { true } else { false }
+                places.append(pasted || lastWords.map { index < $0 } == true ? count : nil)
+            }
+        }
+        return places
     }
 
     /// The prompt's text as its host receives it: each attachment's place
@@ -1486,5 +1648,49 @@ extension RowKind {
         default: nil
         }
         return phase == .pending || phase == .running
+    }
+}
+
+/// One edit of the draft: the characters from `start` to `removedEnd` of
+/// the old text became those from `start` to `insertedEnd` of the new.
+struct DraftEdit: Equatable {
+    let start: Int
+    let removedEnd: Int
+    let insertedEnd: Int
+
+    init(start: Int, removedEnd: Int, insertedEnd: Int) {
+        (self.start, self.removedEnd, self.insertedEnd) = (start, removedEnd, insertedEnd)
+    }
+
+    /// The edit read from the texts alone: the characters between what the
+    /// two share at the start and at the end.
+    init(from old: [Character], to new: [Character]) {
+        var head = 0
+        while head < old.count, head < new.count, old[head] == new[head] { head += 1 }
+        var tail = 0
+        while tail < old.count - head, tail < new.count - head,
+              old[old.count - 1 - tail] == new[new.count - 1 - tail] { tail += 1 }
+        self.init(start: head, removedEnd: old.count - tail, insertedEnd: new.count - tail)
+    }
+
+    /// The edit that leaves the caret at `caret` in `new`: what it put in
+    /// ends there, and starts where the two texts part or at the caret,
+    /// whichever comes first. Nil when no such edit takes `old` to `new`,
+    /// as when the caret has yet to move with the edit.
+    init?(endingAt caret: Int, from old: [Character], to new: [Character]) {
+        let removedEnd = caret + old.count - new.count
+        var head = 0
+        while head < old.count, head < new.count, old[head] == new[head] { head += 1 }
+        let edit = DraftEdit(start: min(head, caret, removedEnd), removedEnd: removedEnd, insertedEnd: caret)
+        guard edit.fits(old, new) else { return nil }
+        self = edit
+    }
+
+    /// Whether this is an edit that takes `old` to `new`.
+    func fits(_ old: [Character], _ new: [Character]) -> Bool {
+        guard start >= 0, start <= removedEnd, removedEnd <= old.count, start <= insertedEnd,
+              insertedEnd <= new.count, old.count - removedEnd == new.count - insertedEnd
+        else { return false }
+        return old[..<start] == new[..<start] && old[removedEnd...] == new[insertedEnd...]
     }
 }

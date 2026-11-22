@@ -1,19 +1,22 @@
 # The embedded runtime
 
-*For developers working on the Rust side of the iPhone app, or building another rich client on the same layer.*
+*For developers working on the Rust side of the iPhone and Android apps, or building another rich client on the same layer.*
 
 A rich client needs three things from Rust: the chats and fleet it draws, a
 runtime to read them from, and a way to call both from its own language. The
-app layer splits those into three crates:
+app layer splits those across five crates:
 
 | Crate | Owns |
 | --- | --- |
 | `app-runtime` | The chats and fleet over a local runtime: session and fleet drivers, views asked for by row key, changes gathered until the host's next main-thread turn, and the values a host passes in and gets back |
 | `app-embedded` | The daemon hosted in the client's own process: one installation with one profile per account, each with its identity, trust, store of replica rows, pairing, direct links and relay link; and `Phone`, the driver that steps its cores on the client's queue and confines its transport to one thread |
-| `app-ffi` | The C ABI over both: exported `amux_*` functions, JSON in and out, a wake descriptor and a step, tickets for acts, opaque handles, the `staticlib`, and the header `cbindgen` generates |
+| `app-bridge` | The language-neutral bridge over both: `AmuxRuntime`, `AmuxProfile`, `AmuxChat`, JSON in and out, the wake descriptor and step, and ticketed acts |
+| `app-ffi` | The C ABI facade over `app-bridge` for Apple clients: exported `amux_*` functions, opaque handles, the `staticlib`, and the header `cbindgen` generates |
+| `app-jni` | The JNI facade over `app-bridge` for the Android app and host JVM tests: monotonic 64-bit handle tables, a poll over the wake descriptor and a stop latch, `BridgeException` translation, and the `cdylib` (`libamux_app.so`) |
 
-The iPhone app is the one client built on them. How the Swift side uses
-them is on [the iPhone page](IOS.md).
+The [iPhone app](IOS.md) and the [Android app](ANDROID.md) both build on this
+same embedded daemon (`app-embedded`) and session runtime (`app-runtime`),
+differing only in their thin language facade (`app-ffi` vs `app-jni`).
 
 ## The dependency rule
 
@@ -39,21 +42,25 @@ local edge to a fixed list:
 | --- | --- |
 | `app-runtime` | `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` |
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` |
-| `app-ffi` | `app-embedded`, `app-runtime`, `client`, `installer` (not on iOS), `node`, `ui-state`, `ui-view`, `wire` |
+| `app-bridge` | `app-embedded`, `app-runtime`, `client`, `installer` (not on iOS or Android), `node`, `ui-state`, `ui-view`, `wire` |
+| `app-ffi` | `app-bridge` |
+| `app-jni` | `app-bridge` |
 
 `app-runtime` is also one of the UI crates, which may not reach `node`,
 `store`, `interpret`, `agent` or `pty-host` directly or through anything
 else, and no production crate may depend on test support.
-`app-embedded` and `app-ffi` host the runtime in process and are the
-deliberate exception to "no UI crate links the daemon".
+`app-embedded`, `app-bridge`, `app-ffi` and `app-jni` host the runtime in
+process and are the deliberate exception to "no UI crate links the daemon".
 
 What ships on a phone is checked from the other end too. `just ios
 graph-check` walks `cargo tree -p app-ffi` for the iOS simulator target and
-fails if `pty-host`, `agent`, `interpret`, `claude-protocol`, `codex-protocol`,
-`schemars`, `testnet`, `qualification` or `replay-support` appears, with and
-without the driving tools. `just mobile-check` checks `node`, `client`,
-`ui-state`, `ui-runtime`, `app-runtime` and `app-embedded` for the iOS device
-and simulator targets.
+`just android graph-check` walks `cargo tree -p app-jni` for
+`aarch64-linux-android`; both fail if `pty-host`, `agent`, `interpret`,
+`claude-protocol`, `codex-protocol`, `schemars`, `testnet`, `qualification` or
+`replay-support` appears, with and without the driving tools. `just mobile-check`
+checks `node`, `client`, `ui-state`, `ui-runtime`, `app-runtime`,
+`app-embedded` and `app-bridge` for the iOS device and simulator targets, and
+`just android check` checks the same graph plus `app-jni` for Android.
 
 ## What a client reuses
 
@@ -116,10 +123,14 @@ and come back as inputs.
 A call that waits for the cores to do something (starting, stopping, a
 profile or chat opening) runs its work on the transport thread and steps the
 cores on the calling thread meanwhile, so it never waits on a queue the
-calling thread holds. Through the C ABI a step answers JSON with what moved
-in each open fleet and chat as a delta, the profile list when it moved, and
-the results of acts, each under the ticket its act returned when it started
-and after the deltas of what it moved.
+calling thread holds. Through both `app-ffi` and `app-jni`, a step answers JSON
+with what moved in each open fleet and chat as a delta, the profile list when
+it moved, and the results of acts, each under the ticket its act returned when
+it started and after the deltas of what it moved. On Android, `app-jni` exposes
+`runtimeWaitWake`, which calls `libc::poll` over `wake_fd` and a per-runtime
+stop latch that nothing reads, so Kotlin's wake watcher wakes on both updates
+and shutdown without busy-polling, even when a step has just read the wake
+descriptor empty.
 
 ## Profiles
 
@@ -135,8 +146,16 @@ out profiles by id, and every per-profile call names the profile it is for.
 - **Source policy** (`set_source_policy`) says whether a profile keeps a
   source open for every agent it lists or only for the chats that ask.
 - **Discovered** hands the whole set of machines the platform found on the
-  local network to every profile. On iOS only the system may browse, so
-  `EdgeOverrides::discovery` defaults to none.
+  local network to every profile. On iOS only the system may browse, and on
+  Android discovery goes through `NsdManager`, so `EdgeOverrides::discovery`
+  defaults to none on both mobile targets.
+
+On Android, SELinux denies `link(2)` (`fs::hard_link`) on `app_data_file` for
+untrusted apps. When `crates/node/src/identity.rs` publishes a new `device.key`
+on Android, it therefore uses `renameat2(RENAME_NOREPLACE)` instead of a hard
+link to keep atomic create-without-overwrite semantics, falling back to an
+OS-managed `flock(LOCK_EX)` lockfile check-and-rename on kernels or filesystems
+that return `ENOSYS`, `EINVAL` or `EOPNOTSUPP`.
 
 Pairing (`begin_pair`, `confirm_pair`, `abandon_pair`, `unpair`), the roster
 of trusted machines and account state are per-profile calls too; creating,
@@ -162,44 +181,51 @@ injection point:
 - `EmbeddedRuntime::start_with` takes `EdgeOverrides` (where the relay link
   dials, local-network discovery, where direct links listen) and a clock.
   `start`, which the phone uses, passes the defaults and the system clock.
-- `app-ffi`'s `debug-tools` feature, never a default, is what a driving build
-  links. It lets `StartConfig.lan_bind` keep direct links on loopback, lets
-  `StartConfig.relay_tcp` dial a served test relay's plaintext carrier, and
-  enables `amux_runtime_offer_pairing`, which puts a profile into pairing mode
-  so tests can pair two profiles. A shipping build ignores the two fields and
-  refuses the call; `amux_version` reports `+debug-tools` when the feature is
-  on, and the app's measured runs check it.
+- `app-bridge`'s `debug-tools` feature (forwarded by `app-ffi` and `app-jni`,
+  never a default) is what a driving build links. It lets `StartConfig.lan_bind`
+  keep direct links on loopback, lets `StartConfig.relay_tcp` dial a served
+  test relay's plaintext carrier, and enables `offer_pairing`, which puts a
+  profile into pairing mode so tests can pair two profiles. A shipping build
+  ignores the two fields and refuses the call; `amux_version` /
+  `NativeBridge.version` reports `+debug-tools` when the feature is on, and the
+  apps' scope audits and measured runs check it.
 
 The machines on the other side of every test are the `testnet` crate: real
 daemons, one relay and a stand-in account service, driven in process by Rust
 specs or out of process by `testnet serve`. See [the testnet page](TESTNET.md).
 
-## Generated Swift types
+## Generated Swift and Kotlin types
 
 Every value the bridge carries has a Swift mirror in
-`apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift`, generated
-from the Rust definitions:
+`apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift` and Kotlin
+mirrors in `apps/android/core/values/src/main/kotlin/sh/amux/values/Values.kt`
+and `apps/android/push/src/main/kotlin/sh/amux/push/Said.kt`, generated from
+the same Rust definitions:
 
 ```sh
-cargo run -p ios-tools -- swift-types          # regenerate
-cargo run -p ios-tools -- swift-types --check  # fail when the committed file differs
+cargo run -p ios-tools -- swift-types          # regenerate Swift mirrors
+cargo run -p ios-tools -- swift-types --check  # fail when Swift differs
+cargo run -p ios-tools -- kotlin-types         # regenerate Kotlin mirrors
+cargo run -p ios-tools -- kotlin-types --check # fail when Kotlin differs
 ```
 
 `crates/ios-tools/src/swift_types.rs` lists the root types, from `ui-state`'s
-shared values, `ui-view` and `app-runtime::values`; everything they hold comes along. The
-schemas come from `schemars`. A struct becomes a Swift struct with the Rust
-field names as coding keys; a string-only enum becomes a raw-value enum; any
-other enum is serde's externally tagged form with its `Codable` written out;
+shared values, `ui-view` and `app-runtime::values`; `kotlin_types.rs` reads
+the same list, and everything they hold comes along. The schemas come
+from `schemars`. A struct becomes a Swift struct or `@Serializable` Kotlin
+`data class` with the Rust field names as coding keys; a string-only enum
+becomes a raw-value or `@Serializable` enum; any other enum is serde's
+externally tagged form with its `Codable` or custom `KSerializer` written out;
 a variant holding an optional value writes `null` for none, so the variant is
-still named. A schema shape outside those fails the generation rather than producing a
-mirror that decodes wrongly. Byte strings, such as agent and input ids, are
-JSON arrays of numbers.
+still named. A schema shape outside those fails the generation rather than
+producing a mirror that decodes wrongly. Byte strings, such as agent and input
+ids, are JSON arrays of numbers.
 
-Two tests in that file keep the mirrors honest: the committed file must match
-what the generator produces, and every public struct and enum in `ui-state`'s
-`model.rs`, `ui-view` and `app-runtime::values` must have a mirror, apart from a short
-list that never crosses (the answer body a choice sends, and borrowed option
-types).
+Tests in `ios-tools` keep both mirrors honest: the committed Swift and Kotlin
+files must match what the generators produce, round-trip JSON identically to
+Rust, and every public struct and enum in `ui-state`'s `model.rs`, `ui-view`
+and `app-runtime::values` must have a mirror, apart from a short list that
+never crosses (the answer body a choice sends, and borrowed option types).
 
 Some view values hold wire types. Those protobuf types are generated with
 serde and schema derives so they can be mirrored too: `VIEW_VALUES` in
@@ -211,10 +237,12 @@ a view value means adding it there.
 
 Everything crosses as JSON; every returned string is the caller's to free with
 `amux_string_free`, and every `AmuxBytes` with `amux_bytes_free`. A null
-return means the call failed, and a panic is caught at the boundary and reads
-as a failure. Reads return at once. An act that waits returns a ticket at
-once, and its JSON result comes back from a later `amux_runtime_step` under
-that ticket; nothing in the library calls into the client.
+return means the call failed. A panic aborts the app: every library built
+for an app has `panic = "abort"`, so the boundary's `catch_unwind` only turns
+a panic into a failure under `cargo test`, whose tests count them. Reads
+return at once. An act that waits returns a ticket at once, and its JSON
+result comes back from a later `amux_runtime_step` under that ticket; nothing
+in the library calls into the client.
 
 | Family | Handle | What it covers |
 | --- | --- | --- |
@@ -277,10 +305,28 @@ Each target triple has its own Cargo target directory under
 other, and `SDKROOT` is left unset for the same reason. Each run writes the
 slice sizes to `target/ios/size.txt`.
 
+On Android, `apps/android/tools/android-rust.py` builds `app-jni` as
+`libamux_app.so` via `cargo-ndk` into variant-isolated directories
+(`target/android/debug-jniLibs/` with `debug-tools` under `phone-dev`,
+`target/android/release-jniLibs/` without `debug-tools` under `release`) and
+builds a host shared library under `target/android/host-jni/` for JVM unit
+tests:
+
+```sh
+just android rust            # arm64-v8a debug bridge (with debug-tools)
+just android rust --host     # host OS shared library for JVM unit tests
+just android rust --release  # shipping arm64-v8a bridge (no debug-tools)
+```
+
+See [the Android page](ANDROID.md#rust-core-and-jni-bridge) for Gradle's
+`verifyReleaseJniLibs` guard and `just android scope-audit`.
+
 ## Tests
 
 | Command | What it proves |
 | --- | --- |
 | `just test-crate app-runtime` | The phone's report carries the records and no word of the chat on screen; the host is woken once however many updates land and hears them as one delta; a host's keys moved only by deltas follow the window through every seeded schedule of the client model, and through a trim to the cap; new rows arrive above the newest held and older ones below the oldest, each read when drawn; collapsed runs and the chat frame read as the views say; a settings pick reaches the agent |
 | `just test-crate app-embedded` | A phone pairs by PIN and reads a machine's agents from its own rows; relinks when its browser finds the machine again; each account is a profile and only the resumed one holds a relay link; a signed-in phone reaches its hosts over the relay; a pairing lockout is told in words from its typed reason; a report carries the runtime's log, masked |
+| `just test-crate app-bridge` | Language-neutral bridge handle lifecycle, JSON dispatch, and `debug-tools` gating |
 | `just test-crate app-ffi` | Through the C functions, with the phone's state held only from openings and deltas: pairing by PIN, the fleet, a chat's rows by key, a permission answered by position and a question by picks, paging (handed over before its answer) and a dump; and nothing closed is handed over while its acts are in flight |
+| `just android unit` | Through `app-jni` on the host JVM (`NativeBridgeJvmTest`): starting `EmbeddedRuntime`, watching `wake_fd` via `CoreLoop`, opening a profile, receiving initial deltas and resolving async tickets, alongside all Kotlin JVM and Robolectric suites |

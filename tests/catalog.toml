@@ -616,20 +616,22 @@ cargo = [{ package = "client", modules = ["seam"], features = [] }]
 
 [[suite]]
 name = "phone-bridge-library-units"
-contract = "The Rust phone bridge preserves its C boundary, mobile lifecycle and callback contracts."
-paths = ["crates/app-ffi/src"]
+contract = "The Rust phone bridge preserves its C and JNI boundaries, mobile lifecycle and callback contracts."
+paths = ["crates/app-bridge/src", "crates/app-ffi/src", "crates/app-jni/src"]
 recipe = "just suite phone-bridge-library-units"
 boundary = "Store, effects, bridge"
-oracle = "C-boundary results, callback records and runtime state."
+oracle = "C-boundary and JNI handle/wake results, callback records and runtime state."
 real = ["embedded runtime", "SQLite", "temporary files"]
-substituted = ["Swift caller", "cloud account", "providers"]
+substituted = ["Swift/Kotlin caller", "cloud account", "providers"]
 time = "real"
 capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = ""
 update = ""
 cargo = [
+  { package = "app-bridge", kind = "lib", targets = ["app_bridge"], features = [] },
   { package = "app-ffi", kind = "lib", targets = ["app_ffi"], features = [] },
+  { package = "app-jni", kind = "lib", targets = ["amux_app"], features = [] },
 ]
 
 [[suite]]
@@ -1212,6 +1214,118 @@ lane = "tool"
 evidence = "target/ios/scope-audit"
 update = ""
 cases = ["apps/apple/Tools/ios-scope-audit.py"]
+
+[[suite]]
+name = "android-unit-tests"
+contract = "The Android app's modules keep their wording, push opening, runtime loop and stores, design tokens, screens, shell navigation and test fixtures to their contracts, with the runtime's modules driving the real Rust bridge built for the host JVM."
+paths = ["apps/android/core/words/src/test", "apps/android/push/src/test", "apps/android/core/runtime/src/test", "apps/android/design/src/test", "apps/android/features/src/test", "apps/android/shell/src/test", "apps/android/test-support/src/test", "apps/android/app/src/test"]
+recipe = "just android unit"
+boundary = "Store, effects, bridge"
+oracle = "JUnit and Robolectric assertions over production module behaviour, Compose semantics, and the bridge's answers."
+real = ["host JNI bridge (libamux_app)", "embedded runtime", "SQLite", "Compose under Robolectric"]
+substituted = ["Android device", "cloud account", "providers", "Google Play Billing"]
+time = "real"
+capabilities = ["JDK 21", "Android SDK"]
+lane = "fast"
+evidence = "apps/android/*/build/reports/tests"
+update = ""
+cases = ["apps/android/*/src/test/kotlin/**/*Test.kt", "apps/android/core/*/src/test/kotlin/**/*Test.kt"]
+
+[[suite]]
+name = "android-accessibility-audit"
+contract = "Every registered Android story gives TalkBack a name for each control, keeps text unclipped, marks headings, and gives every control a target of at least 48 dp, with contrast tokens that meet WCAG."
+paths = ["apps/android/app/src/test/kotlin/sh/amux/android/AccessibilityAuditTest.kt"]
+recipe = "just android accessibility"
+boundary = "Native presentation"
+oracle = "Compose semantics trees: names, bounds, roles and touch-target sizes per story."
+real = ["Compose under Robolectric", "the app's stories"]
+substituted = ["Android device", "TalkBack itself"]
+time = "none"
+capabilities = ["JDK 21", "Android SDK"]
+lane = "fast"
+evidence = "apps/android/app/build/reports/tests"
+update = ""
+cases = ["apps/android/app/src/test/kotlin/sh/amux/android/AccessibilityAuditTest.kt"]
+
+[[suite]]
+name = "android-journeys"
+contract = "A person can complete the phone stories through the real debug Android app and the production amux path against a served topology."
+paths = ["crates/testnet/src/journey/android.rs", "journeys/goldens/android"]
+recipe = "just android journey"
+boundary = "Journeys"
+oracle = "Door observations, host-recorded outcomes, exact element geometry, and teardown."
+real = ["built debug Android app", "Android emulator", "daemon runtimes", "relay", "network stack"]
+substituted = ["providers", "cloud account"]
+time = "real"
+capabilities = ["Android SDK", "pinned emulator AVD (amux-android-1)"]
+lane = "journey"
+evidence = "target/journeys/android"
+update = "UPDATE_JOURNEY_GOLDENS=1 just android journey -- reach-host"
+cases = ["journeys/goldens/android/*"]
+
+[[suite]]
+name = "android-release-launch"
+contract = "The minified release APK, with the shipping Rust library, starts the runtime, takes the step that lists its profiles, answers an act, and raises BridgeException when the bridge refuses a call."
+paths = ["apps/android/app/src/androidTest", "apps/android/app/proguard-rules.pro"]
+recipe = "just android release-smoke"
+boundary = "System composition"
+oracle = "Instrumented assertions in the app's process: the profiles decoded from a step, an act's answer, and the exception's type."
+real = ["R8-minified release APK", "shipping libamux_app.so", "Android emulator or phone", "embedded runtime", "SQLite"]
+substituted = ["cloud account", "network"]
+time = "real"
+capabilities = ["Android SDK", "JDK 21", "an emulator or phone"]
+lane = "system"
+evidence = "apps/android/app/build/reports/androidTests"
+update = ""
+cases = ["apps/android/app/src/androidTest/kotlin/sh/amux/android/ReleaseLaunchTest.kt"]
+
+[[suite]]
+name = "android-shipping-scope-audit"
+contract = "The release APK ships no debug or test-support class and a JNI library with no driving tools, no debug sections, and SQLite linked in statically."
+paths = ["apps/android/tools/android-scope-audit.py"]
+recipe = "just android scope-audit"
+boundary = "System composition"
+oracle = "R8's mapping of kept classes, the library's ELF dynamic section, section headers and symbols."
+real = ["R8-minified release APK", "shipping libamux_app.so", "NDK binary tools"]
+substituted = ["Google Play upload"]
+time = "real"
+capabilities = ["Android SDK and NDK", "JDK 21"]
+lane = "tool"
+evidence = "the printed audit"
+update = ""
+cases = ["apps/android/tools/android-scope-audit.py"]
+
+[[suite]]
+name = "android-source-policy"
+contract = "Android source keeps screens free of activities, navigation, networking, toasts and spinners, keeps tests free of fixed sleeps, and keeps every string resource to the copy rules."
+paths = ["apps/android/tools/feature-lint.sh", "apps/android/tools/test-waits-lint.sh", "apps/android/tools/strings-lint.sh"]
+recipe = "just android lint"
+boundary = "Native presentation"
+oracle = "Static source scans and the string resources."
+real = ["repository source"]
+substituted = ["compiler", "Android app"]
+time = "none"
+capabilities = ["POSIX shell", "Python 3"]
+lane = "tool"
+evidence = ""
+update = ""
+cases = ["apps/android/tools/feature-lint.sh", "apps/android/tools/test-waits-lint.sh", "apps/android/tools/strings_lint.py"]
+
+[[suite]]
+name = "android-script-tests"
+contract = "The Android build, emulator, storybook, scope audit, release and lint scripts keep their command contracts."
+paths = ["apps/android/tools/tests"]
+recipe = "just android script-tests"
+boundary = "System composition"
+oracle = "Python unittest assertions over commands, files, parsers, and scripted process results."
+real = ["temporary files", "script parsers", "the lint scripts"]
+substituted = ["Gradle", "cargo", "emulators", "Google Play"]
+time = "none"
+capabilities = ["Python 3"]
+lane = "tool"
+evidence = ""
+update = ""
+cases = ["apps/android/tools/tests/*_test.py"]
 
 [[suite]]
 name = "line-coverage"

@@ -1,0 +1,40 @@
+shell |  |  | 0,0,411,923
+chat |  |  | 0,0,411,923
+chat.feed |  |  | 0,118,411,651
+chat.row.prompt:<id> |  |  | 16,120,379,52
+chat.row.kind.prompt |  |  | 16,120,379,40
+markdown.root | Move the journal. |  | 254,130,127,20
+chat.row.<id>-plan |  |  | 16,172,379,48
+chat.row.kind.plan | Plan approved, Move the journal |  | 16,172,379,48
+chat.row.turn:1 | Worked for <t> |  | 16,220,379,30
+chat.row.turn-end | Worked for <t> |  | 16,220,81,16
+chat.row.prompt:<id> |  |  | 16,250,379,52
+chat.row.kind.prompt |  |  | 16,250,379,40
+markdown.root | Implement the plan. |  | 235,260,147,20
+chat.row.msg_<run>0000000000000003 |  |  | 16,302,379,32
+chat.row.kind.prose |  |  | 16,302,379,20
+markdown.root | Moving the journal as planned. |  | 16,302,379,20
+chat.row.turn:2 | Worked for <t> |  | 16,334,379,30
+chat.row.turn-end | Worked for <t> |  | 16,334,81,16
+chat.row.prompt:<id> |  |  | 16,364,379,52
+chat.row.kind.prompt |  |  | 16,364,379,40
+markdown.root | Rotate the logs. |  | 267,374,114,20
+chat.row.<id>-plan |  |  | 16,416,379,55
+chat.row.kind.plan | Plan sent back, “Keep a month of logs, compressed.” |  | 16,416,379,55
+chat.row.turn:3 | Worked for <t> |  | 16,470,379,30
+chat.row.turn-end | Worked for <t> |  | 16,470,81,16
+chat.row.prompt:<id> |  |  | 16,501,379,52
+chat.row.kind.prompt |  |  | 16,501,379,40
+markdown.root | Keep a month of logs, compressed. |  | 125,510,256,20
+chat.row.<id>-plan |  |  | 16,552,379,174
+chat.row.kind.plan | Plan proposed, Rotate the logs, 1., Rotate the daemon's log every night., 2., Compress rotated logs., 3., Delete logs older than a month. |  | 16,552,379,174
+chat.row.turn:4 | Worked for <t> |  | 16,727,379,30
+chat.row.turn-end | Worked for <t> |  | 16,727,81,16
+ask | Plan ready, Approve, Send back… |  | 12,773,387,116
+ask.approve | Approve |  | 28,827,173,44
+ask.choice.1 | Send back… |  | 210,827,173,44
+chat.topBar | Back, planner-codex, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
+nav.back | Back |  | 8,66,40,40
+chat.title | planner-codex | planner-codex | 56,62,299,48
+chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
+chat.more | More |  | 363,66,40,40

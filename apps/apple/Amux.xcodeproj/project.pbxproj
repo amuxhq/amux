@@ -15,6 +15,7 @@
 		1F71DC755174214F60A5E1B2 /* AccessibilityAuditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456A00ECD8EEBD4C0C5E19EA /* AccessibilityAuditTests.swift */; };
 		2AB9F9F887627829BEBBB09D /* MenuSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F29C3D017EFCF2521645DAB /* MenuSource.swift */; };
 		397B8AE7013A6651F031B2C7 /* AmuxPush in Frameworks */ = {isa = PBXBuildFile; productRef = 57B721515F0D34E773AC0EFD /* AmuxPush */; };
+		4512F6C8F8C68950524BA626 /* markdown-fixtures.json in Resources */ = {isa = PBXBuildFile; fileRef = 0E46E13DCF21345B3E7B69CC /* markdown-fixtures.json */; };
 		48C852D18B47B3DA431FDA05 /* Door.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA38C20C8560FEE2BB88D9F /* Door.swift */; };
 		546E08243B4B5BE2BDFDAB84 /* DoorServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 590B62F0B4C074AA2233FC70 /* DoorServer.swift */; };
 		553BF8DD2498F7F22153BE30 /* ComponentCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F1F76966F0F1B7A14313E7 /* ComponentCatalog.swift */; };
@@ -33,6 +34,7 @@
 		B6D27C4537AD3B1E7AC14846 /* ReportFreeze.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12ABCF940EE4B9A099281C70 /* ReportFreeze.swift */; };
 		BAED77CD2151147F26ABA239 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 7841E9EA7855115C8262F599 /* Localizable.xcstrings */; };
 		BD68D3CF9F5A540F6C3FCE62 /* ScriptedChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8653CA7820599C23895CAB29 /* ScriptedChat.swift */; };
+		BE2F40C4BAE9FCC256B73C48 /* MarkdownFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0174CB268FBD0126871E8DC3 /* MarkdownFixtures.swift */; };
 		BFD2EE45792143D71B460CF0 /* DoorLines.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB72F14B366D0C657F5D98FA /* DoorLines.swift */; };
 		C2C5A57355760307F4612B69 /* PushKeychainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15A6564E38B94FF35200EFC8 /* PushKeychainTests.swift */; };
 		C6963BF3CE7707F2FF2CB446 /* AmuxShell in Frameworks */ = {isa = PBXBuildFile; productRef = 62675EA602BEE702494C2D3C /* AmuxShell */; };
@@ -89,7 +91,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0174CB268FBD0126871E8DC3 /* MarkdownFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownFixtures.swift; sourceTree = "<group>"; };
 		03CB11BE8186B9B3BB3A02C2 /* ReportTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportTools.swift; sourceTree = "<group>"; };
+		0E46E13DCF21345B3E7B69CC /* markdown-fixtures.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "markdown-fixtures.json"; sourceTree = "<group>"; };
 		12ABCF940EE4B9A099281C70 /* ReportFreeze.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportFreeze.swift; sourceTree = "<group>"; };
 		15A6564E38B94FF35200EFC8 /* PushKeychainTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushKeychainTests.swift; sourceTree = "<group>"; };
 		1E66BD0F085353353B013CB1 /* AmuxCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AmuxCore; path = Packages/AmuxCore; sourceTree = SOURCE_ROOT; };
@@ -200,6 +204,14 @@
 			path = Sources;
 			sourceTree = "<group>";
 		};
+		4449D0A6A852D2E301F18DB9 /* AmuxCore */ = {
+			isa = PBXGroup;
+			children = (
+				A93C129C195D63A10C55EBFC /* Sources */,
+			);
+			path = AmuxCore;
+			sourceTree = "<group>";
+		};
 		5445FBC267DE6D42E3D857C1 /* AmuxUITests */ = {
 			isa = PBXGroup;
 			children = (
@@ -207,6 +219,15 @@
 				DB72F14B366D0C657F5D98FA /* DoorLines.swift */,
 			);
 			path = AmuxUITests;
+			sourceTree = "<group>";
+		};
+		60A40DC5881DEF14D586745B /* AmuxFixtures */ = {
+			isa = PBXGroup;
+			children = (
+				0174CB268FBD0126871E8DC3 /* MarkdownFixtures.swift */,
+				F2184E1B2E92FC259ADEB4A1 /* Fixtures */,
+			);
+			path = AmuxFixtures;
 			sourceTree = "<group>";
 		};
 		64DAC62299FAA0DD1E9445EA /* Amux */ = {
@@ -268,6 +289,14 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		A93C129C195D63A10C55EBFC /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				60A40DC5881DEF14D586745B /* AmuxFixtures */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
 		AE5FEBD430E530D71BFD9832 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -313,9 +342,18 @@
 				8021E0FEAFACAFAABAA26DD2 /* AmuxPush */,
 				E2D4F1F96B2AE8306CD589E6 /* AmuxShell */,
 				B4EFC5ACC5BD2F025A261F98 /* AmuxTestSupport */,
+				4449D0A6A852D2E301F18DB9 /* AmuxCore */,
 				211FF3D8B6D4DECA3AF7C730 /* AmuxTestSupport */,
 			);
 			path = Packages;
+			sourceTree = "<group>";
+		};
+		F2184E1B2E92FC259ADEB4A1 /* Fixtures */ = {
+			isa = PBXGroup;
+			children = (
+				0E46E13DCF21345B3E7B69CC /* markdown-fixtures.json */,
+			);
+			path = Fixtures;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -459,6 +497,7 @@
 				BAED77CD2151147F26ABA239 /* Localizable.xcstrings in Resources */,
 				6B19BAA39C6C7A8BAC26801A /* PrivacyInfo.xcprivacy in Resources */,
 				CA1F697290D6919EF12B1899 /* frozen-frame.png in Resources */,
+				4512F6C8F8C68950524BA626 /* markdown-fixtures.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -513,6 +552,7 @@
 				546E08243B4B5BE2BDFDAB84 /* DoorServer.swift in Sources */,
 				82056283E7015DF9A446A93F /* DoorWindow.swift in Sources */,
 				81316F8788C3CE4719D72EB7 /* Instrumentation.swift in Sources */,
+				BE2F40C4BAE9FCC256B73C48 /* MarkdownFixtures.swift in Sources */,
 				2AB9F9F887627829BEBBB09D /* MenuSource.swift in Sources */,
 				ED8720902FE38642BEFCF796 /* Previews.swift in Sources */,
 				B6D27C4537AD3B1E7AC14846 /* ReportFreeze.swift in Sources */,
@@ -735,7 +775,7 @@
 				CODE_SIGN_ENTITLEMENTS = Amux/Amux.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				EXCLUDED_SOURCE_FILE_NAMES = "$(SRCROOT)/Amux/Debug/* $(SRCROOT)/Packages/AmuxTestSupport/Sources/AmuxTestSupport/* $(SRCROOT)/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Resources/*";
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SRCROOT)/Amux/Debug/* $(SRCROOT)/Packages/AmuxTestSupport/Sources/AmuxTestSupport/* $(SRCROOT)/Packages/AmuxTestSupport/Sources/AmuxTestSupport/Resources/* $(SRCROOT)/Packages/AmuxCore/Sources/AmuxFixtures/* $(SRCROOT)/Packages/AmuxCore/Sources/AmuxFixtures/Fixtures/*";
 				INFOPLIST_FILE = Amux/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

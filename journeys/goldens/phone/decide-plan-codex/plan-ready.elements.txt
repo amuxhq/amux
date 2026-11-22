@@ -3,7 +3,7 @@ chat |  | planner-codex | 0,116,402,724
 chat.row.prompt | Move the journal. |  | 16,124,370,40
 chat.prose.render |  | rendered | 245,134,127,20
 chat.row.plan | Plan proposed, Move the journal |  | 16,176,370,160
-chat.prose.render |  | rendered | 58,215,316,109
+chat.prose.render |  | rendered | 58,215,316,180
 chat.row.turn-end | Worked for <t> |  | 16,345,81,16
 ask | Plan ready | open | 12,702,378,128
 ask.more | More |  | 338,710,44,44

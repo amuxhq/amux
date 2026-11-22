@@ -8,10 +8,10 @@
 
                                  ╭─ Devices ────────────────────────────────╮
                                  │                                          │
-                                 │ laptop   this computer                   │
+                                 │ laptop   this device                     │
                                  │ desk     found nearby · amux pair desk   │
                                  │                                          │
-                                 │ Pair another computer with amux pair     │
+                                 │ Pair another device with amux pair       │
                                  │ esc close                                │
                                  ╰──────────────────────────────────────────╯
 

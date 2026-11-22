@@ -10,7 +10,7 @@ use wire::{AcpToolKind, acp_item};
 use super::{
     AskRow, CallPhase, Decision, ExploreVerb, FileChangeView, FileRow, HunkStart, NoticeReason,
     NoticeSeverity, PatchHunk, PatchLine, RowKind, agent_message, amux_call, ask_row, boundary,
-    call_phase, chat_segments, compaction, continued, counts, decision_view, duration, error,
+    call_phase, chat_text, compaction, continued, counts, decision_view, duration, error,
     explore_result, first_change, output_head, output_tail, prose, thinking, turn_row,
     unrecognized,
 };
@@ -28,11 +28,11 @@ pub(super) fn kind_of(
     match kind {
         Acp::Prompt(_) if wire::is_continued_input(&held.item.input_id) => plain(continued()),
         Acp::Prompt(_) => plain(RowKind::Prompt {
-            text: chat_segments(held),
+            text: chat_text(held, false),
             steered: false,
         }),
         Acp::Steer(_) => plain(RowKind::Prompt {
-            text: chat_segments(held),
+            text: chat_text(held, false),
             steered: true,
         }),
         Acp::Message(m) => plain(prose(held, m.complete, false)),

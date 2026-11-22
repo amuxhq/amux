@@ -1,276 +1,60 @@
+import AmuxValues
 import Foundation
-import SwiftUI
 
-/// One block of an agent's prose.
+/// An agent's prose as the Apple clients draw it.
 ///
 /// Agents write markdown, so the transcript reads markdown: headings that are
 /// headings, code that keeps its whitespace and its language, tables that line
-/// up. The alternative — showing the source, or flattening it to one run of
-/// text — either makes the reader do the parsing or throws away structure the
-/// agent chose deliberately.
-///
-/// Inline styling is resolved here too, into `AttributedString`, because that
-/// resolution is the expensive half and it must not happen while a finger is
-/// on the screen. See ``MarkdownDocument``.
-public enum MarkdownBlock: Equatable, Sendable {
-    case heading(level: Int, text: AttributedString)
-    case paragraph(AttributedString)
-    /// A list. `ordered` decides whether the marker is a number or a dot, and
-    /// `depth` how far each item is indented.
-    case list(ordered: Bool, items: [Item])
-    /// Fenced code, with whatever the fence named as its language. Never
-    /// wrapped: code that wraps stops being code, so it scrolls sideways.
-    /// `closed` is false for a fence the source ends inside, which in a
-    /// message still streaming is the block still being written: only
-    /// that one is coloured as it streams (``CodeHighlighting``), since
-    /// any other is finished.
-    case code(language: String?, text: String, closed: Bool)
-    case quote([AttributedString])
-    case table(header: [AttributedString], rows: [[AttributedString]])
-    case rule
-
-    public struct Item: Equatable, Sendable, Identifiable {
-        public let id: Int
-        public let depth: Int
-        public let marker: String
-        public let text: AttributedString
-
-        public init(id: Int, depth: Int, marker: String, text: AttributedString) {
-            self.id = id
-            self.depth = depth
-            self.marker = marker
-            self.text = text
-        }
-    }
-}
-
-/// Prose, parsed.
-///
-/// A document is parsed away from the main thread and handed over whole:
-/// ``MarkdownDocument/parse(_:)`` is `nonisolated` and returns a `Sendable`
-/// value, so a view awaits it in a task and never blocks a frame on it. The
-/// budget this exists for is the streaming one — a thousand rows arriving at
-/// fifty a second — and inline attribute resolution is far too slow to do
-/// while the list is being scrolled.
-public struct MarkdownDocument: Equatable, Sendable {
-    public let blocks: [MarkdownBlock]
-
-    public init(blocks: [MarkdownBlock]) {
-        self.blocks = blocks
-    }
-
-    /// The source's lines, ending at `\n`, `\r\n` or a lone `\r`, as
-    /// markdown reads them. Past here the three are alike, so a Windows
-    /// line's `\r` is never part of a heading, a table row or a
-    /// fenced block's code, and a code block's text has only `\n` between
-    /// its lines, which is how ``CodeText/lines(_:)`` and the shared view's
-    /// highlighting both split it.
-    nonisolated static func lines(_ source: String) -> [String] {
-        source.replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-            .components(separatedBy: "\n")
-    }
-
-    public nonisolated static func parse(_ source: String) -> MarkdownDocument {
-        var blocks: [MarkdownBlock] = []
-        var lines = ArraySlice(Self.lines(source))
-        var counter = 0
-
-        func next() -> Int { counter += 1; return counter }
-
-        while let line = lines.first {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-            if trimmed.isEmpty {
-                lines = lines.dropFirst()
-                continue
-            }
-
-            if let fence = Self.fence(trimmed) {
-                lines = lines.dropFirst()
-                var body: [String] = []
-                while let line = lines.first, Self.fence(line.trimmingCharacters(in: .whitespaces)) == nil {
-                    body.append(line)
-                    lines = lines.dropFirst()
-                }
-                // Only a closing fence stops the body short of the end.
-                let closed = !lines.isEmpty
-                if closed { lines = lines.dropFirst() }
-                blocks.append(.code(
-                    language: fence.isEmpty ? nil : fence,
-                    text: body.joined(separator: "\n"), closed: closed))
-                continue
-            }
-
-            if trimmed.hasPrefix("#"), let level = Self.headingLevel(trimmed) {
-                lines = lines.dropFirst()
-                let text = trimmed.dropFirst(level).trimmingCharacters(in: .whitespaces)
-                blocks.append(.heading(level: level, text: Self.inline(text)))
-                continue
-            }
-
-            if trimmed.allSatisfy({ $0 == "-" || $0 == "*" || $0 == "_" }), trimmed.count >= 3 {
-                lines = lines.dropFirst()
-                blocks.append(.rule)
-                continue
-            }
-
-            if trimmed.hasPrefix("|"), Self.isTableRow(trimmed) {
-                var rows: [[String]] = []
-                while let line = lines.first,
-                      Self.isTableRow(line.trimmingCharacters(in: .whitespaces)) {
-                    rows.append(Self.cells(line.trimmingCharacters(in: .whitespaces)))
-                    lines = lines.dropFirst()
-                }
-                // The second row of a markdown table is the alignment rule,
-                // which is punctuation rather than content and is dropped.
-                let body = rows.count > 1 && rows[1].allSatisfy(Self.isAlignmentCell)
-                    ? Array(rows.dropFirst(2)) : Array(rows.dropFirst())
-                blocks.append(.table(
-                    header: (rows.first ?? []).map(Self.inline),
-                    rows: body.map { $0.map(Self.inline) }))
-                continue
-            }
-
-            if trimmed.hasPrefix(">") {
-                var quoted: [AttributedString] = []
-                while let line = lines.first,
-                      line.trimmingCharacters(in: .whitespaces).hasPrefix(">") {
-                    let text = line.trimmingCharacters(in: .whitespaces)
-                        .dropFirst().trimmingCharacters(in: .whitespaces)
-                    quoted.append(Self.inline(text))
-                    lines = lines.dropFirst()
-                }
-                blocks.append(.quote(quoted))
-                continue
-            }
-
-            if let first = Self.listMarker(line) {
-                var items: [MarkdownBlock.Item] = []
-                let ordered = first.ordered
-                while let line = lines.first, let marker = Self.listMarker(line),
-                      marker.ordered == ordered {
-                    items.append(MarkdownBlock.Item(
-                        id: next(), depth: marker.depth, marker: marker.marker,
-                        text: Self.inline(marker.rest)))
-                    lines = lines.dropFirst()
-                }
-                blocks.append(.list(ordered: ordered, items: items))
-                continue
-            }
-
-            // A paragraph always takes the line that opened it: every branch
-            // above declined it, so nothing else would, and a line left
-            // unconsumed here would loop forever. Later lines join it until
-            // one would open a block of its own.
-            var paragraph: [String] = [trimmed]
-            lines = lines.dropFirst()
-            while let line = lines.first, !Self.opensBlock(line) {
-                paragraph.append(line.trimmingCharacters(in: .whitespaces))
-                lines = lines.dropFirst()
-            }
-            // A single newline stays a line break. Agents write lists, logs
-            // and "one per line" answers as lines, and Claude's and Codex's
-            // own interfaces draw them that way; joining them as standard
-            // markdown does runs them together. A blank line still parts two
-            // paragraphs.
-            blocks.append(.paragraph(Self.inline(paragraph.joined(separator: "\n"))))
-        }
-
-        return MarkdownDocument(blocks: blocks)
-    }
-
-    /// Inline markdown — emphasis, code spans, links — resolved once.
+/// up. The text arrives parsed, as the blocks every client draws
+/// (`Markdown`, read by the shared view layer when it builds the row), so
+/// nothing here parses: it turns a block's inline runs into attributed text
+/// and says what a list's markers read.
+public enum ProseText {
+    /// Inline runs as attributed text: strong, emphasis, code and
+    /// strikethrough as presentation intents, which `Text` draws and a
+    /// design restyles.
     ///
-    /// Foundation's own parser is used rather than a hand-written one, and it
-    /// is given the whole run at once. It refuses malformed source outright, so
-    /// a failure falls back to the literal text: an agent writing a stray
-    /// asterisk must not blank its own sentence.
-    public nonisolated static func inline(_ source: some StringProtocol) -> AttributedString {
-        let text = String(source)
-        let options = AttributedString.MarkdownParsingOptions(
-            allowsExtendedAttributes: true,
-            interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        var parsed = (try? AttributedString(markdown: text, options: options))
-            ?? AttributedString(text)
-        // A link is underlined rather than coloured. Every colour in this
-        // design is either the neutral ramp or the one accent, and the accent
-        // means "something is waiting for you"; a link is not that, and the
-        // system's own blue is not a colour this app owns. A link this phone
-        // will not open stays as its words.
-        let links = parsed.runs.compactMap { run in run.link.map { (run.range, $0) } }
-        for (range, link) in links {
-            if OpenableLink(link) == nil {
-                parsed[range].link = nil
-            } else {
-                parsed[range].underlineStyle = .single
+    /// A link is underlined rather than coloured. Every colour in this design
+    /// is either the neutral ramp or the one accent, and the accent means
+    /// "something is waiting for you"; a link is not that, and the system's
+    /// own blue is not a colour this app owns. A link this device will not
+    /// open stays as its words.
+    public static func attributed(_ runs: [InlineRun]) -> AttributedString {
+        var text = AttributedString()
+        for run in runs {
+            var piece = AttributedString(run.text)
+            var intent: InlinePresentationIntent = []
+            if run.strong { intent.insert(.stronglyEmphasized) }
+            if run.emphasis { intent.insert(.emphasized) }
+            if run.code { intent.insert(.code) }
+            if run.strikethrough { intent.insert(.strikethrough) }
+            if !intent.isEmpty { piece.inlinePresentationIntent = intent }
+            if let target = run.link, let link = OpenableLink(string: target) {
+                piece.link = link.url
+                piece.underlineStyle = .single
+            }
+            text.append(piece)
+        }
+        return text
+    }
+
+    /// The runs' words, without their markup: what VoiceOver says and what a
+    /// driver reads.
+    public static func plain(_ runs: [InlineRun]) -> String {
+        runs.map(\.text).joined()
+    }
+
+    /// The marker each item of a list is drawn after: its number counted up
+    /// from the list's first, a bullet, or for a task whether it is done.
+    /// A client sets them in one column as wide as the widest, so every
+    /// item's words start at one edge.
+    public static func markers(ordered: Bool, start: UInt64, items: [ProseItem]) -> [String] {
+        items.enumerated().map { index, item in
+            switch item.task {
+            case .some(true): "\u{2713}"
+            case .some(false): "\u{25CB}"
+            case .none: ordered ? "\(start + UInt64(index))." : "\u{2022}"
             }
         }
-        return parsed
-    }
-
-    /// Whether `line` would open a block other than a paragraph, by exactly
-    /// the tests ``parse(_:)`` applies, so a paragraph stops where, and only
-    /// where, something else takes over.
-    private nonisolated static func opensBlock(_ line: String) -> Bool {
-        let text = line.trimmingCharacters(in: .whitespaces)
-        return text.isEmpty
-            || fence(text) != nil
-            || headingLevel(text) != nil
-            || (text.count >= 3 && text.allSatisfy { $0 == "-" || $0 == "*" || $0 == "_" })
-            || isTableRow(text)
-            || text.hasPrefix(">")
-            || listMarker(line) != nil
-    }
-
-    private nonisolated static func fence(_ line: String) -> String? {
-        guard line.hasPrefix("```") || line.hasPrefix("~~~") else { return nil }
-        return String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-    }
-
-    private nonisolated static func headingLevel(_ line: String) -> Int? {
-        // The marks are followed by a space or end the line: `#42` and a
-        // shebang are prose, and `##` alone is a heading whose title has not
-        // been written yet, as it is while a reply streams in.
-        let hashes = line.prefix { $0 == "#" }.count
-        let after = line.dropFirst(hashes)
-        guard hashes >= 1, hashes <= 6, after.isEmpty || after.hasPrefix(" ") else { return nil }
-        return hashes
-    }
-
-    private nonisolated static func isTableRow(_ line: String) -> Bool {
-        line.hasPrefix("|") && line.dropFirst().contains("|")
-    }
-
-    private nonisolated static func isAlignmentCell(_ cell: String) -> Bool {
-        !cell.isEmpty && cell.allSatisfy { $0 == "-" || $0 == ":" || $0 == " " }
-    }
-
-    private nonisolated static func cells(_ line: String) -> [String] {
-        var text = line
-        if text.hasPrefix("|") { text.removeFirst() }
-        if text.hasSuffix("|") { text.removeLast() }
-        return text.components(separatedBy: "|").map {
-            $0.trimmingCharacters(in: .whitespaces)
-        }
-    }
-
-    private nonisolated static func listMarker(
-        _ line: String
-    ) -> (ordered: Bool, depth: Int, marker: String, rest: String)? {
-        let indent = line.prefix { $0 == " " || $0 == "\t" }.count
-        let body = line.dropFirst(indent)
-        let depth = min(2, indent / 2)
-        if let first = body.first, first == "-" || first == "*" || first == "+",
-           body.dropFirst().hasPrefix(" ") {
-            return (false, depth, "\u{2022}",
-                    body.dropFirst(2).trimmingCharacters(in: .whitespaces))
-        }
-        let digits = body.prefix(while: \.isNumber)
-        if !digits.isEmpty, body.dropFirst(digits.count).hasPrefix(". ") {
-            return (true, depth, "\(digits).",
-                    body.dropFirst(digits.count + 2).trimmingCharacters(in: .whitespaces))
-        }
-        return nil
     }
 }

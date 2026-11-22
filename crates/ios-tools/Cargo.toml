@@ -13,6 +13,7 @@ ui-state = { workspace = true, features = ["schema"] }
 schemars = { workspace = true }
 ui-view = { workspace = true, features = ["schema"] }
 wire = { workspace = true, features = ["schema"] }
+serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]

@@ -63,14 +63,24 @@ class SweepTest(unittest.TestCase):
         d2 = self._make_inc_dir(
             "aarch64-apple-ios/debug/incremental/wire-b", 4096, mtime=2000
         )
-        # Nested ios/rust-cargo is swept on its own pass, not by the outer target.
+        # Nested ios/rust-cargo and android/rust-cargo are swept on their own passes.
         ios_d = self._make_inc_dir("ios/rust-cargo/debug/incremental/ffi-c", 4096, mtime=3000)
+        android_host_d = self._make_inc_dir(
+            "android/rust-cargo/host/phone-dev/incremental/jni-d", 4096, mtime=3000
+        )
+        android_target_d = self._make_inc_dir(
+            "android/rust-cargo/android/aarch64-linux-android/phone-dev/incremental/jni-e",
+            4096,
+            mtime=3000,
+        )
 
         kept, kept_bytes, removed = sweep.prune_incremental(self.target, 0)
         self.assertEqual((kept, kept_bytes, removed), (0, 0, 2))
         self.assertFalse(d1.exists())
         self.assertFalse(d2.exists())
         self.assertTrue(ios_d.exists())
+        self.assertTrue(android_host_d.exists())
+        self.assertTrue(android_target_d.exists())
 
     def test_prune_incremental_dry_run_deletes_nothing(self):
         old = self._make_inc_dir("debug/incremental/node-old", 32_768, mtime=1000)
@@ -88,12 +98,15 @@ class SweepTest(unittest.TestCase):
         _write_bytes(self.target / "debug/build/ring/out", 50_000)
         _write_bytes(self.target / "aarch64-apple-ios/debug/deps/libwire.rlib", 100_000)
         _write_bytes(self.target / "ios/DerivedData/blob", 40_000)
+        _write_bytes(self.target / "android/debug-jniLibs/arm64-v8a/libamux_app.so", 40_000)
+        _write_bytes(self.target / "android/rust-cargo/host/phone-dev/deps/libjni.rlib", 40_000)
         _write_bytes(self.target / "size/after-out/bin", 40_000)
         _write_bytes(self.target / "debug/incremental/node-a/dep.bin", 40_000)
 
         unmanaged = sweep.unmanaged_bytes(self.target)
         expected = (
             sweep.dir_bytes(self.target / "ios")
+            + sweep.dir_bytes(self.target / "android")
             + sweep.dir_bytes(self.target / "size")
             + sweep.dir_bytes(self.target / "debug/incremental")
         )
@@ -146,6 +159,40 @@ class SweepTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertIsNone(calls[0][1])
         self.assertEqual(calls[1][1], str(ios_target))
+
+    def test_sweep_also_sweeps_nested_android_rust_cargo_host_and_android(self):
+        android_root = self.target / "android" / "rust-cargo"
+        host_target = android_root / "host"
+        device_target = android_root / "android"
+        host_inc = host_target / "phone-dev/incremental/jni-host"
+        device_inc = device_target / "aarch64-linux-android/phone-dev/incremental/jni-dev"
+        _write_bytes(host_inc / "s/f", 4096)
+        _write_bytes(host_target / "phone-dev/deps/libjni.rlib", 4096)
+        _write_bytes(device_inc / "s/f", 4096)
+        _write_bytes(
+            device_target / "aarch64-linux-android/phone-dev/deps/libjni.rlib",
+            4096,
+        )
+        calls: list[tuple[list[str], str | None]] = []
+
+        def fake_runner(cmd, cwd, env, check):
+            calls.append((cmd, env.get("CARGO_TARGET_DIR")))
+            return subprocess.CompletedProcess(cmd, 0)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = sweep.sweep(
+                self.root,
+                cold=True,
+                which=lambda _: "/usr/local/bin/cargo-sweep",
+                runner=fake_runner,
+            )
+        self.assertEqual(code, 0)
+        self.assertFalse(host_inc.exists())
+        self.assertFalse(device_inc.exists())
+        self.assertEqual(
+            [target_dir for _, target_dir in calls],
+            [None, str(host_target), str(device_target)],
+        )
 
     def test_check_target_silent_when_healthy_and_warns_when_over_threshold(self):
         healthy_disk = lambda _: SimpleNamespace(free=100 * sweep.GIB)

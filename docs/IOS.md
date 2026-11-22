@@ -23,7 +23,7 @@ every command goes through `just ios <recipe>` (`just --list ios`).
 | --- | --- |
 | `AmuxCore` | The Swift side of the bridge (`Runtime`, `Profile`, `Chat`), the observable stores screens read (`RuntimeCoordinator`, `StoreBundle`, `ChatModel`, `FleetStore`, `HostsStore`, `AccountRegistry`), the account service and App Store adapters, web sign-in, local-network discovery, report assembly and signposts; builds for macOS too, for the [Mac app](MAC.md) |
 | `AmuxCore/AmuxValues` | Swift mirrors of every value the bridge carries, generated from the Rust definitions; never edited by hand |
-| `AmuxCore/AmuxWords` | How the Apple clients word and place those values: a fleet row's state and second line, the chat's typed facts, how a run of tool steps folds and joins the rail, the agent's markdown parsed into blocks, places and ages. Shared with the [Mac app](MAC.md) so both say the same words, and free of the bridge so the Mac's storybook can link it |
+| `AmuxCore/AmuxWords` | How the Apple clients word and place those values: a fleet row's state and second line, the chat's typed facts, how a run of tool steps folds and joins the rail, the agent's markdown blocks drawn as attributed text, places and ages. Shared with the [Mac app](MAC.md) so both say the same words, and free of the bridge so the Mac's storybook can link it |
 | `AmuxCore/LaunchClock` | The one piece of C in the app: an image initialiser that marks the end of dynamic loading for the cold-start split |
 | `AmuxDesign` | Light and dark tokens, bundled faces, type scaling, glass, motion and thumb-target geometry |
 | `AmuxFeatures` | The screens, as functions of the state and actions they are handed, plus the registered UIKit leaves |
@@ -142,7 +142,7 @@ thread. A chat is a `ChatModel` over an open `Chat`:
   says why ("desk is out of reach · your draft is kept"), and nothing sends
   it later; once the chat is current, Send sends it. A prompt refused
   because its host could not be reached comes back into the composer with
-  "Not sent: its host is away", as any refused prompt does with its reason.
+  "Not sent: its device is away", as any refused prompt does with its reason.
   A stop is the exception: one whose host cannot be reached is held, shown
   under the chat's header and on the agent's home row, and the chat's menu
   offers Cancel Stop.
@@ -155,7 +155,15 @@ thread. A chat is a `ChatModel` over an open `Chat`:
   agent's matching commands are offered above the composer, and a tap puts
   one in the draft. Which commands match, and what the draft becomes, is the
   shared view's `command_matches`; a paste becomes a text attachment by its
-  `pastes_as_attachment`, the rule the terminal follows too.
+  `pastes_as_attachment`, the rule the terminal follows too. The pasted text
+  is sent where the cursor was, with the draft's words on both sides of it,
+  and its place moves with the words typed around it, by the edit the field
+  made: the field's caret after each edit says which of a run of repeated
+  characters was typed or deleted, and only a caret that does not fit the
+  edit leaves the model to compare the two texts. Its chip still sits above
+  the field. A paste keeps its place when a draft is put back, at the end of
+  the words too. Photos and files have no place in the field and follow
+  every word.
 - When terminal Claude's own view resumes another conversation, the chat
   says so above the composer ("Claude's own view switched to another
   conversation") with Switch Back, which asks the library to return that
@@ -187,9 +195,9 @@ A bundle keeps every chat a page shows open, plus chats viewed in the last
 five minutes, plus a chat a push is bringing current.
 
 Code is coloured by the shared view's highlighting, the terminal's own:
-fenced blocks in the agent's markdown and the patch on an edit card. The
-phone parses markdown itself (`AmuxWords`), so each block asks the bridge
-for its runs (`CodeHighlighting`, read from the environment, which the app
+fenced blocks in the agent's markdown and the patch on an edit card. A
+row's markdown arrives parsed by the shared view layer, the same blocks
+every client draws, and each code block asks the bridge for its runs (`CodeHighlighting`, read from the environment, which the app
 and the catalogue set to the bridge's) away from the main thread, and draws
 them in the design's `syntax` colours (`Design.ink(_:)`, in `AmuxFeatures`:
 the design package holds the colours and no bridge values). Only the open fence
@@ -298,14 +306,14 @@ profile. Discovery only supplies candidates and addresses; pairing and the
 pinned handshake establish trust.
 
 The app declares `_amux._udp` in `NSBonjourServices` and explains the
-local-network permission as "amux finds computers on your network so this phone
-can pair and connect to them directly." When access is denied, the Computers tab
+local-network permission as "amux finds devices on your network so this phone
+can pair and connect to them directly." When access is denied, the Devices tab
 says so, lists no machine and offers the Settings route.
 
 iOS asks for local network access the first time anything browses, so a fresh
-install does not browse at once. The empty Agents list (and the empty Computers
-tab) first says in one line that amux looks for computers on this network and
-that iOS asks next, with **Look for Computers**; pressing it starts the browser,
+install does not browse at once. The empty Agents list (and the empty Devices
+tab) first says in one line that amux looks for devices on this network and
+that iOS asks next, with **Look for Devices**; pressing it starts the browser,
 and the system's alert follows. The answer is kept in the app's defaults
 (`localNetworkExplained`). A profile that already trusts a machine counts as
 explained, so an existing install never sees the line.
@@ -314,15 +322,15 @@ A machine running `amux pair` (or onboarding's pairing step) advertises an
 open pairing window: `pair=1` in its TXT record. `LocalDiscovery` reads it
 into `Found.pairing_open`, and a change of it alone is handed over without
 resolving again. A machine found with its window open is offered as "Pair
-with laptop?", and while the Agents list is empty or the Computers tab is in
+with laptop?", and while the Agents list is empty or the Devices tab is in
 front, the phone raises the keypad for it by itself, so a first pairing is
 opening amux there and typing six digits here. Putting the keypad away is
 remembered for that window: the phone does not raise it again until the
 window closes and another opens. A machine found with no window open says
 "Open amux on laptop to pair" and has no button.
 
-The Computers tab is one list of paired machines, reachable first, each saying
-how the phone reaches it; machines found and not yet paired are offered as
+The Devices tab is one list of paired machines, reachable first, each saying
+how the phone reaches it (a row reads "macOS · Local", "macOS · Direct" or "macOS · Relayed"; Local is the daemon's `same_network` on a direct route); machines found and not yet paired are offered as
 cards above it. Tapping a host opens its page: how the phone reaches it and,
 when it is away or offline, what that means for its agents; its platform,
 version, providers and addresses; that its last dial failed while it is
@@ -334,7 +342,9 @@ Pairing is a sheet raised over whichever tab asked for it. By code, it takes
 the six digits `amux pair` printed in the system's number pad (a code pasted
 as "418 207" fills all six) and tries them once the sixth lands; by link, it
 opens straight onto checking the invitation. Either way the machine's name
-and how it would be reached are shown before anything is trusted, with its
+and how it would be reached (the header reads "Local" for a machine found on
+this network, "Relayed" for one reached through the relay) are shown before
+anything is trusted, with its
 key's fingerprint underneath, and the sheet closes itself once the machine
 is trusted. Signing in or subscribing from it opens on the tab beneath, and
 the sheet comes back with its pairing where it was when that is put away.
@@ -883,7 +893,7 @@ out only the cells in view.
 The rows' heights are the leaf's own, not UIKit's self-sizing. Its layout
 stacks the rows by height, measures a row with one hidden hosting view
 when it first comes within a screen of view (as if photographed, so a row
-that parses its markdown on a background task is measured at its final
+that loads anything on a background task is measured at its final
 shape), and forgets a height only when the model says that row was read
 again, the width changes or the environment does. The list reports no safe
 area to its cells: it runs under the status bar, the header and the home

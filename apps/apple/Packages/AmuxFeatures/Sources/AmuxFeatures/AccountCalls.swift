@@ -27,20 +27,20 @@ public enum SubscribeCopy {
     /// The offer in the words of what it buys. Not "subscription required":
     /// that names a state of the account rather than a thing a person wanted
     /// to do, and what they wanted to do is reach this machine from here.
-    public static let headline = "Reach your agents from anywhere"
+    public static let headline = "Relayed connections need Pro"
 
     /// Why the machine somebody is looking at cannot be used, and what is true
     /// about the ones that can.
     public static func detail(host: String?) -> String {
         guard let host else {
             return """
-                The relay can see this host and cannot carry agents to it on this account. \
-                A subscription opens the tunnel. Hosts on this network never need one.
+                Pro relays connections when this phone and this device aren’t on the same \
+                network. Devices on this network connect without it.
                 """
         }
         return """
-            The relay can see \(host) and cannot carry its agents to this phone. A \
-            subscription opens the tunnel. Hosts on this network never need one.
+            Pro relays connections when this phone and \(host) aren’t on the same \
+            network. Devices on this network connect without it.
             """
     }
 }

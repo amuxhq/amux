@@ -11,12 +11,13 @@ people will notice updates the page that describes it.
 - **Get started:** [Install](guide/get-started/install.md),
   [Your first agent](guide/get-started/first-agent.md),
   [Connect your phone](guide/get-started/connect-your-phone.md),
-  [Add another computer](guide/get-started/add-another-computer.md).
+  [Add another device](guide/get-started/add-another-computer.md).
 - **Understand:** [How amux works](guide/understand/how-amux-works.md),
   [Security and privacy](guide/understand/security-and-privacy.md),
   [What amux sends](guide/understand/what-amux-sends.md).
 - **Use:** [Terminal app](guide/use/terminal.md),
   [iPhone app](guide/use/iphone.md),
+  [Android app](guide/use/android.md),
   [Reviewing changes](guide/use/reviews.md),
   [Agents working together](guide/use/agents-working-together.md),
   [Other agents](guide/use/other-agents.md),
@@ -73,10 +74,11 @@ paths to the `.md` files, so they work both here and on the site.
   how one is picked, grammars built in the background, streaming blocks, definitions, sizes and what was left out.
 - [Terminal client](TERMINAL.md) — screens, keys, the leader, raw attach and the CLI verbs.
 - [iPhone app](IOS.md) — packages, the chat and fleet, driving the app, snapshots and journeys.
+- [Android app](ANDROID.md) — modules, the JNI bridge, platform integrations, storybook, audits and journeys.
 - [Mac app](MAC.md) — a client of the daemon: installing and attaching, sign-in, building and running.
 - [Browser extension](BROWSER.md) — commenting on web pages for an agent: the overlay and its hosts, the native
   messaging bridge and its registration, the page review attachment, and WebAssembly as a convenience.
-- [Embedding](EMBEDDED.md) — app-runtime, app-embedded, app-ffi, the generated Swift types and the seams.
+- [Embedding](EMBEDDED.md) — app-runtime, app-embedded, app-bridge, app-ffi, app-jni, the generated Swift and Kotlin types and the seams.
 - [iPhone copy](IOS_COPY.md) — the rules the app's words follow and the lint that holds them.
 - [Cloud](CLOUD.md) — what the app and daemon ask of amux.sh.
 

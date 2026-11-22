@@ -162,6 +162,9 @@ pub struct EmbeddedRuntime {
     /// The app's automatic-reports setting, read before every dump is sent.
     auto_reports: Arc<AtomicBool>,
     analytics: Option<analytics::Flusher>,
+    /// The app hosting the installation, which every call it makes names
+    /// and the client it counts as opening.
+    surface: Surface,
 }
 
 impl EmbeddedRuntime {
@@ -174,11 +177,15 @@ impl EmbeddedRuntime {
     /// links, channels, calls, jobs, timers and pairings bound to the
     /// process that ended, and what outlives it is read back from the
     /// store, the drafts file, the trust store and the settings.
+    ///
+    /// `surface` is the app hosting it (the iPhone or Android app), which its
+    /// calls name to the node and its analytics count as the client opened.
     pub async fn start_with(
         config: &StartConfig,
         overrides: EdgeOverrides,
         clock: Arc<dyn Clock>,
         cores: Cores,
+        surface: Surface,
     ) -> Result<EmbeddedRuntime, EmbeddedError> {
         if let Some(path) = &config.log_path {
             // A log that cannot be opened costs the dump its log, never the
@@ -250,6 +257,7 @@ impl EmbeddedRuntime {
             clock,
             telemetry,
             auto_reports,
+            surface,
         })
     }
 
@@ -283,7 +291,7 @@ impl EmbeddedRuntime {
             runtime.analytics().record_at_most_every(
                 CLIENT_OPENED_EVERY,
                 analytics::Event::ClientOpened {
-                    client: analytics::Client::Ios,
+                    client: analytics_client(self.surface),
                 },
             );
         }
@@ -380,6 +388,7 @@ impl EmbeddedRuntime {
             .map(|daemon| daemon.front_door())
             .ok_or(ProfileRefusal::Stopping)?;
         let registry = self.registry.clone();
+        let surface = self.surface;
         let open = move |id: &[u8]| {
             let refused =
                 |code, message: String| client::RpcError::Refused(wire::Error::new(code, message));
@@ -389,12 +398,12 @@ impl EmbeddedRuntime {
                     "a profile id is 16 bytes".into(),
                 )
             })?;
-            in_memory(&registry, profile)
+            in_memory(&registry, profile, surface)
                 .map_err(|error| refused(wire::ErrorCode::NotFound, error.to_string()))
         };
         Ok(Installation::in_memory(
             InstallationServiceServer::new(door),
-            Surface::Ios,
+            self.surface,
             open,
         ))
     }
@@ -420,7 +429,7 @@ impl EmbeddedRuntime {
     /// node's router, so a call addressed to another host is carried there,
     /// and the profile's administration beside them.
     pub fn node(&self, profile: ProfileId) -> Result<Client, EmbeddedError> {
-        Ok(in_memory(&self.registry, profile)?)
+        Ok(in_memory(&self.registry, profile, self.surface)?)
     }
 
     /// Runs `work` where the profile's core steps, between two of its
@@ -687,7 +696,24 @@ fn fingerprint(pubkey: &[u8]) -> String {
         .collect()
 }
 
-/// A client of a profile's node over its routes in memory, as the phone.
-fn in_memory(registry: &Registry, profile: ProfileId) -> Result<Client, ProfileRefusal> {
-    Ok(Client::in_memory(registry.routes(profile)?, Surface::Ios))
+/// A client of a profile's node over its routes in memory, as the app
+/// hosting it.
+fn in_memory(
+    registry: &Registry,
+    profile: ProfileId,
+    surface: Surface,
+) -> Result<Client, ProfileRefusal> {
+    Ok(Client::in_memory(registry.routes(profile)?, surface))
+}
+
+/// The client analytics counts as opened when the app hosting the
+/// installation comes to the front.
+fn analytics_client(surface: Surface) -> analytics::Client {
+    match surface {
+        Surface::Terminal => analytics::Client::Terminal,
+        Surface::Mac => analytics::Client::Mac,
+        Surface::Ios => analytics::Client::Ios,
+        Surface::Android => analytics::Client::Android,
+        Surface::Browser => analytics::Client::Browser,
+    }
 }

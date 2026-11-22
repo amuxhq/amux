@@ -421,8 +421,8 @@ fn attachments_keep_their_positions() {
             rows[0].kind,
             RowKind::Prompt {
                 text: vec![
-                    Segment::Attachment(AttachmentView::of(&image, &[])),
-                    Segment::Text("first".into())
+                    ProsePart::Attachment(AttachmentView::of(&image, &[])),
+                    ProsePart::Text(Markdown::parse("first", false))
                 ],
                 steered: false
             }
@@ -1159,6 +1159,7 @@ fn host_entry(host: &str, signed_in: Option<bool>) -> FleetMsg {
                     wire::RouteKind::Unspecified as i32,
                 )),
                 current: false,
+                same_network: false,
             })),
             ..Default::default()
         })),
@@ -1170,6 +1171,7 @@ fn reads(entry: &mut wire::HostEntry, reach: wire::trusted::Reach) {
     entry.standing = Some(wire::host_entry::Standing::Trusted(wire::Trusted {
         reach: Some(reach),
         current: false,
+        same_network: false,
     }));
 }
 
@@ -2424,8 +2426,8 @@ fn an_agent_message_carries_its_attachments_as_chips() {
     assert_eq!(
         *text,
         vec![
-            Segment::Text("second look at this ".into()),
-            Segment::Attachment(AttachmentView::of(&file, &[])),
+            ProsePart::Text(Markdown::parse("second look at this ", false)),
+            ProsePart::Attachment(AttachmentView::of(&file, &[])),
         ]
     );
 }

@@ -24,7 +24,7 @@ public struct ChatPane: View {
         }
     }
 
-    private var host: String { row.map { PlaceNames.host($0.hostName) } ?? "its computer" }
+    private var host: String { row.map { PlaceNames.host($0.hostName) } ?? "its device" }
 }
 
 /// The rows, oldest first, following the newest while the reader is there.
@@ -59,7 +59,7 @@ private struct Feed: View {
                 }
                 ForEach(Array(chat.landing.enumerated()), id: \.offset) { _, prompt in
                     VStack(alignment: .trailing, spacing: 2) {
-                        PromptBubble(segments: prompt.text, steered: false)
+                        PromptBubble(segments: prompt.text.map(\.segment), steered: false)
                         Text(ChatWords.underway(prompt.underway, host: host))
                             .font(.ui(.caption))
                             .foregroundStyle(Palette.textTertiary)

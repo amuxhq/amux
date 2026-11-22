@@ -28,7 +28,10 @@ let package = Package(
         // The named screens the storybook draws. The app does not link this.
         .target(
             name: "AmuxMacStories",
-            dependencies: ["AmuxMacScreens", .product(name: "AmuxValues", package: "AmuxCore")]),
+            dependencies: [
+                "AmuxMacScreens", .product(name: "AmuxValues", package: "AmuxCore"),
+                .product(name: "AmuxFixtures", package: "AmuxCore"),
+            ]),
     ],
     swiftLanguageModes: [.v6]
 )

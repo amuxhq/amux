@@ -845,16 +845,33 @@ impl Session {
         self.inner.send(input).await
     }
 
-    /// A prompt in this agent's kind.
+    /// A prompt in this agent's kind. One carrying an attachment the agent
+    /// does not take (an image to an agent that takes none) is refused at
+    /// once and never sent, as a prompt the agent refused is: it is among
+    /// `ui_view::refused_prompts` with its words and attachments, so every
+    /// client gives the draft back with why.
     pub async fn send_prompt(&self, text: &str, attachments: Vec<wire::Attachment>) -> Sent {
+        let untaken = ui_view::untaken(&self.inner.model().state, &attachments);
+        let unsupported = || {
+            InputOutcome::Reply(rejected(wire::Rejected {
+                refusal: wire::Refusal::Unsupported as i32,
+                detail: None,
+            }))
+        };
         match inputs::prompt(self.kind(), text, attachments) {
-            Some(input) => self.send(input).await,
+            Some(input) if untaken.is_none() => self.send(input).await,
+            Some(input) => {
+                let id = input.input_id.clone();
+                self.inner.apply(Msg::Send(input));
+                self.inner.apply(Msg::Sent(id.clone(), unsupported()));
+                Sent {
+                    id,
+                    outcome: unsupported(),
+                }
+            }
             None => Sent {
                 id: Vec::new(),
-                outcome: InputOutcome::Reply(rejected(wire::Rejected {
-                    refusal: wire::Refusal::Unsupported as i32,
-                    detail: None,
-                })),
+                outcome: unsupported(),
             },
         }
     }
@@ -913,7 +930,8 @@ impl Session {
     /// Steers a queued prompt into the running turn; the entry reads
     /// steered until its reflection lands.
     pub async fn send_now(&self, queued: &[u8]) -> Result<(), InputError> {
-        self.act(inputs::send_now(self.kind(), queued)).await
+        self.act(inputs::send_now(self.kind(), &self.capabilities(), queued))
+            .await
     }
 
     /// Answers an open ask with the input `ui_view::answer_input` made
@@ -928,13 +946,15 @@ impl Session {
 
     /// Stops one background job by its key; the agent keeps running.
     pub async fn stop_job(&self, key: &str) -> Result<(), InputError> {
-        self.act(inputs::stop_job(self.kind(), key)).await
+        self.act(inputs::stop_job(self.kind(), &self.capabilities(), key))
+            .await
     }
 
     /// Takes the agent's own view back to its conversation after it
     /// switched to another (terminal Claude).
     pub async fn switch_back(&self) -> Result<(), InputError> {
-        self.act(inputs::switch_back(self.kind())).await
+        self.act(inputs::switch_back(self.kind(), &self.capabilities()))
+            .await
     }
 
     /// Forgets an input that was not confirmed.
@@ -973,6 +993,10 @@ impl Session {
 
     fn kind(&self) -> wire::Kind {
         self.inner.model().state.kind()
+    }
+
+    fn capabilities(&self) -> wire::AgentCapabilities {
+        self.inner.model().state.capabilities()
     }
 
     /// An attachment's bytes, if fetched. A missing one starts its fetch,

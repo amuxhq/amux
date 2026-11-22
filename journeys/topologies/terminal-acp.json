@@ -1,0 +1,82 @@
+{
+  "hosts": [
+    {
+      "name": "desk",
+      "agents": {
+        "helper": {
+          "name": "Helper",
+          "script": {
+            "chunk_ms": 40,
+            "steps": [
+              {"text": {"chunks": ["Hello ", "from ", "Helper."]}},
+              "turn_end"
+            ]
+          }
+        },
+        "gatekeeper": {
+          "name": "Gatekeeper",
+          "script": {
+            "steps": [
+              {"call": {"kind": "execute", "title": "Run the migration", "input": {"command": "scripts/migrate --apply"}, "ask": "once", "outcome": {"output": "3 migrations applied"}}},
+              {"text": {"chunks": ["The migration ran."]}},
+              "turn_end",
+              {"call": {"kind": "delete", "title": "Delete the build folder", "input": {"command": "rm -rf build"}, "ask": "always", "outcome": {"output": ""}}},
+              {"text": {"chunks": ["I left the build folder alone."]}},
+              "turn_end"
+            ]
+          }
+        },
+        "runner": {
+          "name": "Runner",
+          "script": {
+            "acp": {"cancel_chunks": 0},
+            "steps": [
+              {"text": {"chunks": ["Starting the long job."]}},
+              {"wait_for": {"path": "never"}},
+              {"text": {"chunks": ["The long job finished."]}},
+              "turn_end",
+              {"text": {"chunks": ["Ready again."]}},
+              "turn_end"
+            ]
+          }
+        },
+        "soaker": {
+          "name": "Soaker",
+          "script": {
+            "steps": [
+              {"text": {"chunks": ["Starting the soak."]}},
+              {"wait_for": {"path": "soak-done"}},
+              {"text": {"chunks": ["\n\nThe soak finished."]}},
+              "turn_end",
+              {"text": {"chunks": ["Logged the peak."]}},
+              "turn_end"
+            ]
+          }
+        },
+        "one-shot": {
+          "name": "One Shot",
+          "script": {
+            "acp": {"load": false, "resume": false},
+            "steps": [
+              {"text": {"chunks": ["Done, once."]}},
+              "turn_end",
+              {"exit": {"code": 0}}
+            ]
+          }
+        },
+        "locked": {
+          "name": "Locked",
+          "script": {
+            "acp": {"signed_in_at": "locked-signed-in"},
+            "steps": [
+              {"text": {"chunks": ["Signed in and ready."]}},
+              "turn_end",
+              {"text": {"chunks": ["Read the second message too."]}},
+              "turn_end"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

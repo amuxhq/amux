@@ -35,7 +35,7 @@ final class SubagentChanges: XCTestCase {
     private func row(_ agent: AgentKey, _ name: String, native: Bool) -> FleetRow {
         FleetRow(
             card: FleetCard(
-                agent: agent, name: name, handle: name, kind: .claudeSdk, attention: .working, cwd: "/src/amux",
+                agent: agent, name: name, handle: name, kind: .claudeSdk, provider: "claude", providerName: "Claude", attachable: false, attention: .working, cwd: "/src/amux",
                 phaseSinceMs: 0, host: "this Mac", hostReach: .online(.direct), children: native ? 0 : 1,
                 familyAttention: .working, members: native ? 1 : 2, descendants: native ? 0 : 1,
                 backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: !native, native: native,

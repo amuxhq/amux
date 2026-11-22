@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package amux.v1;
 
-import "amux/v1/inventory.proto";
-
 // What a host offers before any agent exists: each provider's catalogue,
 // and the folders its person pinned for a new agent to start in.
 //
@@ -28,7 +26,9 @@ service HostService {
 }
 
 message GetCatalogueRequest {
-  Provider provider = 1;
+  // The provider's id, as ProviderOnHost.provider_id names it: "claude",
+  // "codex", or an ACP agent's. A host refuses an id it does not offer.
+  string provider = 1;
 }
 
 // The encoded Catalogue and the SHA-256 of exactly these bytes, which is

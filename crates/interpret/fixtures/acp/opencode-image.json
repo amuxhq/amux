@@ -1,0 +1,10 @@
+{
+  "about": "opencode 1.18.33, recorded live: a prompt with a PNG image attached",
+  "spec": {
+    "provider": "opencode"
+  },
+  "recording": {
+    "path": "live/opencode-image/io.jsonl",
+    "format": "acp_io"
+  }
+}

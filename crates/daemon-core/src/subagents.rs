@@ -112,6 +112,8 @@ impl Daemon {
     ) -> Result<AgentRow, StoreError> {
         let names = self.own_names()?;
         let mut row = AgentRow::new(key, host.kind, host.cwd.clone());
+        // Run by its host's provider process, so of its host's program.
+        row.provider = host.provider_id().to_owned();
         // Never a word pair or a name taken from what it is about: those
         // are names a person would choose, and the provider's description
         // is the title.
@@ -483,7 +485,8 @@ pub fn stoppable_job(row: &AgentRow) -> Option<String> {
                 .ok()?
                 .background_jobs
         }
-        wire::Kind::Unspecified => None,
+        // An ACP agent's own subagents are not amux agents: none is a job.
+        wire::Kind::Acp | wire::Kind::Unspecified => None,
     }?;
     jobs.jobs
         .iter()
@@ -512,7 +515,8 @@ fn stop_job_body(kind: i32, key: &str) -> Option<Vec<u8>> {
             }
             .encode_to_vec(),
         ),
-        wire::Kind::ClaudePty | wire::Kind::Unspecified => None,
+        // ACP has no way to stop one job of an agent's.
+        wire::Kind::ClaudePty | wire::Kind::Acp | wire::Kind::Unspecified => None,
     }
 }
 

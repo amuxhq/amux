@@ -1,0 +1,10 @@
+{
+  "about": "antigravity 1.5.13, recorded live: one plain prompt and its answer",
+  "spec": {
+    "provider": "antigravity"
+  },
+  "recording": {
+    "path": "live/agy-prompt/io.jsonl",
+    "format": "acp_io"
+  }
+}

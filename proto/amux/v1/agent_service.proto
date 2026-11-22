@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package amux.v1;
 
+import "amux/v1/acp.proto";
 import "amux/v1/claude.proto";
 import "amux/v1/codex.proto";
 import "amux/v1/inventory.proto";
@@ -73,6 +74,9 @@ message CreateAgentRequest {
     ClaudeCreateConfig claude_pty = 4;
     ClaudeCreateConfig claude_sdk = 5;
     CodexCreateConfig codex = 6;
+    // An agent program that speaks the Agent Client Protocol, named by its
+    // provider id.
+    AcpCreateConfig acp = 11;
   }
   // The first prompt, with attachments: the agent's first turn, written to
   // the provider once it takes input.

@@ -17,6 +17,7 @@ use std::fmt;
 use std::path::Path;
 
 use daemon_core::{AgentId, Daemon, Input, Output, Recorded, StepBudget};
+use interpret::acp::Acp;
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
@@ -646,6 +647,7 @@ pub fn replay_facts(agents: &Path) -> Verdict {
             wire::Kind::ClaudeSdk => replay_agent::<ClaudeSdk>(&id, &dir),
             wire::Kind::ClaudePty => replay_agent::<ClaudePty>(&id, &dir),
             wire::Kind::Codex => replay_agent::<Codex>(&id, &dir),
+            wire::Kind::Acp => replay_agent::<Acp>(&id, &dir),
             wire::Kind::Unspecified => continue,
         };
         match replay {

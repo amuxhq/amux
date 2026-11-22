@@ -257,6 +257,16 @@ public final class Chat: ChatSource, @unchecked Sendable {
         }
     }
 
+    public func attachmentRefusal(name: String, mime: String, size: Int) -> String? {
+        call(nil) { live in
+            name.withCString { name in
+                mime.withCString { mime in
+                    Bridge.read(String?.self, amux_session_attachment_refusal(live, name, mime, UInt64(size))) ?? nil
+                }
+            }
+        }
+    }
+
     /// Stores an attachment's bytes, answering the reference a draft carries.
     public func putBlob(
         _ data: Data, name: String, mime: String

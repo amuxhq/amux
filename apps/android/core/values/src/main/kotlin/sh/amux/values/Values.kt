@@ -787,6 +787,14 @@ data class AskCard(
      */
     @SerialName("question_reply") val questionReply: Boolean,
     /**
+     * The person may reply in their own words instead of answering
+     * whatever the ask is (an ACP agent's): the turn is cancelled, which
+     * closes the ask, and the words go as the next prompt. The card's
+     * refusal takes them as its note, and [`reply_answer`] sends them on
+     * their own.
+     */
+    @SerialName("reply_instead") val replyInstead: Boolean,
+    /**
      * Stopping interrupts a running turn. Codex proposes a plan as its
      * turn ends, so with its plan open there is no turn to stop.
      */
@@ -1479,6 +1487,33 @@ enum class CallPhase {
 }
 
 /**
+ * What an agent can do, which decides the controls a client offers it.
+ * False is the safe reading of each: a control left out is all it costs.
+ */
+@Serializable
+data class Capabilities(
+    /** One background job can be stopped on its own. */
+    @SerialName("stops_job") val stopsJob: Boolean,
+    /** Its own view can go to another conversation and be brought back. */
+    @SerialName("switches_back") val switchesBack: Boolean,
+    /**
+     * It runs with a terminal interface of its own, which a terminal on
+     * its host can attach to.
+     */
+    @SerialName("attachable") val attachable: Boolean,
+    /** Once it has exited, it can be resumed. */
+    @SerialName("resumable") val resumable: Boolean,
+    /** A queued prompt can be sent into its running turn. */
+    @SerialName("sends_now") val sendsNow: Boolean,
+    /** A prompt may carry images. */
+    @SerialName("images") val images: Boolean,
+    /** A prompt may carry files. */
+    @SerialName("files") val files: Boolean,
+    /** A slash command it does not list goes to it as typed. */
+    @SerialName("passes_unknown_commands") val passesUnknownCommands: Boolean,
+)
+
+/**
  * Where the card is after the person acts. Stop is in the menu while a
  * turn runs: it is the interrupt, and the agent stays.
  */
@@ -2012,7 +2047,10 @@ data class ChatDelta(
 data class ChatFrame(
     @SerialName("agent") val agent: AgentKey,
     @SerialName("name") val name: String,
-    @SerialName("kind") val kind: Kind,
+    /** The program it runs, as its host names it. */
+    @SerialName("provider") val provider: ProviderLabel,
+    /** What it can do: which controls its chat offers. */
+    @SerialName("capabilities") val capabilities: Capabilities,
     @SerialName("phase") val phase: PhaseView,
     @SerialName("composer") val composer: ComposerView,
     /**
@@ -2136,6 +2174,16 @@ sealed interface ChoiceOutcome {
         val mode: String,
         val modeName: String,
     ) : ChoiceOutcome
+    /**
+     * An option the agent offered in its own words, for what it decides
+     * itself: an ACP agent's "always" options, which it keeps as long as
+     * it chooses, and an option of a kind this build does not know.
+     * `refuses` says it turns the call down.
+     */
+    data class Offered(
+        val name: String,
+        val refuses: Boolean,
+    ) : ChoiceOutcome
 }
 
 object ChoiceOutcomeSerializer : KSerializer<ChoiceOutcome> {
@@ -2229,6 +2277,20 @@ object ChoiceOutcomeSerializer : KSerializer<ChoiceOutcome> {
                     ),
                 )
             }
+            "Offered" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("ChoiceOutcome.Offered payload must be an object")
+                ChoiceOutcome.Offered(
+                    name = json.decodeFromJsonElement(
+                        serializer<String>(),
+                        fields["name"] ?: throw SerializationException("ChoiceOutcome.Offered missing field name"),
+                    ),
+                    refuses = json.decodeFromJsonElement(
+                        serializer<Boolean>(),
+                        fields["refuses"] ?: throw SerializationException("ChoiceOutcome.Offered missing field refuses"),
+                    ),
+                )
+            }
             else -> throw SerializationException("unknown ChoiceOutcome variant $tag")
         }
     }
@@ -2278,6 +2340,14 @@ object ChoiceOutcomeSerializer : KSerializer<ChoiceOutcome> {
                     "ApprovePlan" to buildJsonObject {
                         put("mode", json.encodeToJsonElement(serializer<String>(), value.mode))
                         put("mode_name", json.encodeToJsonElement(serializer<String>(), value.modeName))
+                    },
+                ),
+            )
+            is ChoiceOutcome.Offered -> JsonObject(
+                mapOf(
+                    "Offered" to buildJsonObject {
+                        put("name", json.encodeToJsonElement(serializer<String>(), value.name))
+                        put("refuses", json.encodeToJsonElement(serializer<Boolean>(), value.refuses))
                     },
                 ),
             )
@@ -2502,6 +2572,12 @@ sealed interface Composer {
      */
     data object Resume : Composer
     /**
+     * The agent has exited and its program cannot reopen its
+     * conversation, so nothing resumes it: there is no text box. A fresh
+     * conversation would be another agent, never this one resumed.
+     */
+    data object Ended : Composer
+    /**
      * The chat is not current. Drafting continues; a send is refused at
      * once and the draft stays in the composer, which says why.
      */
@@ -2531,6 +2607,7 @@ object ComposerSerializer : KSerializer<Composer> {
             return when (element.content) {
                 "Send" -> Composer.Send
                 "Resume" -> Composer.Resume
+                "Ended" -> Composer.Ended
                 else -> throw SerializationException("no Composer is named ${element.content}")
             }
         }
@@ -2564,6 +2641,7 @@ object ComposerSerializer : KSerializer<Composer> {
         val element: JsonElement = when (value) {
             Composer.Send -> JsonPrimitive("Send")
             Composer.Resume -> JsonPrimitive("Resume")
+            Composer.Ended -> JsonPrimitive("Ended")
             is Composer.Waiting -> JsonObject(
                 mapOf("Waiting" to json.encodeToJsonElement(serializer<Waiting>(), value.value)),
             )
@@ -3415,6 +3493,15 @@ data class FleetCard(
     /** The name it is addressed and renamed by. */
     @SerialName("handle") val handle: String,
     @SerialName("kind") val kind: Kind,
+    /** Its provider's id: "claude", "codex", or an ACP agent's. */
+    @SerialName("provider") val provider: String,
+    /**
+     * What people call its provider: the name its host gives it, else its
+     * id ("Claude", "OpenCode", the name a person gave their own agent).
+     */
+    @SerialName("provider_name") val providerName: String,
+    /** Its provider has a terminal of its own the agent can be opened in. */
+    @SerialName("attachable") val attachable: Boolean,
     @SerialName("attention") val attention: Attention,
     @SerialName("cwd") val cwd: String,
     @SerialName("phase_since_ms") val phaseSinceMs: Long,
@@ -3954,6 +4041,35 @@ data class HighlightedCode(
     @SerialName("settled") val settled: Boolean,
 )
 
+/** An agent program a host offers, as a new-agent screen lists it. */
+@Serializable
+data class HostProvider(
+    /**
+     * What it is named by: what a new agent and the host's catalogue ask
+     * for.
+     */
+    @SerialName("provider") val provider: String,
+    /**
+     * What people call it, as the host names it ("Claude", "OpenCode", the
+     * name a person gave their own); its id when the host gives none.
+     */
+    @SerialName("name") val name: String,
+    /**
+     * What a person does to sign in to it, in its own words; empty when
+     * the host knows none.
+     */
+    @SerialName("sign_in_hint") val signInHint: String,
+    /**
+     * The program's version as the host last read it; empty where it gave
+     * none.
+     */
+    @SerialName("version") val version: String,
+    /** What an agent of it started there now can do. */
+    @SerialName("capabilities") val capabilities: Capabilities,
+    /** Whether it is signed in on the host; None until the host has asked it. */
+    @SerialName("signed_in") val signedIn: Boolean? = null,
+)
+
 /** A host in the fleet as a screen lists it. */
 @Serializable
 data class HostView(
@@ -3997,15 +4113,11 @@ data class HostView(
      */
     @SerialName("current") val current: Boolean,
     /**
-     * The providers the host has said it can run, and whether each is
-     * signed in there.
+     * The agent programs the host offers, in its order: Claude and Codex
+     * once it has said anything, then each other agent it has asked,
+     * a person's own among them.
      */
-    @SerialName("providers") val providers: List<ProviderSignIn>,
-    /**
-     * Which Claude a new agent on it runs, as its settings resolve it;
-     * None until it has said.
-     */
-    @SerialName("claude_kind") val claudeKind: Kind? = null,
+    @SerialName("providers") val providers: List<HostProvider>,
     @SerialName("last_dial_error") val lastDialError: String? = null,
     /** The operating system it runs, when it said. */
     @SerialName("platform") val platform: Platform? = null,
@@ -4411,6 +4523,12 @@ enum class Kind {
     ClaudeSdk,
     @SerialName("Codex")
     Codex,
+    /**
+     * An agent program that speaks the Agent Client Protocol; which one is
+     * the agent's provider id.
+     */
+    @SerialName("Acp")
+    Acp,
 }
 
 /**
@@ -4527,15 +4645,20 @@ data class ModelChoice(
 @Serializable
 data class NewAgent(
     @SerialName("host_id") val hostId: List<Int>,
-    @SerialName("kind") val kind: Kind,
+    /**
+     * The agent program to start, by the id the host's entry lists it by;
+     * the host's entry says which kind of agent that starts.
+     */
+    @SerialName("provider") val provider: String,
     @SerialName("cwd") val cwd: String,
     @SerialName("name") val name: String,
     @SerialName("effort") val effort: String? = null,
     @SerialName("mode") val mode: String? = null,
     /**
      * The provider's model, effort, permission and mode, by their values
-     * in the host's catalogue; the host's default for each one absent. Only
-     * Codex takes a mode.
+     * in the host's catalogue; the host's default for each one absent, and
+     * for a mode, the agent's own. One the provider takes no pick of at
+     * start is not sent.
      */
     @SerialName("model") val model: String? = null,
     /** Start it in a worktree of its own, made from the folder's repository. */
@@ -4649,6 +4772,34 @@ object NewAgentPickSerializer : KSerializer<NewAgentPick> {
         }
         jsonEncoder.encodeJsonElement(element)
     }
+}
+
+/** What a notice is about. */
+@Serializable
+enum class NoticeReason {
+    /** The agent's own words. */
+    @SerialName("Agent")
+    Agent,
+    /** The model refused to go on; the turn is over. */
+    @SerialName("Refusal")
+    Refusal,
+    /** The turn reached the model's limit on tokens. */
+    @SerialName("MaxTokens")
+    MaxTokens,
+    /** The turn reached the agent's limit on model requests in one turn. */
+    @SerialName("MaxTurnRequests")
+    MaxTurnRequests,
+}
+
+/** How much a notice matters, as its agent marks it. */
+@Serializable
+enum class NoticeSeverity {
+    @SerialName("Info")
+    Info,
+    @SerialName("Warning")
+    Warning,
+    @SerialName("Error")
+    Error,
 }
 
 /** Which side of a one-tap sign-in this device is. */
@@ -5775,25 +5926,16 @@ object ProsePartSerializer : KSerializer<ProsePart> {
     }
 }
 
-/**
- * Which provider's program a host runs: the vocabulary amux uses to ask a
- * host what it offers with no agent running. Distinct from Kind, which is
- * the interpreter.
- */
+/** How a chat names the program its agent runs. */
 @Serializable
-enum class Provider {
-    @SerialName("Unspecified")
-    Unspecified,
-    @SerialName("Claude")
-    Claude,
-    @SerialName("Codex")
-    Codex,
-}
-
-@Serializable
-data class ProviderSignIn(
-    @SerialName("provider") val provider: Provider,
-    @SerialName("signed_in") val signedIn: Boolean,
+data class ProviderLabel(
+    /** Its id ("claude", "opencode", one a person chose). */
+    @SerialName("provider") val provider: String,
+    /**
+     * What people call it, as the agent's host names it; the id while the
+     * host has not said.
+     */
+    @SerialName("name") val name: String,
 )
 
 /**
@@ -7215,6 +7357,17 @@ sealed interface RowKind {
         val rationale: String,
         val subject: String,
     ) : RowKind
+    /**
+     * Something the agent, or the end of its turn, says to the person
+     * that is not the conversation: the agent's own notice, under its own
+     * title when it gives one, or why its turn stopped short.
+     */
+    data class Notice(
+        val reason: NoticeReason,
+        val severity: NoticeSeverity,
+        val title: String,
+        val text: String,
+    ) : RowKind
     data class Unrecognized(
         val what: String,
         val summary: String,
@@ -7648,6 +7801,28 @@ object RowKindSerializer : KSerializer<RowKind> {
                     ),
                 )
             }
+            "Notice" -> {
+                val fields = payload as? JsonObject
+                    ?: throw SerializationException("RowKind.Notice payload must be an object")
+                RowKind.Notice(
+                    reason = json.decodeFromJsonElement(
+                        serializer<NoticeReason>(),
+                        fields["reason"] ?: throw SerializationException("RowKind.Notice missing field reason"),
+                    ),
+                    severity = json.decodeFromJsonElement(
+                        serializer<NoticeSeverity>(),
+                        fields["severity"] ?: throw SerializationException("RowKind.Notice missing field severity"),
+                    ),
+                    title = json.decodeFromJsonElement(
+                        serializer<String>(),
+                        fields["title"] ?: throw SerializationException("RowKind.Notice missing field title"),
+                    ),
+                    text = json.decodeFromJsonElement(
+                        serializer<String>(),
+                        fields["text"] ?: throw SerializationException("RowKind.Notice missing field text"),
+                    ),
+                )
+            }
             "Unrecognized" -> {
                 val fields = payload as? JsonObject
                     ?: throw SerializationException("RowKind.Unrecognized payload must be an object")
@@ -7881,6 +8056,16 @@ object RowKindSerializer : KSerializer<RowKind> {
                     },
                 ),
             )
+            is RowKind.Notice -> JsonObject(
+                mapOf(
+                    "Notice" to buildJsonObject {
+                        put("reason", json.encodeToJsonElement(serializer<NoticeReason>(), value.reason))
+                        put("severity", json.encodeToJsonElement(serializer<NoticeSeverity>(), value.severity))
+                        put("title", json.encodeToJsonElement(serializer<String>(), value.title))
+                        put("text", json.encodeToJsonElement(serializer<String>(), value.text))
+                    },
+                ),
+            )
             is RowKind.Unrecognized -> JsonObject(
                 mapOf(
                     "Unrecognized" to buildJsonObject {
@@ -7962,6 +8147,12 @@ data class RunCounts(
     @SerialName("subagents") val subagents: Int,
     /** Tool-server calls, images and the rest. */
     @SerialName("other") val other: Int,
+    /**
+     * Steps refused before they ran, by the person or the agent's own
+     * rules: counted here and not as what they would have done, so a run
+     * whose one command was denied does not read as having run it.
+     */
+    @SerialName("denied") val denied: Int,
 )
 
 @Serializable(with = ScopeSerializer::class)
@@ -8345,6 +8536,43 @@ data class SettingsView(
     @SerialName("commands") val commands: List<CommandView>,
 )
 
+@Serializable
+enum class SettleTurn {
+    @SerialName("Working")
+    Working,
+    @SerialName("NeedsYou")
+    NeedsYou,
+}
+
+/**
+ * What settling an agent costs, for the confirm a client shows first:
+ * the work it cuts short, and whether a message resumes the agent after.
+ * Every client words it; [`SettleWarning::asks`] is when to ask at all.
+ */
+@Serializable
+data class SettleWarning(
+    @SerialName("background_jobs") val backgroundJobs: Int,
+    /**
+     * Its live descendants: those its host counts, or those this fleet
+     * sees when it sees more.
+     */
+    @SerialName("subagents") val subagents: Int,
+    /**
+     * A message resumes it once settled: its program reopens the
+     * conversation in a later process. When not, settling ends the
+     * conversation for good. A provider subagent takes no messages and
+     * goes with its parent, so it is never said to lose anything.
+     */
+    @SerialName("resumable") val resumable: Boolean,
+    /** A subagent its parent's provider runs. */
+    @SerialName("provider_subagent") val providerSubagent: Boolean,
+    /**
+     * The turn under way, which settling ends: working, or holding an
+     * ask open, which settling leaves unanswered.
+     */
+    @SerialName("turn") val turn: SettleTurn? = null,
+)
+
 /** One step of onboarding, in the order clients show them. */
 @Serializable
 enum class SetupStep {
@@ -8468,6 +8696,14 @@ data class SignInView(
     @SerialName("state") val state: SignInState,
     @SerialName("account") val account: String,
     @SerialName("message") val message: String,
+    /** Who needs signing in to: the provider's name, as its host gives it. */
+    @SerialName("provider_name") val providerName: String,
+    /**
+     * What a person does to sign in, in the provider's words as its host
+     * gives them ("Run `opencode auth login` in the terminal"); empty when
+     * nothing is known. Code is marked with backticks.
+     */
+    @SerialName("hint") val hint: String,
 )
 
 /** What an embedded runtime starts from. */

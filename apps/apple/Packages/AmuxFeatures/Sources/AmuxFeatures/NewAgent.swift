@@ -38,9 +38,7 @@ public enum NewAgentAction: Equatable, Sendable {
 /// unstated on the one control where it matters.
 public struct NewAgent: View {
     @Environment(\.design) private var design
-    /// How tall the Start bar floating at the foot is, so the last rows can
-    /// always scroll clear of it, at any text size.
-    @State private var footHeight: CGFloat = 110
+    @FocusState private var naming: Bool
     private let model: NewAgentStore
     private let hosts: HostsStore
     private let actions: @MainActor (NewAgentAction) -> Void
@@ -57,20 +55,31 @@ public struct NewAgent: View {
     public var body: some View {
         ZStack(alignment: .bottom) {
             Ground()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    place
-                    agent
-                    naming
+            ScrollViewReader { scroll in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+                        place
+                        agent
+                        name.id(Self.nameRow)
+                    }
+                    .padding(.horizontal, design.metrics.gutter)
+                    .padding(.top, 8)
+                    .padding(.bottom, 20)
                 }
-                .padding(.horizontal, design.metrics.gutter)
-                .padding(.top, 8)
-                // Clear of the bar at the foot, which floats over this.
-                .padding(.bottom, footHeight + 20)
+                .scrollIndicators(.hidden)
+                .scrollDismissesKeyboard(.interactively)
+                // The bar at the foot floats over the list as an inset of
+                // the scroll view rather than over it, so what scrolls into
+                // view comes to rest above the bar, not under it.
+                .safeAreaInset(edge: .bottom, spacing: 0) { foot }
+                // The system brings only the text field's own line above
+                // the keyboard; the whole row, the last on the page, comes
+                // up with it, so its card is not cut by the bar.
+                .onChange(of: naming) { _, focused in
+                    guard focused else { return }
+                    withAnimation { scroll.scrollTo(Self.nameRow, anchor: .bottom) }
+                }
             }
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.interactively)
-            foot
         }
         .navigationTitle("New Agent")
         .toolbarTitleDisplayMode(.inline)
@@ -229,15 +238,8 @@ public struct NewAgent: View {
 
     // MARK: - What runs there
 
-    /// Whether the chosen host has said this provider is signed in there;
-    /// nil until it says.
-    private func signedIn(_ provider: NewAgentStore.Provider) -> Bool? {
-        guard let machine = model.machine else { return nil }
-        return hosts.host(machine)?.providers.first { $0.provider == provider.wire }?.signedIn
-    }
-
     /// Which agent, and the model, effort, permission and mode it starts
-    /// with, from what the host says its provider offers, and the
+    /// with, from what the host says that agent offers, and the
     /// new-worktree switch. The agent heads the group because it decides what
     /// the rows under it offer.
     private var agent: some View {
@@ -254,47 +256,62 @@ public struct NewAgent: View {
                     worktree
                 }
             }
-            if signedIn(model.provider) == false {
-                Explain("\(model.provider.title) is not signed in on \(machineName). Its agents can’t work there until it is.")
-                    .identified("new-agent.signed-out", value: model.provider.rawValue)
+            if let chosen = model.chosenAgent, chosen.signedIn == false {
+                // In the agent's own words for what to do, on the computer
+                // where it keeps its credential.
+                Explain("\(chosen.name) is not signed in on \(machineName). Its agents can’t work there until it is. \(ChatWords.signInStepsThere(chosen.signInHint))")
+                    .identified("new-agent.signed-out", value: chosen.provider)
             }
-            if model.machine != nil {
-                switch model.offers[model.provider] {
+            if model.machine != nil, let chosen = model.chosenAgent {
+                switch model.offer {
+                case .offered(let catalogue)? where catalogue.models.isEmpty:
+                    // Nothing listed yet, as for an agent that names its
+                    // models only once a conversation has started there.
+                    Explain("\(chosen.name) starts on its own model and settings.")
+                        .identified("new-agent.offer.own")
                 case .offered?:
                     EmptyView()
                 case .unavailable?:
-                    Explain("\(machineName) could not say what \(model.provider.title) offers. The agent starts with the device’s defaults.")
+                    Explain("\(machineName) could not say what \(chosen.name) offers. The agent starts with the device’s defaults.")
                         .identified("new-agent.offer.unavailable")
                 case .asking?, nil:
-                    Explain("Asking \(machineName) what \(model.provider.title) offers…")
+                    Explain("Asking \(machineName) what \(chosen.name) offers…")
                         .identified("new-agent.offer.asking")
                 }
+            } else if model.machine != nil {
+                Explain("Asking \(machineName) which agents it runs…")
+                    .identified("new-agent.agents.asking")
             }
         }
     }
 
-    /// A menu rather than a control with a place for each: more agents than
-    /// two are coming, and a menu row says which one is not signed in here.
+    /// A menu rather than a control with a place for each: a host offers as
+    /// many agents as its person set up, and a menu row says which one is
+    /// not signed in here.
     private var providerPicker: some View {
-        let items = NewAgentStore.Provider.allCases.map { provider in
+        let items = model.agents.map { offered in
             MenuItem(
-                title: provider.title,
-                subtitle: signedIn(provider) == false
+                title: offered.name,
+                subtitle: offered.signedIn == false
                     ? String(localized: "Not signed in on \(machineName)") : nil,
-                chosen: model.provider == provider
-            ) { model.choose(provider: provider) }
+                chosen: model.provider == offered.provider
+            ) { model.choose(provider: offered.provider) }
         }
+        let name = model.chosenAgent?.name ?? String(localized: "Choose")
         return MenuButton(
-            name: String(localized: "Agent, \(model.provider.title)"), identifier: "new-agent.provider",
-            items: items, value: model.provider.rawValue
+            name: String(localized: "Agent, \(name)"), identifier: "new-agent.provider",
+            items: items, value: model.provider
         ) {
-            FieldRow(label: String(localized: "Agent"), value: model.provider.title)
+            FieldRow(label: String(localized: "Agent"), value: name)
         }
     }
 
+    /// A row for each setting the agent takes a pick of at start; none when
+    /// it lists nothing to pick from, and it starts on its own defaults.
     private var pickers: [AnyView] {
-        guard case .offered? = model.offers[model.provider], let view = model.settings else { return [] }
-        var rows = [AnyView(modelPicker(view))]
+        guard case .offered? = model.offer, let view = model.settings else { return [] }
+        var rows: [AnyView] = []
+        if view.changeable.model == .pick, !view.models.isEmpty { rows.append(AnyView(modelPicker(view))) }
         if view.changeable.effort == .pick { rows.append(AnyView(effortPicker(view))) }
         if view.changeable.permission == .pick { rows.append(AnyView(permissionPicker(view))) }
         if view.changeable.mode == .pick { rows.append(AnyView(modePicker(view))) }
@@ -338,15 +355,25 @@ public struct NewAgent: View {
             String(localized: "Permission"), id: "new-agent.permission", current: current, items: items)
     }
 
+    /// With none marked in force, as for an agent whose modes name no
+    /// normal one, nothing is picked and the agent starts in the mode its
+    /// own settings name.
     private func modePicker(_ view: SettingsView) -> some View {
-        let items = view.modes.map { mode in
+        var items = view.modes.map { mode in
             MenuItem(title: ChatWords.mode(mode), chosen: mode.current) {
                 model.choose(.mode(mode.value))
             }
         }
+        if !view.modes.contains(where: \.normal) {
+            items.insert(
+                MenuItem(title: ChatWords.agentsOwnMode, chosen: !view.modes.contains(where: \.current)) {
+                    model.choose(.mode(nil))
+                }, at: 0)
+        }
         return picker(
             String(localized: "Mode"), id: "new-agent.mode",
-            current: view.modes.first(where: \.current).map(ChatWords.mode) ?? unnamed, items: items)
+            current: view.modes.first(where: \.current).map(ChatWords.mode) ?? ChatWords.agentsOwnMode,
+            items: items)
     }
 
     private func picker(_ label: String, id: String, current: String, items: [MenuItem]) -> some View {
@@ -379,13 +406,15 @@ public struct NewAgent: View {
 
     // MARK: - What it is called
 
+    private static let nameRow = "new-agent.name-row"
+
     /// The name, standing in the field as the suggestion until it is changed.
     ///
     /// Filled rather than left as a placeholder: the suggestion is what will
     /// be sent if nothing is typed, and a grey hint would suggest the field
     /// was empty. The machine still has the last word, and a name it refuses
     /// comes back as its own sentence under the host.
-    private var naming: some View {
+    private var name: some View {
         Surface {
             HStack(spacing: 10) {
                 Text("Name")
@@ -402,6 +431,7 @@ public struct NewAgent: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .submitLabel(.done)
+                    .focused($naming)
                     .identified("new-agent.name", label: "Name", value: model.name)
             }
             .padding(.horizontal, 14)
@@ -439,7 +469,6 @@ public struct NewAgent: View {
                 "new-agent.start", label: "Start on \(machineName)",
                 value: model.starting ? "starting" : "ready", enabled: model.ready)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footHeight = $0 }
     }
 }
 

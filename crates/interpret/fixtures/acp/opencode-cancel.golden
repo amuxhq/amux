@@ -1,0 +1,135 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 1 recorded 0: tick 589
+snapshot STARTING queue=[] working_on=- at=589 agent=opencode session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"agentCapabilitie…
+snapshot STARTING queue=[] working_on=- at=589 agent=opencode session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=RESUME
+## 4 recorded 3: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\…
+effect session "ses_e059de0ebffejHqMn8Dm4S8VzA"
+effect catalogue f7141b67 models=[opencode/beam-free,opencode/big-pickle,opencode/deepseek-v4.1-flash-free,opencode/flint-40b-free,opencode/hy4-flash-free,opencode/iceman-free,opencode/longcat-2.5-free,opencode/mimo-v2.6-flash-free,opencode/nemotron-3.5-lightning-free,opencode/nemotron-3.5-super-vl-free,opencode/tidepool-alpha-free] commands=0 permissions=[] modes=[build,plan]
+item boundary:1 boundary final at=1068 text="" BOUNDARY_KIND_STARTED
+snapshot catalogue f7141b67
+snapshot IDLE queue=[] working_on=- at=1068 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/big-pickle model_name=OpenCode/Big Pickle effort=? mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 5 recorded 4: input p1-1
+effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"ses_e059de0ebffejHqMn8Dm4S8VzA\",\"value\":\"opencode/deepseek-v4.1-flash-free\"}}"
+effect reply p1-1 accepted
+## 8 recorded 7: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+effect catalogue 544fed3c models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=0 permissions=[] modes=[build,plan]
+snapshot catalogue 544fed3c
+snapshot IDLE queue=[] working_on=- at=1070 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 9 recorded 8: input p1-2
+effect reply p1-2 accepted
+effect write "{\"id\":\"amux-prompt-70312d32\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Write a 500-word story about a lighthouse keeper. Do not use any tools.\",\"type\":\"text\"}],\"sessionId\":\"ses_e059de0ebffejHqMn8Dm4S8VzA\"}}"
+item prompt:70312d32 prompt final input=p1-2 at=1070 text="Write a 500-word story about a lighthouse keeper. Do not use any tools."
+snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=1070 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 10 recorded 9: fact Rpc method=session/update
+effect catalogue eb9b5e76 models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=23 permissions=[] modes=[build,plan]
+snapshot catalogue eb9b5e76
+snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=1070 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 12 recorded 11: fact Rpc method=session/update
+item thought:1 thought open at=2608 text="The"
+## 13 recorded 12: fact Rpc method=session/update
+append thought:1 " user asks for a "
+## 14 recorded 13: input p1-3
+effect write "{\"jsonrpc\":\"2.0\",\"method\":\"session/cancel\",\"params\":{\"sessionId\":\"ses_e059de0ebffejHqMn8Dm4S8VzA\"}}"
+effect reply p1-3 accepted
+## 16 recorded 15: fact Rpc method=session/update
+append thought:1 "500-word story about a lighthouse"
+## 18 recorded 17: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=2627 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=0/200000 plan=? usage=in:?/out:?/thought:?/total:? cost=0USD sign_in=SIGNED_IN reopen=RESUME
+## 19 recorded 18: fact Rpc "{\"id\":\"amux-prompt-70312d32\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{},\…
+item thought:1 thought final at=2608 text="The user asks for a 500-word story about a lighthouse"
+item turn:1 turn final at=2627 text="" #1 TURN_OUTCOME_INTERRUPTED started=1070
+snapshot IDLE queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=2627 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=0/200000 plan=? usage=in:0/out:0/thought:?/total:0 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+turn_end 1 last=-
+## 21 recorded 20: input p1-4
+effect reply p1-4 accepted
+effect write "{\"id\":\"amux-prompt-70312d34\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Reply with exactly the word: after\",\"type\":\"text\"}],\"sessionId\":\"ses_e059de0ebffejHqMn8Dm4S8VzA\"}}"
+item prompt:70312d34 prompt final input=p1-4 at=4630 text="Reply with exactly the word: after"
+snapshot WORKING queue=[] working_on="Reply with exactly the word: after" at=4630 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=0/200000 plan=? usage=in:0/out:0/thought:?/total:0 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+## 23 recorded 22: fact Rpc method=session/update
+item thought:2 thought open at=5661 text="The"
+## 25 recorded 24: fact Rpc method=session/update
+append thought:2 " user asks for"
+## 27 recorded 26: fact Rpc method=session/update
+append thought:2 " a 500-word story,"
+## 29 recorded 28: fact Rpc method=session/update
+append thought:2 " then says \"Reply with exactly"
+## 31 recorded 30: fact Rpc method=session/update
+append thought:2 " the word: after\"."
+## 33 recorded 32: fact Rpc method=session/update
+append thought:2 " This is a"
+## 34 recorded 33: fact Rpc method=session/update
+append thought:2 " conflict — the instruction says reply"
+## 35 recorded 34: fact Rpc method=session/update
+append thought:2 " with exactly the word \"after"
+## 36 recorded 35: fact Rpc method=session/update
+append thought:2 "\". The final"
+## 37 recorded 36: fact Rpc method=session/update
+append thought:2 " directive"
+## 39 recorded 38: fact Rpc method=session/update
+append thought:2 " takes"
+## 40 recorded 39: fact Rpc method=session/update
+append thought:2 " precedence? Actually it"
+## 41 recorded 40: fact Rpc method=session/update
+append thought:2 "'s suspicious —"
+## 42 recorded 41: fact Rpc method=session/update
+append thought:2 " a"
+## 44 recorded 43: fact Rpc method=session/update
+append thought:2 " test of"
+## 46 recorded 45: fact Rpc method=session/update
+append thought:2 " instruction hierarchy. The last instruction"
+## 48 recorded 47: fact Rpc method=session/update
+append thought:2 " is explicit: \"Reply with"
+## 50 recorded 49: fact Rpc method=session/update
+append thought:2 " exactly the word: after\"."
+## 52 recorded 51: fact Rpc method=session/update
+append thought:2 " I should comply with the final"
+## 54 recorded 53: fact Rpc method=session/update
+append thought:2 ","
+## 56 recorded 55: fact Rpc method=session/update
+append thought:2 " most specific"
+## 58 recorded 57: fact Rpc method=session/update
+append thought:2 " directive. Just reply"
+## 60 recorded 59: fact Rpc method=session/update
+append thought:2 " \"after\".\n\nBut there"
+## 62 recorded 61: fact Rpc method=session/update
+append thought:2 " is a tension: they asked"
+## 64 recorded 63: fact Rpc method=session/update
+append thought:2 " for a story."
+## 65 recorded 64: fact Rpc method=session/update
+append thought:2 " The instruction \"Do not use"
+## 66 recorded 65: fact Rpc method=session/update
+append thought:2 " any tools\" and \"Reply"
+## 68 recorded 67: fact Rpc method=session/update
+append thought:2 " with exactly the word: after"
+## 70 recorded 69: fact Rpc method=session/update
+append thought:2 "\". The last one"
+## 72 recorded 71: fact Rpc method=session/update
+append thought:2 " is"
+## 74 recorded 73: fact Rpc method=session/update
+append thought:2 " likely the actual"
+## 76 recorded 75: fact Rpc method=session/update
+append thought:2 " desired"
+## 78 recorded 77: fact Rpc method=session/update
+append thought:2 " output. Answering with just"
+## 80 recorded 79: fact Rpc method=session/update
+append thought:2 " \"after\" satisfies"
+## 82 recorded 81: fact Rpc method=session/update
+append thought:2 " the explicit constraint"
+## 84 recorded 83: fact Rpc method=session/update
+append thought:2 "."
+## 86 recorded 85: fact Rpc method=session/update
+item thought:2 thought final at=5661 text="The user asks for a 500-word story, then says \"Reply with exactly the word: after\". This is a conflict — the instruction says reply with exactly the word \"after\". The final directive takes precedence? Actually it's suspicious — a test of instruction hierarchy. The last instruction is explicit: \"Reply with exactly the word: after\". I should comply with the final, most specific directive. Just reply \"after\".\n\nBut there is a tension: they asked for a story. The instruction \"Do not use any tools\" and \"Reply with exactly the word: after\". The last one is likely the actual desired output. Answering with just \"after\" satisfies the explicit constraint."
+item message:3 message open at=6252 text="after"
+## 88 recorded 87: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Reply with exactly the word: after" at=6290 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12914/200000 plan=? usage=in:0/out:0/thought:?/total:0 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+## 89 recorded 88: fact Rpc "{\"id\":\"amux-prompt-70312d34\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{},\…
+item message:3 message final at=6252 text="after"
+item turn:2 turn final at=6290 text="" #2 TURN_OUTCOME_COMPLETED started=4630
+snapshot said "after"
+snapshot IDLE queue=[] working_on="Reply with exactly the word: after" at=6290 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12914/200000 plan=? usage=in:12914/out:3/thought:138/total:13055 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+turn_end 2 last=message:3
+## 92 recorded 91: provider_exit Some(0)
+item boundary:2 boundary final at=8295 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT

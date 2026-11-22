@@ -35,11 +35,17 @@ public struct ChatSubject: Equatable, Sendable {
     /// no folder and cannot be messaged, so it is never deleted on its own
     /// and has no address to copy.
     public let native: Bool
+    /// What settling it costs, by the fleet's shared rule; nil when the
+    /// fleet does not hold it.
+    public let settle: SettleWarning?
+    /// Its program's name, as its host lists it.
+    public let provider: String
 
     public init(
         name: String, host: String, directory: String, branch: String? = nil, reach: Reach,
         connecting: Bool = false, descendants: Int = 0, backgroundJobs: Int = 0, closeHeld: Bool = false,
-        filing: Filing = .open, topLevel: Bool = true, native: Bool = false
+        filing: Filing = .open, topLevel: Bool = true,
+        native: Bool = false, settle: SettleWarning? = nil, provider: String = ""
     ) {
         self.name = name
         self.host = host
@@ -53,6 +59,8 @@ public struct ChatSubject: Equatable, Sendable {
         self.filing = filing
         self.topLevel = topLevel
         self.native = native
+        self.settle = settle
+        self.provider = provider
     }
 
     public var reachable: Bool { reach.online }
@@ -418,19 +426,25 @@ public struct ChatScreen: View {
     }
 
     /// What closing would cut short, when anything.
-    static func closeCuts(model: ChatModel, subject: ChatSubject, descendants: Int) -> String? {
-        ChatWords.closeCuts(
-            name: subject.name, phase: model.frame?.phase,
-            jobs: max(subject.backgroundJobs, model.overview?.jobs.count ?? 0),
-            subAgents: descendants)
+    static func closeCuts(subject: ChatSubject) -> String? {
+        subject.settle.flatMap { ChatWords.closeCuts(name: subject.name, $0) }
     }
 
-    /// Closes at once, or asks first when that would cut work short.
+    /// What settling this agent ends for good, when its program cannot
+    /// reopen the conversation; nil when a message resumes it.
+    static func endsForGood(model: ChatModel, subject: ChatSubject) -> String? {
+        subject.settle.flatMap {
+            ChatWords.settleEndsForGood(provider: model.frame?.provider.name ?? subject.provider, $0)
+        }
+    }
+
+    /// Closes at once, or asks first when that would cut work short or end
+    /// a conversation that cannot be reopened.
     private func close() {
-        if Self.closeCuts(model: model, subject: subject, descendants: descendants) == nil {
-            actions(.close)
-        } else {
+        if subject.settle?.asks == true {
             showing = .close
+        } else {
+            actions(.close)
         }
     }
 
@@ -718,8 +732,8 @@ public struct ChatStanding: View {
                 }
             case .close?:
                 CloseCard(
-                    name: subject.name, cuts: ChatScreen.closeCuts(model: model, subject: subject, descendants: descendants) ?? "",
-                    cancel: { showing = nil }
+                    name: subject.name, cuts: ChatScreen.closeCuts(subject: subject),
+                    endsForGood: ChatScreen.endsForGood(model: model, subject: subject), cancel: { showing = nil }
                 ) {
                     showing = nil
                     actions(.close)
@@ -735,13 +749,13 @@ public struct ChatStanding: View {
             case .settings?:
                 if let settings = model.settings {
                     SettingsCard(
-                        view: settings, kind: model.frame?.kind, change: { model.change($0) },
+                        view: settings, provider: model.frame?.provider, change: { model.change($0) },
                         close: { showing = nil })
                 } else {
                     composerStack
                 }
             case .plus?:
-                PlusCard(settings: model.settings, attach: { choice in
+                PlusCard(settings: model.settings, capabilities: model.frame?.capabilities, attach: { choice in
                     showing = nil
                     focused = false
                     actions(.attach(choice))
@@ -815,11 +829,12 @@ public struct ChatStanding: View {
         // A sign-in problem stands above a composer that still sends:
         // sending is how someone who signed in elsewhere tries again. A
         // provider subagent takes no messages, so it has no notice.
-        if let signIn = model.frame?.signIn, model.frame?.composer.mode.nativeStop == nil {
-            let kind = model.frame?.kind
+        if let signIn = model.frame?.signIn, model.frame?.composer.mode.nativeStop == nil,
+            model.frame?.composer.mode != .ended
+        {
             FootCard(
-                kind: "sign-in", title: ChatWords.needsSignIn(kind),
-                detail: ChatWords.signInDetail(signIn, kind: kind, host: subject.host))
+                kind: "sign-in", title: ChatWords.needsSignIn(signIn.providerName),
+                detail: ChatWords.signInDetail(signIn, host: subject.host))
         }
         if showing != .plus {
             ChatDock(
@@ -835,6 +850,17 @@ public struct ChatStanding: View {
             NativeComposer(
                 model: model, stop: stop, activity: model.frame?.composer.activity,
                 activitySubject: activitySubject)
+        } else if model.frame?.composer.mode == .ended {
+            // Its program cannot reopen the conversation: there is nowhere
+            // to type, only what says so.
+            let ended = ChatWords.endedForGood(provider: model.frame?.provider.name ?? "")
+            Text(ended)
+                .designFont(.detail, design)
+                .foregroundStyle(design.inkMuted.color)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .identified("chat.ended", label: ended)
         } else {
             ComposerBox(
                 model: model, placeholder: placeholder, activity: model.frame?.composer.activity,
@@ -864,7 +890,7 @@ public struct ChatStanding: View {
             reach: subject.reach, connecting: subject.connecting, working: working, limit: limit)
     }
 
-    private var activitySubject: String? {
+    private var activitySubject: ChatWords.Subject? {
         guard case .running(let key)? = model.frame?.composer.activity?.kind else { return nil }
         return model.cell(for: key).row.flatMap(ChatWords.subject(of:))
     }
@@ -1017,10 +1043,15 @@ private struct RenameCard: View {
 private struct CloseCard: View {
     @Environment(\.design) private var design
     let name: String
-    /// What the close cuts short.
-    let cuts: String
+    /// What the close cuts short, when anything.
+    let cuts: String?
+    /// That settling ends the conversation for good, for an agent that
+    /// cannot be resumed.
+    let endsForGood: String?
     let cancel: () -> Void
     let confirm: () -> Void
+
+    private var said: String { [cuts, endsForGood].compactMap { $0 }.joined(separator: " ") }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1028,13 +1059,20 @@ private struct CloseCard: View {
                 .designFont(.screenTitle, design)
                 .foregroundStyle(design.ink.color)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(cuts)
-                .designFont(.detail, design)
-                .foregroundStyle(design.ink.color)
-                .fixedSize(horizontal: false, vertical: true)
-                .identified("chat.settle.cuts", label: cuts)
+            if let cuts {
+                Text(cuts)
+                    .designFont(.detail, design)
+                    .foregroundStyle(design.ink.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .identified("chat.settle.cuts", label: cuts)
+            }
             Consequence("xmark", kept: false, String(localized: "Settling stops it now."))
-            Consequence("checkmark", kept: true, String(localized: "Its chat and edits stay. A message resumes it."))
+            if let endsForGood {
+                Consequence("xmark", kept: false, endsForGood)
+                Consequence("checkmark", kept: true, String(localized: "Its chat and edits stay."))
+            } else {
+                Consequence("checkmark", kept: true, String(localized: "Its chat and edits stay. A message resumes it."))
+            }
             ButtonPair {
                 choiceButton(String(localized: "Cancel"), kind: .outline, id: "chat.settle.cancel", action: cancel)
                 choiceButton(String(localized: "Settle"), kind: .destructive, id: "chat.settle.confirm", action: confirm)
@@ -1042,7 +1080,7 @@ private struct CloseCard: View {
         }
         .padding(16)
         .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
-        .identified("chat.settle.card", label: cuts)
+        .identified("chat.settle.card", label: said)
     }
 }
 

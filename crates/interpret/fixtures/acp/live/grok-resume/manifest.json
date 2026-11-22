@@ -1,0 +1,25 @@
+{
+  "spec": "grok-resume",
+  "recorded": {
+    "provider": "grok",
+    "version": "1.0.89",
+    "model": "grok-4.7-build-fast",
+    "at": "2026-11-20T19:27:46.825021Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:0df8654d7db151329d4e2e8421caa8355c7dcbae128d98ba15307e7235991648",
+    "spawn.jsonl": "sha256:c690171e8cd08c869a355541455252bd3b39c1b6591ac4f2fe890ab1beb1afa2"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 301,
+    "personal_identifiers": 7
+  },
+  "session_ids": [
+    "01a1fa63-3aa8-7e91-8049-b0478e86003d"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a prompt, the process ended, then session/resume in a new process and a prompt"
+  }
+}

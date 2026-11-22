@@ -1,0 +1,10 @@
+{
+  "about": "antigravity 1.5.13, recorded live: a shell command needing permission, allowed once",
+  "spec": {
+    "provider": "antigravity"
+  },
+  "recording": {
+    "path": "live/agy-allow/io.jsonl",
+    "format": "acp_io"
+  }
+}

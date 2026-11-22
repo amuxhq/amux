@@ -85,6 +85,12 @@ pub struct Launch {
     pub install_path: PathBuf,
     pub claude_command: String,
     pub codex_command: String,
+    /// The ACP agent programs this host knows: the built-ins and a person's
+    /// own, merged. Which of them it offers is decided as each is needed, by
+    /// whether its command is found then. None by default: whoever starts
+    /// the daemon names them, so a test never meets the agents installed
+    /// on the machine it runs on.
+    pub agents: Vec<crate::agents::AgentProgram>,
     /// Environment additions for every provider child.
     pub provider_env: HashMap<String, String>,
     pub agent: settings::AgentSettings,
@@ -171,6 +177,7 @@ impl Default for Launch {
             install_path: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("amux")),
             claude_command: "claude".to_owned(),
             codex_command: "codex".to_owned(),
+            agents: Vec::new(),
             provider_env: HashMap::new(),
             agent: settings::AgentSettings::default(),
             core: daemon_core::Settings::default(),
@@ -245,6 +252,22 @@ pub enum RegistryError {
     Worktree(#[from] git_facts::WorktreeError),
     #[error("{}", attachments::UNREADABLE)]
     UnreadableAttachment,
+    /// An ACP agent no built-in and no `[agents.<id>]` entry names.
+    #[error(
+        "this device knows no agent {0:?}; an agent of your own is added to the config \
+         under [agents.{0}]"
+    )]
+    UnknownAgent(String),
+    /// An ACP agent whose command is not found where it is looked for.
+    #[error(
+        "{name} is not installed on this device: amux runs {command:?} and it is not on \
+         the PATH amux starts agents with"
+    )]
+    AgentNotInstalled { name: String, command: String },
+    /// The agent's conversation cannot be reopened by a new process of its
+    /// program, so the agent ended for good with its last process.
+    #[error("agent {0} cannot reopen its conversation, so it ended for good with its process")]
+    Unresumable(AgentId),
     #[error("{}", kind_not_run_words(.host, *.kind, *.runs_none))]
     KindNotRun {
         host: String,
@@ -298,6 +321,13 @@ fn kind_not_run_words(host: &str, kind: Kind, runs_none: bool) -> String {
         Kind::ClaudePty => "terminal Claude",
         Kind::ClaudeSdk => "headless Claude",
         Kind::Codex => "Codex",
+        // A host that runs Claude and Codex but none of these is one built
+        // before them.
+        Kind::Acp => {
+            return format!(
+                "{host} runs no agents but Claude and Codex; update amux there to run others"
+            );
+        }
         Kind::Unspecified => "these",
     };
     format!("{host} does not run {kind} agents")
@@ -331,6 +361,9 @@ impl RegistryError {
             | Self::NoFarCwd(_)
             | Self::BadName(_) => ErrorCode::InvalidArgument,
             Self::KindNotRun { .. }
+            | Self::UnknownAgent(_)
+            | Self::AgentNotInstalled { .. }
+            | Self::Unresumable(_)
             | Self::ParentEnded(_)
             | Self::HasParent(_)
             | Self::Subagent(_)
@@ -710,13 +743,14 @@ impl ProfileRuntime {
             pins,
         } = profile;
         let offers = crate::offers::Offers::load(&dir, &launch);
+        let suspension = launch.experiments.is_on(&settings::experiments::SUSPENSION);
         let options = daemon_core::StartOptions {
             generation,
             agents: dir.join(AGENTS),
             replicas: dir.join(crate::install::REPLICAS),
             budget: launch.step_budget,
             workspaces: launch.experiments.is_on(&settings::experiments::WORKSPACES),
-            suspension: launch.experiments.is_on(&settings::experiments::SUSPENSION),
+            suspension,
             reviews: launch.experiments.is_on(&settings::experiments::REVIEWS),
             rebooted,
         };
@@ -772,6 +806,7 @@ impl ProfileRuntime {
         runtime.tell_own_host();
         runtime.refresh_folders();
         runtime.refresh_folders_now_and_then();
+        runtime.refresh_agents();
         runtime
     }
 
@@ -911,11 +946,6 @@ impl ProfileRuntime {
 
     pub fn launch(&self) -> Launch {
         self.launch.lock().unwrap().clone()
-    }
-
-    /// Which Claude a new agent here runs, as the host publishes it.
-    pub(crate) fn launch_claude_kind(&self) -> wire::Kind {
-        self.launch.lock().unwrap().claude_kind
     }
 
     /// The settings the profile's core reads, without the rest of
@@ -1071,15 +1101,10 @@ impl ProfileRuntime {
         }
         let picked =
             spec::picked_at_creation(&agent, request.remember_model, request.remember_effort);
-        let provider = match kind {
-            Kind::Codex => crate::Provider::Codex,
-            _ => crate::Provider::Claude,
-        };
-        let filled = spec::with_remembered(
-            &agent,
-            &self.launch().new_agent,
-            self.offers().offered(provider).as_ref(),
-        );
+        // The host's copy of what the provider offers, which says which
+        // efforts a remembered model takes.
+        let offered = self.offers().offered(agent.provider_id());
+        let filled = spec::with_remembered(&agent, &self.launch().new_agent, offered.as_ref());
         let resolved = spec::resolve(&filled);
         let bootstrap = request
             .initial_prompt
@@ -1144,7 +1169,7 @@ impl ProfileRuntime {
                 offered: None,
                 base_branch: None,
             },
-        );
+        )?;
         let recent = Path::new(&cwd)
             .canonicalize()
             .ok()
@@ -1362,9 +1387,12 @@ impl ProfileRuntime {
         let Some(previous) = previous else {
             return Ok(None);
         };
+        if previous.kind() == Kind::Acp && !acp_reopens(snapshot) {
+            return Err(RegistryError::Unresumable(id));
+        }
         let latest = last_settings(snapshot, previous.kind());
         let resolved = spec::carry(&previous, latest);
-        Ok(Some(spec::build(
+        spec::build(
             &self.launch(),
             spec::Incarnation {
                 agent_id: id.as_bytes(),
@@ -1379,7 +1407,8 @@ impl ProfileRuntime {
                 offered: None,
                 base_branch: previous.base_branch.clone(),
             },
-        )))
+        )
+        .map(Some)
     }
 
     /// What the host's provider offers, for a kind that cannot ask its
@@ -1390,7 +1419,7 @@ impl ProfileRuntime {
         if kind != Kind::ClaudePty {
             return None;
         }
-        self.folder_catalogue(crate::Provider::Claude, Path::new(cwd))
+        self.folder_catalogue(wire::agents::CLAUDE, Path::new(cwd))
             .await
             .ok()
             .map(|offered| wire::Catalogue {
@@ -1930,9 +1959,35 @@ impl ProfileRuntime {
     }
 
     /// Counts what one ingest step committed.
-    pub(crate) fn ingested(&self, report: &daemon_core::Ingested) {
+    pub(crate) fn ingested(self: &Arc<Self>, report: &daemon_core::Ingested) {
         if report.frames == 0 {
             return;
+        }
+        // An ACP agent met a sign-in, or found it gone: the host's entry
+        // says so now, not at the next ask of what the agent offers.
+        if let Some((provider, state)) = &report.acp_sign_in
+            && self.offers().signed_in(provider) != Some(*state != wire::SignInState::SignedOut)
+            && let Ok(handle) = tokio::runtime::Handle::try_current()
+        {
+            let runtime = Arc::downgrade(self);
+            let provider = provider.clone();
+            handle.spawn(async move {
+                if let Some(runtime) = runtime.upgrade()
+                    && let Err(error) = runtime.agent_catalogue(&provider).await
+                {
+                    tracing::debug!(provider, %error, "republishing an agent's sign-in");
+                }
+            });
+        }
+        // A person's pick the agent's program took: kept off the core's
+        // thread, as a pick made at creation is.
+        if let Some(taken) = &report.picked
+            && let Ok(kind) = Kind::try_from(report.kind)
+            && let Some(picked) = spec::Picked::taken(kind, &report.provider, taken)
+            && let Ok(handle) = tokio::runtime::Handle::try_current()
+        {
+            let remember = self.remember_pick.clone();
+            handle.spawn_blocking(move || remember.keep(picked));
         }
         self.wrote();
         self.ingested_frames
@@ -1941,7 +1996,7 @@ impl ProfileRuntime {
             .fetch_add(u64::from(report.skipped), Ordering::Relaxed);
         if report.turn_ends > 0
             && self.analytics.is_on()
-            && let Some(kind) = crate::telemetry::kind_coded(report.kind)
+            && let Some(kind) = crate::telemetry::kind_coded(report.kind, &report.provider)
         {
             self.turns.add(kind, report.turn_ends);
         }
@@ -2251,11 +2306,30 @@ fn registry_error(id: AgentId, error: CallError) -> RegistryError {
         Refusal::Worktree(error) => RegistryError::Refused(error),
         Refusal::Store(words) => RegistryError::Core(words),
         Refusal::Subagent(words) => RegistryError::Subagent(words),
+        Refusal::Spec(error) => RegistryError::Refused(error),
     }
 }
 
 pub(crate) fn ms(ms: i64) -> Duration {
     Duration::from_millis(ms.max(0) as u64)
+}
+
+/// Whether an ACP agent's next process may start, as its newest snapshot
+/// `body` says. One with no snapshot or no conversation yet has nothing to
+/// lose and starts its first. One with a conversation starts only when its
+/// program's own `initialize` answer offered to resume or load it: a
+/// snapshot that does not say counts as cannot, so a fresh conversation is
+/// never started in place of the old one.
+fn acp_reopens(body: Option<&[u8]>) -> bool {
+    use prost::Message as _;
+    let Some(snapshot) = body.and_then(|body| wire::AcpSnapshot::decode(body).ok()) else {
+        return true;
+    };
+    snapshot.session_id.is_none()
+        || matches!(
+            snapshot.reopen(),
+            wire::AcpReopen::Resume | wire::AcpReopen::Load
+        )
 }
 
 /// The model, permission, mode and effort an agent last ran with, as its
@@ -2279,6 +2353,16 @@ fn last_settings(body: Option<&[u8]>, kind: Kind) -> spec::Settings {
                 model: snapshot.model,
                 permission: snapshot.permission,
                 mode: snapshot.mode,
+                effort: snapshot.effort,
+            })
+            .unwrap_or_default(),
+        // An ACP agent's permission is its mode, whose default comes from
+        // the agent's own settings and is never carried over.
+        Kind::Acp => wire::AcpSnapshot::decode(body)
+            .map(|snapshot| spec::Settings {
+                model: snapshot.model,
+                permission: None,
+                mode: None,
                 effort: snapshot.effort,
             })
             .unwrap_or_default(),

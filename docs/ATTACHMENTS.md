@@ -191,11 +191,36 @@ names it ([agent tools](AGENT_TOOLS.md#attach)); no daemon call is made. The
 tool's own step carries the attachment, read from the element it returned
 (whose path is this host's, so it is not shown as text). The model may also
 put the element in its reply, and the interpreter turns it into an
-attachment on the reply's item when the reply completes. An
-image inside a Claude tool result takes the same lane without a tool: the
-interpreter decodes the base64 image block, hashes it, and emits a blob write
-with the step; the agent process writes the blob before it journals the step,
-and the tool's item carries the reference. The daemon does nothing at ingest.
+attachment on the reply's item when the reply completes. The daemon does
+nothing at ingest.
+
+**What an agent presents.** Anything an agent deliberately shows a person
+becomes an attachment, so every device can see it; what a tool saw is not
+presented and never becomes one. An image a Claude tool read stays inside the
+tool's result (a step recorded before this rule may still carry such images,
+and it still draws them), and so do the images and files inside an ACP
+agent's tool calls. Codex's image view and image generation steps keep their
+images, because those steps exist to show them. An ACP agent's reply can
+carry content blocks besides text. Those that hold bytes the agent sent
+itself become an attachment at its place in the reply's text:
+
+| Block in a reply | What the reply's item gets |
+| --- | --- |
+| `image` | The bytes decoded from base64 and written as a blob with the step, the agent process writing it before it journals the step, and an image attachment named `image-<n>` with its type's extension. |
+| `audio` | The same, as a file attachment named `audio-<n>`. |
+| `resource` (embedded) | Its text or bytes as a file attachment, named from the URI's last segment, with its type. |
+| `resource_link` | The link's name and URI as text, a local file's too. |
+
+A link to a local file is never read. Storing it would copy a file the
+agent only names into the agent's blobs, which the agent reads without
+asking and every device is sent, around the permission the `attach` tool
+asks for; an agent that means to show a file calls `attach`.
+
+The words of the reply also go through the element reader when the reply
+completes, as Claude's and Codex's do, so an element a model writes there
+becomes an attachment. A conversation an ACP agent replays when it is
+reopened is not drawn again, so nothing is attached twice, and a blob is
+named by its hash, so the same bytes are one file.
 
 **Reading.** `GetBlob(agent, hash)` reads the file whenever a client asks, from
 the node it is attached to. On a host holding a replica, a blob fetched
@@ -259,6 +284,7 @@ that provider reads (`crates/agent/src/provider.rs`):
 | `claude_pty` | The prompt typed into the terminal with each placeholder replaced by its element, blob paths included. |
 | `claude_sdk` | A user message whose text carries the elements with paths. When the prompt has images, the content is blocks instead: the text split at each image's element, with the image's bytes as a native image block right after it, typed by its bytes. An image whose bytes are not a native image gets no block. A page review's screenshots are images too, each a block after the review's element. |
 | `codex` | The turn's input with each attachment appended after the text as its element text naming its blob's path, and an image whose bytes are a native image then as a `localImage` item naming the same path; a page review's screenshots follow its element the same way. |
+| `acp` | A `session/prompt` whose text blocks carry each element with its path at its place. After an image's element comes an `image` block with its base64 bytes, when the agent's `initialize` said it takes images and the bytes are a native image. After a file's element (or a patch, or an image sent as no image block) comes an embedded `resource` block with its contents, text where they are UTF-8, when the agent said it takes embedded context. What the agent takes neither way reaches it as the element alone, and clients refuse an attachment the agent's capabilities rule out before it is uploaded. |
 
 **Between agents.** An agent message carries attachments as a prompt does:
 An `Envelope`'s message body holds positioned text and the ordered

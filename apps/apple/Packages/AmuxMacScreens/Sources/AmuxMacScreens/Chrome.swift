@@ -474,6 +474,20 @@ struct Icon: View {
     }
 }
 
+/// The marks of the agent programs the app carries one for, each a drawing
+/// in `Icons/` named `provider-<id>` after the id its host lists it by. Only
+/// a mark whose owner's terms let the app carry it is there (`Icons/NOTICE`
+/// says where each came from); any other agent, a person's own among them,
+/// is named in its mark's place, never given one made up for it.
+@MainActor
+enum ProviderMark {
+    /// The icon name of `provider`'s mark; nil when the app carries none.
+    static func glyph(_ provider: String) -> String? {
+        let name = "provider-\(provider)"
+        return Icons.has(name) ? name : nil
+    }
+}
+
 /// The icons, read once each per drawn size from the package's resources.
 @MainActor
 enum Icons {
@@ -532,6 +546,7 @@ enum Icons {
         "globe": "globe",
         "hand": "hand.raised",
         "image": "photo",
+        "info": "info.circle",
         "laptop": "laptopcomputer",
         "layers": "square.stack",
         "lightbulb": "lightbulb",
@@ -581,6 +596,7 @@ enum Icons {
     ]
 
     private static var loaded: [String: NSImage] = [:]
+    /// Each drawing's source by name; empty for a name with none.
     private static var sources: [String: String] = [:]
 
     /// One of the app's own drawings, as a template image.
@@ -592,11 +608,18 @@ enum Icons {
         return image
     }
 
+    /// Whether the app carries a drawing by this name.
+    static func has(_ name: String) -> Bool {
+        source(name) != nil
+    }
+
     private static func source(_ name: String) -> String? {
-        if let svg = sources[name] { return svg }
+        // A name looked for and not found is remembered too: a fleet row
+        // asks after its agent's mark each time it draws.
+        if let svg = sources[name] { return svg.isEmpty ? nil : svg }
         let url = Bundle.module.url(forResource: name, withExtension: "svg", subdirectory: "Icons")
         let svg = url.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
-        sources[name] = svg
+        sources[name] = svg ?? ""
         return svg
     }
 }

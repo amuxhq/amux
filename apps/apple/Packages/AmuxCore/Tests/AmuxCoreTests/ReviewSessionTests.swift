@@ -88,6 +88,7 @@ private final class ReviewChat: ChatSource, @unchecked Sendable {
     func change(_ setting: SettingChange) async -> ActOutcome? { .done }
     func resume(with draft: Draft) async -> ActOutcome? { .done }
     func pageOlder(_ rows: UInt32) async -> PageOutcome? { .arrived(0) }
+    func attachmentRefusal(name: String, mime: String, size: Int) -> String? { nil }
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure> {
         .failure(RuntimeFailure("no blobs"))
     }
@@ -485,6 +486,7 @@ private final class ReviewChatClosing: ChatSource, @unchecked Sendable {
     func change(_ setting: SettingChange) async -> ActOutcome? { nil }
     func resume(with draft: Draft) async -> ActOutcome? { nil }
     func pageOlder(_ rows: UInt32) async -> PageOutcome? { nil }
+    func attachmentRefusal(name: String, mime: String, size: Int) -> String? { nil }
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure> {
         .failure(RuntimeFailure("closed"))
     }

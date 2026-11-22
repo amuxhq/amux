@@ -1,0 +1,25 @@
+{
+  "spec": "agy-read",
+  "recorded": {
+    "provider": "antigravity",
+    "version": "1.5.13",
+    "model": "gemini-3.8-flash",
+    "at": "2026-11-20T19:27:43.958889Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:13b497d766be3338e2408c4cdeb7e0f747a68c3d84e11541b7ec73ca99f36741",
+    "spawn.jsonl": "sha256:ce7f820044a03e8b9618e1bdebb6e743a271fe1e6ad80ae0ee9f31efd54657ba"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 8,
+    "personal_identifiers": 3
+  },
+  "session_ids": [
+    "6652ff21-c5ee-4e17-a9ab-f4c33350173a"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a prompt that has the agent read a file in its folder"
+  }
+}

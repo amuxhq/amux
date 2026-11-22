@@ -4,15 +4,15 @@ import AmuxWords
 import SwiftUI
 
 /// What the agent offers to change, as the settings view lists it: the
-/// models, the current model's efforts, the permissions and (Codex) the
-/// modes, each from the agent's catalogue with the current value marked. A
+/// models, the current model's efforts, the permissions and the modes, each from the agent's catalogue with the current value marked. A
 /// pick is sent at once and the mark moves when the agent reports the new
 /// value. Where the view says a setting changes otherwise, the card shows
 /// the current value and says how.
 struct SettingsCard: View {
     @Environment(\.design) private var design
     let view: SettingsView
-    let kind: Kind?
+    /// The agent's program as its host names it.
+    let provider: ProviderLabel?
     let change: (SettingChange) -> Void
     let close: () -> Void
     @State private var height: CGFloat = 0
@@ -49,7 +49,7 @@ struct SettingsCard: View {
         }
         .padding(16)
         .frosted(RoundedRectangle(cornerRadius: design.metrics.floatRadius, style: .continuous))
-        .identified("chat.settings", value: kind.map { "\($0)" })
+        .identified("chat.settings", value: provider?.provider)
     }
 
     private var sections: some View {
@@ -126,7 +126,7 @@ struct SettingsCard: View {
     @ViewBuilder
     private var permissions: some View {
         VStack(alignment: .leading, spacing: 4) {
-            heading(ChatWords.permissionsHeading(kind))
+            heading(ChatWords.permissionsHeading(provider?.name))
             if view.changeable.permission == .cycle {
                 HStack(alignment: .center, spacing: 10) {
                     if let current = view.permissions.first(where: { $0.current }) {

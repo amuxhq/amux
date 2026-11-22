@@ -1,0 +1,10 @@
+{
+  "about": "opencode 1.18.33, recorded live: a prompt that has the agent read a file in its folder",
+  "spec": {
+    "provider": "opencode"
+  },
+  "recording": {
+    "path": "live/opencode-read/io.jsonl",
+    "format": "acp_io"
+  }
+}

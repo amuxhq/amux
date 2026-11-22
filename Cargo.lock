@@ -3,6 +3,14 @@
 version = 4
 
 [[package]]
+name = "acp-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -22,6 +30,7 @@ dependencies = [
 name = "agent"
 version = "0.1.0"
 dependencies = [
+ "acp-protocol",
  "agent-core",
  "agent-dir",
  "anyhow",
@@ -52,7 +61,9 @@ dependencies = [
  "tokio-tungstenite",
  "tonic",
  "tower",
+ "url",
  "uuid",
+ "windows-sys 0.61.2",
  "wire",
  "zstd",
 ]
@@ -2075,6 +2086,7 @@ dependencies = [
 name = "interpret"
 version = "0.1.0"
 dependencies = [
+ "acp-protocol",
  "attachments",
  "base64 0.22.1",
  "claude-protocol",
@@ -3190,6 +3202,7 @@ checksum = "95067976aca6421a523e491fce939a3e65249bac4b977adee0ee9771568e8aa3"
 name = "provider-fakes"
 version = "0.1.0"
 dependencies = [
+ "acp-protocol",
  "claude-protocol",
  "codex-protocol",
  "futures-util",

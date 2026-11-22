@@ -1,0 +1,25 @@
+{
+  "spec": "opencode-question",
+  "recorded": {
+    "provider": "opencode",
+    "version": "1.18.33",
+    "model": "opencode/deepseek-v4.1-flash-free",
+    "at": "2026-11-20T19:27:48.330517Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:680ae0cf8b8c0c50e58a3585424e5c0a2b64cf939219ff6d7e39bc44b14b6ad3",
+    "spawn.jsonl": "sha256:e2c00f078d9f3175fa6976b8105e3438ead832b8438b48007974577d4e274113"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 2,
+    "personal_identifiers": 0
+  },
+  "session_ids": [
+    "ses_e0595fdd8ffeXJximwK6kAMMXl"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a prompt asking the agent to put a question to the person with its own question tool rather than in chat"
+  }
+}

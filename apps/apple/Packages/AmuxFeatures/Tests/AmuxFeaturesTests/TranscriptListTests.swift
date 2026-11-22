@@ -321,7 +321,11 @@ private final class StubChat: ChatSource, @unchecked Sendable {
     }
     private func frame() -> ChatFrame {
         ChatFrame(
-            agent: AgentKey(host: [1], agent: [2]), name: "a", kind: .claudeSdk, phase: .idle,
+            agent: AgentKey(host: [1], agent: [2]), name: "a",
+            provider: ProviderLabel(provider: "claude", name: "Claude"),
+            capabilities: Capabilities(
+                stopsJob: true, switchesBack: false, attachable: false, resumable: true, sendsNow: true, images: true,
+                files: true, passesUnknownCommands: true), phase: .idle,
             composer: ComposerView(mode: .send, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: true,
             hasOlder: hasOlder, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil,
             context: nil, ended: nil, git: nil, reviewChip: nil, signIn: nil)
@@ -345,6 +349,7 @@ private final class StubChat: ChatSource, @unchecked Sendable {
     func change(_ setting: SettingChange) async -> ActOutcome? { nil }
     func resume(with draft: Draft) async -> ActOutcome? { nil }
     func pageOlder(_ rows: UInt32) async -> PageOutcome? { nil }
+    func attachmentRefusal(name: String, mime: String, size: Int) -> String? { nil }
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure> {
         .failure(RuntimeFailure("stub"))
     }

@@ -1,0 +1,34 @@
+
+  soaker │ /tmp/journey/aj-xxxxxxxx/net/desk/work                                            [Diff] │ [Home]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    Run the soak.                                                                                    hh:mm
+
+
+    Starting the soak.
+
+    Working · <t>
+
+    Then log the peak.                                                                              queued
+    And email me.                                                                                   queued
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message soaker                                                                                       │
+  ╰────────────────────────────────────────────────────────────────────────────────── fake-model (medium) ─╯
+
+  enter queue   ctrl+x interrupt   shift+tab mode   ctrl+a more

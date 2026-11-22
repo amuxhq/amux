@@ -21,10 +21,12 @@ pub fn corpus(kind: Kind) -> &'static Corpus {
     static SDK: OnceLock<Corpus> = OnceLock::new();
     static CODEX: OnceLock<Corpus> = OnceLock::new();
     static PTY: OnceLock<Corpus> = OnceLock::new();
+    static ACP: OnceLock<Corpus> = OnceLock::new();
     let (cell, root) = match kind {
         Kind::ClaudeSdk => (&SDK, "../interpret/fixtures/claude_sdk/live"),
         Kind::Codex => (&CODEX, "../interpret/fixtures/codex/live"),
         Kind::ClaudePty => (&PTY, "../interpret/fixtures/claude_pty/live"),
+        Kind::Acp => (&ACP, "../interpret/fixtures/acp/live"),
     };
     cell.get_or_init(|| {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(root);
@@ -64,10 +66,23 @@ impl Host {
         script: Value,
         exempt: &'static [&'static str],
     ) -> Self {
+        Self::spawn_with(kind, binary, args, script, exempt, &[]).await
+    }
+
+    /// [`Host::spawn`] with more of the fake's environment.
+    pub async fn spawn_with(
+        kind: Kind,
+        binary: &str,
+        args: &[&str],
+        script: Value,
+        exempt: &'static [&'static str],
+        env: &[(&str, &std::ffi::OsStr)],
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let path = script_file(dir.path(), script);
         let mut child = tokio::process::Command::new(binary)
             .args(args)
+            .envs(env.iter().copied())
             .env(provider_fakes::SCRIPT_ENV, &path)
             // Keeps a fake Claude's transcript out of the person's own
             // `~/.claude`, where it would otherwise write it as Claude does.

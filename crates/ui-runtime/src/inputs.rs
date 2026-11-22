@@ -1,10 +1,11 @@
-//! Inputs in each kind's own arm. A person's acts on a chat are the same on
-//! every kind; which message carries them is the kind's.
+//! A person's acts on a chat as inputs, under fresh ids. The acts are the
+//! same on every kind; which message carries them is the kind's, which
+//! [`ui_view::act_input`] knows.
 
+use ui_view::Act;
 use wire::{
-    Attachment, ClaudePtyInput, ClaudeSdkInput, CodexInput, Input, Interrupt, Kind, PromptInput,
-    PromptSubmission, SendQueuedNow, WithdrawQueued, claude_pty_input, claude_sdk_input,
-    codex_input,
+    AgentCapabilities, Attachment, Input, Kind, PromptInput, PromptSubmission, SendQueuedNow,
+    StopJob, WithdrawQueued,
 };
 
 /// A fresh client-generated input id.
@@ -12,43 +13,8 @@ pub fn input_id() -> Vec<u8> {
     uuid::Uuid::new_v4().as_bytes().to_vec()
 }
 
-/// One act, before it is put in a kind's arm.
-enum Act {
-    Prompt(PromptInput),
-    Withdraw(WithdrawQueued),
-    SendNow(SendQueuedNow),
-    Interrupt,
-}
-
 fn wrap(kind: Kind, act: Act) -> Option<Input> {
-    let of = match kind {
-        Kind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
-            of: Some(match act {
-                Act::Prompt(prompt) => claude_pty_input::Of::Prompt(prompt),
-                Act::Withdraw(withdraw) => claude_pty_input::Of::Withdraw(withdraw),
-                Act::SendNow(now) => claude_pty_input::Of::SendNow(now),
-                Act::Interrupt => claude_pty_input::Of::Interrupt(Interrupt {}),
-            }),
-        }),
-        Kind::ClaudeSdk => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
-            of: Some(match act {
-                Act::Prompt(prompt) => claude_sdk_input::Of::Prompt(prompt),
-                Act::Withdraw(withdraw) => claude_sdk_input::Of::Withdraw(withdraw),
-                Act::SendNow(now) => claude_sdk_input::Of::SendNow(now),
-                Act::Interrupt => claude_sdk_input::Of::Interrupt(Interrupt {}),
-            }),
-        }),
-        Kind::Codex => wire::KindInput::Codex(CodexInput {
-            of: Some(match act {
-                Act::Prompt(prompt) => codex_input::Of::Prompt(prompt),
-                Act::Withdraw(withdraw) => codex_input::Of::Withdraw(withdraw),
-                Act::SendNow(now) => codex_input::Of::SendNow(now),
-                Act::Interrupt => codex_input::Of::Interrupt(Interrupt {}),
-            }),
-        }),
-        Kind::Unspecified => return None,
-    };
-    Some(Input::new(input_id(), of))
+    Some(Input::new(input_id(), ui_view::act_input(kind, act)?))
 }
 
 /// A first prompt for a create or a resume, under a fresh id.
@@ -93,8 +59,13 @@ pub fn withdraw(kind: Kind, queued_input_id: &[u8]) -> Option<Input> {
     )
 }
 
-/// Steers a queued prompt into the running turn.
-pub fn send_now(kind: Kind, queued_input_id: &[u8]) -> Option<Input> {
+/// Steers a queued prompt into the running turn; None for an agent not
+/// known to take one into its running turn, which sends it when the turn
+/// ends.
+pub fn send_now(kind: Kind, can: &AgentCapabilities, queued_input_id: &[u8]) -> Option<Input> {
+    if !can.sends_now {
+        return None;
+    }
     wrap(
         kind,
         Act::SendNow(SendQueuedNow {
@@ -107,39 +78,23 @@ pub fn interrupt(kind: Kind) -> Option<Input> {
     wrap(kind, Act::Interrupt)
 }
 
-/// Stops one background job by its key; None for a kind that cannot stop
-/// one job (terminal Claude).
-pub fn stop_job(kind: Kind, key: &str) -> Option<Input> {
-    let stop = wire::StopJob {
+/// Stops one background job by its key; None for an agent that cannot
+/// stop one job (terminal Claude, an ACP agent).
+pub fn stop_job(kind: Kind, can: &AgentCapabilities, key: &str) -> Option<Input> {
+    let stop = StopJob {
         key: key.to_owned(),
     };
-    match kind {
-        Kind::ClaudeSdk => Some(Input::new(
-            Vec::new(),
-            wire::ClaudeSdkInput {
-                of: Some(wire::claude_sdk_input::Of::StopJob(stop)),
-            },
-        )),
-        Kind::Codex => Some(Input::new(
-            Vec::new(),
-            wire::CodexInput {
-                of: Some(wire::codex_input::Of::StopJob(stop)),
-            },
-        )),
-        _ => None,
-    }
+    let mut input = wrap(kind, Act::StopJob(stop)).filter(|_| can.stops_job)?;
+    // The session gives it its id as it sends it.
+    input.input_id = Vec::new();
+    Some(input)
 }
 
-/// Takes terminal Claude's own view back to the agent's conversation; None
-/// for a kind whose view cannot switch away.
-pub fn switch_back(kind: Kind) -> Option<Input> {
-    use wire::claude_pty_input::Of;
-    (kind == Kind::ClaudePty).then(|| {
-        Input::new(
-            Vec::new(),
-            wire::ClaudePtyInput {
-                of: Some(Of::SwitchBack(wire::SwitchBack {})),
-            },
-        )
-    })
+/// Takes the agent's own view back to its conversation; None for an agent
+/// whose view cannot switch away (anything but terminal Claude).
+pub fn switch_back(kind: Kind, can: &AgentCapabilities) -> Option<Input> {
+    let mut input = wrap(kind, Act::SwitchBack).filter(|_| can.switches_back)?;
+    // The session gives it its id as it sends it.
+    input.input_id = Vec::new();
+    Some(input)
 }

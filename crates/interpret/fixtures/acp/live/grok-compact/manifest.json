@@ -1,0 +1,25 @@
+{
+  "spec": "grok-compact",
+  "recorded": {
+    "provider": "grok",
+    "version": "1.0.89",
+    "model": "grok-4.7-build-fast",
+    "at": "2026-11-20T19:27:44.513550Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:8f01872c6c89c47a6b2d1615d82940da101c56743159e49c7cd5d75b8c20998a",
+    "spawn.jsonl": "sha256:8aab213a2fb26391131f0a91634b225aee476835849fe455902b65583a019be5"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 153,
+    "personal_identifiers": 4
+  },
+  "session_ids": [
+    "01a1fa64-1bf8-7073-b8b9-f78f6d121812"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "one prompt, then the agent's own compact command"
+  }
+}

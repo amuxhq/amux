@@ -405,9 +405,17 @@ struct FleetRowView: View {
                 thirdLine
                 Spacer(minLength: 4)
                 if !row.native {
-                    Icon(Self.providerGlyph(row.card.kind), size: 12, brand: true)
-                        .foregroundStyle(Palette.textTertiary)
-                        .help(Self.providerName(row.card.kind))
+                    if let glyph = ProviderMark.glyph(row.card.provider) {
+                        Icon(glyph, size: 12, brand: true)
+                            .foregroundStyle(Palette.textTertiary)
+                            .help(row.card.providerName)
+                    } else {
+                        Text(row.card.providerName)
+                            .font(.ui(.meta))
+                            .foregroundStyle(Palette.textTertiary)
+                            .lineLimit(1)
+                            .layoutPriority(-1)
+                    }
                 }
             }
             .frame(height: 16)
@@ -449,7 +457,7 @@ struct FleetRowView: View {
     /// ask (its own or a member's), why it stopped, the step at work, or
     /// that its host cannot be reached.
     private var words: (text: String, color: Color)? {
-        if let loud = row.loud, let line = FleetWords.secondLine(loud.secondLine, kind: row.card.kind, now: now),
+        if let loud = row.loud, let line = FleetWords.secondLine(loud.secondLine, provider: row.card.providerName, now: now),
             line.ink == .ask
         {
             return ("\(loud.name): \(line.text)", Palette.you)
@@ -542,14 +550,6 @@ struct FleetRowView: View {
         return "\(seconds / 3600)h"
     }
 
-    static func providerGlyph(_ kind: Kind) -> String {
-        kind == .codex ? "provider-codex" : "provider-claude"
-    }
-
-    static func providerName(_ kind: Kind) -> String {
-        kind == .codex ? "Codex" : "Claude Code"
-    }
-
     /// "fix-scroll · build-box": the branch, and the host unless it goes
     /// without saying.
     private var place: String {
@@ -563,12 +563,12 @@ struct FleetRowView: View {
     /// What the row would say on its third line, as every client words it.
     private var said: (text: String, color: Color) {
         if let loud = row.loud,
-            let line = FleetWords.secondLine(loud.secondLine, kind: row.card.kind, now: now)
+            let line = FleetWords.secondLine(loud.secondLine, provider: row.card.providerName, now: now)
         {
             return ("\(loud.name): \(line.text)", color(line.ink))
         }
         if let line = FleetWords.secondLine(
-            row.secondLine, kind: row.card.kind, now: now, backgroundJobs: row.card.backgroundJobs)
+            row.secondLine, provider: row.card.providerName, now: now, backgroundJobs: row.card.backgroundJobs)
         {
             return (line.text, color(line.ink))
         }

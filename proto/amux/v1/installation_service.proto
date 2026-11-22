@@ -75,7 +75,10 @@ message Settings {
   // The repository list new-agent pickers offer, as canonical paths.
   repeated string repositories = 4;
   ChatIn chat_in = 5;
-  // Which Claude a new agent runs; KIND_UNSPECIFIED follows chat_in.
+  // Which Claude a new agent runs; KIND_UNSPECIFIED follows chat_in. The
+  // person's setting: the kind it resolves to is what the host's entry
+  // lists as the Claude provider's ProviderDescriptor.kind, which is what
+  // clients start Claude agents with.
   Kind claude_kind = 6;
   bool telemetry = 7;
   bool auto_reports = 8;

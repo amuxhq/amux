@@ -228,12 +228,19 @@ fn transcript_row(line: &str) -> Option<&str> {
         .strip_suffix('}')
 }
 
+/// The process a spawn or I/O line belongs to: its transport, and the
+/// process it names where the recorder numbers them. A recording of an
+/// ACP agent that was stopped and started again holds both processes on
+/// the one transport, `process` telling them apart (`agy-resume`).
 fn transport_of(value: &Value) -> String {
-    value
+    let transport = value
         .get("transport_id")
         .and_then(Value::as_str)
-        .unwrap_or("stdio")
-        .to_owned()
+        .unwrap_or("stdio");
+    match value.get("process").and_then(Value::as_str) {
+        Some(process) => format!("{transport}/{process}"),
+        None => transport.to_owned(),
+    }
 }
 
 fn decode_hex(hex: &str) -> Option<Vec<u8>> {

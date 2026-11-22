@@ -1,0 +1,10 @@
+{
+  "about": "antigravity 1.5.13, recorded live: a prompt that has the agent edit a file, its permission allowed once",
+  "spec": {
+    "provider": "antigravity"
+  },
+  "recording": {
+    "path": "live/agy-edit/io.jsonl",
+    "format": "acp_io"
+  }
+}

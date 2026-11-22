@@ -1,0 +1,47 @@
+shell |  | agents | 0,62,402,778
+chat |  | soaker | 0,116,402,724
+chat.row.prompt | Start the long job. |  | 16,124,370,40
+chat.prose.render |  | rendered | 242,134,130,20
+chat.row.prose | Starting the long job. | final | 16,176,370,20
+chat.prose.render |  | rendered | 16,176,370,20
+chat.row.stopped | You stopped it |  | 16,207,370,20
+chat.row.prompt | Run the soak. |  | 16,241,370,40
+chat.prose.render |  | rendered | 274,251,98,20
+chat.row.prose | Running the soak. | streaming | 16,293,370,20
+chat.prose.render |  | rendered | 16,293,370,20
+chat.dock |  | folded | 12,571,378,120
+chat.queued.0 | Then check the logs. | queued | 12,571,378,60
+chat.queued.0.withdraw | Withdraw |  | 344,579,40,44
+chat.queued.1 | And email me. | queued | 12,631,378,60
+chat.queued.1.withdraw | Withdraw |  | 344,639,40,44
+chat.activity | <volatile>
+chat.field | Queue a message |  | 28,750,346,24
+chat.attach | Attach | closed | 23,779,44,44
+chat.model | fake-model · medium |  | 71,779,163,44
+chat.dictate | Dictate | idle | 287,779,44,44
+chat.stop | Interrupt |  | 335,779,44,44
+chat.more | More |  | 350,66,28,36
+chat.header | /p/t/a/n/c/r/work · cabin | live | 76,66,178,36
+chat.title | soaker | soaker | 76,66,178,36
+ | Clock |  | 30,594,14,14
+ | Then check the logs. |  | 58,582,151,20
+ | queued |  | 58,604,46,16
+ | Withdraw |  | 344,579,40,44
+ | Clock |  | 30,654,14,14
+ | And email me. |  | 58,642,105,20
+ | queued |  | 58,664,46,16
+ | Withdraw |  | 344,639,40,44
+ | Working · <t> |  | 28,713,346,27
+ | Attach |  | 23,779,44,44
+ | fake-model · medium |  | 71,779,163,44
+ | Dictate |  | 287,779,44,44
+ | Interrupt |  | 335,779,44,44
+ | Start the long job. |  | 16,124,370,40
+ | Starting the long job. |  | 16,176,370,20
+ | You stopped it |  | 16,207,370,20
+ | Run the soak. |  | 16,241,370,40
+ | Running the soak. |  | 16,293,370,20
+BackButton | Agents |  | 16,62,44,44
+ | soaker, /p/t/a/n/c/r/work · cabin |  | 76,66,178,36
+ | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

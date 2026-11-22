@@ -20,6 +20,7 @@ people will notice updates the page that describes it.
   [Android app](guide/use/android.md),
   [Reviewing changes](guide/use/reviews.md),
   [Agents working together](guide/use/agents-working-together.md),
+  [Other agents](guide/use/other-agents.md),
   [Running amux on a server](guide/use/server.md),
   [Updates and channels](guide/use/updates.md),
   [Troubleshooting](guide/use/troubleshooting.md).
@@ -40,8 +41,10 @@ paths to the `.md` files, so they work both here and on the site.
   socket and raw attach, the tool server, exit and self-destruct.
 - [Provider crates](PROVIDER_CRATES.md) — each provider's protocol, host and client layers, who uses each, and
   the checks that hold them to the recordings.
-- [Interpreters](INTERPRETERS.md) — how terminal Claude, headless Claude and Codex output becomes chat items:
-  the step rule, checkpoints, redaction, provider crates, recordings and the coverage test.
+- [Interpreters](INTERPRETERS.md) — how terminal Claude, headless Claude, Codex and ACP agents' output becomes
+  chat items: the step rule, checkpoints, redaction, provider crates, recordings and the coverage test.
+- [ACP agents](ACP.md) — agents that speak the Agent Client Protocol: the layers, quirks by agent, resumability,
+  sign-in, the host's catalogue, capabilities and descriptors, and how to add a built-in.
 - [Journal and store](JOURNAL_AND_STORE.md) — journal segments, commit and revisions, durability, ingest, the
   store schema, own and replica rows, retention and disk-full.
 - [The wire](WIRE.md) — the amux.v1 services and who answers each, how a call is addressed to a host and who it

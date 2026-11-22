@@ -3,7 +3,8 @@
 //! host's name, capabilities and whether its rows are current. The core is
 //! told this host's own entry as the shell describes it, whenever what it
 //! is made of moves: the edge starting, signing in or out, a provider's
-//! offer read again, the settings changing its name or its Claude kind.
+//! offer read again, the settings changing its name, its Claude kind or
+//! its agents.
 
 use wire::HostEntry;
 
@@ -29,7 +30,7 @@ impl ProfileRuntime {
                 account_signed_in: edge.as_ref().and_then(|edge| edge.cloud().signed_in()),
             }),
             generation: self.generation(),
-            providers: self.offers().on_host(),
+            providers: self.offers().on_host(&self.launch()),
             standing: Some(wire::host_entry::Standing::Trusted(wire::Trusted {
                 reach: Some(wire::trusted::Reach::Online(
                     wire::RouteKind::Unspecified as i32,
@@ -37,7 +38,6 @@ impl ProfileRuntime {
                 current: true,
                 same_network: false,
             })),
-            claude_kind: self.launch_claude_kind() as i32,
             folders: self.folders(),
             push_key: self
                 .push_key

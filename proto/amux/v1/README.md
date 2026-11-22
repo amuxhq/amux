@@ -22,10 +22,10 @@ application channels on separate native streams.
 | `installation_service.proto` | `InstallationService`: the installation and its profiles |
 | `profile_admin_service.proto` | `ProfileAdminService`: one profile's account, pairing, peers and dump |
 | `pairing_service.proto` | `PairingService`: two hosts coming to trust each other |
-| `inventory.proto` | Hosts and agent rows |
-| `records.proto` | The kind-neutral session records |
+| `inventory.proto` | Hosts, the agent programs each runs, and agent rows |
+| `records.proto` | The kind-neutral session records, and what an agent can do (`AgentCapabilities`) |
 | `chat.proto` | What the kinds share inside a body |
-| `claude.proto`, `codex.proto` | The per-kind bodies |
+| `claude.proto`, `codex.proto`, `acp.proto` | The per-kind bodies: terminal and headless Claude, Codex, and every agent that speaks the Agent Client Protocol |
 | `agent_process.proto` | The agent process's spec, its `ctl.sock` and `pty.sock` frames, and what its tool server asks it on `private/agent.sock` |
 | `link.proto` | Host-to-host link control |
 | `dump.proto` | The diagnostic dump |
@@ -37,6 +37,16 @@ a call is addressed to, for what that host owns; a call's address is its
 authority, the host's id, and the node passes a call addressed to another
 host on to it unread. [The wire](../../../docs/WIRE.md#where-clients-call)
 says who calls what, and where.
+
+A `Kind` is an interpreter; which agent program it runs is a provider id, a
+plain string: `claude` (both Claude kinds), `codex`, or an ACP agent's
+(`antigravity`, `opencode`, `grok`, or one a person added in a host's
+config). Ids are strings rather than an enum because a person can add an
+agent no build knows. `ProviderOnHost`, `GetCatalogueRequest`, `Agent` and
+`AgentSpec` name a provider by its id. What a client offers for an agent it
+reads from `AgentCapabilities` and the host's `ProviderDescriptor`, never
+from the kind or the id, so an agent no client knows by name gets the same
+chat as the ones it does.
 
 ## Compatibility
 

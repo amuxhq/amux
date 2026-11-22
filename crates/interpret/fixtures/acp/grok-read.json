@@ -1,0 +1,10 @@
+{
+  "about": "grok 1.0.89, recorded live: a prompt that has the agent read a file in its folder",
+  "spec": {
+    "provider": "grok"
+  },
+  "recording": {
+    "path": "live/grok-read/io.jsonl",
+    "format": "acp_io"
+  }
+}

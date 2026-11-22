@@ -1,0 +1,118 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=1800000000000 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 1 fact {"channel":"rpc","json":{"id":"agent-initialize","jsonrpc":"2.0","result":{"agentCapabilities":{"loadSession":true},"protocolVersion":1}}}
+snapshot STARTING queue=[] working_on=- at=1800000000000 agent=my-own-agent session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=LOAD
+## 2 fact {"channel":"rpc","json":{"id":"agent-session","jsonrpc":"2.0","result":{"modes":{"availableModes":[{"id":"ask","name":"Ask"},{"id":"code","name":"Code"}],"currentModeId":"ask"},"sessionId":"s1"}}}
+effect session "s1"
+effect catalogue 7ec4ca40 models=[] commands=0 permissions=[] modes=[ask,code]
+item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
+snapshot catalogue 7ec4ca40
+snapshot IDLE queue=[] working_on=- at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=ask context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=LOAD
+## 3 input {"id":"i1","mode":{"value":"code"}}
+effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_mode\",\"params\":{\"modeId\":\"code\",\"sessionId\":\"s1\"}}"
+effect reply i1 accepted
+## 4 fact {"channel":"rpc","json":{"id":"amux-set-1","jsonrpc":"2.0","result":{}}}
+snapshot IDLE queue=[] working_on=- at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=LOAD
+## 5 agent_message {"envelope":"m1","from":"reviewer","text":"Please check the tests."}
+effect reply m1 accepted
+effect write "{\"id\":\"amux-prompt-6d31\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"[message from agent reviewer]\\nPlease check the tests.\",\"type\":\"text\"}],\"sessionId\":\"s1\"}}"
+item agent-message:6d31 agent_message final input=m1 at=1800000000000 text="Please check the tests."
+snapshot WORKING queue=[] working_on="Please check the tests." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=LOAD
+pending [m1]
+## 6 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"entries":[{"content":"Run the tests","priority":"high","status":"in_progress"},{"content":"Report","priority":"low","status":"pending"}],"sessionUpdate":"plan"}}}}
+snapshot WORKING queue=[] working_on="Please check the tests." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=? plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=LOAD
+## 7 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"cost":{"amount":0.25,"currency":"USD"},"sessionUpdate":"usage_update","size":200000,"used":1200}}}}
+snapshot WORKING queue=[] working_on="Please check the tests." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+## 8 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"text":"Checking.","type":"text"},"sessionUpdate":"agent_message_chunk"}}}}
+item message:1 message open at=1800000000000 text="Checking."
+## 9 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"kind":"execute","sessionUpdate":"tool_call","status":"pending","title":"Run cargo test","toolCallId":"c1"}}}}
+item message:1 message final at=1800000000000 text="Checking."
+item tool:c1 tool open at=1800000000000 text="" EXECUTE PENDING "Run cargo test"
+## 10 fact {"channel":"rpc","json":{"id":7,"jsonrpc":"2.0","method":"session/request_permission","params":{"options":[{"kind":"allow_once","name":"Allow","optionId":"yes"},{"kind":"reject_once","name":"Reject","optionId":"no"}],"sessionId":"s1","toolCall":{"toolCallId":"c1"}}}}
+item tool:c1 tool open at=1800000000000 text="" EXECUTE PENDING "Run cargo test"
+snapshot said "Checking."
+snapshot NEEDS_YOU queue=[] working_on="Please check the tests." at=1800000000000 agent=my-own-agent session=s1 asks=[ask-1:permission[yes=ALLOW_ONCE,no=REJECT_ONCE]] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+notice ask ask-1 other "" "Run cargo test" why="" more=0
+## 11 input {"answer":{"answer":{"option":"maybe"},"ask":"ask-1"},"id":"i2"}
+effect reply i2 rejected:UNSUPPORTED
+## 12 input {"id":"i3","interrupt":{}}
+effect write "{\"jsonrpc\":\"2.0\",\"method\":\"session/cancel\",\"params\":{\"sessionId\":\"s1\"}}"
+effect write "{\"id\":7,\"jsonrpc\":\"2.0\",\"result\":{\"outcome\":{\"outcome\":\"cancelled\"}}}"
+effect reply i3 accepted
+item tool:c1 tool open at=1800000000000 text="" EXECUTE PENDING "Run cargo test" decision=UNKNOWN
+snapshot WORKING queue=[] working_on="Please check the tests." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+## 13 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"text":" Stopping.","type":"text"},"sessionUpdate":"agent_message_chunk"}}}}
+item message:2 message open at=1800000000000 text=" Stopping."
+## 14 fact {"channel":"rpc","json":{"id":"amux-prompt-6d31","jsonrpc":"2.0","result":{"stopReason":"cancelled"}}}
+item message:2 message final at=1800000000000 text=" Stopping."
+item tool:c1 tool final at=1800000000000 text="" EXECUTE CANCELLED "Run cargo test" decision=UNKNOWN
+item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_INTERRUPTED started=1800000000000
+snapshot said "Stopping."
+snapshot IDLE queue=[] working_on="Please check the tests." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+pending []
+turn_end 1 last=message:2
+## 15 input {"id":"p1","prompt":{"text":"Write the summary."}}
+effect reply p1 accepted
+effect write "{\"id\":\"amux-prompt-7031\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Write the summary.\",\"type\":\"text\"}],\"sessionId\":\"s1\"}}"
+item prompt:7031 prompt final input=p1 at=1800000000000 text="Write the summary."
+snapshot WORKING queue=[] working_on="Write the summary." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+## 16 input {"id":"p2","prompt":{"text":"And then stop."}}
+effect reply p2 queued
+snapshot WORKING queue=[p2] working_on="Write the summary." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+## 17 input {"id":"i4","send_now":{"target":"p2"}}
+effect reply i4 rejected:UNSUPPORTED
+## 18 input {"id":"i5","withdraw":{"target":"p2"}}
+effect reply i5 accepted
+snapshot WORKING queue=[] working_on="Write the summary." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+## 19 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"description":"The model is slow today.","sessionUpdate":"notice","severity":"warning","title":"Slow"}}}}
+item notice:3 notice final at=1800000000000 text="The model is slow today." AGENT WARNING Slow
+## 20 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"compactionId":"k1","sessionUpdate":"compaction_update","status":"completed"}}}}
+item compaction:k1 compaction final at=1800000000000 text="" before=? after=? automatic=false
+## 21 fact {"channel":"rpc","json":{"id":"amux-prompt-7031","jsonrpc":"2.0","result":{"stopReason":"refusal"}}}
+item notice:4 notice final at=1800000000000 text="The model refused to go on." REFUSAL WARNING -
+item turn:2 turn final at=1800000000000 text="" #2 TURN_OUTCOME_COMPLETED started=1800000000000
+snapshot IDLE queue=[] working_on="Write the summary." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+turn_end 2 last=-
+## 22 input {"id":"p3","prompt":{"text":"Try once more."}}
+effect reply p3 accepted
+effect write "{\"id\":\"amux-prompt-7033\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Try once more.\",\"type\":\"text\"}],\"sessionId\":\"s1\"}}"
+item prompt:7033 prompt final input=p3 at=1800000000000 text="Try once more."
+snapshot WORKING queue=[] working_on="Try once more." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+## 23 fact {"channel":"rpc","json":{"error":{"code":-32603,"message":"model overloaded"},"id":"amux-prompt-7033","jsonrpc":"2.0"}}
+item error:5 error final at=1800000000000 text="" -32603 "model overloaded"
+item turn:3 turn final at=1800000000000 text="" #3 TURN_OUTCOME_FAILED started=1800000000000
+snapshot IDLE queue=[] working_on="Try once more." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+notice blocked failed "model overloaded"
+turn_end 3 last=-
+## 24 input {"id":"p4","prompt":{"text":"Last try."}}
+effect reply p4 accepted
+effect write "{\"id\":\"amux-prompt-7034\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Last try.\",\"type\":\"text\"}],\"sessionId\":\"s1\"}}"
+item prompt:7034 prompt final input=p4 at=1800000000000 text="Last try."
+snapshot WORKING queue=[] working_on="Last try." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:?/out:?/thought:?/total:? cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+## 25 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":[{"newText":"hello\n","path":"/work/notes.md","type":"diff"}],"kind":"edit","locations":[{"path":"/work/notes.md"}],"sessionUpdate":"tool_call","status":"completed","title":"Write notes.md","toolCallId":"c2"}}}}
+item tool:c2 tool final at=1800000000000 text="" EDIT SUCCEEDED "Write notes.md" at=/work/notes.md diff=/work/notes.md(new) +1
+## 26 fact {"channel":"rpc","json":{"id":"amux-prompt-7034","jsonrpc":"2.0","result":{"stopReason":"max_tokens","usage":{"inputTokens":6,"outputTokens":4,"totalTokens":10}}}}
+item notice:6 notice final at=1800000000000 text="The turn reached the model's token limit." MAX_TOKENS WARNING -
+item turn:4 turn final at=1800000000000 text="" #4 TURN_OUTCOME_COMPLETED started=1800000000000
+snapshot IDLE queue=[] working_on="Last try." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:6/out:4/thought:?/total:10 cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+turn_end 4 last=-
+## 27 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"session_info_update","title":"Test check"}}}}
+snapshot title "Test check"
+snapshot IDLE queue=[] working_on="Last try." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:6/out:4/thought:?/total:10 cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+## 28 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"_acme/heartbeat","params":{}}}
+effect log "my-own-agent sent _acme/heartbeat, which amux does not read"
+## 29 fact {"channel":"rpc","json":{"id":"x1","jsonrpc":"2.0","method":"_acme/ask","params":{}}}
+effect write "{\"error\":{\"code\":-32601,\"message\":\"amux does not handle _acme/ask\"},\"id\":\"x1\",\"jsonrpc\":\"2.0\"}"
+effect log "my-own-agent sent _acme/ask, which amux does not read"
+## 30 fact {"channel":"rpc","json":{"id":9,"jsonrpc":"2.0","method":"elicitation/create","params":{"elicitationId":"e1","message":"Sign in to the docs server.","mode":"url","sessionId":"s1","url":"https://example.com/sign-in"}}}
+item ask:ask-2 ask open at=1800000000000 text="" link  open
+snapshot NEEDS_YOU queue=[] working_on="Last try." at=1800000000000 agent=my-own-agent session=s1 asks=[ask-2:link "Sign in to the docs server."] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:6/out:4/thought:?/total:10 cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+notice ask ask-2 other "" "Sign in to the docs server." why="" more=0
+## 31 input {"answer":{"answer":{"link":{"action":"accept"}},"ask":"ask-2"},"id":"i6"}
+effect write "{\"id\":9,\"jsonrpc\":\"2.0\",\"result\":{\"action\":\"accept\"}}"
+effect reply i6 accepted
+item ask:ask-2 ask final at=1800000000000 text="" link  ASK_OUTCOME_ANSWERED
+snapshot IDLE queue=[] working_on="Last try." at=1800000000000 agent=my-own-agent session=s1 asks=[] model=? model_name=? effort=? mode=code context=1200/200000 plan=[1:TASK_LIST_STATUS_IN_PROGRESS:"Run the tests",2:TASK_LIST_STATUS_PENDING:"Report"] usage=in:6/out:4/thought:?/total:10 cost=0.25USD sign_in=SIGNED_IN reopen=LOAD
+## 32 provider_exit {"code":0}
+item boundary:2 boundary final at=1800000000000 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT

@@ -44,14 +44,31 @@ def has_phone(world: Path) -> bool:
     return bool((json.loads(world.read_text()).get("clients") or {}).get("phone"))
 
 
-def build(phone: bool) -> None:
+# A real host runs each real agent behind the probe that records it, and
+# offers no agent whose probe is not built.
+PROBES = ["claude-probe", "codex-probe", "acp-probe"]
+
+
+def has_real_host(world: Path) -> bool:
+    hosts = json.loads(world.read_text()).get("hosts") or []
+    return any(host.get("provider") == "real" for host in hosts)
+
+
+def build_commands(phone: bool, real: bool) -> list[list[str]]:
+    """The cargo builds a world needs: the net's binaries, and the probes
+    when a host runs real agents."""
+    bounded = [str(ROOT / "scripts/bounded"), "1800", "cargo", "build", "--locked"]
+    commands = [bounded + ["-p", "amux", "-p", "provider-fakes", "-p", "testnet", "--bins"]]
+    if real:
+        commands.append(bounded + ["-p", "qualification"] + [f"--bin={probe}" for probe in PROBES])
+    return commands
+
+
+def build(phone: bool, real: bool) -> None:
     """The binaries a QA run builds, and the phone app when it is wanted."""
     say("building the binaries")
-    subprocess.run(
-        [str(ROOT / "scripts/bounded"), "1800", "cargo", "build", "--locked",
-         "-p", "amux", "-p", "provider-fakes", "-p", "testnet", "--bins"],
-        cwd=ROOT, check=True,
-    )
+    for command in build_commands(phone, real):
+        subprocess.run(command, cwd=ROOT, check=True)
     if phone:
         say("building the phone app")
         subprocess.run(["just", "ios", "build"], cwd=ROOT, check=True)
@@ -105,16 +122,17 @@ def main(arguments: list[str]) -> int:
     name = arguments[0]
     world = ENVIRONMENTS / f"{name}.json"
     phone = has_phone(world)
+    real = has_real_host(world)
     # The lease is taken once the build is done, for as long as the world
     # is up: a simulator given back while the app still runs on it is free
     # for another tree to take.
     if phone and not os.environ.get("WT_LEASE_IPHONE"):
-        build(phone)
+        build(phone, real)
         os.environ["AMUX_ENV_BUILT"] = "1"
         script = [str(ROOT / "scripts/py"), "-B", str(Path(__file__).resolve()), name]
         os.execv(str(ROOT / "scripts/with"), [str(ROOT / "scripts/with"), "iphone", "--", *script])
     if not os.environ.get("AMUX_ENV_BUILT"):
-        build(phone)
+        build(phone, real)
     folder = FOLDERS / name
     folder.mkdir(parents=True, exist_ok=True)
     # A net an earlier start left behind goes first.

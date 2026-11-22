@@ -3141,6 +3141,7 @@ fn a_forms_answer_carries_the_checked_values() {
             question_note: false,
             question_skip: false,
             question_reply: false,
+            reply_instead: false,
             stops_turn: true,
             default_to_no: false,
             state: ui_view::CardState::Open,
@@ -4496,4 +4497,39 @@ fn a_job_offers_its_own_stop_where_the_kind_can_stop_one() {
     assert_eq!(stops(Kind::ClaudeSdk), offered);
     assert_eq!(stops(Kind::Codex), offered);
     assert_eq!(stops(Kind::ClaudePty), vec![JobStop::Unavailable; 4]);
+}
+
+/// An image a Claude tool read is no longer attached to its step, but a
+/// step recorded before that, which carries it, still draws it.
+#[test]
+fn an_older_steps_image_still_draws() {
+    let mut state = SessionState::new(agent(Kind::ClaudeSdk, Phase::Idle), CAP);
+    let mut read = tool_item(
+        1,
+        "Read",
+        serde_json::json!({"file_path": "shot.png"}),
+        serde_json::json!({}),
+        ToolState::Succeeded,
+    );
+    let mut body = wire::ClaudeItem::decode(read.body.as_slice()).unwrap();
+    let image = wire::BlobRef {
+        hash: vec![7; 32],
+        name: String::new(),
+        mime: "image/png".into(),
+        size: 99,
+    };
+    if let Some(wire::claude_item::Kind::Tool(tool)) = &mut body.kind {
+        tool.attachments = vec![wire::Attachment {
+            of: Some(wire::attachment::Of::Image(image.clone())),
+            ..Default::default()
+        }];
+    }
+    read.body = body.encode_to_vec();
+    page(&mut state, vec![read], true);
+    let rows = all_rows(&state, ToolRows::ShowAll);
+    assert!(
+        matches!(&rows[0].kind, RowKind::Image { image: Some(drawn), .. } if *drawn == image),
+        "{:?}",
+        rows[0].kind
+    );
 }

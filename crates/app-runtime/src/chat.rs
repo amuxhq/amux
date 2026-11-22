@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, Weak};
 
 use tokio::task::JoinHandle;
 use ui_runtime::{Fleet, InputError, PageError, Session};
-use ui_state::{AgentKey, InputOutcome, InputState, Key, Refusal, SessionState};
+use ui_state::{AgentKey, InputOutcome, InputState, InputWhat, Key, Refusal, SessionState};
 use ui_view::{
     AskCard, Comparison, FormValue, Overview, QuestionResponse, Row, SettingChange, SettingsView,
     ToolRows,
@@ -19,8 +19,8 @@ use crate::coalesce::{Coalescer, WakeFn};
 use crate::delta::Sent;
 use crate::review::ReviewSession;
 use crate::values::{
-    ActOutcome, AskMoved, ChatDelta, ChatFrame, CommandOutcome, Draft, PageOutcome, ReviewChange,
-    ReviewOutcome, SendOutcome,
+    ActOutcome, AskMoved, ChatDelta, ChatFrame, CommandOutcome, Draft, PageOutcome, ProviderLabel,
+    ReviewChange, ReviewOutcome, SendOutcome,
 };
 
 /// An open chat. The host hears what moved as [`ChatDelta`]s: the window's
@@ -387,11 +387,16 @@ impl Chat {
     pub async fn send(&self, draft: &Draft) -> SendOutcome {
         let (text, attachments) = draft.to_prompt();
         let sent = self.session.send_prompt(&text, attachments).await;
-        let state = self
-            .session
-            .state()
+        let session = self.session.state();
+        let state = match session
             .input_state(&sent.id)
-            .unwrap_or_else(|| outcome_state(&sent.outcome));
+            .unwrap_or_else(|| outcome_state(&sent.outcome))
+        {
+            InputState::Rejected(refusal) => {
+                InputState::Rejected(worded(&session, &sent.id, refusal))
+            }
+            state => state,
+        };
         SendOutcome {
             input_id: sent.id,
             state,
@@ -720,6 +725,14 @@ impl Chat {
         }
     }
 
+    /// Why an attachment would be refused before anything of it is read or
+    /// stored, in words naming the file: over the size every host takes, or
+    /// a picture or file the agent takes none of, which would have the
+    /// whole prompt refused. None when it may go.
+    pub fn attachment_refusal(&self, name: &str, mime: &str, size: u64) -> Option<String> {
+        attachment_refusal(&self.session.state(), name, mime, size)
+    }
+
     /// Stores bytes to attach to a prompt.
     pub async fn put_blob(
         &self,
@@ -775,7 +788,8 @@ pub(crate) fn frame(state: &SessionState, now_ms: i64, ended: Option<String>) ->
     ChatFrame {
         agent: ui_state::agent_key(agent),
         name: ui_state::shown_name(agent).to_owned(),
-        kind: state.kind(),
+        provider: provider_label(state),
+        capabilities: state.capabilities().into(),
         phase: state.phase(),
         composer: ui_view::composer(state, now_ms),
         controls: ui_view::controls(state),
@@ -788,11 +802,74 @@ pub(crate) fn frame(state: &SessionState, now_ms: i64, ended: Option<String>) ->
         arrivals_held: state.arrivals_held(),
         queue: ui_view::queue_rows(state),
         underway: ui_view::prompts_underway(state),
-        refused: ui_view::refused_prompts(state),
+        refused: ui_view::refused_prompts(state)
+            .into_iter()
+            .map(|refused| ui_view::RefusedPrompt {
+                reason: worded(state, &refused.input_id, refused.reason),
+                ..refused
+            })
+            .collect(),
         ask_input: ui_view::ask_card(state)
             .and_then(|card| state.answering(&card.key).map(|sent| sent.id.clone())),
         ended,
         review_chip: ui_view::review_chip(agent),
+    }
+}
+
+/// A prompt's refusal with words where it carries none of its own: one
+/// refused for an attachment the agent takes none of says which, by the
+/// agent's name, so the draft that comes back says why.
+fn worded(state: &SessionState, input_id: &[u8], refusal: Refusal) -> Refusal {
+    if refusal.reason != wire::Refusal::Unsupported || refusal.detail.is_some() {
+        return refusal;
+    }
+    let untaken = state
+        .inputs()
+        .iter()
+        .find(|sent| sent.id.as_slice() == input_id)
+        .and_then(|sent| match &sent.what {
+            InputWhat::Prompt { attachments, .. } => ui_view::untaken(state, attachments),
+            _ => None,
+        });
+    match untaken {
+        Some(what) => Refusal {
+            detail: Some(cannot_take(state, what)),
+            ..refusal
+        },
+        None => refusal,
+    }
+}
+
+/// "OpenCode can’t take images".
+fn cannot_take(state: &SessionState, what: ui_view::Untaken) -> String {
+    let what = match what {
+        ui_view::Untaken::Images => "images",
+        ui_view::Untaken::Files => "files",
+    };
+    format!("{} can’t take {what}", state.provider_name())
+}
+
+fn attachment_refusal(state: &SessionState, name: &str, mime: &str, size: u64) -> Option<String> {
+    let limit = ui_view::ATTACHMENT_SIZE_LIMIT as u64;
+    if size > limit {
+        let megabytes = limit / (1024 * 1024);
+        return Some(format!(
+            "{name} is not attached because it is over the {megabytes} MB limit for attachments."
+        ));
+    }
+    let what = ui_view::untaken_file(state, mime)?;
+    Some(format!(
+        "{name} is not attached: {}.",
+        cannot_take(state, what)
+    ))
+}
+
+/// The agent's program as its host names it; by its id while the host has
+/// not said, which is what the host would name it by.
+fn provider_label(state: &SessionState) -> ProviderLabel {
+    ProviderLabel {
+        provider: state.agent().provider_id().to_owned(),
+        name: state.provider_name(),
     }
 }
 

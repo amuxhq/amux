@@ -1,0 +1,10 @@
+{
+  "about": "opencode 1.18.33, recorded live: one prompt, then the agent's own compact command",
+  "spec": {
+    "provider": "opencode"
+  },
+  "recording": {
+    "path": "live/opencode-compact/io.jsonl",
+    "format": "acp_io"
+  }
+}

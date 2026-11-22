@@ -49,8 +49,12 @@ public protocol NewAgentSurface: AnyObject {
     var found: [Directory] { get }
     var typed: String { get set }
 
-    var provider: Provider { get }
-    func choose(provider: Provider)
+    /// The agents the chosen host offers, in its order, named as it names
+    /// them; empty until it has said.
+    var agents: [HostProvider] { get }
+    /// The chosen agent's id; nil while the host lists none.
+    var provider: String? { get }
+    func choose(provider: String)
     /// What the chosen host has said of the chosen provider; nil before it
     /// was asked.
     var offer: OfferState? { get }
@@ -331,8 +335,9 @@ public struct NewAgentPage: View {
 
     // MARK: - What runs there
 
-    private func signedIn(_ provider: Provider) -> Bool? {
-        chosenHost?.providers.first { $0.provider == provider }?.signedIn
+    /// The chosen agent as the host lists it.
+    private var agent: HostProvider? {
+        surface.agents.first { $0.provider == surface.provider }
     }
 
     /// The agent, and the model and effort it starts with.
@@ -347,6 +352,7 @@ public struct NewAgentPage: View {
     /// The provider's glyph, then the model and the effort as the chat's
     /// composer shows them: "✳ Opus 5.5 High". The glyph always stays: the
     /// provider is what the agent is; the model, else the provider's name.
+    /// An agent the app carries no mark for is named in the glyph's place.
     private func agentLabel(_ fit: Compaction) -> some View {
         var model: String?
         var effort: String?
@@ -355,10 +361,12 @@ public struct NewAgentPage: View {
             effort = fit.effort && settings.changeable.effort == .pick
                 ? settings.efforts.first(where: \.current)?.value.capitalized : nil
         }
+        let name = agent?.name ?? "Agent"
+        let glyph = surface.provider.flatMap(ProviderMark.glyph)
+        let text = glyph == nil ? [name, model].compactMap { $0 }.joined(separator: " · ") : model ?? name
         return ChipLabel(
-            icon: surface.provider == .codex ? "provider-codex" : "provider-claude",
-            text: model ?? Self.title(surface.provider), detail: model == nil ? nil : effort, tint: .primary)
-            .help(Self.title(surface.provider))
+            icon: glyph, text: text, detail: model == nil ? nil : effort, tint: .primary)
+            .help(name)
     }
 
     /// The permission the agent starts with, when the host lets it be
@@ -398,21 +406,6 @@ public struct NewAgentPage: View {
         }
     }
 
-    static func title(_ provider: Provider) -> String {
-        switch provider {
-        case .codex: "Codex"
-        case .claude, .unspecified: "Claude"
-        }
-    }
-
-    /// How to sign in where the agent would run, which is where the
-    /// provider keeps its credential.
-    static func signInSteps(_ provider: Provider) -> String {
-        switch provider {
-        case .codex: "Run codex login there."
-        case .claude, .unspecified: "Run claude and sign in with /login there."
-        }
-    }
 
     // MARK: - Said under it
 
@@ -425,11 +418,13 @@ public struct NewAgentPage: View {
             if surface.listing == .unavailable {
                 Text("Couldn’t list folders on \(hostName). Type a path instead.")
             }
-            if signedIn(surface.provider) == false {
-                Text("\(Self.title(surface.provider)) isn’t signed in on \(hostName). \(Self.signInSteps(surface.provider))")
+            if let agent, agent.signedIn == false {
+                // In the agent's own words for what to do, on the host
+                // where it keeps its credential.
+                Text(ChatWords.withCode("\(agent.name) isn’t signed in on \(hostName). \(ChatWords.signInStepsThere(agent.signInHint))"))
             }
-            if surface.machine != nil, surface.offer == .unavailable {
-                Text("Couldn’t get \(Self.title(surface.provider))’s options from \(hostName). It’ll start with the defaults there.")
+            if let agent, surface.machine != nil, surface.offer == .unavailable {
+                Text("Couldn’t get \(agent.name)’s options from \(hostName). It’ll start with the defaults there.")
             }
             if !recent.isEmpty, surface.failure == nil {
                 // As many as fit on one line: a row wider than the window
@@ -493,19 +488,19 @@ public struct AgentPicker: View {
         let host = surface.hosts.first { $0.hostId == surface.machine }
         let hostName = host.map { $0.local ? "this Mac" : PlaceNames.host($0.name) } ?? "this device"
         ModelPicker(
-            providers: [Provider.claude, .codex].map { provider in
-                let signedIn = host?.providers.first { $0.provider == provider }?.signedIn
-                return ModelPicker.ProviderItem(
-                    provider: provider, name: NewAgentPage.title(provider),
-                    glyph: provider == .codex ? "provider-codex" : "provider-claude",
-                    note: signedIn == false ? "Not signed in on \(hostName)" : nil)
+            providers: surface.agents.map { agent in
+                ModelPicker.ProviderItem(
+                    provider: agent.provider, name: agent.name,
+                    glyph: ProviderMark.glyph(agent.provider),
+                    note: agent.signedIn == false ? "Not signed in on \(hostName)" : nil)
             },
             provider: surface.provider,
             settings: surface.offer == .offered ? surface.settings : nil,
             chooseProvider: { surface.choose(provider: $0) },
             chooseModel: { surface.choose(.model($0)) },
             chooseEffort: { surface.choose(.effort($0)) },
-            chooseMode: { surface.choose(.mode($0)) })
+            chooseMode: { surface.choose(.mode($0)) },
+            chooseOwnMode: { surface.choose(.mode(nil)) })
     }
 }
 

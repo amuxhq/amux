@@ -21,8 +21,13 @@ Three rules shape the library:
   carries there unread. A client never opens a store, never dials another host, never holds a cursor, and never
   reads disk.
 - **Per-kind knowledge lives in one thin layer.** The model knows an agent's kind (terminal Claude, headless
-  Claude, Codex) only where it decodes a snapshot or item body. Everything above that works on kind-neutral
-  facts; the views read the decoded bodies to produce typed rows and cards.
+  Claude, Codex, an ACP agent) only where it decodes a snapshot or item body, or builds the input in a kind's
+  arm. Everything above that works on kind-neutral facts; the views read the decoded bodies to produce typed rows
+  and cards. What an agent can do is its `AgentCapabilities` (on its snapshot, else its host's
+  `ProviderOnHost`), and how a provider is named, started and signed in to is that host's `ProviderDescriptor`
+  ([the wire](WIRE.md#capabilities)); a client never decides either by matching a kind or a provider id.
+  `just client-kind-check` holds the client crates to this: it lists every place in them that still matches a
+  kind or a provider's name, each with why, and fails on any other.
 - **Nothing is persisted.** Every value the model holds can be re-served by the runtime, so the model is never
   saved, checkpointed or restored. Closing a chat narrows its session to the few rows the fleet keeps, or drops it
   for an exited agent; opening it again pages or rebuilds the rest from the runtime's rows.
@@ -110,8 +115,8 @@ parts:
   does while the agent's host cannot be reached, is asked again when the stream says `CaughtUp` or the chat is
   opened again, not at every event in between. Fetches can answer out of order, so the state never replaces a held catalogue the newest
   snapshot names with one it does not name; any other catalogue is kept as it arrives. A field the provider has not
-  reported stays at its explicit unknown. Open asks keep the provider's own shape as `OpenAsk::Claude` or
-  `OpenAsk::Codex`.
+  reported stays at its explicit unknown. Open asks keep the provider's own shape as `OpenAsk::Claude`,
+  `OpenAsk::Codex` or `OpenAsk::Acp`.
 - **`Transcript`**, the window of items by order, and the rows that arrived above it while the reader was in
   history. See [the transcript window](#the-transcript-window).
 - **Whether the reader follows** the newest row, as the client last said. It is the one fact about the view the
@@ -202,7 +207,7 @@ The state answers the questions every client asks, so no client re-derives them:
 | Method | Answer |
 |---|---|
 | `can_send()` | Caught up, the entry does not say exited, and the agent is not a provider subagent. Drafting is never gated. |
-| `composer()` | `Send`; `Resume` for an exited agent (the draft becomes the next incarnation's first prompt); `Waiting(Waiting)` with `CatchingUp`, `Detached` or `Reconnecting`: the chat is not current, so nothing sends and the draft stays in the composer; or `Native { stop }` for a provider subagent (see below). |
+| `composer()` | `Send`; `Resume` for an exited agent that can be resumed (`capabilities().resumable`; the draft becomes the next incarnation's first prompt), `Ended` for one that cannot (no text box, and a fresh conversation is never passed off as a resume); `Waiting(Waiting)` with `CatchingUp`, `Detached` or `Reconnecting`: the chat is not current, so nothing sends and the draft stays in the composer; or `Native { stop }` for a provider subagent (see below). |
 | `native()`, `native_stop()` | Whether the agent is a subagent its parent's provider runs (`Agent.native`), and its Stop: a `JobStop` from its own job in its snapshot's background jobs, the one of kind `SUBAGENT` keyed by the provider's id for it. Offered while listed and not stopping, `Stopping` once a stop went, `Refused` with the provider's words, and `Unavailable` once it ended, when it is not listed, and always on terminal Claude. |
 | `phase()` | `PhaseView`: lifecycle from the entry, everything else from the snapshot. |
 | `open_asks()` | The asks to draw, head first. Before CaughtUp an ask is drawn only if the entry says needs-you, so an ask answered on another device does not flash from a cached snapshot and vanish. |
@@ -284,7 +289,7 @@ host, and from its replica for another host's agent even while that host is away
 | `page_older(n)` | Fetch up to `n` rows older than the oldest held; see [paging](#paging). |
 | `send(input)`, `send_prompt(text, attachments)` | Send under a fresh input id; returns `Sent { id, outcome }`. |
 | `resume_with(draft)` | ResumeAgent with the draft as the next incarnation's first prompt; on failure the draft is discarded from the state and handed back to the composer. |
-| `withdraw(queued)`, `send_now(queued)` | Take a queued prompt back, or steer it into the running turn. |
+| `withdraw(queued)`, `send_now(queued)` | Take a queued prompt back, or steer it into the running turn; send-now is refused at once for an agent whose capabilities say it does not take a prompt into a running turn. |
 | `answer(input)` | Answer an ask with the input `ui_view::answer_input` built. Any open ask can be answered. |
 | `interrupt()` | Interrupt the turn; the agent stays live and idle. |
 | `switch_back()` | Takes terminal Claude's own view back to the agent's conversation after it switched to another. |
@@ -365,18 +370,20 @@ directly (a name, a path, a count the state holds), but never works out a judgem
 | `chat_rows(state, range, opts)` | One `Row` per held item whose order is in `range`, widened to include any run that crosses either edge. The terminal's call, for what is on screen. |
 | `chat_rows_for(state, keys, opts)` | Rows for these keys, in order. The phone's call, for the cells an update changed. |
 | `ask_card(state)` | The head ask as an `AskCard`, with its count, or `None`. |
-| `answer_input(card, answer, note)`, `question_answer(card, responses)` | The input that answers the card in its kind's arm; a question's response carries its picks and its typed "Something else" words together. |
+| `answer_input(card, answer, note)`, `question_answer(card, responses)`, `reply_answer(card, words, responses)` | The input that answers the card in its kind's arm; a question's response carries its picks and its typed "Something else" words together; the person's own words instead of an answer, on a question that takes them or on any ask whose card says `reply_instead`. |
+| `act_input(kind, act)`, `create_config(kind, provider, chosen)` | The input for a prompt, withdraw, send-now, interrupt, job stop or switch-back in the kind's arm (None for an act the kind has no input for), and a new agent's create arm for the kind its host starts the picked provider as. The runtimes and the browser bridge build their inputs here, so no client holds a kind arm of its own. |
 | `form_problems(fields, values)`, `form_answer(card, values)` | A tool server's form, checked and encoded once for every client: given one `FormValue` per field (typed text, a toggle, a choice or picks by position), each field's `FieldProblem` (required and empty, not a number or not a whole one, out of the schema's range, too short or long, too few or many picked), or the Submit carrying the JSON object the schema describes. |
 | `composer(state, now_ms)`, `waiting(state)`, `switched_away(state)` | The composer mode, the activity line inside it, and whether terminal Claude's own view is on another conversation (prompts are refused until `Session::switch_back` takes it back); the waiting reason. |
 | `composer_tokens(draft, attachments)`, `segments(text, attachments)` | Text runs and attachment chips at their placeholder positions. |
-| `queue_rows(state)`, `sends_to_feed(state)`, `prompts_underway(state, in_feed)`, `refused_prompts(state)` | Queued prompts (withdraw, send now); whether a new prompt lands at the feed's end or in the queue; this client's prompts on their way, each where it was first drawn, sending or may not have arrived; the prompts the agent refused, with why. |
-| `overview(state, changed)`, `changes(changed)`, `Comparison::base()`, `lists_changes(state)` | The `Overview`: tasks, background jobs (each with its `JobStop`: unavailable on terminal Claude or for a job with no key, offered with its key, stopping, or refused with the provider's words), failed tool servers, usage near a limit, and the changed files by folder (root files first, renames with their old path) as the agent's host answered `GetChanges`, with the base it used; what a comparison asks for: HEAD, or nothing for the host's own rule on the branch. |
-| `context(state)`, `sign_in(state)` | Context use (near full from 80%) and a sign-in problem. |
+| `queue_rows(state)`, `sends_to_feed(state)`, `prompts_underway(state, in_feed)`, `refused_prompts(state)` | Queued prompts (withdraw, and send now only where the agent's capabilities say `sends_now`); whether a new prompt lands at the feed's end or in the queue; this client's prompts on their way, each where it was first drawn, sending or may not have arrived; the prompts the agent refused, with why. |
+| `overview(state, changed)`, `changes(changed)`, `Comparison::base()`, `lists_changes(state)` | The `Overview`: tasks, background jobs (each with its `JobStop`: unavailable where the agent's capabilities say it stops no one job, or for a job with no key, offered with its key, stopping, or refused with the provider's words), failed tool servers, usage near a limit, and the changed files by folder (root files first, renames with their old path) as the agent's host answered `GetChanges`, with the base it used; what a comparison asks for: HEAD, or nothing for the host's own rule on the branch. |
+| `context(state)`, `sign_in(state)` | Context use (near full from 80%) and a sign-in problem, with the provider's name and its host's words for signing in (the descriptor's `sign_in_hint`, which may mark commands in backticks). |
+| `untaken(state, attachments)`, `untaken_file(state, mime)` | The first attachment the agent's capabilities say it does not take (`Untaken::Images` or `Files`), so a client refuses it before storing the file; pasted text and page comments always go. |
 | `settings(state)`, `setting_input(kind, change)` | What the agent offers to change (models, efforts, permissions, modes, commands), each choice named and its current one marked; how each setting changes (`Changeable`: a pick, the agent's own cycle, typing its own command, or not offered); and the input a pick sends. |
 | `controls(state)` | The `ControlsSummary` beside the composer: the running model by its one name, the effort in force, and the permission and mode only while they are not the agent's normal ones. |
 | `new_agent_settings(catalogue, chosen)`, `new_agent_pick(catalogue, chosen, pick)` | A new agent's settings from its host's catalogue, in the settings view's own choices (what can be set at start, the chosen ones marked, the normal mode in force when none is chosen, a chosen value the host does not list kept); and what is chosen after a pick: another model starts at its default effort and gives up a permission it does not take for the normal one, and picking the normal mode leaves the mode unchosen. |
 | `fleet_view(fleet, local_host, lines, expand, keep)`, `session_line(state, now_ms)` | Home's sections (needs you, live, exited) with each family in its loudest member's section, newest since-when first, whether each starts folded, and every row's second line; the fleet-wide counts of agents that need you and that are working; what one session knows for that line. |
-| `fleet_card(fleet, local_host, agent_id)`, `family_header(fleet, local_host, agent_id)` | One agent's card (name, branch, host and its reach, how it ended, family counts, whether it is a provider subagent), and a chat's family header with how many of the family need you. |
+| `fleet_card(fleet, local_host, agent_id)`, `family_header(fleet, local_host, agent_id)` | One agent's card (name, branch, host and its reach, how it ended, family counts, whether it is a provider subagent, its provider id and the name its host's descriptor gives it, else the name `wire::agents::display_name` knows the id by (Claude, Codex, a built-in ACP agent), else the id, and whether it can be attached in its own terminal, from its host's entry when that entry's kind matches the agent's, else what its kind can do), and a chat's family header with how many of the family need you. |
 | `opened_agent(fleet, agent_id)`, `group_state(fleet, agents)`, `chat_agents(state, fleet)` | The agent a call row opens as its fleet row has it (its key to open, its title else its name, its kind, its `PhaseView`), or None when the fleet does not hold it; what a group's agents come to (`GroupState`: running, needing you, idle, finished, ended, failed, unknown); and every agent a chat's held rows open with each group's state, which the phone is handed when the fleet moves. |
 | `toggle_group(state, member, open)`, `subagent_rows_moved(state, changed)` | Opens or closes the group a call belongs to, in the set that holds open runs; and the calls whose group a change moved without touching them (a call joining, a turn bound, a cut taking the first), for a client holding rows by key. |
 | `reach(fleet, local_host, host)` | How this machine reaches a host: online over a route; away, meaning only that the relay refused it for the account's free plan and upgrading reaches it; or offline, for a reason this machine can name (this machine is signed out, or the host no longer trusts it) or for none. |
@@ -506,13 +513,14 @@ if the runtime's source for that agent is current, or after the delta if it is c
 
 ### Sending
 
-`send_prompt` puts the text and attachments in the kind's prompt input (`ui_runtime::inputs`), gives it a fresh
-input id, applies `Msg::Send` so the optimistic row exists at once, and calls `SendInput`. The reply is the
+`send_prompt` puts the text and attachments in the kind's prompt input (`ui_view::act_input`), refuses it at
+once when it carries an attachment the agent does not take (recorded as a refused prompt, so its words and
+attachments go back to the composer like any refusal's), gives it a fresh input id, applies `Msg::Send` so the optimistic row exists at once, and calls `SendInput`. The reply is the
 interpreter's verdict: accepted (possibly `queued`), or rejected with a reason. A prompt sent while a turn runs
 waits in the agent's queue, which every snapshot lists, so other clients see it too; `queue_rows` offers
 withdraw and send-now on it, and send-now steers it into the running turn, where it reads "steered" until its
-reflection lands. `stop_job` sends the kind's `StopJob` for a background job's key (none for terminal Claude);
-the job's `JobStop` says how it stands from then on.
+reflection lands. `stop_job` sends the kind's `StopJob` for a background job's key, only where the agent's
+capabilities say `stops_job`; the job's `JobStop` says how it stands from then on.
 
 This client's own prompts on their way are one rule for every client. `sends_to_feed` says where a new prompt
 lands: at the feed's end while the agent is idle with nothing queued, otherwise in the queue. The client
@@ -522,8 +530,9 @@ found neither queued nor in the transcript, reads "may not have arrived" with re
 `refused_prompts` lists the ones the agent or its host refused; the words go back to the composer with the
 reason, which for a host that could not be reached is that the host is away.
 
-When the entry says exited, the composer is `Resume`: the draft goes through `resume_with` as the next
-incarnation's first prompt, one tap.
+When the entry says exited, the composer is `Resume` where the agent can be resumed: the draft goes through
+`resume_with` as the next incarnation's first prompt, one tap. An ACP agent that offered no way to reopen a
+session is `Ended` instead.
 
 ### The client's own commands
 
@@ -544,7 +553,10 @@ rather than only at its start. Claude lists its skills among its commands, as Cl
 
 `ask_card` builds the card for the head ask. Each `Choice` carries its `ChoiceOutcome` and the answer body it
 sends; the client passes the chosen answer (with a note, for choices that take one) to `answer_input`, then to
-`Session::answer`. A form's values go to `form_answer` instead, which refuses them with each field's problem or
+`Session::answer`. An ACP agent's permission ask offers exactly the options the agent sent, the ones amux has no
+outcome for as `ChoiceOutcome::Offered` with the agent's name for them; its own forms and links are named as the
+agent; and every ACP ask takes the person's words instead (`reply_instead`), which a refusal's or a decline's note
+becomes. A form's values go to `form_answer` instead, which refuses them with each field's problem or
 builds the Submit; both clients say what keeps a form back from the same `form_problems`. An answer names its ask by key, so any queued ask can be answered from any client. While the
 answer is in flight the card's `CardState` is `Sending`; a rejection brings it back as `Rejected(refusal)`; a lost
 connection leaves it `NotConfirmed` with resend and discard; an exited agent's asks are `Dismissed`. On the phone,

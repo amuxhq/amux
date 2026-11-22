@@ -1,0 +1,34 @@
+
+  gatekeeper │ /tmp/journey/aj-xxxxxxxx/net/desk/work                                        [Diff] │ [Home]
+
+
+
+
+
+
+
+
+    Apply the migrations.                                                                            hh:mm
+
+
+  ▸ Ran 1 command
+
+    The migration ran.
+
+    Worked <t>
+
+
+    Clean the build folder.                                                                          hh:mm
+
+
+  ▸ Denied 1 step
+
+    I left the build folder alone.
+
+    Worked <t>
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message gatekeeper                                                                                   │
+  ╰────────────────────────────────────────────────────────────────────────────────── fake-model (medium) ─╯
+
+  shift+tab mode   ctrl+a more

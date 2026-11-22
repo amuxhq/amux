@@ -8,6 +8,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use interpret::acp::Acp;
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
@@ -223,6 +224,13 @@ fn offered(card: &AskCard) -> Vec<(String, Answer, &'static str)> {
             ));
         }
     }
+    if card.reply_instead && !matches!(card.body, AskBody::Question(_)) {
+        answers.push((
+            "reply instead".into(),
+            reply_answer(card, "Let's talk it through first", &[]),
+            "",
+        ));
+    }
     answers
 }
 
@@ -341,6 +349,16 @@ fn codex_cards_answer_the_interpreter() {
     );
 }
 
+#[test]
+fn acp_cards_answer_the_interpreter() {
+    let answered = answer_all::<Acp>(Kind::Acp, "acp");
+    assert_eq!(
+        answered,
+        BTreeSet::from(["command", "edit", "form", "link", "question", "tool"]),
+        "card bodies answered"
+    );
+}
+
 /// Every pick the settings view offers once a fixture has played, sent as
 /// `setting_input` makes it, to a copy of the interpreter: each must be
 /// accepted. A setting the view refuses has no input at all.
@@ -447,6 +465,11 @@ fn settings_picks_reach_the_interpreter() {
         pick_all::<Codex>(Kind::Codex, "codex"),
         BTreeSet::from(["effort", "mode", "model", "permission"]),
         "Codex's picks"
+    );
+    assert_eq!(
+        pick_all::<Acp>(Kind::Acp, "acp"),
+        BTreeSet::from(["effort", "mode", "model"]),
+        "an ACP agent's picks"
     );
 }
 

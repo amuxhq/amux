@@ -305,7 +305,7 @@ impl Provider {
                         then: Vec::new(),
                     });
                 }
-                Step::TurnEnd => {
+                Step::TurnEnd | Step::Stop { .. } => {
                     self.said
                         .push_back(Said::Fact(fact(json!({"type": "turn_end"}))));
                     self.turn_over(script);
@@ -321,7 +321,11 @@ impl Provider {
                 | Step::Spawn { .. }
                 | Step::Usage(_)
                 | Step::AuthFailed { .. }
-                | Step::Subagents { .. } => {}
+                | Step::Subagents { .. }
+                | Step::Call(_)
+                | Step::ToolServer(_)
+                | Step::Context { .. }
+                | Step::Title { .. } => {}
             }
         }
     }

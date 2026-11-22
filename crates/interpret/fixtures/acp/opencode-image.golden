@@ -1,0 +1,41 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 1 recorded 0: tick 590
+snapshot STARTING queue=[] working_on=- at=590 agent=opencode session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"agentCapabilitie…
+snapshot STARTING queue=[] working_on=- at=590 agent=opencode session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=RESUME
+## 4 recorded 3: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\…
+effect session "ses_e059d7216ffexDuMuT5mV2IZUb"
+effect catalogue f7141b67 models=[opencode/beam-free,opencode/big-pickle,opencode/deepseek-v4.1-flash-free,opencode/flint-40b-free,opencode/hy4-flash-free,opencode/iceman-free,opencode/longcat-2.5-free,opencode/mimo-v2.6-flash-free,opencode/nemotron-3.5-lightning-free,opencode/nemotron-3.5-super-vl-free,opencode/tidepool-alpha-free] commands=0 permissions=[] modes=[build,plan]
+item boundary:1 boundary final at=977 text="" BOUNDARY_KIND_STARTED
+snapshot catalogue f7141b67
+snapshot IDLE queue=[] working_on=- at=977 agent=opencode session=ses_e059d7216ffexDuMuT5mV2IZUb asks=[] model=opencode/big-pickle model_name=OpenCode/Big Pickle effort=? mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 5 recorded 4: input p1-1
+effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"ses_e059d7216ffexDuMuT5mV2IZUb\",\"value\":\"opencode/deepseek-v4.1-flash-free\"}}"
+effect reply p1-1 accepted
+## 8 recorded 7: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+effect catalogue 544fed3c models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=0 permissions=[] modes=[build,plan]
+snapshot catalogue 544fed3c
+snapshot IDLE queue=[] working_on=- at=979 agent=opencode session=ses_e059d7216ffexDuMuT5mV2IZUb asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 9 recorded 8: input p1-2
+effect reply p1-2 accepted
+effect write "{\"id\":\"amux-prompt-70312d32\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"What is the main colour of the attached image? Reply with one word.\",\"type\":\"text\"}],\"sessionId\":\"ses_e059d7216ffexDuMuT5mV2IZUb\"}}" attachments=1
+item prompt:70312d32 prompt final input=p1-2 at=979 text="What is the main colour of the attached image? Reply with one word." attachments=1
+snapshot WORKING queue=[] working_on="What is the main colour of the attached image? Reply with one word." at=979 agent=opencode session=ses_e059d7216ffexDuMuT5mV2IZUb asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 10 recorded 9: fact Rpc method=session/update
+effect catalogue eb9b5e76 models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=23 permissions=[] modes=[build,plan]
+snapshot catalogue eb9b5e76
+snapshot WORKING queue=[] working_on="What is the main colour of the attached image? Reply with one word." at=979 agent=opencode session=ses_e059d7216ffexDuMuT5mV2IZUb asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 12 recorded 11: fact Rpc method=session/update
+item message:1 message open at=2403 text="Red"
+## 14 recorded 13: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="What is the main colour of the attached image? Reply with one word." at=2407 agent=opencode session=ses_e059d7216ffexDuMuT5mV2IZUb asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=13089/200000 plan=? usage=in:?/out:?/thought:?/total:? cost=0USD sign_in=SIGNED_IN reopen=RESUME
+## 16 recorded 15: fact Rpc "{\"id\":\"amux-prompt-70312d32\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{},\…
+item message:1 message final at=2403 text="Red"
+item turn:1 turn final at=2408 text="" #1 TURN_OUTCOME_COMPLETED started=979
+snapshot said "Red"
+snapshot IDLE queue=[] working_on="What is the main colour of the attached image? Reply with one word." at=2408 agent=opencode session=ses_e059d7216ffexDuMuT5mV2IZUb asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=13089/200000 plan=? usage=in:13089/out:3/thought:?/total:13092 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+turn_end 1 last=message:1
+## 19 recorded 18: provider_exit Some(0)
+item boundary:2 boundary final at=4414 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT

@@ -229,6 +229,20 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
             ],
         )?;
     }
+    // A person names their own agent programs; amux's own ids are kept.
+    let own: Vec<&str> = [wire::agents::CLAUDE, wire::agents::CODEX]
+        .into_iter()
+        .chain(wire::agents::BUILT_INS.iter().map(|agent| agent.id))
+        .collect();
+    let listed = own
+        .iter()
+        .map(|id| format!("'{id}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    tx.execute(
+        &format!("UPDATE agents SET provider = 'custom' WHERE provider NOT IN ({listed})"),
+        [],
+    )?;
     Ok(())
 }
 

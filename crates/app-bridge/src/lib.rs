@@ -1666,19 +1666,20 @@ impl AmuxProfile {
         })
     }
 
-    /// What a provider offers on a host with no agent running there.
+    /// What a provider, by its id as a JSON string ("claude", "codex", an
+    /// ACP agent's), offers on a host with no agent running there.
     pub fn host_catalogue(&self, host_id: Option<&str>, provider: Option<&str>) -> u64 {
         let host_id: Option<Vec<u8>> = parse(host_id);
-        let provider: Option<app_runtime::Provider> = parse(provider);
+        let provider: Option<String> = parse(provider);
         let app = self.app.clone();
         self.act(async move {
             let Some(host_id) = host_id else {
                 return Answered::Err("the host id is not a byte array".into());
             };
             let Some(provider) = provider else {
-                return Answered::Err("the provider is not a Provider".into());
+                return Answered::Err("the provider is not a provider id".into());
             };
-            Answered::from(app.host_catalogue(&host_id, provider).await)
+            Answered::from(app.host_catalogue(&host_id, &provider).await)
         })
     }
 
@@ -1723,6 +1724,15 @@ impl AmuxProfile {
     pub fn fleet_family(&self, agent: Option<&str>) -> Option<String> {
         let agent: AgentKey = parse(agent)?;
         json(&self.app.family_header(&agent))
+    }
+
+    /// What settling an agent costs, as a JSON `SettleWarning`, or `"null"`
+    /// for an agent the fleet does not hold; `None` when `agent` does not
+    /// parse. Ask before settling when it cuts work short or ends a
+    /// conversation nothing resumes.
+    pub fn fleet_settle_warning(&self, agent: Option<&str>) -> Option<String> {
+        let agent: AgentKey = parse(agent)?;
+        json(&self.app.settle_warning(&agent))
     }
 
     /// Opens a chat on a fleet agent, named by its `AgentKey` as JSON, with
@@ -1787,6 +1797,13 @@ impl AmuxChat {
         let shared = self.shared.clone();
         let _entered = shared.handle().enter();
         drop(self);
+    }
+
+    /// Why an attachment of `size` bytes would be refused before anything
+    /// of it is read or stored, as a JSON string naming the file; `"null"`
+    /// when it may go.
+    pub fn attachment_refusal(&self, name: &str, mime: &str, size: u64) -> Option<String> {
+        self.read(|chat| json(&chat.attachment_refusal(name, mime, size)))
     }
 
     /// The chat whole as a JSON `ChatDelta`.

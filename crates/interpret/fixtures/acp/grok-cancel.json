@@ -1,0 +1,10 @@
+{
+  "about": "grok 1.0.89, recorded live: a long turn cancelled with session/cancel once it streams, then one more prompt",
+  "spec": {
+    "provider": "grok"
+  },
+  "recording": {
+    "path": "live/grok-cancel/io.jsonl",
+    "format": "acp_io"
+  }
+}

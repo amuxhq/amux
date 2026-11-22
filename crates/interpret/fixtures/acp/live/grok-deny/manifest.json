@@ -1,0 +1,25 @@
+{
+  "spec": "grok-deny",
+  "recorded": {
+    "provider": "grok",
+    "version": "1.0.89",
+    "model": "grok-4.7-build-fast",
+    "at": "2026-11-20T19:27:44.792838Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:789da17258fa536edac5099ce2910dcf9edc8e011ddcd10ebffcdfd1280f8038",
+    "spawn.jsonl": "sha256:8aab213a2fb26391131f0a91634b225aee476835849fe455902b65583a019be5"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 202,
+    "personal_identifiers": 4
+  },
+  "session_ids": [
+    "01a1fa68-e4c4-7f40-b2e5-5520add38215"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a shell command needing permission, rejected once"
+  }
+}

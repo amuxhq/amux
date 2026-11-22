@@ -1,0 +1,34 @@
+
+  locked │ /tmp/journey/aj-xxxxxxxx/net/desk/work                                            [Diff] │ [Home]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    Are you there?                                                                                   hh:mm
+
+
+  ● Locked needs you to sign in
+    Signed out
+    Run fake-acp login in the terminal on desk.
+    Signed in elsewhere? Send a message to try again.
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ › Message locked                                                                                       │
+  ╰────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+  ctrl+a more

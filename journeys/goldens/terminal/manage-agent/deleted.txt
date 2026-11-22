@@ -6,7 +6,7 @@
 
   ▾ Live 5 ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-    ○ decision-pty  Claude (terminal) · /tmp/journey/aj-xxxxxxxx/net/desk/work                         now
+    ○ decision-pty  Claude · /tmp/journey/aj-xxxxxxxx/net/desk/work                                    now
 
     ○ reviewer  Claude · /tmp/journey/aj-xxxxxxxx/net/desk/work                                        now
 

@@ -82,7 +82,8 @@ To send an agent more work, type in its chat and press **Enter**.
 
 On the home screen, **x** settles the highlighted agent: you're done with it,
 so it stops if it's running and moves to **Settled**. It asks first if that
-would cut work short. **x** on a settled agent deletes it, after asking. A
+would cut work short, or if the agent can't be resumed, since settling then
+ends its conversation for good. **x** on a settled agent deletes it, after asking. A
 settled agent can be resumed later with `amux resume <name>`. `amux ls` lists your agents from the command line.
 
 ## Prefer Claude Code's own interface?

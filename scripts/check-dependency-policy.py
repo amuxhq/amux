@@ -33,15 +33,19 @@ ALLOWED_LOCAL = {
     # The pure per-kind step, and the per-kind body redactor beside it;
     # core-ring for the check type its every-step checks report as, and for
     # reading the facts ring an agent's record is built from.
-    "interpret": {"attachments", "claude-protocol", "codex-protocol", "core-ring", "preview", "redaction", "wire"},
+    "interpret": {
+        "acp-protocol", "attachments", "claude-protocol", "codex-protocol", "core-ring", "preview",
+        "redaction", "wire",
+    },
     # The agent process: its lock, journal and sockets, the interpreter,
-    # and the provider hosts, each in a module of its own (`claude`, `codex`).
+    # and the provider hosts, each in a module of its own (`acp`, `claude`, `codex`).
     "agent": {
-        "agent-core", "agent-dir", "attachments", "claude-protocol", "codex-protocol", "core-ring",
+        "acp-protocol", "agent-core", "agent-dir", "attachments", "claude-protocol", "codex-protocol", "core-ring",
         "git-facts", "interpret", "journal", "log-file", "pty-host", "wire",
     },
     # Each provider's messages as types: pure, so the interpreter the phone
     # links can read them. PURE_EXTERNAL below bounds what they may pull in.
+    "acp-protocol": set(),
     "claude-protocol": set(),
     "codex-protocol": set(),
     "pty-host": set(),
@@ -131,11 +135,13 @@ CORES_ALLOWED_LOCAL = {
 # (app-bridge, app-ffi, app-jni, app-embedded) hosts the runtime in process and is not one of them.
 UI_CRATES = {"client", "ui-state", "ui-view", "ui-code", "ui-runtime", "tui", "app-runtime"}
 FORBIDDEN_FOR_UI = {
-    "node", "store", "interpret", "agent", "claude-protocol", "codex-protocol", "pty-host",
+    "node", "store", "interpret", "agent", "acp-protocol", "claude-protocol", "codex-protocol",
+    "pty-host",
 }
 # The protocol crates hold types and nothing else: no process, socket or
 # async runtime code may come in through a dependency.
 PURE_EXTERNAL = {
+    "acp-protocol": {"serde", "serde_json"},
     "claude-protocol": {"serde", "serde_json"},
     "codex-protocol": {"serde", "serde_json"},
 }
@@ -175,7 +181,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # The fake providers speak each protocol from its recordings, and check
     # what they compose against the protocol crates' types. They never use
     # the host crates, so a host bug cannot hide behind shared host code.
-    "provider-fakes": {"claude-protocol", "codex-protocol", "pty-host"},
+    "provider-fakes": {"acp-protocol", "claude-protocol", "codex-protocol", "pty-host"},
     # A stand-in amux binary that runs the real supervisor, so the
     # supervisor tests exec and roll back the shipped code.
     "fake-amux": {"agent-dir", "node"},

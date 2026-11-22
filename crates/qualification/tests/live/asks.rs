@@ -372,6 +372,8 @@ pub(super) fn questions(ask: &OpenAsk) -> Option<Vec<wire::Question>> {
             Some(wire::codex_ask::Body::Question(question)) => Some(question.questions.clone()),
             _ => None,
         },
+        // ACP asks no questions; its forms are elicitations.
+        OpenAsk::Acp(_) => None,
     }
 }
 
@@ -379,6 +381,8 @@ fn is_plan(ask: &OpenAsk) -> bool {
     match ask {
         OpenAsk::Claude(ask) => matches!(ask.body, Some(wire::ask::Body::Plan(_))),
         OpenAsk::Codex(ask) => matches!(ask.body, Some(wire::codex_ask::Body::Plan(_))),
+        // An ACP plan is a progress list, never an ask.
+        OpenAsk::Acp(_) => false,
     }
 }
 

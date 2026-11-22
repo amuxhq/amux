@@ -1,0 +1,16 @@
+{
+  "about": "antigravity 1.5.13, recorded live: a prompt, the process ended, then session/resume in a new process and a prompt",
+  "spec": {
+    "provider": "antigravity"
+  },
+  "recording": {
+    "path": "live/agy-resume/io.jsonl",
+    "format": "acp_io"
+  },
+  "incarnations": [
+    {
+      "path": "live/agy-resume/io.jsonl",
+      "format": "acp_io:2"
+    }
+  ]
+}

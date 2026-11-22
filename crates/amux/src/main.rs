@@ -38,8 +38,8 @@ use crate::verbs::CliAgent;
 #[command(
     name = "amux",
     version = node::version(),
-    about = "Every Claude Code and Codex agent on your machines, in one place",
-    long_about = "Every Claude Code and Codex agent on your machines, in one place.\n\n\
+    about = "Every coding agent on your machines, in one place",
+    long_about = "Every coding agent on your machines, in one place.\n\n\
                   With no command, the terminal app opens."
 )]
 struct Cli {
@@ -81,6 +81,8 @@ enum Command {
     Ls,
     /// Start a new agent in this directory.
     New {
+        /// The agent: claude, codex, or another the computer offers, by its
+        /// id: antigravity, opencode, grok, or one added to its config.
         agent: CliAgent,
         /// Its name, and with --worktree its branch's; amux picks one
         /// otherwise.
@@ -308,11 +310,14 @@ enum Internal {
     /// Ask a provider what it offers on this device and whether it is signed
     /// in, and write the answer to a file.
     Catalogue {
-        /// The provider: claude or codex.
+        /// The provider: claude, codex, or an ACP agent's id.
         provider: String,
         /// How the provider is started.
         #[arg(long)]
         command: String,
+        /// One of an ACP agent's arguments, in order; repeated.
+        #[arg(long = "arg", value_name = "ARG", allow_hyphen_values = true)]
+        args: Vec<String>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -377,9 +382,12 @@ fn main() -> ExitCode {
                 Internal::Catalogue {
                     provider,
                     command,
+                    args,
                     out,
                 },
-        } => ExitCode::from(agent::catalogue::main(&provider, &command, &out).clamp(0, 255) as u8),
+        } => ExitCode::from(
+            agent::catalogue::main(&provider, &command, &args, &out).clamp(0, 255) as u8,
+        ),
         Command::Internal {
             command: Internal::Hook {
                 provider: Hook::Claude,
@@ -716,6 +724,45 @@ mod tests {
         }
     }
 
+    /// The catalogue helper takes an ACP agent's arguments in order, a
+    /// flag among them, and none for Claude or Codex.
+    #[test]
+    fn the_catalogue_helper_takes_an_acp_agents_arguments_in_order() {
+        let parsed = |args: &[&str]| match Cli::try_parse_from(args).unwrap().command {
+            Some(Command::Internal {
+                command: Internal::Catalogue { provider, args, .. },
+            }) => (provider, args),
+            other => panic!("not the catalogue helper: {other:?}"),
+        };
+        let (provider, args) = parsed(&[
+            "amux",
+            "internal",
+            "catalogue",
+            "mine",
+            "--command",
+            "/opt/mine",
+            "--arg",
+            "serve",
+            "--arg",
+            "--stdio",
+            "--out",
+            "o",
+        ]);
+        assert_eq!(provider, "mine");
+        assert_eq!(args, ["serve", "--stdio"]);
+        let (_, args) = parsed(&[
+            "amux",
+            "internal",
+            "catalogue",
+            "claude",
+            "--command",
+            "claude",
+            "--out",
+            "o",
+        ]);
+        assert!(args.is_empty());
+    }
+
     /// These names are a contract between builds: a peer over SSH runs
     /// whichever `amux` it finds, an agent's hooks and its tool server name
     /// the build that launched them, and an agent outlives a daemon update.
@@ -730,6 +777,20 @@ mod tests {
                 "claude",
                 "--command",
                 "c",
+                "--out",
+                "o",
+            ],
+            &[
+                "amux",
+                "internal",
+                "catalogue",
+                "grok",
+                "--command",
+                "grok",
+                "--arg",
+                "agent",
+                "--arg",
+                "stdio",
                 "--out",
                 "o",
             ],

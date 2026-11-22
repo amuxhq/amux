@@ -150,12 +150,13 @@ pub fn components(theme: Theme) -> Vec<Component> {
         "composer_signed_out_codex",
         "Codex refused its sign-in: above a composer that still sends, a notice says Codex needs you to sign in, that sign-in failed and the provider's words why, to run codex login on the agent's host, and that someone who signed in elsewhere tries again by sending.",
         sign_in_composer_lines(
-            wire::Kind::Codex,
             "studio",
             &ui_view::SignInView {
                 state: wire::SignInState::Failed,
                 account: String::new(),
                 message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header".into(),
+                provider_name: "Codex".into(),
+                hint: "Run codex login.".into(),
             },
             "fixer",
             w,
@@ -167,7 +168,11 @@ pub fn components(theme: Theme) -> Vec<Component> {
             name,
             shows,
             native_composer_lines(
-                kind,
+                if kind == wire::Kind::Codex {
+                    "Codex"
+                } else {
+                    "Claude"
+                },
                 &stop,
                 if kind == wire::Kind::Codex {
                     "GPT-5.5"
@@ -919,7 +924,7 @@ impl HomeScene {
     }
 
     /// The open new-agent composer told what the desk offers its agent.
-    pub fn offer(&mut self, provider: wire::Provider, catalogue: &wire::Catalogue) {
+    pub fn offer(&mut self, provider: &str, catalogue: &wire::Catalogue) {
         if let Some(setup) = self.home.open_setup() {
             setup.offer(b"desk", provider, &[1; 32], catalogue);
         }
@@ -932,8 +937,8 @@ impl HomeScene {
 }
 
 /// Home over the authored fleet: two hosts, one of them away, and a dozen
-/// agents in every standing, with families, branches and what each
-/// session says for its second line. The exited fold is open and the
+/// agents in every standing, one of them an ACP agent, with families,
+/// branches and what each session says for its second line. The exited fold is open and the
 /// highlight on the first agent.
 pub fn authored_home() -> HomeScene {
     use std::collections::HashMap;
@@ -952,6 +957,11 @@ pub fn authored_home() -> HomeScene {
             of: Some(of),
         })))
     };
+    // The ACP agent the fleet's ACP row runs.
+    let opencode = crate::sessions::hinted(
+        crate::sessions::offered("opencode", "OpenCode", Kind::Acp),
+        "Run `opencode auth login` in the terminal",
+    );
     for (id, name, reach) in [
         (
             b"desk".as_slice(),
@@ -964,7 +974,23 @@ pub fn authored_home() -> HomeScene {
             Reach::Offline(wire::Offline::default()),
         ),
     ] {
-        event(Of::Host(wire::HostEntry::trusted_host(id, name, reach)));
+        // Each offers Claude, Codex and two ACP agents, one of them not
+        // signed in there, each with the words its own agent gives for
+        // signing in.
+        use crate::sessions::{hinted, offered, offered_providers};
+        let mut providers = offered_providers();
+        providers.push(opencode.clone());
+        providers.push(wire::ProviderOnHost {
+            signed_in: false,
+            ..hinted(
+                offered("antigravity", "Antigravity", Kind::Acp),
+                "Log in with your Google account",
+            )
+        });
+        event(Of::Host(wire::HostEntry {
+            providers,
+            ..wire::HostEntry::trusted_host(id, name, reach)
+        }));
     }
     let mut lines = HashMap::new();
     let asks = |wants: Wants, more: u32| Said::Ask {
@@ -998,7 +1024,7 @@ pub fn authored_home() -> HomeScene {
         i64,
         Option<&str>,
         Option<SessionLine>,
-    ); 12] = [
+    ); 13] = [
         (
             "planner",
             "desk",
@@ -1055,6 +1081,16 @@ pub fn authored_home() -> HomeScene {
             1,
             None,
             Some(line(None, Some("cargo test -p relay"), None)),
+        ),
+        (
+            "drafter",
+            "desk",
+            Kind::Acp,
+            Phase::Working,
+            Some("site-copy"),
+            2,
+            None,
+            Some(line(None, Some("Edit docs/guide/README.md"), None)),
         ),
         (
             "fixer",
@@ -1158,6 +1194,11 @@ pub fn authored_home() -> HomeScene {
             agent_id: name.as_bytes().to_vec(),
             host_id: host.as_bytes().to_vec(),
             kind: kind as i32,
+            provider: if kind == Kind::Acp {
+                opencode.provider_id.clone()
+            } else {
+                String::new()
+            },
             name: name.into(),
             cwd: "/home/sam/src/amux".into(),
             lifecycle: if exit_cause.is_some() {
@@ -1373,6 +1414,7 @@ fn facts(row: &Row) -> RowFacts {
                 ],
             }],
             more: 10,
+            cut: false,
         });
     }
     facts
@@ -2187,6 +2229,49 @@ fn row_sets() -> Vec<RowSet> {
             .collect(),
         ),
         (
+            "row_notice",
+            "What an ACP agent says about its own session: a note, a warning, the turn ending at its token limit, and an error it reports.",
+            [
+                (
+                    ui_view::NoticeReason::Agent,
+                    ui_view::NoticeSeverity::Info,
+                    "Indexed 1,204 files",
+                    "",
+                ),
+                (
+                    ui_view::NoticeReason::Agent,
+                    ui_view::NoticeSeverity::Warning,
+                    "Rate limited",
+                    "Retrying in 20 seconds.",
+                ),
+                (
+                    ui_view::NoticeReason::MaxTokens,
+                    ui_view::NoticeSeverity::Warning,
+                    "",
+                    "",
+                ),
+                (
+                    ui_view::NoticeReason::Agent,
+                    ui_view::NoticeSeverity::Error,
+                    "",
+                    "The model provider refused the request.\nCheck the API key in settings.",
+                ),
+            ]
+            .into_iter()
+            .map(|(reason, severity, title, text)| {
+                (
+                    row(RowKind::Notice {
+                        reason,
+                        severity,
+                        title: title.into(),
+                        text: text.into(),
+                    }),
+                    CLOSED,
+                )
+            })
+            .collect(),
+        ),
+        (
             "row_agent_message",
             "Messages between agents: one received with a file attached, a child's finished report, one sent and delivered, and one the recipient refused.",
             vec![
@@ -2308,6 +2393,7 @@ fn card(body: AskBody, mut choices: Vec<Choice>) -> AskCard {
         question_note: true,
         question_skip: true,
         question_reply: true,
+        reply_instead: false,
         stops_turn: true,
         default_to_no: false,
         state: CardState::Open,

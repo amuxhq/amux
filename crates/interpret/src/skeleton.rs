@@ -97,6 +97,8 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
             "deleted",
             "needsAuth",
             "notLoggedIn",
+            // A tool server Grok could not start (`grok-allow`).
+            "unavailable",
         ],
     ),
     (
@@ -349,8 +351,12 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
             wire::ATTACH_TOOL,
         ],
     ),
-    // What a Codex subagent did, reported on its parent's thread.
-    ("kind", &["started", "interacted", "completed"]),
+    // What a Codex subagent did, reported on its parent's thread; what
+    // Grok's own reviewer took up (`grok-allow`).
+    (
+        "kind",
+        &["started", "interacted", "completed", "permission"],
+    ),
     // The agent process's handshake requests to Codex, whose answers the
     // interpreter tells apart by id: a resumed thread's answer leaves its
     // turns out, a new thread's does not.
@@ -358,6 +364,88 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
         "id",
         &[crate::codex::THREAD_REQUEST, crate::codex::RESUME_REQUEST],
     ),
+    // The agent process's handshake requests to an ACP agent, whose answers
+    // the interpreter tells apart by id. The interpreter's own requests
+    // (`amux-prompt-…`, `amux-set-…`, `amux-apply-…`) need no place here:
+    // it writes them itself, so a made-up stream learns them from its
+    // writes.
+    (
+        "id",
+        &[
+            crate::acp::INITIALIZE_REQUEST,
+            crate::acp::NEW_SESSION_REQUEST,
+            crate::acp::RESUME_REQUEST,
+            crate::acp::LOAD_REQUEST,
+        ],
+    ),
+    // JSON-RPC's version, the only one there is.
+    ("jsonrpc", &["2.0"]),
+    // ACP's closed sets the interpreter branches on, as `acp_protocol`
+    // spells them: a config option's category, a call's kind and status, a
+    // permission option's kind and the outcome chosen, a turn's stop
+    // reason, a plan entry's, a notice's and a compaction's.
+    (
+        "category",
+        &["mode", "model", "model_config", "thought_level", "speed"],
+    ),
+    (
+        "kind",
+        &[
+            "read",
+            "edit",
+            "delete",
+            "move",
+            "search",
+            "execute",
+            "think",
+            "fetch",
+            "switch_mode",
+            "other",
+            "allow_once",
+            "allow_always",
+            "reject_once",
+            "reject_always",
+        ],
+    ),
+    (
+        "status",
+        &["pending", "in_progress", "completed", "failed", "cancelled"],
+    ),
+    // A permission's outcome; Grok's questions' (`grok-question`).
+    (
+        "outcome",
+        &[
+            "selected",
+            "cancelled",
+            "accepted",
+            "chat_about_this",
+            "skip_interview",
+        ],
+    ),
+    (
+        "stopReason",
+        &[
+            "end_turn",
+            "max_tokens",
+            "max_turn_requests",
+            "refusal",
+            "cancelled",
+        ],
+    ),
+    ("priority", &["high", "medium", "low"]),
+    ("severity", &["info", "warning", "error"]),
+    (
+        "state",
+        &[
+            "authenticated",
+            "unauthenticated",
+            "not_required",
+            "unknown",
+        ],
+    ),
+    // The auth method Grok lists only while signed in, by which the
+    // interpreter reads its sign-in (`grok-catalogue`).
+    ("id", &["cached_token"]),
     ("role", &["user", "assistant", "system"]),
     (
         "media_type",
@@ -482,6 +570,20 @@ const FRAMES: &[(&str, &str)] = &[
 /// position whose key is the data's (a model, a file, a question's id),
 /// itself aliased. A name anywhere else in data is aliased.
 const KEPT: &[(&str, &[&str])] = &[
+    // ACP: vendor data, of which the ACP interpreter reads Grok's turn
+    // tokens in its prompt answer (`grok-prompt`).
+    (
+        "*._meta",
+        &[
+            "inputTokens",
+            "outputTokens",
+            "cachedReadTokens",
+            "reasoningTokens",
+            "totalTokens",
+            // Grok's window for each model it lists (`grok-catalogue`).
+            "totalContextTokens",
+        ],
+    ),
     // Claude: a tool's input and result, wherever a frame carries them.
     ("message.content[].input", &["@input"]),
     ("event.content_block.input", &["@input"]),
@@ -1003,6 +1105,101 @@ fn kept(subtree: &str) -> &'static [&'static str] {
         .map_or(&[], |(_, kept)| kept)
 }
 
+/// The fields of a vendor's own ACP method that the ACP interpreter reads,
+/// by method and by place in the line (`[]` each element of a list), kept
+/// as names though the protocol crate leaves this vendor method's params
+/// untyped: Grok's compaction report, told by its update's tag, with its
+/// token counts (`grok-compact`), and its reviewer taking up a call and
+/// finishing with it (`grok-allow`); a tool server's state
+/// (`grok-allow`); and the models it lists, with each one's window.
+const ACP_VENDOR_FIELDS: &[(&str, &[Place])] = &[
+    (
+        "_x.ai/session_notification",
+        &[
+            ("params", &["update"]),
+            (
+                "params.update",
+                &[
+                    "sessionUpdate",
+                    "tokens_before",
+                    "tokens_after",
+                    "kind",
+                    "tool_call_id",
+                ],
+            ),
+        ],
+    ),
+    (
+        "_x.ai/mcp/server_status",
+        &[("params", &["name", "status", "detail"])],
+    ),
+    (
+        "_x.ai/models/update",
+        &[
+            ("params", &["availableModels", "currentModelId"]),
+            ("params.availableModels[]", &["modelId", "_meta"]),
+        ],
+    ),
+];
+
+/// A place in a line, with the names amux reads there.
+type Place = (&'static str, &'static [&'static str]);
+
+/// Marks the vendor fields of `line` that amux reads as typed in `fields`.
+fn vendor_fields(line: &Value, fields: &mut Fields) {
+    let Some(method) = line.get("method").and_then(Value::as_str) else {
+        return;
+    };
+    let Some((_, places)) = ACP_VENDOR_FIELDS.iter().find(|(named, _)| *named == method) else {
+        return;
+    };
+    for (place, read) in *places {
+        let mut objects = objects_at(line, place).peekable();
+        if objects.peek().is_none() {
+            continue;
+        }
+        let untyped = objects
+            .flat_map(|object| object.keys())
+            .filter(|name| !read.contains(&name.as_str()))
+            .cloned()
+            .collect();
+        fields.insert((*place).to_owned(), untyped);
+    }
+}
+
+/// The objects at a place in a line, a `[]` segment standing for each
+/// element of the list there.
+fn objects_at<'a>(
+    line: &'a Value,
+    place: &str,
+) -> Box<dyn Iterator<Item = &'a serde_json::Map<String, Value>> + 'a> {
+    let (first, rest) = place.split_once('.').unwrap_or((place, ""));
+    let (name, each) = match first.strip_suffix("[]") {
+        Some(name) => (name, true),
+        None => (first, false),
+    };
+    let Some(below) = line.get(name) else {
+        return Box::new(std::iter::empty());
+    };
+    let below: Vec<&'a Value> = if each {
+        below
+            .as_array()
+            .map(|items| items.iter().collect())
+            .unwrap_or_default()
+    } else {
+        vec![below]
+    };
+    let rest = rest.to_owned();
+    Box::new(below.into_iter().flat_map(move |value| {
+        if rest.is_empty() {
+            Box::new(value.as_object().into_iter())
+                as Box<dyn Iterator<Item = &'a serde_json::Map<String, Value>>>
+        } else {
+            objects_at(value, &rest)
+        }
+    }))
+}
+
 /// The protobuf fields that name a model, effort, permission or mode from
 /// the provider's own catalogue, kept as a fact's model is when [`chosen`]
 /// holds them.
@@ -1103,7 +1300,14 @@ const OWN_SERVERS: &[&str] = &[crate::AMUX_TOOL_SERVER, "codex_apps"];
 const MODEL: &[&str] = &["model", "modelId", "defaultModel"];
 
 /// The fields a protocol tags its messages with.
-const TAGS: &[&str] = &["type", "subtype", "method", "hook_event_name"];
+const TAGS: &[&str] = &[
+    "type",
+    "subtype",
+    "method",
+    "hook_event_name",
+    // ACP's kind of session update.
+    "sessionUpdate",
+];
 
 /// Fields amux itself adds to what a provider writes, before the
 /// interpreter reads it: a notebook cell's source beside its edit, and the
@@ -1305,7 +1509,13 @@ impl Frame {
                 items: codex_protocol::ITEM_LISTS,
                 maps: codex_protocol::DATA_MAPS,
             },
-            _ => Frame {
+            wire::Kind::Acp => Frame {
+                data: acp_protocol::DATA_SUBTREES,
+                items: acp_protocol::ITEM_LISTS,
+                maps: acp_protocol::DATA_MAPS,
+            },
+            // No provider speaks for no kind.
+            wire::Kind::Unspecified => Frame {
                 data: &[],
                 items: &[],
                 maps: &[],
@@ -1441,9 +1651,41 @@ impl Skeleton {
             }
             (wire::Kind::Codex, Some(Channel::Rpc)) => codex_protocol::fields(payload),
             (wire::Kind::Codex, None) => codex_protocol::client_fields(payload),
-            _ => Some(Fields::new()),
+            (wire::Kind::Acp, Some(Channel::Rpc)) => acp_protocol::fields(payload),
+            (wire::Kind::Acp, None) => acp_protocol::client_fields(payload),
+            // A channel the kind's provider does not write on, or no kind:
+            // nothing on it is typed, so every name is aliased.
+            (
+                wire::Kind::ClaudeSdk,
+                Some(
+                    Channel::Transcript
+                    | Channel::SubagentTranscript
+                    | Channel::Hook
+                    | Channel::Rpc,
+                ),
+            )
+            | (wire::Kind::ClaudePty, Some(Channel::Stream | Channel::Rpc))
+            | (
+                wire::Kind::Codex | wire::Kind::Acp,
+                Some(
+                    Channel::Transcript
+                    | Channel::SubagentTranscript
+                    | Channel::Hook
+                    | Channel::Stream,
+                ),
+            )
+            | (wire::Kind::Unspecified, _) => Some(Fields::new()),
         };
-        let names = match &typed {
+        // The vendor fields amux reads are kept as names, though they are
+        // not reported as the protocol's own.
+        let read = typed.as_ref().map(|fields| {
+            let mut fields = fields.clone();
+            if kind == wire::Kind::Acp {
+                vendor_fields(&value, &mut fields);
+            }
+            fields
+        });
+        let names = match &read {
             None => Names::Own,
             Some(fields) => Names::Typed(fields),
         };
@@ -1536,7 +1778,13 @@ impl Skeleton {
                         None => {
                             let above = path;
                             let path = child(path, name);
-                            let entered = at.frame.data.iter().find(|subtree| **subtree == path);
+                            // A subtree is a path, or `*.<name>`: any
+                            // field of that name at any depth.
+                            let entered = at
+                                .frame
+                                .data
+                                .iter()
+                                .find(|subtree| codex_protocol::is_map(&[subtree], &path));
                             match entered {
                                 // The protocol crate names its data's place.
                                 Some(subtree) => (
@@ -1964,6 +2212,15 @@ impl Skeleton {
         {
             return self.named(text);
         }
+        // A built-in ACP agent's id, which amux chose and by which the
+        // interpreter knows that agent's quirks. An agent a person added
+        // goes by the id they gave it, which is aliased.
+        if message == "amux.v1.AgentSpec"
+            && field == "provider"
+            && crate::acp::built_in(text).is_some()
+        {
+            return self.named(text);
+        }
         if field.ends_with("key") {
             return match key_prefix(text) {
                 Some(prefix) => self.alias(prefix, text),
@@ -2064,8 +2321,12 @@ fn server_tool(fields: &Map<String, Value>, kind: Option<&str>) -> bool {
 pub fn input_message(kind: wire::Kind) -> &'static str {
     match kind {
         wire::Kind::ClaudePty => "amux.v1.ClaudePtyInput",
+        wire::Kind::ClaudeSdk => "amux.v1.ClaudeSdkInput",
         wire::Kind::Codex => "amux.v1.CodexInput",
-        wire::Kind::ClaudeSdk | wire::Kind::Unspecified => "amux.v1.ClaudeSdkInput",
+        wire::Kind::Acp => "amux.v1.AcpInput",
+        // No interpreter has no kind, so no input message is its; the
+        // skeleton of a name the schema lacks is null.
+        wire::Kind::Unspecified => "",
     }
 }
 

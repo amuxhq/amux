@@ -1174,9 +1174,7 @@ impl State {
         } else {
             output
         };
-        for write in tool.take_result(content, result) {
-            emit.effect(write);
-        }
+        tool.take_result(result);
         if tool.ended_at_ms.is_none() {
             tool.ended_at_ms = at_ms.or(Some(self.shared.now_ms()));
         }

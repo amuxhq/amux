@@ -1,0 +1,10 @@
+{
+  "about": "opencode 1.18.33, recorded live: a second session/prompt sent while the first turn streams",
+  "spec": {
+    "provider": "opencode"
+  },
+  "recording": {
+    "path": "live/opencode-mid_turn/io.jsonl",
+    "format": "acp_io"
+  }
+}

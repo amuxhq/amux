@@ -1,0 +1,25 @@
+{
+  "spec": "grok-mid_turn",
+  "recorded": {
+    "provider": "grok",
+    "version": "1.0.89",
+    "model": "grok-4.7-build-fast",
+    "at": "2026-11-20T19:27:45.864053Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:7f1f18078fb4d45daf2dda552382b6381fd64aa467bcc1b56c5230638ee011d4",
+    "spawn.jsonl": "sha256:8aab213a2fb26391131f0a91634b225aee476835849fe455902b65583a019be5"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 201,
+    "personal_identifiers": 4
+  },
+  "session_ids": [
+    "01a1fa62-9f44-7330-8704-81bcbb12473e"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a second session/prompt sent while the first turn streams"
+  }
+}

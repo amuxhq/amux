@@ -672,6 +672,12 @@ public struct AskCard: Codable, Hashable, Sendable {
     /// The person may reply in their own words instead of answering the
     /// questions. Not for the provider's own dialogs, outside any turn.
     public var questionReply: Bool
+    /// The person may reply in their own words instead of answering
+    /// whatever the ask is (an ACP agent's): the turn is cancelled, which
+    /// closes the ask, and the words go as the next prompt. The card's
+    /// refusal takes them as its note, and [`reply_answer`] sends them on
+    /// their own.
+    public var replyInstead: Bool
     /// Stopping interrupts a running turn. Codex proposes a plan as its
     /// turn ends, so with its plan open there is no turn to stop.
     public var stopsTurn: Bool
@@ -681,7 +687,7 @@ public struct AskCard: Codable, Hashable, Sendable {
     public var defaultToNo: Bool
     public var state: CardState
 
-    public init(kind: Kind, key: String, itemKey: String, position: UInt, count: UInt, body: AskBody, choices: [Choice], questionNote: Bool, questionSkip: Bool, questionReply: Bool, stopsTurn: Bool, defaultToNo: Bool, state: CardState) {
+    public init(kind: Kind, key: String, itemKey: String, position: UInt, count: UInt, body: AskBody, choices: [Choice], questionNote: Bool, questionSkip: Bool, questionReply: Bool, replyInstead: Bool, stopsTurn: Bool, defaultToNo: Bool, state: CardState) {
         self.kind = kind
         self.key = key
         self.itemKey = itemKey
@@ -692,6 +698,7 @@ public struct AskCard: Codable, Hashable, Sendable {
         self.questionNote = questionNote
         self.questionSkip = questionSkip
         self.questionReply = questionReply
+        self.replyInstead = replyInstead
         self.stopsTurn = stopsTurn
         self.defaultToNo = defaultToNo
         self.state = state
@@ -708,6 +715,7 @@ public struct AskCard: Codable, Hashable, Sendable {
         case questionNote = "question_note"
         case questionSkip = "question_skip"
         case questionReply = "question_reply"
+        case replyInstead = "reply_instead"
         case stopsTurn = "stops_turn"
         case defaultToNo = "default_to_no"
         case state
@@ -1220,6 +1228,50 @@ public enum CallPhase: String, Codable, Hashable, Sendable, CaseIterable {
     case failed = "Failed"
     case denied = "Denied"
     case cancelled = "Cancelled"
+}
+
+/// What an agent can do, which decides the controls a client offers it.
+/// False is the safe reading of each: a control left out is all it costs.
+public struct Capabilities: Codable, Hashable, Sendable {
+    /// One background job can be stopped on its own.
+    public var stopsJob: Bool
+    /// Its own view can go to another conversation and be brought back.
+    public var switchesBack: Bool
+    /// It runs with a terminal interface of its own, which a terminal on
+    /// its host can attach to.
+    public var attachable: Bool
+    /// Once it has exited, it can be resumed.
+    public var resumable: Bool
+    /// A queued prompt can be sent into its running turn.
+    public var sendsNow: Bool
+    /// A prompt may carry images.
+    public var images: Bool
+    /// A prompt may carry files.
+    public var files: Bool
+    /// A slash command it does not list goes to it as typed.
+    public var passesUnknownCommands: Bool
+
+    public init(stopsJob: Bool, switchesBack: Bool, attachable: Bool, resumable: Bool, sendsNow: Bool, images: Bool, files: Bool, passesUnknownCommands: Bool) {
+        self.stopsJob = stopsJob
+        self.switchesBack = switchesBack
+        self.attachable = attachable
+        self.resumable = resumable
+        self.sendsNow = sendsNow
+        self.images = images
+        self.files = files
+        self.passesUnknownCommands = passesUnknownCommands
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case stopsJob = "stops_job"
+        case switchesBack = "switches_back"
+        case attachable
+        case resumable
+        case sendsNow = "sends_now"
+        case images
+        case files
+        case passesUnknownCommands = "passes_unknown_commands"
+    }
 }
 
 /// Where the card is after the person acts. Stop is in the menu while a
@@ -1798,7 +1850,10 @@ public struct ChatDelta: Codable, Hashable, Sendable {
 public struct ChatFrame: Codable, Hashable, Sendable {
     public var agent: AgentKey
     public var name: String
-    public var kind: Kind
+    /// The program it runs, as its host names it.
+    public var provider: ProviderLabel
+    /// What it can do: which controls its chat offers.
+    public var capabilities: Capabilities
     public var phase: PhaseView
     public var composer: ComposerView
     /// The model, effort in force, and a permission or mode other than the
@@ -1834,10 +1889,11 @@ public struct ChatFrame: Codable, Hashable, Sendable {
     /// Only a problem; a notice above the composer, which still sends.
     public var signIn: SignInView?
 
-    public init(agent: AgentKey, name: String, kind: Kind, phase: PhaseView, composer: ComposerView, controls: ControlsSummary, connection: Connection, caughtUp: Bool, hasOlder: Bool, arrivalsHeld: Bool, queue: [QueuedRow], underway: [SentPrompt], refused: [RefusedPrompt], askInput: [UInt8]?, context: ContextView?, ended: String?, git: Git?, reviewChip: ReviewChip?, signIn: SignInView?) {
+    public init(agent: AgentKey, name: String, provider: ProviderLabel, capabilities: Capabilities, phase: PhaseView, composer: ComposerView, controls: ControlsSummary, connection: Connection, caughtUp: Bool, hasOlder: Bool, arrivalsHeld: Bool, queue: [QueuedRow], underway: [SentPrompt], refused: [RefusedPrompt], askInput: [UInt8]?, context: ContextView?, ended: String?, git: Git?, reviewChip: ReviewChip?, signIn: SignInView?) {
         self.agent = agent
         self.name = name
-        self.kind = kind
+        self.provider = provider
+        self.capabilities = capabilities
         self.phase = phase
         self.composer = composer
         self.controls = controls
@@ -1859,7 +1915,8 @@ public struct ChatFrame: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case agent
         case name
-        case kind
+        case provider
+        case capabilities
         case phase
         case composer
         case controls
@@ -1951,12 +2008,18 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
     /// Approve the plan; with a `mode`, switching to that permission, which
     /// `mode_name` names as the agent's catalogue does.
     case approvePlan(mode: String, modeName: String)
+    /// An option the agent offered in its own words, for what it decides
+    /// itself: an ACP agent's "always" options, which it keeps as long as
+    /// it chooses, and an option of a kind this build does not know.
+    /// `refuses` says it turns the call down.
+    case offered(name: String, refuses: Bool)
 
     private enum Tag: String, CodingKey {
         case allowAlways = "AllowAlways"
         case allowSimilar = "AllowSimilar"
         case allowNetwork = "AllowNetwork"
         case approvePlan = "ApprovePlan"
+        case offered = "Offered"
     }
 
     private enum AllowAlwaysKeys: String, CodingKey {
@@ -1978,6 +2041,11 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
     private enum ApprovePlanKeys: String, CodingKey {
         case mode
         case modeName = "mode_name"
+    }
+
+    private enum OfferedKeys: String, CodingKey {
+        case name
+        case refuses
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2034,6 +2102,12 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
             self = .approvePlan(
                 mode: try _fields.decode(String.self, forKey: .mode),
                 modeName: try _fields.decode(String.self, forKey: .modeName))
+        case .offered:
+            let _fields = try _container.nestedContainer(
+                keyedBy: OfferedKeys.self, forKey: .offered)
+            self = .offered(
+                name: try _fields.decode(String.self, forKey: .name),
+                refuses: try _fields.decode(Bool.self, forKey: .refuses))
         }
     }
 
@@ -2090,6 +2164,11 @@ public enum ChoiceOutcome: Codable, Hashable, Sendable {
             var _fields = _container.nestedContainer(keyedBy: ApprovePlanKeys.self, forKey: .approvePlan)
             try _fields.encode(mode, forKey: .mode)
             try _fields.encode(modeName, forKey: .modeName)
+        case .offered(let name, let refuses):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: OfferedKeys.self, forKey: .offered)
+            try _fields.encode(name, forKey: .name)
+            try _fields.encode(refuses, forKey: .refuses)
         }
     }
 }
@@ -2301,6 +2380,10 @@ public enum Composer: Codable, Hashable, Sendable {
     /// The agent has exited: the draft goes through ResumeAgent as the new
     /// incarnation's first prompt, one tap.
     case resume
+    /// The agent has exited and its program cannot reopen its
+    /// conversation, so nothing resumes it: there is no text box. A fresh
+    /// conversation would be another agent, never this one resumed.
+    case ended
     /// The chat is not current. Drafting continues; a send is refused at
     /// once and the draft stays in the composer, which says why.
     case waiting(Waiting)
@@ -2328,6 +2411,7 @@ public enum Composer: Codable, Hashable, Sendable {
             switch _name {
             case "Send": self = .send
             case "Resume": self = .resume
+            case "Ended": self = .ended
             default:
                 throw DecodingError.dataCorruptedError(
                     in: _single, debugDescription: "no Composer is named \(_name)")
@@ -2360,6 +2444,9 @@ public enum Composer: Codable, Hashable, Sendable {
         case .resume:
             var _container = encoder.singleValueContainer()
             try _container.encode("Resume")
+        case .ended:
+            var _container = encoder.singleValueContainer()
+            try _container.encode("Ended")
         case .waiting(let _value):
             var _container = encoder.container(keyedBy: Tag.self)
             try _container.encode(_value, forKey: .waiting)
@@ -3197,6 +3284,13 @@ public struct FleetCard: Codable, Hashable, Sendable {
     /// The name it is addressed and renamed by.
     public var handle: String
     public var kind: Kind
+    /// Its provider's id: "claude", "codex", or an ACP agent's.
+    public var provider: String
+    /// What people call its provider: the name its host gives it, else its
+    /// id ("Claude", "OpenCode", the name a person gave their own agent).
+    public var providerName: String
+    /// Its provider has a terminal of its own the agent can be opened in.
+    public var attachable: Bool
     public var attention: Attention
     public var cwd: String
     public var phaseSinceMs: Int64
@@ -3234,11 +3328,14 @@ public struct FleetCard: Codable, Hashable, Sendable {
     /// The repository it works in, by its remote, else its folder.
     public var repository: Repository?
 
-    public init(agent: AgentKey, name: String, handle: String, kind: Kind, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, native: Bool, branch: String?, exitCause: ExitCause?, repository: Repository?) {
+    public init(agent: AgentKey, name: String, handle: String, kind: Kind, provider: String, providerName: String, attachable: Bool, attention: Attention, cwd: String, phaseSinceMs: Int64, host: String, hostReach: Reach, children: UInt32, familyAttention: Attention, members: UInt32, descendants: UInt32, backgroundJobs: UInt32, closeHeld: Bool, filing: Filing, topLevel: Bool, native: Bool, branch: String?, exitCause: ExitCause?, repository: Repository?) {
         self.agent = agent
         self.name = name
         self.handle = handle
         self.kind = kind
+        self.provider = provider
+        self.providerName = providerName
+        self.attachable = attachable
         self.attention = attention
         self.cwd = cwd
         self.phaseSinceMs = phaseSinceMs
@@ -3263,6 +3360,9 @@ public struct FleetCard: Codable, Hashable, Sendable {
         case name
         case handle
         case kind
+        case provider
+        case providerName = "provider_name"
+        case attachable
         case attention
         case cwd
         case phaseSinceMs = "phase_since_ms"
@@ -3856,6 +3956,44 @@ public struct HighlightedCode: Codable, Hashable, Sendable {
     }
 }
 
+/// An agent program a host offers, as a new-agent screen lists it.
+public struct HostProvider: Codable, Hashable, Sendable {
+    /// What it is named by: what a new agent and the host's catalogue ask
+    /// for.
+    public var provider: String
+    /// What people call it, as the host names it ("Claude", "OpenCode", the
+    /// name a person gave their own); its id when the host gives none.
+    public var name: String
+    /// What a person does to sign in to it, in its own words; empty when
+    /// the host knows none.
+    public var signInHint: String
+    /// The program's version as the host last read it; empty where it gave
+    /// none.
+    public var version: String
+    /// What an agent of it started there now can do.
+    public var capabilities: Capabilities
+    /// Whether it is signed in on the host; None until the host has asked it.
+    public var signedIn: Bool?
+
+    public init(provider: String, name: String, signInHint: String, version: String, capabilities: Capabilities, signedIn: Bool?) {
+        self.provider = provider
+        self.name = name
+        self.signInHint = signInHint
+        self.version = version
+        self.capabilities = capabilities
+        self.signedIn = signedIn
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case provider
+        case name
+        case signInHint = "sign_in_hint"
+        case version
+        case capabilities
+        case signedIn = "signed_in"
+    }
+}
+
 /// A host in the fleet as a screen lists it.
 public struct HostView: Codable, Hashable, Sendable {
     public var hostId: [UInt8]
@@ -3887,12 +4025,10 @@ public struct HostView: Codable, Hashable, Sendable {
     /// on a live stream: what the fleet shows for it is what it lists now.
     /// Always true for this device.
     public var current: Bool
-    /// The providers the host has said it can run, and whether each is
-    /// signed in there.
-    public var providers: [ProviderSignIn]
-    /// Which Claude a new agent on it runs, as its settings resolve it;
-    /// None until it has said.
-    public var claudeKind: Kind?
+    /// The agent programs the host offers, in its order: Claude and Codex
+    /// once it has said anything, then each other agent it has asked,
+    /// a person's own among them.
+    public var providers: [HostProvider]
     public var lastDialError: String?
     /// The operating system it runs, when it said.
     public var platform: Platform?
@@ -3905,7 +4041,7 @@ public struct HostView: Codable, Hashable, Sendable {
     public var through: String?
     public var version: String?
 
-    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, sameNetwork: Bool, link: UInt64, addrs: [String], relayOnly: Bool, pairingOpen: Bool, current: Bool, providers: [ProviderSignIn], claudeKind: Kind?, lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
+    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, sameNetwork: Bool, link: UInt64, addrs: [String], relayOnly: Bool, pairingOpen: Bool, current: Bool, providers: [HostProvider], lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
         self.hostId = hostId
         self.name = name
         self.local = local
@@ -3919,7 +4055,6 @@ public struct HostView: Codable, Hashable, Sendable {
         self.pairingOpen = pairingOpen
         self.current = current
         self.providers = providers
-        self.claudeKind = claudeKind
         self.lastDialError = lastDialError
         self.platform = platform
         self.signedIn = signedIn
@@ -3941,7 +4076,6 @@ public struct HostView: Codable, Hashable, Sendable {
         case pairingOpen = "pairing_open"
         case current
         case providers
-        case claudeKind = "claude_kind"
         case lastDialError = "last_dial_error"
         case platform
         case signedIn = "signed_in"
@@ -4336,6 +4470,9 @@ public enum Kind: String, Codable, Hashable, Sendable, CaseIterable {
     case claudePty = "ClaudePty"
     case claudeSdk = "ClaudeSdk"
     case codex = "Codex"
+    /// An agent program that speaks the Agent Client Protocol; which one is
+    /// the agent's provider id.
+    case acp = "Acp"
 }
 
 /// Where a prompt on its way is drawn: where it was sent to (see
@@ -4503,22 +4640,25 @@ public struct ModelChoice: Codable, Hashable, Sendable {
 /// An agent to start on a host.
 public struct NewAgent: Codable, Hashable, Sendable {
     public var hostId: [UInt8]
-    public var kind: Kind
+    /// The agent program to start, by the id the host's entry lists it by;
+    /// the host's entry says which kind of agent that starts.
+    public var provider: String
     public var cwd: String
     public var name: String
     public var effort: String?
     public var mode: String?
     /// The provider's model, effort, permission and mode, by their values
-    /// in the host's catalogue; the host's default for each one absent. Only
-    /// Codex takes a mode.
+    /// in the host's catalogue; the host's default for each one absent, and
+    /// for a mode, the agent's own. One the provider takes no pick of at
+    /// start is not sent.
     public var model: String?
     /// Start it in a worktree of its own, made from the folder's repository.
     public var newWorktree: Bool?
     public var permission: String?
 
-    public init(hostId: [UInt8], kind: Kind, cwd: String, name: String, effort: String?, mode: String?, model: String?, newWorktree: Bool?, permission: String?) {
+    public init(hostId: [UInt8], provider: String, cwd: String, name: String, effort: String?, mode: String?, model: String?, newWorktree: Bool?, permission: String?) {
         self.hostId = hostId
-        self.kind = kind
+        self.provider = provider
         self.cwd = cwd
         self.name = name
         self.effort = effort
@@ -4530,7 +4670,7 @@ public struct NewAgent: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case hostId = "host_id"
-        case kind
+        case provider
         case cwd
         case name
         case effort
@@ -4636,6 +4776,25 @@ public enum NewAgentPick: Codable, Hashable, Sendable {
             try _container.encode(_value, forKey: .mode)
         }
     }
+}
+
+/// What a notice is about.
+public enum NoticeReason: String, Codable, Hashable, Sendable, CaseIterable {
+    /// The agent's own words.
+    case agent = "Agent"
+    /// The model refused to go on; the turn is over.
+    case refusal = "Refusal"
+    /// The turn reached the model's limit on tokens.
+    case maxTokens = "MaxTokens"
+    /// The turn reached the agent's limit on model requests in one turn.
+    case maxTurnRequests = "MaxTurnRequests"
+}
+
+/// How much a notice matters, as its agent marks it.
+public enum NoticeSeverity: String, Codable, Hashable, Sendable, CaseIterable {
+    case info = "Info"
+    case warning = "Warning"
+    case error = "Error"
 }
 
 /// Which side of a one-tap sign-in this device is.
@@ -5854,27 +6013,22 @@ public enum ProsePart: Codable, Hashable, Sendable {
     }
 }
 
-/// Which provider's program a host runs: the vocabulary amux uses to ask a
-/// host what it offers with no agent running. Distinct from Kind, which is
-/// the interpreter.
-public enum Provider: String, Codable, Hashable, Sendable, CaseIterable {
-    case unspecified = "Unspecified"
-    case claude = "Claude"
-    case codex = "Codex"
-}
+/// How a chat names the program its agent runs.
+public struct ProviderLabel: Codable, Hashable, Sendable {
+    /// Its id ("claude", "opencode", one a person chose).
+    public var provider: String
+    /// What people call it, as the agent's host names it; the id while the
+    /// host has not said.
+    public var name: String
 
-public struct ProviderSignIn: Codable, Hashable, Sendable {
-    public var provider: Provider
-    public var signedIn: Bool
-
-    public init(provider: Provider, signedIn: Bool) {
+    public init(provider: String, name: String) {
         self.provider = provider
-        self.signedIn = signedIn
+        self.name = name
     }
 
     private enum CodingKeys: String, CodingKey {
         case provider
-        case signedIn = "signed_in"
+        case name
     }
 }
 
@@ -7363,6 +7517,10 @@ public enum RowKind: Codable, Hashable, Sendable {
     /// Codex's automatic reviewer on an action. A client words the status,
     /// and says `status_word` for one this build does not know.
     case autoReview(status: ReviewStatus, statusWord: String, risk: String, rationale: String, subject: String)
+    /// Something the agent, or the end of its turn, says to the person
+    /// that is not the conversation: the agent's own notice, under its own
+    /// title when it gives one, or why its turn stopped short.
+    case notice(reason: NoticeReason, severity: NoticeSeverity, title: String, text: String)
     case unrecognized(what: String, summary: String)
     /// An item that belongs to the overview or the activity line, never a row.
     case hidden
@@ -7388,6 +7546,7 @@ public enum RowKind: Codable, Hashable, Sendable {
         case boundary = "Boundary"
         case agentMessage = "AgentMessage"
         case autoReview = "AutoReview"
+        case notice = "Notice"
         case unrecognized = "Unrecognized"
     }
 
@@ -7520,6 +7679,13 @@ public enum RowKind: Codable, Hashable, Sendable {
         case risk
         case rationale
         case subject
+    }
+
+    private enum NoticeKeys: String, CodingKey {
+        case reason
+        case severity
+        case title
+        case text
     }
 
     private enum UnrecognizedKeys: String, CodingKey {
@@ -7700,6 +7866,14 @@ public enum RowKind: Codable, Hashable, Sendable {
                 risk: try _fields.decode(String.self, forKey: .risk),
                 rationale: try _fields.decode(String.self, forKey: .rationale),
                 subject: try _fields.decode(String.self, forKey: .subject))
+        case .notice:
+            let _fields = try _container.nestedContainer(
+                keyedBy: NoticeKeys.self, forKey: .notice)
+            self = .notice(
+                reason: try _fields.decode(NoticeReason.self, forKey: .reason),
+                severity: try _fields.decode(NoticeSeverity.self, forKey: .severity),
+                title: try _fields.decode(String.self, forKey: .title),
+                text: try _fields.decode(String.self, forKey: .text))
         case .unrecognized:
             let _fields = try _container.nestedContainer(
                 keyedBy: UnrecognizedKeys.self, forKey: .unrecognized)
@@ -7848,6 +8022,13 @@ public enum RowKind: Codable, Hashable, Sendable {
             try _fields.encode(risk, forKey: .risk)
             try _fields.encode(rationale, forKey: .rationale)
             try _fields.encode(subject, forKey: .subject)
+        case .notice(let reason, let severity, let title, let text):
+            var _container = encoder.container(keyedBy: Tag.self)
+            var _fields = _container.nestedContainer(keyedBy: NoticeKeys.self, forKey: .notice)
+            try _fields.encode(reason, forKey: .reason)
+            try _fields.encode(severity, forKey: .severity)
+            try _fields.encode(title, forKey: .title)
+            try _fields.encode(text, forKey: .text)
         case .unrecognized(let what, let summary):
             var _container = encoder.container(keyedBy: Tag.self)
             var _fields = _container.nestedContainer(keyedBy: UnrecognizedKeys.self, forKey: .unrecognized)
@@ -7939,8 +8120,12 @@ public struct RunCounts: Codable, Hashable, Sendable {
     public var subagents: UInt32
     /// Tool-server calls, images and the rest.
     public var other: UInt32
+    /// Steps refused before they ran, by the person or the agent's own
+    /// rules: counted here and not as what they would have done, so a run
+    /// whose one command was denied does not read as having run it.
+    public var denied: UInt32
 
-    public init(commands: UInt32, edits: UInt32, reads: UInt32, searches: UInt32, lists: UInt32, fetches: UInt32, subagents: UInt32, other: UInt32) {
+    public init(commands: UInt32, edits: UInt32, reads: UInt32, searches: UInt32, lists: UInt32, fetches: UInt32, subagents: UInt32, other: UInt32, denied: UInt32) {
         self.commands = commands
         self.edits = edits
         self.reads = reads
@@ -7949,6 +8134,7 @@ public struct RunCounts: Codable, Hashable, Sendable {
         self.fetches = fetches
         self.subagents = subagents
         self.other = other
+        self.denied = denied
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -7960,6 +8146,7 @@ public struct RunCounts: Codable, Hashable, Sendable {
         case fetches
         case subagents
         case other
+        case denied
     }
 }
 
@@ -8393,6 +8580,47 @@ public struct SettingsView: Codable, Hashable, Sendable {
     }
 }
 
+public enum SettleTurn: String, Codable, Hashable, Sendable, CaseIterable {
+    case working = "Working"
+    case needsYou = "NeedsYou"
+}
+
+/// What settling an agent costs, for the confirm a client shows first:
+/// the work it cuts short, and whether a message resumes the agent after.
+/// Every client words it; [`SettleWarning::asks`] is when to ask at all.
+public struct SettleWarning: Codable, Hashable, Sendable {
+    public var backgroundJobs: UInt32
+    /// Its live descendants: those its host counts, or those this fleet
+    /// sees when it sees more.
+    public var subagents: UInt32
+    /// A message resumes it once settled: its program reopens the
+    /// conversation in a later process. When not, settling ends the
+    /// conversation for good. A provider subagent takes no messages and
+    /// goes with its parent, so it is never said to lose anything.
+    public var resumable: Bool
+    /// A subagent its parent's provider runs.
+    public var providerSubagent: Bool
+    /// The turn under way, which settling ends: working, or holding an
+    /// ask open, which settling leaves unanswered.
+    public var turn: SettleTurn?
+
+    public init(backgroundJobs: UInt32, subagents: UInt32, resumable: Bool, providerSubagent: Bool, turn: SettleTurn?) {
+        self.backgroundJobs = backgroundJobs
+        self.subagents = subagents
+        self.resumable = resumable
+        self.providerSubagent = providerSubagent
+        self.turn = turn
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case backgroundJobs = "background_jobs"
+        case subagents
+        case resumable
+        case providerSubagent = "provider_subagent"
+        case turn
+    }
+}
+
 /// One step of onboarding, in the order clients show them.
 public enum SetupStep: String, Codable, Hashable, Sendable, CaseIterable {
     /// Connect a phone: the pairing window.
@@ -8519,17 +8747,27 @@ public struct SignInView: Codable, Hashable, Sendable {
     public var state: SignInState
     public var account: String
     public var message: String
+    /// Who needs signing in to: the provider's name, as its host gives it.
+    public var providerName: String
+    /// What a person does to sign in, in the provider's words as its host
+    /// gives them ("Run `opencode auth login` in the terminal"); empty when
+    /// nothing is known. Code is marked with backticks.
+    public var hint: String
 
-    public init(state: SignInState, account: String, message: String) {
+    public init(state: SignInState, account: String, message: String, providerName: String, hint: String) {
         self.state = state
         self.account = account
         self.message = message
+        self.providerName = providerName
+        self.hint = hint
     }
 
     private enum CodingKeys: String, CodingKey {
         case state
         case account
         case message
+        case providerName = "provider_name"
+        case hint
     }
 }
 

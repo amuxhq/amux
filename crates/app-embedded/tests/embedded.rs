@@ -328,14 +328,14 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
         "{hosts:?}"
     );
     assert!(hosts.iter().any(|host| host.local && host.name == "phone"));
-    // The desk says which Claude a new agent there runs, so the phone starts
-    // the same kind its person would; the phone runs none.
+    // The desk lists the agents it runs, each named as it names them, so
+    // the phone offers what the desk would start.
     let listed = hosts.iter().find(|host| host.name == "desk").unwrap();
     assert!(
-        matches!(
-            listed.claude_kind,
-            Some(wire::Kind::ClaudeSdk | wire::Kind::ClaudePty)
-        ),
+        listed
+            .providers
+            .iter()
+            .any(|offer| offer.provider == "claude" && offer.name == "Claude"),
         "{listed:?}"
     );
 

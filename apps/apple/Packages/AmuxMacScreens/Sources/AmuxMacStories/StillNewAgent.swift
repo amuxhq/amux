@@ -17,7 +17,7 @@ final class StillNewAgent: NewAgentSurface {
     private(set) var directory: String
     var query = ""
     var typed = ""
-    private(set) var provider: Provider = .claude
+    private(set) var chosen: String?
     private var choices: [String: String] = [:]
     var newWorktree = false
     var name = ""
@@ -54,14 +54,22 @@ final class StillNewAgent: NewAgentSurface {
         return (repositories + recent + history).filter { $0.path.lowercased().contains(wanted) }
     }
 
-    func choose(provider: Provider) {
-        self.provider = provider
+    /// The chosen host's agents, as its entry lists them.
+    var agents: [HostProvider] { hosts.first { $0.hostId == machine }?.providers ?? [] }
+    var provider: String? { chosen ?? agents.first?.provider }
+
+    func choose(provider: String) {
+        chosen = provider
         choices = [:]
     }
 
     var offer: OfferState? { .offered }
 
     var settings: SettingsView? {
+        // Claude's settings, and for any other agent the models it listed in
+        // its last conversation there, as an ACP agent offers them: no
+        // efforts, no permissions, and modes with none of them normal.
+        if provider != agents.first?.provider { return otherAgent }
         let model = choices["model"] ?? "opus"
         let effort = choices["effort"] ?? "high"
         let permission = choices["permission"] ?? "default"
@@ -92,6 +100,28 @@ final class StillNewAgent: NewAgentSurface {
             ],
             modes: [],
             changeable: Changeability(model: .pick, effort: .pick, permission: .pick, mode: .notOffered),
+            commands: [])
+    }
+
+    private var otherAgent: SettingsView {
+        let model = choices["model"] ?? "anthropic/claude-sonnet-5"
+        let mode = choices["mode"]
+        return SettingsView(
+            models: [
+                ModelChoice(
+                    value: "anthropic/claude-sonnet-5", displayName: "Claude Sonnet 5", description: "", efforts: [],
+                    current: model == "anthropic/claude-sonnet-5", unlisted: false, defaultEffort: nil),
+                ModelChoice(
+                    value: "openai/gpt-6", displayName: "GPT-6", description: "", efforts: [],
+                    current: model == "openai/gpt-6", unlisted: false, defaultEffort: nil),
+            ],
+            efforts: [],
+            permissions: [],
+            modes: [
+                ModeChoice(value: "build", displayName: "Build", current: mode == "build", unlisted: false, normal: false, settable: true),
+                ModeChoice(value: "plan", displayName: "Plan", current: mode == "plan", unlisted: false, normal: false, settable: true),
+            ],
+            changeable: Changeability(model: .pick, effort: .notOffered, permission: .notOffered, mode: .pick),
             commands: [])
     }
 

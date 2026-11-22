@@ -89,6 +89,12 @@ pub struct HostDecl {
     /// What agents a client starts on this host play; none plays nothing.
     #[serde(default)]
     pub script: Option<Script>,
+    /// Agents added in the host's config file, by id, as a person adds
+    /// one under `[agents.<id>]`: the net writes each entry there, running
+    /// the fake ACP agent on a script of the entry's own, and the host
+    /// offers them as it reads them from that file.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub agents: BTreeMap<String, ConfiguredAgent>,
     /// Git repositories the net makes in the host's directory, by path
     /// below it; each is one of the host's repositories.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -135,6 +141,20 @@ pub struct HostDecl {
     /// about a host coming back must not race a shorter clock.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_grace_secs: Option<u64>,
+}
+
+/// An agent a host's config adds: what people call it and what the fake
+/// ACP agent standing in for its program plays. Every agent of this id a
+/// client starts on the host plays the script from its start.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfiguredAgent {
+    /// The entry's `name`; none leaves the id as its name, as a person's
+    /// entry without one does.
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub script: Script,
 }
 
 /// What an agent's provider is.

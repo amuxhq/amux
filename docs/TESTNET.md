@@ -196,6 +196,13 @@ large model and the operator's own default permission mode, which may act withou
 (`settle`, `turn_ended`, `input_settled`) allow `REAL_PATIENCE`, 240 seconds, rather than `PATIENCE`. On a real
 host, refreshing what each provider offers (models, commands) runs the real provider.
 
+A real host offers, in place of the fake ACP agent, the built-in agents that speak the Agent Client Protocol
+(Antigravity, OpenCode, Grok) that this machine has on its PATH, each under its own sign-in and with its own
+settings, which nothing in the net writes; OpenCode, whose own default runs commands and edits without asking, is
+told for its process alone to ask first. Each runs behind `acp-probe` (from `qualification`), so its traffic is
+kept under the recordings folder by host and agent id; without the probe built, a real host offers none of them.
+A net on a fake host never runs them.
+
 ## Process and supervised hosts
 
 A process host is a real `amux` daemon in its own process, with its own installation config under the net's
@@ -609,7 +616,7 @@ what holds the port.
 | A host's own record | `fleet HOST` (its own agents and its trusted peers', as its clients show them; rows a host it no longer trusts left behind are listed apart), `chat HOST AGENT` (each item with what its body decodes as, and the asks waiting on a person), `block HOST AGENT`, `provider-input AGENT` |
 | The real CLI | `amux HOST -- ARGS…`, with standard input passed through; bare `pair` runs in the background and prints its PIN and address, and `pair ADDRESS` naming one of the net's hosts goes through the pair's gate |
 | Terminal client | `tui open HOST [--size COLSxROWS] [--theme light\|dark \| --palette FILE] [--name N]`, `tui keys PANE KEY…`, `tui type PANE TEXT`, `tui paste PANE TEXT\|--file FILE\|--file -`, `tui clip PANE FILE [--image]`, `tui screen PANE`, `tui shot PANE`, `tui record PANE FILE [--every D] [--for D]`, `tui resize PANE COLSxROWS`, `tui attach PANE AGENT`, `tui watch PANE`, `tui close PANE`, `tui list` |
-| Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone perform ID ACTION` (an element's named accessibility action, such as a review line's "Select line"), `phone choose LABEL` (an item of the dialog or menu that is open), `phone type TEXT --into ID`, `phone search TEXT`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone attach AGENT FILE [--image]`, `phone settle` |
+| Phone | `phone open [--host H] [--relay]`, `phone pair HOST`, `phone connect ACCOUNT`, `phone tap ID`, `phone perform ID ACTION` (an element's named accessibility action, such as a review line's "Select line"), `phone choose LABEL` (an item of the dialog or menu that is open), `phone back` (as the back button does), `phone type TEXT --into ID`, `phone search TEXT`, `phone scroll DIRECTION [--in ID]`, `phone query`, `phone shot`, `phone appearance light\|dark`, `phone text-size SIZE`, `phone attach AGENT FILE [--image]`, `phone settle` |
 | Evidence | `capture NAME [--note TEXT]`, `log [--tail N]`, `dump show BUNDLE [--agent A]` |
 | Files to test with | `make-file NAME SIZE [--fill zero\|random\|text]`: a file below the folder (no `..`), up to 2g |
 | Ledger | `ledger read`, `ledger findings`, `ledger claim TEXT`, `ledger idea TEXT`, `ledger finding NAME [--new\|--duplicate-of TESTER/NAME]`, `ledger done SUMMARY` |
@@ -711,6 +718,7 @@ watch` the terminal pane. Every environment is real throughout, so a QA run may 
 | `busy` | Four hosts with six agents between them: two at work editing, one Codex reading a repository, a terminal Claude waiting on a permission, and quick ones that come to rest. The phone is paired with three hosts; `nas` stays discoverable for pairing by hand. The terminal client runs on `studio`. |
 | `asks` | One host whose agents stop to ask: a Claude permission for a new file, a Claude plan, a Claude question, a terminal Claude's permission and a Codex approval. The phone is paired with it and the terminal client runs on it. |
 | `first-run` | Two hosts on the network, neither paired: the empty fleet, discovery and the pairing flow, on the phone only. |
+| `acp` | One host offering the agents this Mac has installed that speak the Agent Client Protocol (Antigravity, OpenCode, Grok), beside Claude and Codex, under the operator's own sign-ins. The phone is paired with it and the terminal client runs on it. |
 
 ## The harness's own tests
 

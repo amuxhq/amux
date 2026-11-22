@@ -54,6 +54,7 @@ pub async fn conformance(kind: Kind, binary: &Path, recording: &Path) -> Result<
                 #[cfg(not(unix))]
                 Kind::Codex => stdio(binary, recording, process).await,
                 Kind::ClaudePty => terminal(binary, recording, process).await,
+                Kind::Acp => stdio(binary, recording, process).await,
             }
         };
         tokio::time::timeout(PROCESS_DEADLINE, played)

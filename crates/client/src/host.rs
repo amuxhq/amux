@@ -35,13 +35,11 @@ impl Host {
         }
     }
 
-    /// What `provider` offers on this host with no agent running.
-    pub async fn catalogue(
-        &self,
-        provider: wire::Provider,
-    ) -> Result<wire::GetCatalogueResponse, RpcError> {
+    /// What the provider `provider` names by its id ("claude", "codex",
+    /// or an ACP agent's) offers on this host with no agent running.
+    pub async fn catalogue(&self, provider: &str) -> Result<wire::GetCatalogueResponse, RpcError> {
         let request = wire::GetCatalogueRequest {
-            provider: provider as i32,
+            provider: provider.to_owned(),
         };
         Ok(self.stub()?.get_catalogue(request).await?.into_inner())
     }

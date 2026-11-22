@@ -1,0 +1,489 @@
+{
+  "about": "An ACP agent a person added, so no quirks: modes set by session/set_mode, an agent message as its own prompt, a cancel with a permission open, send-now refused, every stop reason amux reads, a turn's error, a new file's diff, a title, vendor methods off the known list, and a link.",
+  "spec": {
+    "provider": "my-own-agent",
+    "unnamed": true,
+    "created_at_ms": 1800000000000
+  },
+  "events": [
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "id": "agent-initialize",
+          "result": {
+            "protocolVersion": 1,
+            "agentCapabilities": {
+              "loadSession": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "id": "agent-session",
+          "result": {
+            "sessionId": "s1",
+            "modes": {
+              "currentModeId": "ask",
+              "availableModes": [
+                {
+                  "id": "ask",
+                  "name": "Ask"
+                },
+                {
+                  "id": "code",
+                  "name": "Code"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "i1",
+        "mode": {
+          "value": "code"
+        }
+      },
+      "note": "modes alone: the mode is set with session/set_mode",
+      "expect": {
+        "reply": "accepted"
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "id": "amux-set-1",
+          "result": {}
+        }
+      }
+    },
+    {
+      "agent_message": {
+        "envelope": "m1",
+        "from": "reviewer",
+        "text": "Please check the tests."
+      },
+      "note": "an idle agent takes a message as a prompt of its own"
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "plan",
+              "entries": [
+                {
+                  "content": "Run the tests",
+                  "priority": "high",
+                  "status": "in_progress"
+                },
+                {
+                  "content": "Report",
+                  "priority": "low",
+                  "status": "pending"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "usage_update",
+              "used": 1200,
+              "size": 200000,
+              "cost": {
+                "amount": 0.25,
+                "currency": "USD"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "Checking."
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "tool_call",
+              "toolCallId": "c1",
+              "title": "Run cargo test",
+              "kind": "execute",
+              "status": "pending"
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "id": 7,
+          "method": "session/request_permission",
+          "params": {
+            "sessionId": "s1",
+            "toolCall": {
+              "toolCallId": "c1"
+            },
+            "options": [
+              {
+                "optionId": "yes",
+                "name": "Allow",
+                "kind": "allow_once"
+              },
+              {
+                "optionId": "no",
+                "name": "Reject",
+                "kind": "reject_once"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "i2",
+        "answer": {
+          "ask": "ask-1",
+          "answer": {
+            "option": "maybe"
+          }
+        }
+      },
+      "note": "only an offered option answers",
+      "expect": {
+        "reply": "rejected:UNSUPPORTED"
+      }
+    },
+    {
+      "input": {
+        "id": "i3",
+        "interrupt": {}
+      },
+      "note": "the cancel is a notification, and the open permission is answered cancelled at once"
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": " Stopping."
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "id": "amux-prompt-6d31",
+          "result": {
+            "stopReason": "cancelled"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "p1",
+        "prompt": {
+          "text": "Write the summary."
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "p2",
+        "prompt": {
+          "text": "And then stop."
+        }
+      },
+      "expect": {
+        "reply": "queued"
+      }
+    },
+    {
+      "input": {
+        "id": "i4",
+        "send_now": {
+          "target": "p2"
+        }
+      },
+      "note": "an agent not known to steer is never sent a prompt mid-turn",
+      "expect": {
+        "reply": "rejected:UNSUPPORTED"
+      }
+    },
+    {
+      "input": {
+        "id": "i5",
+        "withdraw": {
+          "target": "p2"
+        }
+      },
+      "expect": {
+        "reply": "accepted"
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "notice",
+              "severity": "warning",
+              "title": "Slow",
+              "description": "The model is slow today."
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "compaction_update",
+              "compactionId": "k1",
+              "status": "completed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "id": "amux-prompt-7031",
+          "result": {
+            "stopReason": "refusal"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "p3",
+        "prompt": {
+          "text": "Try once more."
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "id": "amux-prompt-7033",
+          "error": {
+            "code": -32603,
+            "message": "model overloaded"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "p4",
+        "prompt": {
+          "text": "Last try."
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "tool_call",
+              "toolCallId": "c2",
+              "title": "Write notes.md",
+              "kind": "edit",
+              "status": "completed",
+              "locations": [
+                {
+                  "path": "/work/notes.md"
+                }
+              ],
+              "content": [
+                {
+                  "type": "diff",
+                  "path": "/work/notes.md",
+                  "newText": "hello\n"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "note": "a diff with no old text is a new file"
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "id": "amux-prompt-7034",
+          "result": {
+            "stopReason": "max_tokens",
+            "usage": {
+              "totalTokens": 10,
+              "inputTokens": 6,
+              "outputTokens": 4
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "session/update",
+          "params": {
+            "sessionId": "s1",
+            "update": {
+              "sessionUpdate": "session_info_update",
+              "title": "Test check"
+            }
+          }
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "method": "_acme/heartbeat",
+          "params": {}
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "id": "x1",
+          "method": "_acme/ask",
+          "params": {}
+        }
+      }
+    },
+    {
+      "fact": {
+        "channel": "rpc",
+        "json": {
+          "jsonrpc": "2.0",
+          "id": 9,
+          "method": "elicitation/create",
+          "params": {
+            "sessionId": "s1",
+            "mode": "url",
+            "elicitationId": "e1",
+            "url": "https://example.com/sign-in",
+            "message": "Sign in to the docs server."
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "id": "i6",
+        "answer": {
+          "ask": "ask-2",
+          "answer": {
+            "link": {
+              "action": "accept"
+            }
+          }
+        }
+      },
+      "expect": {
+        "reply": "accepted"
+      }
+    },
+    {
+      "provider_exit": {
+        "code": 0
+      }
+    }
+  ]
+}

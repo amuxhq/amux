@@ -11,8 +11,8 @@ use super::composer::QueueEntry;
 use super::layout::Anchor;
 use super::{
     ASK_ARMS_MS, ChatEffect, ChatView, Hint, Selection, StopAsk, commands, composer, has_draft,
-    keys, next_control, pane, refused_command_words, review, review_counter, unchangeable_words,
-    withdraw_effect,
+    keys, modes_stand_for_permissions, next_control, pane, refused_command_words, review,
+    review_counter, unchangeable_words, withdraw_effect,
 };
 use crate::text;
 use crate::theme::Theme;
@@ -192,9 +192,10 @@ impl ChatView {
             let action = self.ask.box_key(&card, key);
             return self.ask_effects(state, &card, action);
         }
-        // A provider subagent takes no messages: there is no field to type
-        // in, and Enter sends nothing.
-        if matches!(state.composer(), Composer::Native { .. }) {
+        // A provider subagent takes no messages, nor does an agent that has
+        // ended and cannot be resumed: there is no field to type in, and
+        // Enter sends nothing.
+        if matches!(state.composer(), Composer::Native { .. } | Composer::Ended) {
             if key.code == KeyCode::Esc {
                 self.escape();
             }
@@ -457,8 +458,9 @@ impl ChatView {
             return vec![];
         }
         match state.composer() {
-            // A provider subagent takes no messages at all.
-            Composer::Native { .. } => vec![],
+            // A provider subagent takes no messages at all, and an agent
+            // that ended for good takes none again: the draft stays.
+            Composer::Native { .. } | Composer::Ended => vec![],
             // Not current, nothing goes: the draft stays in the composer,
             // whose top edge says why, until it can.
             Composer::Waiting(_) => {
@@ -599,6 +601,9 @@ impl ChatView {
             let (setting, item, title) = match key.code {
                 KeyCode::Char('m') => (&view.changeable.model, Item::Model, "Model"),
                 KeyCode::Char('e') => (&view.changeable.effort, Item::Effort, "Effort"),
+                KeyCode::Char('p') if modes_stand_for_permissions(&view) => {
+                    (&view.changeable.mode, Item::Mode, "Mode")
+                }
                 KeyCode::Char('p') => (&view.changeable.permission, Item::Permission, "Permission"),
                 // Esc takes the settings key back; any other key was never
                 // meant for it and goes on as typed.
@@ -615,6 +620,7 @@ impl ChatView {
             let choices = match item {
                 Item::Model => crate::setup::model_choices(&view),
                 Item::Effort => crate::setup::effort_choices(&view),
+                Item::Mode => crate::setup::mode_choices(&view),
                 _ => crate::setup::permission_choices(&view),
             };
             self.picker = Some(Picker::new(item, title, choices, false));
@@ -648,6 +654,7 @@ impl ChatView {
                 let change = match item {
                     Item::Effort => ui_view::SettingChange::Effort(value),
                     Item::Permission => ui_view::SettingChange::Permission(value),
+                    Item::Mode => ui_view::SettingChange::Mode(value),
                     _ => ui_view::SettingChange::Model(value),
                 };
                 match ui_view::setting_input(state.kind(), &change) {

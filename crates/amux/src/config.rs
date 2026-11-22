@@ -189,6 +189,9 @@ pub fn edit(path: &Path) -> Result<()> {
     for name in config.experiments.unknown_names() {
         eprintln!("amux: this amux has no experiment named {name:?}, so it is ignored");
     }
+    for warning in node::agents::configured(&config).1 {
+        eprintln!("amux: {warning}");
+    }
     Ok(())
 }
 
@@ -207,7 +210,9 @@ enum Setting {
 /// that experiment's to know.
 fn known(key: &str) -> Result<Setting> {
     let keys = installation_keys();
-    if keys.iter().any(|known| known == key) {
+    // An ACP agent's remembered picks are keyed by its id, which no fixed
+    // list can hold.
+    if keys.iter().any(|known| known == key) || settings::is_new_agent_key(key) {
         return Ok(Setting::File);
     }
     if let Some(rest) = key.strip_prefix("experiments.") {
@@ -317,6 +322,7 @@ mod tests {
         set(&path, "telemetry", "false").unwrap();
         set(&path, "ui.chat_in", "native").unwrap();
         set(&path, "new_agent.claude.model", "sonnet").unwrap();
+        set(&path, "new_agent.opencode.model", "anthropic/sonnet").unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(
             text.starts_with("# mine\nchannel = \"preview\"\n"),
@@ -326,7 +332,14 @@ mod tests {
         assert!(text.contains("chat_in = \"native\""), "{text}");
         assert!(text.contains("telemetry = false"), "{text}");
         let config = InstallationConfig::from_file(&path).unwrap();
-        assert_eq!(config.new_agent.claude.model.as_deref(), Some("sonnet"));
+        assert_eq!(
+            config.new_agent.of("claude").model.as_deref(),
+            Some("sonnet")
+        );
+        assert_eq!(
+            config.new_agent.of("opencode").model.as_deref(),
+            Some("anthropic/sonnet")
+        );
         assert!(!config.telemetry);
     }
 

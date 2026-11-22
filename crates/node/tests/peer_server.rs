@@ -461,7 +461,7 @@ async fn a_host_service_refuses_the_paired_daemon_asking_for_itself() {
             "GetCatalogue",
             wire::host_service_client(channel.clone())
                 .get_catalogue(wire::GetCatalogueRequest {
-                    provider: wire::Provider::Codex as i32,
+                    provider: "codex".to_owned(),
                 })
                 .await
                 .err(),

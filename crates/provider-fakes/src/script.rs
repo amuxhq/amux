@@ -130,6 +130,108 @@ pub struct Script {
     /// server can take seconds. None by default: it exits at once.
     #[serde(default)]
     pub exit_ms: u64,
+    /// What an ACP agent is and offers (fake-acp only).
+    #[serde(default)]
+    pub acp: AcpAgent,
+}
+
+/// What a scripted ACP agent says it is and can do, and how it acts where
+/// the recorded agents differ (each choice names the recording under
+/// `crates/interpret/fixtures/acp/live/` that shows it).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AcpAgent {
+    /// `agentInfo.name`; the version is the script's `version`.
+    pub name: String,
+    /// No `agentInfo` at all, as Grok sends none (`grok-catalogue`).
+    pub anonymous: bool,
+    /// `session/load`: offered as `loadSession` and a `load` session
+    /// capability (Antigravity offers both, `agy-catalogue`).
+    pub load: bool,
+    /// `session/resume`, offered as a `resume` session capability. With
+    /// neither this nor `load` the agent cannot reopen a session in a new
+    /// process.
+    pub resume: bool,
+    /// The prompt capabilities: images and embedded resources.
+    pub image: bool,
+    pub embedded_context: bool,
+    /// The session's `mode` option; Antigravity's four modes when unset
+    /// (`agy-config`), and no mode option when empty (as Grok).
+    pub modes: Option<Vec<OfferedMode>>,
+    /// The id of the thought-level option, whose category is what a client
+    /// reads: `thought_level` (Antigravity), `effort` (OpenCode) or
+    /// `reasoning_effort` (Grok).
+    pub thought_level_id: String,
+    /// What a `session/prompt` sent while a turn runs does.
+    pub mid_turn: MidTurn,
+    /// How many of the turn's chunks still stream after `session/cancel`
+    /// before the `cancelled` answer: Antigravity streamed two
+    /// (`agy-cancel`).
+    pub cancel_chunks: usize,
+    /// `session/resume` and `session/load` refuse every session, as for one
+    /// the agent no longer has.
+    pub refuse_reopen: bool,
+    /// A reopened session comes back with the agent's default model,
+    /// thought level and mode, as Antigravity's does (`agy-resume`); the
+    /// others keep what was set.
+    pub forgets_settings: bool,
+    /// The protocol version `initialize` answers with; ACP's own, 1, unless
+    /// set.
+    pub protocol_version: u16,
+    /// A request method the agent never answers, as an agent stuck at its
+    /// start would not (`initialize`, `session/new`, ...).
+    pub unanswered: Option<String>,
+    /// Signed out until this file exists, as an agent a person signs in to
+    /// meanwhile: each session it is asked to open checks again.
+    pub signed_in_at: Option<PathBuf>,
+}
+
+impl Default for AcpAgent {
+    fn default() -> Self {
+        Self {
+            name: "Fake ACP Agent".into(),
+            anonymous: false,
+            load: true,
+            resume: true,
+            image: true,
+            embedded_context: true,
+            modes: None,
+            thought_level_id: "thought_level".into(),
+            mid_turn: MidTurn::default(),
+            cancel_chunks: 2,
+            refuse_reopen: false,
+            forgets_settings: false,
+            signed_in_at: None,
+            protocol_version: 1,
+            unanswered: None,
+        }
+    }
+}
+
+/// What an ACP agent does with a prompt sent while one runs, as the
+/// recorded agents differ (`*-mid_turn`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MidTurn {
+    /// Run it as its own turn once the running one is answered (Grok).
+    #[default]
+    Queue,
+    /// Answer the running prompt `end_turn` at once and go on with the
+    /// turn under the new one (Antigravity).
+    Steer,
+    /// Play the new prompt's turn straight after the running one's, then
+    /// answer both at once with the same answer (OpenCode).
+    Together,
+}
+
+/// A mode an ACP session offers.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OfferedMode {
+    pub value: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 /// A tool server as headless Claude reports it.
@@ -247,6 +349,88 @@ pub enum Step {
     /// interleave as parallel ones do. The parent's turn goes on once the
     /// last has finished.
     Subagents { agents: Vec<Subagent> },
+    /// A tool call in an ACP agent's own terms (fake-acp).
+    Call(Call),
+    /// A call of a tool on one of the tool servers the session was given
+    /// (fake-acp), named as Antigravity names it: `mcp_<server>_<tool>`.
+    ToolServer(ToolServerCall),
+    /// How much of its context window the session has used: ACP's
+    /// `usage_update` (fake-acp).
+    Context { used: u64, size: u64 },
+    /// The title the agent gives the session: ACP's `session_info_update`
+    /// (fake-acp).
+    Title { title: String },
+    /// End the turn with this ACP stop reason (`end_turn`, `max_tokens`,
+    /// `max_turn_requests`, `refusal`, `cancelled`) (fake-acp).
+    Stop { reason: String },
+}
+
+/// An ACP tool call: announced `pending`, asked about when `ask` names
+/// the options, then `in_progress` and `completed` (or `failed` when the
+/// outcome is an error or the person rejects it).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Call {
+    /// ACP's tool kind: read, edit, delete, move, search, execute, think,
+    /// fetch or other.
+    pub kind: String,
+    pub title: String,
+    /// The agent's own name for the tool; one for the kind when unset.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// What the tool was given (`rawInput`).
+    #[serde(default)]
+    pub input: Option<Value>,
+    /// The files it touches.
+    #[serde(default)]
+    pub locations: Vec<String>,
+    /// The change it makes to a file, shown in the ask and the completed
+    /// call. With the script's `edit_files` the file is written.
+    #[serde(default)]
+    pub diff: Option<Diff>,
+    /// Ask permission first, offering this set of options.
+    #[serde(default)]
+    pub ask: Option<Offer>,
+    #[serde(default)]
+    pub outcome: Outcome,
+}
+
+/// A file's text before and after a call.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Diff {
+    pub path: String,
+    #[serde(default)]
+    pub old_text: String,
+    pub new_text: String,
+}
+
+/// The options an ACP permission request offers, as the recorded agents
+/// offer them (`agy-allow`, `opencode-allow_always`); nobody offered
+/// `reject_always`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Offer {
+    /// Antigravity's: allow once or deny.
+    Once,
+    /// OpenCode's: allow once, always allow or reject. An always answer
+    /// holds for the rest of the process: the same title is not asked
+    /// about again.
+    Always,
+}
+
+/// A call of a tool on a tool server the session was given.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolServerCall {
+    pub server: String,
+    pub tool: String,
+    #[serde(default)]
+    pub input: Option<Value>,
+    #[serde(default)]
+    pub ask: Option<Offer>,
+    #[serde(default)]
+    pub outcome: Outcome,
 }
 
 /// One subagent of a [`Step::Subagents`]: its task and what it does. Its
@@ -644,6 +828,11 @@ impl Step {
             Step::Usage(_) => Some("usage"),
             Step::AuthFailed { .. } => Some("auth_failed"),
             Step::Subagents { .. } => Some("subagents"),
+            Step::Call(_) => Some("call"),
+            Step::ToolServer(_) => Some("tool_server"),
+            Step::Context { .. } => Some("context"),
+            Step::Title { .. } => Some("title"),
+            Step::Stop { .. } => Some("stop"),
             _ => None,
         }
     }
@@ -658,6 +847,7 @@ impl Step {
             Step::AuthFailed { .. } => Some("auth_failed in a subagent"),
             Step::Repeat { .. } => Some("repeat in a subagent"),
             Step::Subagents { .. } => Some("subagents in a subagent"),
+            Step::Stop { .. } => Some("stop in a subagent"),
             _ => None,
         }
     }

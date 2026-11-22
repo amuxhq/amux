@@ -1,0 +1,26 @@
+shell |  | agents | 0,62,402,778
+chat |  | signer | 0,116,402,724
+chat.row.prompt | Are you there? |  | 16,124,370,40
+chat.prose.render |  | rendered | 265,134,107,20
+chat.row.prose | Signed in and ready. | final | 16,176,370,20
+chat.prose.render |  | rendered | 16,176,370,20
+chat.row.turn-end | <volatile>
+chat.field | Reply |  | 28,750,346,24
+chat.attach | Attach | closed | 23,779,44,44
+chat.model | fake-model · medium |  | 71,779,163,44
+chat.dictate | Dictate | idle | 287,779,44,44
+chat.send | Send |  | 335,779,44,44 (disabled)
+chat.more | More |  | 350,66,28,36
+chat.header | /p/t/a/n/a/r/work · attic | live | 76,66,172,36
+chat.title | signer | signer | 76,66,172,36
+ | Attach |  | 23,779,44,44
+ | fake-model · medium |  | 71,779,163,44
+ | Dictate |  | 287,779,44,44
+ | Send |  | 335,779,44,44 (disabled)
+ | Are you there? |  | 16,124,370,40
+ | Signed in and ready. |  | 16,176,370,20
+ | Worked for <t> |  | 16,203,81,16
+BackButton | Agents |  | 16,62,44,44
+ | signer, /p/t/a/n/a/r/work · attic |  | 76,66,172,36
+ | More |  | 350,66,28,36
+ | Back |  | 16,73,44,23

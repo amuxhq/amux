@@ -57,6 +57,18 @@ const STORIES: &[(&str, Tell)] = &[
     ("report-a-problem", report_a_problem),
     ("first-run", first_run),
     ("provider-subagents", provider_subagents),
+    (
+        "acp-create-from-config",
+        super::terminal_acp::create_from_config,
+    ),
+    ("acp-permission", super::terminal_acp::permission),
+    ("acp-interrupt", super::terminal_acp::interrupt),
+    (
+        "acp-queue-and-withdraw",
+        super::terminal_acp::queue_and_withdraw,
+    ),
+    ("acp-ends-for-good", super::terminal_acp::ends_for_good),
+    ("acp-sign-in", super::terminal_acp::sign_in),
 ];
 
 /// The bound one story runs under.
@@ -232,7 +244,7 @@ fn run_bounded(name: &str, output: &Path) -> (bool, String) {
 // --- reading frames ------------------------------------------------------
 
 /// `first`, then at least one space, then `then`, somewhere in `text`.
-fn spaced(text: &str, first: &str, then: &str) -> bool {
+pub(crate) fn spaced(text: &str, first: &str, then: &str) -> bool {
     text.match_indices(first).any(|(at, _)| {
         let rest = &text[at + first.len()..];
         let after = rest.trim_start();

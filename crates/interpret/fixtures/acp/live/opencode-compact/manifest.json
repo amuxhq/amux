@@ -1,0 +1,25 @@
+{
+  "spec": "opencode-compact",
+  "recorded": {
+    "provider": "opencode",
+    "version": "1.18.33",
+    "model": "opencode/deepseek-v4.1-flash-free",
+    "at": "2026-11-20T19:27:47.255047Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:a043ca19a50d6299cd551fe722284673c9f2f02ad769542cc86432207e467f1c",
+    "spawn.jsonl": "sha256:e2c00f078d9f3175fa6976b8105e3438ead832b8438b48007974577d4e274113"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 2,
+    "personal_identifiers": 0
+  },
+  "session_ids": [
+    "ses_e059cbffeffemYAWJBXwlZylHW"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "one prompt, then the agent's own compact command"
+  }
+}

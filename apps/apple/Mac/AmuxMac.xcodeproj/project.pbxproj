@@ -20,10 +20,12 @@
 		4579F28F51468255CED4809A /* MacNewAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDF30FE89C87A5A6106AFD47 /* MacNewAgent.swift */; };
 		4B2CDB27BE213B97988EF311 /* SettingsWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2562BD49C150F71B56CD979B /* SettingsWindow.swift */; };
 		4E6FFBCE4B0040245C2042FA /* AmuxMacScreens in Frameworks */ = {isa = PBXBuildFile; productRef = BFD9FAA1300DAA573A2CAFE4 /* AmuxMacScreens */; };
+		535C8313A5EAFF3F85C46A5A /* AcpLiveWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD1F2E85B6AF71B0BD3100F /* AcpLiveWalk.swift */; };
 		6872F646FB2966C77288017A /* SubagentChanges.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA88938A05A26C081E71780 /* SubagentChanges.swift */; };
 		6D381452797C6A9B327E8878 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2425F3FA9610E168BEAA90CC /* Assets.xcassets */; };
 		722BC67CC5A42CD8884FC896 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2425F3FA9610E168BEAA90CC /* Assets.xcassets */; };
 		748BF46B286856646B0449F8 /* SetupWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7C00CABFF413D47B11818BC /* SetupWalk.swift */; };
+		749926F3C5B30F55CF8CF4AA /* AcpAgentWalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3412553AC569B0CC5209FF3 /* AcpAgentWalk.swift */; };
 		882195E368B9D757F25FE602 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35ACFC26A1D58966C680CFB4 /* MainWindow.swift */; };
 		8B3E1B675CE87AB02FD5AD6A /* Setup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 010C7AFBB1A5638DA828D47A /* Setup.swift */; };
 		9086C8CAD17CB7FE5E2200DC /* StoryList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 823B6AB1C3DAE4F5B02FBFF6 /* StoryList.swift */; };
@@ -53,6 +55,7 @@
 		1F306E903C196FD15A1A3A51 /* AmuxCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AmuxCore; path = ../Packages/AmuxCore; sourceTree = SOURCE_ROOT; };
 		2425F3FA9610E168BEAA90CC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		2562BD49C150F71B56CD979B /* SettingsWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindow.swift; sourceTree = "<group>"; };
+		2AD1F2E85B6AF71B0BD3100F /* AcpLiveWalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AcpLiveWalk.swift; sourceTree = "<group>"; };
 		346AFCEEDEEBAA12E3660F6E /* ReviewPageChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewPageChoice.swift; sourceTree = "<group>"; };
 		35ACFC26A1D58966C680CFB4 /* MainWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindow.swift; sourceTree = "<group>"; };
 		54A561A0762D332F6D67E93C /* AmuxMacStorybook.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AmuxMacStorybook.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -64,6 +67,7 @@
 		97C89AE8BEB6020889CCDDBF /* CodeContrast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeContrast.swift; sourceTree = "<group>"; };
 		9F7900FD21808546122BEDB3 /* Viewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Viewer.swift; sourceTree = "<group>"; };
 		AA7C9EEC1ABEC000EEAB795C /* AmuxMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmuxMacApp.swift; sourceTree = "<group>"; };
+		B3412553AC569B0CC5209FF3 /* AcpAgentWalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AcpAgentWalk.swift; sourceTree = "<group>"; };
 		C2B49A41F366B23EA3C5BE8A /* AmuxMacScreens */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AmuxMacScreens; path = ../Packages/AmuxMacScreens; sourceTree = SOURCE_ROOT; };
 		C6361E231B9F50C6C65E2E69 /* Storybook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Storybook.swift; sourceTree = "<group>"; };
 		CC920BD5FA8D879CABAEF7AB /* SyntaxContrast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntaxContrast.swift; sourceTree = "<group>"; };
@@ -126,6 +130,8 @@
 		213596547266C20AD51CA789 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				B3412553AC569B0CC5209FF3 /* AcpAgentWalk.swift */,
+				2AD1F2E85B6AF71B0BD3100F /* AcpLiveWalk.swift */,
 				7FA135A9C7C9059763474A61 /* ReviewDrag.swift */,
 				346AFCEEDEEBAA12E3660F6E /* ReviewPageChoice.swift */,
 				D7C00CABFF413D47B11818BC /* SetupWalk.swift */,
@@ -359,6 +365,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				749926F3C5B30F55CF8CF4AA /* AcpAgentWalk.swift in Sources */,
+				535C8313A5EAFF3F85C46A5A /* AcpLiveWalk.swift in Sources */,
 				C4AB5E62EB42518BC1B00D88 /* AppModel.swift in Sources */,
 				E39D76A148B7A76D70EE9492 /* CodeContrast.swift in Sources */,
 				B01344530777C58DF863E29D /* MacChat.swift in Sources */,

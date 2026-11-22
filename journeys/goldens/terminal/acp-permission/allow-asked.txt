@@ -1,0 +1,34 @@
+
+  gatekeeper │ /tmp/journey/aj-xxxxxxxx/net/desk/work                                        [Diff] │ [Home]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    Apply the migrations.                                                                            hh:mm
+
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ● Wants to run                                                                                         │
+  │ scripts/migrate --apply                                                                                │
+  │                                                                                                        │
+  │ › 1. Yes                                                                                               │
+  │   2. No  esc · tab to add a note                                                                       │
+  ╰────────────────────────────────────────────────────────────────────────────────── fake-model (medium) ─╯
+
+  enter choose   ctrl+x interrupt   ctrl+a more

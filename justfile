@@ -199,7 +199,7 @@ journey CLIENT NAME *ARGS: target-check
     if [ "${3-}" = -- ]; then shift 3; else shift 2; fi
     case "{{CLIENT}}" in
     terminal)
-        {{bounded}} 900 cargo build --locked --workspace --bin amux --bin fake-claude-pty --bin fake-claude-sdk --bin fake-codex --bin testnet
+        {{bounded}} 900 cargo build --locked --workspace --bin amux --bin fake-claude-pty --bin fake-claude-sdk --bin fake-codex --bin fake-acp --bin testnet
         if [ "{{NAME}}" = all ]; then
             {{bounded}} 3000 target/debug/testnet journey terminal all
         else
@@ -336,6 +336,11 @@ docs-check:
 typed-provider-check:
     {{bounded}} 60 scripts/py scripts/typed-provider-check.py
 
+# Fail if a client crate decides something by an agent's kind or a
+# provider's name outside the places its list allows.
+client-kind-check:
+    {{bounded}} 60 scripts/py scripts/client-kind-check.py
+
 # Refuse fixture-regeneration flags before any asserted CI check runs.
 [private]
 no-update-flags:
@@ -350,7 +355,7 @@ no-update-flags:
 # the phone's snapshots and the other platforms to CI (docs/CI.md,
 # "`just premerge`").
 # Run the quick checks a change passes before it reaches main.
-premerge: no-update-flags fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests lint
+premerge: no-update-flags fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check client-kind-check docs-check tests-check script-tests lint
     {{just_executable()}} ios lint
     {{just_executable()}} ios script-tests
     {{just_executable()}} android lint
@@ -360,19 +365,23 @@ premerge: no-update-flags fmt-check codegen-check proto-compat store-check depen
     if git diff --quiet "$(git merge-base HEAD origin/main)" -- js; then echo "js: unchanged since main"; else {{just_executable()}} browser check; fi
 
 # Run the same task sequence exercised across continuous-integration jobs.
-ci: no-update-flags lint fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check docs-check tests-check script-tests test doctest release-check mobile-check
+ci: no-update-flags lint fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check client-kind-check docs-check tests-check script-tests test doctest release-check mobile-check
     {{just_executable()}} android check
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,
 # resume, plan, questions, usage, catalogue, host_catalogue, permission, mode,
 # attach, a headless-corpus scenario for claude_sdk, or all), under the
-# operator's existing login. With no arguments
+# operator's existing login. The acp kind takes an agent and a scenario
+# instead (`just live acp grok cancel`, `just live acp all all`; lists may
+# be comma-separated), drives the agent with a scripted ACP client through
+# acp-probe, and joins each run to crates/interpret/fixtures/acp/live.
+# With no arguments
 # it reports not_run for every kind and starts nothing. Its tests are not
 # libtest's, so they run under cargo test, with the binaries they start built
 # first.
 live *ARGS:
-    set -e; if [ "${1-}" = -- ]; then shift; fi; if [ $# -eq 0 ]; then for kind in claude_pty claude_sdk codex; do echo "live $kind: not_run (no scenario selected)"; done; exit 0; fi; kind=$1; shift; case "$kind" in claude_pty|claude_sdk|codex) ;; *) echo "live: unknown kind $kind; known: claude_pty, claude_sdk, codex" >&2; exit 2 ;; esac; {{bounded}} 900 cargo build --locked -p amux -p provider-fakes -p qualification --bins; TESTNET_BINARIES="$PWD/target/debug" {{bounded}} 3600 cargo test --locked -p qualification --features live --test "${kind}_live" -- "$@"
+    set -e; if [ "${1-}" = -- ]; then shift; fi; if [ $# -eq 0 ]; then for kind in claude_pty claude_sdk codex acp; do echo "live $kind: not_run (no scenario selected)"; done; exit 0; fi; kind=$1; shift; case "$kind" in claude_pty|claude_sdk|codex) ;; acp) {{bounded}} 900 cargo build --locked -p qualification --bin acp-probe; TESTNET_BINARIES="$PWD/target/debug" {{bounded}} 3600 cargo test --locked -p qualification --features live --test acp_live -- "$@"; exit $? ;; *) echo "live: unknown kind $kind; known: claude_pty, claude_sdk, codex, acp" >&2; exit 2 ;; esac; {{bounded}} 900 cargo build --locked -p amux -p provider-fakes -p qualification --bins; TESTNET_BINARIES="$PWD/target/debug" {{bounded}} 3600 cargo test --locked -p qualification --features live --test "${kind}_live" -- "$@"
 
 # Waves of Sonnet testers, each on a test network of its own with real
 # Claude and Codex agents, keeping evidence of what they find (docs/QA.md).

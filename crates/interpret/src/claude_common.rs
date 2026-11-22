@@ -7,24 +7,24 @@ use std::collections::BTreeMap;
 
 use claude_protocol::stream::init::{ModelInfo, SlashCommand};
 use claude_protocol::stream::{
-    ContentBlock, ImageSourceType, MessageContent, PermissionUpdate, PermissionUpdateDestination,
-    ToolResultBody, ToolResultContent,
+    ContentBlock, MessageContent, PermissionUpdate, PermissionUpdateDestination, ToolResultBody,
+    ToolResultContent,
 };
 use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    Ask, AskClosed, Attachment, BackgroundJob, BlobRef, Boundary, BoundaryKind, ClaudeGrant,
-    ClaudeItem, ClaudeUsage, ContextMeter, DecisionOutcome, EditInput, Envelope, IncarnationEnd,
-    Limit, NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel, OfferedPermission,
-    PatchHunk, Question, QuestionAsk, QuestionOption, Replacement, ScopeDestination, ShellInput,
-    TaskList, TaskListEntry, TaskListStatus, ToolCall, ToolClass, ToolDecision, ToolInput,
-    ToolServer, ToolServerStatus, ToolState, UsageState, attachment, claude_item, codex_grant,
-    tool_decision, tool_input,
+    Ask, AskClosed, Attachment, BackgroundJob, Boundary, BoundaryKind, ClaudeGrant, ClaudeItem,
+    ClaudeUsage, ContextMeter, DecisionOutcome, EditInput, Envelope, IncarnationEnd, Limit,
+    NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel, OfferedPermission, PatchHunk,
+    Question, QuestionAsk, QuestionOption, Replacement, ScopeDestination, ShellInput, TaskList,
+    TaskListEntry, TaskListStatus, ToolCall, ToolClass, ToolDecision, ToolInput, ToolServer,
+    ToolServerStatus, ToolState, UsageState, attachment, claude_item, codex_grant, tool_decision,
+    tool_input,
 };
 
 use crate::{
-    Effect, Emit, ItemDraft, ItemView, Shared, SnapshotView, agent_message_body, agent_message_key,
+    Emit, ItemDraft, ItemView, Shared, SnapshotView, agent_message_body, agent_message_key,
     serde_pb,
 };
 
@@ -261,45 +261,6 @@ pub(crate) fn tool_result_text(content: Option<&ToolResultBody>) -> String {
             .collect::<Vec<_>>()
             .join("\n"),
     }
-}
-
-/// The images in a tool result's content blocks, each as the attachment a
-/// tool row carries and the blob write that stores its bytes.
-pub(crate) fn tool_result_images(content: Option<&ToolResultBody>) -> Vec<(Attachment, Effect)> {
-    let Some(ToolResultBody::Blocks(blocks)) = content else {
-        return Vec::new();
-    };
-    blocks
-        .iter()
-        .filter_map(|block| match block {
-            ToolResultContent::Image { source, .. } if source.r#type == ImageSourceType::Base64 => {
-                image_blob(&source.media_type, &source.data)
-            }
-            _ => None,
-        })
-        .collect()
-}
-
-/// A base64 image as the attachment that names its blob and the write that
-/// stores it.
-fn image_blob(mime: &str, data: &str) -> Option<(Attachment, Effect)> {
-    use base64::Engine as _;
-    use sha2::Digest as _;
-
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(data)
-        .ok()?;
-    let hash = sha2::Sha256::digest(&bytes).to_vec();
-    let image = Attachment {
-        of: Some(attachment::Of::Image(BlobRef {
-            hash: hash.clone(),
-            name: String::new(),
-            mime: mime.to_owned(),
-            size: bytes.len() as u64,
-        })),
-        ..Default::default()
-    };
-    Some((image, Effect::WriteBlob { hash, bytes }))
 }
 
 /// A tool's structured result without the base64 copy of an image it
@@ -1705,9 +1666,6 @@ pub(crate) struct Tool<T> {
     /// working_on, the task tools the task list, and a file written in
     /// plan mode is part of the plan.
     pub(crate) hidden: bool,
-    /// Images the tool read, by the blobs that hold them.
-    #[serde(with = "serde_pb::msgs")]
-    pub(crate) images: Vec<Attachment>,
     /// What amux's attach tool attached, from the element it answered.
     #[serde(with = "serde_pb::msgs")]
     pub(crate) attached: Vec<Attachment>,
@@ -1749,7 +1707,6 @@ impl<T> Tool<T> {
             ended_at_ms: None,
             started_at_ms: None,
             child_agent_id: Vec::new(),
-            images: Vec::new(),
             attached: Vec::new(),
             asked: None,
             emitted: Vec::new(),
@@ -1764,18 +1721,12 @@ impl<T> Tool<T> {
     }
 
     /// Reads what the result carries beside its text, once `outcome_text`
-    /// holds that text: the images the tool read, what amux's attach tool
-    /// attached, and the structured result. The attach tool's element
-    /// names the blob by this host's path, so the step carries the
-    /// attachment instead.
-    /// Returns the blob writes for the images, which go in the step that
-    /// draws them.
-    pub(crate) fn take_result(
-        &mut self,
-        content: Option<&ToolResultBody>,
-        result: Option<&Value>,
-    ) -> Vec<Effect> {
-        let mut writes = Vec::new();
+    /// holds that text: what amux's attach tool attached, and the
+    /// structured result. The attach tool's element names the blob by this
+    /// host's path, so the step carries the attachment instead. What a tool
+    /// read (an image a Read returned) is what the tool saw, not something
+    /// the agent presented, so it is never an attachment.
+    pub(crate) fn take_result(&mut self, result: Option<&Value>) {
         if crate::is_attach_tool(&self.server, &self.name) {
             let (text, attached) =
                 crate::shared::parse_reply(std::mem::take(&mut self.outcome_text));
@@ -1784,19 +1735,10 @@ impl<T> Tool<T> {
                 self.attached = attached;
             }
         }
-        let images = tool_result_images(content);
-        if !images.is_empty() {
-            self.images = Vec::new();
-            for (image, write) in images {
-                self.images.push(image);
-                writes.push(write);
-            }
-        }
         if let Some(result) = result.filter(|result| !result.is_null() && self.attached.is_empty())
         {
             self.outcome_json = compact_json(&without_image_bytes(result));
         }
-        writes
     }
 
     /// A built-in task tool's call and result applied to the task list.
@@ -1861,7 +1803,9 @@ impl<T> Tool<T> {
                 input: Some(tool_input(&self.name, &self.server, &input, "")),
                 state: self.state,
                 outcome_text: self.outcome_text.clone(),
-                attachments: self.images.clone(),
+                // What a tool read is not presented; a call recorded before
+                // this rule may still carry its images, and draws them.
+                attachments: Vec::new(),
                 class: self.class,
                 decision: self.decision.clone(),
                 background: self.background,

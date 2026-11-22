@@ -11,6 +11,7 @@ chat shows. There is one per agent kind, in
 | `claude_pty` | Claude Code in a terminal | [`interpret::claude_pty`](../crates/interpret/src/claude_pty/mod.rs) |
 | `claude_sdk` | Headless Claude over stream-JSON | [`interpret::claude_sdk`](../crates/interpret/src/claude_sdk/mod.rs) |
 | `codex` | The Codex app server over JSON-RPC | [`interpret::codex`](../crates/interpret/src/codex/mod.rs) |
+| `acp` | Any agent that speaks the Agent Client Protocol over stdio (Antigravity, OpenCode, Grok, or one a person adds) | [`interpret::acp`](../crates/interpret/src/acp/mod.rs) |
 
 The two Claude kinds write the same item and snapshot messages and share
 everything about drawing a call, a boundary and an agent message
@@ -26,7 +27,7 @@ committed by the daemon and served to clients unchanged (see
 described from the client's side in [the chat vocabulary](CHAT_VOCABULARY.md).
 
 Provider messages reach an interpreter only as types. Every fact is decoded
-by its provider's protocol crate (`codex_protocol` for Codex,
+by its provider's protocol crate (`acp_protocol` for ACP agents, `codex_protocol` for Codex,
 `claude_protocol::stream` for headless Claude, `claude_protocol::transcript`
 and `claude_protocol::hooks` for terminal Claude) and every line an
 interpreter writes is built from the same crate's types and encoded by it;
@@ -50,15 +51,16 @@ no ids (they arrive on inputs and facts) and does no I/O. It implements
 |---|---|
 | `type State: Checkpoint` | Everything it holds; serialized as the checkpoint |
 | `const KIND` | The kind tag its items and snapshots carry |
-| `initial(spec, version)` | The starting state and the first journal frame: a snapshot with phase starting and every field at its explicit unknown |
+| `initial(spec)` | The starting state and the first journal frame: a snapshot with phase starting and every field at its explicit unknown |
 | `step(state, event)` | One event in; a `Stepped` out: the journal `Step` and the `Effect`s to perform |
-| `reincarnate(state, spec, version)` | Continues a checkpointed state in the agent's next incarnation |
-| `redact(target)` | Removes secrets from a body, a facts-ring entry, a checkpoint, a spec, a step or an inventory row, keeping its structure |
+| `reincarnate(state, spec)` | Continues a checkpointed state in the agent's next incarnation |
 | `unknown_snapshot()` | The snapshot body with every field unknown |
 | `pending_messages(state)` | Agent messages the provider accepted and has not consumed yet; a one-shot agent waits for this to be empty |
 | `wake_at(state)` | When it next wants a `Tick` that no event would bring; the agent process arms a timer for it. None by default |
 | `typed_unrecorded(state)` | A prompt typed that the provider has not recorded yet, where the record starts the turn (terminal Claude); a one-shot agent waits for it too |
-| `holds(state)` | What the provider process holds that ending it would lose or cut short: its background jobs (for Codex, also a command known to run on past its turn before Codex lists it), Codex's subagent threads still running, a turn it owes for a job that ended between turns (both Claudes report one in a turn they start themselves), its scheduled wake-ups (terminal Claude's Stop `session_crons`; headless Claude's kept from ScheduleWakeup, CronCreate and CronDelete), and a grant amux sent for the session (a rule or a directory: a permission mode for the session, as approving a plan sends Claude, is the agent's permission from then on, recorded on its snapshot at once, and a resume starts in it). An agent suspends only while it holds nothing; each new process starts holding nothing |
+| `holds(state)` | What the provider process holds that ending it would lose or cut short: its background jobs (for Codex, also a command known to run on past its turn before Codex lists it), Codex's subagent threads still running, a turn it owes for a job that ended between turns (both Claudes report one in a turn they start themselves), its scheduled wake-ups (terminal Claude's Stop `session_crons`; headless Claude's kept from ScheduleWakeup, CronCreate and CronDelete), an ACP session the agent cannot reopen in a new process, and a grant amux sent for the session (a rule or a directory: a permission mode for the session, as approving a plan sends Claude, is the agent's permission from then on, recorded on its snapshot at once, and a resume starts in it). An agent suspends only while it holds nothing; each new process starts holding nothing |
+| `housekeeping(state)` | Where the housekeeping it does on its own while idle (an idle compaction) stands: due, running or settled. Settled by default |
+| `fact_shape(fact)`, `input_shape(input)`, `item_shape(body)`, `structure(state)` | What the agent's record keeps of a fact, an input, an item body and the state: shapes and keys, never content. `fact_shape` has no default, so a new kind says which reader its provider needs |
 | `describe_item`, `describe_snapshot`, `fixture_input`, `recording` | What the golden harness needs to render bodies, build authored inputs and read recorded corpora |
 
 An `Event` is a provider `Fact`, a person's `Input`, a person's input to one
@@ -67,7 +69,7 @@ agent message with the envelope its daemon set, the daemon's word that a Codex a
 a `Tick`, the provider's exit, the daemon being lost, a stop request, the process
 exiting, or the agent folder's git facts (`Git`, none outside a repository),
 which the shared core publishes on the snapshot. A fact carries its `Channel`: `Transcript`, `Hook` and `Agent` for
-terminal Claude, `Stream` for headless Claude, `Rpc` for Codex.
+terminal Claude, `Stream` for headless Claude, `Rpc` for Codex and ACP agents.
 
 An `Effect` is something the agent process does on the interpreter's behalf,
 in order: write bytes to the provider (`ProviderWrite`), reply to an input
@@ -75,7 +77,9 @@ in order: write bytes to the provider (`ProviderWrite`), reply to an input
 (`Inject`), type a semantic input into terminal Claude (`Terminal`), send a
 headless user message (`UserMessage`), follow a transcript file
 (`FollowTranscript`), send a Codex turn whose input carries attachments
-(`CodexTurnInput`), write a blob an item refers to (`WriteBlob`), or end the
+(`CodexTurnInput`), send an ACP prompt whose content carries attachments
+(`AcpPrompt`), save the provider's session id for the next incarnation
+(`ProviderSession`), log a line for amux's developers (`Log`), write a blob an item refers to (`WriteBlob`), or end the
 process (`Exit`).
 
 ## Idle compaction
@@ -235,7 +239,9 @@ and every counter behind an item key carries on, so a later incarnation never
 reuses a key.
 
 The golden harness holds every interpreter to this: for every fixture, it
-checkpoints after every prefix of the events, resumes, runs the rest, and
+checkpoints after every prefix of the events (of a script longer than 96
+events: the first 24, evenly spaced ones up to 48 in all, the end, and both
+sides of every event that is not a provider fact), resumes, runs the rest, and
 requires the same items and final snapshot as the uninterrupted run, with a
 resume that re-emits only keys readers already have, at their current
 content.
@@ -678,8 +684,9 @@ transcript row, in transcript order:
   reply Claude already drew keeps the key it streamed under.
 - A `tool_use` block opens a call, running, keyed by its tool-use id. The
   `tool_result` in a later user row lands it: succeeded, failed, denied or
-  cancelled, with its output, any images it read (written as blobs), and its
-  end time. Claude writes the call's row as it starts and its result as it
+  cancelled, with its output and its end time. An image the tool read stays
+  in its result and is never an attachment; a step journaled before that
+  rule may carry such images, and they still draw. Claude writes the call's row as it starts and its result as it
   ends, so a running call is live in the chat and the text that introduced
   it sits above it.
 - A queued-command attachment row is a prompt Claude took into the running
@@ -1213,6 +1220,211 @@ answer.
   that prompt's turn instead of an empty one, so the model reads its task
   with them.
 
+## ACP agents
+
+One interpreter serves every agent that speaks the
+[Agent Client Protocol](https://agentclientprotocol.com): JSON-RPC over the
+agent's stdio, one session per agent. Its envelope (`AcpItem`,
+`AcpSnapshot`, `AcpInput`, in `proto/amux/v1/acp.proto`) is its own and is
+shared by no other kind. Which agent runs is a plain string id
+(`AcpCreateConfig.agent`, the spec's `provider`), never a closed list.
+[ACP agents](ACP.md) ties this interpreter to the protocol crate, the host
+and the registry, and says how to add a built-in.
+
+**Quirks.** Where agents differ inside the protocol, `interpret::acp::quirks`
+picks a `Quirks` by the agent's id, each field citing the recording that
+shows it; an agent a person adds gets the default, which assumes nothing
+beyond ACP.
+
+| Agent | Quirk | Recording |
+|---|---|---|
+| `antigravity` | A prompt sent mid-turn is folded into the running turn, so only it is offered send-now | `agy-mid_turn` |
+| `grok` | The turn's tokens are in the prompt answer's `_meta` | `grok-prompt` |
+| `grok` | `initialize` lists the `cached_token` auth method only while signed in | `grok-catalogue`, `grok-signed_out` |
+| `grok` | `initialize`'s `_meta` lists the models with their efforts, and the commands, so the host's copy has them without a session | `grok-catalogue` |
+| `grok` | Its question tool asks in Grok's own `_x.ai/ask_user_question`, answered with the labels picked (or the words typed) by question text | `grok-question` |
+| `grok` | No `usage_update`: the context in use is `totalTokens` in each `session/update`'s `_meta`, against the running model's `totalContextTokens` from the models `initialize`, the session answer and `_x.ai/models/update` list | `grok-allow`, `grok-catalogue` |
+| `grok` | Its tool servers come in `_x.ai/mcp/server_status`, each ready or unavailable with why; one whose words say it wants a sign-in ("Auth required") needs one, and the snapshot's `servers` carry them to the overview as Claude's and Codex's do | `grok-allow`, `grok-elicitation` |
+| `grok` | Its own reviewer decides on a call between `pending_interaction` (kind `permission`) and `interaction_resolved`: meanwhile the call waits and its content, the call's description, is not its output; a call it blocks fails in words saying so, and is drawn denied | `grok-allow` |
+| each | How a call to a tool server's tool is named: `mcp_<server>_<tool>` and `Run …` (`antigravity`), `<server>_<tool>` (`opencode`), `<server>__<tool>` in `use_tool`'s input (`grok`); an added agent any of these | `agy-elicitation`, `opencode-elicitation`, `grok-elicitation` |
+
+What is generic, though only one agent shows it: a setting change's
+answer is authoritative and `config_option_update` is ignored while one is
+in flight (Antigravity echoes the old value first, `agy-config`);
+`session/set_mode` is called only where the agent offers modes (Grok
+accepts it without, `grok-config`); a thought level is found by its
+option's category, not its id; a command's exit code is read from the
+call's `rawOutput` under the names agents give it (`exit_code` in
+Antigravity's and Grok's, `metadata.exit` in OpenCode's, with
+`metadata.truncated` when OpenCode cut the output, `agy-allow`,
+`opencode-allow`); a change's start line comes from Grok's diff `_meta`
+(`old_line`, `new_line`, `grok-edit`) or the first hunk of OpenCode's
+`rawOutput.metadata.filediff` patch (`opencode-edit`), and a change with
+neither is drawn unnumbered.
+
+**What a call keeps.** A change keeps only the lines its texts do not
+share at their start and end, since no row draws the rest and OpenCode
+sends the whole file on every update. When a side left is over twice
+`OUTPUT_CAP`, both sides keep the same number of first lines, as many as
+fit the cap on each, so what is kept is still a true part of the change,
+and the diff is marked `truncated`, which the terminal draws as "… change
+cut short" under the patch. Each string in a call's input over twice the
+cap keeps its first cap's worth and ends in "…". A turn's end settles every call
+still running, and an update the agent sends afterwards for a call it
+settled is dropped rather than opening a blank running row.
+
+**Handshake and reopening.** The agent process sends `initialize` and the
+session request under fixed ids (`INITIALIZE_REQUEST`,
+`NEW_SESSION_REQUEST`, `RESUME_REQUEST`, `LOAD_REQUEST`) and reads the
+answers as facts like everything else. `opening` picks how a new process
+opens the saved session: `session/resume` where offered, else
+`session/load`; a new session only when none is saved. A fresh
+conversation is never passed off as a reopened one: an agent offering
+neither cannot continue a conversation in a new process, so `holds` reports
+it (`unresumable`) once it has a session and it never suspends, and should
+its process end anyway, the next one exits at its `initialize` answer
+(`Opening::Unresumable`) with `UNRESUMABLE` as the cause, and the agent
+process sends no session request. Likewise a refused resume or load ends the
+incarnation and opens nothing in its place, so an agent's session never
+changes under it. A refused or unreadable `initialize`, a refused session,
+or a new session's answer naming no session, ends the incarnation with the
+agent's words, except a session refused `AUTH_REQUIRED`: the agent does not
+end but waits, idle and signed out (the snapshot's sign-in and a blocked
+notice say so, as for Claude), holding every prompt and message in its
+queue. Each prompt that arrives while it waits asks again, one ask at a
+time, by an `AcpReopen` effect; a prompt that arrives while an ask is in
+flight has it asked once more if refused, since the person may have signed
+in after it went. The agent process sends the very request it was refused, so a refused resume or load is asked again as itself and never
+becomes a new session. Once the session opens, the agent is signed in and
+the queue drains in order. The agent's host takes the sign-in its agents
+meet as its word on the provider (a conversation's newer than the helper's
+last ask), and publishes its entry as soon as an ingest step brings an ACP
+snapshot whose sign-in disagrees with it.
+
+**What the agent process does.** It starts the agent's command and
+arguments over stdio, sends `initialize` (elicitation forms and links, no
+files or terminals) and the session request `opening` picks, each new,
+resumed or loaded session given amux's tool server as a stdio MCP entry
+and, where the agent takes more folders, the agent's blob folder. A
+prompt with attachments is an `AcpPrompt` effect: the agent process puts
+each attachment's element at its place in the text, then an image's bytes
+as an image block and a file's contents as an embedded resource where
+`initialize` said the prompt takes them. The interpreter refuses an image
+at once for an agent that said it takes none (Grok before 1.0.89,
+`grok-image`); the answer is read again from each process, as it changes
+with the agent's version. A line the agent writes on stderr reaches the
+interpreter as an `Agent`-channel fact, which is logged and never drawn:
+agents write there freely.
+
+**What a reply presents.** A non-text block in an agent's message is
+something the agent shows: an image or audio block is decoded and written
+as a blob with the step, and an embedded resource is stored the same way as
+a file, each an attachment at its place in the message's text. A
+`resource_link` goes in as its name and URI, a local file's too: storing a
+file the agent only names would read it unasked into blobs the agent reads
+and every device is sent. When a message completes, the words
+between its attachments go through the element reader, so an element the
+model wrote is an attachment too. A call to amux's `attach` tool carries the
+attachment its element names. What a tool call holds is never an
+attachment ([Attachments](ATTACHMENTS.md#bytes-and-metadata)).
+
+**Replay.** `session/load` replays the whole conversation before it
+answers, with no marker (`agy-load`, `opencode-load`, `grok-load`). Until
+this process's session answer comes, the interpreter draws nothing of the
+conversation (messages, thoughts, calls, notices, compactions) and applies
+only what describes the session: commands, settings, usage, title, plan.
+`session/resume` replays nothing.
+
+**Settings.** The create config's model, effort and mode, and every pick a
+person makes, are what amux wants the session to have. When a session opens
+(new or reopened), each one it lacks is sent again under
+`amux-apply-<option>`, since Antigravity reopens on its defaults
+(`agy-load`) where Grok keeps them (`grok-load`). They go one at a time,
+model first, then effort, then mode, each checked against the options in
+the previous answer, since the efforts offered change with the model; a
+value no longer offered is dropped. The agent starts, and the first prompt
+goes, only once they have settled. A person's change goes as
+`amux-set-<n>`; one before the session opens waits for it. The latest pick
+for a setting is the one wanted: a refusal of an older pick leaves a newer
+one standing, and a refused pick with none newer falls back to the
+session's value. A pick of none returns to the value the first session
+started with. The permission is the
+agent's own; amux sets none and remembers no permission answer.
+
+**Queue.** The interpreter holds the queue. A prompt is `session/prompt`
+under `amux-prompt-<input id>`, and its row is drawn as it is sent, since
+ACP reflects no prompt. A prompt typed while one runs waits for that
+prompt's answer. Send-now is refused for an agent not known to steer; for
+one that is, the queued prompt is sent at once, and the earlier prompt's
+answer, coming first, draws the steer while the turn goes on under the
+later one. A send-now the agent refuses goes back to waiting, with an error
+row giving the agent's words. Agent messages are queued and sent as prompts the same way,
+labelled with their sender, and consumed at their prompt's answer, or
+when the process ends before it. An accepted agent message cannot be
+withdrawn; only a person's queued prompt can.
+
+**Turns.** A turn ends at the answer to its last prompt: `end_turn`
+completes it, `cancelled` interrupts it (stopped, after a stop), `refusal`
+completes it with a refusal notice, `max_tokens` and `max_turn_requests`
+complete it with a notice saying which limit stopped it (a stop at a limit
+is not a failure), an error fails it with an error row. Usage comes
+from the answer (`usage`, or Grok's `_meta`); an answer with neither
+clears the turn's token counts and keeps the session's cost. The context
+meter comes from `usage_update`. Calls still running at the turn's end are cancelled and
+its asks dismissed.
+
+**Cancel.** An interrupt or stop sends `session/cancel`, a notification,
+and answers every open ask of the turn cancelled at once, as ACP requires;
+an ask that arrives while the turn is cancelling is answered cancelled and
+never opened.
+Chunks keep arriving until the `cancelled` answer (`agy-cancel`,
+`grok-cancel`) and are drawn.
+
+**Asks.** An ask's key is amux's own (`ask-<n>`, counted across the
+agent's processes) and its JSON-RPC request id is kept beside it for the
+reply and for cancelling: a later process may reuse a request id, and an
+answer meant for an ask of an earlier process must never reach it.
+`session/request_permission` opens an ask on the call's own row
+offering exactly the agent's options; an answer names one by id, and an
+allow-always one is a session grant (`opencode-allow_always`). A request
+for one of amux's own tools is answered allow once at once and opens no
+ask (an agent offering no allow once is asked as for any call, since an
+allow always nobody chose would be a session grant), recognised by the agent's naming quirk from the call's earlier title
+and the request's title, name and input (OpenCode retitles a call in its
+request, `opencode-allow`); `attach` asks, as it does in Claude, since it
+copies a file the agent names to where the agent reads unasked.
+`elicitation/create` opens a form or link ask row. A field whose choices
+are a `oneOf` of constants with titles (as Antigravity's questions are,
+`agy-question`), or an array whose `items` are an `anyOf` of them (ACP's
+titled multi-select), is offered as a choice of the titles, one or several,
+and the answer sends the agent the constant of each title picked, so no
+client reads such a field as typed text. Each option's constant is its
+identity: two titled alike read apart, and a default starts on its titles. Grok's `_x.ai/ask_user_question` opens a question ask on
+the tool's row, one question per question it sends, each taking one answer
+or several as it says, with typed words allowed. The answer is Grok's own
+shape, `{"outcome": "accepted", "answers": {<question>: <label> | [<labels>]}}`,
+read from what Grok 1.0.92 accepted live since it is not published; a
+question nobody answered is left out, and an ask with every question
+skipped is answered `cancelled`, which Grok tells its model as declined.
+(Grok's `skip_interview` ends its plan interview, a different thing, and
+is never sent.) A form, link or question names the call it comes from
+(`toolCallId`), a question tool's: that call is emitted naming the ask's
+item (`AcpTool.ask_item_key`), from the ask on, and clients draw the ask's
+row alone for both (`agy-question`, `grok-question`). The call's item stays
+a tool item, since an item's key never changes arm. Replying instead
+withdraws the ask, cancels the turn and queues the words.
+
+**What is not read.** A vendor method (`_` prefix) that is any other
+request is answered "method not found" at once, Grok's tool-server forms
+included (`grok-elicitation`, `_x.ai/mcp/elicit`), since the answer they
+would take was never recorded. A vendor notification on
+`acp_protocol::EXTENSIONS` is dropped by name, except Grok's automatic
+compaction report (`grok-compact`), which draws a compaction; one not on the
+list is logged and never drawn. Requests for files or terminals, which amux
+does not offer, are refused and logged. Anything else unknown draws an
+unrecognized row, and a request is refused. A test replays every recording
+and fails on an unrecognized row or a vendor method off the list.
+
 ## Provider transport
 
 The messages themselves are in the protocol crates, described with these in
@@ -1222,6 +1434,7 @@ The messages themselves are in the protocol crates, described with these in
 |---|---|---|
 | [`agent::claude`](../crates/agent/src/claude.rs) | Hosting Claude Code: hook forwarding over the hook socket (`hooks`), launch settings and the environment scrub (`launch`), the messaging socket client (`messaging`), session files (`history`) and version probing (`version`) | The agent process (hooks, launch, messaging, version, session files) and `amux internal hook claude` |
 | [`agent::codex`](../crates/agent/src/codex.rs) | Hosting the Codex app server: the listening socket (stdio on Windows), the process group, and whole messages in and out as bytes | The agent process, for its Codex server and the catalogue probe |
+| [`agent::acp`](../crates/agent/src/acp.rs) | Hosting an ACP agent over its stdio: the handshake's requests, opening, resuming or loading its session, prompts with their attachments as content blocks, amux's tool server as an MCP entry | The agent process, and the catalogue helper (`amux internal catalogue`), which sends `initialize` only |
 | [`pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal hosting: spawn in a process group, one output stream, input, resize, process-group signals, graceful termination | The agent process (terminal Claude and Codex views) and `claude-probe`'s terminal capture |
 
 ## Recordings and re-recording
@@ -1239,8 +1452,10 @@ Each kind's corpus sits beside the goldens that replay it, under
 | [`claude_pty/live/<scenario>/`](../crates/interpret/fixtures/claude_pty/live/README.md) | The whole terminal Claude corpus |
 | [`claude_pty/transcripts/`](../crates/interpret/fixtures/claude_pty/transcripts/README.md) | Two transcript captures that cannot be regenerated in the tree |
 | [`codex/live/<scenario>/`](../crates/interpret/fixtures/codex/live/README.md) | The whole Codex corpus |
+| [`acp/live/<agent>-<scenario>/`](../crates/interpret/fixtures/acp/live) | Each built-in ACP agent's corpus, prefixed by its id (`agy`, `opencode`, `grok`) |
 
-The probes that record and join them, `claude-probe` and `codex-probe`, are
+The probes that record and join them, `claude-probe`, `codex-probe` and
+`acp-probe`, are
 binaries of [`qualification`](../crates/qualification/src/lib.rs), with
 the recording manifests and sanitizer they share in its `recording` module.
 
@@ -1252,8 +1467,8 @@ machine paths, credentials and personal identifiers become placeholders, while
 provider ids, timestamps, payloads and ordering are kept.
 
 An interpreter fixture names its recording by a relative path and a format
-(`claude_pty_io`, `transcript_rows`, `claude_sdk_io` or `codex_io`), so the
-same bytes feed the provider fakes' conformance tests, the protocol crates'
+(`claude_pty_io`, `transcript_rows`, `claude_sdk_io`, `codex_io` or
+`acp_io`), so the same bytes feed the provider fakes' conformance tests, the protocol crates'
 corpus checks and the interpreter goldens.
 
 ### Re-recording
@@ -1272,6 +1487,10 @@ cargo run -p qualification --bin claude-probe -- join target/live/recordings/cla
 # Codex, the same way.
 just live codex <scenario>...
 cargo run -p qualification --bin codex-probe -- join target/live/recordings/codex/<scenario> <name>
+
+# ACP agents by id and scenarios, each a comma-separated list or `all`: a
+# scenario that runs to its end joins the corpus itself.
+just live acp <agent>[,<agent>...] <scenario>[,<scenario>...]
 ```
 
 The probe stands in for the provider on the lane's `PATH` and runs the real

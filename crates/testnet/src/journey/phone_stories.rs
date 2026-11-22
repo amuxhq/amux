@@ -32,8 +32,10 @@ pub(crate) type Tell<D> = fn(&mut D) -> Proved;
 /// which the Android app does not have yet; the local-network permission
 /// (`local-network`) is iOS's own, as Android browses with `NsdManager`
 /// behind no permission; a push that wakes the app (`push-wake`) needs a
-/// push delivered to it, which the Android app does not take yet; and the
-/// link log `resume` reads is the simulator's, read from its app container.
+/// push delivered to it, which the Android app does not take yet; the
+/// link log `resume` reads is the simulator's, read from its app container;
+/// and the ACP agents' stories (`acp-*`) are written against the iPhone's
+/// driver, as the Android app does not offer ACP agents yet.
 pub(crate) fn shared<D: Driver>() -> Vec<(&'static str, Tell<D>)> {
     vec![
         ("reach-host", reach_host),
@@ -77,6 +79,13 @@ fn stories() -> Vec<(&'static str, Tell<PhoneJourney>)> {
         ("local-network", local_network),
         ("push-wake", push_wake),
         ("resume", resume),
+        ("acp-conversation", super::phone_acp::conversation),
+        (
+            "acp-interrupt-and-queue",
+            super::phone_acp::interrupt_and_queue,
+        ),
+        ("acp-unresumable", super::phone_acp::unresumable),
+        ("acp-signed-out", super::phone_acp::signed_out),
     ]);
     stories
 }
@@ -178,7 +187,7 @@ fn selected(native: bool, named: Vec<String>) -> Result<Vec<String>, String> {
 // --- reading the phone ---------------------------------------------------
 
 /// The ask choice a person reads as `label`.
-fn choice(drawn: &Drawn, label: &str) -> Result<String, String> {
+pub(super) fn choice(drawn: &Drawn, label: &str) -> Result<String, String> {
     let choices = || {
         drawn
             .iter()
@@ -223,7 +232,7 @@ fn current(drawn: &Drawn) -> bool {
 
 /// The prompts waiting under the feed, oldest first: each one's words and
 /// how it waits.
-fn queued(drawn: &Drawn) -> Vec<(String, String)> {
+pub(super) fn queued(drawn: &Drawn) -> Vec<(String, String)> {
     let mut rows: Vec<(u32, &Value)> = drawn
         .iter()
         .filter_map(|(name, element)| {
@@ -247,14 +256,14 @@ fn queued(drawn: &Drawn) -> Vec<(String, String)> {
         .collect()
 }
 
-fn asking(drawn: &Drawn, question: &str) -> bool {
+pub(super) fn asking(drawn: &Drawn, question: &str) -> bool {
     drawn.label("ask.question") == question
 }
 
 /// How many of the chat's rows hold `text`. Android draws a row's prose in
 /// a `markdown.root` of its own inside the row, so the row's own label is
 /// empty there and the prose is counted where it is drawn.
-fn replies(drawn: &Drawn, text: &str) -> usize {
+pub(super) fn replies(drawn: &Drawn, text: &str) -> usize {
     drawn
         .iter()
         .filter(|(name, element)| {
@@ -359,7 +368,7 @@ fn reviewed(chat: &Value, comment: &str) -> Result<(Value, String), String> {
 /// The phone's browser finds `host`; once `amux pair` opens its pairing
 /// window the phone offers the keypad by itself, the PIN it printed is typed
 /// there and the machine it names is trusted.
-fn pair_by_code<D: Driver>(journey: &mut D, host: &str) -> Result<(), String> {
+pub(super) fn pair_by_code<D: Driver>(journey: &mut D, host: &str) -> Result<(), String> {
     let host_id = journey.host_id(host);
     journey.tab(Tab::Devices)?;
     journey.found(host, false)?;
@@ -388,7 +397,7 @@ fn open_agent<D: Driver>(journey: &mut D, name: &str) -> Result<String, String> 
     Ok(agent)
 }
 
-fn send<D: Driver>(journey: &mut D, text: &str) -> Result<(), String> {
+pub(super) fn send<D: Driver>(journey: &mut D, text: &str) -> Result<(), String> {
     journey.type_text("chat.field", text)?;
     journey.wait(
         |drawn| drawn.enabled("chat.send"),
@@ -399,7 +408,7 @@ fn send<D: Driver>(journey: &mut D, text: &str) -> Result<(), String> {
 
 /// Waits for the fleet with the agent's row on it, opening the folded
 /// section holding the row when the fleet keeps it folded away.
-fn back_to_row<D: Driver>(
+pub(super) fn back_to_row<D: Driver>(
     journey: &mut D,
     agent: &str,
     left: impl Fn(&Drawn) -> bool,
@@ -427,7 +436,7 @@ fn back_to_row<D: Driver>(
 
 /// Leaves the chat for the fleet and opens it again, so it is read with the
 /// keyboard down.
-fn reopen<D: Driver>(
+pub(super) fn reopen<D: Driver>(
     journey: &mut D,
     agent: &str,
     ready: impl Fn(&Drawn) -> bool,
@@ -521,7 +530,7 @@ fn plan_mode<D: Driver>(journey: &mut D) -> Result<(), String> {
 /// The activity bar slides while the turn runs; under reduced motion it
 /// stands still, so the screen can be photographed. Its elapsed time is
 /// masked.
-fn photograph_running<D: Driver>(journey: &mut D, label: &str) -> Result<(), String> {
+pub(super) fn photograph_running<D: Driver>(journey: &mut D, label: &str) -> Result<(), String> {
     journey.reduce_motion(true)?;
     journey.screen(label, &["chat.activity"])?;
     journey.reduce_motion(false)?;
@@ -1446,7 +1455,7 @@ fn settle_from_menu<D: Driver>(journey: &mut D) -> Result<(), String> {
 }
 
 /// The Settled page from the foot of the fleet, once it lists `agent`.
-fn open_settled<D: Driver>(journey: &mut D, agent: &str) -> Result<(), String> {
+pub(super) fn open_settled<D: Driver>(journey: &mut D, agent: &str) -> Result<(), String> {
     journey.wait_for(&["home.settled"])?;
     journey.tap("home.settled")?;
     let row = format!("home.row.{agent}");
@@ -3311,7 +3320,7 @@ mod tests {
     use super::super::phone::tests::{DESK, element};
     use super::*;
 
-    const NATIVE: [&str; 8] = [
+    const NATIVE: [&str; 12] = [
         "account-sign-in",
         "one-tap-sign-in",
         "purchase-restore",
@@ -3320,6 +3329,10 @@ mod tests {
         "local-network",
         "push-wake",
         "resume",
+        "acp-conversation",
+        "acp-interrupt-and-queue",
+        "acp-unresumable",
+        "acp-signed-out",
     ];
 
     #[test]

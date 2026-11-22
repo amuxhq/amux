@@ -9,8 +9,9 @@ import SwiftUI
 public struct AgentActions {
     public var openChanges: @MainActor () -> Void
     public var openAgent: @MainActor (AgentKey) -> Void
-    /// Its own interface in Terminal, through `amux attach`.
-    public var openTerminal: @MainActor () -> Void
+    /// Its own interface in Terminal, through `amux attach`; nil for an
+    /// agent that has no terminal interface of its own.
+    public var openTerminal: (@MainActor () -> Void)?
     /// Its folder in Finder and in the editor, for an agent on this Mac.
     public var reveal: (@MainActor () -> Void)?
     public var openEditor: (@MainActor () -> Void)?
@@ -24,7 +25,7 @@ public struct AgentActions {
 
     public init(
         openChanges: @escaping @MainActor () -> Void = {}, openAgent: @escaping @MainActor (AgentKey) -> Void = { _ in },
-        openTerminal: @escaping @MainActor () -> Void = {}, reveal: (@MainActor () -> Void)? = nil,
+        openTerminal: (@MainActor () -> Void)? = nil, reveal: (@MainActor () -> Void)? = nil,
         openEditor: (@MainActor () -> Void)? = nil, editor: String = "Editor", editorIcon: NSImage? = nil,
         terminalIcon: NSImage? = nil, finderIcon: NSImage? = nil
     ) {
@@ -38,6 +39,10 @@ public struct AgentActions {
         self.reveal = reveal
         self.openEditor = openEditor
     }
+
+    /// Whether anything opens the agent elsewhere: its folder, or its own
+    /// interface.
+    var opens: Bool { openEditor != nil || reveal != nil || openTerminal != nil }
 }
 
 /// What the window's bars show of the open agent beyond its row: the
@@ -78,11 +83,13 @@ struct OpenMenu: View {
                     Label { Text("Show in Finder") } icon: { app(actions.finderIcon) }
                 }
             }
-            if actions.openEditor != nil || actions.reveal != nil { Divider() }
-            Button(action: actions.openTerminal) {
-                Label { Text("Attach in Terminal") } icon: { app(actions.terminalIcon) }
+            if let openTerminal = actions.openTerminal {
+                if actions.openEditor != nil || actions.reveal != nil { Divider() }
+                Button(action: openTerminal) {
+                    Label { Text("Attach in Terminal") } icon: { app(actions.terminalIcon) }
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
             }
-            .keyboardShortcut("t", modifiers: [.command, .shift])
         } label: {
             HStack(spacing: 4) {
                 if let icon = actions.openEditor != nil ? actions.editorIcon : actions.terminalIcon {

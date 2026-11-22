@@ -10,7 +10,7 @@
 //! [`Net::rewind_host`] is power loss, the store and journals back to what
 //! reached the drive and the machine up under a new boot id.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
@@ -999,14 +999,20 @@ impl Net {
 
     /// Every line `name`'s provider has read from its agent process, over
     /// all its incarnations: what it was really sent, whatever the store
-    /// made of it. Only the stdio fakes (headless Claude, Codex) log.
+    /// made of it. Only the stdio fakes (headless Claude, Codex, ACP) log.
+    /// For a host's name, what the fakes of the agents clients created on
+    /// that host read, playing the host's script.
     pub fn provider_input(&self, name: &str) -> Result<Vec<String>, NetError> {
-        self.agent(name)?;
+        let log = match self.agent(name) {
+            Ok(_) => name.to_owned(),
+            Err(_) if self.hosts.contains_key(name) => format!("{name}.host"),
+            Err(error) => return Err(error),
+        };
         let path = self
             .root
             .path()
             .join("scripts")
-            .join(format!("{name}.{INPUT_LOG}"));
+            .join(format!("{log}.{INPUT_LOG}"));
         match std::fs::read_to_string(path) {
             Ok(text) => Ok(text.lines().map(str::to_owned).collect()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
@@ -1164,6 +1170,55 @@ impl Net {
             self.hosts.get_mut(host).expect("the host").commands = commands;
         }
         Ok(())
+    }
+
+    /// The built-in ACP agents this machine has installed, which a real
+    /// host offers beside the fake one: each runs through the ACP recording
+    /// probe, so what amux wrote to it and read back is kept under the
+    /// host's recordings, by agent id. An agent not on this process's PATH
+    /// is left out, as a daemon leaves out one it cannot find; without the
+    /// probe built, none is offered.
+    fn machine_agents(&self, host: &str) -> Vec<node::agents::AgentProgram> {
+        let probe = self
+            .binaries
+            .dir()
+            .join(format!("acp-probe{}", std::env::consts::EXE_SUFFIX));
+        if !probe.is_file() {
+            tracing::warn!(%host, "acp-probe is not built; the real host offers no built-in ACP agents");
+            return Vec::new();
+        }
+        let (built_ins, _) = node::agents::programs(&[]);
+        built_ins
+            .into_iter()
+            .filter_map(|program| {
+                // Looked up as a daemon looks it up: runnable, and an
+                // absolute path, as the probe starts it from elsewhere.
+                let real = program.find(&HashMap::new())?;
+                let mut args = vec!["--".to_owned(), real.to_string_lossy().into_owned()];
+                args.extend(program.args.iter().cloned());
+                let capture = self.recordings.join(host).join(&program.id);
+                let mut env = BTreeMap::from([(
+                    "ACP_CAPTURE_DIR".to_owned(),
+                    capture.to_string_lossy().into_owned(),
+                )]);
+                if program.id == "opencode" {
+                    // OpenCode's own default runs commands and edits without
+                    // asking; a net's agents ask, as its Claude does. The
+                    // variable is merged over OpenCode's config files for
+                    // this process only, leaving them as they are.
+                    env.insert(
+                        "OPENCODE_CONFIG_CONTENT".to_owned(),
+                        r#"{"permission":{"bash":"ask","edit":"ask"}}"#.to_owned(),
+                    );
+                }
+                Some(node::agents::AgentProgram {
+                    command: probe.to_string_lossy().into_owned(),
+                    args,
+                    env,
+                    ..program
+                })
+            })
+            .collect()
     }
 
     fn write_commands(&self, host: &str) -> Result<Commands, NetError> {
@@ -1570,6 +1625,13 @@ impl Net {
             }
         }
         resolve(&self.gates(), &mut script.steps);
+        // An ACP agent signed out until a file exists signs in when a test
+        // opens that gate, as a person signing in meanwhile would.
+        if let Some(path) = script.acp.signed_in_at.as_mut()
+            && path.is_relative()
+        {
+            *path = self.gates().join(&*path);
+        }
         let path = self
             .root
             .path()
@@ -1643,6 +1705,51 @@ impl Net {
                         .into_owned(),
                 );
             }
+        }
+        // The host's agent programs are the fake one and those its config
+        // adds, read from the file as a daemon reads a person's: a net
+        // runs the built-in agents, which are whatever this machine has
+        // installed, only on a host declared real.
+        launch.agents = vec![node::agents::AgentProgram {
+            id: providers::FAKE_ACP_AGENT.to_owned(),
+            name: "Fake ACP Agent".to_owned(),
+            command: own.commands.acp.to_string_lossy().into_owned(),
+            args: vec!["acp".to_owned()],
+            env: BTreeMap::new(),
+            built_in: false,
+        }];
+        if let Ok(config) = settings::InstallationConfig::from_file(&own.info.config) {
+            let read = config.agents.read();
+            let declared: BTreeSet<String> =
+                read.entries.iter().map(|entry| entry.id.clone()).collect();
+            let (added, warnings) = node::agents::configured(&config);
+            for warning in warnings {
+                tracing::warn!(host = %host.name, "{warning}");
+            }
+            launch.agents.extend(
+                added
+                    .into_iter()
+                    .filter(|program| offered_from_config(program, &declared)),
+            );
+        }
+        if own.decl.provider == Provider::Real {
+            // A real host's `acp` command has no real agent behind it, so
+            // it offers the machine's own in the fake one's place.
+            launch
+                .agents
+                .retain(|program| program.id != providers::FAKE_ACP_AGENT);
+            // An id the topology configures stays as configured.
+            let machine: Vec<_> = self
+                .machine_agents(&host.name)
+                .into_iter()
+                .filter(|program| {
+                    !launch
+                        .agents
+                        .iter()
+                        .any(|configured| configured.id == program.id)
+                })
+                .collect();
+            launch.agents.extend(machine);
         }
         launch.agent.grace_secs = own.decl.agent_grace_secs.unwrap_or(AGENT_GRACE_SECS);
         launch.agent.drain_secs = 5;
@@ -1730,6 +1837,17 @@ impl Net {
         if let Some(script) = &decl.script {
             self.write_script(&format!("{}.host", decl.name), script.clone())?;
         }
+        for (id, agent) in &decl.agents {
+            let mut script = agent.script.clone();
+            // Signed in once a test opens that gate, as a person signing in
+            // meanwhile would.
+            if let Some(path) = script.acp.signed_in_at.as_mut()
+                && path.is_relative()
+            {
+                *path = self.gates().join(&*path);
+            }
+            self.write_script(&configured_script(&decl.name, id), script)?;
+        }
         let process = decl.runs_as_process().then(|| ProcessHost {
             amux: if decl.supervised {
                 dir.join("install").join("amux")
@@ -1773,6 +1891,7 @@ impl Net {
                 commands: Commands {
                     claude: PathBuf::new(),
                     codex: PathBuf::new(),
+                    acp: PathBuf::new(),
                 },
             },
         );
@@ -1842,6 +1961,24 @@ impl Net {
             ));
             if let Some(mib) = self.facts_ring_mib {
                 text.push_str(&format!("facts_ring_mib = {mib}\n"));
+            }
+        }
+        // Each agent the host's config adds runs the host's own `acp`
+        // command, the fake ACP agent, on the script written for it.
+        for (id, agent) in &decl.agents {
+            let script = self
+                .root
+                .path()
+                .join("scripts")
+                .join(format!("{}.json", configured_script(&decl.name, id)));
+            text.push_str(&format!(
+                "[agents.{id}]\ncommand = {}\nargs = [\"acp\"]\nenv = {{ {} = {} }}\n",
+                quoted(&dir.join("bin").join("acp")),
+                providers::AGENT_SCRIPT_ENV,
+                quoted(&script),
+            ));
+            if let Some(name) = &agent.name {
+                text.push_str(&format!("name = {name:?}\n"));
             }
         }
         if decl.provider == Provider::Real {
@@ -4061,6 +4198,12 @@ fn work_dir(work: &Path, cwd: Option<&str>) -> Result<String, NetError> {
 }
 
 /// An input id as a failure message shows it.
+/// The name a configured agent's script and input log go by in the net's
+/// `scripts/`: `<host>.<id>.agent`.
+pub(crate) fn configured_script(host: &str, id: &str) -> String {
+    format!("{host}.{id}.agent")
+}
+
 /// A host's installation config `text` with the settings in `added`, both
 /// TOML, laid over it: a table in both is merged key by key, and any other
 /// value in `added` replaces the one in `text`.
@@ -4096,5 +4239,40 @@ fn loopback(decl: &HostDecl) -> std::net::IpAddr {
         std::net::Ipv6Addr::LOCALHOST.into()
     } else {
         std::net::Ipv4Addr::LOCALHOST.into()
+    }
+}
+
+/// Whether a host offers `program`, read from its config: an agent the
+/// config adds, or a built-in whose id the config declares, as a topology
+/// does to play its own script under a built-in's id. A built-in the config
+/// leaves alone is whatever this machine has installed, which a net does
+/// not run from here.
+fn offered_from_config(program: &node::agents::AgentProgram, declared: &BTreeSet<String>) -> bool {
+    !program.built_in || declared.contains(&program.id)
+}
+
+#[cfg(test)]
+mod config_agent_tests {
+    use super::*;
+
+    #[test]
+    fn a_built_in_id_the_config_declares_is_kept_and_the_rest_are_left_out() {
+        let (programs, _) = node::agents::programs(&[]);
+        let declared = BTreeSet::from(["opencode".to_owned()]);
+        let kept: Vec<&str> = programs
+            .iter()
+            .filter(|program| offered_from_config(program, &declared))
+            .map(|program| program.id.as_str())
+            .collect();
+        assert_eq!(kept, ["opencode"]);
+        let added = node::agents::AgentProgram {
+            id: "helper".to_owned(),
+            name: "Helper".to_owned(),
+            command: "/bin/true".to_owned(),
+            args: Vec::new(),
+            env: BTreeMap::new(),
+            built_in: false,
+        };
+        assert!(offered_from_config(&added, &BTreeSet::new()));
     }
 }

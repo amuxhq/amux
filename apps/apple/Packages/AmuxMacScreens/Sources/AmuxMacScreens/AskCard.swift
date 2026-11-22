@@ -152,7 +152,9 @@ struct AskCardView: View {
     // MARK: - Answers
 
     @ViewBuilder private var choices: some View {
-        if let index = noting {
+        if replying {
+            replyRow(soFar: [])
+        } else if let index = noting {
             HStack(spacing: 8) {
                 TextField("Say why (optional)", text: $note)
                     .textFieldStyle(.roundedBorder)
@@ -169,6 +171,13 @@ struct AskCardView: View {
             // its buttons. The other answers ride on the expected one's
             // chevron, so the row never wraps.
             HStack(spacing: 8) {
+                // An agent that takes the person's own words in place of
+                // any answer (an ACP agent's) offers them on every ask.
+                if card.replyInstead {
+                    Button("Reply instead") { replying = true }
+                        .buttonStyle(PillButtonStyle())
+                        .disabled(card.state == .sending)
+                }
                 Spacer(minLength: 0)
                 ForEach(refusals, id: \.self) { index in
                     choiceButton(index, hint: "Esc")
@@ -261,6 +270,7 @@ struct AskCardView: View {
     static func refuses(_ choice: Choice) -> Bool {
         switch choice.outcome {
         case .deny, .denyAndStop, .decline: return true
+        case .offered(_, let refuses): return refuses
         default: return false
         }
     }
@@ -281,26 +291,32 @@ struct AskCardView: View {
 
     @ViewBuilder private func questionButtons(_ questions: [QuestionView]) -> some View {
         if replying {
-            HStack(spacing: 8) {
-                TextField("Reply in your own words", text: $reply)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { sendReply(questions) }
-                Button("Cancel") { replying = false }
-                    .buttonStyle(PillButtonStyle())
-                Button("Reply") { sendReply(questions) }
-                    .buttonStyle(PillButtonStyle(prominent: true))
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
+            replyRow(soFar: responses(questions))
         } else {
             answerButtons(questions)
         }
     }
 
-    private func sendReply(_ questions: [QuestionView]) {
+    /// The person's own words in place of an answer, with what they had
+    /// answered so far; the shared answer builder makes the agent's input.
+    private func replyRow(soFar: [QuestionResponse]) -> some View {
+        HStack(spacing: 8) {
+            TextField("Reply in your own words", text: $reply)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { sendReply(soFar: soFar) }
+            Button("Cancel") { replying = false }
+                .buttonStyle(PillButtonStyle())
+            Button("Reply") { sendReply(soFar: soFar) }
+                .buttonStyle(PillButtonStyle(prominent: true))
+                .keyboardShortcut(.defaultAction)
+                .disabled(reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+
+    private func sendReply(soFar: [QuestionResponse]) {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        chat.replyInstead(text, soFar: responses(questions))
+        chat.replyInstead(text, soFar: soFar)
         replying = false
         reply = ""
     }

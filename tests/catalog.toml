@@ -39,8 +39,8 @@ journeys = ["survive-daemon"]
 
 [[suite]]
 name = "agent-provider-hosting"
-contract = "The agent process launches each provider child, completes its handshake and a turn, continues the provider's own session in a later incarnation, delivers agent messages through each provider's own injection channel, and names a Codex thread after the agent at start and on rename, so Codex's own app shows the same name; its Claude host keeps Claude's launch settings, hook forwarding, session files and version probe, and its Codex host its connection to the hosted app server, to their contracts."
-paths = ["crates/agent/tests/providers.rs", "crates/agent/tests/codex_thread_name.rs", "crates/agent/tests/replay", "crates/agent/src"]
+contract = "The agent process launches each provider child, completes its handshake and a turn, continues the provider's own session in a later incarnation, delivers agent messages through each provider's own injection channel, and names a Codex thread after the agent at start and on rename, so Codex's own app shows the same name; an ACP agent reopens its session or ends for good when it cannot, gets attachments within what its prompts take and runs amux's own tools unasked; its Claude host keeps Claude's launch settings, hook forwarding, session files and version probe, and its Codex host its connection to the hosted app server, to their contracts."
+paths = ["crates/agent/tests/providers.rs", "crates/agent/tests/acp.rs", "crates/agent/tests/codex_thread_name.rs", "crates/agent/tests/replay", "crates/agent/src"]
 recipe = "just suite agent-provider-hosting"
 boundary = "Provider adapter"
 oracle = "Journaled items and snapshots, provider writes checked byte for byte against recorded input, re-emitted open items after a restart, the thread/name/set requests the fake Codex logged, and the hosts' launch settings, forwarded payloads and decoded protocol messages."
@@ -53,7 +53,7 @@ evidence = "crates/agent/tests/replay"
 update = "Cut or rewrite a replay fixture from its recording in crates/interpret/fixtures/<kind>/live and record the change in crates/agent/tests/replay/README.md."
 cargo = [
   { package = "agent", kind = "lib", targets = ["agent"], features = [] },
-  { package = "agent", modules = ["codex_thread_name", "providers"], features = [] },
+  { package = "agent", modules = ["acp", "codex_thread_name", "providers"], features = [] },
 ]
 
 [[suite]]
@@ -217,6 +217,25 @@ cargo = [
 ]
 
 [[suite]]
+name = "acp-recorded-adapter"
+contract = "The ACP capture proxy runs any agent command, carries its stdin, stdout and stderr through unchanged while recording each line, refuses to run unrecorded, and joins a capture spanning two agent processes to the corpus with each line naming its process and nothing of the owner's home, host, installation ids or subscription left."
+paths = ["crates/qualification/src/bin/acp_probe", "crates/qualification/src/recording/acp.rs", "crates/qualification/tests/acp_probe.rs"]
+recipe = "just suite acp-recorded-adapter"
+boundary = "Provider adapter"
+oracle = "The relayed bytes, the recorded rows and the joined recording's manifest and lines."
+real = ["processes on the PATH"]
+substituted = ["live ACP agent by a shell script"]
+time = "driven"
+capabilities = ["Unix", "Rust toolchain"]
+lane = "fast"
+evidence = "crates/interpret/fixtures/acp/live"
+update = "Re-record with `just live acp <agent> <scenario>`, which joins each run; `acp-probe join` sanitizes a kept capture again."
+cargo = [
+  { package = "qualification", kind = "bin", targets = ["acp-probe"], features = [] },
+  { package = "qualification", modules = ["acp_probe"], features = [] },
+]
+
+[[suite]]
 name = "claude-protocol"
 contract = "Every line of every headless Claude recording, in both directions, and every transcript row and hook payload of every terminal Claude recording decodes as a known type; an unknown type is kept whole in production and refused by the strict check."
 paths = ["crates/claude-protocol"]
@@ -255,9 +274,28 @@ cargo = [
 ]
 
 [[suite]]
+name = "acp-protocol"
+contract = "Every message the crate types matches ACP's own JSON schema: generated from it with every field, only the required ones and every nullable one null, over every member of every union, it reads strictly and writes back the same, and a missing required field is refused. Every line of every ACP agent recording, in both directions, decodes strictly and encodes back to the same JSON, and every answer reads as its request's answer; an unknown method, update kind, spelling or field is kept in production and refused by the strict check; what amux writes encodes to the bytes it means."
+paths = ["crates/acp-protocol"]
+recipe = "just suite acp-protocol"
+boundary = "Provider adapter"
+oracle = "Strict decoding of schema-generated and recorded lines, JSON equality after encoding, the typed fields read from hand-written lines, and exact encoded bytes."
+real = ["ACP's published JSON schema", "recorded agent bytes"]
+substituted = ["live agent processes"]
+time = "none"
+capabilities = ["Rust toolchain"]
+lane = "fast"
+evidence = "crates/acp-protocol/schema and crates/interpret/fixtures/acp/live"
+update = "A failing generated message is a wrong type: fix it in crates/acp-protocol/src, or list what is left out on purpose in tests/schema.rs with why. A failing recorded line is agent drift or a wrong type: fix the type, never a live recording. A new schema release replaces the files in schema/ whole."
+cargo = [
+  { package = "acp-protocol", kind = "lib", targets = ["acp_protocol"], features = [] },
+  { package = "acp-protocol", modules = ["corpus", "messages", "schema"], features = [] },
+]
+
+[[suite]]
 name = "provider-fake-behaviour"
 contract = "Each scripted fake provider speaks its real protocol as a host sees it: every frame it composes has a recorded shape, it echoes, queues, folds, steers, interrupts and blocks on asks the way its provider does, and every journey script loads on every fake."
-paths = ["crates/provider-fakes/src", "crates/provider-fakes/tests/codex.rs", "crates/provider-fakes/tests/pty.rs", "crates/provider-fakes/tests/sdk.rs", "crates/provider-fakes/tests/scripts.rs"]
+paths = ["crates/provider-fakes/src", "crates/provider-fakes/tests/acp.rs", "crates/provider-fakes/tests/codex.rs", "crates/provider-fakes/tests/pty.rs", "crates/provider-fakes/tests/sdk.rs", "crates/provider-fakes/tests/scripts.rs"]
 recipe = "just suite provider-fake-behaviour"
 boundary = "Provider adapter"
 oracle = "Frames, transcript rows and hook payloads checked against recorded shapes, and exit codes."
@@ -270,14 +308,14 @@ evidence = ""
 update = ""
 cargo = [
   { package = "provider-fakes", kind = "lib", targets = ["provider_fakes"], features = [] },
-  { package = "provider-fakes", kind = "bin", targets = ["fake-claude-pty", "fake-claude-sdk", "fake-codex"], features = [] },
-  { package = "provider-fakes", modules = ["codex", "pty", "scripts", "sdk"], features = [] },
+  { package = "provider-fakes", kind = "bin", targets = ["fake-acp", "fake-claude-pty", "fake-claude-sdk", "fake-codex"], features = [] },
+  { package = "provider-fakes", modules = ["acp", "codex", "pty", "scripts", "sdk"], features = [] },
 ]
 
 [[suite]]
 name = "provider-fake-conformance"
 contract = "Every recording in the Claude and Codex corpora plays back through its fake byte for byte, and each fake's script engine reproduces the ordered frame kinds its provider recorded for the same scenario."
-paths = ["crates/provider-fakes/tests/conformance.rs", "crates/provider-fakes/tests/scripted.rs", "crates/interpret/fixtures/claude_sdk/live", "crates/interpret/fixtures/claude_pty/live", "crates/interpret/fixtures/codex/live"]
+paths = ["crates/provider-fakes/tests/conformance.rs", "crates/provider-fakes/tests/scripted.rs", "crates/interpret/fixtures/claude_sdk/live", "crates/interpret/fixtures/claude_pty/live", "crates/interpret/fixtures/codex/live", "crates/interpret/fixtures/acp/live"]
 recipe = "just suite provider-fake-conformance"
 boundary = "Provider adapter"
 oracle = "Byte-for-byte playback and the recorded sequence of frame kinds, one test per recording."
@@ -293,7 +331,7 @@ cargo = [{ package = "provider-fakes", modules = ["conformance", "scripted"], fe
 [[suite]]
 name = "interpreter-emissions"
 contract = "Each kind's interpreter turns its recorded and authored facts into the reviewed items, snapshots and effects, and every chat-vocabulary row a kind can show has a place in its bodies and a golden that shows it."
-paths = ["crates/interpret/src", "crates/interpret/fixtures", "crates/interpret/tests/claude_pty.rs", "crates/interpret/tests/claude_sdk.rs", "crates/interpret/tests/codex.rs", "crates/interpret/tests/coverage.rs", "crates/interpret/tests/checks.rs", "crates/interpret/tests/record.rs", "crates/interpret/tests/vocabulary.toml"]
+paths = ["crates/interpret/src", "crates/interpret/fixtures", "crates/interpret/tests/acp.rs", "crates/interpret/tests/claude_pty.rs", "crates/interpret/tests/claude_sdk.rs", "crates/interpret/tests/codex.rs", "crates/interpret/tests/coverage.rs", "crates/interpret/tests/checks.rs", "crates/interpret/tests/record.rs", "crates/interpret/tests/vocabulary.toml"]
 recipe = "just suite interpreter-emissions"
 boundary = "Interpreter"
 oracle = "Reviewed emission goldens, explicit intermediate outcomes, and the vocabulary catalogue checked against every kind's goldens."
@@ -306,7 +344,7 @@ evidence = "crates/interpret/fixtures"
 update = "INTERPRET_UPDATE_GOLDENS=1 just test-crate interpret, then review the golden diff."
 cargo = [
   { package = "interpret", kind = "lib", targets = ["interpret"], features = [] },
-  { package = "interpret", modules = ["checks", "claude_pty", "claude_sdk", "codex", "coverage", "record"], features = [] },
+  { package = "interpret", modules = ["acp", "checks", "claude_pty", "claude_sdk", "codex", "coverage", "record"], features = [] },
 ]
 
 [[suite]]
@@ -741,8 +779,8 @@ cargo = [{ package = "testnet", modules = ["ctl"], features = [] }]
 
 [[suite]]
 name = "many-daemon-protocol-spec"
-contract = "Production daemons enforce pairing, trust, discovery, routing, relay carriers, credential refresh, revocation and account isolation, reconcile the inventory, keep each replica one contiguous block, carry agent families and their deliveries across hosts, and count pairings and forwarded prompts once on the right host, and send a person's report or a check's dump to the profile's account only when signed in and allowed. Four parallel provider subagents (headless Claude and Codex) are fleet rows and chats of their own on every client of either host, folded into one row in their parent's chat, which keeps its history in its window; an ask in one is answered once from the paired host's client while the parent's row reads waiting on you, a stop reaches the provider once and ends it stopped while the parent carries on, a client of a host that joins later catches up on a subagent's whole chat, and a one-shot host stays until its background subagent and the follow-up turn on it have ended. A person on a paired host reviews an agent through the carrier, the agent's host marking sent exactly the comments the message it accepts names, while agents, copies of another host's agents and hosts without the experiment are refused."
-paths = ["crates/testnet/tests/spec_analytics.rs", "crates/testnet/tests/spec_carried.rs", "crates/testnet/tests/spec_edge.rs", "crates/testnet/tests/spec_families.rs", "crates/testnet/tests/spec_inventory.rs", "crates/testnet/tests/spec_network.rs", "crates/testnet/tests/spec_pairing_window.rs", "crates/testnet/tests/spec_replication.rs", "crates/testnet/tests/spec_reports.rs", "crates/testnet/tests/spec_reviews.rs", "crates/testnet/tests/spec_sign_in_offers.rs", "crates/testnet/tests/spec_subagents.rs", "crates/testnet/tests/spec_suspension.rs", "crates/testnet/tests/spec_workspaces.rs", "crates/testnet/tests/support"]
+contract = "Production daemons enforce pairing, trust, discovery, routing, relay carriers, credential refresh, revocation and account isolation, reconcile the inventory, keep each replica one contiguous block, carry agent families and their deliveries across hosts, and count pairings and forwarded prompts once on the right host, and send a person's report or a check's dump to the profile's account only when signed in and allowed. Four parallel provider subagents (headless Claude and Codex) are fleet rows and chats of their own on every client of either host, folded into one row in their parent's chat, which keeps its history in its window; an ask in one is answered once from the paired host's client while the parent's row reads waiting on you, a stop reaches the provider once and ends it stopped while the parent carries on, a client of a host that joins later catches up on a subagent's whole chat, and a one-shot host stays until its background subagent and the follow-up turn on it have ended. A person on a paired host reviews an agent through the carrier, the agent's host marking sent exactly the comments the message it accepts names, while agents, copies of another host's agents and hosts without the experiment are refused. An ACP agent a paired host's client creates by its agent's id runs on the host named, streams its reply to that client, takes its permission answer, interrupt and stop from it, and ends stopped; a host lists each ACP agent it offers in its own entry, asked as it starts, and a paired host's client reads its name, kind, sign-in words, version, signed-in state and capabilities there and its catalogue from GetCatalogue."
+paths = ["crates/testnet/tests/spec_acp.rs", "crates/testnet/tests/spec_analytics.rs", "crates/testnet/tests/spec_carried.rs", "crates/testnet/tests/spec_edge.rs", "crates/testnet/tests/spec_families.rs", "crates/testnet/tests/spec_inventory.rs", "crates/testnet/tests/spec_network.rs", "crates/testnet/tests/spec_pairing_window.rs", "crates/testnet/tests/spec_replication.rs", "crates/testnet/tests/spec_reports.rs", "crates/testnet/tests/spec_reviews.rs", "crates/testnet/tests/spec_sign_in_offers.rs", "crates/testnet/tests/spec_subagents.rs", "crates/testnet/tests/spec_suspension.rs", "crates/testnet/tests/spec_workspaces.rs", "crates/testnet/tests/support"]
 recipe = "just suite many-daemon-protocol-spec"
 modes = ["real"]
 boundary = "Many daemons"
@@ -754,7 +792,7 @@ capabilities = ["loopback network", "desktop"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "testnet", modules = ["spec_analytics", "spec_carried", "spec_edge", "spec_families", "spec_inventory", "spec_network", "spec_pairing_window", "spec_replication", "spec_reports", "spec_reviews", "spec_sign_in_offers", "spec_subagents", "spec_suspension", "spec_workspaces"], features = [] }]
+cargo = [{ package = "testnet", modules = ["spec_acp", "spec_analytics", "spec_carried", "spec_edge", "spec_families", "spec_inventory", "spec_network", "spec_pairing_window", "spec_replication", "spec_reports", "spec_reviews", "spec_sign_in_offers", "spec_subagents", "spec_suspension", "spec_workspaces"], features = [] }]
 
 [[suite]]
 name = "claude-pty-live-compatibility"
@@ -805,6 +843,24 @@ update = "Join a passing run's capture into the Codex corpus with codex-probe jo
 cargo = [
   { package = "qualification", targets = ["codex_live"], features = ["live"] },
   { package = "qualification", kind = "bin", targets = ["codex-probe"], features = [] },
+]
+
+[[suite]]
+name = "acp-live-compatibility"
+contract = "Each built-in ACP agent (Antigravity, OpenCode, Grok) under its real program and the owner's sign-in answers a scripted client across the scenario matrix (prompt, file read and edit, approvals allowed, denied and always, cancel, queued and mid-turn prompts, image, settings, resume and load in a new process, catalogue, signed-out start, elicitation, question, compaction), and each run joins the ACP corpus sanitized."
+paths = ["crates/qualification/tests/acp_live.rs", "crates/qualification/tests/acp"]
+recipe = "just live acp all all"
+boundary = "Provider adapter"
+oracle = "Each scenario's own protocol facts (an answer, a stop reason, a permission request, a file changed); the recordings are the evidence, as no ACP interpreter judges them yet."
+real = ["Antigravity, OpenCode and Grok programs", "operator login"]
+substituted = ["amux by a scripted ACP client"]
+time = "real"
+capabilities = ["Unix", "agent sign-ins", "network", "may spend provider credits"]
+lane = "qualification"
+evidence = "the printed verdict lines and notes; raw captures with each agent's stderr in target/live/acp/"
+update = "Re-run the scenario; the run replaces its recording in crates/interpret/fixtures/acp/live."
+cargo = [
+  { package = "qualification", targets = ["acp_live"], features = ["live"] },
 ]
 
 [[suite]]
@@ -920,11 +976,11 @@ cargo = [
 
 [[suite]]
 name = "view-goldens"
-contract = "Each view is a pure function of the session state; row ids are item keys and never move, run membership is an attribute, a run of tool steps names only the failures its ended turn left unresolved, a finished turn folded to its answer keeps those failures in view and names every row a change moves, a call that opens an agent names it, reads its state from the fleet and folds with its turn's other such calls into one row, a provider subagent's composer has no text box, attachments keep their positions, and every choice an ask card offers reaches the interpreter as an input it accepts."
+contract = "Each view is a pure function of the session state; row ids are item keys and never move, run membership is an attribute, a run of tool steps names only the failures its ended turn left unresolved, a finished turn folded to its answer keeps those failures in view and names every row a change moves, a call that opens an agent names it, reads its state from the fleet and folds with its turn's other such calls into one row, a provider subagent's composer has no text box, attachments keep their positions, an agent's capabilities and its host's descriptor (never its kind) decide send-now, resume, attachments and its name, and every choice an ask card offers reaches the interpreter as an input it accepts."
 paths = ["crates/ui-view/tests"]
 recipe = "just suite view-goldens"
 boundary = "Views"
-oracle = "Reviewed view data goldens replayed from every interpreter fixture of all three kinds, each provider subagent's part committed under its own agent and fleet row, authored goldens for inputs and composer states, row invariants over random windows, and the interpreter accepting each card's answers."
+oracle = "Reviewed view data goldens replayed from every interpreter fixture of all four kinds, each provider subagent's part committed under its own agent and fleet row, authored goldens for inputs and composer states, row invariants over random windows, and the interpreter accepting each card's answers."
 real = ["interpreter"]
 substituted = ["network", "store", "provider", "wall clock"]
 time = "none"
@@ -934,7 +990,7 @@ evidence = ""
 update = "Rerun with UI_VIEW_UPDATE_GOLDENS=1 and review the golden diff."
 cargo = [
   { package = "ui-view", kind = "lib", targets = ["ui_view"], features = [] },
-  { package = "ui-view", modules = ["answers", "goldens", "reviews", "runs", "subagents", "turns", "views"], features = [] },
+  { package = "ui-view", modules = ["acp", "answers", "goldens", "reviews", "runs", "subagents", "turns", "views"], features = [] },
 ]
 
 [[suite]]
@@ -1010,7 +1066,7 @@ swift = ["AmuxAppTests", "AmuxCoreTests", "AmuxDesignTests", "AmuxFeaturesTests"
 [[suite]]
 name = "phone-journeys"
 contract = "A person can complete every declared phone story through the real app and production amux path against a served topology."
-paths = ["crates/testnet/src/journey", "journeys/manifest.json", "journeys/topologies/phone-stories.json", "journeys/topologies/phone-reach.json", "journeys/topologies/phone-authority.json", "journeys/topologies/phone-accounts.json", "journeys/topologies/phone-purchase.json", "journeys/topologies/phone-accessible.json", "journeys/topologies/phone-push.json", "journeys/topologies/phone-resume.json", "journeys/topologies/phone-flows.json", "journeys/fixtures/needs-you.apns", "journeys/goldens/phone"]
+paths = ["crates/testnet/src/journey", "journeys/manifest.json", "journeys/topologies/phone-stories.json", "journeys/topologies/phone-reach.json", "journeys/topologies/phone-authority.json", "journeys/topologies/phone-accounts.json", "journeys/topologies/phone-purchase.json", "journeys/topologies/phone-accessible.json", "journeys/topologies/phone-push.json", "journeys/topologies/phone-resume.json", "journeys/topologies/phone-flows.json", "journeys/topologies/phone-acp.json", "journeys/fixtures/needs-you.apns", "journeys/goldens/phone"]
 recipe = "just ios journey"
 boundary = "Journeys"
 oracle = "Declared acts, independent door and host observations, exact element geometry, exits, and teardown evidence."
@@ -1022,12 +1078,12 @@ lane = "journey"
 evidence = "target/journeys/phone"
 update = "UPDATE_JOURNEY_GOLDENS=1 just ios journey -- conversation-decision-claude-sdk"
 journey_manifest = "journeys/manifest.json"
-journeys = ["account-sign-in", "one-tap-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake", "resume"]
+journeys = ["account-sign-in", "one-tap-sign-in", "purchase-restore", "report", "accessibility", "local-network", "push-wake", "resume", "acp-conversation", "acp-interrupt-and-queue", "acp-unresumable", "acp-signed-out"]
 
 [[suite]]
 name = "terminal-journeys"
 contract = "A person completes declared terminal stories through the real TUI and production installation front door against a served topology."
-paths = ["crates/testnet/src/journey", "journeys/manifest.json", "journeys/topologies/terminal-stories.json", "journeys/topologies/terminal-reach.json", "journeys/topologies/terminal-authority.json", "journeys/topologies/terminal-flows.json", "journeys/topologies/terminal-worktree.json", "journeys/topologies/terminal-subagents.json", "journeys/goldens/terminal"]
+paths = ["crates/testnet/src/journey", "journeys/manifest.json", "journeys/topologies/terminal-stories.json", "journeys/topologies/terminal-reach.json", "journeys/topologies/terminal-authority.json", "journeys/topologies/terminal-flows.json", "journeys/topologies/terminal-worktree.json", "journeys/topologies/terminal-subagents.json", "journeys/topologies/terminal-acp.json", "journeys/goldens/terminal"]
 recipe = "just journey terminal all"
 boundary = "Journeys"
 oracle = "Door observations, exact terminal text and semantic styles, cache contents, process exits, and teardown."
@@ -1039,7 +1095,7 @@ lane = "journey"
 evidence = "target/journeys; target/journeys/summary.txt after `all`"
 update = "UPDATE_JOURNEY_GOLDENS=1 just journey terminal conversation-decision-claude-pty"
 journey_manifest = "journeys/manifest.json"
-journeys = ["reach-host", "conversation-decision-claude-pty", "conversation-decision-claude-sdk", "conversation-decision-codex", "leave-and-recover", "manage-agent", "attachment-or-review", "keep-authority", "decide-plan-claude-sdk", "decide-plan-claude-pty", "decide-plan-codex", "answer-questions", "tool-server-asks", "queue-and-steer", "send-while-away", "send-may-not-have-arrived", "composer-limits", "new-agent-terminal", "new-agent-worktree", "report-a-problem", "first-run", "provider-subagents"]
+journeys = ["reach-host", "conversation-decision-claude-pty", "conversation-decision-claude-sdk", "conversation-decision-codex", "leave-and-recover", "manage-agent", "attachment-or-review", "keep-authority", "decide-plan-claude-sdk", "decide-plan-claude-pty", "decide-plan-codex", "answer-questions", "tool-server-asks", "queue-and-steer", "send-while-away", "send-may-not-have-arrived", "composer-limits", "new-agent-terminal", "new-agent-worktree", "report-a-problem", "first-run", "provider-subagents", "acp-create-from-config", "acp-permission", "acp-interrupt", "acp-queue-and-withdraw", "acp-ends-for-good", "acp-sign-in"]
 
 [[suite]]
 name = "phone-accessibility-audit"

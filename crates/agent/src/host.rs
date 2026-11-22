@@ -341,7 +341,14 @@ fn resumed<I: Interpreter>(facts: &std::path::Path) -> Option<Resumed<I::State>>
 
 impl<I: Interpreter> Driver<I> {
     async fn run(&mut self, channels: &mut Channels) -> ExitCause {
-        match Provider::spawn(&self.spec, &self.dir, channels.provider_tx.clone()).await {
+        match Provider::spawn(
+            &self.spec,
+            &self.dir,
+            channels.provider_tx.clone(),
+            self.clock.clone(),
+        )
+        .await
+        {
             Ok(provider) => self.provider = Some(provider),
             Err(error) => {
                 self.feed(Input::ProviderUnstarted {
@@ -489,6 +496,12 @@ impl<I: Interpreter> Driver<I> {
                     .await;
             }
             ProviderEvent::Exited(code) => self.feed(Input::ProviderExited { code }).await,
+            ProviderEvent::Unstarted(why) => {
+                if let Some(provider) = &mut self.provider {
+                    provider.kill();
+                }
+                self.feed(Input::ProviderUnstarted { why }).await;
+            }
         }
     }
 

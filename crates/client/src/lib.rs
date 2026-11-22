@@ -34,7 +34,7 @@
 //! client.agent(&row).rename("docs").await.unwrap();
 //! // A new agent has no row yet, so it starts from a host.
 //! let desk = client.host(&row.host_id);
-//! desk.catalogue(wire::Provider::Claude).await.unwrap();
+//! desk.catalogue("claude").await.unwrap();
 //! # }
 //! ```
 //!

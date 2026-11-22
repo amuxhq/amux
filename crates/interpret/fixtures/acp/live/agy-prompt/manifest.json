@@ -1,0 +1,25 @@
+{
+  "spec": "agy-prompt",
+  "recorded": {
+    "provider": "antigravity",
+    "version": "1.5.13",
+    "model": "gemini-3.8-flash",
+    "at": "2026-11-20T19:27:43.766963Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:096dc67eaeb00b790a699a882246674c87e55546d1df97f2b9bc4acf3342f775",
+    "spawn.jsonl": "sha256:ce7f820044a03e8b9618e1bdebb6e743a271fe1e6ad80ae0ee9f31efd54657ba"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 2,
+    "personal_identifiers": 3
+  },
+  "session_ids": [
+    "76093fea-1d2c-4773-99cc-be04c1b92a15"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "one plain prompt and its answer"
+  }
+}

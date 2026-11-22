@@ -41,6 +41,6 @@
 == agent sub-4453d686 "Lovelace" started by host/call-spawn
   composer Native { stop: Unavailable } phase=Exited { cause: Ended }
 == chat
-     1 exec-1 Background { command: "sleep 97; echo LATE", description: "", running: false, duration_ms: Some(0) } run[exec-1..exec-1 x1 recent=0 live shown RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }] attention
+     1 exec-1 Background { command: "sleep 97; echo LATE", description: "", running: false, duration_ms: Some(0) } run[exec-1..exec-1 x1 recent=0 live shown RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0 }] attention
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
   changes: Changeability { model: NotOffered, effort: NotOffered, permission: NotOffered, mode: NotOffered } commands=0

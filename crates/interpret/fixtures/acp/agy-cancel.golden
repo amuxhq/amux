@@ -1,0 +1,72 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 1 recorded 0: tick 62
+snapshot STARTING queue=[] working_on=- at=62 agent=antigravity session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"agentCapabilitie…
+snapshot STARTING queue=[] working_on=- at=62 agent=antigravity session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=RESUME
+## 4 recorded 3: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"antigrav…
+effect session "f4bea624-bd4c-4c75-bc9f-bf7806c006b1"
+effect catalogue 67fa6bde models=[gemini-4-neon{low/medium/high/xhigh},gemini-4-argon{low/medium/high/xhigh},gemini-4-hydrogen{low/medium/high/xhigh},gemini-pro-orchestrator-neon{low/medium/high/xhigh},gemini-pro-orchestrator-g1-pro{low/medium/high/xhigh},gemini-3.8-flash{low/medium/high/xhigh},claude-opus-5-5{low/medium/high/xhigh},claude-sonnet-5-5{low/medium/high/xhigh},gpt-oss-120b-medium{low/medium/high/xhigh}] commands=0 permissions=[] modes=[default,accept-edits,auto,plan]
+item boundary:1 boundary final at=1432 text="" BOUNDARY_KIND_STARTED
+snapshot catalogue 67fa6bde
+snapshot IDLE queue=[] working_on=- at=1432 agent=antigravity session=f4bea624-bd4c-4c75-bc9f-bf7806c006b1 asks=[] model=gemini-4-neon model_name=Gemini 4 Neon effort=high mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 6 recorded 5: input p1-1
+effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"f4bea624-bd4c-4c75-bc9f-bf7806c006b1\",\"value\":\"gemini-3.8-flash\"}}"
+effect reply p1-1 accepted
+## 8 recorded 7: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+effect catalogue 92cd6296 models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=0 permissions=[] modes=[default,accept-edits,auto,plan]
+snapshot catalogue 92cd6296
+snapshot IDLE queue=[] working_on=- at=1434 agent=antigravity session=f4bea624-bd4c-4c75-bc9f-bf7806c006b1 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=high mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 9 recorded 8: input p1-2
+effect write "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"thought_level\",\"sessionId\":\"f4bea624-bd4c-4c75-bc9f-bf7806c006b1\",\"value\":\"low\"}}"
+effect reply p1-2 accepted
+## 12 recorded 11: fact Rpc "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+snapshot IDLE queue=[] working_on=- at=1435 agent=antigravity session=f4bea624-bd4c-4c75-bc9f-bf7806c006b1 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 13 recorded 12: input p1-3
+effect reply p1-3 accepted
+effect write "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Write a 500-word story about a lighthouse keeper. Do not use any tools.\",\"type\":\"text\"}],\"sessionId\":\"f4bea624-bd4c-4c75-bc9f-bf7806c006b1\"}}"
+item prompt:70312d33 prompt final input=p1-3 at=1435 text="Write a 500-word story about a lighthouse keeper. Do not use any tools."
+snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=1435 agent=antigravity session=f4bea624-bd4c-4c75-bc9f-bf7806c006b1 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 16 recorded 15: fact Rpc method=session/update
+effect catalogue 51ec4a90 models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=13 permissions=[] modes=[default,accept-edits,auto,plan]
+snapshot catalogue 51ec4a90
+snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=1439 agent=antigravity session=f4bea624-bd4c-4c75-bc9f-bf7806c006b1 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 17 recorded 16: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=1439 agent=antigravity session=f4bea624-bd4c-4c75-bc9f-bf7806c006b1 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=0/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 24 recorded 23: fact Rpc method=session/update
+item message:1 message open at=3882 text="The wind"
+## 26 recorded 25: fact Rpc method=session/update
+append message:1 " on Oakhaven Shoal never truly stopped; it only changed octaves. By"
+## 27 recorded 26: input p1-4
+effect write "{\"jsonrpc\":\"2.0\",\"method\":\"session/cancel\",\"params\":{\"sessionId\":\"f4bea624-bd4c-4c75-bc9f-bf7806c006b1\"}}"
+effect reply p1-4 accepted
+## 28 recorded 27: fact Rpc method=session/update
+append message:1 " dusk, it had risen to a keening shriek that shook the iron-framed glass of the lantern room. Thomas"
+## 29 recorded 28: fact Rpc method=session/update
+append message:1 " climbed the spiral cast-iron staircase, one deliberate boot at a time, his sixty-year-old knees marking the ascent"
+## 31 recorded 30: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=3884 agent=antigravity session=f4bea624-bd4c-4c75-bc9f-bf7806c006b1 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9011/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 33 recorded 32: fact Rpc "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"result\":{\"stopReason\"…
+item message:1 message final at=3882 text="The wind on Oakhaven Shoal never truly stopped; it only changed octaves. By dusk, it had risen to a keening shriek that shook the iron-framed glass of the lantern room. Thomas climbed the spiral cast-iron staircase, one deliberate boot at a time, his sixty-year-old knees marking the ascent"
+item turn:1 turn final at=3886 text="" #1 TURN_OUTCOME_INTERRUPTED started=1435
+snapshot said "The wind on Oakhaven Shoal never truly stopped; it only changed octaves. By dusk, it had risen to a keening shriek that shook the iron-framed glass of the lantern room. Thomas climbed the spiral cast-iron staircase, one deliberate boot at a time, his sixty-year-old knees marking the ascent"
+snapshot IDLE queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=3886 agent=antigravity session=f4bea624-bd4c-4c75-bc9f-bf7806c006b1 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9011/1048576 plan=? usage=in:8943/out:68/thought:0/total:9011 cost=? sign_in=SIGNED_IN reopen=RESUME
+turn_end 1 last=message:1
+## 35 recorded 34: input p1-5
+effect reply p1-5 accepted
+effect write "{\"id\":\"amux-prompt-70312d35\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Reply with exactly the word: after\",\"type\":\"text\"}],\"sessionId\":\"f4bea624-bd4c-4c75-bc9f-bf7806c006b1\"}}"
+item prompt:70312d35 prompt final input=p1-5 at=5889 text="Reply with exactly the word: after"
+snapshot WORKING queue=[] working_on="Reply with exactly the word: after" at=5889 agent=antigravity session=f4bea624-bd4c-4c75-bc9f-bf7806c006b1 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9011/1048576 plan=? usage=in:8943/out:68/thought:0/total:9011 cost=? sign_in=SIGNED_IN reopen=RESUME
+## 37 recorded 36: fact Rpc method=session/update
+item message:2 message open at=7788 text="after"
+## 39 recorded 38: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Reply with exactly the word: after" at=7813 agent=antigravity session=f4bea624-bd4c-4c75-bc9f-bf7806c006b1 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9102/1048576 plan=? usage=in:8943/out:68/thought:0/total:9011 cost=? sign_in=SIGNED_IN reopen=RESUME
+## 41 recorded 40: fact Rpc "{\"id\":\"amux-prompt-70312d35\",\"jsonrpc\":\"2.0\",\"result\":{\"stopReason\"…
+item message:2 message final at=7788 text="after"
+item turn:2 turn final at=7815 text="" #2 TURN_OUTCOME_COMPLETED started=5889
+snapshot said "after"
+snapshot IDLE queue=[] working_on="Reply with exactly the word: after" at=7815 agent=antigravity session=f4bea624-bd4c-4c75-bc9f-bf7806c006b1 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9102/1048576 plan=? usage=in:9101/out:1/thought:0/total:9102 cost=? sign_in=SIGNED_IN reopen=RESUME
+turn_end 2 last=message:2
+## 44 recorded 43: provider_exit Some(0)
+item boundary:2 boundary final at=9818 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT

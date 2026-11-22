@@ -64,6 +64,8 @@ pub fn definitions() -> Map<String, Value> {
         ui_view::FleetRow,
         ui_view::FleetCard,
         ui_view::FamilyHeader,
+        ui_view::SettleWarning,
+        ui_view::SettleTurn,
         ui_view::Offline,
         ui_view::ReviewPage,
         ui_view::ReviewChip,
@@ -834,6 +836,13 @@ fn undoc(doc: &str) -> String {
 #[cfg(test)]
 pub(crate) fn missing_public_view_values(definitions: &Map<String, Value>) -> Vec<String> {
     const STAY_IN_RUST: &[&str] = &[
+        // What a client asks of an agent before its kind's input is
+        // built: app-runtime and the browser bridge build it, and the
+        // phone names the act through them.
+        "Act",
+        // Which attachment an agent does not take: app-runtime words
+        // the refusal, and the phone shows the words.
+        "Untaken",
         // The answer body a choice sends: the phone names the choice.
         "Answer",
         // Borrowed option types; the chat holds its own open runs.

@@ -1,0 +1,23 @@
+{
+  "spec": "grok-catalogue",
+  "recorded": {
+    "provider": "grok",
+    "version": "1.0.89",
+    "model": "none",
+    "at": "2026-11-20T19:27:44.435663Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:aa32b19fadbe2c9e7b37b9d1fb1b194e1ec90ae7664fb9c647fea88ac9572160",
+    "spawn.jsonl": "sha256:8aab213a2fb26391131f0a91634b225aee476835849fe455902b65583a019be5"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 2,
+    "personal_identifiers": 3
+  },
+  "session_ids": [],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "initialize alone, with no session opened"
+  }
+}

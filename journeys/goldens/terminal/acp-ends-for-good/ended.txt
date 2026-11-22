@@ -1,0 +1,34 @@
+
+  one-shot │ /tmp/journey/aj-xxxxxxxx/net/desk/work                                stopped │ [Diff] │ [Home]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    Do one thing.                                                                                    hh:mm
+
+
+    Done, once.
+
+    Worked <t>
+
+
+    One more thing.                                                                                  hh:mm
+
+
+  stopped ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ╭────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ Ended · One Shot can't reopen this conversation                                                        │
+  ╰────────────────────────────────────────────────────────────────────────────────── fake-model (medium) ─╯
+
+  ctrl+a more

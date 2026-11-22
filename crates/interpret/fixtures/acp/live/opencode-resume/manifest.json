@@ -1,0 +1,25 @@
+{
+  "spec": "opencode-resume",
+  "recorded": {
+    "provider": "opencode",
+    "version": "1.18.33",
+    "model": "opencode/deepseek-v4.1-flash-free",
+    "at": "2026-11-20T19:27:48.804796Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:f85397b788856f8662c971808101bf69aefb06ff08bf8dc33117cca0df2e31f1",
+    "spawn.jsonl": "sha256:7be777f55aab327e6f5b30261cd0a061cb639171695ea59350df11ef0be3fd58"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 4,
+    "personal_identifiers": 0
+  },
+  "session_ids": [
+    "ses_e059d42ccffepEqynZfNOqOGDI"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a prompt, the process ended, then session/resume in a new process and a prompt"
+  }
+}

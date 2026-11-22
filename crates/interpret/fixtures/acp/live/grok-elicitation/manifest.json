@@ -1,0 +1,25 @@
+{
+  "spec": "grok-elicitation",
+  "recorded": {
+    "provider": "grok",
+    "version": "1.0.92",
+    "model": "grok-4.7-build-fast",
+    "at": "2026-11-21T13:38:45.641102Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:032a8fa401410717ba68ad455842cc935be06d0ca3c16e980792007bbb05950e",
+    "spawn.jsonl": "sha256:8aab213a2fb26391131f0a91634b225aee476835849fe455902b65583a019be5"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 248,
+    "personal_identifiers": 4
+  },
+  "session_ids": [
+    "01a1fe54-79dd-75d3-9713-f2f8d3b671d6"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a tool server's form elicitation, during a tool call the prompt asks for"
+  }
+}

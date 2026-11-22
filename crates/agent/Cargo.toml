@@ -8,6 +8,7 @@ publish = false
 autotests = false
 
 [dependencies]
+acp-protocol = { workspace = true }
 log-file = { workspace = true }
 agent-core = { workspace = true }
 agent-dir = { workspace = true }
@@ -35,9 +36,14 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
+url = "2"
 uuid = { workspace = true, features = ["v4"] }
 wire = { workspace = true, features = ["grpc"] }
 zstd = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+# TerminateProcess, so a kill ends the provider before the agent can exit.
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [target.'cfg(unix)'.dependencies]
 # Codex's app-server socket speaks WebSocket.

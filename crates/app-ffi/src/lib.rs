@@ -364,13 +364,6 @@ pub unsafe extern "C" fn amux_pastes_as_attachment(pasted: *const c_char) -> boo
     app_bridge::pastes_as_attachment(pasted)
 }
 
-/// The most an attachment may hold, in bytes; the hosts refuse more, so a
-/// client can refuse it before reading or uploading anything.
-#[unsafe(no_mangle)]
-pub extern "C" fn amux_attachment_limit() -> u64 {
-    app_bridge::attachment_limit()
-}
-
 /// Starts the installation from a `StartConfig` as JSON, its transport
 /// on a thread of its own and its cores stepped by `amux_runtime_step`.
 /// Blocks, stepping them on the calling thread, until every profile's
@@ -1600,6 +1593,27 @@ pub unsafe extern "C" fn amux_fleet_family(
     })
 }
 
+/// What settling an agent costs, as a `SettleWarning`, or null JSON for an
+/// agent the fleet does not hold. Ask before settling when it cuts work
+/// short or ends a conversation nothing resumes.
+///
+/// # Safety
+/// As for `amux_fleet_card`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_fleet_settle_warning(
+    profile: *const AmuxProfile,
+    agent: *const c_char,
+) -> *mut c_char {
+    guard(std::ptr::null_mut(), || {
+        // SAFETY: the caller's contract.
+        let Some(profile) = (unsafe { live_profile(profile) }) else {
+            return std::ptr::null_mut();
+        };
+        // SAFETY: the caller's contract.
+        into_c_string(profile.0.fleet_settle_warning(unsafe { text(agent) }))
+    })
+}
+
 // --- a chat ----------------------------------------------------------------
 
 /// Opens a chat on a fleet agent, named by its `AgentKey` as JSON, with
@@ -1890,6 +1904,32 @@ pub unsafe extern "C" fn amux_session_open_overview(
         };
         // SAFETY: the caller's contract.
         open.0.open_overview(unsafe { text(comparison) })
+    })
+}
+
+/// Why an attachment of `size` bytes would be refused before anything of
+/// it is read or stored, as a JSON string naming the file; JSON `null` when
+/// it may go.
+///
+/// # Safety
+/// `chat` is from `amux_session_open`; the strings are NUL-terminated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn amux_session_attachment_refusal(
+    chat: *const AmuxChat,
+    name: *const c_char,
+    mime: *const c_char,
+    size: u64,
+) -> *mut c_char {
+    guard(std::ptr::null_mut(), || {
+        // SAFETY: the caller's contract.
+        let Some(open) = (unsafe { held_chat(chat) }) else {
+            return std::ptr::null_mut();
+        };
+        // SAFETY: the caller's contract.
+        let name = unsafe { text(name) }.unwrap_or_default();
+        // SAFETY: the caller's contract.
+        let mime = unsafe { text(mime) }.unwrap_or_default();
+        into_c_string(open.0.attachment_refusal(name, mime, size))
     })
 }
 

@@ -3,6 +3,7 @@
 
 mod support;
 
+mod acp;
 mod attach;
 mod codex_thread_name;
 mod dump;

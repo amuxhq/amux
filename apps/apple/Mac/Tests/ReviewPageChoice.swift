@@ -86,6 +86,7 @@ private final class Silent: ChatSource {
     func change(_ setting: SettingChange) async -> ActOutcome? { nil }
     func resume(with draft: Draft) async -> ActOutcome? { nil }
     func pageOlder(_ rows: UInt32) async -> PageOutcome? { nil }
+    func attachmentRefusal(name: String, mime: String, size: Int) -> String? { nil }
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure> {
         .failure(RuntimeFailure("silent"))
     }

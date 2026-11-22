@@ -22,7 +22,7 @@ final class DeleteWordsTests: XCTestCase {
         FleetRow(
             card: FleetCard(
                 agent: AgentKey(host: machine, agent: UUID()), name: "fix-scroll", handle: "fix-scroll",
-                kind: .claudeSdk, attention: .exited, cwd: "~/src/amux", phaseSinceMs: 0,
+                kind: .claudeSdk, provider: "claude", providerName: "Claude", attachable: false, attention: .exited, cwd: "~/src/amux", phaseSinceMs: 0,
                 host: "Studio.local", hostReach: .online(.direct), children: 0,
                 familyAttention: .exited, members: 1, descendants: descendants, backgroundJobs: 0, closeHeld: false,
                 filing: .closed, topLevel: true, native: false, branch: "fix-scroll", exitCause: .ended,

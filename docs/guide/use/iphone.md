@@ -29,7 +29,10 @@ when the line says why. Pull down for search, by name, title, folder or device.
 
 Swipe a row right to pin it, or left to settle it: it stops if it's running,
 and asks first if that would cut work short. A settled agent can be un-settled
-or deleted the same way, and sending it a message starts it again.
+or deleted the same way, and sending it a message starts it again. An agent
+that can't reopen its conversation is the exception: settling it ends the
+conversation for good, so amux asks first, and a settled one takes no more
+messages (see [Other agents](other-agents.md)).
 
 Tap **+** to start an agent. Pick the device and the folder (your repositories
 come first, then folders your agents used lately, then ones you used with Claude

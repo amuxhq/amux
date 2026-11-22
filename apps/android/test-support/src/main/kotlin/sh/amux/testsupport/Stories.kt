@@ -78,6 +78,8 @@ import sh.amux.features.SettingsScreen
 import sh.amux.features.SettingsScreenState
 import sh.amux.features.StaticChatRowSource
 import sh.amux.features.StoreFailureScreen
+import sh.amux.shell.ShellFrame
+import sh.amux.shell.Tab
 import sh.amux.values.ActivityKind
 import sh.amux.values.AskBody
 import sh.amux.values.AskCard
@@ -141,7 +143,8 @@ data class Story(
  * others are the iOS catalogue's examples under the iOS ids (an ask card in
  * each of its states, say), so each Android picture has an iOS picture of the
  * same name to be compared with. Both draw the iOS catalogue's own data:
- * [CatalogFixtures] and [StoryFleet].
+ * [CatalogFixtures] and [StoryFleet]. The Shell stories are Android's own:
+ * a tab's screen in the app's frame, so the gallery shows the tab bar.
  */
 object Stories {
     private const val NOW_MS: Long = CatalogFixtures.NOW_MS
@@ -891,6 +894,27 @@ object Stories {
             fontScale = LARGEST_FONT_SCALE,
         ) {
             HostsTab(state = hostsTabState(F.machines, pro = false), onAction = {})
+        },
+        // --- App frame -----------------------------------------------------
+        Story(
+            id = "shell.agents",
+            area = "Shell",
+            title = "Agents tab in the app frame",
+            description = "The busy fleet as the app draws it: in the app's frame, with the tab bar that moves between Agents and Devices.",
+        ) {
+            ShellFrame(tab = Tab.Agents, showsTabBar = true, onSelectTab = {}) {
+                AgentsHome(state = StoryFleet.busy(away = true), onAction = {})
+            }
+        },
+        Story(
+            id = "shell.devices",
+            area = "Shell",
+            title = "Devices tab in the app frame",
+            description = "The paired devices as the app draws them: in the app's frame, with Devices selected in the tab bar.",
+        ) {
+            ShellFrame(tab = Tab.Hosts, showsTabBar = true, onSelectTab = {}) {
+                HostsTab(state = hostsTabState(F.machines), onAction = {})
+            }
         },
         Story(
             id = "host.page",

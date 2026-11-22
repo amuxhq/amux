@@ -140,8 +140,6 @@ fun Shell(
     newAgentSourceProvider: ((StoreBundle) -> NewAgentSource?)? = null,
     newAgentBridge: NewAgentBridge = NativeNewAgentBridge,
 ) {
-    val colors = AmuxTheme.colors
-
     val routerState by router.state.collectAsState()
     val signInState = signIn?.state?.collectAsState()?.value ?: SignInState()
     val reportState = report?.state?.collectAsState()?.value
@@ -186,90 +184,76 @@ fun Shell(
     )
 
     Box(modifier = modifier.fillMaxSize()) {
-        AmuxGround(modifier = Modifier.testTag(TestTags.SHELL)) {
-            Scaffold(
-                containerColor = Color.Transparent,
-                contentColor = colors.ink,
-                contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                bottomBar = {
-                    if (routerState.showsBottomBar) {
-                        ShellTabBar(selected = routerState.tab, onSelect = router::selectTab)
+        ShellFrame(
+            tab = routerState.tab,
+            showsTabBar = routerState.showsBottomBar,
+            onSelectTab = router::selectTab,
+        ) {
+            ShellRoutes(routerState = routerState) { route ->
+                when (route) {
+                    null -> when (routerState.tab) {
+                        Tab.Agents -> AgentsRoute(
+                            scope = HomeScope.Fleet,
+                            stores = stores,
+                            accounts = accounts,
+                            router = router,
+                            offerNotifications = offerNotifications,
+                            signingIn = effectiveSigningIn,
+                            networkSight = networkSight,
+                            backEnabled = !overlayOpen,
+                            onAction = onAction,
+                        )
+                        Tab.Hosts -> HostsRoute(stores = stores, router = router, onAction = onAction)
                     }
-                },
-            ) { innerPadding ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                        .consumeWindowInsets(innerPadding),
-                ) {
-                    ShellRoutes(routerState = routerState) { route ->
-                        when (route) {
-                            null -> when (routerState.tab) {
-                                Tab.Agents -> AgentsRoute(
-                                    scope = HomeScope.Fleet,
-                                    stores = stores,
-                                    accounts = accounts,
-                                    router = router,
-                                    offerNotifications = offerNotifications,
-                                    signingIn = effectiveSigningIn,
-                                    networkSight = networkSight,
-                                    backEnabled = !overlayOpen,
-                                    onAction = onAction,
-                                )
-                                Tab.Hosts -> HostsRoute(stores = stores, router = router, onAction = onAction)
-                            }
-                            is Route.Conversation -> ChatRoute(
-                                agent = route.agent,
-                                stores = stores,
-                                router = router,
-                                dictation = dictation,
-                            )
-                            is Route.Review -> ReviewRoute(
-                                agent = route.agent,
-                                stores = stores,
-                                router = router,
-                            )
-                            is Route.Host -> HostRoute(
-                                host = route.host,
-                                stores = stores,
-                                router = router,
-                                onAction = onAction,
-                            )
-                            Route.Settled -> AgentsRoute(
-                                scope = HomeScope.Closed,
-                                stores = stores,
-                                accounts = accounts,
-                                router = router,
-                                offerNotifications = false,
-                                signingIn = effectiveSigningIn,
-                                backEnabled = !overlayOpen,
-                                onAction = onAction,
-                            )
-                            Route.Settings -> SettingsRoute(
-                                stores = stores,
-                                accounts = accounts,
-                                router = router,
-                                signInState = signInState,
-                                choices = settingsChoices,
-                                onAction = onAction,
-                            )
-                            Route.NewAgent -> NewAgentRoute(
-                                stores = stores,
-                                router = router,
-                                sourceProvider = newAgentSourceProvider,
-                                bridge = newAgentBridge,
-                            )
-                            is Route.Paywall -> PaywallRoute(
-                                paywall = paywall,
-                                accounts = accounts,
-                                router = router,
-                                storeUnavailable = paywallStoreUnavailable,
-                                cloudEndpoint = cloudEndpoint,
-                                onAction = onAction,
-                            )
-                        }
-                    }
+                    is Route.Conversation -> ChatRoute(
+                        agent = route.agent,
+                        stores = stores,
+                        router = router,
+                        dictation = dictation,
+                    )
+                    is Route.Review -> ReviewRoute(
+                        agent = route.agent,
+                        stores = stores,
+                        router = router,
+                    )
+                    is Route.Host -> HostRoute(
+                        host = route.host,
+                        stores = stores,
+                        router = router,
+                        onAction = onAction,
+                    )
+                    Route.Settled -> AgentsRoute(
+                        scope = HomeScope.Closed,
+                        stores = stores,
+                        accounts = accounts,
+                        router = router,
+                        offerNotifications = false,
+                        signingIn = effectiveSigningIn,
+                        backEnabled = !overlayOpen,
+                        onAction = onAction,
+                    )
+                    Route.Settings -> SettingsRoute(
+                        stores = stores,
+                        accounts = accounts,
+                        router = router,
+                        signInState = signInState,
+                        choices = settingsChoices,
+                        onAction = onAction,
+                    )
+                    Route.NewAgent -> NewAgentRoute(
+                        stores = stores,
+                        router = router,
+                        sourceProvider = newAgentSourceProvider,
+                        bridge = newAgentBridge,
+                    )
+                    is Route.Paywall -> PaywallRoute(
+                        paywall = paywall,
+                        accounts = accounts,
+                        router = router,
+                        storeUnavailable = paywallStoreUnavailable,
+                        cloudEndpoint = cloudEndpoint,
+                        onAction = onAction,
+                    )
                 }
             }
         }
@@ -363,6 +347,41 @@ private fun ShellRoutes(
 /** Names a route by its tab, its depth on that tab's stack and the route itself; depth 0 is the tab's root. */
 private fun routeKey(tab: Tab, depth: Int, route: Route?): String =
     if (route == null || depth == 0) "${tab.wireName}/root" else "${tab.wireName}/$depth/$route"
+
+/**
+ * The app's frame around a screen: the ground, and the tab bar under it
+ * while [showsTabBar]. The storybook draws a tab's root screen in this same
+ * frame, so its pictures show the bar a person navigates by.
+ */
+@Composable
+fun ShellFrame(
+    tab: Tab,
+    showsTabBar: Boolean,
+    onSelectTab: (Tab) -> Unit,
+    content: @Composable () -> Unit,
+) {
+    AmuxGround(modifier = Modifier.testTag(TestTags.SHELL)) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentColor = AmuxTheme.colors.ink,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
+                if (showsTabBar) {
+                    ShellTabBar(selected = tab, onSelect = onSelectTab)
+                }
+            },
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding),
+            ) {
+                content()
+            }
+        }
+    }
+}
 
 @Composable
 private fun ShellTabBar(selected: Tab, onSelect: (Tab) -> Unit) {

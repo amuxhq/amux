@@ -1,4 +1,4 @@
-"""Unit tests for apps/android/tools/android_emulator.py."""
+"""Unit tests for apps/android/tools/android-emulator.py."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ TOOLS_DIR = Path(__file__).resolve().parents[1]
 
 def load_module():
     spec = importlib.util.spec_from_file_location(
-        "android_emulator", TOOLS_DIR / "android_emulator.py",
+        "android_emulator", TOOLS_DIR / "android-emulator.py",
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

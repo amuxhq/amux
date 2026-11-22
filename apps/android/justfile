@@ -51,7 +51,7 @@ tools:
 
 # Boot and pin the Android emulator AVD (`amux-android-1`).
 emulator *ARGS:
-    {{bounded}} 600 {{python}} -B apps/android/tools/android_emulator.py "$@"
+    {{bounded}} 600 {{python}} -B apps/android/tools/android-emulator.py "$@"
 
 # Build the debug Android APK.
 build *ARGS:
@@ -79,12 +79,12 @@ storybook *ARGS:
 scope-audit *ARGS:
     {{bounded}} 2400 {{python}} -B apps/android/tools/android-scope-audit.py "$@"
 
-# Run the launch smoke test on the minified release APK: the runtime starts,
-# steps, acts, and refuses a call through the bridge. It runs on the device
-# ANDROID_SERIAL names, or boots the pinned emulator.
+# The runtime starts, steps, acts, and refuses a call through the bridge, on
+# the device ANDROID_SERIAL names or else the pinned emulator.
+# Run the launch smoke test on the minified release APK.
 release-smoke *ARGS:
     {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py --release
-    if [ -z "${ANDROID_SERIAL-}" ]; then {{bounded}} 600 {{python}} -B apps/android/tools/android_emulator.py >&2 && ANDROID_SERIAL=$({{python}} -B apps/android/tools/android_emulator.py --serial) && export ANDROID_SERIAL; fi; {{bounded}} 1800 {{gradle}} :app:connectedReleaseAndroidTest -Pamux.releaseSmoke "$@"
+    if [ -z "${ANDROID_SERIAL-}" ]; then {{bounded}} 600 {{python}} -B apps/android/tools/android-emulator.py >&2 && ANDROID_SERIAL=$({{python}} -B apps/android/tools/android-emulator.py --serial) && export ANDROID_SERIAL; fi; {{bounded}} 1800 {{gradle}} :app:connectedReleaseAndroidTest -Pamux.releaseSmoke "$@"
 
 # Run the unit tests of the Android recipe and lint scripts.
 script-tests:

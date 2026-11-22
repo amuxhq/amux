@@ -596,21 +596,22 @@ impl ProfileRuntime {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
-            .kill_on_drop(true);
+            // Ended by `running` instead, with the provider it started.
+            .kill_on_drop(false);
         #[cfg(unix)]
         helper.process_group(0);
         let child = helper
             .spawn()
             .map_err(|error| CatalogueError::Helper(error.to_string()))?;
-        let pid = child.id();
+        let mut running = Running(child.id());
         let deadline = Duration::from_millis(launch.core.start_deadline_ms);
         let output = match tokio::time::timeout(deadline, child.wait_with_output()).await {
-            Ok(output) => output.map_err(|error| CatalogueError::Helper(error.to_string()))?,
+            Ok(output) => {
+                running.0 = None;
+                output.map_err(|error| CatalogueError::Helper(error.to_string()))?
+            }
             Err(_) => {
-                // The provider runs in the helper's group: both go.
-                if let Some(pid) = pid {
-                    crate::runtime::kill_group(pid);
-                }
+                drop(running);
                 return Err(CatalogueError::Helper(format!(
                     "asking {word} took longer than {}ms",
                     launch.core.start_deadline_ms
@@ -626,6 +627,22 @@ impl ProfileRuntime {
         let _ = std::fs::remove_file(&out);
         ProviderOffer::decode(bytes.as_slice())
             .map_err(|_| CatalogueError::Helper(format!("{} does not decode", out.display())))
+    }
+}
+
+/// A catalogue helper still running, by its pid: dropped before it exits,
+/// as when its ask takes too long or the daemon stops mid-ask, it is
+/// killed with the provider it started, which runs in its group (on
+/// Windows, below it in its process tree). Killing the helper alone would
+/// leave the provider running with whatever the daemon's process handed
+/// down to it.
+struct Running(Option<u32>);
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        if let Some(pid) = self.0.take() {
+            crate::runtime::kill_group(pid);
+        }
     }
 }
 

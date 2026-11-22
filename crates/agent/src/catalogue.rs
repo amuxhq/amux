@@ -413,6 +413,12 @@ async fn ask_acp(agent: &str, command: &str, args: &[String]) -> Result<Provider
         .await
         .is_err()
     {
+        // Behind npm's `.cmd` shim on Windows, the agent is the shim's
+        // child, which killing the shim alone leaves running.
+        #[cfg(windows)]
+        if let Some(pid) = child.id() {
+            crate::acp::kill_tree(pid);
+        }
         let _ = child.start_kill();
     }
     let answer =

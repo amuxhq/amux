@@ -1288,7 +1288,12 @@ fn raw_attach_to_a_stopped_agent_says_it_is_stopped() {
         chat_in: settings::ChatInSetting::Amux,
         system_clipboard: false,
     };
-    for kind in [Kind::ClaudePty, Kind::Codex] {
+    // Codex has a terminal to attach to everywhere but Windows, where it
+    // runs over a pipe and is refused for that first.
+    let attachable = [Kind::ClaudePty]
+        .into_iter()
+        .chain((!cfg!(windows)).then_some(Kind::Codex));
+    for kind in attachable {
         let stopped = wire::Agent {
             host_id: b"a".to_vec(),
             kind: kind as i32,

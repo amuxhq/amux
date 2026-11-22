@@ -325,15 +325,17 @@ fn file_uri(path: &Path) -> Option<String> {
 }
 
 /// Kills the process `pid` and every process below it, as `taskkill /T`
-/// does: the daemon stops an agent's process tree the same way.
+/// does, and returns once they are gone: the daemon stops an agent's
+/// process tree the same way. Blocking, so a caller about to end cannot
+/// end before the tree does.
 #[cfg(windows)]
-pub async fn kill_tree(pid: u32) {
-    let _ = tokio::process::Command::new("taskkill")
+pub fn kill_tree(pid: u32) {
+    let _ = std::process::Command::new("taskkill")
         .args(["/F", "/T", "/PID", &pid.to_string()])
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .status()
-        .await;
+        .status();
 }
 
 /// The program to start for `command`. On Windows a bare name is looked up

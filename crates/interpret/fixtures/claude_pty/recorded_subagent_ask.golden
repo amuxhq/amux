@@ -1,14 +1,16 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
-effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cd96cd29
+effect catalogue 9d924e4e models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 9d924e4e
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1794787836179 text="" BOUNDARY_KIND_STARTED
+snapshot settings model=claude-haiku-5-5 effort=? permission=? level=?
 snapshot IDLE queue=[] working_on=- at=1794787836179 asks=[] session=5b75ebef-f349-424a-84c4-a069db75643c model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot settings model=claude-haiku-5-5 effort=? permission=default level=ask
 snapshot IDLE queue=[] working_on=- at=1794787836724 asks=[] session=5b75ebef-f349-424a-84c4-a069db75643c model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 13 recorded 11: fact Transcript type=user uuid=226f8ce8-6c73-4d3a-9edc-e968e85d438f
 item 226f8ce8-6c73-4d3a-9edc-e968e85d438f prompt final at=1794787836899 text="Launch the `toucher` subagent and wait for it. When it has reported, reply with exactly what it said."
@@ -17,6 +19,7 @@ snapshot WORKING queue=[] working_on=- at=1794787836899 asks=[] session=5b75ebef
 effect follow subagent aec59f8070eabeb38
 ## 46 recorded 44: fact Transcript type=assistant uuid=c12859e4-b165-4335-953b-89b614b19a16
 item toolu_01U1ghx1wqq2KycPjx9ZhiAa tool final at=1794787838921 text="" Agent TOOL_STATE_RUNNING opens=sub-c7bc14b0 started=1794787838921 input=subagent:"Run toucher subagent"
+snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask
 snapshot WORKING queue=[] working_on=- at=1794787838847 asks=[] session=5b75ebef-f349-424a-84c4-a069db75643c model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35996/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 agent sub-c7bc14b0 start child=aec59f8070eabeb38 call=host/toolu_01U1ghx1wqq2KycPjx9ZhiAa title="Run toucher subagent"
 agent sub-c7bc14b0 snapshot WORKING queue=[] working_on=- at=1794787838847 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]

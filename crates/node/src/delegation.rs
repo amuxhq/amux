@@ -1,0 +1,618 @@
+//! What an agent may ask for when it starts a subagent, and how the
+//! subagent's host fits what it asked onto what its provider offers.
+//!
+//! Three things a start can choose are kept apart because they differ in
+//! kind. Authority (the permission) is capped: a subagent starts at its
+//! parent's level, or a narrower one the parent asks for, never a wider
+//! one. The mind (model and effort) is cost and capability, not authority,
+//! so a parent picks it freely from what the subagent's host offers, and it
+//! is never kept as the person's pick for later agents. Isolation (a new
+//! workspace) widens nothing. Arguments for the provider itself, and the
+//! settings a person picks only in the provider's own terms (a raw
+//! permission value or a mode), stay the person's.
+//!
+//! The subagent's host settles all of it, as it answers every rule about
+//! its caller: it holds the parent's row (its own, or the copy it keeps of
+//! a paired host's, which carries the parent's settings), and its own
+//! provider's catalogue, onto which it maps the level and against which it
+//! checks the model and effort.
+
+use wire::{AgentSettings, Catalogue, CreateAgentRequest, PermissionLevel, create_agent_request};
+
+use crate::runtime::{ProfileRuntime, RegistryError};
+
+/// A refusal in words the calling model can act on.
+fn refused(words: impl Into<String>) -> RegistryError {
+    RegistryError::Delegation(words.into())
+}
+
+fn not_yours(words: impl Into<String>) -> RegistryError {
+    RegistryError::NotYours(words.into())
+}
+
+/// The level a subagent starts at: the one asked for, or its parent's.
+/// Asking for a wider one than the parent's is refused, naming the
+/// parent's. A parent whose own permission has no level (an ACP agent a
+/// person added) can still ask for read-only, the narrowest there is.
+pub(crate) fn ceiling(
+    asked: PermissionLevel,
+    parent: PermissionLevel,
+) -> Result<PermissionLevel, RegistryError> {
+    let word = |level: PermissionLevel| level.word().unwrap_or("unknown");
+    match (asked, parent) {
+        (PermissionLevel::Unspecified, parent) => Ok(parent),
+        (asked, PermissionLevel::Unspecified) if asked == PermissionLevel::ReadOnly => Ok(asked),
+        (asked, PermissionLevel::Unspecified) => Err(not_yours(format!(
+            "your own permission has no level amux knows, so a subagent can be asked only for \
+             read-only, or left to start on its own default; {} is refused",
+            word(asked)
+        ))),
+        (asked, parent) if asked as i32 > parent as i32 => Err(not_yours(format!(
+            "permission {} is wider than yours, {}: a subagent gets at most your own; ask for \
+             {} or narrower",
+            word(asked),
+            word(parent),
+            word(parent)
+        ))),
+        (asked, _) => Ok(asked),
+    }
+}
+
+/// Refuses what only the person chooses: the provider's own arguments, a
+/// permission or mode in the provider's own terms, and keeping the model
+/// or effort as the host's pick for later agents.
+pub(crate) fn only_picks(request: &CreateAgentRequest) -> Result<(), RegistryError> {
+    use create_agent_request::Agent;
+    if request.remember_model || request.remember_effort {
+        return Err(not_yours(
+            "an agent's picks for a subagent are never kept as the person's",
+        ));
+    }
+    let persons = match &request.agent {
+        Some(Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude)) => {
+            !claude.args.is_empty() || claude.permission.is_some()
+        }
+        Some(Agent::Codex(codex)) => codex.permission.is_some() || codex.mode.is_some(),
+        Some(Agent::Acp(acp)) => acp.mode.is_some(),
+        None => false,
+    };
+    if persons {
+        return Err(not_yours(
+            "a subagent's permission is asked for by level (read-only, ask, auto or full); \
+             provider arguments, modes and permission values are the person's to choose",
+        ));
+    }
+    Ok(())
+}
+
+/// What a subagent's host made of what its parent asked: the settings it
+/// starts on, as the start's answer reports them.
+pub(crate) struct Fitted {
+    pub(crate) settings: AgentSettings,
+}
+
+/// Fits a subagent's model, effort and permission level onto what its
+/// provider offers on this host, `catalogue`, writing the permission the
+/// level maps to into `agent`. A model or effort the catalogue does not
+/// list is refused, listing what it does; one asked of a provider whose
+/// catalogue this host has not read is refused too, since nothing can say
+/// it exists. Left out, they are the ones this host starts a new agent on,
+/// where its catalogue names them. A level maps onto the widest permission at or below it; a
+/// provider with no permission that narrow is refused. A provider whose
+/// permissions have no level at all (an ACP agent a person added) starts on
+/// its own default.
+pub(crate) fn fit(
+    agent: &mut create_agent_request::Agent,
+    level: PermissionLevel,
+    catalogue: Option<&Catalogue>,
+    host: &str,
+) -> Result<Fitted, RegistryError> {
+    use create_agent_request::Agent;
+    let provider = agent.provider_id().to_owned();
+    let (model, effort, permission) = match agent {
+        Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => (
+            &mut claude.model,
+            &mut claude.effort,
+            &mut claude.permission,
+        ),
+        Agent::Codex(codex) => (&mut codex.model, &mut codex.effort, &mut codex.permission),
+        Agent::Acp(acp) => (&mut acp.model, &mut acp.effort, &mut acp.mode),
+    };
+    let listed = |what: &str| {
+        refused(format!(
+            "{host} has not listed what {provider} offers yet, so its {what} cannot be checked; \
+             leave {what} out and it starts on its default"
+        ))
+    };
+    let entry = match model.as_deref() {
+        Some(asked) => {
+            let catalogue = catalogue.ok_or_else(|| listed("model"))?;
+            let found = catalogue
+                .models
+                .iter()
+                .find(|offered| offered.value == asked || offered.resolved_model == asked);
+            match found {
+                Some(found) => Some(found),
+                None => {
+                    let names: Vec<&str> = catalogue
+                        .models
+                        .iter()
+                        .map(|offered| offered.value.as_str())
+                        .collect();
+                    return Err(refused(format!(
+                        "{provider} on {host} offers no model {asked:?}; it offers {}",
+                        list(&names)
+                    )));
+                }
+            }
+        }
+        // Left out, the model is the one this host starts a new agent on,
+        // as a person's client fills it in: named in the start, since the
+        // provider's own default may be another.
+        None => {
+            let starting = catalogue.and_then(|catalogue| {
+                let starting = catalogue.new_agent.as_ref()?.model.as_deref()?;
+                catalogue
+                    .models
+                    .iter()
+                    .find(|offered| offered.value == starting || offered.resolved_model == starting)
+                    .map(|entry| (starting.to_owned(), entry))
+            });
+            starting.map(|(starting, entry)| {
+                *model = Some(starting);
+                entry
+            })
+        }
+    };
+    if let Some(asked) = effort.as_deref() {
+        let catalogue = catalogue.ok_or_else(|| listed("effort"))?;
+        let takes: Vec<&str> = match entry {
+            Some(entry) => entry.efforts.iter().map(String::as_str).collect(),
+            None => {
+                let mut every: Vec<&str> = catalogue
+                    .models
+                    .iter()
+                    .flat_map(|offered| offered.efforts.iter().map(String::as_str))
+                    .collect();
+                every.sort_unstable();
+                every.dedup();
+                every
+            }
+        };
+        let whose = entry.map_or_else(|| provider.clone(), |entry| entry.value.clone());
+        if takes.is_empty() {
+            return Err(refused(format!(
+                "{whose} on {host} takes no effort; leave effort out"
+            )));
+        }
+        if !takes.contains(&asked) {
+            return Err(refused(format!(
+                "{whose} on {host} takes no effort {asked:?}; it takes {}",
+                list(&takes)
+            )));
+        }
+    }
+    let offered = wire::levels::offered(&provider, catalogue);
+    let mapped = match level {
+        PermissionLevel::Unspecified => None,
+        _ if offered.is_empty() => None,
+        level => Some(wire::levels::at(&offered, level).ok_or_else(|| {
+            let words: Vec<&str> = wire::levels::levels(&offered)
+                .into_iter()
+                .filter_map(PermissionLevel::word)
+                .collect();
+            refused(format!(
+                "{provider} on {host} offers no permission at or below {}; it offers {}",
+                level.word().unwrap_or("that"),
+                list(&words)
+            ))
+        })?),
+    };
+    *permission = mapped.as_ref().map(|mapped| mapped.value.clone());
+    let defaults = catalogue.and_then(|catalogue| catalogue.new_agent.as_ref());
+    // Left out, the effort is the new-agent one where the model takes it,
+    // named for the same reason; else the provider's default for the model.
+    if effort.is_none()
+        && let Some(entry) = entry
+        && let Some(starting) = defaults.and_then(|defaults| defaults.effort.as_ref())
+        && entry.efforts.contains(starting)
+    {
+        *effort = Some(starting.clone());
+    }
+    let starting_effort = effort
+        .clone()
+        .or_else(|| entry.and_then(|entry| entry.default_effort.clone()));
+    Ok(Fitted {
+        settings: AgentSettings {
+            model: model
+                .clone()
+                .or_else(|| defaults.and_then(|defaults| defaults.model.clone())),
+            effort: starting_effort,
+            permission: mapped.as_ref().map(|mapped| mapped.value.clone()),
+            permission_level: mapped
+                .as_ref()
+                .map_or(PermissionLevel::Unspecified, |mapped| mapped.level)
+                as i32,
+        },
+    })
+}
+
+/// Words listed as a person would say them: `a, b or c`, or `nothing`.
+fn list(words: &[&str]) -> String {
+    match words {
+        [] => "nothing".to_owned(),
+        [one] => (*one).to_owned(),
+        [rest @ .., last] => format!("{} or {last}", rest.join(", ")),
+    }
+}
+
+impl ProfileRuntime {
+    /// Settles what an agent, `parent`, asked for its subagent on this
+    /// host: only the picks an agent may make; the permission level capped
+    /// at the parent's, from the parent's row as this host holds it (its
+    /// own, or the copy it keeps of a paired host's); the model, effort and
+    /// level fitted to what the provider offers here; and a fork only of
+    /// the parent's own conversation, on this host, by the same provider.
+    /// Answers the settings the subagent starts on and the conversation it
+    /// forks.
+    pub(crate) async fn delegate(
+        &self,
+        request: &mut CreateAgentRequest,
+        parent: crate::api::CallingAgent,
+    ) -> Result<(Fitted, Option<wire::ForkFrom>), RegistryError> {
+        only_picks(request)?;
+        let parent_row = self.row_by_id(parent.agent.as_bytes()).await?;
+        let level = match &parent_row {
+            Some(row) => ceiling(
+                request.permission_level(),
+                row.settings.as_ref().map_or(
+                    PermissionLevel::Unspecified,
+                    AgentSettings::permission_level,
+                ),
+            )?,
+            None if parent.host == self.host() => {
+                return Err(RegistryError::NotFound(parent.agent));
+            }
+            // A paired host's agent this host holds no copy of yet, such as
+            // one that started a moment ago: its tool server names the
+            // parent's own level when the parent asks for none, and a
+            // paired host is trusted to keep to the protocol.
+            None => request.permission_level(),
+        };
+        request.set_permission_level(level);
+        let here = self
+            .edge()
+            .map_or_else(|| "this host".to_owned(), |edge| edge.host_name());
+        let Some(agent) = request.agent.as_mut() else {
+            return Err(RegistryError::NoKind);
+        };
+        let provider = agent.provider_id().to_owned();
+        // What the provider offers here, asked of it now when this host
+        // holds no copy, but only when the start chose something to check
+        // against it.
+        let asks = level != PermissionLevel::Unspecified || chooses_mind(agent);
+        let catalogue = match self.offers().offered(&provider) {
+            Some(held) => Some(held),
+            None if asks => self
+                .host_catalogue(&provider)
+                .await
+                .ok()
+                .map(|offered| offered.catalogue),
+            None => None,
+        };
+        let fitted = fit(agent, level, catalogue.as_ref(), &here)?;
+        let fork = match request.fork {
+            true => {
+                if parent.host != self.host() {
+                    return Err(refused(
+                        "fork copies your conversation, which lives on your own host: start \
+                         the subagent there, or leave fork out",
+                    ));
+                }
+                let parent_row = parent_row.ok_or(RegistryError::NotFound(parent.agent))?;
+                Some(self.fork_of(&parent_row, &provider)?)
+            }
+            false => None,
+        };
+        Ok((fitted, fork))
+    }
+
+    /// The conversation of `parent`, one of this host's agents, that a
+    /// fork by `provider` copies: the provider session its newest snapshot
+    /// names, and the folder it runs in. Refused for another provider's
+    /// conversation, by a provider that cannot fork, and before the parent
+    /// has a conversation.
+    fn fork_of(
+        &self,
+        parent: &store::AgentRow,
+        provider: &str,
+    ) -> Result<wire::ForkFrom, RegistryError> {
+        let theirs = parent.provider_id();
+        if provider != theirs {
+            return Err(refused(format!(
+                "fork copies your conversation, which only {} can read: start a {theirs} \
+                 subagent, or leave fork out",
+                wire::agents::name_or_id(theirs),
+            )));
+        }
+        let kind = wire::Kind::try_from(parent.kind).unwrap_or(wire::Kind::Unspecified);
+        let forks = wire::AgentCapabilities::of_kind(kind)
+            .or_else(|| {
+                parent
+                    .snapshot
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.capabilities)
+            })
+            .is_some_and(|capabilities| capabilities.forks);
+        if !forks {
+            return Err(refused(format!(
+                "{} cannot start a conversation from a copy of another; leave fork out",
+                wire::agents::name_or_id(provider)
+            )));
+        }
+        let session = parent
+            .snapshot
+            .as_ref()
+            .and_then(|snapshot| crate::runtime::provider_session(&snapshot.body, kind))
+            .ok_or_else(|| {
+                refused(
+                    "your conversation has not started yet, so there is nothing to fork; leave \
+                     fork out",
+                )
+            })?;
+        Ok(wire::ForkFrom {
+            session,
+            cwd: parent.cwd.clone(),
+        })
+    }
+}
+
+/// Whether a start chose its subagent's model or effort.
+fn chooses_mind(agent: &create_agent_request::Agent) -> bool {
+    use create_agent_request::Agent;
+    match agent {
+        Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => {
+            claude.model.is_some() || claude.effort.is_some()
+        }
+        Agent::Codex(codex) => codex.model.is_some() || codex.effort.is_some(),
+        Agent::Acp(acp) => acp.model.is_some() || acp.effort.is_some(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wire::create_agent_request::Agent;
+    use wire::{CodexCreateConfig, OfferedModel, PermissionLevel as Level};
+
+    use super::*;
+
+    /// A subagent gets its parent's level, or a narrower one asked for;
+    /// a wider one is refused naming the parent's. A parent with no level
+    /// can still ask for read-only.
+    #[test]
+    fn the_parents_level_is_the_default_and_the_ceiling() {
+        assert_eq!(
+            ceiling(Level::Unspecified, Level::Auto).unwrap(),
+            Level::Auto
+        );
+        assert_eq!(
+            ceiling(Level::ReadOnly, Level::Auto).unwrap(),
+            Level::ReadOnly
+        );
+        assert_eq!(ceiling(Level::Auto, Level::Auto).unwrap(), Level::Auto);
+        let wider = ceiling(Level::Full, Level::Ask).unwrap_err().to_string();
+        assert!(wider.contains("full is wider than yours, ask"), "{wider}");
+        assert_eq!(
+            ceiling(Level::ReadOnly, Level::Unspecified).unwrap(),
+            Level::ReadOnly
+        );
+        assert!(ceiling(Level::Ask, Level::Unspecified).is_err());
+        assert_eq!(
+            ceiling(Level::Unspecified, Level::Unspecified).unwrap(),
+            Level::Unspecified
+        );
+    }
+
+    /// Provider arguments, a raw permission or mode, and keeping a pick are
+    /// the person's.
+    #[test]
+    fn only_an_agents_own_picks_pass() {
+        let codex = |config: CodexCreateConfig| CreateAgentRequest {
+            agent: Some(Agent::Codex(config)),
+            ..Default::default()
+        };
+        assert!(
+            only_picks(&codex(CodexCreateConfig {
+                model: Some("m".into()),
+                effort: Some("low".into()),
+                ..Default::default()
+            }))
+            .is_ok()
+        );
+        assert!(
+            only_picks(&codex(CodexCreateConfig {
+                permission: Some("full-access".into()),
+                ..Default::default()
+            }))
+            .is_err()
+        );
+        assert!(
+            only_picks(&codex(CodexCreateConfig {
+                mode: Some("plan".into()),
+                ..Default::default()
+            }))
+            .is_err()
+        );
+        let mut remembered = codex(CodexCreateConfig::default());
+        remembered.remember_model = true;
+        assert!(only_picks(&remembered).is_err());
+        let claude = CreateAgentRequest {
+            agent: Some(Agent::ClaudeSdk(wire::ClaudeCreateConfig {
+                args: vec!["--dangerously-skip-permissions".into()],
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        assert!(only_picks(&claude).is_err());
+    }
+
+    fn codex_catalogue() -> Catalogue {
+        Catalogue {
+            models: vec![
+                OfferedModel {
+                    value: "gpt-6-luna".into(),
+                    efforts: vec!["low".into(), "high".into()],
+                    default_effort: Some("low".into()),
+                    ..Default::default()
+                },
+                OfferedModel {
+                    value: "gpt-6-sol".into(),
+                    efforts: vec!["medium".into()],
+                    ..Default::default()
+                },
+            ],
+            permissions: wire::codex::PERMISSIONS
+                .iter()
+                .map(|named| wire::OfferedPermission {
+                    value: named.value.into(),
+                    settable: true,
+                    normal: named.normal,
+                    level: wire::levels::codex(named.value) as i32,
+                    ..Default::default()
+                })
+                .collect(),
+            new_agent: Some(wire::NewAgentDefaults {
+                model: Some("gpt-6-sol".into()),
+                effort: Some("medium".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    /// The model and effort are checked against the catalogue, the level
+    /// mapped onto the provider's permission, and the settings answered
+    /// are what the subagent starts on.
+    #[test]
+    fn a_subagent_is_fitted_to_what_its_host_offers() {
+        let catalogue = codex_catalogue();
+        let mut agent = Agent::Codex(CodexCreateConfig {
+            model: Some("gpt-6-luna".into()),
+            effort: Some("high".into()),
+            ..Default::default()
+        });
+        let fitted = fit(&mut agent, Level::ReadOnly, Some(&catalogue), "laptop").unwrap();
+        let Agent::Codex(config) = &agent else {
+            unreachable!()
+        };
+        assert_eq!(config.permission.as_deref(), Some("read-only"));
+        assert_eq!(
+            fitted.settings,
+            AgentSettings {
+                model: Some("gpt-6-luna".into()),
+                effort: Some("high".into()),
+                permission: Some("read-only".into()),
+                permission_level: Level::ReadOnly as i32,
+            }
+        );
+
+        // Left out, the model and effort are the host's new-agent ones,
+        // named in the start rather than left to the provider.
+        let mut defaults = Agent::Codex(CodexCreateConfig::default());
+        let fitted = fit(&mut defaults, Level::Auto, Some(&catalogue), "laptop").unwrap();
+        let Agent::Codex(config) = &defaults else {
+            unreachable!()
+        };
+        assert_eq!(
+            (config.model.as_deref(), config.effort.as_deref()),
+            (Some("gpt-6-sol"), Some("medium"))
+        );
+        assert_eq!(fitted.settings.model.as_deref(), Some("gpt-6-sol"));
+
+        let mut unknown = Agent::Codex(CodexCreateConfig {
+            model: Some("gpt-9".into()),
+            ..Default::default()
+        });
+        let refused = fit(&mut unknown, Level::Ask, Some(&catalogue), "laptop")
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(
+            refused.contains("offers no model \"gpt-9\"; it offers gpt-6-luna or gpt-6-sol"),
+            "{refused}"
+        );
+
+        // The default model takes only medium.
+        let mut effort = Agent::Codex(CodexCreateConfig {
+            effort: Some("high".into()),
+            ..Default::default()
+        });
+        let refused = fit(&mut effort, Level::Ask, Some(&catalogue), "laptop")
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(
+            refused.contains("gpt-6-sol on laptop takes no effort \"high\""),
+            "{refused}"
+        );
+
+        // Unchosen, the host's defaults are what the answer reports.
+        let mut plain = Agent::Codex(CodexCreateConfig::default());
+        let fitted = fit(&mut plain, Level::Auto, Some(&catalogue), "laptop").unwrap();
+        assert_eq!(fitted.settings.model.as_deref(), Some("gpt-6-sol"));
+        assert_eq!(fitted.settings.permission.as_deref(), Some("auto"));
+
+        // Without a catalogue a model cannot be checked, and is refused.
+        let mut blind = Agent::Codex(CodexCreateConfig {
+            model: Some("gpt-6-luna".into()),
+            ..Default::default()
+        });
+        assert!(fit(&mut blind, Level::Ask, None, "laptop").is_err());
+    }
+
+    /// An agent with nothing as narrow as the level is refused; one whose
+    /// permissions have no level starts on its own default.
+    #[test]
+    fn a_level_nothing_offered_fits_is_refused_and_no_levels_means_the_default() {
+        let mut opencode = Agent::Acp(wire::AcpCreateConfig {
+            agent: "opencode".into(),
+            ..Default::default()
+        });
+        let fitted = fit(&mut opencode, Level::Auto, None, "laptop").unwrap();
+        let Agent::Acp(config) = &opencode else {
+            unreachable!()
+        };
+        assert_eq!(config.mode.as_deref(), Some("plan"), "auto fits only plan");
+        assert_eq!(fitted.settings.permission_level(), Level::ReadOnly);
+
+        let claude_catalogue = Catalogue {
+            permissions: vec![wire::OfferedPermission {
+                value: "bypassPermissions".into(),
+                settable: true,
+                level: Level::Full as i32,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut claude = Agent::ClaudeSdk(wire::ClaudeCreateConfig::default());
+        let refused = fit(&mut claude, Level::Ask, Some(&claude_catalogue), "laptop")
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(
+            refused.contains("no permission at or below ask; it offers full"),
+            "{refused}"
+        );
+
+        let mut added = Agent::Acp(wire::AcpCreateConfig {
+            agent: "my-agent".into(),
+            ..Default::default()
+        });
+        let fitted = fit(&mut added, Level::ReadOnly, None, "laptop").unwrap();
+        let Agent::Acp(config) = &added else {
+            unreachable!()
+        };
+        assert_eq!(config.mode, None);
+        assert_eq!(fitted.settings.permission_level(), Level::Unspecified);
+    }
+}

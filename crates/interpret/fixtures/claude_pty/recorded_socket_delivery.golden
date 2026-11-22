@@ -1,8 +1,8 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
-effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cd96cd29
+effect catalogue 9d924e4e models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 9d924e4e
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 2 agent_message {"envelope":"env-idle","from":"probe","text":"A2A_SOCKET_IDLE_21240"}
 effect inject env-idle via MessagingSocket
@@ -18,6 +18,7 @@ pending [env-busy,env-idle]
 snapshot title "recipient"
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 7 recorded 3: fact Transcript type=permission-mode
+snapshot settings model=? effort=? permission=bypassPermissions level=full
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 11 recorded 7: fact Transcript type=user uuid=f30e3af6-7585-43a0-bff2-42f3eb53493b
 item f30e3af6-7585-43a0-bff2-42f3eb53493b prompt final at=1787443880224 text="Reply exactly READY and nothing else."
@@ -26,6 +27,7 @@ snapshot WORKING queue=[] working_on=- at=1787443880224 asks=[] session=7567be7d
 snapshot WORKING queue=[] working_on=- at=1787443880224 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=? model_name=? effort=? mode=bypassPermissions context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 16 recorded 12: fact Transcript type=assistant uuid=6770e217-dc12-44ac-aa3e-f9d8651ce95e
 item 6770e217-dc12-44ac-aa3e-f9d8651ce95e thinking final at=1787443881672 text=""
+snapshot settings model=claude-haiku-4-5-20251001 effort=? permission=bypassPermissions level=full
 snapshot WORKING queue=[] working_on=- at=1787443881672 asks=[] session=7567be7d-3119-43d1-9c1d-5b7f20e48820 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=bypassPermissions context=35808/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 18 recorded 14: fact Transcript type=assistant uuid=70cca43c-1567-454d-b513-aee897603d83
 item 70cca43c-1567-454d-b513-aee897603d83 message final at=1787443881674 text="READY"

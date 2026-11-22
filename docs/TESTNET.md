@@ -125,7 +125,7 @@ The same network as JSON, as `testnet serve` reads it:
 | `agents[].kind` | `claude_pty`, `claude_sdk` (the default) or `codex`: which fake runs and which interpreter reads it. |
 | `agents[].script` or `script_file` | What the fake plays, inline or from a file relative to the topology file; not both. |
 | `agents[].prompt` | The first prompt, sent at creation. |
-| `agents[].parent` | An agent declared earlier, on any host. The child is made as the parent's spawn tool makes one, by asking the parent's agent process: no client names a parent. |
+| `agents[].parent` | An agent declared earlier, on any host. The child is made as the parent's `start_subagent` tool makes one, by asking the parent's agent process: no client names a parent. |
 | `agents[].cwd` | Its working directory; none is the host's work directory, and a relative path a folder below it. |
 | `agents[].repository` | One of its host's repositories to work in, instead of `cwd`. |
 | `agents[].branch` | The branch its `cwd` folder is on: the net makes that folder a git repository on this branch, so its fleet row has a branch. Needs a relative `cwd`; agents sharing a folder share its branch. |
@@ -167,7 +167,7 @@ load.
 ## Real providers
 
 A host's `provider` decides what agents created on it run, whoever creates them: `ctl spawn`, `amux new`, the
-terminal client, the phone, or another agent's `spawn` tool. With `real`, they are the real Claude and Codex
+terminal client, the phone, or another agent's `start_subagent` tool. With `real`, they are the real Claude and Codex
 under the operator's own logins; an agent's own `provider` overrides its host's for that one agent.
 
 Each host has its own `claude` and `codex` wrapper commands in its directory. An in-process host names them in its
@@ -189,7 +189,7 @@ A real host's installation config sets the person's defaults for a new agent to 
 agent made from the terminal client starts on the small models unless someone picks another. An agent the net
 spawns on a real provider (`Net::spawn`, `ctl spawn`) starts on the small model and, for Claude, the `default`
 permission, unless its declaration names others. Any other agent amux starts with no model or permission named,
-such as one left at the phone's "Host default" or a child made by amux's spawn tool, gets the same from the
+such as one left at the phone's "Host default" or a child made by amux's `start_subagent` tool, gets the same from the
 host's provider commands: the Claude command adds `--model haiku` and `--permission-mode default` when amux
 passed neither, and Codex's scratch config names `gpt-5.6-luna` as its model. Left unset, Claude would take a
 large model and the operator's own default permission mode, which may act without asking. Waits on a real agent
@@ -401,7 +401,7 @@ The harness owns resources, verbs and observations, never scenarios. Scenarios l
 | `send(name, text)`, `input(...)` | Send a prompt, or any input (an answer, a withdrawal, an interrupt), through the agent's own host. |
 | `stop(name)` | Stop the agent on its own host, as a person does; it can be resumed. |
 | `delete(name)` | Delete an agent on its own host, as a person does. Its children follow on their own hosts by the family rule, after the call returns. |
-| `spawn_child(parent, decl)` | Spawn as the parent's own spawn tool does, through its agent process's own socket, naming the child's host. |
+| `spawn_child(parent, decl)` | Spawn as the parent's own `start_subagent` tool does, through its agent process's own socket, naming the child's host. |
 | `next_start(name, script)` | Give the next process the host starts for `name` this script, for a resume the host makes itself. |
 | `freeze(name)`, `thaw(name)` | Stop an agent process where it stands, holding its lock and connection, and let it run again. |
 | `sign_in(host, account)`, `set_tier(account, tier)` | Sign a host in through its front door; change what an account has bought. |

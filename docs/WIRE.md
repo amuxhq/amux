@@ -128,8 +128,10 @@ agent:
 - An agent may message any agent. Every other call naming an agent it makes
   only on its own direct children, refused `PERMISSION_DENIED` otherwise, and
   it reads the conversations, files and drafts of its own children only.
-- An agent makes children with their kind's default settings only, files
-  them only as closed, and pins no folder: those are the person's.
+- An agent chooses its children's model, effort, permission level (never
+  wider than its own), new workspace and fork, nothing else of their
+  settings, files them only as closed, and pins no folder: the rest is the
+  person's ([the tools socket](PROTOCOL.md#the-tools-socket)).
 - A new agent's parent is the agent that made it, and a person's agent has
   none; a message's sender is its caller. No request can say otherwise.
 

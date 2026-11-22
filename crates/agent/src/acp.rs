@@ -12,7 +12,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use acp_protocol::client::{
-    InitializeRequest, LoadSessionRequest, NewSessionRequest, PROTOCOL_VERSION,
+    ForkSessionRequest, InitializeRequest, LoadSessionRequest, NewSessionRequest, PROTOCOL_VERSION,
     ResumeSessionRequest,
 };
 use acp_protocol::content::{
@@ -161,6 +161,18 @@ pub fn open_session(
                 cwd: setup.cwd.clone(),
                 additional_directories: setup.folders(takes_folders),
                 session_id: session.clone(),
+                system_prompt: None,
+                meta: None,
+                extra: Extra::new(),
+            }),
+        ),
+        Opening::Fork(session) => (
+            NEW_SESSION_REQUEST,
+            ClientRequest::SessionFork(ForkSessionRequest {
+                session_id: session.clone(),
+                cwd: setup.cwd.clone(),
+                additional_directories: setup.folders(takes_folders),
+                mcp_servers: Some(setup.servers()),
                 system_prompt: None,
                 meta: None,
                 extra: Extra::new(),

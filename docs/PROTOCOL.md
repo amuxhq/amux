@@ -1160,11 +1160,32 @@ there as from that agent, and the agent's own host is never asked to check
 it: the rules about an agent caller are the owner's, so they hold the same
 for an agent here and for one of a paired host.
 
-- `CreateAgent` makes the caller the child's parent, and takes only the
-  kind's default settings, as the spawn tool sends them: a permission mode,
-  model, effort or provider arguments are refused, being the person's to
-  choose. One of this host's agents that names no folder starts its child
-  where it works itself; on another host it names one.
+- `CreateAgent` makes the caller the child's parent. One of this host's
+  agents that names no folder starts its child where it works itself; on
+  another host it names one. The create may choose the child's mind, its
+  authority and its isolation, and nothing else:
+  - `model` and `effort` in the provider's config are checked against this
+    host's catalogue for the provider, refused when it does not list them
+    or cannot be read, and never kept as the person's picks
+    (`remember_model` and `remember_effort` are refused).
+  - `permission_level` is a level on amux's one scale, read-only < ask <
+    auto < full. Left unspecified it is the parent's own level, from the
+    parent's row this host holds (its own, or its copy of a paired host's);
+    a wider one than the parent's is refused with `PERMISSION_DENIED`,
+    naming the parent's. The host maps the level onto the widest
+    permission (for an ACP agent, mode) its provider offers at or below
+    it. A permission value or mode in the provider's own terms, and
+    provider arguments, are refused with `PERMISSION_DENIED`: they are the
+    person's to choose. A paired host's agent this host holds no copy of
+    yet is taken at the level its create names.
+  - `new_workspace` is taken as from a person.
+  - `fork` starts the child from a copy of the caller's own conversation,
+    refused for a caller on another host, a child of another provider, a
+    provider that cannot fork (`AgentCapabilities.forks`), and a caller
+    with no conversation yet. The host puts the conversation in the child's
+    first spec as `AgentSpec.fork`.
+  [Agent tools](AGENT_TOOLS.md#start_subagent) has the mapping and how each
+  provider forks.
 - `SendMessage`'s sender is the caller, and an agent may message any agent.
 - Every other call naming an agent (`SendInput`, `SetFiling`, `RenameAgent`,
   `ResumeAgent`, `DeleteAgent`, `PreviewDelete`, `PutBlob`, `GetChanges`)

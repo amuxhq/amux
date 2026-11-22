@@ -1,12 +1,12 @@
 {
-  "about": "A spawned agent's first prompt is not queued, and sets working_on from its first line; it is submitted once the provider accepts input, and the agent is quiet once the turn ends.",
+  "about": "A spawned agent's first prompt is not queued, and never stands in for what it works on; it is submitted once the provider accepts input, and the agent is quiet once the turn ends.",
   "spec": { "created_at_ms": 1000, "parent": true, "initial_prompt": "\n  Review the parser\nand report back" },
   "events": [
-    { "tick": 1000, "expect": { "phase": "STARTING", "queue": [], "working_on": "Review the parser", "silent": true } },
+    { "tick": 1000, "expect": { "phase": "STARTING", "queue": [], "working_on": null, "silent": true } },
     { "fact": { "channel": "stream", "json": { "type": "ready" } },
       "expect": { "phase": "WORKING", "queue": [] } },
     { "fact": { "channel": "stream", "json": { "type": "user", "id": "u1", "text": "Review the parser\nand report back" } } },
     { "fact": { "channel": "stream", "json": { "type": "turn_end" } },
-      "expect": { "phase": "IDLE", "working_on": "Review the parser" } }
+      "expect": { "phase": "IDLE", "working_on": null } }
   ]
 }

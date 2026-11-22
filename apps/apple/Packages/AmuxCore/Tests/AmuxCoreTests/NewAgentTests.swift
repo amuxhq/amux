@@ -229,13 +229,13 @@ final class NewAgentTests: XCTestCase {
         ],
         commands: [],
         permissions: [
-            OfferedPermission(value: "default", displayName: "Default", normal: true, neverAsks: false, settable: true, models: []),
-            OfferedPermission(value: "auto", displayName: "Auto", normal: false, neverAsks: false, settable: true, models: ["gpt-6-astra"]),
-            OfferedPermission(value: "locked", displayName: "Locked", normal: false, neverAsks: false, settable: false, models: []),
+            OfferedPermission(value: "default", displayName: "Default", normal: true, neverAsks: false, settable: true, models: [], level: 0),
+            OfferedPermission(value: "auto", displayName: "Auto", normal: false, neverAsks: false, settable: true, models: ["gpt-6-astra"], level: 0),
+            OfferedPermission(value: "locked", displayName: "Locked", normal: false, neverAsks: false, settable: false, models: [], level: 0),
         ],
         modes: [
-            OfferedMode(value: "default", displayName: "Default", normal: true, settable: true),
-            OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
+            OfferedMode(value: "default", displayName: "Default", normal: true, settable: true, level: 0),
+            OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true, level: 0),
         ],
         skills: [], newAgent: nil)
 
@@ -304,8 +304,8 @@ final class NewAgentTests: XCTestCase {
         let modes = Catalogue(
             models: [], commands: [], permissions: [],
             modes: [
-                OfferedMode(value: "default", displayName: "Default", normal: false, settable: true),
-                OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
+                OfferedMode(value: "default", displayName: "Default", normal: false, settable: true, level: 0),
+                OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true, level: 0),
             ],
             skills: [], newAgent: nil)
         store.offered(.success(modes), for: "grok", asked: store.askingOffer(for: "grok"))

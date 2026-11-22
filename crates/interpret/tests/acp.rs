@@ -224,7 +224,8 @@ fn said_capabilities(stepped: &interpret::Stepped) -> Option<wire::AgentCapabili
 /// not said before `initialize` answers, and what that answer offered
 /// after, with send-now for an agent known to steer. It is resumable until
 /// it has a conversation to lose, as the daemon starts a later process for
-/// one with none: then only where its process said it reopens one.
+/// one with none: then only where its process said it reopens one. It
+/// forks where its process offered `session/fork`.
 #[test]
 fn an_acp_agents_snapshot_says_what_its_process_can_do() {
     for (provider, steers) in [("antigravity", true), ("my-own-agent", false)] {
@@ -240,12 +241,20 @@ fn an_acp_agents_snapshot_says_what_its_process_can_do() {
                 rpc(
                     serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::INITIALIZE_REQUEST,
                     "result": {"protocolVersion": 1, "agentCapabilities": {
-                        "loadSession": reopens, "promptCapabilities": {"image": true}}}}),
+                        "loadSession": reopens, "promptCapabilities": {"image": true},
+                        "sessionCapabilities": if reopens {
+                            serde_json::json!({"fork": {}})
+                        } else {
+                            serde_json::json!({})
+                        }}}}),
                 ),
             );
             assert_eq!(
                 said_capabilities(&answered),
-                Some(wire::AgentCapabilities::acp(true, true, steers)),
+                Some(wire::AgentCapabilities {
+                    forks: reopens,
+                    ..wire::AgentCapabilities::acp(true, true, steers)
+                }),
                 "{provider} once it answered, with no conversation yet"
             );
             let opened = Acp::step(
@@ -257,7 +266,10 @@ fn an_acp_agents_snapshot_says_what_its_process_can_do() {
             );
             assert_eq!(
                 said_capabilities(&opened),
-                Some(wire::AgentCapabilities::acp(reopens, true, steers)),
+                Some(wire::AgentCapabilities {
+                    forks: reopens,
+                    ..wire::AgentCapabilities::acp(reopens, true, steers)
+                }),
                 "{provider} with a conversation, reopening it: {reopens}"
             );
         }
@@ -1139,8 +1151,11 @@ fn the_hosts_copy_comes_from_initialize_alone() {
         assert!(offer.acp.images && offer.acp.embedded_context);
         assert_eq!(
             offer.capabilities,
-            wire::AgentCapabilities::acp(true, true, agent == "antigravity"),
-            "{agent}: it resumes and takes images; only Antigravity steers"
+            wire::AgentCapabilities {
+                forks: agent == "opencode",
+                ..wire::AgentCapabilities::acp(true, true, agent == "antigravity")
+            },
+            "{agent}: it resumes and takes images; only Antigravity steers, and only OpenCode forks"
         );
         assert_eq!(offer.acp.sign_in, wire::SignInState::Unspecified as i32);
         assert!(offer.signed_in());

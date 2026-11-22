@@ -601,6 +601,7 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         // Named for every agent, as the kind implies on a row kept before
         // rows named it.
         provider: row.provider_id().to_owned(),
+        settings: row.settings.clone().map(Box::new),
     }
 }
 

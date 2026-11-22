@@ -21,6 +21,7 @@ method_enum! {
         "initialize" => Initialize(InitializeParams),
         "thread/start" => ThreadStart(ThreadStartParams),
         "thread/resume" => ThreadResume(ThreadResumeParams),
+        "thread/fork" => ThreadFork(ThreadForkParams),
         "thread/unarchive" => ThreadUnarchive(ThreadIdParams),
         "thread/unsubscribe" => ThreadUnsubscribe(ThreadIdParams),
         "thread/name/set" => ThreadSetName(ThreadSetNameParams),
@@ -122,6 +123,34 @@ pub struct ThreadResumeParams {
     pub model: Option<String>,
     /// Answer without the turns, for a client that pages them from the
     /// history on disk, as Codex's own app does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude_turns: Option<bool>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// A new thread from a copy of another's history up to now, which may be
+/// running: its running turn reads as interrupted in the copy. The copy
+/// takes the source thread's approval and sandbox unless they are given,
+/// and the configured default model, not the source's, unless one is.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadForkParams {
+    pub thread_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval_policy: Option<AskForApproval>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approvals_reviewer: Option<ApprovalsReviewer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<SandboxMode>,
+    /// Configuration overrides for the new thread, by dotted key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<serde_json::Map<String, serde_json::Value>>,
+    /// Answer without the copied turns.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude_turns: Option<bool>,
     #[serde(flatten)]

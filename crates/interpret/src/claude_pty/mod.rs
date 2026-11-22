@@ -1796,6 +1796,12 @@ impl Interpreter for ClaudePty {
             .retain(|prompt| awaiting.contains(&prompt.id));
         state.drop_settled_runs();
         state.subagent_snapshots(&mut emit);
+        state.shared.set_settings(
+            wire::agents::CLAUDE,
+            state.provider.model.as_deref(),
+            state.provider.effort.as_deref(),
+            state.provider.permission_mode.as_deref(),
+        );
         let body = state.body();
         let notice = state.shared.notice(crate::notice::claude_ask);
         state.shared.finish(emit, body, notice)

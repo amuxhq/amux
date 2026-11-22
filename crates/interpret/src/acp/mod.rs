@@ -98,6 +98,9 @@ pub enum Opening {
     Resume(String),
     /// `session/load`: the agent reopens it and replays it all first.
     Load(String),
+    /// The agent has no conversation yet and starts from a copy of its
+    /// parent's, this one: `session/fork`, answered as a new session is.
+    Fork(String),
     /// The agent has a conversation and cannot reopen it in a new process.
     /// The agent process exits for good with [`UNRESUMABLE`] as the cause:
     /// a fresh conversation is never passed off as the old one resumed.
@@ -114,8 +117,24 @@ pub const UNRESUMABLE: &str = "the agent cannot reopen its conversation in a new
 /// over ([`Opening::Unresumable`]), which [`Interpreter::holds`] reports
 /// while its process runs, so the agent never suspends on its own.
 pub fn opening(init: &InitializeResponse, saved: Option<&str>) -> Opening {
+    opening_or_fork(init, saved, None)
+}
+
+/// As [`opening`], for an agent whose first incarnation copies the
+/// conversation `fork`, its parent's: with no conversation of its own yet,
+/// it forks that one where the agent offers `session/fork`. An agent that
+/// does not starts a new conversation; its host refuses such a fork before
+/// the agent exists, so this is only a host from before the agent changed.
+pub fn opening_or_fork(
+    init: &InitializeResponse,
+    saved: Option<&str>,
+    fork: Option<&str>,
+) -> Opening {
     let Some(saved) = saved else {
-        return Opening::New;
+        return match fork {
+            Some(fork) if Reopens::of(init).fork => Opening::Fork(fork.to_owned()),
+            _ => Opening::New,
+        };
     };
     let reopens = Reopens::of(init);
     if reopens.resume {
@@ -138,11 +157,14 @@ fn capabilities(
     reopens: Option<Reopens>,
     takes: Option<Takes>,
 ) -> AgentCapabilities {
-    AgentCapabilities::acp(
-        !session || reopens.is_some_and(|reopens| reopens.resume || reopens.load),
-        takes.is_some_and(|takes| takes.images),
-        quirks(agent).steers,
-    )
+    AgentCapabilities {
+        forks: reopens.is_some_and(|reopens| reopens.fork),
+        ..AgentCapabilities::acp(
+            !session || reopens.is_some_and(|reopens| reopens.resume || reopens.load),
+            takes.is_some_and(|takes| takes.images),
+            quirks(agent).steers,
+        )
+    }
 }
 
 /// What tells one ACP agent from another, where the protocol leaves room.
@@ -252,14 +274,21 @@ fn double_underscore(name: &str, server: &str, tool: &str) -> bool {
 /// amux's own tools that run without asking. `attach` asks, as it does in
 /// Claude: it copies any file the agent names into the agent's blob folder,
 /// which the agent then reads unasked, so a read the agent's own settings
-/// would ask about goes through them first.
-const AMUX_TOOLS_UNASKED: [&str; 6] = [
+/// would ask about goes through them first. Each by its name now and by the
+/// one a release before 0.11 gave it, which a resumed agent may still call.
+const AMUX_TOOLS_UNASKED: [&str; 12] = [
     wire::AGENTS_TOOL,
     wire::HOSTS_TOOL,
-    wire::SEND_TOOL,
-    wire::SPAWN_TOOL,
+    wire::MESSAGE_TOOL,
+    wire::START_TOOL,
     wire::STOP_TOOL,
-    wire::STATUS_TOOL,
+    wire::WORKING_ON_TOOL,
+    wire::former_tools::AGENTS_TOOL,
+    wire::former_tools::HOSTS_TOOL,
+    wire::former_tools::SEND_TOOL,
+    wire::former_tools::SPAWN_TOOL,
+    wire::former_tools::STOP_TOOL,
+    wire::former_tools::STATUS_TOOL,
 ];
 
 /// The quirks of the agent with this id.
@@ -294,6 +323,9 @@ pub fn quirks(agent: &str) -> Quirks {
 struct Reopens {
     resume: bool,
     load: bool,
+    /// It offers `session/fork`: a new session from a copy of another.
+    #[serde(default)]
+    fork: bool,
 }
 
 impl Reopens {
@@ -311,6 +343,7 @@ impl Reopens {
             resume: session.is_some_and(|session| matches!(session.resume, Some(Some(_)))),
             load: caps.load_session.or(caps.load_session_again) == Some(true)
                 || session.is_some_and(|session| session.load.is_some()),
+            fork: session.is_some_and(|session| matches!(session.fork, Some(Some(_)))),
         }
     }
 }
@@ -833,6 +866,7 @@ impl State {
                             display_name: value.name.clone(),
                             normal: normal == Some(&value.value),
                             settable: true,
+                            level: wire::levels::acp_mode(&self.agent, &value.value) as i32,
                         })
                         .collect()
                 })
@@ -1218,7 +1252,10 @@ impl State {
         [Some(tool.title.as_str()), used.as_deref()]
             .into_iter()
             .flatten()
-            .any(|name| naming.runs_amux(name, wire::ATTACH_TOOL))
+            .any(|name| {
+                naming.runs_amux(name, wire::ATTACH_TOOL)
+                    || naming.runs_amux(name, wire::former_tools::ATTACH_TOOL)
+            })
     }
 
     /// Whether the call's row was drawn finished, after which nothing more
@@ -2004,6 +2041,17 @@ impl Interpreter for Acp {
             let catalogue = state.catalogue();
             state.shared.set_catalogue(&mut emit, catalogue);
         }
+        let (model, effort, mode) = (
+            state.current(Category::Model),
+            state.current(Category::Effort),
+            state.current(Category::Mode),
+        );
+        state.shared.set_settings(
+            &state.agent,
+            model.as_deref(),
+            effort.as_deref(),
+            mode.as_deref(),
+        );
         let body = state.body();
         let notice = state.shared.notice(crate::notice::acp_ask);
         state.shared.finish(emit, body, notice)

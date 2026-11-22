@@ -232,8 +232,10 @@ message Snapshot {
   // STARTING until the provider accepts input; NEEDS_YOU whenever an ask is
   // open. The daemon copies phase and working_on onto the inventory row.
   Phase phase = 5;
-  // From the status tool call or the spawn prompt; never cleared
-  // automatically.
+  // What the agent declared with its set_working_on tool call; never
+  // cleared automatically, and absent until it declares something. Builds
+  // before 0.11 wrote the first line of the newest prompt here while
+  // nothing was declared.
   optional string working_on = 6;
   // The interpreter's clock when the step that produced this snapshot ran.
   int64 at_ms = 7;
@@ -274,6 +276,43 @@ message Snapshot {
   // In the envelope rather than a body because every client reads it for
   // every kind, the same way, to decide which controls to offer.
   AgentCapabilities capabilities = 15;
+  // The model, effort and permission the agent runs with, by the values its
+  // catalogue names, and the permission's level. The daemon copies it onto
+  // the inventory row, so a listing says how every agent runs without
+  // decoding a body. Absent in a snapshot an earlier build wrote.
+  optional AgentSettings settings = 16;
+}
+
+// How an agent runs, as its interpreter last learned it. Each value is
+// absent while unknown.
+message AgentSettings {
+  optional string model = 1;
+  optional string effort = 2;
+  // The provider's own value: a Claude permission mode, a Codex permission,
+  // an ACP agent's mode.
+  optional string permission = 3;
+  // Where that permission sits on amux's scale; unspecified when the
+  // provider's value has no level (an ACP agent a person added).
+  PermissionLevel permission_level = 4;
+}
+
+// How much an agent may do without asking, on one scale for every
+// provider, narrowest first. Each provider's permissions (an ACP agent's
+// modes) map onto it in its catalogue. An agent starting a subagent may
+// give it its own level or a narrower one, never a wider one.
+enum PermissionLevel {
+  // Not known, or not on the scale.
+  PERMISSION_LEVEL_UNSPECIFIED = 0;
+  // Reads and plans; changes nothing (Claude's plan, Codex's read-only).
+  PERMISSION_LEVEL_READ_ONLY = 1;
+  // Asks before it edits or runs anything (Claude's and Codex's default).
+  PERMISSION_LEVEL_ASK = 2;
+  // Edits and runs commands in its workspace without asking, within its
+  // provider's own checks (Claude's acceptEdits and auto, Codex's auto).
+  PERMISSION_LEVEL_AUTO = 3;
+  // Does anything without asking (Claude's bypassPermissions, Codex's
+  // full-access).
+  PERMISSION_LEVEL_FULL = 4;
 }
 
 // What an agent can do that differs between agents and kinds, as data: a
@@ -309,6 +348,10 @@ message AgentCapabilities {
   // A slash command the agent does not list goes to it as typed; false: a
   // client refuses it before sending.
   bool passes_unknown_commands = 8;
+  // A subagent can start from a copy of this agent's conversation
+  // (CreateAgentRequest.fork): its program copies a conversation into a
+  // new one of its own.
+  bool forks = 9;
 }
 
 // What a notification says, in data rather than sentences: each client words

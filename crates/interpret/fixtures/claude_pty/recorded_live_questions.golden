@@ -1,14 +1,16 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
-effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cd96cd29
+effect catalogue 9d924e4e models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 9d924e4e
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1793453368498 text="" BOUNDARY_KIND_STARTED
+snapshot settings model=claude-haiku-5-5 effort=? permission=? level=?
 snapshot IDLE queue=[] working_on=- at=1793453368498 asks=[] session=bc16698b-f82b-4449-9025-51e504820b2f model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot settings model=claude-haiku-5-5 effort=? permission=default level=ask
 snapshot IDLE queue=[] working_on=- at=1793453368986 asks=[] session=bc16698b-f82b-4449-9025-51e504820b2f model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 14 recorded 12: fact Transcript type=user uuid=5663f5d4-13c7-4bc1-950c-741c618a678b
 item 5663f5d4-13c7-4bc1-950c-741c618a678b prompt final at=1793453369177 text="Use the AskUserQuestion tool once, asking me two questions in that one call: 'Which colour?' with the options Red and Blue, and 'Which size?' with the options Small and Large. After I answer, use it once more to ask me one question, 'Which shape?' with the options Circle and Square. Then reply with the single word done. Do nothing else."
@@ -23,6 +25,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1793453370626 asks=[ask:1->- questio
 notice ask ask:1 question "Which colour?" why="" more=0
 ## 51 recorded 49: fact Transcript type=assistant uuid=76914126-eca4-458d-80f1-5f5b783a8853
 item 76914126-eca4-458d-80f1-5f5b783a8853 thinking final at=1793453370219 text=""
+snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask
 snapshot NEEDS_YOU queue=[] working_on=- at=1793453370678 asks=[ask:1->- question:2+other,2+other] session=bc16698b-f82b-4449-9025-51e504820b2f model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35670/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 notice ask ask:1 question "Which colour?" why="" more=0
 ## 53 recorded 51: fact Transcript type=assistant uuid=f00e3c90-205e-40da-9b2f-f1eaceaf87a4

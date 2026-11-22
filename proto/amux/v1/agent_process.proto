@@ -64,12 +64,27 @@ message AgentSpec {
   // whose kind names its program: Claude's kinds are "claude", Codex's
   // "codex".
   string provider = 17;
+  // Set on the first incarnation of an agent started from a copy of its
+  // parent's conversation: the conversation its provider copies into a new
+  // one of the agent's own. Absent otherwise; a later incarnation reopens
+  // the agent's own conversation.
+  optional ForkFrom fork = 18;
   // What experiments tell the agent process, each entry keyed by an
   // experiment's version (e.g. "suspension/1") and holding an encoded
   // amux.experimental message. A process reads only the entries of the
   // versions it implements and ignores every other key. The map is
   // promised; its entries are not. Empty outside experiments.
   map<string, bytes> experimental = 1000;
+}
+
+// The parent's conversation a forked agent starts from.
+message ForkFrom {
+  // The provider's id for it: Claude's session, Codex's thread, an ACP
+  // agent's session.
+  string session = 1;
+  // The folder the parent's conversation runs in, where its provider keeps
+  // it.
+  string cwd = 2;
 }
 
 message Bootstrap {

@@ -1714,6 +1714,7 @@ pub fn from_wire(agent: &Agent) -> AgentRow {
     row.filed_at_ms = agent.filed_at_ms;
     row.title = agent.title.clone();
     row.last_said = agent.last_said.clone();
+    row.settings = agent.settings.as_deref().cloned();
     row.native = agent.native.clone();
     row.provider = agent.provider.clone();
     // What the origin says under each experiment, whole and undecoded,

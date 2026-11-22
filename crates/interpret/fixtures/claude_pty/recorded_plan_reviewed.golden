@@ -1,14 +1,16 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
-effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cd96cd29
+effect catalogue 9d924e4e models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 9d924e4e
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1793452914081 text="" BOUNDARY_KIND_STARTED
+snapshot settings model=claude-haiku-5-5 effort=? permission=? level=?
 snapshot IDLE queue=[] working_on=- at=1793452914081 asks=[] session=68ea5f9c-dac0-4ea3-b8fe-fe55cc8835ae model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot settings model=claude-haiku-5-5 effort=? permission=plan level=read-only
 snapshot IDLE queue=[] working_on=- at=1793452914607 asks=[] session=68ea5f9c-dac0-4ea3-b8fe-fe55cc8835ae model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 13 recorded 11: fact Transcript type=user uuid=dbed17a4-232f-48e9-9d19-2cb0649b27f5
 item dbed17a4-232f-48e9-9d19-2cb0649b27f5 prompt final at=1793452914802 text="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval with the ExitPlanMode tool."
@@ -23,6 +25,7 @@ snapshot WORKING queue=[] working_on=- at=1793452916484 asks=[] session=68ea5f9c
 snapshot WORKING queue=[] working_on=- at=1793452916525 asks=[] session=68ea5f9c-dac0-4ea3-b8fe-fe55cc8835ae model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 50 recorded 48: fact Transcript type=assistant uuid=455fa713-b69d-4280-9212-8d77ce5ba4ee
 item toolu_01BUtMt8Mt6apnU3zDWic2X3 tool final at=1793452916115 text="" ToolSearch TOOL_STATE_RUNNING search started=1793452916115 input="{\"max_results\":1,\"query\":\"select:ExitPlanMode\"}"
+snapshot settings model=claude-sonnet-5-5 effort=medium permission=plan level=read-only
 snapshot WORKING queue=[] working_on=- at=1793452916650 asks=[] session=68ea5f9c-dac0-4ea3-b8fe-fe55cc8835ae model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=medium mode=plan context=36620/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 51 recorded 49: fact Transcript type=user uuid=45a4d941-8244-4a4e-848b-871b339bb82e
 item toolu_01BUtMt8Mt6apnU3zDWic2X3 tool final at=1793452916115 text="" ToolSearch TOOL_STATE_SUCCEEDED search started=1793452916115 ended=1793452916163 input="{\"max_results\":1,\"query\":\"select:ExitPlanMode\"}"
@@ -50,11 +53,14 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1793452922664 asks=[ask:2->toolu_01F
 notice ask ask:2 plan "Update README.md" why="" more=0
 ## 98 recorded 96: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01F9KceXNkHxGozEH67ahHKR
 item toolu_01F9KceXNkHxGozEH67ahHKR plan final at=1793452922628 text="# Plan: Update README.md\n\n## Context\nREADME.md contains a single line, `CURRENT`. You asked for it to become `UPDATED`.\n\n## Why the change is needed\nYou didn't give a reason, so I can't state a project-specific one. What the change does: it replaces the README's stale placeholder text (`CURRENT`) with the new content (`UPDATED`), so the README shows what you want it to say. If there's a more specific reason, tell me and I'll record it here.\n\n## Step\n1. Edit `<MACHINE_PATH> replace line 1 `CURRENT` with `UPDATED`.\n\n## Verification\nRead README.md and confirm its only line is `UPDATED`.\n" PLAN_VERDICT_APPROVED_SWITCHING to=auto
+snapshot settings model=claude-sonnet-5-5 effort=medium permission=auto level=auto
 snapshot WORKING queue=[] working_on=- at=1793452922694 asks=[] session=68ea5f9c-dac0-4ea3-b8fe-fe55cc8835ae model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=medium mode=auto context=37760/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 99 recorded 97: fact Hook hook_event_name=PostModelSwitch
+snapshot settings model=claude-haiku-5-5 effort=medium permission=auto level=auto
 snapshot WORKING queue=[] working_on=- at=1793452922694 asks=[] session=68ea5f9c-dac0-4ea3-b8fe-fe55cc8835ae model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=auto context=37760/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 101 recorded 99: fact Transcript type=assistant uuid=b749e908-0a63-46dc-ab81-84f2d508b2c9
 item b749e908-0a63-46dc-ab81-84f2d508b2c9 thinking final at=1793452921001 text=""
+snapshot settings model=claude-sonnet-5-5 effort=medium permission=auto level=auto
 snapshot WORKING queue=[] working_on=- at=1793452922953 asks=[] session=68ea5f9c-dac0-4ea3-b8fe-fe55cc8835ae model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=medium mode=auto context=38272/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 103 recorded 101: fact Transcript type=assistant uuid=7060ec76-4299-4c20-b861-6cba51d8ce54
 item toolu_01EiGsVQZghANtQFK36DoKqd tool final at=1793452922763 text="" Write TOOL_STATE_RUNNING started=1793452922763 input=write:"<MACHINE_PATH>"
@@ -70,6 +76,7 @@ snapshot WORKING queue=[] working_on=- at=1793452925054 asks=[] session=68ea5f9c
 snapshot WORKING queue=[] working_on=- at=1793452925100 asks=[] session=68ea5f9c-dac0-4ea3-b8fe-fe55cc8835ae model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=medium mode=auto context=38272/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 138 recorded 136: fact Transcript type=assistant uuid=9d9faa36-de29-4f96-987a-7f00229a7f96
 item 9d9faa36-de29-4f96-987a-7f00229a7f96 thinking final at=1793452924719 text=""
+snapshot settings model=claude-haiku-5-5 effort=medium permission=auto level=auto
 snapshot WORKING queue=[] working_on=- at=1793452925153 asks=[] session=68ea5f9c-dac0-4ea3-b8fe-fe55cc8835ae model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=auto context=39502/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 140 recorded 138: fact Transcript type=assistant uuid=b6b74a6c-3091-424f-8bc6-87b3e7653f99
 item toolu_01ATANapJ4uMBqonv1j4bnRH tool final at=1793452925050 text="" Edit TOOL_STATE_RUNNING started=1793452925050 input=edit:"<MACHINE_PATH>"x1

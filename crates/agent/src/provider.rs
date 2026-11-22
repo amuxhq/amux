@@ -24,8 +24,8 @@ use std::time::Duration;
 use base64::Engine as _;
 use claude_protocol::stream as claude_stream;
 use codex_protocol::client::{
-    Capabilities, ClientInfo, InitializeParams, InjectedContent, InjectedItem, ThreadResumeParams,
-    ThreadStartParams,
+    Capabilities, ClientInfo, InitializeParams, InjectedContent, InjectedItem, ThreadForkParams,
+    ThreadResumeParams, ThreadStartParams,
 };
 use codex_protocol::items::{LocalImageInput, UserInput};
 use codex_protocol::{ClientMessage, ClientNotification, ClientRequest, RequestId, ServerMessage};
@@ -258,11 +258,9 @@ impl Provider {
                 "--permission-prompt-tool",
                 "stdio",
                 "--replay-user-messages",
-                if resume { "--resume" } else { "--session-id" },
-                &session,
-                "--settings",
-                &settings,
             ])
+            .args(claude_opening(spec, &session, resume))
+            .args(["--settings", &settings])
             .current_dir(&spec.cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -545,6 +543,7 @@ impl Provider {
         let handshake = sender.clone();
         let cwd = spec.cwd.clone();
         let model = spec.config.as_ref().and_then(|config| config.model.clone());
+        let fork = codex_fork(spec);
         tokio::spawn(async move {
             let initialize = ClientMessage::request(
                 RequestId::String(CODEX_INITIALIZE.into()),
@@ -587,14 +586,26 @@ impl Provider {
                         ..Default::default()
                     }),
                 ),
-                None => ClientMessage::request(
-                    RequestId::String(CODEX_THREAD.into()),
-                    ClientRequest::ThreadStart(ThreadStartParams {
-                        cwd: Some(cwd),
-                        model,
-                        ..Default::default()
-                    }),
-                ),
+                // A forked agent's first thread is a copy of its parent's,
+                // answered as a new thread is, so it is the conversation
+                // the next incarnation resumes.
+                None => match fork {
+                    Some(fork) => ClientMessage::request(
+                        RequestId::String(CODEX_THREAD.into()),
+                        ClientRequest::ThreadFork(ThreadForkParams {
+                            cwd: Some(cwd),
+                            ..fork
+                        }),
+                    ),
+                    None => ClientMessage::request(
+                        RequestId::String(CODEX_THREAD.into()),
+                        ClientRequest::ThreadStart(ThreadStartParams {
+                            cwd: Some(cwd),
+                            model,
+                            ..Default::default()
+                        }),
+                    ),
+                },
             };
             let initialized = ClientMessage::notification(ClientNotification::Initialized(()));
             let _ = send_codex(&handshake, &codex_protocol::encode(&initialized)).await;
@@ -776,6 +787,7 @@ impl Provider {
         let opening_sent: Arc<std::sync::Mutex<Option<Vec<u8>>>> = Arc::default();
         let sent = opening_sent.clone();
         let unanswered = events.clone();
+        let fork = spec.fork.as_ref().map(|fork| fork.session.clone());
         let agent = if spec.provider.is_empty() {
             spec.provider_command.clone()
         } else {
@@ -815,7 +827,7 @@ impl Provider {
             if crate::acp::speaks("", &init).is_err() {
                 return;
             }
-            let opening = interpret::acp::opening(&init, saved.as_deref());
+            let opening = interpret::acp::opening_or_fork(&init, saved.as_deref(), fork.as_deref());
             let Some(request) =
                 crate::acp::open_session(&opening, &setup, acp_takes_folders(&init))
             else {
@@ -828,6 +840,7 @@ impl Provider {
             let method = match opening {
                 interpret::acp::Opening::Resume(_) => "session/resume",
                 interpret::acp::Opening::Load(_) => "session/load",
+                interpret::acp::Opening::Fork(_) => "session/fork",
                 _ => "session/new",
             };
             tokio::select! {
@@ -897,9 +910,8 @@ impl Provider {
                 }))
                 .await;
         }
+        args.extend(claude_opening(spec, &session, resume));
         args.extend([
-            if resume { "--resume" } else { "--session-id" }.to_owned(),
-            session.clone(),
             "--settings".to_owned(),
             settings,
             "--messaging-socket-path".to_owned(),
@@ -1879,6 +1891,63 @@ fn provider_session(spec: &AgentSpec, dir: &Path) -> io::Result<(String, bool)> 
     }
 }
 
+/// The fork of the parent's thread a forked Codex agent's first thread is,
+/// on the agent's own model, effort and permission: a fork takes Codex's
+/// configured default model rather than the parent's, and the parent's
+/// approval and sandbox rather than the agent's, unless each is given.
+fn codex_fork(spec: &AgentSpec) -> Option<ThreadForkParams> {
+    use codex_protocol::thread::{ApprovalPolicy, ApprovalsReviewer, AskForApproval, SandboxMode};
+    let fork = spec.fork.as_ref()?;
+    let config = spec.config.clone().unwrap_or_default();
+    let named = config
+        .permission
+        .as_deref()
+        .and_then(wire::codex::permission);
+    let effort = config.effort.map(|effort| {
+        let mut overrides = serde_json::Map::new();
+        overrides.insert(
+            "model_reasoning_effort".to_owned(),
+            serde_json::Value::String(effort),
+        );
+        overrides
+    });
+    Some(ThreadForkParams {
+        thread_id: fork.session.clone(),
+        model: config.model,
+        approval_policy: named
+            .map(|named| AskForApproval::Named(ApprovalPolicy::parse(named.approval_policy))),
+        approvals_reviewer: named.map(|named| ApprovalsReviewer::parse(named.approvals_reviewer)),
+        sandbox: named.map(|named| SandboxMode::parse(named.sandbox)),
+        config: effort,
+        exclude_turns: Some(true),
+        ..Default::default()
+    })
+}
+
+/// How Claude opens this agent's session: a later incarnation resumes it;
+/// a forked agent's first copies its parent's conversation into it, Claude
+/// closing the call the parent was making as interrupted; any other starts
+/// it new. Claude finds the parent's session by its id from any folder, so
+/// a fork into a new workspace finds it too.
+fn claude_opening(spec: &AgentSpec, session: &str, resume: bool) -> Vec<String> {
+    let mut args = Vec::new();
+    match &spec.fork {
+        Some(fork) if !resume => {
+            args.extend([
+                "--resume".to_owned(),
+                fork.session.clone(),
+                "--fork-session".to_owned(),
+            ]);
+            args.extend(["--session-id".to_owned(), session.to_owned()]);
+        }
+        _ => args.extend([
+            if resume { "--resume" } else { "--session-id" }.to_owned(),
+            session.to_owned(),
+        ]),
+    }
+    args
+}
+
 /// Claude's session for this agent, and whether this incarnation resumes
 /// it, in both modes. Claude writes a session's transcript at its first
 /// message; one that ended before (at its folder-trust dialog, or stopped
@@ -2298,8 +2367,15 @@ mod tests {
             .collect();
         assert_eq!(
             allow,
-            ["agents", "hosts", "send", "spawn", "stop", "status"]
-                .map(|tool| format!("mcp__amux__{tool}"))
+            [
+                "start_subagent",
+                "message_agent",
+                "list_agents",
+                "stop_subagent",
+                "list_hosts",
+                "set_working_on"
+            ]
+            .map(|tool| format!("mcp__amux__{tool}"))
         );
     }
 

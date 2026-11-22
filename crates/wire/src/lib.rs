@@ -187,6 +187,7 @@ mod continued;
 mod entry;
 mod error;
 mod host_name;
+pub mod levels;
 #[cfg(test)]
 mod pinned;
 mod said;
@@ -593,18 +594,37 @@ pub const AGENT_NAME_MOST: usize = 64;
 /// calls by it.
 pub const AMUX_TOOL_SERVER: &str = "amux";
 /// amux's tool that sets the caller's working_on.
-pub const STATUS_TOOL: &str = "status";
+pub const WORKING_ON_TOOL: &str = "set_working_on";
 /// amux's tool that messages another agent.
-pub const SEND_TOOL: &str = "send";
+pub const MESSAGE_TOOL: &str = "message_agent";
 /// amux's tool that attaches a file to the caller's reply.
-pub const ATTACH_TOOL: &str = "attach";
+pub const ATTACH_TOOL: &str = "attach_file";
 /// amux's tool that starts a child agent.
-pub const SPAWN_TOOL: &str = "spawn";
+pub const START_TOOL: &str = "start_subagent";
 /// amux's tool that stops one of the caller's children.
-pub const STOP_TOOL: &str = "stop";
+pub const STOP_TOOL: &str = "stop_subagent";
 /// amux's tools that list the fleet and the trusted hosts.
-pub const AGENTS_TOOL: &str = "agents";
-pub const HOSTS_TOOL: &str = "hosts";
+pub const AGENTS_TOOL: &str = "list_agents";
+pub const HOSTS_TOOL: &str = "list_hosts";
+
+/// What releases before 0.11 named the same tools. An agent resumed from
+/// then still has calls by these names in its provider's history, so the
+/// interpreters and views read both.
+pub mod former_tools {
+    pub const STATUS_TOOL: &str = "status";
+    pub const SEND_TOOL: &str = "send";
+    pub const ATTACH_TOOL: &str = "attach";
+    pub const SPAWN_TOOL: &str = "spawn";
+    pub const STOP_TOOL: &str = "stop";
+    pub const AGENTS_TOOL: &str = "agents";
+    pub const HOSTS_TOOL: &str = "hosts";
+}
+
+/// Whether `tool` is amux's tool named `now`, by its name now or by the
+/// name a release before 0.11 gave it, `before`.
+pub fn is_tool(tool: &str, now: &str, before: &str) -> bool {
+    tool == now || tool == before
+}
 
 /// Why a name cannot name an agent. Each client words it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]

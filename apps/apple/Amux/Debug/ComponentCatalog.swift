@@ -1936,8 +1936,8 @@ extension CatalogFixtures {
         ],
         commands: [], permissions: [],
         modes: [
-            OfferedMode(value: "build", displayName: "Build", normal: false, settable: true),
-            OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
+            OfferedMode(value: "build", displayName: "Build", normal: false, settable: true, level: 0),
+            OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true, level: 0),
         ],
         skills: [], newAgent: nil)
 
@@ -1948,13 +1948,13 @@ extension CatalogFixtures {
         ],
         commands: [],
         permissions: [
-            OfferedPermission(value: "read-only", displayName: "Read only", normal: false, neverAsks: false, settable: true, models: []),
-            OfferedPermission(value: "default", displayName: "Default", normal: true, neverAsks: false, settable: true, models: []),
-            OfferedPermission(value: "full-access", displayName: "Full access", normal: false, neverAsks: true, settable: true, models: []),
+            OfferedPermission(value: "read-only", displayName: "Read only", normal: false, neverAsks: false, settable: true, models: [], level: 0),
+            OfferedPermission(value: "default", displayName: "Default", normal: true, neverAsks: false, settable: true, models: [], level: 0),
+            OfferedPermission(value: "full-access", displayName: "Full access", normal: false, neverAsks: true, settable: true, models: [], level: 0),
         ],
         modes: [
-            OfferedMode(value: "default", displayName: "Default", normal: true, settable: true),
-            OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
+            OfferedMode(value: "default", displayName: "Default", normal: true, settable: true, level: 0),
+            OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true, level: 0),
         ],
         skills: [], newAgent: nil)
 
@@ -1965,10 +1965,10 @@ extension CatalogFixtures {
         ],
         commands: [],
         permissions: [
-            OfferedPermission(value: "default", displayName: "Default", normal: true, neverAsks: false, settable: true, models: []),
-            OfferedPermission(value: "acceptEdits", displayName: "Accept edits", normal: false, neverAsks: false, settable: true, models: []),
-            OfferedPermission(value: "plan", displayName: "Plan", normal: false, neverAsks: false, settable: true, models: []),
-            OfferedPermission(value: "bypassPermissions", displayName: "Bypass permissions", normal: false, neverAsks: true, settable: true, models: []),
+            OfferedPermission(value: "default", displayName: "Default", normal: true, neverAsks: false, settable: true, models: [], level: 0),
+            OfferedPermission(value: "acceptEdits", displayName: "Accept edits", normal: false, neverAsks: false, settable: true, models: [], level: 0),
+            OfferedPermission(value: "plan", displayName: "Plan", normal: false, neverAsks: false, settable: true, models: [], level: 0),
+            OfferedPermission(value: "bypassPermissions", displayName: "Bypass permissions", normal: false, neverAsks: true, settable: true, models: [], level: 0),
         ],
         modes: [],
         skills: [], newAgent: nil)

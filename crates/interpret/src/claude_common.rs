@@ -1485,6 +1485,7 @@ pub(crate) fn permissions(
         value: value.to_owned(),
         display_name: display_name.to_owned(),
         settable,
+        level: wire::levels::claude(value) as i32,
         ..OfferedPermission::default()
     };
     let mut offered = vec![

@@ -98,6 +98,19 @@ message CreateAgentRequest {
   // No host: the call's address is the host. No parent: an agent that
   // calls is the parent, a person's agent has none, and a create is
   // refused when the calling agent has exited or gone.
+
+  // Start the agent from a copy of its parent's conversation, with
+  // initial_prompt as its next prompt. Refused for a create with no
+  // calling agent, on a host other than the parent's, of a provider other
+  // than the parent's, and for a provider that cannot fork
+  // (AgentCapabilities.forks). False starts a new conversation, as builds
+  // before it did.
+  bool fork = 12;
+  // The permission by amux's level, mapped by the host onto the widest
+  // permission its provider offers at or below that level; the config's
+  // own permission is then left unset. Unspecified leaves the config's
+  // permission as it is.
+  PermissionLevel permission_level = 13;
 }
 
 message CreateAgentResponse {

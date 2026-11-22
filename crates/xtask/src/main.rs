@@ -140,6 +140,12 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
     // A notice is rare and a snapshot is moved through every step, so the
     // notice's room is taken only when there is one.
     config.boxed(".amux.v1.Snapshot.notice");
+    // The store's records hold a snapshot by value beside much smaller
+    // items, and a client's session messages an inventory row beside
+    // smaller events, so their settings sit behind a pointer to keep each
+    // message small.
+    config.boxed(".amux.v1.Snapshot.settings");
+    config.boxed(".amux.v1.Agent.settings");
     // Every agent row carries its git facts, and the store's records hold
     // rows by value, so the checkout's room is taken only when there is one.
     config.boxed(".amux.v1.Git.checkout");

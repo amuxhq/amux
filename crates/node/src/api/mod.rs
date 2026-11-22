@@ -23,7 +23,7 @@ use std::sync::Weak;
 
 #[cfg(test)]
 pub(crate) use caller::Surface;
-pub(crate) use caller::{Caller, surface_named};
+pub(crate) use caller::{AgentRef as CallingAgent, Caller, surface_named};
 #[cfg(test)]
 pub(crate) use entry::client_entrance;
 pub(crate) use entry::{Entrance, Entry, entrance, layer};

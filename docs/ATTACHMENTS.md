@@ -177,7 +177,7 @@ types both Claude and Codex read natively, and its type is the one the
 bytes say. Anything else (SVG, HEIC, TIFF, a misnamed file) is a file the
 model opens from its element's path. The agent applies the rule to every
 image it hands a provider, whatever the label; the terminal's paste and the
-`attach` tool use it to decide image or file. The phone cannot call it, so
+`attach_file` tool use it to decide image or file. The phone cannot call it, so
 its pickers keep to the same types: a photo that is a PNG or GIF keeps its
 bytes, any other is re-encoded as JPEG (which drops its location), each is
 named `photo-<n>` with its type's extension, and one that cannot be read is
@@ -185,9 +185,9 @@ sent as a file; a picked file in an image type no provider reads is
 converted (PNG if it has transparency, else JPEG), and one that cannot be
 decoded (SVG) goes as a file.
 
-**A model's attachment.** The `attach` tool reads a file on the agent's host,
+**A model's attachment.** The `attach_file` tool reads a file on the agent's host,
 hashes it, writes it into the agent's directory and returns the element that
-names it ([agent tools](AGENT_TOOLS.md#attach)); no daemon call is made. The
+names it ([agent tools](AGENT_TOOLS.md#attach_file)); no daemon call is made. The
 tool's own step carries the attachment, read from the element it returned
 (whose path is this host's, so it is not shown as text). The model may also
 put the element in its reply, and the interpreter turns it into an
@@ -213,8 +213,8 @@ itself become an attachment at its place in the reply's text:
 
 A link to a local file is never read. Storing it would copy a file the
 agent only names into the agent's blobs, which the agent reads without
-asking and every device is sent, around the permission the `attach` tool
-asks for; an agent that means to show a file calls `attach`.
+asking and every device is sent, around the permission the `attach_file` tool
+asks for; an agent that means to show a file calls `attach_file`.
 
 The words of the reply also go through the element reader when the reply
 completes, as Claude's and Codex's do, so an element a model writes there
@@ -288,8 +288,8 @@ that provider reads (`crates/agent/src/provider.rs`):
 
 **Between agents.** An agent message carries attachments as a prompt does:
 An `Envelope`'s message body holds positioned text and the ordered
-attachments. The `send` tool moves each element the model wrote (the
-`attach` tool's) out of the text into the list, since an element names the
+attachments. The `message_agent` tool moves each element the model wrote (the
+`attach_file` tool's) out of the text into the list, since an element names the
 file by its path on the sender's host. Before the recipient's daemon hands
 the message to its agent, it puts each file's bytes into the recipient's own
 blobs: copied from the sending agent's directory when both run on that host,
@@ -350,5 +350,5 @@ draws it as pasted text.
   (`a_body_escapes_only_what_reads_as_markup`) and a sent review's text;
   [`crates/node/tests/reviews.rs`](../crates/node/tests/reviews.rs) proves
   that an accepted send marks exactly the comments its entry names.
-- [`crates/agent/tests/tools.rs`](../crates/agent/tests/tools.rs): the `attach`
+- [`crates/agent/tests/tools.rs`](../crates/agent/tests/tools.rs): the `attach_file`
   tool stores the file by its hash and answers its element without a daemon.

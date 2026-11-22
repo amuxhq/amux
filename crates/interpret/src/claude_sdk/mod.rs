@@ -1220,6 +1220,12 @@ impl Interpreter for ClaudeSdk {
         }
         state.forget_ended_subagents();
         state.subagent_snapshots(&mut emit);
+        state.shared.set_settings(
+            wire::agents::CLAUDE,
+            state.model.as_deref(),
+            state.effort.as_deref(),
+            state.permission_mode.as_deref(),
+        );
         let body = state.body();
         let notice = state.shared.notice(crate::notice::claude_ask);
         state.shared.finish(emit, body, notice)

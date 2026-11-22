@@ -37,6 +37,7 @@ impl AgentCapabilities {
             images: true,
             files: true,
             passes_unknown_commands: true,
+            forks: true,
         }
     }
 
@@ -52,6 +53,7 @@ impl AgentCapabilities {
             images: true,
             files: true,
             passes_unknown_commands: true,
+            forks: true,
         }
     }
 
@@ -69,6 +71,7 @@ impl AgentCapabilities {
             images: true,
             files: true,
             passes_unknown_commands: false,
+            forks: true,
         }
     }
 
@@ -79,7 +82,8 @@ impl AgentCapabilities {
     /// reference in the prompt's text and embedded where the agent takes
     /// that. ACP has no input that stops one job, no terminal of its own
     /// for amux to attach, and a prompt's slash command is the agent's to
-    /// read.
+    /// read. It forks only where its `initialize` answer offered
+    /// `session/fork`, which the caller says by setting `forks`.
     pub fn acp(resumable: bool, images: bool, sends_now: bool) -> Self {
         Self {
             stops_job: false,
@@ -90,6 +94,7 @@ impl AgentCapabilities {
             images,
             files: true,
             passes_unknown_commands: true,
+            forks: false,
         }
     }
 }
@@ -117,7 +122,7 @@ mod tests {
         assert_eq!(AgentCapabilities::of_kind(Kind::Acp), None);
         assert_eq!(AgentCapabilities::of_kind(Kind::Unspecified), None);
         let unknown = AgentCapabilities::acp(false, false, false);
-        assert!(!unknown.resumable && !unknown.images && !unknown.sends_now);
+        assert!(!unknown.resumable && !unknown.images && !unknown.sends_now && !unknown.forks);
         assert!(unknown.files && unknown.passes_unknown_commands);
     }
 }

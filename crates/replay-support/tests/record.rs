@@ -405,6 +405,7 @@ fn marked_history() -> ClientSessionHistory {
             })),
         })),
         capabilities: Some(wire::AgentCapabilities::claude_sdk()),
+        settings: None,
     };
     let prompt = wire::Input::new(
         b"sent".to_vec(),

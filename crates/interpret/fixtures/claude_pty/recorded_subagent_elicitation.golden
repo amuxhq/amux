@@ -1,14 +1,16 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
-effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cd96cd29
+effect catalogue 9d924e4e models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 9d924e4e
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1794787862310 text="" BOUNDARY_KIND_STARTED
+snapshot settings model=claude-haiku-5-5 effort=? permission=? level=?
 snapshot IDLE queue=[] working_on=- at=1794787862310 asks=[] session=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot settings model=claude-haiku-5-5 effort=? permission=default level=ask
 snapshot IDLE queue=[] working_on=- at=1794787862849 asks=[] session=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 13 recorded 11: fact Transcript type=user uuid=9754ad00-a64e-408d-9744-e8900cdc7947
 item 9754ad00-a64e-408d-9744-e8900cdc7947 prompt final at=1794787862996 text="Launch the `confirmer` subagent and wait for it. When it has reported, reply with exactly what it said."
@@ -17,6 +19,7 @@ snapshot WORKING queue=[] working_on=- at=1794787862996 asks=[] session=a4c136b1
 effect follow subagent a70921864c3af9207
 ## 45 recorded 43: fact Transcript type=assistant uuid=99fb3592-375f-4da8-9615-5f8308f09494
 item toolu_01Abe34kgPAtT2P64uL9xvPW tool final at=1794787865098 text="" Agent TOOL_STATE_RUNNING opens=sub-68d18aee started=1794787865098 input=subagent:"Run confirmer subagent"
+snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask
 snapshot WORKING queue=[] working_on=- at=1794787865085 asks=[] session=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36036/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 agent sub-68d18aee start child=a70921864c3af9207 call=host/toolu_01Abe34kgPAtT2P64uL9xvPW title="Run confirmer subagent"
 agent sub-68d18aee snapshot WORKING queue=[] working_on=- at=1794787865085 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]

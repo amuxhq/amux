@@ -4777,12 +4777,18 @@ public struct OfferedMode: Codable, Hashable, Sendable {
     public var displayName: String
     public var normal: Bool
     public var settable: Bool
+    /// For an ACP agent, whose modes are its permissions: where the mode sits
+    /// on amux's scale, from the built-in agent's known modes. Unspecified
+    /// for Codex's modes, which are not permissions, and for a mode of an
+    /// agent a person added.
+    public var level: Int32
 
-    public init(value: String, displayName: String, normal: Bool, settable: Bool) {
+    public init(value: String, displayName: String, normal: Bool, settable: Bool, level: Int32) {
         self.value = value
         self.displayName = displayName
         self.normal = normal
         self.settable = settable
+        self.level = level
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -4790,6 +4796,7 @@ public struct OfferedMode: Codable, Hashable, Sendable {
         case displayName = "display_name"
         case normal
         case settable
+        case level
     }
 }
 
@@ -4841,14 +4848,18 @@ public struct OfferedPermission: Codable, Hashable, Sendable {
     public var settable: Bool
     /// Empty: every model. Otherwise only these.
     public var models: [String]
+    /// Where it sits on amux's scale, written by the interpreter like
+    /// display_name; unspecified for a value with no level.
+    public var level: Int32
 
-    public init(value: String, displayName: String, normal: Bool, neverAsks: Bool, settable: Bool, models: [String]) {
+    public init(value: String, displayName: String, normal: Bool, neverAsks: Bool, settable: Bool, models: [String], level: Int32) {
         self.value = value
         self.displayName = displayName
         self.normal = normal
         self.neverAsks = neverAsks
         self.settable = settable
         self.models = models
+        self.level = level
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -4858,6 +4869,7 @@ public struct OfferedPermission: Codable, Hashable, Sendable {
         case neverAsks = "never_asks"
         case settable
         case models
+        case level
     }
 }
 

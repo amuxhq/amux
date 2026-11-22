@@ -20,6 +20,7 @@ mod carry;
 mod changes;
 mod connection;
 mod daemon;
+mod delegation;
 pub mod discovery;
 mod dispatcher;
 mod driver;

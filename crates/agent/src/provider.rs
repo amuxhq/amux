@@ -53,6 +53,15 @@ const CODEX_INITIALIZE: &str = "agent-initialize";
 const CODEX_THREAD: &str = interpret::codex::THREAD_REQUEST;
 /// The longest a starting Codex server is waited for to listen.
 const CODEX_LISTEN_WAIT: Duration = Duration::from_secs(30);
+/// How long a kill on Windows waits for the child to have gone: well
+/// inside the 2 s the daemon gives the agent process to exit once it has
+/// asked it to die, and far longer than termination takes.
+#[cfg(windows)]
+const GONE_WAIT: Duration = Duration::from_millis(1_000);
+/// How long the `taskkill /T` of an ACP agent behind a Windows shim has to
+/// end its tree before the shim is killed regardless.
+#[cfg(windows)]
+const TREE_KILL_WAIT: Duration = Duration::from_secs(5);
 /// How long an ACP agent has to answer each request of its handshake:
 /// long enough for an agent that loads a lot at its start, or reaches a
 /// slow network for its sign-in.
@@ -176,6 +185,62 @@ pub struct Provider {
     /// handshake sent it, which the interpreter has sent again once a
     /// person may have signed in ([`Effect::AcpReopen`]).
     acp_opening: Option<Arc<std::sync::Mutex<Option<Vec<u8>>>>>,
+    /// The child is a Windows batch file, as npm's `.cmd` shim is: the
+    /// shell running it runs the program as its own child, so a kill ends
+    /// the whole tree.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    behind_shim: bool,
+    /// The plain child's own process, for a kill that ends it at once.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    process: Process,
+}
+
+/// A plain child's process, held for [`Provider::kill`]. On Windows, a
+/// handle of its own to the child's process, duplicated from the child's,
+/// so it stays valid after the task waiting on the child has reaped and
+/// dropped it: terminating a process that has already exited through it
+/// does nothing. Elsewhere nothing: a kill there signals the child's group.
+#[derive(Default)]
+struct Process(#[cfg(windows)] Option<std::os::windows::io::OwnedHandle>);
+
+impl Process {
+    fn of(child: &tokio::process::Child) -> Self {
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::BorrowedHandle;
+            Self(child.raw_handle().and_then(|raw| {
+                // SAFETY: the child is alive and owns this handle for the
+                // length of the borrow, which only duplicates it.
+                unsafe { BorrowedHandle::borrow_raw(raw) }
+                    .try_clone_to_owned()
+                    .ok()
+            }))
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = child;
+            Self()
+        }
+    }
+
+    /// Ends the process, and returns once it has gone or [`GONE_WAIT`] has
+    /// passed. Termination finishes after TerminateProcess returns, and
+    /// until it does the process still has its working folder open, which
+    /// on Windows keeps that folder from being removed: a delete that
+    /// follows this agent's exit would find the workspace still in use.
+    #[cfg(windows)]
+    fn terminate(&self) {
+        use std::os::windows::io::AsRawHandle as _;
+
+        use windows_sys::Win32::System::Threading::{TerminateProcess, WaitForSingleObject};
+        if let Some(handle) = &self.0 {
+            // SAFETY: the handle is this value's own, open until it drops.
+            unsafe {
+                TerminateProcess(handle.as_raw_handle(), 1);
+                WaitForSingleObject(handle.as_raw_handle(), GONE_WAIT.as_millis() as u32);
+            }
+        }
+    }
 }
 
 /// Asked of headless Claude so a command's row can open on what it is for
@@ -274,6 +339,7 @@ impl Provider {
             source,
         })?;
         let pid = child.id();
+        let process = Process::of(&child);
         // Claude finishes its turn after its input closes: tethered, it is
         // asked to finish when the agent dies instead.
         #[cfg(unix)]
@@ -310,13 +376,6 @@ impl Provider {
             let status = tokio::select! {
                 status = child.wait() => status,
                 _ = killed => {
-                    // An agent npm installed runs behind a `.cmd` shim, whose
-                    // shell runs the agent as its child: killing the shim
-                    // alone would leave the agent running.
-                    #[cfg(windows)]
-                    if let Some(pid) = pid {
-                        crate::acp::kill_tree(pid).await;
-                    }
                     let _ = child.start_kill();
                     child.wait().await
                 }
@@ -343,6 +402,8 @@ impl Provider {
             census: Vec::new(),
             takes: None,
             acp_opening: None,
+            behind_shim: false,
+            process,
         };
         // Claude reports nothing until it is asked; its answer is what says
         // it takes input. amux's interrupt ends the turn and leaves
@@ -405,6 +466,7 @@ impl Provider {
             }
         })?;
         let pid = child.id();
+        let process = Process::of(&child);
         #[cfg(unix)]
         let tether = match &listen {
             crate::codex::Listen::Unix(_) => match pty_host::Tether::new(&child) {
@@ -634,6 +696,8 @@ impl Provider {
             census: Vec::new(),
             takes: None,
             acp_opening: None,
+            behind_shim: false,
+            process,
         })
     }
 
@@ -682,10 +746,14 @@ impl Provider {
             folders: vec![blobs.display().to_string()],
             tool_server: tool_server(spec, dir),
         };
-        let mut command = tokio::process::Command::new(crate::acp::program(
-            &spec.provider_command,
-            &spec.provider_env,
-        ));
+        let program = crate::acp::program(&spec.provider_command, &spec.provider_env);
+        let behind_shim = program
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
+            });
+        let mut command = tokio::process::Command::new(program);
         command
             .args(&spec.provider_args)
             .current_dir(&spec.cwd)
@@ -701,6 +769,7 @@ impl Provider {
             source,
         })?;
         let pid = child.id();
+        let process = Process::of(&child);
         // An agent may run on after its input closes: tethered, it is asked
         // to finish when the agent process dies instead.
         #[cfg(unix)]
@@ -866,6 +935,8 @@ impl Provider {
             census: Vec::new(),
             takes: Some(takes),
             acp_opening: Some(opening_sent),
+            behind_shim,
+            process,
         })
     }
 
@@ -1019,6 +1090,8 @@ impl Provider {
             census: Vec::new(),
             takes: None,
             acp_opening: None,
+            behind_shim: false,
+            process: Process::default(),
         })
     }
 
@@ -1404,6 +1477,36 @@ impl Provider {
         }
         #[cfg(not(unix))]
         if let Some(kill) = self.kill.take() {
+            // Windows has no process groups. An ACP agent npm installed
+            // runs behind a `.cmd` shim whose shell runs the agent as its
+            // child, so killing the shim alone would leave the agent
+            // running: that tree is ended by `taskkill /T`, started here
+            // and not waited for, since the stop the daemon asked waits on
+            // this agent process's exit within seconds and taskkill can take
+            // that long on a loaded machine. The shim itself is killed only
+            // once taskkill is done (or has had its time), since a tree
+            // whose root has gone can no longer be found from it. Started,
+            // taskkill runs on even if this process ends first.
+            #[cfg(windows)]
+            if self.behind_shim
+                && let Some(pid) = self.pid
+                && let Some(mut tree) = crate::acp::start_killing_tree(pid)
+            {
+                tokio::spawn(async move {
+                    let _ = tokio::time::timeout(TREE_KILL_WAIT, tree.wait()).await;
+                    let _ = kill.send(());
+                });
+                return;
+            }
+            // Any other child ends here, before this returns: the agent
+            // process exits right after a kill, which can drop the task
+            // waiting on the child before that task has killed it, and the
+            // child would outlive the agent, holding its folder and the
+            // handles it inherited. It has gone by the time the agent's exit
+            // is seen, so a delete that follows can remove its folder. The
+            // task then sees it exit.
+            #[cfg(windows)]
+            self.process.terminate();
             let _ = kill.send(());
         }
     }

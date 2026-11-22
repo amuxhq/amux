@@ -1326,6 +1326,11 @@ impl Home {
         if let Some(setup) = self.open_setup() {
             setup.settle(fleet);
         }
+        if let (Some(picker), Some(setup)) = (self.draft.picker.as_mut(), &self.draft.setup)
+            && self.draft.open
+        {
+            picker.refresh(setup.choices(picker.item, fleet));
+        }
         // An agent used in its own terminal starts from a modal over home;
         // one chatted with in amux, from its own composer.
         let modal = self.draft.open

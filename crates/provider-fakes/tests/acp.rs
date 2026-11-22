@@ -31,24 +31,55 @@ struct Agent {
     line: Line,
     next: u64,
     session: String,
+    /// Where the fake logs each line it handles ([`provider_fakes::INPUT_LOG_ENV`]).
+    handled: tempfile::TempDir,
 }
 
 impl Agent {
     /// A fake keeping its sessions in `sessions`.
     async fn spawn(script: Value, sessions: &Path) -> Self {
+        let handled = scratch();
+        let log = handled.path().join("input");
         let line = Line::spawn_with(
             Kind::Acp,
             env!("CARGO_BIN_EXE_fake-acp"),
             &["acp"],
             script,
             &[],
-            &[(provider_fakes::acp::SESSIONS_ENV, sessions.as_os_str())],
+            &[
+                (provider_fakes::acp::SESSIONS_ENV, sessions.as_os_str()),
+                (provider_fakes::INPUT_LOG_ENV, log.as_os_str()),
+            ],
         )
         .await;
         Agent {
             line,
             next: 0,
             session: String::new(),
+            handled,
+        }
+    }
+
+    /// Returns once the fake has taken the request `id` in: it logs a line
+    /// as it starts handling it, and handles it whole before its script
+    /// goes on, so a gate opened after this cannot overtake it.
+    async fn handled(&self, id: u64) {
+        let log = self.handled.path().join("input");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            let text = std::fs::read_to_string(&log).unwrap_or_default();
+            let taken = text.lines().any(|line| {
+                serde_json::from_str::<Value>(line)
+                    .is_ok_and(|frame| frame["id"] == id && frame.get("method").is_some())
+            });
+            if taken {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the fake never handled request {id}: {text}"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
     }
 
@@ -1014,6 +1045,8 @@ async fn an_agent_running_both_in_one_loop_answers_both_together() {
     let first = agent.prompt("story").await;
     agent.update("agent_message_chunk").await;
     let second = agent.prompt("and then").await;
+    // Joined only if it reached the fake while the turn still ran.
+    agent.handled(second).await;
     std::fs::write(&gate, "").unwrap();
     let (said, answer) = agent.said_until(first).await;
     assert_eq!(said, ["two", "three"]);

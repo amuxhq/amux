@@ -72,8 +72,8 @@ Antigravity. An agent whose own permission amux can't place on that scale
 starts its subagents read-only. An agent that has no such settings at all,
 such as Grok or one you added yourself, can only be started as a subagent by
 an agent with full access. You can still change a subagent's permission
-yourself afterwards. The model and effort an agent picks for a subagent apply to that
-subagent only, and never change the defaults you've chosen.
+yourself afterwards. The model and effort an agent picks for a subagent
+apply to that subagent only, and never change the defaults you've chosen.
 
 An agent can also start a subagent from a copy of its own conversation, so
 the subagent knows everything the agent knew so far. That works for a Claude

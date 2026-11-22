@@ -23,7 +23,7 @@
 
     Starting the soak.
 
-    Working
+    Working · <t>
 
     Then log the peak.                                                                              queued
     And email me.                                                                                   queued

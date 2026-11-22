@@ -240,15 +240,19 @@ impl Lookup {
             candidates.push(path.to_owned());
         }
         for extension in extensions {
-            let mut name = path.as_os_str().to_owned();
-            name.push(extension);
-            candidates.push(PathBuf::from(name));
-            // Windows matches names whatever their case; another file
-            // system running the same rules does not.
+            // Lower case first, as files are named: Windows, whose file
+            // system matches names whatever their case, would otherwise
+            // find `agent.exe` as the `agent.EXE` its default PATHEXT
+            // spells, and the path the agent is started by and shown as
+            // would not be the file's own. Another file system running the
+            // same rules finds only the spelling on disk, so both are tried.
             let lower = extension.to_ascii_lowercase();
+            let mut name = path.as_os_str().to_owned();
+            name.push(&lower);
+            candidates.push(PathBuf::from(name));
             if lower != extension {
                 let mut name = path.as_os_str().to_owned();
-                name.push(lower);
+                name.push(extension);
                 candidates.push(PathBuf::from(name));
             }
         }

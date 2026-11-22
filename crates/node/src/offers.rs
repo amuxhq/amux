@@ -596,21 +596,22 @@ impl ProfileRuntime {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
-            .kill_on_drop(true);
+            // Ended by `running` instead, with the provider it started.
+            .kill_on_drop(false);
         #[cfg(unix)]
         helper.process_group(0);
         let child = helper
             .spawn()
             .map_err(|error| CatalogueError::Helper(error.to_string()))?;
-        let pid = child.id();
+        let mut running = Running(child.id());
         let deadline = Duration::from_millis(launch.core.start_deadline_ms);
         let output = match tokio::time::timeout(deadline, child.wait_with_output()).await {
-            Ok(output) => output.map_err(|error| CatalogueError::Helper(error.to_string()))?,
+            Ok(output) => {
+                running.0 = None;
+                output.map_err(|error| CatalogueError::Helper(error.to_string()))?
+            }
             Err(_) => {
-                // The provider runs in the helper's group: both go.
-                if let Some(pid) = pid {
-                    crate::runtime::kill_group(pid);
-                }
+                drop(running);
                 return Err(CatalogueError::Helper(format!(
                     "asking {word} took longer than {}ms",
                     launch.core.start_deadline_ms
@@ -629,6 +630,22 @@ impl ProfileRuntime {
     }
 }
 
+/// A catalogue helper still running, by its pid: dropped before it exits,
+/// as when its ask takes too long or the daemon stops mid-ask, it is
+/// killed with the provider it started, which runs in its group (on
+/// Windows, below it in its process tree). Killing the helper alone would
+/// leave the provider running with whatever the daemon's process handed
+/// down to it.
+struct Running(Option<u32>);
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        if let Some(pid) = self.0.take() {
+            crate::runtime::kill_group(pid);
+        }
+    }
+}
+
 impl ProfileRuntime {
     /// The ACP agents this host offers now: the ones it knows whose
     /// command is found.
@@ -642,19 +659,17 @@ impl ProfileRuntime {
     /// version, sign-in and what it can do; an agent whose command is no
     /// longer found leaves the entry. Run as the runtime starts and whenever
     /// the agents the config names change.
+    ///
+    /// Each agent is asked on its own task, all at once: asking starts the
+    /// agent's program and waits for its `initialize`, which takes seconds
+    /// for a real agent, so asked one after another the last agent a config
+    /// names would be listed only after every one before it had started.
+    /// Each agent's own lock still keeps to one ask of it at a time.
     pub(crate) fn refresh_agents(self: &Arc<Self>) {
-        let runtime = Arc::downgrade(self);
-        let ids: Vec<String> = self
-            .launch()
-            .agents
-            .iter()
-            .map(|program| program.id.clone())
-            .collect();
-        if ids.is_empty() {
-            return;
-        }
-        tokio::spawn(async move {
-            for id in ids {
+        for program in &self.launch().agents {
+            let runtime = Arc::downgrade(self);
+            let id = program.id.clone();
+            tokio::spawn(async move {
                 let Some(runtime) = runtime.upgrade() else {
                     return;
                 };
@@ -669,8 +684,8 @@ impl ProfileRuntime {
                         tracing::warn!(agent = id, %error, "asking an agent what it offers failed")
                     }
                 }
-            }
-        });
+            });
+        }
     }
 
     /// What the ACP agent `agent` offers on this host, and whether it is

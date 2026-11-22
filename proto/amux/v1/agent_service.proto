@@ -28,8 +28,11 @@ import "amux/v1/session.proto";
 // - A person may make every call.
 // - An agent may message any agent. Every other call naming an agent it
 //   may make only on its own direct children.
-// - An agent makes children with their kind's default settings only, and
-//   files them only as closed.
+// - An agent makes children whose model and effort it may pick from what
+//   this host offers, never kept as the person's picks, and whose
+//   permission it asks for only by level, never wider than its own; a
+//   provider's own arguments, modes and permission values are the
+//   person's. It files its children only as closed.
 
 service AgentService {
   // Makes an agent on this host. An agent that calls is its parent.

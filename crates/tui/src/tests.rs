@@ -1597,7 +1597,11 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
     let fleet = home_fleet();
     let refusal = |agent: &wire::Agent| crate::app::terminal_refusal(&fleet, agent, &config);
     assert_eq!(refusal(&agent(b"a", Kind::ClaudePty)), None);
-    assert_eq!(refusal(&agent(b"a", Kind::Codex)), None);
+    // Codex runs over a pipe on Windows, with no terminal to attach to.
+    assert_eq!(
+        refusal(&agent(b"a", Kind::Codex)),
+        cfg!(windows).then(|| "Codex has no terminal here".to_owned())
+    );
     assert!(refusal(&agent(b"a", Kind::ClaudeSdk)).is_some_and(|why| why.contains("no terminal")));
     // Every agent on another host is refused with the same reason: raw
     // attach reads the agent's directory on this machine. Home adds that

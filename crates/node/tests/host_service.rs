@@ -1185,6 +1185,9 @@ async fn an_acp_agents_pick_is_kept_once_the_agent_took_it() {
         Some("slow"),
         "the refused pick is not kept"
     );
+    // An agent outlives its daemon by design; one left running would
+    // outlive the test too.
+    kill_all(&runtime).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
@@ -1386,6 +1389,9 @@ async fn a_signed_out_acp_agent_waits_for_a_sign_in_and_the_entry_follows() {
         |seen| says_signed_in(seen, here, "mine") == Some(true),
     )
     .await;
+    // An agent outlives its daemon by design; one left running would
+    // outlive the test too.
+    kill_all(&runtime).await;
     drop((inventory, runtime));
     daemon.shutdown().await.unwrap();
 }

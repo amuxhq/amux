@@ -897,6 +897,14 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                             Some(wire::trusted::Reach::Away(_)) => "AWAY",
                             Some(wire::trusted::Reach::Offline(_)) => "OFFLINE",
                         },
+                        // The agents the host's entry offers to start, by
+                        // provider id: a host lists each ACP agent its
+                        // config adds only once it has asked it.
+                        "providers": host
+                            .providers
+                            .iter()
+                            .map(|offered| offered.provider_id.clone())
+                            .collect::<Vec<_>>(),
                     })
                 })
                 .collect();

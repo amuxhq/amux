@@ -788,6 +788,25 @@ impl Picker {
         }
     }
 
+    /// The choices as they stand now, for a list left open while what it
+    /// lists moves: a host's entry gains the ACP agents it has started one
+    /// by one, a host comes and goes, its folders or catalogue arrive. The
+    /// pointer stays on the choice it was on, and what is typed stays.
+    pub fn refresh(&mut self, choices: Vec<Choice>) {
+        if self.shape == Shape::Text || choices == self.choices {
+            return;
+        }
+        let shown = self.shown();
+        let on = shown
+            .get(self.selected.min(shown.len().saturating_sub(1)))
+            .map(|choice| choice.value.clone());
+        self.choices = choices;
+        let shown = self.shown();
+        self.selected = on
+            .and_then(|value| shown.iter().position(|choice| choice.value == value))
+            .unwrap_or_else(|| self.selected.min(shown.len().saturating_sub(1)));
+    }
+
     fn filtering(&self) -> bool {
         self.shape != Shape::List || self.choices.len() >= FILTERS_FROM
     }

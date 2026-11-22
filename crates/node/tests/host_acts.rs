@@ -489,11 +489,12 @@ async fn an_agent_acts_only_on_its_own_children_and_a_person_on_any() {
     host.stop().await;
 }
 
-/// An agent starts its children with their kind's defaults, never a
-/// permission mode or settings of its choosing, and files them only as
-/// closed; pinning one or filing it open again is the person's.
+/// An agent never names its children's permission or mode in the
+/// provider's own terms (it asks by level, settled against its own), and
+/// files them only as closed; pinning one or filing it open again is the
+/// person's.
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_starts_children_with_defaults_and_files_them_only_closed() {
+async fn an_agent_names_no_raw_permission_for_children_and_files_them_only_closed() {
     let mut setup = Setup::new();
     let mut mine = Vec::new();
     for who in EVERYONE {
@@ -526,9 +527,10 @@ async fn an_agent_starts_children_with_defaults_and_files_them_only_closed() {
             assert!(host.row(id).await.is_some(), "{who:?}");
         }
 
-        // An ACP child's program is the creator's to name, its settings
-        // are not. This host offers no ACP agent, so a create the rule lets
-        // through is refused for that instead.
+        // An ACP child's program and level are its creator's to name, its
+        // mode is not: a mode is the provider's own term for a permission.
+        // This host offers no ACP agent, so a create the rule lets through
+        // is refused for that instead.
         let acp = |mode: Option<&str>, name: &str| wire::CreateAgentRequest {
             agent: Some(wire::create_agent_request::Agent::Acp(
                 wire::AcpCreateConfig {

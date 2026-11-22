@@ -291,7 +291,11 @@ fun NewAgentScreen(
                                 showChevron = canPickHost,
                                 enabled = canPickHost,
                                 onClick = { activePicker = ActiveNewAgentPicker.Host },
-                                modifier = Modifier.testTag(NewAgentTags.HOST_ROW),
+                                // Read by what is chosen, as the other clients
+                                // report it; unchosen reads empty.
+                                modifier = Modifier
+                                    .semantics { reportedValue = state.selectedHost?.name.orEmpty() }
+                                    .testTag(NewAgentTags.HOST_ROW),
                             )
                             AmuxInsetHairline()
                             val hasDirectory = state.directory.isNotEmpty()
@@ -307,7 +311,9 @@ fun NewAgentScreen(
                                 showChevron = true,
                                 enabled = state.selectedHostId != null,
                                 onClick = { onAction(NewAgentAction.SetBrowsing(true)) },
-                                modifier = Modifier.testTag(NewAgentTags.DIRECTORY_ROW),
+                                modifier = Modifier
+                                    .semantics { reportedValue = state.directory }
+                                    .testTag(NewAgentTags.DIRECTORY_ROW),
                             )
                         }
 
@@ -383,7 +389,10 @@ fun NewAgentScreen(
                             showChevron = true,
                             enabled = true,
                             onClick = { activePicker = ActiveNewAgentPicker.Provider },
-                            modifier = Modifier.testTag(NewAgentTags.PROVIDER_ROW),
+                            // The provider's id, as the other clients report it.
+                            modifier = Modifier
+                                .semantics { reportedValue = state.provider.name.lowercase() }
+                                .testTag(NewAgentTags.PROVIDER_ROW),
                         )
                         var hasPrecedingRow = true
                         AmuxInsetHairline()

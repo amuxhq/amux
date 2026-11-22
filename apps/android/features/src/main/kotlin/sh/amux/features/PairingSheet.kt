@@ -96,12 +96,14 @@ fun PairingSheetContent(
     val headerTitle = pairingHeaderTitle(state)
     val headerSubtitle = pairingHeaderSubtitle(state)
 
+    val (sheetTag, sheetReading) = pairingSheetReading(state)
     Column(
         modifier = modifier
             .fillMaxWidth()
             .background(AmuxTheme.backdrop)
             .padding(bottom = Space.xl)
-            .testTag(TestTags.PAIRING_SHEET),
+            .semantics { reportedValue = sheetReading }
+            .testTag(sheetTag),
     ) {
         AmuxSheetHeader(
             title = headerTitle,
@@ -174,6 +176,24 @@ fun PairingSheetContent(
         }
     }
 }
+
+/**
+ * The sheet's name and reading as the other clients report them, which show
+ * the code and the device that answered as two pages: the code typed so far
+ * while it is being entered or checked, and once the device has answered,
+ * its name or how the pairing ended.
+ */
+internal fun pairingSheetReading(state: PairingSheetState): Pair<String, String> =
+    when (val phase = state.phase) {
+        PairingPhaseUi.Entering, PairingPhaseUi.NeedsSubscription -> TestTags.PIN_SHEET to state.digits
+        is PairingPhaseUi.Checking ->
+            if (phase.viaLink) TestTags.PAIR_CONFIRM_SHEET to "checking" else TestTags.PIN_SHEET to state.digits
+        is PairingPhaseUi.Refused ->
+            if (phase.viaLink) TestTags.PAIR_CONFIRM_SHEET to "refused" else TestTags.PIN_SHEET to state.digits
+        is PairingPhaseUi.Confirming -> TestTags.PAIR_CONFIRM_SHEET to phase.pending.name
+        is PairingPhaseUi.Trusted -> TestTags.PAIR_CONFIRM_SHEET to "trusted ${phase.name}"
+        is PairingPhaseUi.NeedsAccount -> TestTags.PAIR_NEEDS_ACCOUNT_SHEET to ""
+    }
 
 @Composable
 private fun pairingHeaderTitle(state: PairingSheetState): String {
@@ -320,7 +340,9 @@ private fun PinEntryContent(
             text = headline,
             style = typography.screenTitle,
             color = colors.ink,
-            modifier = Modifier.testTag(TestTags.PAIRING_TITLE),
+            modifier = Modifier
+                .semantics { reportedValue = headline }
+                .testTag(TestTags.PIN_TITLE),
         )
         Text(
             text = instruction,
@@ -427,7 +449,7 @@ private fun CodeEntry(
                         contentDescription = codeLabel
                         stateDescription = spokenDigits
                     }
-                    .testTag(TestTags.PAIRING_DIGITS),
+                    .testTag(TestTags.PIN_CODE),
             )
         }
 
@@ -436,7 +458,7 @@ private fun CodeEntry(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Space.s),
-                    modifier = Modifier.testTag(TestTags.PAIRING_CHECKING),
+                    modifier = Modifier.testTag(TestTags.PIN_CHECKING),
                 ) {
                     AmuxStateMark(state = RowState.Working, size = 10.dp)
                     Text(
@@ -456,7 +478,7 @@ private fun CodeEntry(
                     text = refusedMessage ?: fallback,
                     style = typography.detail,
                     color = colors.removed,
-                    modifier = Modifier.testTag(TestTags.PAIRING_REFUSED),
+                    modifier = Modifier.testTag(TestTags.PIN_REFUSED),
                 )
             }
             else -> {
@@ -469,6 +491,9 @@ private fun CodeEntry(
                     text = expiryText,
                     style = typography.detail,
                     color = colors.inkFaint,
+                    modifier = Modifier
+                        .semantics { reportedValue = state.offerWindow }
+                        .testTag(TestTags.PIN_EXPIRY),
                 )
             }
         }
@@ -537,17 +562,31 @@ private fun ConfirmPairingContent(
     val groupedFingerprint = remember(pending.fingerprint) {
         FingerprintFormat.grouped(pending.fingerprint)
     }
+    val headline = stringResource(R.string.pairing_headline_host, pending.name)
+    val fingerprintLabel = stringResource(R.string.pairing_fingerprint_label)
 
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+        // The device by its own name, read whether or not there is a line
+        // about it to show: it is what the person agrees to.
+        Column(
+            modifier = Modifier
+                .semantics {
+                    reportedLabel = about.ifEmpty { pending.name }
+                    reportedValue = pending.name
+                }
+                .testTag(TestTags.PAIR_CONFIRM_NAME),
+            verticalArrangement = Arrangement.spacedBy(Space.xs),
+        ) {
             Text(
-                text = stringResource(R.string.pairing_headline_host, pending.name),
+                text = headline,
                 style = typography.screenTitle,
                 color = colors.ink,
-                modifier = Modifier.testTag(TestTags.PAIRING_TITLE),
+                modifier = Modifier
+                    .semantics { reportedValue = headline }
+                    .testTag(TestTags.PAIR_CONFIRM_TITLE),
             )
             if (about.isNotEmpty()) {
                 Text(
@@ -562,6 +601,9 @@ private fun ConfirmPairingContent(
             text = stringResource(R.string.pairing_confirm_explain, expiry),
             style = typography.detail,
             color = colors.inkMuted,
+            modifier = Modifier
+                .semantics { reportedValue = expiry }
+                .testTag(TestTags.PAIR_CONFIRM_EXPIRY),
         )
 
         // The key, whole, for anybody who wants to check it against the
@@ -570,12 +612,15 @@ private fun ConfirmPairingContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = Space.s, bottom = Space.xs)
-                .semantics(mergeDescendants = true) {}
-                .testTag(TestTags.PAIRING_FINGERPRINT),
+                .semantics(mergeDescendants = true) {
+                    reportedLabel = fingerprintLabel
+                    reportedValue = groupedFingerprint
+                }
+                .testTag(TestTags.PAIR_CONFIRM_FINGERPRINT),
             verticalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
             Text(
-                text = stringResource(R.string.pairing_fingerprint_label),
+                text = fingerprintLabel,
                 style = typography.detail,
                 color = colors.inkMuted,
             )
@@ -594,14 +639,14 @@ private fun ConfirmPairingContent(
                 kind = ActionButtonKind.Primary,
                 fillWidth = true,
                 onClick = onConfirm,
-                modifier = Modifier.testTag(TestTags.PAIRING_CONFIRM),
+                modifier = Modifier.testTag(TestTags.PAIR_CONFIRM_TRUST),
             )
             AmuxActionButton(
                 label = stringResource(R.string.pairing_button_not_now),
                 kind = ActionButtonKind.Outline,
                 fillWidth = true,
                 onClick = onAbandon,
-                modifier = Modifier.testTag(TestTags.PAIRING_CANCEL),
+                modifier = Modifier.testTag(TestTags.PAIR_CONFIRM_ABANDON),
             )
         }
     }
@@ -613,7 +658,7 @@ private fun CheckingInvitationContent() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag(TestTags.PAIRING_CHECKING),
+            .testTag(TestTags.PAIR_CONFIRM_CHECKING),
         verticalArrangement = Arrangement.spacedBy(Space.s),
     ) {
         Row(
@@ -641,7 +686,7 @@ private fun TrustedContent(name: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag(TestTags.PAIRING_TRUSTED),
+            .testTag(TestTags.PAIR_CONFIRM_TRUSTED),
         verticalArrangement = Arrangement.spacedBy(Space.s),
     ) {
         Text(
@@ -666,7 +711,7 @@ private fun RefusedInvitationContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag(TestTags.PAIRING_REFUSED),
+            .testTag(TestTags.PAIR_CONFIRM_REFUSED),
         verticalArrangement = Arrangement.spacedBy(Space.m),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
@@ -692,7 +737,7 @@ private fun RefusedInvitationContent(
             kind = ActionButtonKind.Outline,
             fillWidth = true,
             onClick = onClose,
-            modifier = Modifier.testTag(TestTags.PAIRING_CANCEL),
+            modifier = Modifier.testTag(TestTags.PAIR_CONFIRM_BACK),
         )
     }
 }
@@ -733,14 +778,14 @@ private fun SubscribeCallToAction(
             kind = ActionButtonKind.Primary,
             fillWidth = true,
             onClick = onSubscribe,
-            modifier = Modifier.testTag(TestTags.PAIRING_SUBSCRIBE),
+            modifier = Modifier.testTag(TestTags.PIN_SUBSCRIBE),
         )
         AmuxActionButton(
             label = stringResource(R.string.pairing_button_not_now),
             kind = ActionButtonKind.Outline,
             fillWidth = true,
             onClick = onCancel,
-            modifier = Modifier.testTag(TestTags.PAIRING_CANCEL),
+            modifier = Modifier.testTag(TestTags.PIN_NOT_NOW),
         )
     }
 }
@@ -775,7 +820,7 @@ private fun NeedsAccountContent(
                     horizontalArrangement = Arrangement.spacedBy(Space.s),
                     modifier = Modifier
                         .thumbTarget()
-                        .testTag(TestTags.PAIRING_SIGN_IN),
+                        .testTag(TestTags.PAIR_NEEDS_ACCOUNT_SIGN_IN),
                 ) {
                     AmuxStateMark(state = RowState.Working, size = 10.dp)
                     Text(
@@ -790,7 +835,7 @@ private fun NeedsAccountContent(
                     kind = ActionButtonKind.Accent,
                     fillWidth = true,
                     onClick = onSignIn,
-                    modifier = Modifier.testTag(TestTags.PAIRING_SIGN_IN),
+                    modifier = Modifier.testTag(TestTags.PAIR_NEEDS_ACCOUNT_SIGN_IN),
                 )
             }
             AmuxActionButton(
@@ -798,7 +843,7 @@ private fun NeedsAccountContent(
                 kind = ActionButtonKind.Outline,
                 fillWidth = true,
                 onClick = onCancel,
-                modifier = Modifier.testTag(TestTags.PAIRING_CANCEL),
+                modifier = Modifier.testTag(TestTags.PAIR_NEEDS_ACCOUNT_CANCEL),
             )
             Text(
                 text = stringResource(R.string.pairing_needs_account_kept),

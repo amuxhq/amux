@@ -191,7 +191,7 @@ class ShellTest {
 
         // Back to Agents, open account switcher, push Settings
         composeRule.onNodeWithTag(TestTags.TAB_AGENTS).performClick()
-        composeRule.onNodeWithTag(TestTags.HOME_ACCOUNT_MENU).performClick()
+        composeRule.onNodeWithTag(TestTags.HOME_ACCOUNTS).performClick()
         composeRule.onNodeWithTag(TestTags.ACCOUNTS_SHEET).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.ACCOUNTS_SETTINGS).performClick()
 
@@ -243,7 +243,7 @@ class ShellTest {
 
         composeRule.waitForIdle()
         assertEquals(PairingModal.Code(laptopId), router.snapshot.pairing)
-        composeRule.onNodeWithTag(TestTags.PAIRING_SHEET).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.PIN_SHEET).assertIsDisplayed()
 
         // Closing the pairing sheet records declineWindow so it does not re-raise
         composeRule.onNodeWithTag(TestTags.PAIRING_CLOSE).performClick()
@@ -358,7 +358,7 @@ class ShellTest {
             }
         }
 
-        composeRule.onNodeWithTag(TestTags.PAIRING_CONFIRM).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.PAIR_CONFIRM_TRUST).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.PAIRING_CLOSE).performClick()
         composeRule.waitForIdle()
         composeRule.waitUntil(timeoutMillis = 2_000L) { abandoned.isNotEmpty() }
@@ -452,9 +452,9 @@ class ShellTest {
         }
 
         // Open conversation from AgentsHome
-        composeRule.onNodeWithTag(TestTags.homeRow("desk-work")).performClick()
+        composeRule.onNodeWithTag(TestTags.homeRow(agentRow.card.agent.agent)).performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SCREEN_CHAT).assertIsDisplayed()
         composeRule.onNodeWithText("Ready for the next step.").assertIsDisplayed()
 
         // Type and send a prompt
@@ -615,7 +615,7 @@ class ShellTest {
             }
         }
 
-        composeRule.onNodeWithTag(TestTags.homeRow("desk-review")).performClick()
+        composeRule.onNodeWithTag(TestTags.homeRow(agentRow.card.agent.agent)).performClick()
         composeRule.waitForIdle()
         testScope.runCurrent()
         composeRule.waitForIdle()
@@ -636,7 +636,7 @@ class ShellTest {
         // Back to the chat: the review page closes, the chat stays.
         composeRule.runOnIdle { router.pop() }
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SCREEN_CHAT).assertIsDisplayed()
         assertEquals(1, fakeChat.reviewCloses)
         nowMs += 10_000L
         testScope.advanceTimeBy(10_000L)
@@ -694,7 +694,7 @@ class ShellTest {
             stores.attach(null)
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SCREEN_CHAT).assertIsDisplayed()
         composeRule.onNodeWithText("Ready for the next step.").assertIsDisplayed()
     }
 
@@ -729,18 +729,18 @@ class ShellTest {
             }
         }
 
-        composeRule.onNodeWithTag(TestTags.HOME_LIST).performScrollToNode(hasTestTag(TestTags.homeRow("agent-30")))
-        composeRule.onNodeWithTag(TestTags.homeRow("agent-30")).performClick()
+        composeRule.onNodeWithTag(TestTags.HOME_LIST).performScrollToNode(hasTestTag(TestTags.homeRow(rows[30].card.agent.agent)))
+        composeRule.onNodeWithTag(TestTags.homeRow(rows[30].card.agent.agent)).performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SCREEN_CHAT).assertIsDisplayed()
 
         composeRule.onNodeWithTag(TestTags.NAV_BACK).performClick()
         composeRule.waitForIdle()
 
         // Back on the list, the row that was opened is still in view and the
         // top of the list is still scrolled away.
-        composeRule.onNodeWithTag(TestTags.homeRow("agent-30")).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.homeRow("agent-00")).assertDoesNotExist()
+        composeRule.onNodeWithTag(TestTags.homeRow(rows[30].card.agent.agent)).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.homeRow(rows[0].card.agent.agent)).assertDoesNotExist()
     }
 
     @Test
@@ -775,7 +775,7 @@ class ShellTest {
                 Shell(router = router, accounts = accounts, stores = stores, deviceName = "Pixel 9")
             }
         }
-        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SCREEN_CHAT).assertIsDisplayed()
         composeRule.waitForIdle()
 
         val before = composeRule.runOnIdle { recompositions() }
@@ -929,7 +929,7 @@ class ShellTest {
             }
         }
 
-        composeRule.onNodeWithTag(TestTags.HOME_FAB_NEW_AGENT).performClick()
+        composeRule.onNodeWithTag(TestTags.HOME_NEW_AGENT).performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag(NewAgentTags.SCREEN).assertIsDisplayed()
 
@@ -940,7 +940,7 @@ class ShellTest {
         assertEquals("/Users/ada/source/amux", createdRequests.single().cwd)
         assertEquals(Route.Conversation(createdKey), router.snapshot.topRoute)
         assertFalse(Route.NewAgent in router.snapshot.currentStack)
-        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SCREEN_CHAT).assertIsDisplayed()
     }
 
     @Test
@@ -1035,12 +1035,12 @@ class ShellTest {
             }
         }
 
-        composeRule.onNodeWithTag(TestTags.HOME_SETTLED_ROW).performClick()
+        composeRule.onNodeWithTag(TestTags.HOME_SETTLED).performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag(TestTags.SCREEN_SETTLED).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.settledRow("old-migration")).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.homeRow(settledKey.agent)).assertIsDisplayed()
 
-        composeRule.onNodeWithTag(TestTags.settledRow("old-migration")).performTouchInput { longClick() }
+        composeRule.onNodeWithTag(TestTags.homeRow(settledKey.agent)).performTouchInput { longClick() }
         composeRule.onNodeWithTag(TestTags.HOME_ACTION_UNSETTLE).performClick()
         composeRule.waitForIdle()
         assertEquals(listOf(AgentAct.Unfile to settledKey), acts)
@@ -1368,9 +1368,9 @@ class ShellTest {
         }
 
         // Relay-only invitation must show the sign-in prompt and must NOT start pairing.
-        composeRule.onNodeWithTag(TestTags.PAIRING_SIGN_IN).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.PAIR_NEEDS_ACCOUNT_SIGN_IN).assertIsDisplayed()
         assertEquals(0, pairCalls)
-        composeRule.onNodeWithTag(TestTags.PAIRING_SIGN_IN).performClick()
+        composeRule.onNodeWithTag(TestTags.PAIR_NEEDS_ACCOUNT_SIGN_IN).performClick()
         assertTrue(ShellAction.SignIn in actions)
 
         // Report overlay on the signed-out selected profile must show the signed-out notice and not send.

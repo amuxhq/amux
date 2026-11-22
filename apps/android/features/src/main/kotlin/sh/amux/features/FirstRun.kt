@@ -183,14 +183,14 @@ internal fun FirstRunContent(
                     for (host in state.discoveredHosts) {
                         val offer = rememberPairOffer(host = host, accountPro = state.accountPro)
                         val actionTag = when {
-                            offer.waiting -> TestTags.homeFound(host.name)
-                            offer.subscribe -> TestTags.homeSubscribe(host.name)
-                            else -> TestTags.homePair(host.name)
+                            offer.waiting -> TestTags.homeFound(host.hostId)
+                            offer.subscribe -> TestTags.homeSubscribe(host.hostId)
+                            else -> TestTags.homePair(host.hostId)
                         }
                         PairOfferCard(
                             host = host,
                             accountPro = state.accountPro,
-                            cardTestTag = TestTags.homeFound(host.name),
+                            cardTestTag = TestTags.homeFound(host.hostId),
                             actionTestTag = actionTag,
                             onPair = { onAction(HomeAction.Pair(host.hostId)) },
                             onSubscribe = { onAction(HomeAction.Subscribe) },

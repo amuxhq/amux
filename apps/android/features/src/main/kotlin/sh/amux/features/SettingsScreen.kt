@@ -59,6 +59,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,18 +77,18 @@ object SettingsTags {
     const val BACK: String = TestTags.NAV_BACK
     const val SCROLL: String = "settings.scroll"
 
-    const val SIGNED_OUT_CARD: String = "settings.accounts.signed-out"
-    const val SIGN_IN_BUTTON: String = "settings.accounts.sign-in"
-    const val ADD_ACCOUNT: String = "settings.accounts.add"
+    const val SIGNED_OUT_CARD: String = "you.signIn.caption"
+    const val SIGN_IN_BUTTON: String = "you.signIn"
+    const val ADD_ACCOUNT: String = "you.add"
     const val MANAGE_SUBSCRIPTION: String = "settings.account.subscription"
-    const val SIGN_OUT: String = "settings.account.sign-out"
+    const val SIGN_OUT: String = "you.signOut"
     const val REMOVE_ACCOUNT: String = "settings.account.remove"
     const val DELETE_ACCOUNT: String = "settings.account.delete"
 
-    const val APPEARANCE_GROUP: String = "settings.appearance"
-    const val APPEARANCE_LIGHT: String = "settings.appearance.light"
-    const val APPEARANCE_DARK: String = "settings.appearance.dark"
-    const val APPEARANCE_SYSTEM: String = "settings.appearance.system"
+    const val APPEARANCE_GROUP: String = "you.appearance"
+    const val APPEARANCE_LIGHT: String = "you.appearance.light"
+    const val APPEARANCE_DARK: String = "you.appearance.dark"
+    const val APPEARANCE_SYSTEM: String = "you.appearance.system"
 
     const val NOTIFICATIONS_CARD: String = "settings.notifications"
     const val NOTIFICATIONS_STATUS: String = "settings.notifications.status"
@@ -102,11 +103,11 @@ object SettingsTags {
     const val EXPORT_DIAGNOSTICS_STATUS: String = "settings.diagnostics.export.status"
     const val CONTACT_SUPPORT: String = "settings.diagnostics.support"
 
-    const val DEVICE_NAME_ROW: String = "settings.phone.name"
-    const val DEVICE_FINGERPRINT_ROW: String = "settings.phone.fingerprint"
-    const val APP_VERSION_ROW: String = "settings.phone.version"
+    const val DEVICE_NAME_ROW: String = "you.name"
+    const val DEVICE_FINGERPRINT_ROW: String = "you.fingerprint"
+    const val APP_VERSION_ROW: String = "you.version"
 
-    fun accountRow(email: String): String = "settings.account.row.$email"
+    fun accountRow(email: String): String = "account.$email"
     fun accountSignInAgain(email: String): String = "settings.account.sign-in-again.$email"
     fun accountWaiting(email: String): String = "settings.account.waiting.$email"
 }
@@ -233,7 +234,10 @@ fun SettingsScreen(
     val largeText = LocalDensity.current.fontScale >= 1.3f
     val scroll = rememberScrollState()
 
-    AmuxGround(modifier = modifier.testTag(SettingsTags.SCREEN)) {
+    // The page reads as the account it is of, as the other clients report
+    // it; TalkBack hears the account in its section instead.
+    val reading = state.selectedAccount?.email ?: "none"
+    AmuxGround(modifier = modifier.semantics { reportedValue = reading }.testTag(SettingsTags.SCREEN)) {
         Scaffold(
             containerColor = Color.Transparent,
             contentColor = colors.ink,
@@ -295,10 +299,16 @@ private fun AccountsSection(
                 AmuxInsetHairline(leadingInset = Space.l)
             }
             when {
+                // Where Sign In was, saying it is under way and not taking a
+                // second press, which would only be refused.
                 state.addingAccount -> WorkingInlineRow(
                     label = stringResource(R.string.settings_signing_in),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .semantics(mergeDescendants = true) {
+                            disabled()
+                            reportedValue = "signing in"
+                        }
                         .padding(horizontal = Space.l, vertical = Space.m)
                         .testTag(if (state.hasAccounts) SettingsTags.ADD_ACCOUNT else SettingsTags.SIGN_IN_BUTTON),
                 )
@@ -418,6 +428,15 @@ private fun SettingsAccountRow(
                 selected = account.selected
                 contentDescription = listOfNotNull(name, subtitle, spokenWaiting).joinToString(", ")
                 spokenState?.let { stateDescription = it }
+                // The account and its line, and where it stands, as the other
+                // clients report them; TalkBack hears the same in its own words.
+                reportedLabel = "$name, $subtitle"
+                reportedValue = when {
+                    account.signingIn -> "signing in"
+                    account.selected -> "selected"
+                    !account.needsSignInAgain -> "signed in"
+                    else -> "signed out"
+                }
                 // An account signed out of is the one most likely to be
                 // taken off the phone; its own section is only ever the
                 // selected account's.
@@ -728,6 +747,7 @@ private fun AppearanceRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = Space.l, vertical = Space.s)
+                .semantics { reportedValue = selected.name.lowercase() }
                 .testTag(SettingsTags.APPEARANCE_GROUP),
             verticalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
@@ -739,6 +759,7 @@ private fun AppearanceRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = Space.l, vertical = Space.xs)
+                .semantics { reportedValue = selected.name.lowercase() }
                 .testTag(SettingsTags.APPEARANCE_GROUP),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.m),

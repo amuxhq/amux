@@ -496,7 +496,12 @@ internal fun ChatRoute(
             onPin = { coroutineScope.launch { stores.pin(agent) } },
             onUnpin = { coroutineScope.launch { stores.unfile(agent) } },
             onRename = { newName -> coroutineScope.launch { stores.rename(newName, agent) } },
-            onSettle = { coroutineScope.launch { stores.close(agent) } },
+            // A settled agent is put away, so its chat goes with it, back to
+            // the list it was opened from, as on the iPhone.
+            onSettle = {
+                coroutineScope.launch { stores.close(agent) }
+                router.pop()
+            },
             onUnsettle = { coroutineScope.launch { stores.unfile(agent) } },
             onCancelSettle = { coroutineScope.launch { stores.cancelClose(agent) } },
             onDelete = { discardingChanges ->

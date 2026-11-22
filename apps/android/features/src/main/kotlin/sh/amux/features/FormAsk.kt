@@ -294,6 +294,9 @@ private fun FormFieldControl(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(AmuxTheme.metrics.controlRadius))
+                        // What the field will answer, as the other clients
+                        // report it; TalkBack hears the switch's own state.
+                        .semantics { reportedValue = checked.toString() }
                         .testTag(AskReviewTags.askField(field.name)),
                     contentPadding = PaddingValues(vertical = Space.xs),
                     colors = amuxSwitchColors(),
@@ -355,6 +358,8 @@ private fun FormFieldControl(
                             .semantics {
                                 contentDescription = fieldLabel
                                 stateDescription = chosenLabel
+                                // Unchosen reads empty, not the prompt to choose.
+                                reportedValue = chosenIndex?.let { kind.options.getOrNull(it) }.orEmpty()
                             }
                             .padding(horizontal = Space.l, vertical = Space.s)
                             .testTag(AskReviewTags.askField(field.name)),
@@ -415,6 +420,13 @@ private fun FormFieldControl(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        // The options picked, one a line, as the other
+                        // clients report them; each checkbox speaks its own.
+                        .semantics {
+                            reportedValue = kind.options
+                                .filterIndexed { optionIndex, _ -> optionIndex in picked }
+                                .joinToString("\n")
+                        }
                         .testTag(AskReviewTags.askField(field.name)),
                     verticalArrangement = Arrangement.spacedBy(Space.xs),
                 ) {

@@ -10,6 +10,7 @@ mod accessibility;
 mod android;
 mod common;
 mod device;
+mod driver;
 mod frame;
 mod perf;
 mod phone;

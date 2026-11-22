@@ -70,7 +70,7 @@ class RouterTest {
     @Test
     fun leaveAccountClearsStacksAndCodePairingButKeepsLinkInvitation() {
         val router = Router()
-        router.push(Route.Settings)
+        router.push(Route.Settled)
         router.presentPairing(PairingModal.Code(hostId))
         router.leaveAccount()
 
@@ -86,6 +86,17 @@ class RouterTest {
         router.presentPairing(PairingModal.Link(invitation))
         router.leaveAccount()
         assertEquals(PairingModal.Link(invitation), router.snapshot.pairing)
+    }
+
+    @Test
+    fun leaveAccountKeepsSettingsOpenToShowTheSignIn() {
+        val router = Router()
+        router.push(Route.Settled)
+        router.push(Route.Settings)
+        router.leaveAccount()
+
+        assertEquals(listOf<Route>(Route.Settings), router.snapshot.agentsStack)
+        assertEquals(Route.Settings, router.snapshot.topRoute)
     }
 
     @Test

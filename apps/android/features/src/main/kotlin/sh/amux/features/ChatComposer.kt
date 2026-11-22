@@ -437,6 +437,12 @@ private fun SignInNoticeCard(
     AmuxChrome(
         modifier = Modifier
             .fillMaxWidth()
+            // The notice's title as its name and what to do as its reading,
+            // the two parts a person reads apart; TalkBack hears both texts.
+            .semantics {
+                reportedLabel = title
+                reportedValue = detail
+            }
             .testTag(ChatComposerTags.SIGN_IN_NOTICE),
     ) {
         Row(
@@ -880,6 +886,12 @@ private fun DockTrayRow(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = DockRowHeight)
+            // The prompt and how it waits, read apart from the buttons
+            // beside them; TalkBack hears both in the column below.
+            .semantics {
+                reportedLabel = text
+                reportedValue = state
+            }
             .padding(horizontal = Space.l, vertical = Space.s),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.m),
@@ -1659,6 +1671,11 @@ private fun ExitedHeadLine(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // What stopped it, read apart from the machine it ran on.
+            .semantics {
+                reportedLabel = title
+                reportedValue = host
+            }
             .testTag(ChatComposerTags.EXITED_HEAD),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.s),

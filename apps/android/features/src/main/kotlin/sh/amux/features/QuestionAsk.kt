@@ -314,6 +314,15 @@ internal fun QuestionAskSection(
                                 }
                                 .heightIn(min = ThumbTarget.MinSize)
                                 .padding(horizontal = Space.m, vertical = Space.s)
+                                // Whether this step is done, as the other
+                                // clients report it; the summary says it aloud.
+                                .semantics {
+                                    reportedValue = when {
+                                        answered(index) -> "answered"
+                                        decided(index) -> "skipped"
+                                        else -> "open"
+                                    }
+                                }
                                 .testTag(AskReviewTags.askReview(index)),
                             verticalArrangement = Arrangement.spacedBy(Space.xxs),
                         ) {
@@ -731,6 +740,12 @@ private fun QuestionOptionRow(
                 if (isSelected) Modifier.border(1.5.dp, colors.ink, rowShape) else Modifier,
             )
             .then(choose)
+            // Picked or not, read the same for a radio and a checkbox; the
+            // option by its own words, without its detail.
+            .semantics {
+                reportedLabel = labelPlain
+                if (isSelected) reportedValue = "selected"
+            }
             .heightIn(min = ThumbTarget.MinSize)
             .padding(horizontal = Space.m + Space.xxs, vertical = 11.dp),
         verticalAlignment = Alignment.Top,

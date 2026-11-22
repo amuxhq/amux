@@ -61,7 +61,7 @@ class PairingSheetTest {
             }
         }
 
-        composeRule.onNodeWithTag(TestTags.PAIRING_DIGITS).performTextInput("418 207")
+        composeRule.onNodeWithTag(TestTags.PIN_CODE).performTextInput("418 207")
         assertEquals(PairingAction.Digits("418207"), actions.last())
     }
 
@@ -90,16 +90,16 @@ class PairingSheetTest {
             }
         }
 
-        composeRule.onNodeWithTag(TestTags.PAIRING_FINGERPRINT).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.PAIR_CONFIRM_FINGERPRINT).assertIsDisplayed()
         composeRule.onNodeWithText(FingerprintFormat.grouped(fingerprint)).assertIsDisplayed()
         // A direct dial to the laptop discovery found here stays Local, in
         // the header and the line under the name alike.
         composeRule.onNodeWithText("Local").assertIsDisplayed()
         composeRule.onNodeWithText("macOS · Local").assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.PAIRING_CONFIRM).performClick()
+        composeRule.onNodeWithTag(TestTags.PAIR_CONFIRM_TRUST).performClick()
         assertEquals(PairingAction.Confirm(pending), actions.last())
 
-        composeRule.onNodeWithTag(TestTags.PAIRING_CANCEL).performClick()
+        composeRule.onNodeWithTag(TestTags.PAIR_CONFIRM_ABANDON).performClick()
         assertEquals(PairingAction.Abandon(pending), actions.last())
     }
 

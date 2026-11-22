@@ -241,14 +241,21 @@ private fun OverviewPlaceHeader(
             closeModifier = Modifier.testTag(AskReviewTags.OVERVIEW_CLOSE),
         )
         val facts = buildList {
-            if (subject.host.isNotEmpty()) add(stringResource(R.string.overview_label_host) to subject.host)
-            if (subject.directory.isNotEmpty()) add(stringResource(R.string.overview_label_directory) to subject.directory)
-            if (!subject.branch.isNullOrEmpty()) add(stringResource(R.string.overview_label_branch) to subject.branch)
-            if (subject.address.isNotEmpty()) add(stringResource(R.string.overview_label_address) to subject.address)
+            if (subject.host.isNotEmpty()) add(PlaceFact(stringResource(R.string.overview_label_host), subject.host))
+            if (subject.directory.isNotEmpty()) {
+                add(PlaceFact(stringResource(R.string.overview_label_directory), subject.directory))
+            }
+            if (!subject.branch.isNullOrEmpty()) {
+                add(PlaceFact(stringResource(R.string.overview_label_branch), subject.branch, AskReviewTags.OVERVIEW_BRANCH))
+            }
+            if (subject.address.isNotEmpty()) add(PlaceFact(stringResource(R.string.overview_label_address), subject.address))
         }
         PlaceFacts(facts = facts, modifier = Modifier.padding(horizontal = Space.margin))
     }
 }
+
+/** One of the place's facts; [tag] names the ones a journey reads. */
+private data class PlaceFact(val label: String, val value: String, val tag: String? = null)
 
 /**
  * The place's facts as two columns: every label the widest label's width,
@@ -256,7 +263,7 @@ private fun OverviewPlaceHeader(
  */
 @Composable
 private fun PlaceFacts(
-    facts: List<Pair<String, String>>,
+    facts: List<PlaceFact>,
     modifier: Modifier = Modifier,
 ) {
     if (facts.isEmpty()) return
@@ -266,18 +273,24 @@ private fun PlaceFacts(
     val density = LocalDensity.current
     val labelWidth = remember(facts, labelStyle, density) {
         with(density) {
-            facts.maxOf { (label, _) -> measurer.measure(label, labelStyle).size.width }.toDp()
+            facts.maxOf { measurer.measure(it.label, labelStyle).size.width }.toDp()
         }
     }
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(Space.s),
     ) {
-        facts.forEach { (label, value) ->
+        facts.forEach { (label, value, tag) ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics(mergeDescendants = true) {},
+                    .semantics(mergeDescendants = true) {
+                        if (tag != null) {
+                            reportedLabel = label
+                            reportedValue = value
+                        }
+                    }
+                    .then(if (tag != null) Modifier.testTag(tag) else Modifier),
                 horizontalArrangement = Arrangement.spacedBy(Space.m),
             ) {
                 Text(

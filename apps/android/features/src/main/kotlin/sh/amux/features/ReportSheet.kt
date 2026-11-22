@@ -101,9 +101,11 @@ import sh.amux.words.RowState
  * Local test tags for [ReportOfferBanner], [ReportOverlay], and [ReportOverlayContent].
  */
 object ReportTags {
-    const val OFFER_BANNER: String = "report.prompt"
-    const val OFFER_OPEN: String = "report.prompt.open"
-    const val OFFER_DISMISS: String = "report.prompt.dismiss"
+    const val OFFER_BANNER: String = "report.offer"
+
+    /** The press that opens the report, named as on the other clients. */
+    const val OFFER_OPEN: String = "report.prompt"
+    const val OFFER_DISMISS: String = "report.offer.dismiss"
 
     const val OVERLAY: String = "report.screen"
     const val CLOSE: String = "report.cancel"
@@ -938,6 +940,13 @@ private fun ReportComposerDock(
                             .background(colors.sunken)
                             .border(AmuxTheme.metrics.hairline, colors.removed.copy(alpha = 0.45f), noteShape)
                             .padding(start = Space.m, end = Space.xs, top = Space.xs, bottom = Space.xs)
+                            // What happened and the account service's own
+                            // reason, read apart as the other clients report
+                            // them; TalkBack hears the one sentence.
+                            .semantics {
+                                reportedLabel = "Not sent"
+                                reportedValue = failed.reason
+                            }
                             .testTag(ReportTags.REFUSAL),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(Space.s),
@@ -1075,16 +1084,22 @@ private fun ReportSentContent(
     val typography = AmuxTheme.typography
     var copied by remember(referenceId) { mutableStateOf(false) }
     val copyLabel = stringResource(if (copied) R.string.report_copied else R.string.report_copy_reference)
+    val sentTitle = stringResource(R.string.report_sent_title)
 
     Column(
         modifier = modifier
             .padding(horizontal = Space.margin, vertical = Space.l)
             .windowInsetsPadding(WindowInsets.navigationBars)
+            // That it arrived, and the reference it arrived as.
+            .semantics {
+                reportedLabel = sentTitle
+                reportedValue = referenceId
+            }
             .testTag(ReportTags.SENT),
         verticalArrangement = Arrangement.spacedBy(Space.s),
     ) {
         Text(
-            text = stringResource(R.string.report_sent_title),
+            text = sentTitle,
             style = typography.screenTitle,
             color = colors.ink,
         )

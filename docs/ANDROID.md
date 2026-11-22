@@ -384,17 +384,30 @@ have no semantics and are not in it.
 
 ### Journeys and emulator
 
-`just android emulator` boots the pinned AVD (`amux-android-1`, Pixel 9,
-Android 36, `arm64-v8a`), disables window/transition/animator scales for
-deterministic settling and dismisses the keyguard. `just android journey` builds
-the debug APK and Rust test tools (`testnet`, `amux`, `provider-fakes`) and runs
-`testnet journey android`, which serves `journeys/topologies/phone-*.json` and
-drives the app through `DoorServer`. Like [the iPhone app](IOS.md#journeys),
-journeys verify both host-recorded backend outcomes and reviewed element
-geometry goldens under `journeys/goldens/android/<story>/` (with screenshots
-saved beside them under `target/journeys/android/<story>/actual/` for review,
-never pixel-diffed). `UPDATE_JOURNEY_GOLDENS=1` rewrites differing geometry for
-review before committing.
+`just android emulator` boots the pinned AVD (`amux-android-1`), first making
+it with `avdmanager` from the pinned system image
+(`system-images;android-36;google_apis;arm64-v8a`) and device (`pixel_9`)
+when it is missing or was made from anything else, since the goldens are
+geometry on that screen. It disables window/transition/animator scales for
+deterministic settling and dismisses the keyguard. No `wt` pool leases the
+emulator: one run at a time holds it through the journey's scratch lock.
+`just android journey` builds the debug APK and Rust test tools (`testnet`,
+`amux`, `provider-fakes`) and runs `testnet journey android`, which serves
+`journeys/topologies/phone-*.json` and drives the app through `DoorServer`.
+
+The stories are the iPhone's own: `phone_stories.rs` tells each shared story
+once, through a driver trait the iPhone and Android drivers both implement,
+and the Android app reports the same element identifiers, words and values
+as the iPhone app (a value is a node's `stateDescription`), so a story reads
+both. What the platforms do differently (reaching a tab or Settings, finding a
+machine on the network, asking for large text) is the driver's. The iPhone's
+own stories that Android does not tell, and why, are listed beside the shared
+ones. Like [the iPhone app](IOS.md#journeys), journeys verify both
+host-recorded backend outcomes and reviewed element geometry goldens under
+`journeys/goldens/android/<story>/` (with screenshots saved beside them under
+`target/journeys/android/<story>/actual/` for review, never pixel-diffed).
+`UPDATE_JOURNEY_GOLDENS=1` rewrites differing geometry for review before
+committing.
 
 ## Checks only a phone can make
 

@@ -669,7 +669,7 @@ private fun ChatScreenContent(
     AmuxGround(
         modifier = modifier
             .fillMaxSize()
-            .testTag(TestTags.SCREEN_CONVERSATION),
+            .testTag(TestTags.SCREEN_CHAT),
     ) {
         Scaffold(
             containerColor = Color.Transparent,
@@ -681,6 +681,7 @@ private fun ChatScreenContent(
                     scrolled = transcriptScrolled,
                     subject = state.subject,
                     placeLine = placeLine,
+                    detached = detached,
                     unconfirmed = detached || !state.subject.reachable,
                     changes = state.changes,
                     hasOverviewHighlights = state.hasOverviewHighlights,
@@ -984,7 +985,7 @@ fun ChatPlaceholderScreen(
     AmuxGround(
         modifier = modifier
             .fillMaxSize()
-            .testTag(TestTags.SCREEN_CONVERSATION),
+            .testTag(TestTags.SCREEN_CHAT),
     ) {
         Scaffold(
             containerColor = Color.Transparent,

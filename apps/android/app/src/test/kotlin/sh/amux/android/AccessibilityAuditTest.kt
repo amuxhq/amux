@@ -49,6 +49,7 @@ import sh.amux.design.AmuxDesign
 import sh.amux.design.AmuxTheme
 import sh.amux.design.Appearance
 import sh.amux.design.ThumbTarget
+import sh.amux.features.TestTags
 import sh.amux.testsupport.Stories
 import sh.amux.testsupport.Story
 
@@ -329,7 +330,7 @@ class AccessibilityAuditTest {
                     val clipped = bounds.width < own.width - CLIP_TOLERANCE_PX ||
                         bounds.height < own.height - CLIP_TOLERANCE_PX
                     val touchable = if (clipped) target.intersect(bounds) else target
-                    val floating = tag.startsWith(FLOATING_TAG_PREFIX)
+                    val floating = tag == FLOATING_TAG
                     if (touchable.width > 0f && touchable.height > 0f && !floating) {
                         targets += descriptor to touchable
                     }
@@ -517,7 +518,7 @@ class AccessibilityAuditTest {
          * design, and the list scrolls out from under it, so it is left out
          * of the overlap check.
          */
-        private const val FLOATING_TAG_PREFIX = "home.fab."
+        private const val FLOATING_TAG = TestTags.HOME_NEW_AGENT
 
         /** The test tags of a review's diff lines, drawn as a dense listing. */
         private const val DIFF_LINE_TAG_PREFIX = "review.line."

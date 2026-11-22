@@ -41,6 +41,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -61,14 +64,14 @@ import sh.amux.words.name
 
 /** Semantic test tags for account sign-in, removal, and deletion sheets and dialogs. */
 object AccountSheetTags {
-    const val SIGN_IN_OFFER_SHEET: String = "account.sign-in-offer.sheet"
-    const val SIGN_IN_OFFER_TITLE: String = "account.sign-in-offer.title"
-    const val SIGN_IN_OFFER_DETAIL: String = "account.sign-in-offer.detail"
-    const val SIGN_IN_OFFER_FAILURE: String = "account.sign-in-offer.failure"
-    const val SIGN_IN_OFFER_ACCEPT: String = "account.sign-in-offer.accept"
-    const val SIGN_IN_OFFER_DECLINE: String = "account.sign-in-offer.decline"
-    const val SIGN_IN_OFFER_WORKING: String = "account.sign-in-offer.working"
-    const val SIGN_IN_OFFER_CLOSE: String = "account.sign-in-offer.close"
+    const val SIGN_IN_OFFER_SHEET: String = "sign-in-offer"
+    const val SIGN_IN_OFFER_TITLE: String = "sign-in-offer.title"
+    const val SIGN_IN_OFFER_DETAIL: String = "sign-in-offer.detail"
+    const val SIGN_IN_OFFER_FAILURE: String = "sign-in-offer.failure"
+    const val SIGN_IN_OFFER_ACCEPT: String = "sign-in-offer.accept"
+    const val SIGN_IN_OFFER_DECLINE: String = "sign-in-offer.decline"
+    const val SIGN_IN_OFFER_WORKING: String = "sign-in-offer.working"
+    const val SIGN_IN_OFFER_CLOSE: String = "sign-in-offer.close"
 
     const val SIGN_IN_RESULT_DIALOG: String = "account.sign-in-result.dialog"
     const val SIGN_IN_RESULT_TITLE: String = "account.sign-in-result.title"
@@ -195,6 +198,14 @@ fun SignInOfferSheetContent(
             .background(AmuxTheme.backdrop)
             .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(bottom = Space.xl)
+            // Which way the offer goes, as the other clients report it; the
+            // headline says it aloud.
+            .semantics {
+                reportedValue = when (state.prompt) {
+                    is SignInOfferPromptUi.Offered -> "offered"
+                    is SignInOfferPromptUi.Offering -> "offering"
+                }
+            }
             .testTag(AccountSheetTags.SIGN_IN_OFFER_SHEET),
     ) {
         AmuxSheetHeader(
@@ -900,10 +911,12 @@ fun AccountSwitcherContent(
             } else {
                 stringResource(R.string.accounts_signed_out_tap)
             }
+            val selectedDesc = stringResource(R.string.accounts_selected)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 56.dp)
+                    .testTag(TestTags.accountRow(account.email))
                     .clickable(role = Role.Button) {
                         if (account.signedIn) {
                             onSelectAccount(account.id)
@@ -911,8 +924,19 @@ fun AccountSwitcherContent(
                             onSignInAgain(account.id)
                         }
                     }
-                    .padding(horizontal = Space.margin, vertical = Space.s)
-                    .testTag(TestTags.accountRow(account.email)),
+                    // The row is named by the account's name alone, as a
+                    // menu item is, and says the rest as its state: what it
+                    // is picked by stays one word whatever the line under it
+                    // says. The disc's initials only repeat the name.
+                    .clearAndSetSemantics {
+                        contentDescription = account.name
+                        stateDescription = listOfNotNull(
+                            detail,
+                            selectedDesc.takeIf { account.selected },
+                        ).joinToString(", ")
+                        selected = account.selected
+                    }
+                    .padding(horizontal = Space.margin, vertical = Space.s),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Space.m),
             ) {
@@ -940,7 +964,6 @@ fun AccountSwitcherContent(
                     )
                 }
                 if (account.selected) {
-                    val selectedDesc = stringResource(R.string.accounts_selected)
                     Icon(
                         imageVector = Icons.Outlined.Check,
                         contentDescription = selectedDesc,

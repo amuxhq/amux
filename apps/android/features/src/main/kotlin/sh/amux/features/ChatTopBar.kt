@@ -61,6 +61,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -125,6 +126,7 @@ internal fun ChatTopBar(
     scrolled: Boolean,
     subject: ChatSubject,
     placeLine: String,
+    detached: Boolean,
     unconfirmed: Boolean,
     changes: ChangeTotals?,
     hasOverviewHighlights: Boolean,
@@ -147,6 +149,13 @@ internal fun ChatTopBar(
     val moreLabel = stringResource(R.string.action_more)
     val openOverviewDesc = stringResource(R.string.chat_header_open_overview)
     val titleSpoken = stringResource(R.string.chat_title_spoken, subject.name, placeLine, openOverviewDesc)
+    // Whether the chat is current, as every client reports it: dialling its
+    // machine reads detached whatever the machine's reach.
+    val headerReading = when {
+        detached -> "detached"
+        subject.reachable -> "live"
+        else -> "away"
+    }
     var menuExpanded by remember { mutableStateOf(false) }
     val fill by animateColorAsState(
         targetValue = if (scrolled) colors.barScrolled else colors.ground,
@@ -187,6 +196,8 @@ internal fun ChatTopBar(
                             .semantics {
                                 heading()
                                 contentDescription = titleSpoken
+                                reportedLabel = subject.name
+                                reportedValue = subject.name
                             }
                             .padding(vertical = Space.xs)
                             .testTag(ChatScreenTags.TITLE),
@@ -203,7 +214,17 @@ internal fun ChatTopBar(
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(Space.xs),
-                                modifier = Modifier.testTag(ChatScreenTags.HEADER),
+                                // Its own element, so the place line and
+                                // whether the chat is current can be read on
+                                // their own; hidden from TalkBack, which hears
+                                // the place in the title's description.
+                                modifier = Modifier
+                                    .semantics(mergeDescendants = true) {
+                                        hideFromAccessibility()
+                                        reportedLabel = placeLine
+                                        reportedValue = headerReading
+                                    }
+                                    .testTag(ChatScreenTags.HEADER),
                             ) {
                                 if (unconfirmed) {
                                     AmuxStateMark(

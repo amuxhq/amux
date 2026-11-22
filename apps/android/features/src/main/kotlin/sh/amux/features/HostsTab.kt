@@ -209,14 +209,14 @@ private fun HostsListContent(
                     for (host in state.discovered) {
                         val offer = rememberPairOffer(host = host, accountPro = state.accountPro)
                         val actionTag = when {
-                            offer.waiting -> TestTags.hostsFound(host.name)
-                            offer.subscribe -> TestTags.hostsSubscribe(host.name)
-                            else -> TestTags.hostsPair(host.name)
+                            offer.waiting -> TestTags.hostsFound(host.hostId)
+                            offer.subscribe -> TestTags.hostsSubscribe(host.hostId)
+                            else -> TestTags.hostsPair(host.hostId)
                         }
                         PairOfferCard(
                             host = host,
                             accountPro = state.accountPro,
-                            cardTestTag = TestTags.hostsFound(host.name),
+                            cardTestTag = TestTags.hostsFound(host.hostId),
                             actionTestTag = actionTag,
                             onPair = { onAction(HostsAction.Pair(host.hostId)) },
                             onSubscribe = { onAction(HostsAction.Subscribe) },
@@ -277,7 +277,7 @@ private fun HostRowItem(
             .clickable(role = Role.Button, onClick = onClick)
             .semantics(mergeDescendants = true) { contentDescription = spoken }
             .padding(horizontal = Space.l, vertical = Space.m)
-            .testTag(TestTags.hostsRow(host.name)),
+            .testTag(TestTags.hostsRow(host.hostId)),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.m),
     ) {

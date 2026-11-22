@@ -43,6 +43,33 @@ R5CR123456\tdevice
             ],
         )
 
+    def test_pinned_avd_is_recognised_by_its_image_and_device(self) -> None:
+        config = self.mod.parse_avd_config(
+            "abi.type=arm64-v8a\n"
+            "hw.device.name=pixel_9\n"
+            "image.sysdir.1=system-images/android-36/google_apis/arm64-v8a/\n"
+        )
+        self.assertTrue(self.mod.made_as_pinned(config))
+        self.assertFalse(self.mod.made_as_pinned({**config, "hw.device.name": "pixel_8"}))
+        self.assertFalse(self.mod.made_as_pinned(
+            {**config, "image.sysdir.1": "system-images/android-35/google_apis/arm64-v8a/"}
+        ))
+        self.assertFalse(self.mod.made_as_pinned({}))
+
+    def test_avd_is_created_from_the_pinned_image_and_device(self) -> None:
+        self.assertEqual(
+            self.mod.avd_create_command("/sdk/avdmanager", "amux-android-1"),
+            [
+                "/sdk/avdmanager", "create", "avd", "--force", "--name", "amux-android-1",
+                "--package", "system-images;android-36;google_apis;arm64-v8a",
+                "--device", "pixel_9",
+            ],
+        )
+        self.assertEqual(
+            self.mod.image_dir(Path("/sdk")),
+            Path("/sdk/system-images/android-36/google_apis/arm64-v8a"),
+        )
+
     def test_parse_avd_name_output(self) -> None:
         self.assertEqual(
             self.mod.parse_avd_name_output("amux-android-1\r\nOK\r\n"),

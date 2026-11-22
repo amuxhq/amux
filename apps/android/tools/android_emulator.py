@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Boot, pin, and manage the pinned Android emulator AVD (`amux-android-1`).
 
-Ensures the pinned AVD is booted headless, waits for Android boot completion
+Creates the AVD with `avdmanager` from the pinned system image and device
+when it is missing or was made from anything else, so every machine's
+journeys draw on the same screen. Ensures the pinned AVD is booted headless, waits for Android boot completion
 and PackageManager readiness, disables system window/transition/animator
 scales for deterministic settling, dismisses the keyguard, and prints a
 machine-parseable summary line containing the adb serial (`emulator-5554`).
@@ -18,6 +20,10 @@ import sys
 import time
 
 PINNED_AVD = "amux-android-1"
+# What the AVD is made from. Journey goldens are geometry in dp on this
+# screen, so a different device or image is a different set of goldens.
+PINNED_IMAGE = "system-images;android-36;google_apis;arm64-v8a"
+PINNED_DEVICE = "pixel_9"
 PACKAGE_ID = "sh.amux.android"
 DEFAULT_GPU = "auto"
 DEFAULT_BOOT_TIMEOUT_SECONDS = 240
@@ -102,6 +108,66 @@ def run_cmd(*command: str, timeout: int = 60, check: bool = True) -> subprocess.
         capture_output=True,
         timeout=timeout,
     )
+
+
+def avdmanager_path(sdk_root: Path) -> str:
+    return find_tool(sdk_root, "cmdline-tools/latest/bin/avdmanager", "avdmanager")
+
+
+def sdkmanager_path(sdk_root: Path) -> str:
+    return find_tool(sdk_root, "cmdline-tools/latest/bin/sdkmanager", "sdkmanager")
+
+
+def image_dir(sdk_root: Path, image: str = PINNED_IMAGE) -> Path:
+    """The directory an SDK package path (`system-images;…;…`) installs to."""
+    return sdk_root.joinpath(*image.split(";"))
+
+
+def parse_avd_config(text: str) -> dict[str, str]:
+    """An AVD's `config.ini` as its keys and values."""
+    config: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        key, sep, value = raw_line.partition("=")
+        if sep:
+            config[key.strip()] = value.strip()
+    return config
+
+
+def made_as_pinned(config: dict[str, str], image: str = PINNED_IMAGE, device: str = PINNED_DEVICE) -> bool:
+    """Whether an AVD's config says it was made from the pinned image and device."""
+    sysdir = config.get("image.sysdir.1", "").strip("/")
+    return sysdir == "/".join(image.split(";")) and config.get("hw.device.name") == device
+
+
+def avd_config(avd: str) -> dict[str, str] | None:
+    path = Path.home() / ".android" / "avd" / f"{avd}.avd" / "config.ini"
+    if not path.is_file():
+        return None
+    return parse_avd_config(path.read_text(encoding="utf-8", errors="replace"))
+
+
+def avd_create_command(avdmanager: str, avd: str, image: str = PINNED_IMAGE, device: str = PINNED_DEVICE) -> list[str]:
+    return [avdmanager, "create", "avd", "--force", "--name", avd, "--package", image, "--device", device]
+
+
+def ensure_avd(sdk_root: Path, emulator: str, avd: str) -> None:
+    """Make `avd` from the pinned image and device unless it already is."""
+    config = avd_config(avd) if avd in list_avds(emulator) else None
+    if config is not None and made_as_pinned(config):
+        return
+    if not image_dir(sdk_root).is_dir():
+        run_cmd(sdkmanager_path(sdk_root), "--install", PINNED_IMAGE, timeout=1800)
+    # avdmanager asks whether to make a custom hardware profile; the pinned
+    # device's own is the one wanted.
+    subprocess.run(
+        avd_create_command(avdmanager_path(sdk_root), avd),
+        input="no\n",
+        check=True,
+        text=True,
+        capture_output=True,
+        timeout=300,
+    )
+    print(f"android ({avd}): created from {PINNED_IMAGE} on {PINNED_DEVICE}", flush=True)
 
 
 def list_avds(emulator: str) -> list[str]:
@@ -196,6 +262,8 @@ def ensure_booted(
     adb = adb_path(sdk_root)
     emulator = emulator_path(sdk_root)
 
+    if avd == PINNED_AVD:
+        ensure_avd(sdk_root, emulator, avd)
     avds = list_avds(emulator)
     if avd not in avds:
         available = ", ".join(avds) if avds else "(none)"

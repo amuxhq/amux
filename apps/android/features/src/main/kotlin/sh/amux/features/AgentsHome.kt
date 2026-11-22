@@ -272,7 +272,13 @@ fun AgentsHome(
                         AmuxAccountAvatar(
                             account = state.selectedAccount,
                             onClick = { onAction(HomeAction.OpenAccountMenu) },
-                            modifier = Modifier.testTag(TestTags.HOME_ACCOUNT_MENU),
+                            // Whose fleet this is, said on the control that
+                            // changes it: the title does not carry it.
+                            modifier = Modifier
+                                .testTag(TestTags.HOME_ACCOUNTS)
+                                .semantics {
+                                    state.selectedAccount?.let { stateDescription = it.name }
+                                },
                         )
                     }
                 }
@@ -304,7 +310,7 @@ fun AgentsHome(
                         // The tag goes first: semantics after the clear
                         // would be cleared with the rest.
                         modifier = Modifier
-                            .testTag(TestTags.HOME_FAB_NEW_AGENT)
+                            .testTag(TestTags.HOME_NEW_AGENT)
                             .clearAndSetSemantics {
                                 contentDescription = newAgentLabel
                                 role = Role.Button
@@ -682,8 +688,7 @@ private fun FleetListContent(
                         namesHosts = namesHosts,
                         now = nowInstant,
                         showDivider = index < closedRows.lastIndex,
-                        rowTag = TestTags.settledRow(row.name),
-                        onOpen = { onOpenRow(row) },
+                                                onOpen = { onOpenRow(row) },
                         onOpenMenu = { onOpenRowMenu(row) },
                         onMenuAction = { action -> onRowMenuAction(row, action) },
                         onToggleFamily = { onToggleFamily(row) },
@@ -772,8 +777,8 @@ private fun AgentListRow(
     onOpenMenu: () -> Unit,
     onMenuAction: (RowMenuAction) -> Unit,
     onToggleFamily: () -> Unit,
-    rowTag: String = TestTags.homeRow(row.name),
 ) {
+    val rowTag = TestTags.homeRow(row.id.agent)
     val colors = AmuxTheme.colors
     val typography = AmuxTheme.typography
     val density = LocalDensity.current
@@ -1126,7 +1131,7 @@ private fun SettledHeadRow(
                 .clickable(role = Role.Button, onClick = onClick)
                 .semantics(mergeDescendants = true) { contentDescription = title }
                 .padding(horizontal = Space.margin, vertical = Space.m)
-                .testTag(TestTags.HOME_SETTLED_ROW),
+                .testTag(TestTags.HOME_SETTLED),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(modifier = Modifier.width(AgentMarkColumn), contentAlignment = Alignment.CenterStart) {
@@ -1170,8 +1175,8 @@ private fun rememberHomeCallouts(state: AgentsHomeState): List<HomeCallout> {
             detail = offer.detail,
             icon = pairOfferIcon(offer),
             buttonLabel = offer.buttonLabel,
-            cardTestTag = TestTags.homeFound(host.name),
-            actionTestTag = if (offer.subscribe) TestTags.homeSubscribe(host.name) else TestTags.homePair(host.name),
+            cardTestTag = TestTags.homeFound(host.hostId),
+            actionTestTag = if (offer.subscribe) TestTags.homeSubscribe(host.hostId) else TestTags.homePair(host.hostId),
             action = if (offer.waiting) null else {
                 if (offer.subscribe) HomeAction.Subscribe else HomeAction.Pair(host.hostId)
             },

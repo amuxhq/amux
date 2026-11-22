@@ -84,18 +84,20 @@ class HostsTabTest {
             }
         }
 
-        composeRule.onNodeWithTag(TestTags.hostsFound("laptop")).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.hostsFound("imac")).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.hostsRow("desk")).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.hostsRow("studio")).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.hostsRow("mini")).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.hostsRow("pi")).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.hostsFound(foundOpen.hostId)).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.hostsFound(foundClosed.hostId)).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.hostsRow(desk.hostId)).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.hostsRow(studio.hostId)).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.hostsRow(away.hostId)).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.hostsRow(offline.hostId)).assertIsDisplayed()
 
-        composeRule.onNodeWithTag(TestTags.hostsPair("laptop")).performClick()
+        composeRule.onNodeWithTag(TestTags.hostsPair(foundOpen.hostId)).performClick()
         assertEquals(HostsAction.Pair(foundOpen.hostId), actions.last())
 
-        composeRule.onNodeWithTag(TestTags.hostsRow("desk")).performClick()
+        composeRule.onNodeWithTag(TestTags.hostsRow(desk.hostId)).performClick()
         assertEquals(HostsAction.Open(desk.hostId), actions.last())
+        // Named by the device's id, as the journeys address it on every client.
+        assertEquals("hosts.row.01010101-0101-0101-0101-010101010101", TestTags.hostsRow(desk.hostId))
     }
 
     /**
@@ -118,11 +120,11 @@ class HostsTabTest {
         composeRule.onNodeWithText("macOS · Local").assertIsDisplayed()
         composeRule.onNodeWithText("macOS · Direct").assertIsDisplayed()
         composeRule.onNodeWithText("macOS · Relayed").assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.hostsRow("desk"))
+        composeRule.onNodeWithTag(TestTags.hostsRow(desk.hostId))
             .assertContentDescriptionContains("desk, macOS, connected, local")
-        composeRule.onNodeWithTag(TestTags.hostsRow("studio"))
+        composeRule.onNodeWithTag(TestTags.hostsRow(studio.hostId))
             .assertContentDescriptionContains("studio, macOS, connected, direct")
-        composeRule.onNodeWithTag(TestTags.hostsRow("build"))
+        composeRule.onNodeWithTag(TestTags.hostsRow(build.hostId))
             .assertContentDescriptionContains("build, macOS, connected, relayed")
     }
 }

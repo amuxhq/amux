@@ -790,6 +790,9 @@ fun AmuxRadioRow(
                 role = Role.RadioButton,
                 onClick = onClick,
             )
+            // A choice is picked by its title alone, as a menu item is; its
+            // detail is said but is not its name.
+            .semantics { reportedLabel = title }
             .heightIn(min = ThumbTarget.MinSize)
             .padding(horizontal = Space.s, vertical = Space.s),
         verticalAlignment = Alignment.CenterVertically,

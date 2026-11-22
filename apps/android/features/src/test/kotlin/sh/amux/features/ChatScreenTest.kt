@@ -49,6 +49,7 @@ import sh.amux.values.Filing
 import sh.amux.values.FleetCard
 import sh.amux.values.Kind
 import sh.amux.values.ModelChoice
+import sh.amux.values.Offline
 import sh.amux.values.Overview
 import sh.amux.values.PhaseView
 import sh.amux.values.Reach
@@ -61,6 +62,8 @@ import sh.amux.values.SettingsView
 import sh.amux.values.TaskLine
 import sh.amux.values.TaskMark
 import sh.amux.values.TasksView
+import sh.amux.values.Waiting
+import sh.amux.testsupport.DoorReading
 import sh.amux.values.ProsePart
 import sh.amux.testsupport.plainMarkdown
 import sh.amux.testsupport.prosePart
@@ -198,7 +201,7 @@ class ChatScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag(TestTags.SCREEN_CONVERSATION).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SCREEN_CHAT).assertIsDisplayed()
         composeRule.onNodeWithTag(ChatScreenTags.TITLE).assertIsDisplayed()
         composeRule.onNodeWithText("refactor-auth").assertIsDisplayed()
         composeRule.onNodeWithTag(ChatScreenTags.HELD_STOP).assertIsDisplayed()
@@ -218,6 +221,44 @@ class ChatScreenTest {
         // Changes chip opens review
         composeRule.onNodeWithTag(ChatScreenTags.CHANGES).performClick()
         assertTrue(openedReview)
+    }
+
+    /**
+     * The journeys check that a chat is current by its header, and read its
+     * name after a rename by its title, as on the other clients.
+     */
+    @Test
+    fun titleAndHeaderReadAsTheJourneysCheckThem() {
+        var subject by mutableStateOf(ChatSubject(name = "helper", host = "desk", directory = "/Users/ada/source/amux"))
+        var mode by mutableStateOf<Composer>(Composer.Send)
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, photographed = true) {
+                ChatScreen(
+                    state = ChatScreenState(
+                        subject = subject,
+                        keys = emptyList(),
+                        frame = baseFrame(name = "helper", mode = mode),
+                    ),
+                    rowSource = StaticChatRowSource(emptyList()),
+                    callbacks = ChatScreenCallbacks(),
+                )
+            }
+        }
+        fun read(tag: String) = composeRule.onNodeWithTag(tag).fetchSemanticsNode()
+            .let { DoorReading.label(it) to DoorReading.value(it) }
+
+        composeRule.onNodeWithTag(TestTags.SCREEN_CHAT).assertIsDisplayed()
+        assertEquals("helper" to "helper", read(ChatScreenTags.TITLE))
+        assertEquals("live", read(ChatScreenTags.HEADER).second)
+
+        subject = subject.copy(reach = Reach.Offline(Offline.Plain))
+        composeRule.waitForIdle()
+        assertEquals("desk · away" to "away", read(ChatScreenTags.HEADER))
+
+        subject = subject.copy(reach = Reach.Online(RouteKind.Direct))
+        mode = Composer.Waiting(Waiting.Detached)
+        composeRule.waitForIdle()
+        assertEquals("detached", read(ChatScreenTags.HEADER).second)
     }
 
     @Test

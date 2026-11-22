@@ -166,15 +166,18 @@ class Router(
     /**
      * Clears per-account stacks and code-based pairing sheets when the active
      * account changes. Link-based invitations survive account switches because
-     * signing in is how a relay-only invitation is taken up.
+     * signing in is how a relay-only invitation is taken up. Settings is the
+     * phone's, not an account's, and is where a person signs in or switches,
+     * so it stays open over the new account's fleet to show the outcome.
      */
     fun leaveAccount() {
         val current = _state.value
-        val removed = current.agentsStack + current.hostsStack
+        fun kept(stack: List<Route>) = if (Route.Settings in stack) listOf(Route.Settings) else emptyList()
+        val removed = (current.agentsStack + current.hostsStack).filter { it != Route.Settings }
         _state.update { state ->
             state.copy(
-                agentsStack = emptyList(),
-                hostsStack = emptyList(),
+                agentsStack = kept(state.agentsStack),
+                hostsStack = kept(state.hostsStack),
                 accountSheetOpen = false,
                 pairing = if (state.pairing is PairingModal.Code) null else state.pairing,
             )

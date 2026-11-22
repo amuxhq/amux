@@ -15,6 +15,7 @@ import androidx.compose.ui.text.AnnotatedString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
+import sh.amux.testsupport.DoorReading
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -181,12 +182,15 @@ class AgentsHomeTest {
             }
         }
 
-        composeRule.onNodeWithTag(TestTags.HOME_FAB_NEW_AGENT).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.homeRow("release-notes")).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.HOME_SETTLED_ROW).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.HOME_NEW_AGENT).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.homeRow(askRow.card.agent.agent)).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.HOME_SETTLED).assertIsDisplayed()
+        // The account disc reads as whose fleet it is, by name.
+        val accounts = composeRule.onNodeWithTag(TestTags.HOME_ACCOUNTS).fetchSemanticsNode()
+        assertEquals("Ada", DoorReading.value(accounts))
 
         // Tap a row to open conversation
-        composeRule.onNodeWithTag(TestTags.homeRow("release-notes")).performClick()
+        composeRule.onNodeWithTag(TestTags.homeRow(askRow.card.agent.agent)).performClick()
         assertEquals(HomeAction.Open(askRow.card.agent), actions.last())
 
         // Tap family toggle
@@ -211,7 +215,7 @@ class AgentsHomeTest {
             }
         }
 
-        composeRule.onNodeWithTag(TestTags.homeRow("release-notes")).performTouchInput { longClick() }
+        composeRule.onNodeWithTag(TestTags.homeRow(askRow.card.agent.agent)).performTouchInput { longClick() }
         composeRule.onNodeWithTag(TestTags.HOME_ROW_ACTIONS_SHEET).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.HOME_ACTION_PIN).performClick()
         assertEquals(HomeAction.Pin(askRow.card.agent), actions.last())
@@ -241,7 +245,7 @@ class AgentsHomeTest {
             }
         }
 
-        composeRule.onNodeWithTag(TestTags.homeRow("migration")).performTouchInput { longClick() }
+        composeRule.onNodeWithTag(TestTags.homeRow(workingRow.card.agent.agent)).performTouchInput { longClick() }
         composeRule.onNodeWithTag(TestTags.HOME_ACTION_SETTLE).performClick()
         composeRule.onNodeWithTag(TestTags.HOME_SETTLE_CONFIRM).assertIsDisplayed().performClick()
         assertEquals(HomeAction.Settle(workingRow.card.agent), actions.last())
@@ -264,8 +268,8 @@ class AgentsHomeTest {
         }
 
         composeRule.onNodeWithTag(TestTags.HOME_EMPTY_FIRST_RUN).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.HOME_FAB_NEW_AGENT).assertDoesNotExist()
-        composeRule.onNodeWithTag(TestTags.homePair("laptop")).assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag(TestTags.HOME_NEW_AGENT).assertDoesNotExist()
+        composeRule.onNodeWithTag(TestTags.homePair(laptop.hostId)).assertIsDisplayed().performClick()
         assertEquals(HomeAction.Pair(laptop.hostId), actions.last())
     }
 
@@ -285,7 +289,7 @@ class AgentsHomeTest {
         }
 
         composeRule.onNodeWithTag(TestTags.HOME_EMPTY_NO_AGENTS).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.HOME_FAB_NEW_AGENT).assertDoesNotExist()
+        composeRule.onNodeWithTag(TestTags.HOME_NEW_AGENT).assertDoesNotExist()
         composeRule.onNodeWithTag(TestTags.HOME_EMPTY_NEW_AGENT).performClick()
         assertEquals(HomeAction.NewAgent, actions.last())
         composeRule.onNodeWithText("No agents yet").assertIsDisplayed()

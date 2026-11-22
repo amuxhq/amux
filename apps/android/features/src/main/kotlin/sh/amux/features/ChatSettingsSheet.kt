@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import sh.amux.design.AmuxHairline
 import sh.amux.design.AmuxPanel
@@ -228,7 +229,9 @@ private fun ModelsSection(
                             warn = false,
                             enabled = true,
                             onClick = { if (!choice.current) onPick(choice.value) },
-                            modifier = Modifier.testTag(AskReviewTags.chatSettingsModel(choice.value)),
+                            modifier = Modifier
+                                .testTag(AskReviewTags.chatSettingsModel(choice.value))
+                                .reportedCurrent(choice.current),
                         )
                     }
                 }
@@ -331,7 +334,9 @@ private fun PermissionsSection(
                                         onPick(choice.value)
                                     }
                                 },
-                                modifier = Modifier.testTag(AskReviewTags.chatSettingsPermission(choice.value)),
+                                modifier = Modifier
+                                    .testTag(AskReviewTags.chatSettingsPermission(choice.value))
+                                    .reportedCurrent(choice.current),
                             )
                         }
                     }
@@ -455,7 +460,9 @@ private fun ModesSection(
                                 onPick(choice.value)
                             }
                         },
-                        modifier = Modifier.testTag(AskReviewTags.chatSettingsMode(choice.value)),
+                        modifier = Modifier
+                            .testTag(AskReviewTags.chatSettingsMode(choice.value))
+                            .reportedCurrent(choice.current),
                     )
                 }
             }
@@ -548,3 +555,7 @@ private fun CommandsSection(
         }
     }
 }
+
+/** The radio a setting is now on, read as the other clients report it. */
+private fun Modifier.reportedCurrent(current: Boolean): Modifier =
+    if (current) semantics { reportedValue = "current" } else this

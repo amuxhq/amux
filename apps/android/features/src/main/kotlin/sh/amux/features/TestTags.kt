@@ -15,13 +15,13 @@ object TestTags {
     const val HOME_SCREEN: String = "home"
     const val HOME_LIST: String = "home.list"
     const val HOME_SUBTITLE: String = "home.subtitle"
-    const val HOME_FAB_NEW_AGENT: String = "home.fab.new-agent"
+    const val HOME_NEW_AGENT: String = "home.newAgent"
     const val HOME_SEARCH_TOGGLE: String = "home.search.toggle"
     const val HOME_SEARCH: String = "home.search"
     const val HOME_SEARCH_CLEAR: String = "home.search.clear"
     const val HOME_SEARCH_CLOSE: String = "home.search.close"
-    const val HOME_ACCOUNT_MENU: String = "home.account-menu"
-    const val HOME_SETTLED_ROW: String = "home.settled-row"
+    const val HOME_ACCOUNTS: String = "home.accounts"
+    const val HOME_SETTLED: String = "home.settled"
     const val HOME_NO_MATCHES: String = "home.no-matches"
     const val HOME_NO_MATCHES_CLEAR: String = "home.no-matches.clear"
     const val HOME_EMPTY_FIRST_RUN: String = "home.empty.first-run"
@@ -74,19 +74,33 @@ object TestTags {
     const val HOST_REVOKE_BUTTON: String = "host.revoke"
     const val HOST_REVOKE_CONFIRM: String = "host.revoke.confirm"
 
-    // Pairing sheet
-    const val PAIRING_SHEET: String = "pairing.sheet"
-    const val PAIRING_TITLE: String = "pairing.title"
-    const val PAIRING_DIGITS: String = "pairing.digits"
-    const val PAIRING_CHECKING: String = "pairing.checking"
-    const val PAIRING_REFUSED: String = "pairing.refused"
-    const val PAIRING_FINGERPRINT: String = "pairing.fingerprint"
-    const val PAIRING_CONFIRM: String = "pairing.confirm"
-    const val PAIRING_CANCEL: String = "pairing.cancel"
-    const val PAIRING_CLOSE: String = "pairing.close"
-    const val PAIRING_TRUSTED: String = "pairing.trusted"
-    const val PAIRING_SIGN_IN: String = "pairing.sign-in"
-    const val PAIRING_SUBSCRIBE: String = "pairing.subscribe"
+    // Pairing sheet. It is one sheet here, named by what it shows as the
+    // other clients name their pages: the code being entered and checked
+    // (`pin`), the device that answered to be trusted or an invitation being
+    // checked (`pair-confirm`), and an invitation that needs an account.
+    const val PAIRING_CLOSE: String = "pair.close"
+    const val PIN_SHEET: String = "pin"
+    const val PIN_TITLE: String = "pin.title"
+    const val PIN_CODE: String = "pin.code"
+    const val PIN_CHECKING: String = "pin.checking"
+    const val PIN_REFUSED: String = "pin.refused"
+    const val PIN_EXPIRY: String = "pin.expiry"
+    const val PIN_SUBSCRIBE: String = "pin.subscribe"
+    const val PIN_NOT_NOW: String = "pin.notNow"
+    const val PAIR_CONFIRM_SHEET: String = "pair-confirm"
+    const val PAIR_CONFIRM_TITLE: String = "pair-confirm.title"
+    const val PAIR_CONFIRM_NAME: String = "pair-confirm.name"
+    const val PAIR_CONFIRM_EXPIRY: String = "pair-confirm.expiry"
+    const val PAIR_CONFIRM_FINGERPRINT: String = "pair-confirm.fingerprint"
+    const val PAIR_CONFIRM_TRUST: String = "pair-confirm.trust"
+    const val PAIR_CONFIRM_ABANDON: String = "pair-confirm.abandon"
+    const val PAIR_CONFIRM_TRUSTED: String = "pair-confirm.trusted"
+    const val PAIR_CONFIRM_CHECKING: String = "pair-confirm.checking"
+    const val PAIR_CONFIRM_REFUSED: String = "pair-confirm.refused"
+    const val PAIR_CONFIRM_BACK: String = "pair-confirm.back"
+    const val PAIR_NEEDS_ACCOUNT_SHEET: String = "pair-needs-account"
+    const val PAIR_NEEDS_ACCOUNT_SIGN_IN: String = "pair-needs-account.signIn"
+    const val PAIR_NEEDS_ACCOUNT_CANCEL: String = "pair-needs-account.cancel"
 
     // Store failure
     const val STORE_FAILURE_SCREEN: String = "store-failure"
@@ -95,27 +109,33 @@ object TestTags {
     const val STORE_FAILURE_RELAUNCH: String = "store-failure.relaunch"
 
     // Detail routes
-    const val SCREEN_CONVERSATION: String = "screen.conversation"
+    const val SCREEN_CHAT: String = "chat"
     const val SCREEN_CHANGES: String = "screen.changes"
     const val SCREEN_HOST: String = "screen.host"
     const val SCREEN_NEW_AGENT: String = "screen.new-agent"
-    const val SCREEN_SETTINGS: String = "screen.settings"
+    const val SCREEN_SETTINGS: String = "you"
     const val SCREEN_SETTLED: String = "settled"
     const val SETTLED_BACK: String = "settled.back"
     const val SCREEN_PAYWALL: String = "screen.paywall"
 
-    fun homeRow(name: String): String = "home.row.$name"
-    fun settledRow(name: String): String = "settled.row.$name"
+    // Rows and offers are named by the id of the agent or device they stand
+    // for, never its name: a name changes on rename and two devices may share
+    // one, and the phone journeys address the same element on every client by
+    // the id the topology handed out.
+
+    /** An agent's row, on the Agents list and on the Settled page alike. */
+    fun homeRow(agent: List<Int>): String = "home.row.${uuidText(agent)}"
     fun homeFamily(name: String): String = "home.family.$name"
     fun homeFilter(kind: String): String = "home.filter.$kind"
-    fun homeFound(name: String): String = "home.found.$name"
-    fun homePair(name: String): String = "home.pair.$name"
-    fun homeSubscribe(name: String): String = "home.subscribe.$name"
+    fun homeFound(host: List<Int>): String = "home.found.${uuidText(host)}"
+    fun homePair(host: List<Int>): String = "home.pair.${uuidText(host)}"
+    fun homeSubscribe(host: List<Int>): String = "home.subscribe.${uuidText(host)}"
 
-    fun accountRow(email: String): String = "accounts.row.$email"
+    /** An account in the switcher sheet, by its email as in Settings. */
+    fun accountRow(email: String): String = "account.$email"
 
-    fun hostsRow(name: String): String = "hosts.row.$name"
-    fun hostsFound(name: String): String = "hosts.found.$name"
-    fun hostsPair(name: String): String = "hosts.pair.$name"
-    fun hostsSubscribe(name: String): String = "hosts.subscribe.$name"
+    fun hostsRow(host: List<Int>): String = "hosts.row.${uuidText(host)}"
+    fun hostsFound(host: List<Int>): String = "hosts.found.${uuidText(host)}"
+    fun hostsPair(host: List<Int>): String = "hosts.pair.${uuidText(host)}"
+    fun hostsSubscribe(host: List<Int>): String = "hosts.subscribe.${uuidText(host)}"
 }

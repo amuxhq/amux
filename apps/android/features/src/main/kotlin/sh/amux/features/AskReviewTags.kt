@@ -60,6 +60,7 @@ object AskReviewTags {
     const val OVERVIEW_SHEET: String = "chat.overview"
     const val OVERVIEW_CLOSE: String = "chat.overview.close"
     const val OVERVIEW_PLACE: String = "chat.place"
+    const val OVERVIEW_BRANCH: String = "chat.overview.branch"
     const val OVERVIEW_STOP_DIALOG: String = "chat.overview.stop.dialog"
     const val OVERVIEW_STOP_CONFIRM: String = "chat.overview.stop"
     const val OVERVIEW_STOP_CANCEL: String = "chat.overview.stop-cancel"

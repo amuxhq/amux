@@ -70,6 +70,7 @@ import sh.amux.testsupport.CloudScript
 import sh.amux.testsupport.DoorArgs
 import sh.amux.testsupport.DoorCodec
 import sh.amux.testsupport.DoorFound
+import sh.amux.testsupport.DoorReading
 import sh.amux.testsupport.DoorReply
 import sh.amux.testsupport.DoorRequest
 import sh.amux.testsupport.ScriptedCloudService
@@ -274,6 +275,8 @@ internal object DoorHost {
     }
 
     fun isExtendedRequest(kind: String, obj: JsonObject): Boolean = when (kind) {
+        "choose",
+        "perform",
         "clear",
         "paste",
         "scroll",
@@ -298,6 +301,18 @@ internal object DoorHost {
     suspend fun handleExtended(kind: String, obj: JsonObject): String =
         withContext(Dispatchers.Main.immediate) {
             when (kind) {
+                "choose" -> {
+                    val label = obj.optionalString("label")
+                        ?: return@withContext encodeError("choose requires 'label'")
+                    DoorCodec.encodeReply(choose(label))
+                }
+                "perform" -> {
+                    val id = obj.optionalString("identifier") ?: obj.optionalString("id")
+                        ?: return@withContext encodeError("perform requires 'identifier'")
+                    val action = obj.optionalString("action")
+                        ?: return@withContext encodeError("perform requires 'action'")
+                    DoorCodec.encodeReply(perform(id, action))
+                }
                 "clear" -> {
                     val id = obj.optionalString("identifier") ?: obj.optionalString("id")
                         ?: return@withContext encodeError("clear requires 'identifier'")
@@ -553,8 +568,8 @@ internal object DoorHost {
                 width = bounds.width / density,
                 height = bounds.height / density,
             )
-            val label = extractLabel(node)
-            val value = extractValue(node)
+            val label = DoorReading.label(node)
+            val value = DoorReading.value(node)
             val enabled = SemanticsProperties.Disabled !in node.config
             val selected = node.config.getOrNull(SemanticsProperties.Selected)
             out.add(
@@ -571,49 +586,6 @@ internal object DoorHost {
         for (child in node.children) {
             collectVisibleElements(child, offsetX, offsetY, density, out)
         }
-    }
-
-    private fun extractLabel(node: SemanticsNode): String? {
-        val direct = directLabelParts(node)
-        if (direct.isNotEmpty()) {
-            return direct.joinToString(", ")
-        }
-        val nested = mutableListOf<String>()
-        collectDescendantText(node, nested, maxDepth = 6)
-        return nested.distinct().takeIf { it.isNotEmpty() }?.joinToString(", ")
-    }
-
-    private fun directLabelParts(node: SemanticsNode): List<String> {
-        val parts = mutableListOf<String>()
-        node.config.getOrNull(SemanticsProperties.ContentDescription)
-            ?.filter { it.isNotBlank() }
-            ?.let { parts.addAll(it) }
-        node.config.getOrNull(SemanticsProperties.Text)
-            ?.map { it.text }
-            ?.filter { it.isNotBlank() }
-            ?.let { parts.addAll(it) }
-        return parts.distinct()
-    }
-
-    private fun collectDescendantText(
-        node: SemanticsNode,
-        out: MutableList<String>,
-        maxDepth: Int,
-    ) {
-        if (maxDepth <= 0) return
-        for (child in node.children) {
-            val childParts = directLabelParts(child)
-            out.addAll(childParts)
-            if (child.config.getOrNull(SemanticsProperties.TestTag).isNullOrEmpty()) {
-                collectDescendantText(child, out, maxDepth - 1)
-            }
-        }
-    }
-
-    private fun extractValue(node: SemanticsNode): String? {
-        val editable = node.config.getOrNull(SemanticsProperties.EditableText)?.text
-        if (editable != null) return editable
-        return node.config.getOrNull(SemanticsProperties.StateDescription)
     }
 
     private fun findByTag(identifier: String): LocatedNode? {
@@ -682,6 +654,68 @@ internal object DoorHost {
             up.recycle()
         }
         awaitFrame()
+        return DoorReply.Ack
+    }
+
+    /**
+     * Presses the item a person reads as [label] in whatever menu, sheet,
+     * dialog or picker is up, as the iPhone door presses a menu item, an
+     * alert's button or a tab by its title. The topmost window is searched
+     * first so a menu outranks the screen under it; within a window an
+     * element reported under that label wins over a node merely holding the
+     * words, so a row named "ada" is pressed rather than a caption reading it.
+     */
+    private suspend fun choose(label: String): DoorReply {
+        settle()
+        for ((_, rootForTest) in composeRoots().asReversed()) {
+            val root = rootForTest.semanticsOwner.rootSemanticsNode
+            val target = findNodeInSubtree(root) { node ->
+                !node.config.getOrNull(SemanticsProperties.TestTag).isNullOrEmpty() &&
+                    DoorReading.label(node) == label &&
+                    pressable(node) != null
+            } ?: findNodeInSubtree(root) { node ->
+                DoorReading.parts(node).contains(label) && pressable(node) != null
+            } ?: continue
+            val press = pressable(target)!!
+            if (SemanticsProperties.Disabled in press.config) {
+                return DoorReply.Error("$label is disabled")
+            }
+            val action = press.config.getOrNull(SemanticsActions.OnClick)?.action
+            if (action == null || !action.invoke()) {
+                return DoorReply.Error("$label did not take the press")
+            }
+            awaitFrame()
+            settle()
+            return DoorReply.Ack
+        }
+        return DoorReply.Error("nothing on screen reads $label")
+    }
+
+    /** The node itself or its nearest ancestor that takes a press. */
+    private fun pressable(node: SemanticsNode): SemanticsNode? {
+        var current: SemanticsNode? = node
+        while (current != null) {
+            if (current.config.getOrNull(SemanticsActions.OnClick) != null) return current
+            current = current.parent
+        }
+        return null
+    }
+
+    /** Runs the element's accessibility action named [action], as TalkBack offers it. */
+    private suspend fun perform(identifier: String, action: String): DoorReply {
+        settle()
+        val located = findByTag(identifier)
+            ?: return DoorReply.Error("no element named $identifier")
+        val actions = located.node.config.getOrNull(SemanticsActions.CustomActions).orEmpty()
+        val named = actions.firstOrNull { it.label == action }
+            ?: return DoorReply.Error(
+                "$identifier offers no action named $action; it offers ${actions.map { it.label }}",
+            )
+        if (!named.action()) {
+            return DoorReply.Error("$action on $identifier did not run")
+        }
+        awaitFrame()
+        settle()
         return DoorReply.Ack
     }
 

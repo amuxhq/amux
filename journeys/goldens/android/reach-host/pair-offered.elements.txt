@@ -8,8 +8,8 @@ home.empty.sign-in | Sign In |  | 183,314,64,48
 home.accounts | Switch Account |  | 367,70,32,32
 tab.agents | Agents | selected | 0,819,202,80
 tab.hosts | Devices |  | 210,819,202,80
-pin | Pair desk, Local, Close, Pair with desk?, Enter the code amux shows on desk., Code, The code expires 5 minutes after desk prints it. |  | 0,616,411,260
-pair.close | Close |  | 363,620,48,48
-pin.title | Pair with desk? | Pair with desk? | 16,688,179,32
-pin.code | Code |  | 16,767,379,58
-pin.expiry | The code expires 5 minutes after desk prints it. | 5 minutes | 16,841,316,18
+pin | Pair desk, Local, Close, Pair with desk?, Enter the code amux shows on desk., Code, The code expires 5 minutes after desk prints it. |  | 0,347,411,260
+pair.close | Close |  | 363,352,48,48
+pin.title | Pair with desk? | Pair with desk? | 16,419,179,32
+pin.code | Code |  | 16,499,379,58
+pin.expiry | The code expires 5 minutes after desk prints it. | 5 minutes | 16,573,316,18

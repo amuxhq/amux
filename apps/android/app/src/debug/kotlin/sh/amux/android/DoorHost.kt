@@ -14,9 +14,12 @@ import android.view.MotionEvent
 import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.view.inspector.WindowInspector
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.node.RootForTest
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -1193,9 +1196,10 @@ internal object DoorHost {
     // --- Frame settling & screen capture -----------------------------------
 
     private suspend fun settle() {
+        awaitFrame()
+        awaitFrame()
+        awaitKeyboard()
         val deadline = SystemClock.elapsedRealtime() + 2_000L
-        awaitFrame()
-        awaitFrame()
         var quietFrames = 0
         while (SystemClock.elapsedRealtime() < deadline && quietFrames < 2) {
             val roots = composeRoots()
@@ -1205,6 +1209,29 @@ internal object DoorHost {
             } else {
                 quietFrames += 1
             }
+            awaitFrame()
+        }
+    }
+
+    /**
+     * Waits for the keyboard a focused text field has asked for. A field that
+     * takes focus by itself (the pairing keypad does) raises the keyboard a
+     * beat later, from another process; until it is up the layout is quiet,
+     * so without this a screen is pictured with the keyboard up or down by
+     * chance. Bounded, since a field keeps its focus after Back lowers the
+     * keyboard and then nothing more comes; the layout loop after this waits
+     * out the keyboard's rise.
+     */
+    private suspend fun awaitKeyboard() {
+        val keyboard = activityRef?.get()?.getSystemService(InputMethodManager::class.java) ?: return
+        val deadline = SystemClock.elapsedRealtime() + 1_500L
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val waiting = composeRoots().any { (view, _) ->
+                val editor = view.findFocus()?.takeIf { it.onCheckIsTextEditor() && keyboard.isActive(it) }
+                editor != null &&
+                    ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime()) != true
+            }
+            if (!waiting) return
             awaitFrame()
         }
     }

@@ -764,11 +764,11 @@ The allowed sets encode the layering above:
 | `qualification` | `node`, `provider-fakes`, `pty-host`, `redaction`, `testnet`, `wire` | the live lane and the performance workloads over the harness; its probes host terminal Claude on a pseudo-terminal of their own and sanitize what they record |
 | `xtask` | `release` | signs releases |
 | `installer` | `agent-dir`, `release`, `settings` | finds the front door from the settings, checks a download against the manifest, and waits on the local socket, without the daemon |
-| `ios-tools` | `app-runtime`, `ui-state`, `ui-view`, `wire` | generates the Swift mirrors |
+| `ios-tools` | `app-runtime`, `ui-state`, `ui-view`, `wire` | generates the Swift and Kotlin mirrors and the markdown fixtures |
 
 The phone bridge (`app-embedded`, `app-bridge`, `app-ffi`, `app-jni`) links `node` on purpose: it
 hosts the runtime in process. `just mobile-check` checks
-that provider-free graph for iOS and Android.
+that provider-free graph for iOS, and `just android check` for Android.
 
 ### The rustls patch
 

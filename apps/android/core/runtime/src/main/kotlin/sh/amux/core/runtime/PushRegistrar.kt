@@ -34,7 +34,7 @@ interface PushRegistrar {
     suspend fun settled()
 }
 
-/** Default v1 [PushRegistrar] when push delivery is not yet active. */
+/** The [PushRegistrar] when Firebase is unavailable (a build without `google-services.json`, or a test): it registers nothing. */
 class NoOpPushRegistrar : PushRegistrar {
     override fun updateAccounts(accounts: List<PushAccount>) = Unit
     override fun updatePermitted(permitted: Boolean) = Unit

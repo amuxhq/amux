@@ -51,7 +51,7 @@ the toolchain `rust-toolchain.toml` pins, the formatting nightly, `just`,
 runs one recipe in it. [`nix/toolchain.nix`](../nix/toolchain.nix) is the
 list, and `flake.lock` pins every tool in it, so two machines on the same
 revision get the same tools. `nix profile install .#toolchain` installs the
-same list onto the PATH of every shell, for a machine that should simply have
+same list onto the PATH of every shell, for a machine that should always have
 it.
 
 The shell has no rustup, so it provides the nightly's cargo as
@@ -132,15 +132,16 @@ The recipes a build or change usually needs:
 | `just codegen-check` | Fails if the committed protobuf output is stale |
 | `just mobile-check` | Check the provider-free client graph for iOS |
 | `just android check` | Check the provider-free client and JNI bridge graph for Android (`cargo-ndk`) |
-| `just android lint` | Check Android writing rules, string inventory, and generated Kotlin mirrors |
+| `just android lint` | Check Android writing rules and the string inventory |
 | `just android graph-check` | Prove the `app-jni` graph carries no provider, host, schema, or test crate |
 | `just android unit` | Build the host JNI library and run all Android JVM and Robolectric unit suites |
 | `just android build` | Build the Android JNI library and debug APK |
 | `just android storybook` | Render the headless Robolectric/Roborazzi PNG gallery into `target/android/storybook/index.html` |
 | `just android journey` | Drive the Android debug APK on `amux-android-1` against real daemons and relay (`testnet journey android`) |
 | `just android accessibility` | Run the Android Robolectric Compose semantics, bounds, 48 dp touch-target, heading and WCAG contrast-token audit (`AccessibilityAuditTest`) |
-| `just android scope-audit` | Build the Release APK and verify no debug surfaces or `debug-tools` symbols ship and SQLite is bundled |
-| `just android verify` | Run the full ordered Android verification sequence (lint, script tests, graph check, unit, storybook, scope audit, journeys, accessibility) |
+| `just android scope-audit` | Build the Release APK and verify, from R8's mapping and the library's symbols, that no debug surfaces or `debug-tools` symbols ship and SQLite is bundled |
+| `just android release-smoke` | Run the launch smoke test on the minified Release APK on an emulator or phone |
+| `just android verify` | Run the full ordered Android verification sequence (lint, graph check, script tests, unit with the accessibility audit, storybook, scope audit, release launch, journeys) |
 | `just premerge` | The quick checks before a change reaches main; see [CI](CI.md) |
 | `just ci` | The whole check sequence; see [CI](CI.md) |
 
@@ -175,8 +176,8 @@ and the Kotlin mirrors the Android app reads
 `apps/android/push/src/main/kotlin/sh/amux/push/Said.kt`) are generated from
 the same Rust definitions by `cargo run -p ios-tools -- swift-types` and
 `cargo run -p ios-tools -- kotlin-types`. Unit tests in the `ios-tools` crate,
-run by `just test`, fail when the committed files differ from what the
-generators write.
+run by `just test` and `just premerge`, fail when the committed files differ
+from what the generators write.
 
 ## Worktrees
 

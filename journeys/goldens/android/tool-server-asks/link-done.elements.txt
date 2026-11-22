@@ -1,26 +1,26 @@
 shell |  |  | 0,0,411,923
-screen.conversation |  |  | 0,0,411,923
-chat.feed |  |  | 0,119,411,572
-chat.row.prompt:<id> |  |  | 16,131,379,52
-chat.row.kind.prompt |  |  | 16,131,379,40
-markdown.root | Check the relay's error rate. |  | 182,141,199,20
-chat.row.exec-<run>0000000000000003 |  |  | 16,183,379,54
-chat.row.run | Used 1 tool, Expand, Used 1 tool |  | 16,183,379,54
-chat.row.ask:1 |  |  | 16,237,379,60
-chat.row.kind.link | Opened link from, grafana, Expand, Opened link from, grafana |  | 16,237,379,48
-chat.row.msg_<run>0000000000000004 |  |  | 16,298,379,32
-chat.row.kind.prose |  |  | 16,298,379,20
-markdown.root | I'll read the dashboards another way. |  | 16,298,379,20
-chat.row.turn:1 | Worked for <t> |  | 16,330,379,28
+chat |  |  | 0,0,411,923
+chat.feed |  |  | 0,118,411,674
+chat.row.prompt:<id> |  |  | 16,130,379,52
+chat.row.kind.prompt |  |  | 16,130,379,40
+markdown.root | Check the relay's error rate. |  | 182,140,199,20
+chat.row.exec-<run>0000000000000003 |  |  | 16,182,379,48
+chat.row.run | Used 1 tool |  | 16,182,379,48
+chat.row.ask:1 |  |  | 16,230,379,48
+chat.row.kind.link | Opened link from, grafana |  | 16,230,379,48
+chat.row.msg_<run>0000000000000004 |  |  | 16,278,379,32
+chat.row.kind.prose |  |  | 16,278,379,20
+markdown.root | I'll read the dashboards another way. |  | 16,278,379,20
+chat.row.turn:1 | Worked for <t> |  | 16,310,379,30
 chat.row.turn-end | <volatile>
-chat.composer | Reply, Attach, Dictate, Send |  | 12,699,387,192
-chat.field | Reply |  | 28,714,355,48
-chat.controls | Chat Settings, gpt-fake · medium, gpt-fake · medium |  | 28,773,355,48
-chat.model | Chat Settings, gpt-fake · medium, gpt-fake · medium |  | 28,773,167,48
-chat.attach | Attach |  | 28,831,48,48
-chat.dictate | Dictate |  | 283,831,48,48
-chat.send | Send |  | 335,831,48,48 (disabled)
-chat.topBar | Back, linker, /p/t/a/n/d/work · desk, Open Overview, linker, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
-nav.back | Back |  | 4,62,48,48
-chat.title | linker, /p/t/a/n/d/work · desk, Open Overview, linker, /p/t/a/n/d/work · desk |  | 56,62,299,48
-chat.more | More Options |  | 359,62,48,48
+chat.composer | Reply, Attach, Chat Settings, gpt-fake · medium, gpt-fake · medium, Dictate, Send |  | 12,796,387,94
+chat.field | Reply |  | 28,796,355,36
+chat.attach | Attach |  | 21,837,48,48
+chat.model | Chat Settings, gpt-fake · medium, gpt-fake · medium |  | 70,837,148,48
+chat.dictate | Dictate |  | 287,837,48,48
+chat.send | Send |  | 342,837,48,48 (disabled)
+chat.topBar | Back, linker, /p/t/a/n/d/work · desk, Open Overview, linker, More |  | 0,0,411,118
+nav.back | Back |  | 8,66,40,40
+chat.title | linker | linker | 56,62,299,48
+chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
+chat.more | More |  | 363,66,40,40

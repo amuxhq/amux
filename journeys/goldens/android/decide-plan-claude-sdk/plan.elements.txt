@@ -1,20 +1,18 @@
 shell |  |  | 0,0,411,923
-screen.conversation |  |  | 0,0,411,923
-chat.feed |  |  | 0,119,411,402
-chat.row.<id> |  |  | 16,131,379,52
-chat.row.kind.prompt |  |  | 16,131,379,40
-markdown.root | Move the journal. |  | 254,141,127,20
-chat.row.toolu_fake<run>0000000000000006 |  |  | 16,183,379,181
-chat.row.kind.plan | Plan proposed, Move the journal |  | 16,183,379,169
-markdown.root | Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 58,226,325,109
-ask | Needs your answer, Plan ready, More Options, Switch to Accept edits, As the work starts, Approve, Send back… |  | 12,529,387,362
-ask.more | More Options |  | 335,545,48,48
-ask.plan.body |  |  | 28,605,355,134
-markdown.root | Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 40,618,331,109
-ask.plan.auto | Switch to Accept edits, As the work starts |  | 28,751,355,64
-ask.approve | Approve |  | 28,827,173,48
-ask.choice.2 | Send back… |  | 210,827,174,48
-chat.topBar | Back, planner, /p/t/a/n/d/work · desk, Open Overview, planner, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
-nav.back | Back |  | 4,62,48,48
-chat.title | planner, /p/t/a/n/d/work · desk, Open Overview, planner, /p/t/a/n/d/work · desk |  | 56,62,299,48
-chat.more | More Options |  | 359,62,48,48
+chat |  |  | 0,0,411,923
+chat.feed |  |  | 0,118,411,587
+chat.row.<id> |  |  | 16,130,379,52
+chat.row.kind.prompt |  |  | 16,130,379,40
+markdown.root | Move the journal. |  | 254,140,127,20
+chat.row.toolu_fake<run>0000000000000006 |  |  | 16,182,379,174
+chat.row.kind.plan | Plan proposed, Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 16,182,379,174
+ask | Plan ready, More, Switch to Accept edits, As the work starts, Approve, Send back… |  | 12,709,387,181
+ask.more | More |  | 345,715,48,48
+ask.plan.auto | Switch to Accept edits, As the work starts |  | 28,765,355,48
+ask.approve | Approve |  | 28,827,173,44
+ask.choice.2 | Send back… |  | 210,827,173,44
+chat.topBar | Back, planner, /p/t/a/n/d/work · desk, Open Overview, planner, More |  | 0,0,411,118
+nav.back | Back |  | 8,66,40,40
+chat.title | planner | planner | 56,62,299,48
+chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
+chat.more | More |  | 363,66,40,40

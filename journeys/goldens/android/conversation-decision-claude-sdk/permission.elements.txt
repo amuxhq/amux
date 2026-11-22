@@ -1,18 +1,19 @@
 shell |  |  | 0,0,411,923
-screen.conversation |  |  | 0,0,411,923
-chat.feed |  |  | 0,119,411,511
-chat.row.<id> |  |  | 16,131,379,52
-chat.row.kind.prompt |  |  | 16,131,379,40
-markdown.root | Check the deployment once. |  | 171,141,210,20
-chat.row.toolu_fake<run>0000000000000003 |  |  | 16,183,379,41
-chat.row.kind.command | Wants to run, deploy --check |  | 16,183,379,29
-ask | Needs your answer, Wants to run a command, More Options, Always allow Bash, In this project, from now on, Allow, Deny… |  | 12,638,387,253
-ask.more | More Options |  | 335,654,48,48
-ask.subject | deploy --check |  | 40,723,331,18
-ask.choice.1 | Always allow Bash, In this project, from now on |  | 28,761,355,54
-ask.choice.0 | Allow |  | 28,827,173,48
-ask.deny | Deny… |  | 210,827,174,48
-chat.topBar | Back, decision-sdk, /p/t/a/n/d/work · desk, Open Overview, decision-sdk, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
-nav.back | Back |  | 4,62,48,48
-chat.title | decision-sdk, /p/t/a/n/d/work · desk, Open Overview, decision-sdk, /p/t/a/n/d/work · desk |  | 56,62,299,48
-chat.more | More Options |  | 359,62,48,48
+chat |  |  | 0,0,411,923
+chat.feed |  |  | 0,118,411,534
+chat.row.<id> |  |  | 16,130,379,52
+chat.row.kind.prompt |  |  | 16,130,379,40
+markdown.root | Check the deployment once. |  | 171,140,210,20
+chat.row.toolu_fake<run>0000000000000003 |  |  | 16,182,379,34
+chat.row.kind.command | Wants to run, deploy --check |  | 16,182,379,34
+ask | Wants to run a command, More, Always allow Bash, In this project, from now on, Allow, Deny… |  | 12,656,387,233
+ask.more | More |  | 345,662,48,48
+ask.subject | deploy --check |  | 40,721,331,18
+ask.choice.1 | Always allow Bash, In this project, from now on |  | 28,759,355,54
+ask.choice.0 | Allow |  | 28,827,173,44
+ask.deny | Deny… |  | 210,827,173,44
+chat.topBar | Back, decision-sdk, /p/t/a/n/d/work · desk, Open Overview, decision-sdk, More |  | 0,0,411,118
+nav.back | Back |  | 8,66,40,40
+chat.title | decision-sdk | decision-sdk | 56,62,299,48
+chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
+chat.more | More |  | 363,66,40,40

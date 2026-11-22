@@ -1,17 +1,15 @@
-shell | Agents, Computers |  | 0,0,411,923
+shell | Agents, Devices |  | 0,0,411,923
 home | Agents, Nothing needs you, Search, Switch Account, AD, New Agent |  | 0,0,411,818
 home.list |  |  | 0,0,411,818
-home.row.desk-work | desk-work, work · <t>, More Options |  | 0,123,411,72
-home.row.desk-work.menu | More Options |  | 359,136,48,48
+home.row.<desk-work> | desk-work, Idle, desk, /private/tmp/amux-android-journey/net/desk/work, <age>, desk-work, work · <t> |  | 0,122,411,64
 home.subtitle | Nothing needs you |  | 16,94,112,16
-home.search.toggle | Search |  | 307,62,48,48
-home.account-menu | Switch Account, AD |  | 355,62,48,48
-home.fab.new-agent | New Agent |  | 240,746,155,56
-tab.agents | Agents |  | 0,819,202,80
-tab.hosts | Computers |  | 210,819,202,80
+home.search.toggle | Search |  | 315,66,40,40
+home.accounts | Switch Account, AD | ada | 367,70,32,32
+home.newAgent | New Agent |  | 240,746,155,56
+tab.agents | Agents | selected | 0,819,202,80
+tab.hosts | Devices |  | 210,819,202,80
 report.screen | Close, Report a Problem |  | 0,0,411,923
-report.cancel | Close |  | 4,58,48,48
-report.sent | Report sent, Quote report-1 if you write to us about it., Reference, report-1, Copy Reference, Done |  | 16,136,379,740
-report.receipt.id | report-1 |  | 28,279,67,18
-report.receipt.copy | Copy Reference |  | 227,255,165,48
-report.done | Done |  | 16,327,379,48
+report.cancel | Close |  | 8,66,40,40
+report.sent | Report sent | report-1 | 16,134,379,749
+report.receipt.id | report-1 |  | 16,216,67,18
+report.receipt.copy | Copy Reference |  | 95,202,130,48

@@ -1,0 +1,18 @@
+shell |  |  | 0,0,411,923
+chat |  |  | 0,0,411,923
+chat.feed |  |  | 0,118,411,587
+chat.row.<id> |  |  | 16,130,379,52
+chat.row.kind.prompt |  |  | 16,130,379,40
+markdown.root | Move the journal. |  | 254,140,127,20
+chat.row.toolu_fake<run>0000000000000004 |  |  | 16,182,379,174
+chat.row.kind.plan | Plan proposed, Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 16,182,379,174
+ask | Plan ready, More, Switch to Accept edits, As the work starts, Approve, Send back… |  | 12,709,387,181
+ask.more | More |  | 345,715,48,48
+ask.plan.auto | Switch to Accept edits, As the work starts |  | 28,765,355,48
+ask.approve | Approve |  | 28,827,173,44
+ask.choice.2 | Send back… |  | 210,827,173,44
+chat.topBar | Back, planner-pty, /p/t/a/n/d/work · desk, Open Overview, planner-pty, More |  | 0,0,411,118
+nav.back | Back |  | 8,66,40,40
+chat.title | planner-pty | planner-pty | 56,62,299,48
+chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
+chat.more | More |  | 363,66,40,40

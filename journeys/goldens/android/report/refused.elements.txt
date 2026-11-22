@@ -1,19 +1,18 @@
-shell | Agents, Computers |  | 0,0,411,923
+shell | Agents, Devices |  | 0,0,411,923
 home | Agents, Nothing needs you, Search, Switch Account, AD, New Agent |  | 0,0,411,818
 home.list |  |  | 0,0,411,818
-home.row.desk-work | desk-work, work · <t>, More Options |  | 0,123,411,72
-home.row.desk-work.menu | More Options |  | 359,136,48,48
+home.row.<desk-work> | desk-work, Idle, desk, /private/tmp/amux-android-journey/net/desk/work, <age>, desk-work, work · <t> |  | 0,122,411,64
 home.subtitle | Nothing needs you |  | 16,94,112,16
-home.search.toggle | Search |  | 307,62,48,48
-home.account-menu | Switch Account, AD |  | 355,62,48,48
-home.fab.new-agent | New Agent |  | 240,746,155,56
-tab.agents | Agents |  | 0,819,202,80
-tab.hosts | Computers |  | 210,819,202,80
-report.screen | Cancel, Report a Problem, Drag a box to mark or hide an area. Tap a box to add a note, hide it, or remove it., What went wrong?, Retry |  | 0,0,411,923
-report.cancel | Cancel |  | 4,58,48,48
-report.frame |  | 0 marked | 134,124,142,320
-report.refusal | Not sent: amux.sh could not take this report, Retry |  | 28,638,363,48
-report.retry | Retry |  | 326,638,65,48
-report.note | What went wrong? | The desk's agent is listed twice. | 28,710,355,48 (disabled)
-report.dump-status | Includes this screenshot (with any hidden areas blacked out) and this phone’s diagnostic dump. Diagnostic dumps never include your conversations. |  | 16,779,379,53
-report.send | Retry |  | 16,839,379,48
+home.search.toggle | Search |  | 315,66,40,40
+home.accounts | Switch Account, AD | ada | 367,70,32,32
+home.newAgent | New Agent |  | 240,746,155,56
+tab.agents | Agents | selected | 0,819,202,80
+tab.hosts | Devices |  | 210,819,202,80
+report.screen | Cancel, Report a Problem, Drag a box around anything wrong. Each box takes a note. Tap a box to note or hide it., What went wrong?, Retry |  | 0,0,411,923
+report.cancel | Cancel |  | 8,66,40,40
+report.frame |  | 0 marked | 82,130,247,509
+report.refusal | Not sent | amux.sh could not take this report | 28,656,363,48
+report.retry | Retry |  | 326,661,65,40
+report.note | What went wrong? | The desk's agent is listed twice. | 28,729,355,48 (disabled)
+report.dump-status | Includes this screen and amux’s own logs, never your conversations. |  | 16,797,379,34
+report.send | Retry |  | 16,841,379,44

@@ -1,6 +1,6 @@
-shell | Agents, Computers |  | 0,0,411,923
-hosts | Computers |  | 0,0,411,818
-hosts.list | No computers yet, A computer running amux on this network appears here, ready to pair., Open amux on a computer on this network to pair it, or scan the code it shows with the camera. |  | 0,0,411,818
-hosts.empty | No computers yet |  | 16,143,211,32
+shell | Agents, Devices |  | 0,0,411,923
+hosts | Devices |  | 0,0,411,818
+hosts.list | No devices yet, A device running amux on this network appears here, ready to pair., Open amux on a device on this network to pair it, or scan the code it shows with the camera. |  | 0,0,411,818
+hosts.empty | No devices yet |  | 16,142,171,32
 tab.agents | Agents |  | 0,819,202,80
-tab.hosts | Computers |  | 210,819,202,80
+tab.hosts | Devices | selected | 210,819,202,80

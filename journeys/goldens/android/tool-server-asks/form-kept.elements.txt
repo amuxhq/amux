@@ -1,21 +1,22 @@
 shell |  |  | 0,0,411,923
-screen.conversation |  |  | 0,0,411,923
-chat.feed |  |  | 0,119,411,289
-chat.row.<id> |  |  | 16,131,379,52
-chat.row.kind.prompt |  |  | 16,131,379,40
-markdown.root | File the reconnect flake. |  | 208,141,174,20
-chat.row.toolu_fake<run>0000000000000003 |  |  | 16,183,379,54
-chat.row.run | Used 1 tool, Expand, Used 1 tool |  | 16,183,379,54
-chat.row.ask:<id> |  |  | 16,237,379,60
-chat.row.kind.form | linear needs details, Expand, linear needs details |  | 16,237,379,48
-ask | Needs your answer, linear needs details, More Options, Linear needs a few details before it can create the issue., Title *, One line, as it will read in the backlog., Team *, FOX, Estimate, Submit, Decline |  | 12,416,387,475
-ask.more | More Options |  | 335,432,48,48
-ask.field.title | Title * | Reconnect flake in e2e | 28,586,355,56
-ask.field.team | FOX |  | 28,677,355,48
-ask.field.estimate | Estimate | 3 | 28,759,355,56
-ask.submit | Submit |  | 28,827,173,48
-ask.choice.1 | Decline |  | 210,827,174,48
-chat.topBar | Back, filer, /p/t/a/n/d/work · desk, Open Overview, filer, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
-nav.back | Back |  | 4,62,48,48
-chat.title | filer, /p/t/a/n/d/work · desk, Open Overview, filer, /p/t/a/n/d/work · desk |  | 56,62,299,48
-chat.more | More Options |  | 359,62,48,48
+chat |  |  | 0,0,411,923
+chat.feed |  |  | 0,118,411,328
+chat.row.<id> |  |  | 16,130,379,52
+chat.row.kind.prompt |  |  | 16,130,379,40
+markdown.root | File the reconnect flake. |  | 208,140,174,20
+chat.row.toolu_fake<run>0000000000000003 |  |  | 16,182,379,48
+chat.row.run | Used 1 tool |  | 16,182,379,48
+chat.row.ask:<id> |  |  | 16,230,379,48
+chat.row.kind.form | linear needs details |  | 16,230,379,48
+ask | linear needs details, More, Linear needs a few details before it can create the issue., Title *, One line, as it will read in the backlog., Team *, Estimate, Submit, Decline |  | 12,450,387,439
+ask.more | More |  | 345,456,48,48
+ask.field.title | Title * | Reconnect flake in e2e | 28,601,355,46
+ask.field.team | Team * | FOX | 28,683,355,48
+ask.field.estimate | Estimate | 3 | 28,766,355,46
+ask.submit | Submit |  | 28,827,173,44
+ask.choice.1 | Decline |  | 210,827,173,44
+chat.topBar | Back, filer, /p/t/a/n/d/work · desk, Open Overview, filer, More |  | 0,0,411,118
+nav.back | Back |  | 8,66,40,40
+chat.title | filer | filer | 56,62,299,48
+chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
+chat.more | More |  | 363,66,40,40

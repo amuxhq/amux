@@ -1,7 +1,7 @@
-shell | Agents, Computers |  | 0,0,411,923
-hosts | Computers, 1 offline |  | 0,0,411,818
-hosts.list | OFFLINE, desk, macOS · offline, this phone is signed out |  | 0,0,411,818
-hosts.row.desk | desk, macOS · offline, this phone is signed out |  | 16,159,379,65
+shell | Agents, Devices |  | 0,0,411,923
+hosts | Devices, 1 offline |  | 0,0,411,818
+hosts.list | desk, macOS, offline while this phone is signed out, its agents’ state is unknown, desk, macOS · offline, this phone is signed out |  | 0,0,411,818
+hosts.row.<desk> | desk, macOS, offline while this phone is signed out, its agents’ state is unknown, desk, macOS · offline, this phone is signed out |  | 16,126,379,65
 hosts.subtitle | 1 offline |  | 16,94,45,16
 tab.agents | Agents |  | 0,819,202,80
-tab.hosts | Computers |  | 210,819,202,80
+tab.hosts | Devices | selected | 210,819,202,80

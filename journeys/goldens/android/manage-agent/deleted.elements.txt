@@ -1,4 +1,5 @@
 shell |  |  | 0,0,411,923
 settled | Back, Settled |  | 0,0,411,923
-settled.empty | Nothing settled, Hold an agent to settle it once you are done with it. |  | 16,143,379,732
-settled.back | Back |  | 4,62,48,48
+home.list |  |  | 0,0,411,923
+settled.empty | Nothing settled, Hold an agent to settle it once you are done with it. |  | 16,146,379,58
+settled.back | Back |  | 8,66,40,40

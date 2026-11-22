@@ -1,26 +1,24 @@
 shell |  |  | 0,0,411,923
-screen.settings | Back, Settings |  | 0,0,411,923
-settings.scroll | ACCOUNTS, Active, AD, ada, ada@example.com, Pro, Add Account, ADA, Manage Subscription, amux.sh, Sign Out, Remove from This Phone, Delete Account, APPEARANCE, NOTIFICATIONS, PRIVACY & DIAGNOSTICS, Share Usage Counts, Counts and choices, never what you type, your code, or file names., Automatic Reports, When amux catches its own bug. Never your chats, code, or file names., Report a Problem, Export Diagnostics, Contact Support, A report includes a screenshot and this phone’s diagnostic dump., THIS PHONE, Fingerprint, Tap to copy, <key> |  | 0,119,411,780
-settings.account.row.ada@example.com | Active, AD, ada, ada@example.com, Pro |  | 16,168,379,62
-settings.accounts.add | Add Account |  | 16,231,379,48
-settings.account.subscription | Manage Subscription, amux.sh |  | 16,323,379,48
-settings.account.sign-out | Sign Out |  | 16,372,379,48
-settings.account.remove | Remove from This Phone |  | 16,421,379,48
-settings.account.delete | Delete Account |  | 16,470,379,48
-settings.appearance | Theme, Light, Dark, System |  | 16,563,379,120
-settings.appearance.light | Light |  | 36,615,110,48
-settings.appearance.dark | Dark |  | 151,615,110,48
-settings.appearance.system | System |  | 265,615,110,48
-settings.notifications | Notifications, Coming soon, Background push notifications are not yet enabled in this version of amux. |  | 16,727,379,102
-settings.notifications.status | Coming soon |  | 281,743,99,20
-settings.privacy.share-usage | Share Usage Counts, Counts and choices, never what you type, your code, or file names. |  | 16,874,379,26
-settings.privacy.share-usage.switch | Share Usage Counts |  | 327,892,52,7
-settings.privacy.auto-reports | Automatic Reports, When amux catches its own bug. Never your chats, code, or file names. |  | 0,0,0,0
-settings.privacy.auto-reports.switch | Automatic Reports |  | 0,0,0,0
+you | Back, Settings | ada@example.com | 0,0,411,923
+settings.scroll | ACCOUNTS, ada, ada@example.com, AD, ada, ada@example.com, Add Account, ADA, Pro, Subscribed, Sign Out, Remove from This Phone, Delete Account, THIS PHONE, Share Usage, Counts and choices, never what you type, Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names., Name, <device>, Fingerprint, Tap to copy, <key>, Version, 0.1.0, HELP, Contact Support, Report a Problem, Export Diagnostics, A report includes a screenshot and this phone’s diagnostic dump. |  | 0,118,411,781
+account.ada@example.com | ada, ada@example.com | selected | 16,168,379,62
+you.add | Add Account |  | 16,231,379,58
+settings.account.subscription | Pro, Subscribed |  | 16,338,379,48
+you.signOut | Sign Out |  | 16,387,379,48
+settings.account.remove | Remove from This Phone |  | 16,436,379,48
+settings.account.delete | Delete Account |  | 16,485,379,48
+you.appearance | Appearance, Light, Dark, System | system | 32,585,347,48
+you.appearance.light | Light |  | 141,585,78,48
+you.appearance.dark | Dark |  | 220,585,79,48
+you.appearance.system | System | selected | 299,585,79,48
+settings.privacy.share-usage | Share Usage, Counts and choices, never what you type |  | 16,638,379,64
+settings.privacy.auto-reports | Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names. |  | 16,704,379,85
+settings.notifications | Notifications, Off |  | 16,790,379,48
+settings.notifications.action | Notifications, Off |  | 16,790,379,48
+you.name | <volatile>
+you.fingerprint | <volatile>
+you.version | <volatile>
+settings.diagnostics.support | Contact Support |  | 0,0,0,0
 settings.diagnostics.report | Report a Problem |  | 0,0,0,0
 settings.diagnostics.export | Export Diagnostics |  | 0,0,0,0
-settings.diagnostics.support | Contact Support |  | 0,0,0,0
-settings.phone.name | <volatile>
-settings.phone.fingerprint | <volatile>
-settings.phone.version | <volatile>
-nav.back | Back |  | 4,62,48,48
+nav.back | Back |  | 8,66,40,40

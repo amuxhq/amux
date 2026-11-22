@@ -1,38 +1,38 @@
 shell |  |  | 0,0,411,923
-screen.conversation |  |  | 0,0,411,923
-chat.feed |  |  | 0,119,411,572
-chat.row.<id> |  |  | 16,131,379,52
-chat.row.kind.prompt |  |  | 16,131,379,40
-markdown.root | Remember this recovery turn. |  | 163,141,218,20
-chat.row.msg_fake<run>0000000000000002:0 |  |  | 16,183,379,32
-chat.row.kind.prose |  |  | 16,183,379,20
-markdown.root | The recovery state is safely stored. |  | 16,183,379,20
-chat.row.turn:1 | Worked for <t> |  | 16,215,379,28
+chat |  |  | 0,0,411,923
+chat.feed |  |  | 0,118,411,674
+chat.row.<id> |  |  | 16,130,379,52
+chat.row.kind.prompt |  |  | 16,130,379,40
+markdown.root | Remember this recovery turn. |  | 163,140,218,20
+chat.row.msg_fake<run>0000000000000002:0 |  |  | 16,182,379,32
+chat.row.kind.prose |  |  | 16,182,379,20
+markdown.root | The recovery state is safely stored. |  | 16,182,379,20
+chat.row.turn:1 | Worked for <t> |  | 16,214,379,30
 chat.row.turn-end | <volatile>
-chat.row.<id> |  |  | 16,243,379,52
-chat.row.kind.prompt |  |  | 16,243,379,40
-markdown.root | Carry on. |  | 315,253,66,20
-chat.row.msg_fake<run>0000000000000004:0 |  |  | 16,295,379,32
-chat.row.kind.prose |  |  | 16,295,379,20
-markdown.root | A second turn arrived while you were away. |  | 16,295,379,20
-chat.row.turn:2 | Worked for <t> |  | 16,327,379,28
+chat.row.<id> |  |  | 16,244,379,52
+chat.row.kind.prompt |  |  | 16,244,379,40
+markdown.root | Carry on. |  | 315,254,66,20
+chat.row.msg_fake<run>0000000000000004:0 |  |  | 16,296,379,32
+chat.row.kind.prose |  |  | 16,296,379,20
+markdown.root | A second turn arrived while you were away. |  | 16,296,379,20
+chat.row.turn:2 | Worked for <t> |  | 16,328,379,30
 chat.row.turn-end | <volatile>
-chat.row.<id> |  |  | 16,355,379,52
-chat.row.kind.prompt |  |  | 16,355,379,40
-markdown.root | Pick up where we left off. |  | 200,365,181,20
-chat.row.msg_fake<run>0000000000000006:0 |  |  | 16,407,379,32
-chat.row.kind.prose |  |  | 16,407,379,20
-markdown.root | Back after the restart. |  | 16,407,379,20
-chat.row.turn:3 | Worked for <t> |  | 16,439,379,28
+chat.row.<id> |  |  | 16,358,379,52
+chat.row.kind.prompt |  |  | 16,358,379,40
+markdown.root | Pick up where we left off. |  | 200,368,181,20
+chat.row.msg_fake<run>0000000000000006:0 |  |  | 16,410,379,32
+chat.row.kind.prose |  |  | 16,410,379,20
+markdown.root | Back after the restart. |  | 16,410,379,20
+chat.row.turn:3 | Worked for <t> |  | 16,442,379,30
 chat.row.turn-end | <volatile>
-chat.composer | Reply, Attach, Dictate, Send |  | 12,699,387,192
-chat.field | Reply |  | 28,714,355,48
-chat.controls | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 28,773,355,48
-chat.model | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 28,773,196,48
-chat.attach | Attach |  | 28,831,48,48
-chat.dictate | Dictate |  | 283,831,48,48
-chat.send | Send |  | 335,831,48,48 (disabled)
-chat.topBar | Back, keeper, /p/t/a/n/d/work · desk, Open Overview, keeper, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
-nav.back | Back |  | 4,62,48,48
-chat.title | keeper, /p/t/a/n/d/work · desk, Open Overview, keeper, /p/t/a/n/d/work · desk |  | 56,62,299,48
-chat.more | More Options |  | 359,62,48,48
+chat.composer | Reply, Attach, Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium, Dictate, Send |  | 12,796,387,94
+chat.field | Reply |  | 28,796,355,36
+chat.attach | Attach |  | 21,837,48,48
+chat.model | Chat Settings, claude-fake-1 · medium, claude-fake-1 · medium |  | 70,837,177,48
+chat.dictate | Dictate |  | 287,837,48,48
+chat.send | Send |  | 342,837,48,48 (disabled)
+chat.topBar | Back, keeper, /p/t/a/n/d/work · desk, Open Overview, keeper, More |  | 0,0,411,118
+nav.back | Back |  | 8,66,40,40
+chat.title | keeper | keeper | 56,62,299,48
+chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
+chat.more | More |  | 363,66,40,40

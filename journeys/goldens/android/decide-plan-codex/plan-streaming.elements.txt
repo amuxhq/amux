@@ -1,0 +1,20 @@
+shell |  |  | 0,0,411,923
+chat |  |  | 0,0,411,923
+chat.feed |  |  | 0,118,411,637
+chat.row.prompt:<id> |  |  | 16,130,379,52
+chat.row.kind.prompt |  |  | 16,130,379,40
+markdown.root | Move the journal. |  | 254,140,127,20
+chat.row.<id>-plan |  |  | 16,182,379,174
+chat.row.kind.plan | Plan proposed, Move the journal, 1., Copy the journal to the new store., 2., Point the daemon at it., 3., Delete the old journal. |  | 16,182,379,174
+chat.composer | Working · <t>, Working, <t>, Queue a message, Attach, Chat Settings, gpt-fake · medium · Custom · Plan, gpt-fake · medium · Custom · Plan, Dictate, Interrupt |  | 12,760,387,130
+chat.activity | <volatile>
+chat.field | Queue a message |  | 28,784,355,48
+chat.attach | Attach |  | 21,837,48,48
+chat.model | Chat Settings, gpt-fake · medium · Custom · Plan, gpt-fake · medium · Custom · Plan |  | 70,837,224,48
+chat.dictate | Dictate |  | 287,837,48,48
+chat.stop | Interrupt |  | 342,837,48,48
+chat.topBar | Back, planner-codex, /p/t/a/n/d/work · desk, Open Overview, planner-codex, More |  | 0,0,411,118
+nav.back | Back |  | 8,66,40,40
+chat.title | planner-codex | planner-codex | 56,62,299,48
+chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
+chat.more | More |  | 363,66,40,40

@@ -1,23 +1,24 @@
 shell |  |  | 0,0,411,923
-screen.conversation |  |  | 0,0,411,923
-chat.feed |  |  | 0,119,411,271
-chat.row.<id> |  |  | 16,131,379,52
-chat.row.kind.prompt |  |  | 16,131,379,40
-markdown.root | Add a settings screen. |  | 220,141,162,20
-chat.row.toolu_fake<run>0000000000000003 |  |  | 16,183,379,41
-chat.row.kind.question | Asking, 3 questions |  | 16,183,379,29
-ask | Needs your answer, 3 questions, More Options, Layout, Entry, Order, Review, Layout · How should the settings screen be laid out?, Stacked, Entry · Where should the screen open from?, “From the help panel”, Order · Which section should come first?, Skipped, Send Answers, Reply instead |  | 12,398,387,493
-ask.more | More Options |  | 335,414,48,48
-ask.step.0 | Layout |  | 28,475,83,48
-ask.step.1 | Entry |  | 116,475,75,48
-ask.step.2 | Order |  | 195,475,78,48
-ask.step.review | Review |  | 278,475,66,48
-ask.review.0 | Layout · How should the settings screen be laid out?, Stacked |  | 28,535,355,76
-ask.review.1 | Entry · Where should the screen open from?, “From the help panel” |  | 28,619,355,64
-ask.review.2 | Order · Which section should come first?, Skipped |  | 28,691,355,64
-ask.send | Send Answers |  | 28,767,355,48
-ask.reply | Reply instead |  | 28,827,110,48
-chat.topBar | Back, asker, /p/t/a/n/d/work · desk, Open Overview, asker, /p/t/a/n/d/work · desk, More Options |  | 0,0,411,119
-nav.back | Back |  | 4,62,48,48
-chat.title | asker, /p/t/a/n/d/work · desk, Open Overview, asker, /p/t/a/n/d/work · desk |  | 56,62,299,48
-chat.more | More Options |  | 359,62,48,48
+chat |  |  | 0,0,411,923
+chat.feed |  |  | 0,118,411,310
+chat.row.<id> |  |  | 16,130,379,52
+chat.row.kind.prompt |  |  | 16,130,379,40
+markdown.root | Add a settings screen. |  | 220,140,162,20
+chat.row.toolu_fake<run>0000000000000003 |  |  | 16,182,379,34
+chat.row.kind.question | Asking, 3 questions |  | 16,182,379,34
+ask | 3 questions, More, Layout, Entry, Order, Review, Layout · How should the settings screen be laid out?, Stacked, Entry · Where should the screen open from?, “From the help panel”, Order · Which section should come first?, Skipped, Send Answers, Reply instead |  | 12,432,387,457
+ask.more | More |  | 345,438,48,48
+ask.step.0 | Layout |  | 28,497,83,32
+ask.step.1 | Entry |  | 116,497,75,32
+ask.step.2 | Order |  | 195,497,78,32
+ask.step.review | Review | selected | 278,497,66,32
+ask.review.0 | Layout · How should the settings screen be laid out?, Stacked | answered | 28,549,355,76
+ask.review.1 | Entry · Where should the screen open from?, “From the help panel” | answered | 28,633,355,56
+ask.review.2 | Order · Which section should come first?, Skipped | skipped | 28,697,355,56
+ask.send | Send Answers |  | 28,767,355,44
+ask.reply | Reply instead |  | 28,830,110,40
+chat.topBar | Back, asker, /p/t/a/n/d/work · desk, Open Overview, asker, More |  | 0,0,411,118
+nav.back | Back |  | 8,66,40,40
+chat.title | asker | asker | 56,62,299,48
+chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
+chat.more | More |  | 363,66,40,40

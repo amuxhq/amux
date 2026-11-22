@@ -64,27 +64,27 @@ class AffectedTest(unittest.TestCase):
         self.assertTrue(result["tests"])
         self.assertFalse(result["models"])
 
-    def test_the_phone_app_alone_runs_only_ios_tools_and_leaves_the_rest_to_its_gate(self):
+    def test_the_phone_app_alone_runs_only_mirrors_and_leaves_the_rest_to_its_gate(self):
         self.assertEqual(
-            groups("apps/apple/Amux/Sources/AmuxApp.swift", "docs/IOS.md"), {"ios_tools"}
+            groups("apps/apple/Amux/Sources/AmuxApp.swift", "docs/IOS.md"), {"mirrors"}
         )
 
-    def test_the_android_app_alone_runs_only_ios_tools_and_leaves_the_rest_to_its_gate(self):
+    def test_the_android_app_alone_runs_only_mirrors_and_leaves_the_rest_to_its_gate(self):
         self.assertEqual(
             groups(
                 "apps/android/features/src/main/kotlin/sh/amux/features/AgentsHome.kt",
                 "apps/android/core/values/src/main/kotlin/sh/amux/values/Values.kt",
             ),
-            {"ios_tools"},
+            {"mirrors"},
         )
 
-    def test_android_plus_rust_crate_runs_workspace_tests_not_standalone_ios_tools(self):
+    def test_android_plus_rust_crate_runs_workspace_tests_not_standalone_mirrors(self):
         self.assertEqual(
             groups(
                 "apps/android/features/src/main/kotlin/sh/amux/features/AgentsHome.kt",
                 "crates/app-jni/src/lib.rs",
             ),
-            {"tests"},
+            {"tests", "bridge"},
         )
 
     def test_a_phone_fixture_read_by_a_rust_test_runs_that_crates_jobs(self):
@@ -99,13 +99,13 @@ class AffectedTest(unittest.TestCase):
             SANITIZED,
         )
         self.assertTrue(result["tests"] and result["product"])
-        self.assertFalse(result["ios_tools"])
+        self.assertFalse(result["mirrors"])
 
     def test_a_crate_runs_the_jobs_built_from_it(self):
         self.assertEqual(groups("crates/tui/src/lib.rs"), {"tests", "product", "sanitizers"})
         self.assertEqual(groups("crates/app-runtime/src/lib.rs"), {"tests", "product", "bridge"})
         self.assertEqual(groups("crates/app-bridge/src/lib.rs"), {"tests", "bridge"})
-        self.assertEqual(groups("crates/app-jni/src/lib.rs"), {"tests"})
+        self.assertEqual(groups("crates/app-jni/src/lib.rs"), {"tests", "bridge"})
         self.assertEqual(
             groups("crates/app-ffi/src/lib.rs"), {"tests", "sanitizers", "bridge"}
         )
@@ -128,7 +128,7 @@ class AffectedTest(unittest.TestCase):
                      "journeys/manifest.json", "proto/amux/v1/chat.proto", "qa/FINDING.md",
                      "crates/gone/src/lib.rs", "crates/README.md"]:
             # Anything else runs the full workspace tests, which already cover ios-tools.
-            self.assertEqual(groups(file), set(ci.GROUPS) - {"ios_tools"}, file)
+            self.assertEqual(groups(file), set(ci.GROUPS) - {"mirrors"}, file)
 
     def test_the_browser_extension_alone_runs_its_own_job(self):
         self.assertEqual(groups("js/extension/src/background/index.ts"), {"browser"})

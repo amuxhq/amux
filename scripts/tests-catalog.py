@@ -141,7 +141,7 @@ def just_recipes() -> set[str]:
 
 
 # The justfile's modules, whose recipes `just --summary` lists as `module::recipe`.
-MODULES = {"amux", "browser", "ios", "mac"}
+MODULES = {"amux", "android", "browser", "ios", "mac"}
 
 
 def recipe_name(command: str) -> str | None:

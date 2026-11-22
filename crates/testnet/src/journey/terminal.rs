@@ -133,6 +133,15 @@ pub(crate) fn working(frame: &str) -> bool {
     frame.contains("ctrl+x interrupt")
 }
 
+/// The working line counts the turn's time, which it shows once the turn
+/// has run a whole second: a frame of a running turn waits for it, so the
+/// picture does not depend on how fast the machine got there.
+pub(crate) fn timed(frame: &str) -> bool {
+    frame
+        .lines()
+        .any(|line| line.trim_start().starts_with("Working · "))
+}
+
 /// Every term shows and no turn is under way.
 pub(crate) fn at_rest(frame: &str, terms: &[&str]) -> bool {
     terms.iter().all(|term| frame.contains(term)) && !working(frame)

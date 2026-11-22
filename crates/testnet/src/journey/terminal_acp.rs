@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 use super::common::*;
-use super::terminal::{TerminalJourney, at_home, at_rest, chat_of, working};
+use super::terminal::{TerminalJourney, at_home, at_rest, chat_of, timed, working};
 use super::terminal_stories::spaced;
 use super::{Proved, negative_control, never_sent, phase, quoted, reflected_once};
 
@@ -336,7 +336,7 @@ pub(crate) fn interrupt(journey: &mut TerminalJourney) -> Proved {
     let id = text(&agent["id"]);
     journey.wait(
         &pane,
-        |frame| working(frame) && frame.contains(LONG_STARTED),
+        |frame| working(frame) && timed(frame) && frame.contains(LONG_STARTED),
         "the long job running",
     )?;
     journey.frame(&pane, "running")?;
@@ -400,12 +400,18 @@ pub(crate) fn queue_and_withdraw(journey: &mut TerminalJourney) -> Proved {
     journey.keys(&pane, &["Enter"])?;
     journey.wait(
         &pane,
-        |frame| spaced(frame, PEAK, "queued") && spaced(frame, WITHDRAWN, "queued"),
+        |frame| spaced(frame, PEAK, "queued") && spaced(frame, WITHDRAWN, "queued") && timed(frame),
         "two queued",
     )?;
     journey.frame(&pane, "queued")?;
     journey.keys(&pane, &["Up"])?;
-    let selected = journey.wait_terms(&pane, &["[Withdraw]", "backspace withdraw"])?;
+    let selected = journey.wait(
+        &pane,
+        |frame| {
+            frame.contains("[Withdraw]") && frame.contains("backspace withdraw") && timed(frame)
+        },
+        "the newest selected",
+    )?;
     if selected.contains("Send Now") {
         return Err(format!(
             "a queued prompt offers Send Now on an agent that cannot take one:\n{selected}"

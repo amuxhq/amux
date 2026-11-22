@@ -13,13 +13,14 @@ use crate::theme::Theme;
 
 /// How a trusted host is reached now, in one word: the route while it is
 /// online, else whether it is away or offline. This machine's own entry has
-/// no route.
-pub fn route(reach: Reach, local: bool) -> &'static str {
+/// no route; a direct one on the network both are on reads local.
+pub fn route(reach: Reach, local: bool, same_network: bool) -> &'static str {
     match reach {
-        Reach::Online(RouteKind::Direct) => "on this network",
-        Reach::Online(RouteKind::Relay) => "over the internet",
+        Reach::Online(RouteKind::Direct) if same_network => "local",
+        Reach::Online(RouteKind::Direct) => "direct",
+        Reach::Online(RouteKind::Relay) => "relayed",
         Reach::Online(RouteKind::Ssh) => "ssh",
-        Reach::Online(RouteKind::Unspecified) if local => "local",
+        Reach::Online(RouteKind::Unspecified) if local => "this device",
         Reach::Online(RouteKind::Unspecified) => "online",
         Reach::Away => "away",
         Reach::Offline(_) => "offline",
@@ -32,10 +33,13 @@ pub fn route(reach: Reach, local: bool) -> &'static str {
 /// than the host.
 pub fn caption(fleet: &FleetState, entry: &HostEntry, local_host: &[u8]) -> String {
     let reach = ui_view::reach(fleet, local_host, entry.host_id());
-    let mut parts = vec![format!("·{}", route(reach, entry.host_id() == local_host))];
+    let mut parts = vec![format!(
+        "·{}",
+        route(reach, entry.host_id() == local_host, entry.same_network())
+    )];
     match reach {
-        Reach::Offline(Offline::Revoked) => parts.push("unpaired this computer".into()),
-        Reach::Offline(Offline::SignedOut) => parts.push("this computer is signed out".into()),
+        Reach::Offline(Offline::Revoked) => parts.push("unpaired this device".into()),
+        Reach::Offline(Offline::SignedOut) => parts.push("this device is signed out".into()),
         // Why it is away comes before any old error from dialing it
         // directly, which is not the reason.
         Reach::Away => parts.push(crate::chat::FREE_PLAN_AWAY.into()),
@@ -83,7 +87,7 @@ fn candidate_words(entry: &HostEntry, name: &str) -> String {
         return format!("through {} · {pair}", through.name);
     }
     if candidate.relay_only() {
-        return format!("on your account · Pro pairs it over the internet · {pair}");
+        return format!("on your account · relayed connections need Pro · {pair}");
     }
     pair
 }
@@ -101,7 +105,7 @@ pub fn listed(fleet: &FleetState) -> Vec<&HostEntry> {
 }
 
 /// The hosts modal's rows: one line per host, its name (this machine said
-/// so), then how it is reached ("direct", "relay") or why not ("away · not
+/// so), then how it is reached ("direct", "relayed") or why not ("away · not
 /// signed in"); the hosts nobody paired, faint, with where they were found
 /// and the command that pairs them; and a faint footer on pairing another.
 pub fn modal_rows(fleet: &FleetState, local_host: &[u8], theme: Theme) -> Vec<Line<'static>> {
@@ -133,7 +137,7 @@ pub fn modal_rows(fleet: &FleetState, local_host: &[u8], theme: Theme) -> Vec<Li
         line.spans.push(Span::styled(name.clone(), ink));
         pad_to(&mut line, column);
         let words = if entry.host_id() == local_host {
-            "this computer".to_owned()
+            "this device".to_owned()
         } else if trusted {
             caption(fleet, entry, local_host)
                 .trim_start_matches('·')
@@ -153,7 +157,7 @@ pub fn modal_rows(fleet: &FleetState, local_host: &[u8], theme: Theme) -> Vec<Li
     }
     rows.push(Line::default());
     rows.push(Line::from(vec![
-        Span::styled("Pair another computer with ", theme.faint()),
+        Span::styled("Pair another device with ", theme.faint()),
         Span::styled("amux pair", theme.code()),
     ]));
     rows.push(Line::from(vec![
@@ -161,4 +165,22 @@ pub fn modal_rows(fleet: &FleetState, local_host: &[u8], theme: Theme) -> Vec<Li
         Span::styled(" close", theme.faint()),
     ]));
     rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A direct route reads local only when the daemon says it is on a
+    /// network both machines are on; any other route ignores the flag.
+    #[test]
+    fn a_direct_route_on_the_same_network_reads_local() {
+        let direct = Reach::Online(RouteKind::Direct);
+        assert_eq!(route(direct, false, true), "local");
+        assert_eq!(route(direct, false, false), "direct");
+        assert_eq!(
+            route(Reach::Online(RouteKind::Relay), false, true),
+            "relayed"
+        );
+    }
 }

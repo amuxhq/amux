@@ -113,7 +113,7 @@ impl std::error::Error for ShapeError {}
 /// What a refusal says when [`all_readable`] is false, as the end of "not
 /// sent: ...".
 pub const UNREADABLE: &str =
-    "one of its attachments is of a kind this host can't read; the host needs updating";
+    "one of its attachments is of a kind this device can't read; the device needs updating";
 
 /// Whether this build can read every attachment. An arm a later build added
 /// decodes here as no arm at all, and [`format`] would drop it without a

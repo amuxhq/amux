@@ -473,7 +473,7 @@ private struct AskBodyView: View {
             // The phone reads `localhost` as itself: the page opens only on
             // the agent's machine.
             if localPage {
-                why(String(localized: "This page is on the agent’s computer. Open the link in a browser there."))
+                why(String(localized: "This page is on the agent’s device. Open the link in a browser there."))
             }
         case .access(let reason, let read, let write, let network, let hosts):
             if !reason.isEmpty { why(reason) }
@@ -667,6 +667,16 @@ private struct AskBodyView: View {
                 String(localized: "\(title), As the work starts"),
                 isOn: $autoAccept)
             .identified("ask.plan.auto", value: autoAccept ? "on" : "off")
+        } else if let switched = planSwitched {
+            // The only way to approve also changes the permission mode: no
+            // switch to offer, so say what Approve will do in its place
+            // rather than let it change the mode unannounced.
+            let caption = ChatWords.planSwitches(card.choices[switched])
+            Text(caption)
+                .designFont(.detail, design)
+                .foregroundStyle(design.inkMuted.color)
+                .lineLimit(1)
+                .identified("ask.plan.switches", label: caption)
         }
     }
 

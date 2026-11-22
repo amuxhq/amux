@@ -1842,7 +1842,7 @@ extension CatalogFixtures {
         hosts.stopWaiting()
         hosts.show([HostView(
             hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false,
-            reach: .online(.direct), link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: true,
+            reach: .online(.direct), sameNetwork: false, link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: true,
             providers: [
                 ProviderSignIn(provider: .claude, signedIn: signedIn),
                 ProviderSignIn(provider: .codex, signedIn: true),
@@ -1850,7 +1850,7 @@ extension CatalogFixtures {
             claudeKind: nil, lastDialError: nil, platform: .macos, signedIn: nil, through: nil, version: nil),
         HostView(
             hostId: Array(repeating: 8, count: 16), name: "laptop", local: false, trusted: true,
-            candidate: false, reach: .away, link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: false, providers: [],
+            candidate: false, reach: .away, sameNetwork: false, link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: false, providers: [],
             claudeKind: nil, lastDialError: nil, platform: .macos, signedIn: nil, through: nil, version: nil)])
         let store = NewAgentStore()
         store.open(on: desk)
@@ -2236,7 +2236,7 @@ private struct FrozenFleetPicture: View {
             Text("Agents")
                 .designFont(.screenTitle, design)
                 .padding(.top, 70)
-            Text("No agents yet · 3 hosts")
+            Text("No agents yet · 3 devices")
                 .designFont(.detail, design)
                 .foregroundStyle(design.inkMuted.color)
                 .padding(.top, 4)
@@ -2295,7 +2295,7 @@ extension CatalogFixtures {
     ) -> HostView {
         HostView(
             hostId: Array(repeating: index, count: 16), name: name, local: false, trusted: trusted,
-            candidate: candidate, reach: reach, link: 0, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: false, providers: providers,
+            candidate: candidate, reach: reach, sameNetwork: false, link: 0, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: false, providers: providers,
             claudeKind: nil, lastDialError: nil, platform: platform, signedIn: nil, through: nil, version: version)
     }
 

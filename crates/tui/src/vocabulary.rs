@@ -247,7 +247,7 @@ fn review_pages() -> Vec<(&'static str, &'static str, crate::chat::review::Page)
         ),
         (
             "review_not_offered",
-            "The review page for an agent whose computer does not run reviews.",
+            "The review page for an agent whose device does not run reviews.",
             review_not_offered(),
         ),
     ]
@@ -751,7 +751,7 @@ pub fn review_empty() -> crate::chat::review::Page {
     review_scene(summary, Vec::new(), Vec::new())
 }
 
-/// The page for an agent whose computer does not run reviews.
+/// The page for an agent whose device does not run reviews.
 pub fn review_not_offered() -> crate::chat::review::Page {
     let mut page = crate::chat::review::Page::new();
     page.set_owner("fixer", "/srv/amux");

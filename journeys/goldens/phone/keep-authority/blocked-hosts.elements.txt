@@ -4,15 +4,15 @@ hosts |  | 1 offline | 0,196,402,595
 hosts.row.<desk> | desk, macOS, offline while this phone is signed out, its agents’ state is unknown | offline | 16,202,370,65
 hosts.subtitle |  | 1 offline | 16,166,370,22
  | desk, macOS, offline while this phone is signed out, its agents’ state is unknown |  | 16,202,370,65
- | Computers |  | 16,127,183,42
+ | Devices |  | 16,127,127,42
  | 1 offline |  | 16,170,53,18
- | Agents |  | 110,795,95,54
+ | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 216,830,56,12
- | Agents |  | 110,795,95,54
- | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 217,830,55,12
- | Agents |  | 110,795,95,54
- | Computers | selected | 197,795,95,54
+ | Devices |  | 197,795,94,54
+ | Devices |  | 224,830,40,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Devices |  | 197,795,94,54
+ | Devices |  | 225,830,39,12
+ | Agents |  | 111,795,94,54
+ | Devices | selected | 197,795,94,54

@@ -1111,7 +1111,7 @@ impl Home {
             Setting::Permission => "Permission",
             Setting::Mode => "Mode",
             Setting::Folder => "Folder",
-            Setting::Host => "Computer",
+            Setting::Host => "Device",
             Setting::Worktree => "Worktree",
         };
         let choices = setup.choices(item, fleet);
@@ -1545,7 +1545,7 @@ impl Home {
                     format!("{shown} match{}", if shown == 1 { "" } else { "es" })
                 }
                 None => {
-                    push(&mut line, "name, project or computer", theme.muted(), width);
+                    push(&mut line, "name, project or device", theme.muted(), width);
                     String::new()
                 }
             };
@@ -1605,13 +1605,13 @@ impl Home {
             [] => {}
             [(one, _)] => parts.push((
                 format!(
-                    "{one} unpaired this computer · amux pair {}",
+                    "{one} unpaired this device · amux pair {}",
                     crate::hosts::shell_target(one)
                 ),
                 theme.warning(),
             )),
             many => parts.push((
-                format!("{} computers unpaired this one", many.len()),
+                format!("{} devices unpaired this one", many.len()),
                 theme.warning(),
             )),
         }
@@ -1625,7 +1625,7 @@ impl Home {
         match away.as_slice() {
             [] => {}
             [one] => parts.push((format!("{one} away"), theme.muted())),
-            many => parts.push((format!("{} computers away", many.len()), theme.muted())),
+            many => parts.push((format!("{} devices away", many.len()), theme.muted())),
         }
         if working > 0 {
             parts.push((format!("{working} working"), theme.muted()));
@@ -2077,7 +2077,7 @@ impl Home {
                     ("e", "effort", key(KeyCode::Char('e'))),
                     ("p", "permission", key(KeyCode::Char('p'))),
                     ("d", "folder", key(KeyCode::Char('d'))),
-                    ("h", "computer", key(KeyCode::Char('h'))),
+                    ("h", "device", key(KeyCode::Char('h'))),
                     ("w", "worktree", key(KeyCode::Char('w'))),
                     ("esc", "back", key(KeyCode::Esc)),
                 ]
@@ -2287,11 +2287,11 @@ pub fn help_rows() -> Vec<(&'static str, String)> {
         ("enter, click", "open the chat".into()),
         (
             "a, ctrl+enter",
-            "attach to the agent's own terminal (this computer)".into(),
+            "attach to the agent's own terminal (this device)".into(),
         ),
         (
             "/",
-            "filter by name, agent, folder or computer; esc clears".into(),
+            "filter by name, agent, folder or device; esc clears".into(),
         ),
         (
             "n",
@@ -2299,7 +2299,7 @@ pub fn help_rows() -> Vec<(&'static str, String)> {
         ),
         (
             "ctrl+s then a letter",
-            "a new agent's name, model, effort, folder, computer, agent".into(),
+            "a new agent's name, model, effort, folder, device, agent".into(),
         ),
         ("→ / ←, space", "show or hide a family's agents".into()),
         ("r", "rename, in place".into()),
@@ -2311,7 +2311,7 @@ pub fn help_rows() -> Vec<(&'static str, String)> {
         ("h", "devices".into()),
         (
             ",",
-            "settings: this computer, repositories, chats, usage counts, the account".into(),
+            "settings: this device, repositories, chats, usage counts, the account".into(),
         ),
         (
             "b",
@@ -2587,7 +2587,7 @@ fn second_words(
     // sent; `x` takes it back.
     if row.card.close_held {
         let host = match row.card.host.as_str() {
-            "" => "its computer",
+            "" => "its device",
             host => host,
         };
         return Some((
@@ -2635,10 +2635,10 @@ fn second_words(
         }
         SecondLine::HostRevoked => {
             let host = match row.card.host.as_str() {
-                "" => "its computer",
+                "" => "its device",
                 host => host,
             };
-            (format!("{host} unpaired this computer"), theme.warning())
+            (format!("{host} unpaired this device"), theme.warning())
         }
         SecondLine::Blank => return None,
     })

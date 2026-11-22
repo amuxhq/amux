@@ -320,6 +320,7 @@ mod tests {
                 link: LinkId(link),
                 peer,
                 kind,
+                lan: false,
                 resumed: None,
             },
         )
@@ -774,6 +775,7 @@ mod tests {
                 Input::LinkCarried {
                     link: LinkId(1),
                     kind,
+                    lan: false,
                 },
             )
         };
@@ -787,5 +789,48 @@ mod tests {
             daemon.reads(DESK),
             wire::trusted::Reach::Online(wire::RouteKind::Direct as i32)
         );
+    }
+
+    /// A link on a network both hosts are on reads as direct, as a reader
+    /// that predates the distinction expects, and as on the same network
+    /// besides, whether it came up there or moved there; moving off it, or
+    /// onto a forwarder, says so.
+    #[test]
+    fn a_host_on_a_lan_path_reads_direct_and_on_the_same_network() {
+        let mut daemon = daemon();
+        step(
+            &mut daemon,
+            Input::LinkUp {
+                link: LinkId(1),
+                peer: DESK,
+                kind: CarrierKind::Direct,
+                lan: true,
+                resumed: None,
+            },
+        );
+        assert_eq!(
+            daemon.reads(DESK),
+            wire::trusted::Reach::Online(wire::RouteKind::Direct as i32)
+        );
+        assert!(daemon.same_network(DESK), "a link up on the LAN");
+        let carried = |daemon: &mut Daemon, kind, lan| {
+            step(
+                daemon,
+                Input::LinkCarried {
+                    link: LinkId(1),
+                    kind,
+                    lan,
+                },
+            )
+        };
+        carried(&mut daemon, CarrierKind::Direct, false);
+        assert!(!daemon.same_network(DESK), "punched or public: direct only");
+        carried(&mut daemon, CarrierKind::Direct, true);
+        assert!(daemon.same_network(DESK), "back on the LAN");
+        carried(&mut daemon, CarrierKind::Forwarded, true);
+        assert!(!daemon.same_network(DESK), "a forwarder is never the LAN");
+        carried(&mut daemon, CarrierKind::Direct, true);
+        down(&mut daemon, 1);
+        assert!(!daemon.same_network(DESK), "offline is no network");
     }
 }

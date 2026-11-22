@@ -390,6 +390,39 @@ class ChatModel(
         private set
 
     private data class PastedRun(val at: Int, val text: String)
+
+    /**
+     * One edit of the draft: the characters from [start] to [removedEnd] of
+     * the old text became those from [start] to [insertedEnd] of the new.
+     */
+    private data class EditSpan(val start: Int, val removedEnd: Int, val insertedEnd: Int) {
+        /** Whether this is an edit that takes [old] to [updated]. */
+        fun fits(old: String, updated: String): Boolean =
+            start in 0..removedEnd && removedEnd <= old.length && start <= insertedEnd &&
+                insertedEnd <= updated.length && old.length - removedEnd == updated.length - insertedEnd &&
+                old.regionMatches(0, updated, 0, start) &&
+                old.regionMatches(removedEnd, updated, insertedEnd, old.length - removedEnd)
+
+        companion object {
+            /**
+             * The edit inferred from the texts alone: the characters between
+             * what the two share at the start and at the end.
+             */
+            fun between(old: String, updated: String): EditSpan {
+                var head = 0
+                while (head < old.length && head < updated.length && old[head] == updated[head]) head += 1
+                var tail = 0
+                while (
+                    tail < old.length - head &&
+                    tail < updated.length - head &&
+                    old[old.length - 1 - tail] == updated[updated.length - 1 - tail]
+                ) {
+                    tail += 1
+                }
+                return EditSpan(head, old.length - tail, updated.length - tail)
+            }
+        }
+    }
     private var pasted: PastedRun? = null
 
     /**
@@ -1150,8 +1183,12 @@ class ChatModel(
         get() = positionedDraftOf(draftText, positionedAttachments)
 
     fun setDraft(text: String) {
+        setDraft(text, edit = null)
+    }
+
+    private fun setDraft(text: String, edit: EditSpan?) {
         if (draftText == text) return
-        shiftAttachmentOffsets(draftText, text)
+        shiftAttachmentOffsets(draftText, text, edit)
         draftText = text
         keepDraft()
         recomputeSlashMatches()
@@ -1206,9 +1243,13 @@ class ChatModel(
      * Handles a composer field edit, converting long pastes into inline
      * [DraftAttachment.Text] chips via [ChatBridge.pastesAsAttachment].
      */
-    fun type(text: String) {
+    fun type(text: String, edit: DraftEdit? = null) {
         typedEdits += 1
         var updated = text.replace("\r\n", "\n").replace("\r", "\n")
+        // The field's own account of the edit holds only for the text it
+        // edited: the draft as the model has it, unaltered by line endings.
+        var span = edit?.takeIf { it.original == draftText && updated == text }
+            ?.let { EditSpan(it.start, it.removedEnd, it.insertedEnd) }
         val previousPaste = pasted
         if (
             previousPaste != null &&
@@ -1216,32 +1257,22 @@ class ChatModel(
             updated.substring(previousPaste.at, previousPaste.at + previousPaste.text.length) == previousPaste.text
         ) {
             updated = updated.removeRange(previousPaste.at, previousPaste.at + previousPaste.text.length)
+            span = null
         } else {
             pasted = null
         }
 
         val old = draftText
-        var head = 0
-        while (head < old.length && head < updated.length && old[head] == updated[head]) {
-            head += 1
-        }
-        var tail = 0
-        while (
-            tail < old.length - head &&
-            tail < updated.length - head &&
-            old[old.length - 1 - tail] == updated[updated.length - 1 - tail]
-        ) {
-            tail += 1
-        }
-        var inserted = updated.substring(head, updated.length - tail)
+        val (head, oldEnd, newEnd) = span?.takeIf { it.fits(old, updated) } ?: EditSpan.between(old, updated)
+        var inserted = updated.substring(head, newEnd)
         if (!bridge.pastesAsAttachment(inserted)) {
             // An edit that leaves the draft as it was still answers the
             // composer, which counts on hearing back about every edit.
-            if (draftText == updated) publish() else setDraft(updated)
+            if (draftText == updated) publish() else setDraft(updated, EditSpan(head, oldEnd, newEnd))
             return
         }
         var before = updated.substring(0, head)
-        var after = updated.substring(updated.length - tail)
+        var after = updated.substring(newEnd)
         if (inserted.startsWith(' ') && before.lastOrNull()?.isWhitespace() == false) {
             inserted = inserted.substring(1)
             before += " "
@@ -1251,7 +1282,9 @@ class ChatModel(
             after = " $after"
         }
         val nextText = before + after
-        shiftAttachmentOffsets(old, nextText)
+        // The paste leaves the draft; what it replaced goes, and a space
+        // kept to part it from a word stays as the edit's own.
+        shiftAttachmentOffsets(old, nextText, EditSpan(head, oldEnd, nextText.length - (old.length - oldEnd)))
         draftText = nextText
         insertPositionedAttachment(
             attachment = DraftAttachment.Text(name = ChatNotices.PASTED_TEXT, text = inserted),
@@ -1732,9 +1765,11 @@ class ChatModel(
     private fun restoreWithoutSaving(sent: Draft) {
         val words = sent.words
         val anchorTrailing = draftText.isNotEmpty() || positionedAttachments.any { it.offset != null }
+        // What the composer holds moves past the words put back ahead of
+        // it, and past the line break that parts them from its own words.
         val prefixShift = when {
-            draftText.isEmpty() -> 0
             words.isEmpty() -> 0
+            draftText.isEmpty() -> words.length
             else -> words.length + 1
         }
         if (prefixShift > 0) {
@@ -1774,22 +1809,17 @@ class ChatModel(
         }
     }
 
-    private fun shiftAttachmentOffsets(old: String, updated: String) {
+    /**
+     * Moves each placed attachment with the words around it as the draft goes
+     * from [old] to [updated]: one before the edit stays, one after it moves
+     * by what the edit added or took away, and one inside words the edit
+     * replaced goes to the end of what replaced them. The edit is the field's
+     * own when it has one; only without it is it inferred from the two texts,
+     * which cannot tell which of a run of repeated characters was typed.
+     */
+    private fun shiftAttachmentOffsets(old: String, updated: String, edit: EditSpan? = null) {
         if (positionedAttachments.none { it.offset != null }) return
-        var head = 0
-        while (head < old.length && head < updated.length && old[head] == updated[head]) {
-            head += 1
-        }
-        var tail = 0
-        while (
-            tail < old.length - head &&
-            tail < updated.length - head &&
-            old[old.length - 1 - tail] == updated[updated.length - 1 - tail]
-        ) {
-            tail += 1
-        }
-        val oldEnd = old.length - tail
-        val newEnd = updated.length - tail
+        val (head, oldEnd, newEnd) = edit?.takeIf { it.fits(old, updated) } ?: EditSpan.between(old, updated)
         val delta = updated.length - old.length
         for (i in positionedAttachments.indices) {
             val entry = positionedAttachments[i]

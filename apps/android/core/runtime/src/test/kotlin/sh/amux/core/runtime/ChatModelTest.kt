@@ -1143,7 +1143,7 @@ class ChatModelTest {
 
         assertEquals("retry me", model.draft)
         assertEquals(listOf(DraftAttachment.Image(photo)), model.attachments)
-        assertEquals("Not sent: its host is away", model.snapshot.notice)
+        assertEquals("Not sent: its device is away", model.snapshot.notice)
         assertEquals(listOf(listOf(8)), source.discarded)
         assertTrue(model.currentFrame!!.refused.isEmpty())
 
@@ -1376,6 +1376,89 @@ class ChatModelTest {
         assertEquals("Hey! Start  end", reopened.draft)
         reopened.send()!!.join()
         assertEquals("Hey! Start \uFFFC end", reopenedSource.sent.single().text)
+    }
+
+    @Test
+    fun aDraftPutBackAheadOfAHeldPasteMovesThatPastePastItsWords() = runTest {
+        val source = FakeChat(emptyList(), chatFrame())
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+        val held = (1..10).joinToString("\n") { "held $it" }
+        model.type(held)
+        assertEquals("", model.draft)
+        assertEquals(1, model.attachments.size)
+
+        val returned = (1..10).joinToString("\n") { "returned $it" }
+        model.reopen(
+            Draft(
+                parts = listOf(
+                    DraftPart.Text("Read "),
+                    DraftPart.Attachment(DraftAttachment.Text(name = "Pasted text", text = returned)),
+                    DraftPart.Text(" closely."),
+                ),
+            ),
+        )
+
+        assertEquals("Read  closely.", model.draft)
+        assertEquals("Read \uFFFC closely.\uFFFC", source.keptDrafts.last().text)
+    }
+
+    @Test
+    fun aPasteMovesByTheFieldsOwnEditAmongRepeatedCharacters() = runTest {
+        val source = FakeChat(emptyList(), chatFrame())
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+        model.type("abc")
+        val paste = (1..10).joinToString("\n") { "line $it" }
+        model.type("ab${paste}c")
+        assertEquals("ab\uFFFCc", source.keptDrafts.last().text)
+
+        // A b typed between a and b: only the field knows it went before the
+        // paste, since "abbc" reads the same with it typed after.
+        model.type("abbc", DraftEdit(original = "abc", start = 1, removedEnd = 1, insertedEnd = 2))
+        assertEquals("abb\uFFFCc", source.keptDrafts.last().text)
+
+        // The b before the paste deleted, out of the two.
+        model.type("abc", DraftEdit(original = "abbc", start = 1, removedEnd = 2, insertedEnd = 1))
+        assertEquals("ab\uFFFCc", source.keptDrafts.last().text)
+
+        // An account of an edit to some other text is not this one's: the
+        // two texts decide, which put the b typed after the first.
+        model.type("abbc", DraftEdit(original = "elsewhere", start = 1, removedEnd = 1, insertedEnd = 2))
+        assertEquals("ab\uFFFCbc", source.keptDrafts.last().text)
+    }
+
+    @Test
+    fun aPasteBetweenDoubledSpacesOrLineBreaksStaysWithTheOneLeft() = runTest {
+        val paste = (1..10).joinToString("\n") { "line $it" }
+        for (gap in listOf(" ", "\n")) {
+            val source = FakeChat(emptyList(), chatFrame())
+            val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+            model.type("a${gap}${gap}b")
+            model.type("a${gap}${paste}${gap}b")
+            assertEquals("a${gap}\uFFFC${gap}b", source.keptDrafts.last().text)
+            // The first of the two deleted: the paste follows the a.
+            model.type("a${gap}b", DraftEdit(original = "a${gap}${gap}b", start = 1, removedEnd = 2, insertedEnd = 1))
+            assertEquals("a\uFFFC${gap}b", source.keptDrafts.last().text)
+            // The one after the paste typed twice more: it stays put.
+            model.type("a${gap}${gap}${gap}b", DraftEdit(original = "a${gap}b", start = 2, removedEnd = 2, insertedEnd = 4))
+            assertEquals("a\uFFFC${gap}${gap}${gap}b", source.keptDrafts.last().text)
+        }
+    }
+
+    @Test
+    fun aPasteAfterEveryWordKeepsItsPlaceWhenPutBack() = runTest {
+        val source = FakeChat(emptyList(), chatFrame())
+        val model = ChatModel(source = source, scope = this, loadingHintAfterMs = -1L)
+        model.type("Look: ")
+        val paste = (1..10).joinToString("\n") { "line $it" }
+        model.type("Look: $paste")
+        val kept = source.keptDrafts.last()
+        assertEquals("Look: \uFFFC", kept.text)
+
+        val reopenedSource = FakeChat(emptyList(), chatFrame())
+        reopenedSource.initialKeptDraft = kept
+        val reopened = ChatModel(source = reopenedSource, scope = this, loadingHintAfterMs = -1L)
+        reopened.type("Look:  now")
+        assertEquals("Look: \uFFFC now", reopenedSource.keptDrafts.last().text)
     }
 
     @Test

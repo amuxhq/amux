@@ -65,8 +65,8 @@ struct PairOffer: Equatable {
             // plan: a plan not heard yet is no reason to sell one.
             subscribe = pro == false
             detail = subscribe
-                ? String(localized: "Pro pairs it from anywhere")
-                : String(localized: "Pair it from anywhere")
+                ? String(localized: "Relayed connections need Pro")
+                : String(localized: "Pair it over a relayed connection")
         } else {
             title = String(localized: "\(host.name) can be paired")
             detail = pairIt
@@ -117,7 +117,7 @@ public struct HostsTab: View {
                 list
             }
         }
-        .navigationTitle("Computers")
+        .navigationTitle("Devices")
         .navigationSubtitle(subtitle)
         .toolbar {
             ToolbarItem(placement: .largeSubtitle) {
@@ -203,7 +203,7 @@ public struct HostsTab: View {
             callouts.append(Callout(
                 id: "subscribe", glyph: "person.slash",
                 title: String(localized: "\(away.name) is away"),
-                detail: String(localized: "Pro reaches it from anywhere"),
+                detail: String(localized: "Relayed connections need Pro"),
                 button: String(localized: "Subscribe"), act: .subscribe,
                 identifier: "hosts.subscribe"))
         }
@@ -280,8 +280,8 @@ public struct HostsTab: View {
         var parts: [String] = []
         if let platform = host.platform?.name { parts.append(platform) }
         switch host.group {
-        case .onThisNetwork: parts.append(String(localized: "direct"))
-        case .throughTheRelay: parts.append(String(localized: "over the internet"))
+        case .onThisNetwork: parts.append(host.sameNetwork ? String(localized: "Local") : String(localized: "Direct"))
+        case .throughTheRelay: parts.append(String(localized: "Relayed"))
         case .away: parts.append(String(localized: "away on the free plan"))
         case .offline:
             if model.isConnecting(host.id) {
@@ -318,11 +318,12 @@ public struct HostsTab: View {
         var parts = [host.name]
         if let platform = host.platform?.name { parts.append(platform) }
         switch host.group {
-        case .onThisNetwork: parts.append(String(localized: "reachable on this network"))
-        case .throughTheRelay: parts.append(String(localized: "reachable over the internet"))
+        case .onThisNetwork:
+            parts.append(host.sameNetwork ? String(localized: "connected, local") : String(localized: "connected, direct"))
+        case .throughTheRelay: parts.append(String(localized: "connected, relayed"))
         case .away:
             parts.append(String(localized: "away"))
-            parts.append(String(localized: "reaching it from another network needs Pro"))
+            parts.append(String(localized: "relayed connections need Pro"))
         case .offline where model.isConnecting(host.id):
             parts.append(String(localized: "connecting"))
         case .offline:
@@ -363,11 +364,11 @@ public struct HostsTab: View {
                     refusedNetwork
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("No computers yet")
+                        Text("No devices yet")
                             .designFont(.screenTitle, design)
                             .foregroundStyle(design.ink.color)
-                            .identified("hosts.empty", value: "No computers yet")
-                        Explain("A computer running amux on this network appears here, ready to pair.")
+                            .identified("hosts.empty", value: "No devices yet")
+                        Explain("A device running amux on this network appears here, ready to pair.")
                     }
                     if !model.networkExplained {
                         LocalNetworkPrimer(identifier: "hosts.localNetwork") {

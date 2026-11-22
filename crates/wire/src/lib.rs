@@ -257,7 +257,7 @@ pub fn provider_signalled(detail: Option<&str>) -> bool {
 /// What a caller says of a method its host does not have. gRPC's own answer
 /// to an unknown method has no words, and a caller's "could not start the
 /// agent: " would end at the colon.
-pub const HOST_NEEDS_UPDATE: &str = "that host needs updating to do this";
+pub const HOST_NEEDS_UPDATE: &str = "that device needs updating to do this";
 
 /// A person's input as its kind's own message: what a client builds and
 /// what the agent of that kind decodes from [`Input::body`].
@@ -395,6 +395,7 @@ impl HostEntry {
             standing: Some(host_entry::Standing::Trusted(Trusted {
                 reach: Some(reach),
                 current: false,
+                same_network: false,
             })),
             ..Self::default()
         }
@@ -456,6 +457,13 @@ impl HostEntry {
             trusted::Reach::Online(kind) => Some(RouteKind::try_from(*kind).unwrap_or_default()),
             _ => None,
         }
+    }
+
+    /// A trusted host online over a direct path on a network both machines
+    /// are on, which a client calls Local.
+    pub fn same_network(&self) -> bool {
+        self.online() == Some(RouteKind::Direct)
+            && self.trusted().is_some_and(|trusted| trusted.same_network)
     }
 
     pub fn away(&self) -> bool {

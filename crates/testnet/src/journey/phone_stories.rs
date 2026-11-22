@@ -335,7 +335,7 @@ fn reviewed(chat: &Value, comment: &str) -> Result<(Value, String), String> {
 /// there and the machine it names is trusted.
 fn pair_by_code(journey: &mut PhoneJourney, host: &str) -> Result<(), String> {
     let host_id = journey.host_id(host);
-    journey.tab("Computers")?;
+    journey.tab("Devices")?;
     journey.wait_for(&[&format!("hosts.found.{host_id}")])?;
     let mut pairing = journey.amux(host, &["pair"])?;
     let pin = printed_pin(&mut pairing)?;
@@ -550,7 +550,7 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
         |drawn| !drawn.has("pair-confirm"),
         "the pairing sheet closed",
     )?;
-    journey.tab("Computers")?;
+    journey.tab("Devices")?;
     let row = format!("hosts.row.{desk}");
     let drawn = journey.wait(
         |drawn| drawn.has(&row) && !drawn.has("pair-confirm"),
@@ -1831,7 +1831,7 @@ fn keep_authority(journey: &mut PhoneJourney) -> Proved {
         |drawn| !drawn.has(&row) && drawn.has("home"),
         "bob's empty fleet",
     )?;
-    journey.tab("Computers")?;
+    journey.tab("Devices")?;
     let drawn = journey.wait(|drawn| drawn.has("hosts"), "bob's hosts")?;
     if drawn.has(&format!("hosts.row.{desk}")) {
         return Err("bob's profile knows the desk".to_owned());
@@ -1867,7 +1867,7 @@ fn keep_authority(journey: &mut PhoneJourney) -> Proved {
     )?;
     journey.tap("you.close")?;
     journey.wait(|drawn| !drawn.has("you"), "Settings put away")?;
-    journey.tab("Computers")?;
+    journey.tab("Devices")?;
     journey.wait(
         |drawn| labelled(drawn, "signed out"),
         "the hosts tab naming the sign-out",
@@ -2155,7 +2155,7 @@ fn account_sign_in(journey: &mut PhoneJourney) -> Proved {
     // Signed in, the phone reaches the desk only through the relay the
     // account service named: the desk has no network in common with it.
     pair_through_the_relay(journey, "desk")?;
-    journey.tab("Computers")?;
+    journey.tab("Devices")?;
     let desk = journey.host_id("desk");
     let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
     trusted_as(&drawn, &desk, "desk")?;
@@ -2269,7 +2269,7 @@ fn one_tap_sign_in(journey: &mut PhoneJourney) -> Proved {
     journey.screen("signed-in", &[])?;
     close_settings(journey)?;
 
-    journey.tab("Computers")?;
+    journey.tab("Devices")?;
     let desk = journey.host_id("desk");
     let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
     trusted_as(&drawn, &desk, "desk")?;
@@ -2352,7 +2352,7 @@ fn purchase_restore(journey: &mut PhoneJourney) -> Proved {
         "the pairing sheet closed",
     )?;
     journey.screen("paired", &[])?;
-    journey.tab("Computers")?;
+    journey.tab("Devices")?;
     let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
     trusted_as(&drawn, &desk, "desk")?;
     round_trip(journey, "desk-work", RELAYED, THROUGH_RELAY)?;
@@ -2562,7 +2562,7 @@ fn accessibility(journey: &mut PhoneJourney) -> Proved {
     // Hosts and Settings at the same size: every control whole across the
     // screen, and the Appearance control's choices clear of one another.
     leave_chat(journey)?;
-    journey.tab("Computers")?;
+    journey.tab("Devices")?;
     let row = format!("hosts.row.{}", journey.host_id("desk"));
     let hosts = journey.wait_for(&[&row])?;
     across_the_screen(&hosts, "hosts.")?;
@@ -2658,7 +2658,7 @@ fn local_network(journey: &mut PhoneJourney) -> Proved {
         .record
         .actions
         .push("the system says the local network was refused".to_owned());
-    journey.tab("Computers")?;
+    journey.tab("Devices")?;
     let drawn = journey.wait_for(&["hosts.localNetwork.refused", "hosts.localNetwork.settings"])?;
     if drawn.has(&offer) {
         return Err("the phone offers the desk with the local network refused".to_owned());
@@ -2672,7 +2672,7 @@ fn local_network(journey: &mut PhoneJourney) -> Proved {
         .record
         .actions
         .push("the local network granted in Settings and the app opened again".to_owned());
-    journey.tab("Computers")?;
+    journey.tab("Devices")?;
     journey.wait(
         |drawn| drawn.has(&offer) && !drawn.has("hosts.localNetwork.refused"),
         "the desk found",
@@ -2709,7 +2709,7 @@ fn local_network(journey: &mut PhoneJourney) -> Proved {
         "the pairing sheet closed",
     )?;
     pairing.wait(Duration::from_secs(30))?;
-    journey.tab("Computers")?;
+    journey.tab("Devices")?;
     let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
     trusted_as(&drawn, &desk, "desk")?;
     round_trip(
@@ -3221,7 +3221,7 @@ mod tests {
         let drawn = Drawn::of(&[element(
             &format!("hosts.row.{DESK}"),
             [0.0; 4],
-            Some("desk, reachable on this network"),
+            Some("desk, connected, direct"),
         )]);
         assert!(trusted_as(&drawn, DESK, "desk").is_ok());
         assert!(trusted_as(&drawn, DESK, "laptop").is_err());

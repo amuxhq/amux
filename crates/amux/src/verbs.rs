@@ -225,7 +225,7 @@ fn listed_state(agent: &Agent, hosts: &[HostEntry], host_name: &str) -> String {
     let live = Lifecycle::try_from(agent.lifecycle) != Ok(Lifecycle::Exited);
     match hosts.iter().find(|host| host.host_id() == agent.host_id) {
         Some(host) if live && host.revoked() => {
-            format!("{host_name} no longer trusts this machine")
+            format!("{host_name} unpaired this device")
         }
         Some(host) if live && host.online().is_none() => {
             format!("{host_name} is away")
@@ -414,7 +414,7 @@ fn refusal_words(name: &str, refusal: Refusal) -> String {
         Refusal::Exited => {
             format!("{name} has stopped; start it again with `amux resume {name} <text>`")
         }
-        Refusal::HostUnreachable => format!("{name}'s host cannot be reached"),
+        Refusal::HostUnreachable => format!("{name}'s device cannot be reached"),
         Refusal::ConversationElsewhere => format!(
             "Claude's own view switched to another conversation, so {name}'s conversation is \
              not the one on its screen"

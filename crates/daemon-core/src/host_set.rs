@@ -234,6 +234,7 @@ impl Daemon {
                     standing: Some(Standing::Trusted(wire::Trusted {
                         reach: Some(self.reads(host)),
                         current: self.sources.ready(host),
+                        same_network: self.same_network(host),
                     })),
                     push_key: None,
                     claude_kind: self
@@ -261,6 +262,7 @@ impl Daemon {
         own.standing = Some(Standing::Trusted(wire::Trusted {
             reach: Some(trusted::Reach::Online(RouteKind::Unspecified as i32)),
             current: true,
+            same_network: false,
         }));
         fresh.insert(own_host, own);
         fresh
@@ -369,6 +371,16 @@ impl Daemon {
             },
             None => RouteKind::Unspecified,
         }
+    }
+
+    /// Whether `host` reads online over a direct link on a network both
+    /// hosts are on: the link its calls take is carried on such a path.
+    pub fn same_network(&self, host: HostId) -> bool {
+        matches!(self.reads(host), trusted::Reach::Online(_))
+            && match self.presence.view(host).route() {
+                Some(Route::Direct(link)) => self.routing.links.link(link).is_some_and(|up| up.lan),
+                _ => false,
+            }
     }
 
     /// How `host` reads, as every client is told: online over the kind of

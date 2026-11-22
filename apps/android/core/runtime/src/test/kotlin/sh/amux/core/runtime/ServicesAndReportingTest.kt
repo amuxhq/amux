@@ -160,6 +160,7 @@ class ServicesAndReportingTest {
         val deskHost = sh.amux.values.HostView(
             hostId = hostId.bytes,
             link = 0L,
+            sameNetwork = false,
             name = "desk",
             local = false,
             trusted = true,

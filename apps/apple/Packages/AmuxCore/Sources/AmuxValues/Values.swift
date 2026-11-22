@@ -3867,6 +3867,9 @@ public struct HostView: Codable, Hashable, Sendable {
     public var candidate: Bool
     /// How this device reaches it now, and over which route.
     public var reach: Reach
+    /// Online over a direct path on a network both are on, which reads
+    /// Local; `reach` says direct for it too.
+    public var sameNetwork: Bool
     /// How many links to it this device has read come up: one more each
     /// time it reads the host linked after reading it otherwise. Two
     /// listings that read it linked with the same count read the same
@@ -3902,13 +3905,14 @@ public struct HostView: Codable, Hashable, Sendable {
     public var through: String?
     public var version: String?
 
-    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, link: UInt64, addrs: [String], relayOnly: Bool, pairingOpen: Bool, current: Bool, providers: [ProviderSignIn], claudeKind: Kind?, lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
+    public init(hostId: [UInt8], name: String, local: Bool, trusted: Bool, candidate: Bool, reach: Reach, sameNetwork: Bool, link: UInt64, addrs: [String], relayOnly: Bool, pairingOpen: Bool, current: Bool, providers: [ProviderSignIn], claudeKind: Kind?, lastDialError: String?, platform: Platform?, signedIn: Bool?, through: String?, version: String?) {
         self.hostId = hostId
         self.name = name
         self.local = local
         self.trusted = trusted
         self.candidate = candidate
         self.reach = reach
+        self.sameNetwork = sameNetwork
         self.link = link
         self.addrs = addrs
         self.relayOnly = relayOnly
@@ -3930,6 +3934,7 @@ public struct HostView: Codable, Hashable, Sendable {
         case trusted
         case candidate
         case reach
+        case sameNetwork = "same_network"
         case link
         case addrs
         case relayOnly = "relay_only"

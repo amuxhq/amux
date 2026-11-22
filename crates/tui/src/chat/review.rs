@@ -1078,10 +1078,10 @@ impl Page {
         if let Some(text) = self.gone() {
             let room = width.saturating_sub(4).max(1);
             let why = if self.round.as_ref().is_some_and(|round| round.unreachable) {
-                "The agent's computer can't be reached and none of this round was loaded, so this \
+                "The agent's device can't be reached and none of this round was loaded, so this \
                  is what the agent read."
             } else {
-                "The agent's computer no longer holds this round, so this is what the agent read."
+                "The agent's device no longer holds this round, so this is what the agent read."
             };
             for part in text::wrap(why, room) {
                 let mut line = Line::from(Span::raw("  "));
@@ -1697,7 +1697,7 @@ fn banner_lines(banner: &ReviewBanner, width: usize, theme: Theme) -> Vec<Line<'
             None,
         ),
         ReviewBanner::NotOffered => (
-            "Reviews aren't offered on this agent's computer: its reviews experiment is off, or \
+            "Reviews aren't offered on this agent's device: its reviews experiment is off, or \
              its amux predates them."
                 .into(),
             theme.muted(),
@@ -1709,7 +1709,7 @@ fn banner_lines(banner: &ReviewBanner, width: usize, theme: Theme) -> Vec<Line<'
             None,
         ),
         ReviewBanner::RoundGone => (
-            "The round's snapshot is gone from the agent's computer: its comments show with \
+            "The round's snapshot is gone from the agent's device: its comments show with \
              the code saved with them."
                 .into(),
             theme.muted(),
@@ -1721,7 +1721,7 @@ fn banner_lines(banner: &ReviewBanner, width: usize, theme: Theme) -> Vec<Line<'
             Some(("r", "try again")),
         ),
         ReviewBanner::Unreachable => (
-            "This agent's computer can't be reached: what was loaded still reads, and comments \
+            "This agent's device can't be reached: what was loaded still reads, and comments \
              can't be saved until it's back."
                 .into(),
             theme.warning(),

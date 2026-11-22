@@ -65,6 +65,7 @@ fn linked(daemon: &mut Daemon, link: u64, peer: HostId, kind: CarrierKind, reach
             link: LinkId(link),
             peer,
             kind,
+            lan: false,
             resumed: None,
         },
     );
@@ -147,6 +148,7 @@ fn a_trusted_host_the_relay_claims_is_remembered_as_on_the_account() {
             link: LinkId(2),
             peer: RELAY,
             kind: CarrierKind::Relay,
+            lan: false,
             resumed: None,
         },
     );
@@ -261,6 +263,7 @@ fn a_phone_a_neighbor_announces_is_no_candidate_since_it_shows_no_pairing_code()
             link: LinkId(1),
             peer: RELAY,
             kind: CarrierKind::Relay,
+            lan: false,
             resumed: None,
         },
     );

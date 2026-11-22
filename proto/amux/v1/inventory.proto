@@ -115,6 +115,12 @@ message Trusted {
   // they were remembered. Cleared when the host is lost; a client that
   // reads every trusted host current has reconciled with its fleet.
   bool current = 4;
+  // Online over a direct path on a network both machines are on: a
+  // private, unique-local, link-local or loopback address, as a client says
+  // Local. `online` stays ROUTE_KIND_DIRECT, so a reader without this field
+  // reads the host as direct, which it also is. False for every other route,
+  // for this machine itself, and from builds before it.
+  bool same_network = 5;
 }
 
 message Offline {

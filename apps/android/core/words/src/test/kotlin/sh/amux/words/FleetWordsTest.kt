@@ -113,7 +113,7 @@ class FleetWordsTest {
         assertEquals("Connection refused", failed?.text)
         assertEquals(FleetWords.Ink.Warning, failed?.ink)
         val revoked = FleetWords.secondLine(SecondLine.HostRevoked, kind = Kind.ClaudeSdk, now = now)
-        assertEquals("Unpaired by its computer · pair again to reach it", revoked?.text)
+        assertEquals("Unpaired by its device · pair again to reach it", revoked?.text)
         assertEquals(FleetWords.Ink.Warning, revoked?.ink)
     }
 

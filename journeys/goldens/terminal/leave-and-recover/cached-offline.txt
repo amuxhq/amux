@@ -31,4 +31,4 @@
   │ › Keep this draft through the outage.                                                                  │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  enter can't send until its computer is back
+  enter can't send until its device is back

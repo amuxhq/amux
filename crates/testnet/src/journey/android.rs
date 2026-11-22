@@ -1803,11 +1803,14 @@ fn reach_host(journey: &mut AndroidJourney) -> Proved {
     journey.screen("pair-confirm", &["pairing.fingerprint"])?;
 
     journey.tap("pairing.confirm")?;
+    // Reached directly, the row reads Local when the phone and desk share a
+    // network and Direct when they do not.
     let paired_hosts = journey.wait(
         |drawn| {
+            let row = drawn.label("hosts.row.desk").to_lowercase();
             !drawn.has("pairing.sheet")
                 && drawn.has("hosts.row.desk")
-                && drawn.label("hosts.row.desk").contains("direct")
+                && (row.contains("direct") || row.contains("local"))
         },
         "desk paired and reachable directly",
     )?;
@@ -1853,7 +1856,7 @@ fn reach_host(journey: &mut AndroidJourney) -> Proved {
             .to_owned(),
         "typing the 6-digit PIN reached desk over QUIC/UDP and displayed its fingerprint"
             .to_owned(),
-        format!("confirming trust listed desk on Computers tab: {host_label}"),
+        format!("confirming trust listed desk on Devices tab: {host_label}"),
         format!("reconciled fleet listed desk-work on Agents tab: {agent_label}"),
         format!(
             "the desk's agent answered and recorded {} once",
@@ -3109,7 +3112,7 @@ fn one_tap_sign_in(journey: &mut AndroidJourney) -> Proved {
     Ok(vec![
         "unauthenticated phone paired with signed-in desk over LAN PIN".to_owned(),
         "desk's account offer raised SignInOfferSheet naming ada@example.com and desk".to_owned(),
-        "one tap on Accept signed the phone in as ada@example.com and preserved desk in Computers"
+        "one tap on Accept signed the phone in as ada@example.com and preserved desk in Devices"
             .to_owned(),
     ])
 }

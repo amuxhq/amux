@@ -885,14 +885,14 @@ public struct AgentsHome: View {
             return Callout(
                 id: "subscribe", glyph: glyph(for: .subscribe),
                 title: String(localized: "\(host) is away"),
-                detail: String(localized: "Pro reaches it from anywhere"),
+                detail: String(localized: "Relayed connections need Pro"),
                 button: String(localized: "Subscribe"), act: .subscribe,
                 identifier: "home.subscribe")
         case .signIn(let host)?:
             return Callout(
                 id: "signIn", glyph: glyph(for: .signIn),
                 title: String(localized: "\(host) is out of reach"),
-                detail: String(localized: "Sign in to reach it from anywhere"),
+                detail: String(localized: "Sign in to reach it through the relay"),
                 button: String(localized: "Sign In"), act: .signIn,
                 identifier: "home.signIn", working: signingIn)
         case nil:
@@ -961,11 +961,11 @@ public struct AgentsHome: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.xl) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Pair your first computer")
+                    Text("Pair your first device")
                         .designFont(.screenTitle, design)
                         .foregroundStyle(design.ink.color)
-                        .identified("home.empty.firstRun", value: "Pair your first computer")
-                    Explain("amux runs agents on your computers. Pair one and its agents appear here.")
+                        .identified("home.empty.firstRun", value: "Pair your first device")
+                    Explain("amux runs agents on your devices. Pair one and its agents appear here.")
                         .identified("home.empty.explain")
                 }
                 .padding(.horizontal, design.metrics.gutter)
@@ -1041,7 +1041,7 @@ public struct AgentsHome: View {
         VStack(alignment: .leading, spacing: Space.l) {
             step(1) {
                 VStack(alignment: .leading, spacing: Space.m) {
-                    Text("Get amux on your computer.")
+                    Text("Get amux on the device your agents will run on.")
                     ShareLink(item: Self.install) {
                         ActionLabel("Send Link", kind: .outline)
                     }
@@ -1124,7 +1124,7 @@ public struct AgentsHome: View {
                     Text("No agents yet")
                         .designFont(.screenTitle, design)
                         .foregroundStyle(design.ink.color)
-                    Explain("Start an agent on a computer and it appears here.")
+                    Explain("Start an agent on a device and it appears here.")
                         .identified("home.empty.noAgents")
                 }
                 if offersNewAgent {

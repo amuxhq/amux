@@ -221,7 +221,7 @@ public struct NewAgentPage: View {
     }
 
     private var hostName: String {
-        chosenHost.map { $0.local ? "this Mac" : PlaceNames.host($0.name) } ?? "a computer"
+        chosenHost.map { $0.local ? "this Mac" : PlaceNames.host($0.name) } ?? "a device"
     }
 
     private func picks(_ fit: Compaction) -> some View {
@@ -258,7 +258,7 @@ public struct NewAgentPage: View {
     private func hostLabel(_ fit: Compaction) -> some View {
         ChipLabel(
             icon: chosenHost.map(HostWords.lucide) ?? "monitor",
-            text: fit.hostName ? chosenHost.map { $0.local ? "This Mac" : PlaceNames.host($0.name) } ?? "Choose a computer" : nil)
+            text: fit.hostName ? chosenHost.map { $0.local ? "This Mac" : PlaceNames.host($0.name) } ?? "Choose a device" : nil)
     }
 
     private func folderButton(_ fit: Compaction) -> some View {
@@ -491,7 +491,7 @@ public struct AgentPicker: View {
 
     public var body: some View {
         let host = surface.hosts.first { $0.hostId == surface.machine }
-        let hostName = host.map { $0.local ? "this Mac" : PlaceNames.host($0.name) } ?? "this computer"
+        let hostName = host.map { $0.local ? "this Mac" : PlaceNames.host($0.name) } ?? "this device"
         ModelPicker(
             providers: [Provider.claude, .codex].map { provider in
                 let signedIn = host?.providers.first { $0.provider == provider }?.signedIn
@@ -585,7 +585,7 @@ public struct DirectoryChooser: View {
             {
                 message(onThisMac
                     ? "No repositories yet. Add one, or type a path below."
-                    : "Nothing has started on this computer yet. Type a path below.")
+                    : "Nothing has started on this device yet. Type a path below.")
             }
             if onThisMac {
                 Button(action: addRepositories) {
@@ -605,7 +605,7 @@ public struct DirectoryChooser: View {
         }
         switch surface.listing {
         case .asking: message("Loading repositories…")
-        case .unavailable: message("This computer couldn’t list its repositories.")
+        case .unavailable: message("This device couldn’t list its repositories.")
         case .none, .ready: EmptyView()
         }
     }

@@ -265,6 +265,15 @@ data class QuestionDraft(
  * An attachment carried by a composer draft along with its optional character
  * insertion offset inside the draft's words (`null` places it after all text).
  */
+/**
+ * The composer field's own account of one edit: the characters from [start]
+ * to [removedEnd] of [original] were replaced by those from [start] to
+ * [insertedEnd] of the new text. Placed attachments move by it exactly, where
+ * comparing the two texts cannot tell which of a run of repeated characters
+ * was typed or deleted.
+ */
+data class DraftEdit(val original: String, val start: Int, val removedEnd: Int, val insertedEnd: Int)
+
 data class PositionedAttachment(
     val attachment: DraftAttachment,
     val offset: Int? = null,
@@ -312,8 +321,8 @@ fun positionedDraftOf(
 
 /**
  * Extracts each attachment with its character offset in [Draft.words], keeping
- * trailing attachments (after all text) unpositioned (`offset = null`) so later
- * typing stays ahead of picked files while mid-text pastes preserve their place.
+ * picked files after all text unpositioned (`offset = null`) so later typing
+ * stays ahead of them, while pastes keep their place wherever they are.
  */
 fun Draft.positionedAttachments(): List<PositionedAttachment> {
     val lastTextIndex = parts.indexOfLast { it is DraftPart.Text && it.value.isNotEmpty() }
@@ -323,7 +332,9 @@ fun Draft.positionedAttachments(): List<PositionedAttachment> {
             when (part) {
                 is DraftPart.Text -> cursor += part.value.length
                 is DraftPart.Attachment -> {
-                    val offset = if (index < lastTextIndex) cursor else null
+                    // A paste keeps its place even after every word, so
+                    // words typed later go after it as they did before.
+                    val offset = if (index < lastTextIndex || part.value is DraftAttachment.Text) cursor else null
                     add(PositionedAttachment(part.value, offset = offset))
                 }
             }

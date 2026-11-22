@@ -30,7 +30,7 @@ object PushWords {
         }
         Said.SignedOut ->
             provider?.let { "Signed out of $it" }
-                ?: "Signed out of its provider · sign in on its host"
+                ?: "Signed out of its provider · sign in on its device"
         is Said.UsageLimit -> {
             val resetsAtMs = said.resetsAtMs
             if (resetsAtMs == null) {

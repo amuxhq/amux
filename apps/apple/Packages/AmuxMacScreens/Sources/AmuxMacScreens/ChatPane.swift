@@ -24,7 +24,7 @@ public struct ChatPane: View {
         }
     }
 
-    private var host: String { row.map { PlaceNames.host($0.hostName) } ?? "its computer" }
+    private var host: String { row.map { PlaceNames.host($0.hostName) } ?? "its device" }
 }
 
 /// The rows, oldest first, following the newest while the reader is there.

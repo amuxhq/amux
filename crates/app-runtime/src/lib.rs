@@ -237,6 +237,7 @@ impl AppRuntime {
                     .and_then(|candidate| candidate.through_paired().next())
                     .map(|through| through.name.clone()),
                 relay_only: host.candidate().is_some_and(wire::Candidate::relay_only),
+                same_network: host.same_network(),
                 pairing_open: host
                     .candidate()
                     .is_some_and(|candidate| candidate.pairing_open),

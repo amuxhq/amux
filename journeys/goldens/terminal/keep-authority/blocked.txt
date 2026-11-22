@@ -1,5 +1,5 @@
 
-  guarded │ /tmp/journey/aj-xxxxxxxx/net/des…  desk away · this computer is signed out │ 1 │ [Diff] │ [Home]
+  guarded │ /tmp/journey/aj-xxxxxxxx/net/desk/…  desk away · this device is signed out │ 1 │ [Diff] │ [Home]
 
 
 
@@ -27,8 +27,8 @@
 
     Worked <t>
 
-  ╭─ desk is away · this computer is signed out ───────────────────────────────────────────────────────────╮
+  ╭─ desk is away · this device is signed out ─────────────────────────────────────────────────────────────╮
   │ › Still there?                                                                                         │
   ╰─────────────────────────────────────────────────────────────────────────────── claude-fake-1 (medium) ─╯
 
-  enter can't send until this computer signs in
+  enter can't send until this device signs in

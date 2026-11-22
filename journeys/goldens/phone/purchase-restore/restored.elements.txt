@@ -2,13 +2,13 @@ shell |  | agents | 0,62,402,778
 home |  | ready | 0,174,402,617
 paywall |  | entitled by App Store | 0,116,402,724
 paywall.title |  | Reach your agents anywhere | 16,124,218,64
-paywall.explanation |  | Pro reaches your computers from anywhere. Computers on this network work without it. | 16,194,327,39
-paywall.subscribed |  | App Store | 16,255,370,98
+paywall.explanation |  | Pro relays connections when your phone and device aren’t on the same network. Devices on the same network connect without it. | 16,194,368,59
+paywall.subscribed |  | App Store | 16,274,370,98
 paywall.manage | Manage Subscription |  | 26,774,350,44
  | Reach your agents
 anywhere |  | 16,124,218,64
- | Pro reaches your computers from anywhere. Computers on this network work without it. |  | 16,194,327,39
- | Subscribed in the App Store, Manage your subscription in the App Store., Your other devices follow within a few minutes. |  | 16,269,319,70
+ | Pro relays connections when your phone and device aren’t on the same network. Devices on the same network connect without it. |  | 16,194,368,59
+ | Subscribed in the App Store, Manage your subscription in the App Store., Your other devices follow within a few minutes. |  | 16,288,319,70
  | Manage Subscription |  | 26,774,350,44
 BackButton | Agents |  | 16,62,44,44
  | Back |  | 16,73,44,23

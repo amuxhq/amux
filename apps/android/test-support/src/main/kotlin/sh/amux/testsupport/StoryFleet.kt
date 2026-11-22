@@ -46,8 +46,8 @@ internal object StoryFleet {
     /** The laptop with its pairing window open, as `amux pair` holds it. */
     val laptopOpen = host(4, "laptop", Platform.Macos, trusted = false, candidate = true, pairingOpen = true)
 
-    val ada = AccountUi(id = "ada", name = "Ada", email = "ada@example.com", line = "3 computers", signedIn = true, selected = true)
-    val lovelace = AccountUi(id = "ada-work", name = "Lovelace Labs", email = "ada@lovelace.dev", line = "2 computers", signedIn = true, selected = false)
+    val ada = AccountUi(id = "ada", name = "Ada", email = "ada@example.com", line = "3 devices", signedIn = true, selected = true)
+    val lovelace = AccountUi(id = "ada-work", name = "Lovelace Labs", email = "ada@lovelace.dev", line = "2 devices", signedIn = true, selected = false)
 
     /**
      * A day's agents.
@@ -191,6 +191,7 @@ internal object StoryFleet {
     ): HostView = HostView(
         hostId = List(16) { index },
         link = 0L,
+        sameNetwork = false,
         name = name,
         local = false,
         trusted = trusted,

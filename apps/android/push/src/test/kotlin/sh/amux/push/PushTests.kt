@@ -94,7 +94,7 @@ class SealedPushTests {
             "plan with a title" to "Has a plan for you to decide: Move the cache",
             "plan without one" to "Has a plan for you to decide",
             "the provider's sentence" to "Sign in to Linear to go on · 1 more",
-            "signed out" to "Signed out of its provider · sign in on its host",
+            "signed out" to "Signed out of its provider · sign in on its device",
             "usage limit with a reset" to "Usage limit reached · resets $reset",
             "usage limit without one" to "Usage limit reached",
             "failed" to "Connection refused",
@@ -263,7 +263,7 @@ class PushWordsTests {
     @Test
     fun aRowNamesTheProviderAndAPushCannot() {
         assertEquals("Signed out of Codex", PushWords.body(Said.SignedOut, provider = "Codex"))
-        assertEquals("Signed out of its provider · sign in on its host", PushWords.body(Said.SignedOut))
+        assertEquals("Signed out of its provider · sign in on its device", PushWords.body(Said.SignedOut))
     }
 
     @Test

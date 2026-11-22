@@ -185,7 +185,7 @@ class ShellTest {
         composeRule.onNodeWithTag(TestTags.TAB_AGENTS).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.TAB_HOSTS).assertIsDisplayed()
 
-        // Switch to Computers tab
+        // Switch to Devices tab
         composeRule.onNodeWithTag(TestTags.TAB_HOSTS).performClick()
         composeRule.onNodeWithTag(TestTags.HOSTS_SCREEN).assertIsDisplayed()
 
@@ -214,6 +214,7 @@ class ShellTest {
         val laptop = HostView(
             hostId = laptopId.bytes,
             link = 0L,
+            sameNetwork = false,
             name = "laptop",
             local = false,
             trusted = false,
@@ -277,6 +278,7 @@ class ShellTest {
         val discoveredHost = HostView(
             hostId = hostId.bytes,
             link = 0L,
+            sameNetwork = false,
             name = "ipv6-desk",
             local = false,
             trusted = false,
@@ -319,6 +321,7 @@ class ShellTest {
         val desk = HostView(
             hostId = hostId.bytes,
             link = 0L,
+            sameNetwork = false,
             name = "desk",
             local = false,
             trusted = false,
@@ -371,6 +374,7 @@ class ShellTest {
         val desk = HostView(
             hostId = hostId.bytes,
             link = 0L,
+            sameNetwork = false,
             name = "desk",
             local = false,
             trusted = true,
@@ -522,6 +526,7 @@ class ShellTest {
         val desk = HostView(
             hostId = hostId.bytes,
             link = 0L,
+            sameNetwork = false,
             name = "desk",
             local = false,
             trusted = true,

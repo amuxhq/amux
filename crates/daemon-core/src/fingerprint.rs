@@ -153,6 +153,7 @@ mod tests {
                 link: LinkId(1),
                 peer: PEER,
                 kind: CarrierKind::Direct,
+                lan: false,
                 resumed: None,
             },
             &mut out,

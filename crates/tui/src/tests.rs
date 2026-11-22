@@ -803,7 +803,7 @@ fn an_answer_refused_because_its_host_is_away_opens_the_card_again() {
     let (buffer, _) = draw(&mut view, &state, at, 80, 24, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("Not sent: its computer is away"),
+        screen.contains("Not sent: its device is away"),
         "the card does not say why its answer did not go:\n{screen}"
     );
 }
@@ -1197,18 +1197,18 @@ fn a_host_out_of_reach_while_this_machine_is_signed_out_names_this_machines_sign
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("desk away · this computer is signed out"),
+        screen.contains("desk away · this device is signed out"),
         "{screen}"
     );
     assert!(
-        screen.contains("desk is away · this computer is signed out"),
+        screen.contains("desk is away · this device is signed out"),
         "{screen}"
     );
     typed(&mut view, &state, "still there?");
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("can't send until this computer signs in"),
+        screen.contains("can't send until this device signs in"),
         "{screen}"
     );
 
@@ -1223,7 +1223,7 @@ fn a_host_out_of_reach_while_this_machine_is_signed_out_names_this_machines_sign
         .collect();
     let screen = screen.join("\n");
     assert!(
-        screen.contains("offline · this computer is signed out"),
+        screen.contains("offline · this device is signed out"),
         "{screen}"
     );
     assert!(!screen.contains("not signed in"), "{screen}");
@@ -1270,11 +1270,11 @@ fn a_host_away_on_the_free_plan_names_the_plan() {
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("desk away · reaching it from another network needs Pro"),
+        screen.contains("desk away · relayed connections need Pro"),
         "{screen}"
     );
     assert!(
-        screen.contains("desk is away · reaching it from another network needs Pro"),
+        screen.contains("desk is away · relayed connections need Pro"),
         "{screen}"
     );
 
@@ -1289,7 +1289,7 @@ fn a_host_away_on_the_free_plan_names_the_plan() {
         .collect();
     let rows = rows.join("\n");
     assert!(
-        rows.contains("away · reaching it from another network needs Pro"),
+        rows.contains("away · relayed connections need Pro"),
         "{rows}"
     );
 }
@@ -1304,12 +1304,12 @@ fn an_empty_caught_up_chat_is_not_away_by_a_lagging_fleet() {
     view.reach = ui_view::Reach::Offline(ui_view::Offline::Plain);
     let screen = text(&draw(&mut view, &state, 0, W, H, theme()).0);
     assert!(screen.contains("Nothing here yet."), "{screen}");
-    assert!(!screen.contains("computer is away"), "{screen}");
+    assert!(!screen.contains("device is away"), "{screen}");
 
     state.update(event(session_event::Of::Detached(wire::Detached {})));
     let screen = text(&draw(&mut view, &state, 0, W, H, theme()).0);
     assert!(
-        screen.contains("Its computer is away, and nothing of this chat is held here yet."),
+        screen.contains("Its device is away, and nothing of this chat is held here yet."),
         "{screen}"
     );
 }
@@ -1329,6 +1329,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
                 ..Default::default()
             })),
             current: false,
+            same_network: false,
         }));
     }
     inventory(&mut fleet, desk);
@@ -1344,7 +1345,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
         .collect();
     let screen = screen.join("\n");
     assert!(
-        screen.contains("offline · unpaired this computer"),
+        screen.contains("offline · unpaired this device"),
         "{screen}"
     );
     assert!(!screen.contains("not signed in"), "{screen}");
@@ -1356,7 +1357,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
     view.reach = ui_view::reach(&fleet, b"laptop", b"host");
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
-    assert!(screen.contains("desk unpaired this computer"), "{screen}");
+    assert!(screen.contains("desk unpaired this device"), "{screen}");
     assert!(
         screen.contains("can't send until you pair again"),
         "{screen}"
@@ -1369,7 +1370,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
     });
     let screen = fleet_screen(&mut fleet_view, &fleet);
     assert!(
-        screen.contains("desk unpaired this computer · amux pair desk"),
+        screen.contains("desk unpaired this device · amux pair desk"),
         "{screen}"
     );
     assert!(!screen.contains("away"), "{screen}");
@@ -1496,13 +1497,13 @@ fn the_hosts_overlay_draws_trusted_hosts_and_candidates() {
             .to_owned()
     };
     assert!(row("laptop").ends_with("offline"), "{screen}");
-    assert!(row("studio").ends_with("this computer"), "{screen}");
+    assert!(row("studio").ends_with("this device"), "{screen}");
     assert!(
         row("den mac").ends_with("found nearby · amux pair 'den mac'"),
         "{screen}"
     );
     assert!(
-        row("nova").ends_with("on your account · Pro pairs it over the internet · amux pair nova"),
+        row("nova").ends_with("on your account · relayed connections need Pro · amux pair nova"),
         "{screen}"
     );
     assert!(
@@ -1601,7 +1602,7 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
     for kind in [Kind::ClaudePty, Kind::Codex, Kind::ClaudeSdk] {
         assert_eq!(
             refusal(&agent(b"b", kind)),
-            Some("its terminal is on another computer"),
+            Some("its terminal is on another device"),
         );
     }
 }
@@ -1733,10 +1734,10 @@ mod review_page {
         press(&mut page, KeyCode::Char('c'));
         type_words(&mut page, "why log here");
         press(&mut page, KeyCode::Enter);
-        page.edited(Err("the agent's computer can't be reached".into()));
+        page.edited(Err("the agent's device can't be reached".into()));
         let shown = screen(&mut page);
         assert!(shown.contains("why log here"), "{shown}");
-        assert!(shown.contains("not saved: the agent's computer"), "{shown}");
+        assert!(shown.contains("not saved: the agent's device"), "{shown}");
         // Enter tries again.
         assert!(matches!(
             press(&mut page, KeyCode::Enter),
@@ -2315,7 +2316,7 @@ fn an_exited_agent_on_an_away_host_names_why_it_is_away() {
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("stopped · desk away · this computer is signed out"),
+        screen.contains("stopped · desk away · this device is signed out"),
         "{screen}"
     );
     assert!(screen.contains("Enter resumes"), "{screen}");

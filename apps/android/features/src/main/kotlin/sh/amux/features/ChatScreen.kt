@@ -306,7 +306,7 @@ data class ChatScreenCallbacks(
     val onOpenLink: (OpenableLink) -> Unit = {},
     val onCopyCode: (String) -> Unit = {},
     val onCopyAddress: (String) -> Unit = {},
-    val onDraftChange: (String) -> Unit = {},
+    val onDraftChange: (String, FieldEdit?) -> Unit = { _, _ -> },
     val onSend: () -> Unit = {},
     val onResume: () -> Unit = {},
     val onInterrupt: () -> Unit = {},
@@ -838,7 +838,7 @@ private fun ChatScreenContent(
                 val prefix = "$token "
                 val trimmedStart = state.draft.trimStart()
                 when {
-                    state.draft.isBlank() -> callbacks.onDraftChange(prefix)
+                    state.draft.isBlank() -> callbacks.onDraftChange(prefix, null)
                     trimmedStart == token || trimmedStart.startsWith(prefix) -> Unit
                     else -> pendingCommandPrefix = prefix
                 }
@@ -871,7 +871,7 @@ private fun ChatScreenContent(
                 TextButton(
                     onClick = {
                         pendingCommandPrefix = null
-                        callbacks.onDraftChange(commandToReplace)
+                        callbacks.onDraftChange(commandToReplace, null)
                     },
                     modifier = Modifier.testTag(ChatScreenTags.COMMAND_REPLACE_CONFIRM),
                 ) {

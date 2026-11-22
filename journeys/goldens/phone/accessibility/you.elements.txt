@@ -3,7 +3,7 @@ home |  | signed-out | 0,333,402,458
 hosts |  | 1 reachable | 0,221,402,570
 you |  | none | 0,132,402,708
 you.signIn | Sign In |  | 16,176,370,69
-you.signIn.caption |  |  | 16,253,342,212
+you.signIn.caption |  |  | 16,253,370,212
 you.appearance |  | system | 16,527,370,121
 you.appearance.light | Light | not chosen | 32,580,89,66
 you.appearance.dark | Dark | not chosen | 121,580,84,66
@@ -30,17 +30,17 @@ you.close | Close |  | 342,82,40,36
  | Needs you |  | 164,342,73,18
  | Working |  | 262,335,124,32
  | Working |  | 296,342,57,18
- | Agents |  | 110,795,95,54
+ | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 216,830,56,12
- | Agents |  | 110,795,95,54
- | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 217,830,55,12
+ | Devices |  | 197,795,94,54
+ | Devices |  | 224,830,40,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Devices |  | 197,795,94,54
+ | Devices |  | 225,830,39,12
  | ACCOUNTS |  | 18,132,164,36
  | Sign In |  | 16,176,370,69
- | An account lets this phone reach your computers from anywhere, and a subscription bought on amux.sh carries over. |  | 30,253,314,212
+ | With an account, this phone can reach your devices through the relay, and a subscription bought on amux.sh carries over. |  | 30,253,342,212
  | THIS PHONE |  | 18,483,175,36
  | Appearance |  | 30,536,197,43
  | Light |  | 32,580,89,66
@@ -58,5 +58,5 @@ you.close | Close |  | 342,82,40,36
  | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1804,338,106
  | Settings |  | 161,88,80,25
  | Close |  | 342,82,40,36
- | Agents | selected | 110,795,95,54
- | Computers |  | 197,795,95,54
+ | Agents | selected | 111,795,94,54
+ | Devices |  | 197,795,94,54

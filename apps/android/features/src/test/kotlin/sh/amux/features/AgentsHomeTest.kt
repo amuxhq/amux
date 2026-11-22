@@ -56,6 +56,7 @@ class AgentsHomeTest {
         HostView(
             hostId = List(16) { index },
             link = 0L,
+            sameNetwork = false,
             name = name,
             local = false,
             trusted = trusted,
@@ -159,9 +160,9 @@ class AgentsHomeTest {
             machines = listOf(desk, studio),
             orderedAtMs = nowMs,
             accounts = listOf(
-                AccountUi("a1", "Ada", "ada@example.com", "2 hosts", signedIn = true, selected = true),
+                AccountUi("a1", "Ada", "ada@example.com", "2 devices", signedIn = true, selected = true),
             ),
-            selectedAccount = AccountUi("a1", "Ada", "ada@example.com", "2 hosts", signedIn = true, selected = true),
+            selectedAccount = AccountUi("a1", "Ada", "ada@example.com", "2 devices", signedIn = true, selected = true),
         )
         return Triple(state, askRow, workingRow)
     }

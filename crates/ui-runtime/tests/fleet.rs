@@ -175,6 +175,7 @@ async fn the_fleet_dump_part_writes_no_names_paths_or_status_text() {
                 revoked: false,
             })),
             current: false,
+            same_network: false,
         }),
     ));
     feed.send(host(

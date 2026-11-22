@@ -537,7 +537,11 @@ private fun CopyableMonoRow(
 
 @Composable
 private fun hostReachLine(host: HostView, state: HostPageState, clock: ElapsedClock): String = when (host.reachGroup()) {
-    HostReachGroup.OnThisNetwork -> stringResource(R.string.host_page_reach_direct)
+    // A direct path on the network both are on reads Local; a direct one
+    // across networks, as over Tailscale, reads Direct.
+    HostReachGroup.OnThisNetwork -> stringResource(
+        if (host.sameNetwork) R.string.host_page_reach_local else R.string.host_page_reach_direct,
+    )
     HostReachGroup.ThroughTheRelay -> stringResource(R.string.host_page_reach_relay)
     HostReachGroup.Away -> stringResource(R.string.host_page_reach_away)
     HostReachGroup.Offline -> when {

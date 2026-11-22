@@ -231,6 +231,7 @@ mod tests {
                     link: LinkId(link),
                     peer: HostId(PEER),
                     kind: CarrierKind::Direct,
+                    lan: false,
                     resumed: None,
                 },
             );

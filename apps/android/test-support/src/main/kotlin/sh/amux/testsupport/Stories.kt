@@ -211,15 +211,15 @@ object Stories {
             id = "fleet.no-agents",
             area = "Fleet",
             title = "No agents yet",
-            description = "Paired with a computer that has no agents running yet.",
+            description = "Paired with a device that has no agents running yet.",
         ) {
             AgentsHome(state = StoryFleet.noAgents(), onAction = {})
         },
         Story(
             id = "fleet.first-run",
             area = "Fleet",
-            title = "First run (computer found)",
-            description = "No computers paired yet, with one nearby computer discovered on the network.",
+            title = "First run (device found)",
+            description = "No devices paired yet, with one nearby device discovered on the network.",
         ) {
             AgentsHome(state = StoryFleet.firstRun(), onAction = {})
         },
@@ -227,7 +227,7 @@ object Stories {
             id = "fleet.first-run-two-found",
             area = "Fleet",
             title = "First run (two found)",
-            description = "No computers paired yet, with two computers discovered on this network.",
+            description = "No devices paired yet, with two devices discovered on this network.",
         ) {
             AgentsHome(state = StoryFleet.firstRun(found = listOf(StoryFleet.laptop, StoryFleet.studioFound)), onAction = {})
         },
@@ -235,7 +235,7 @@ object Stories {
             id = "fleet.first-run-window-open",
             area = "Fleet",
             title = "First run (pairing window open)",
-            description = "Nearby computer advertising an open pairing window ready for one-tap pairing.",
+            description = "Nearby device advertising an open pairing window ready for one-tap pairing.",
         ) {
             AgentsHome(state = StoryFleet.firstRun(found = listOf(StoryFleet.laptopOpen)), onAction = {})
         },
@@ -269,16 +269,16 @@ object Stories {
         Story(
             id = "fleet.first-run-signed-out-found",
             area = "Fleet",
-            title = "First run (signed out, computer found)",
-            description = "Nothing paired on a phone with no account, with one nearby computer discovered.",
+            title = "First run (signed out, device found)",
+            description = "Nothing paired on a phone with no account, with one nearby device discovered.",
         ) {
             AgentsHome(state = StoryFleet.firstRun(accounts = 0), onAction = {})
         },
         Story(
             id = "fleet.first-run-on-the-account-free",
             area = "Fleet",
-            title = "First run (relay host on free plan)",
-            description = "Nothing paired on the free plan, with a computer on the account reachable only through the relay.",
+            title = "First run (relayed device on free plan)",
+            description = "Nothing paired on the free plan, with a device on the account reachable only through the relay.",
         ) {
             AgentsHome(state = StoryFleet.firstRun(found = listOf(StoryFleet.onTheAccount), pro = false), onAction = {})
         },
@@ -330,7 +330,7 @@ object Stories {
             id = "new-agent.claude",
             area = "New Agent",
             title = "New Claude agent",
-            description = "Starting a Claude agent: host, folder, name, model, effort, and permission.",
+            description = "Starting a Claude agent: device, folder, name, model, effort, and permission.",
         ) {
             NewAgentScreen(state = newAgentState(), onAction = {})
         },
@@ -442,8 +442,8 @@ object Stories {
         Story(
             id = "chat.away",
             area = "Chat",
-            title = "Host away with kept draft",
-            description = "Away host showing out-of-reach notice, kept draft text, and disabled Send.",
+            title = "Device away with kept draft",
+            description = "Away device showing out-of-reach notice, kept draft text, and disabled Send.",
         ) {
             StoryChatScreen(
                 chat(
@@ -862,32 +862,32 @@ object Stories {
         Story(
             id = "hosts.list",
             area = "Hosts",
-            title = "Paired computers",
-            description = "Every paired computer by how it is reached (direct, relay, away, offline, unpaired this phone) with one found nearby.",
+            title = "Paired devices",
+            description = "Every paired device by how it is reached (direct, relayed, away, offline, unpaired this phone) with one found nearby.",
         ) {
             HostsTab(state = hostsTabState(F.machines), onAction = {})
         },
         Story(
             id = "hosts.empty",
             area = "Hosts",
-            title = "No computers yet",
-            description = "Computers tab when nothing is paired or discovered yet.",
+            title = "No devices yet",
+            description = "Devices tab when nothing is paired or discovered yet.",
         ) {
             HostsTab(state = HostsTabState(nowMs = NOW_MS), onAction = {})
         },
         Story(
             id = "hosts.on-the-account-free",
             area = "Hosts",
-            title = "Hosts (relay host on free plan)",
-            description = "Computers tab on the free plan showing a computer on the account reachable only through the relay.",
+            title = "Devices (relayed device on free plan)",
+            description = "Devices tab on the free plan showing a device on the account reachable only through the relay.",
         ) {
             HostsTab(state = hostsTabState(F.machines + F.accountServer, pro = false), onAction = {})
         },
         Story(
             id = "hosts.large-text",
             area = "Hosts",
-            title = "Paired computers (large text)",
-            description = "Computers list at Android's largest text size, on the free plan so the away computer's card offers Subscribe beside its words.",
+            title = "Paired devices (large text)",
+            description = "Devices list at Android's largest text size, on the free plan so the away device's card offers Subscribe beside its words.",
             fontScale = LARGEST_FONT_SCALE,
         ) {
             HostsTab(state = hostsTabState(F.machines, pro = false), onAction = {})
@@ -895,8 +895,8 @@ object Stories {
         Story(
             id = "host.page",
             area = "Hosts",
-            title = "Computer details",
-            description = "One computer's page: reach, platform, version, providers, copyable addresses, and key fingerprint.",
+            title = "Device details",
+            description = "One device's page: reach, platform, version, providers, copyable addresses, and key fingerprint.",
         ) {
             HostPage(
                 state = HostPageState(
@@ -912,13 +912,13 @@ object Stories {
         pairingStory(
             "pair.code-empty",
             "Pairing code entry",
-            "Six-digit code entry for a computer found on this network, saying where to get the code.",
+            "Six-digit code entry for a device found on this network, saying where to get the code.",
             PairingSheetState(machine = F.nearbyLaptop, nowMs = NOW_MS),
         ),
         pairingStory(
             "pair.code-offered",
             "Pairing code entry (window open)",
-            "Six-digit code entry for a computer whose pairing window is open.",
+            "Six-digit code entry for a device whose pairing window is open.",
             PairingSheetState(machine = F.openLaptop, nowMs = NOW_MS),
         ),
         pairingStory(
@@ -942,19 +942,19 @@ object Stories {
         pairingStory(
             "pair.code-subscribe",
             "Pairing needs Pro subscription",
-            "A pairing code that reached a computer only the relay can carry, on the free plan.",
+            "A pairing code that reached a device only the relay can carry, on the free plan.",
             PairingSheetState(digits = "418207", phase = PairingPhaseUi.NeedsSubscription, machine = F.relayLaptop, nowMs = NOW_MS),
         ),
         pairingStory(
             "pair.needs-account",
             "Pairing needs sign-in",
-            "An invitation naming a computer only the relay can reach on a phone with no account.",
+            "An invitation naming a device only the relay can reach on a phone with no account.",
             PairingSheetState(phase = PairingPhaseUi.NeedsAccount(signingIn = false), machine = null, nowMs = NOW_MS),
         ),
         pairingStory(
             "pair.confirm",
             "Pairing confirmation",
-            "Authenticated computer name, route, and full key fingerprint awaiting confirmation.",
+            "Authenticated device name, route, and full key fingerprint awaiting confirmation.",
             PairingSheetState(
                 phase = PairingPhaseUi.Confirming(pending = F.pendingLaptop, platformName = "macOS"),
                 machine = F.nearbyLaptop,
@@ -964,7 +964,7 @@ object Stories {
         pairingStory(
             "pair.trusted",
             "Pairing completed",
-            "Confirmation state once the computer has been paired and trusted.",
+            "Confirmation state once the device has been paired and trusted.",
             PairingSheetState(phase = PairingPhaseUi.Trusted(name = "laptop"), machine = F.nearbyLaptop, nowMs = NOW_MS),
         ),
 
@@ -1614,7 +1614,7 @@ object Stories {
                 id = "ada",
                 name = "Ada",
                 email = "ada@example.com",
-                line = "3 computers",
+                line = "3 devices",
                 signedIn = true,
                 selected = true,
                 entitlementBadge = SettingsEntitlementBadge.Free,

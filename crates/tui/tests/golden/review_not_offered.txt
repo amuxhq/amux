@@ -1,7 +1,7 @@
 
   fixer │ /srv/amux
 
-  ● Reviews aren't offered on this agent's computer: its reviews experiment is off, or its amux
+  ● Reviews aren't offered on this agent's device: its reviews experiment is off, or its amux
     predates them.
 
 

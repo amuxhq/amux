@@ -781,7 +781,7 @@ final class ChatModelTests: XCTestCase {
         let model = ChatModel(source: source)
         XCTAssertEqual(model.draft, "What is this?")
         XCTAssertEqual(model.attachments, [.image(photo)])
-        XCTAssertEqual(model.notice, "Not sent: its host is away")
+        XCTAssertEqual(model.notice, "Not sent: its device is away")
         XCTAssertEqual(source.discarded, [[8]])
         XCTAssertEqual(model.frame?.refused, [], "taken back once")
     }
@@ -981,9 +981,108 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(model.attachments.count, 2, "one very long line is a paste too")
         await model.send()?.value
         XCTAssertEqual(
-            source.sent.first?.text, "Look at this: two\nlines\u{FFFC}\u{FFFC}",
-            "each paste's place follows the words, where the sent message draws it")
+            source.sent.first?.text, "Look at this: \u{FFFC}two\nlines\u{FFFC}",
+            "each paste is sent where it was pasted among the words")
         XCTAssertEqual(source.sent.first?.attachments?.first, .text(name: "Pasted text", text: text))
+    }
+
+    /// A paste goes where the cursor was, with the draft's words on both
+    /// sides of it, and stays there as the words around it change: the
+    /// terminal and Android place it the same way.
+    func testAPasteIsPlacedAtTheCursorAndMovesWithTheWordsAroundIt() async {
+        let source = FakeChat(rows: [], frame: frame())
+        let model = ChatModel(source: source)
+        model.type("Before after")
+        let log = (1...12).map { "line \($0)" }.joined(separator: "\n")
+        model.type("Before " + log + "after")
+        XCTAssertEqual(model.draft, "Before after", "the words on both sides stay in the draft")
+        XCTAssertEqual(model.attachments, [.text(name: "Pasted text", text: log)])
+        model.draft = "Look: before after"
+        model.draft = "Look: before after, then send"
+        await model.send()?.value
+        XCTAssertEqual(source.sent.first?.text, "Look: before \u{FFFC}after, then send")
+        XCTAssertEqual(
+            source.sent.first?.parts,
+            [.text("Look: before "), .attachment(.text(name: "Pasted text", text: log)), .text("after, then send")])
+    }
+
+    /// A draft put back keeps each paste where it was among its words.
+    func testAPromptTakenBackKeepsItsPasteAmongItsWords() {
+        let pasted = DraftAttachment.text(name: "Pasted text", text: "line one\nline two\nline three")
+        let draft = Draft(parts: [.text("Read "), .attachment(pasted), .text(" closely.")])
+        XCTAssertEqual(draft.places, [5])
+        let model = ChatModel(source: FakeChat(rows: [], frame: frame()))
+        var kept: Draft?
+        model.keeping = { kept = $0 }
+        model.reopen(draft)
+        XCTAssertEqual(model.draft, "Read  closely.")
+        XCTAssertEqual(kept, draft)
+        model.draft = "Please: Read  closely."
+        XCTAssertEqual(kept?.text, "Please: Read \u{FFFC} closely.")
+    }
+
+    /// A prompt put back into a composer that already holds a paste goes
+    /// ahead of it, and the held paste moves past the words put back.
+    func testADraftPutBackAheadOfAHeldPasteMovesThatPastePastItsWords() async {
+        let source = FakeChat(rows: [], frame: frame())
+        let model = ChatModel(source: source)
+        let held = (1...12).map { "held \($0)" }.joined(separator: "\n")
+        model.type(held)
+        XCTAssertEqual(model.draft, "")
+        XCTAssertEqual(model.attachments.count, 1)
+        let returned = DraftAttachment.text(name: "Pasted text", text: "line one\nline two\nline three")
+        model.reopen(Draft(parts: [.text("Read "), .attachment(returned), .text(" closely.")]))
+        XCTAssertEqual(model.draft, "Read  closely.")
+        await model.send()?.value
+        XCTAssertEqual(source.sent.first?.text, "Read \u{FFFC} closely.\u{FFFC}")
+    }
+
+    /// Typing or deleting one of a run of repeated characters beside a
+    /// paste moves it by the edit the field made, which the caret says:
+    /// the texts alone read "abbc" the same whichever b was typed.
+    func testAPasteMovesByTheCaretAmongRepeatedCharacters() {
+        let model = ChatModel(source: FakeChat(rows: [], frame: frame()))
+        var kept: Draft?
+        model.keeping = { kept = $0 }
+        let log = (1...12).map { "line \($0)" }.joined(separator: "\n")
+        model.type("abc")
+        model.type("ab" + log + "c")
+        XCTAssertEqual(kept?.text, "ab\u{FFFC}c")
+        model.type("ab" + log + "c")
+        model.type("abbc", caret: 2)
+        XCTAssertEqual(kept?.text, "abb\u{FFFC}c", "the b typed between a and b")
+        model.type("abc", caret: 1)
+        XCTAssertEqual(kept?.text, "ab\u{FFFC}c", "the b before the paste deleted")
+        model.type("abbc", caret: 1)
+        XCTAssertEqual(kept?.text, "ab\u{FFFC}bc", "a caret that has yet to move: the texts decide")
+        for gap in [" ", "\n"] {
+            let model = ChatModel(source: FakeChat(rows: [], frame: frame()))
+            model.keeping = { kept = $0 }
+            model.type("a\(gap)\(gap)b")
+            model.type("a\(gap)" + log + "\(gap)b")
+            model.type("a\(gap)" + log + "\(gap)b")
+            XCTAssertEqual(kept?.text, "a\(gap)\u{FFFC}\(gap)b")
+            model.type("a\(gap)b", caret: 1)
+            XCTAssertEqual(kept?.text, "a\u{FFFC}\(gap)b", "the first of two \(String(reflecting: gap)) deleted")
+            model.type("a\(gap)\(gap)b", caret: 3)
+            XCTAssertEqual(kept?.text, "a\u{FFFC}\(gap)\(gap)b", "one typed after the paste")
+        }
+    }
+
+    /// A paste after every word keeps its place when the draft is put back,
+    /// so words typed after it go after it, as they did before.
+    func testAPasteAfterEveryWordKeepsItsPlaceWhenPutBack() {
+        let pasted = DraftAttachment.text(name: "Pasted text", text: "line one\nline two\nline three")
+        let draft = Draft(parts: [.text("Look: "), .attachment(pasted)])
+        XCTAssertEqual(draft.places, [6])
+        let photo = DraftAttachment.image(BlobRef(hash: [1], name: "red.png", mime: "image/png", size: 3))
+        XCTAssertEqual(Draft(parts: [.text("Look"), .attachment(photo)]).places, [nil], "a photo still follows every word")
+        let model = ChatModel(source: FakeChat(rows: [], frame: frame()))
+        var kept: Draft?
+        model.keeping = { kept = $0 }
+        model.reopen(draft)
+        model.draft = "Look:  now"
+        XCTAssertEqual(kept?.text, "Look: \u{FFFC} now")
     }
 
     /// A prompt's text marks each attachment's place with U+FFFC, one per
@@ -1478,7 +1577,7 @@ final class ChatModelTests: XCTestCase {
 
         source.editAnswer = .unreachable
         await model.discardReviewDrafts().value
-        XCTAssertEqual(model.notice, "This agent’s computer can’t be reached, so nothing changed.")
+        XCTAssertEqual(model.notice, "This agent’s device can’t be reached, so nothing changed.")
     }
 
     func testDictationStreamsIntoTheDraftAndStopsOnSend() async {

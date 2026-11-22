@@ -352,7 +352,7 @@ final class ReviewSessionTests: XCTestCase {
         chat.answering = .unreachable
         _ = await session.comment("Say why.")?.value
         XCTAssertEqual(session.selected, 1...1)
-        XCTAssertEqual(session.notice, "This agent’s computer can’t be reached, so nothing changed.")
+        XCTAssertEqual(session.notice, "This agent’s device can’t be reached, so nothing changed.")
 
         chat.answering = .failed("the review holds 500 comments already")
         _ = await session.comment("Say why.")?.value
@@ -378,7 +378,7 @@ final class ReviewSessionTests: XCTestCase {
         _ = await session.open()?.value
         XCTAssertEqual(
             session.notice,
-            "The connection dropped before the agent’s computer answered. The page shows what it says next.")
+            "The connection dropped before the agent’s device answered. The page shows what it says next.")
     }
 
     func testRewordingDeletingDiscardingAndStartingOverChangeTheReview() async {

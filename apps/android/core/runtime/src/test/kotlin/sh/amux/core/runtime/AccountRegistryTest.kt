@@ -85,7 +85,7 @@ class AccountRegistryTest {
                 Entitlement.Active(Grant.Purchased(EntitlementSource.Web), null),
                 forAccount = AccountId("ada"),
             )
-            assertEquals("2 computers", registry.selectedAccount?.line)
+            assertEquals("2 devices", registry.selectedAccount?.line)
 
             // Late answer for non-selected account is dropped.
             assertNull(registry.accept("stale", forAccount = AccountId("grace")))
@@ -172,6 +172,7 @@ class AccountRegistryTest {
         val host = HostView(
             hostId = deskId.bytes,
             link = 0L,
+            sameNetwork = false,
             name = "desk",
             local = false,
             trusted = true,

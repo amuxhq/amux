@@ -2869,17 +2869,19 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
         .record()
         .actions
         .push("the app put away behind Settings, holding background time for the push".to_owned());
+    // The bystander is asked first: its answer has to be at the desk when
+    // the push goes, or the push not bringing it in proves nothing.
     journey.request(
         Control::Send {
-            agent: "asker".to_owned(),
-            text: "Deploy it.".to_owned(),
+            agent: "bystander".to_owned(),
+            text: "Anything new?".to_owned(),
         },
         None,
     )?;
     journey.request(
         Control::Send {
-            agent: "bystander".to_owned(),
-            text: "Anything new?".to_owned(),
+            agent: "asker".to_owned(),
+            text: "Deploy it.".to_owned(),
         },
         None,
     )?;
@@ -2896,6 +2898,14 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
     // system's to end, about half a minute after the app went away, and an
     // app it ends cannot answer its door.
     let payload = needs_you_push(journey, "asker")?;
+    // Whether the bystander's answer was already at the desk when the push
+    // went: only then does its chat lacking that answer afterwards show the
+    // push brought in the named chat alone. Read, not waited for, so the
+    // push still goes while the app has time to take it.
+    let bystander_answered = super::holds(
+        &journey.chat("desk", "bystander", "bystander-at-push")?,
+        "The logs are quiet.",
+    );
     let handed = Instant::now();
     push_to_handler(journey, &payload)?;
     journey.record().observations.insert(
@@ -2904,6 +2914,10 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
             "away-before-push": (handed.duration_since(away).as_secs_f64() * 10.0).round() / 10.0,
             "handling": (handed.elapsed().as_secs_f64() * 10.0).round() / 10.0,
         }),
+    );
+    journey.record().observations.insert(
+        "bystander-answered-before-push".to_owned(),
+        json!(bystander_answered),
     );
     // The bystander answers while the app is away all the same.
     journey.wait_chat(
@@ -2958,6 +2972,11 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
     if labelled(&drawn, "The logs are quiet.") {
         return Err(
             "the bystander's chat was brought current by a push that named the asker".to_owned(),
+        );
+    }
+    if !bystander_answered {
+        return Err(
+            "the bystander had not answered at the desk when the push went, so its chat lacking the answer proves nothing".to_owned(),
         );
     }
     journey.screen("not-warmed", &["chat.row.turn-end"])?;

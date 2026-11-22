@@ -103,8 +103,9 @@ pub(crate) trait Driver {
     fn tap(&mut self, name: &str) -> Result<(), String>;
     /// Text typed into the field `name`, after what it holds.
     fn type_text(&mut self, name: &str, text: &str) -> Result<(), String>;
-    /// The field `name` emptied.
+    /// The field `name` emptied, once it is drawn.
     fn clear(&mut self, name: &str) -> Result<(), String> {
+        self.wait_for(&[name])?;
         self.app(json!({"kind": "clear", "identifier": name}))?;
         self.record().actions.push(format!("clear {name}"));
         Ok(())

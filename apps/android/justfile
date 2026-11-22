@@ -79,6 +79,13 @@ storybook *ARGS:
 scope-audit *ARGS:
     {{bounded}} 2400 {{python}} -B apps/android/tools/android-scope-audit.py "$@"
 
+# Run the launch smoke test on the minified release APK: the runtime starts,
+# steps, acts, and refuses a call through the bridge. It runs on the device
+# ANDROID_SERIAL names, or boots the pinned emulator.
+release-smoke *ARGS:
+    {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py --release
+    if [ -z "${ANDROID_SERIAL-}" ]; then {{bounded}} 600 {{python}} -B apps/android/tools/android_emulator.py >&2 && ANDROID_SERIAL=$({{python}} -B apps/android/tools/android_emulator.py --serial) && export ANDROID_SERIAL; fi; {{bounded}} 1800 {{gradle}} :app:connectedReleaseAndroidTest -Pamux.releaseSmoke "$@"
+
 # Run the unit tests of the Android recipe and lint scripts.
 script-tests:
     {{bounded}} 120 {{python}} -m unittest discover -s apps/android/tools/tests -p '*_test.py' -t apps/android/tools/tests
@@ -110,4 +117,5 @@ verify:
     just android unit --no-daemon
     just android storybook fleet.busy --no-daemon
     just android scope-audit
+    just android release-smoke --no-daemon
     just android journey

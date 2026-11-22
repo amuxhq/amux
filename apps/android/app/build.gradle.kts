@@ -15,6 +15,7 @@ if (file("google-services.json").isFile) {
 val releaseVersionCodeOverride = providers.gradleProperty("amux.versionCode").orNull?.toInt()
 val releaseVersionNameOverride = providers.gradleProperty("amux.versionName").orNull
 val releaseStoreFile = providers.gradleProperty("amux.signing.storeFile").orNull
+val releaseSmoke = providers.gradleProperty("amux.releaseSmoke").isPresent
 
 android {
     namespace = "sh.amux.android"
@@ -26,7 +27,12 @@ android {
         targetSdk = 36
         versionCode = releaseVersionCodeOverride ?: 1
         versionName = releaseVersionNameOverride ?: "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+
+    // The instrumented tests are the release launch smoke test, which proves
+    // the R8 rules on the minified build (`just android release-smoke`).
+    testBuildType = "release"
 
     if (releaseStoreFile != null) {
         val releaseKeyAlias = providers.gradleProperty("amux.signing.keyAlias").orNull
@@ -50,13 +56,21 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            if (releaseStoreFile != null) {
-                signingConfig = signingConfigs.getByName("release")
+            // Without the upload key, the release build is signed with the
+            // debug key so it installs on an emulator for the launch smoke
+            // test. Google Play refuses that signature, so it cannot ship.
+            signingConfig = if (releaseStoreFile != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            if (releaseSmoke) {
+                proguardFile("release-smoke-rules.pro")
+            }
         }
     }
 
@@ -107,6 +121,10 @@ dependencies {
 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
+    // Play services, under Firebase, still ask for Fragment 1.1, whose
+    // activity results lint refuses in a release build; raise it to one
+    // that works with this Activity version.
+    implementation(libs.androidx.fragment)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -127,4 +145,8 @@ dependencies {
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)
     testImplementation(libs.roborazzi.junit.rule)
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.kotlinx.coroutines.android)
 }

@@ -1,0 +1,92 @@
+// NativeLink on a Mac: the cache and the worker every Buck2 action runs on
+// (docs/BUILD.md, "The build cache"). scripts/nativelink.py fills in the
+// {{...}} values and runs it under launchd.
+//
+// Every action goes through this worker rather than Buck2's own local
+// executor: Buck2 records only remotely executed results in the action
+// cache, so this is what lets a test that passed in one worktree be a cache
+// hit in another. It is also the sandbox: an action sees only its declared
+// inputs.
+{
+  stores: [
+    {
+      name: "AC",
+      filesystem: {
+        content_path: "{{cache}}/ac",
+        temp_path: "{{cache}}/ac-tmp",
+        eviction_policy: { max_bytes: {{ac_bytes}} },
+      },
+    },
+    {
+      name: "CAS",
+      fast_slow: {
+        fast: {
+          filesystem: {
+            content_path: "{{cache}}/cas",
+            temp_path: "{{cache}}/cas-tmp",
+            eviction_policy: { max_bytes: {{cas_bytes}} },
+          },
+        },
+        slow: { noop: {} },
+      },
+    },
+  ],
+  schedulers: [
+    {
+      name: "SCHEDULER",
+      simple: {
+        supported_platform_properties: {
+          OSFamily: "exact",
+          cpu_count: "minimum",
+          memory_kb: "minimum",
+        },
+      },
+    },
+  ],
+  workers: [
+    {
+      // One worker. It advertises fewer cores than the machine has, so
+      // builds never take the whole laptop, and each action reserves the
+      // cores it asks for (`cpu_count`, one unless a target asks for more),
+      // so a test that wants the whole worker runs alone.
+      local: {
+        name: "mac-",
+        worker_api_endpoint: { uri: "grpc://127.0.0.1:50061" },
+        cas_fast_slow_store: "CAS",
+        upload_action_result: { ac_store: "AC" },
+        work_directory: "{{cache}}/work",
+        max_action_timeout_s: 3600,
+        {{entrypoint}}
+        capacity: {},
+        directory_cache: {},
+        platform_properties: {
+          OSFamily: { values: ["macos"] },
+          cpu_count: { values: ["{{cores}}"] },
+          memory_kb: { values: ["{{memory_kb}}"] },
+        },
+      },
+    },
+  ],
+  servers: [
+    {
+      name: "clients",
+      listener: { http: { socket_address: "127.0.0.1:50051" } },
+      services: {
+        cas: [{ instance_name: "main", cas_store: "CAS" }],
+        ac: [{ instance_name: "main", ac_store: "AC" }],
+        execution: [{ instance_name: "main", cas_store: "CAS", scheduler: "SCHEDULER" }],
+        capabilities: [{ instance_name: "main", remote_execution: { scheduler: "SCHEDULER" } }],
+        bytestream: [{ instance_name: "main", cas_store: "CAS" }],
+      },
+    },
+    {
+      name: "workers",
+      listener: { http: { socket_address: "127.0.0.1:50061" } },
+      services: {
+        worker_api: { scheduler: "SCHEDULER" },
+        health: {},
+      },
+    },
+  ],
+  global: { max_open_files: 24576 },
+}

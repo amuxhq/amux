@@ -1,0 +1,60 @@
+# Toolchains (docs/BUILD.md). Each language's toolchain is added here when
+# the build first needs it.
+load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")
+load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
+load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain", "remote_python_toolchain")
+load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
+load("@prelude//tests:test_toolchain.bzl", "noop_test_toolchain")
+load("@prelude//toolchains:zip_file.bzl", "zip_file_toolchain")
+
+system_cxx_toolchain(
+    name = "cxx",
+    visibility = ["PUBLIC"],
+)
+
+system_genrule_toolchain(
+    name = "genrule",
+    visibility = ["PUBLIC"],
+)
+
+system_python_bootstrap_toolchain(
+    name = "python_bootstrap",
+    visibility = ["PUBLIC"],
+)
+
+remote_python_toolchain(
+    name = "python",
+    bootstrap = False,
+    visibility = ["PUBLIC"],
+)
+
+# Tests run through NativeLink like every other action, so a passing result
+# is in the action cache for every other worktree. Without this profile the
+# prelude runs tests in Buck2's local executor, whose results are never
+# uploaded.
+remote_test_execution_toolchain(
+    name = "remote_test_execution",
+    default_profile = "default",
+    # One action per test target; the target's own runner isolates cases.
+    default_run_as_bundle = True,
+    profiles = {
+        "default": {
+            "capabilities": {
+                "OSFamily": "macos",
+                "cpu_count": "1",
+            },
+            "use_case": "buck2-default",
+        },
+    },
+    visibility = ["PUBLIC"],
+)
+
+noop_test_toolchain(
+    name = "test",
+    visibility = ["PUBLIC"],
+)
+
+zip_file_toolchain(
+    name = "zip_file",
+    visibility = ["PUBLIC"],
+)

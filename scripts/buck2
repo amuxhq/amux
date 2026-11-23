@@ -1,0 +1,5 @@
+#!/bin/sh
+# Run the pinned buck2 (buck/tools.json), fetching it on first use.
+set -eu
+here=$(cd "$(dirname "$0")" && pwd)
+exec "$("$here/py" "$here/buck-tools.py" path buck2)" "$@"

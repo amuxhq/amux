@@ -1,0 +1,10 @@
+genrule(
+    name = "hello",
+    out = "hello.txt",
+    cmd = "echo built by NativeLink > $OUT",
+)
+
+sh_test(
+    name = "pass",
+    test = "pass.sh",
+)

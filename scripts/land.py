@@ -13,8 +13,9 @@ warm from one landing to the next. In it:
 1. fetch origin/main and start from it, detached;
 2. merge the commit with --no-ff and MESSAGE;
 3. run `just premerge` on the merge;
-4. run `just miri` when the merge changes a file the phone's C ABI is
-   built from, the one crate Miri checks;
+4. run `just miri` when the merge changes a file the phone's C ABI or its
+   tests are built from (app-ffi is the one crate Miri checks), or Cargo's
+   manifest, lockfile or toolchain;
 5. push the merge to main. When the push is refused, someone landed
    first, and it starts again from the fetch.
 
@@ -51,24 +52,32 @@ def worktree() -> Path:
     return tree
 
 
+# What every Cargo build of app-ffi reads besides its crates' own files.
+CARGO_INPUTS = {"Cargo.toml", "Cargo.lock", "rust-toolchain.toml"}
+
+
 def miri_covers(tree: Path, base: str) -> bool:
-    """Whether the merge changes a file //crates/app-ffi is built from."""
+    """Whether the merge changes what `just miri` builds: a file of a crate
+    app-ffi or its tests link, as Buck2's configured graph has it, or what
+    Cargo resolves the build from."""
     changed = git("diff", "--name-only", base, "HEAD", cwd=tree, capture=True).splitlines()
     if not changed:
         return False
-    query = subprocess.run(
-        [
-            str(tree / "scripts/buck2"),
-            "uquery",
-            "intersect(deps(//crates/app-ffi:app-ffi), owner(%Ss))",
-            *changed,
-        ],
+    if CARGO_INPUTS & set(changed):
+        return True
+    graph = subprocess.run(
+        [str(tree / "scripts/buck2"), "cquery", "deps(set(//crates/app-ffi:app-ffi //crates/app-ffi:unit-binary), 100000, target_deps())"],
         cwd=tree,
         check=True,
         text=True,
         capture_output=True,
-    )
-    return bool(query.stdout.strip())
+    ).stdout
+    crates = {
+        line.split("//", 1)[1].split(":", 1)[0] + "/"
+        for line in graph.splitlines()
+        if line.startswith("root//crates/")
+    }
+    return any(path.startswith(crate) for path in changed for crate in crates)
 
 
 def land_once(tree: Path, commit: str, message: str) -> str | None:

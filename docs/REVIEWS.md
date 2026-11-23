@@ -89,7 +89,12 @@ The loop, as the host answers it:
 One call at a time works on an agent's review (a per-agent lock in
 `reviews/mod.rs`): two opens at once take one snapshot, and an edit never
 lands between a refresh reading the drafts and moving them. A read-only open
-takes no lock and reads the store once.
+takes no lock and reads the store once. Deleting the agent holds the same
+lock while it removes the agent's directory, so it waits for a snapshot
+under way rather than removing the folder under git's writes; and only a
+snapshot makes the `review` folder, inside the agent's directory as it
+stands, so an open that read the agent's row before the delete and takes
+its turn after it finds the directory gone and answers `NOT_FOUND`.
 
 **The base** is found only when a person opens the review, by the rule
 `GetChanges` uses: the base branch the `Open` names, else the one the
@@ -120,7 +125,11 @@ snapshot` (`snapshot::take`):
 2. The paths that differ from that index, and the untracked ones, are listed
    and measured before anything is stored. A file over 1 MiB is left out and
    named (`omitted`, listed as large), unless it is in conflict or Git LFS
-   tracks it; more than 10,000 paths refuse the snapshot.
+   tracks it; so is a file that cannot be read (one a container left owned
+   by root, say), which would otherwise fail git's add and every snapshot
+   after it, and is listed as large too, since that is how every client
+   already says a file is not shown; a tracked one keeps what the index
+   holds. More than 10,000 paths refuse the snapshot.
 3. The rest are added to the copy with the snapshot store as git's only
    object directory, its tree written, and the tree committed with the
    repository's objects readable as an alternate, since only the commit
@@ -166,8 +175,8 @@ nothing. A sparse index is untested.
 differs from a snapshot without storing anything: untracked files are marked
 in a copy of the index without being stored, and the one object marking
 writes (the empty blob) goes to a folder of its own that is then removed. A
-path the snapshot left out for its size counts as moved only once a snapshot
-would take it (it shrank, went or no longer differs). The daemon core asks
+path the snapshot left out counts as moved only once a snapshot would take
+it (it shrank, became readable, went or no longer differs). The daemon core asks
 this at every turn end of an agent whose checkout holds a review, as a job
 off its thread, and writes the answer onto the review's row entry.
 
@@ -184,7 +193,12 @@ and each comment goes back to its anchor when the agent takes the send. The
 one before the latest also covers a send in the moment before the queue
 lists it: only a second refresh in that moment could drop its own snapshot,
 though one refresh then could drop an older one its comments are anchored
-on. The others are forgotten in the same write and their objects dropped from the store (`snapshot::drop`), with their indexes. An old
+on. The others are forgotten in the same write and their objects dropped from the store (`snapshot::drop`), with their indexes.
+Packed objects go too: git writes some objects into a pack rather than
+loose (`git add` does for a file over the person's `core.bigFileThreshold`,
+which the size cap does not stop for a conflicted file), so a pack nothing
+kept reaches is removed, and one only partly reached is written again with
+what is before the old one goes. An old
 round still depends on the repository holding the commits beneath it: a
 rebase followed by garbage collection can remove them, and the page then
 shows that round's comments with the code stored with them.
@@ -225,6 +239,19 @@ options (`DIFF_OPTIONS`):
 | `core.longpaths=true` | Git for Windows refuses a path past 260 characters ("Filename too long") unless it is set, so one deep file would fail every snapshot and every read of the working tree; git on macOS and Linux has no such limit and ignores the key |
 | `diff.autoRefreshIndex=true` | A file whose times alone changed reads as unchanged, as it does by default, whatever the person set; with optional locks off, git writes no refresh into the person's index |
 
+Clean filters other than LFS's are not pinned: git-crypt's, nbstripout's
+or a person's own run when a snapshot adds a file `.gitattributes` names
+for one, and when a file whose times changed is compared, as they do for
+the person's own `git status` and `git diff`. So a snapshot holds what a
+commit of the file would, which is what the base's side of every
+comparison holds: the review of such a file is the person's
+`git diff --no-textconv`, `GetChanges` counts the same lines, and the
+agent's diff command, run with the person's configuration, compares like
+with like. A file whose cleaned form is ciphertext reads as binary, as it
+does without the text conversion that would decrypt it; a filter marked
+required that fails refuses the snapshot, as it fails the person's own
+`git diff` (`a_clean_filter_runs_so_the_snapshot_holds_what_a_commit_would`).
+
 The one call that runs with the person's configuration alone is checking out
 a new worktree, which is the person's own work: their filters must run so its
 files are their content rather than LFS pointers, and their hooks as on any
@@ -261,7 +288,8 @@ whose hunks all go stays as the rename alone. The summary's
 hunks, and is empty before the first round and when the last round's
 snapshot can no longer be read.
 
-**A file the snapshot left out** for its size is listed as large, changed
+**A file the snapshot left out**, for its size or because it could not be
+read, is listed as large, changed
 when the base's tree holds a file at its path and made otherwise: the tree
 says so, and the file's bytes, however many, are never read for it
 (`compare::files_at`).
@@ -545,6 +573,14 @@ hold, retention with the agent, and isolation from the person's repository.
 **Finding a comment's new place by searching for its text.** Line mapping
 through git's diff is the proven method, and the one GitHub uses.
 
+**Emptying every clean filter, as LFS's are.** The snapshot would hold a
+filtered file's raw bytes while the base holds its cleaned ones, so a
+git-crypt file would compare plaintext with ciphertext and a notebook
+nbstripout cleans would show its outputs as changes, in lines no one
+changed and no commit will hold. LFS's are emptied for what they write into
+`.git/lfs`, and its pointer is worked out in their place; there is no
+general way to work out what another filter would store.
+
 **Leaving git's diff to the person's configuration.** Line numbers, hunk
 boundaries and file order would differ from one machine to the next, and
 with them where comments sit and what since-last keeps; several options
@@ -576,8 +612,8 @@ client keyed by review, path and content; and a review belongs to one agent.
 
 | What | Where | Run |
 | --- | --- | --- |
-| Snapshots: nothing in `.git` changes taking, asking or dropping; nothing fetched in a partial clone; same-second edits; untracked secrets only in the store; submodules, links, embedded repositories, large files, too many paths, merges and rebases, LFS without LFS; kept snapshots stay readable; every call under a hostile git configuration | [`crates/git-facts/tests/snapshot.rs`](../crates/git-facts/tests/snapshot.rs), [`compare.rs`](../crates/git-facts/tests/compare.rs) | `just test-crate git-facts` |
-| `Open` and `Edit` in memory: first and later looks, drafts holding the page, refresh moving drafts, placements (moved, outdated, file, compared, renamed, changed near), discarding and starting over, two agents in one folder, the base on a branch with no upstream, since-last after a merge, kept snapshots, two opens at once, the row entry and its counter, read-only opens, a rewritten base branch, the agent's command truthful and writing nothing, rounds closing exactly the named drafts when the agent takes the prompt, on the snapshot the text names through refreshes while it waits, the experiment switched off, and a dump holding nothing of a review | [`crates/node/tests/reviews.rs`](../crates/node/tests/reviews.rs) | `just test-crate node` |
+| Snapshots: nothing in `.git` changes taking, asking or dropping; nothing fetched in a partial clone; same-second edits; untracked secrets only in the store; submodules, links, embedded repositories, large and unreadable files, too many paths, merges and rebases, LFS without LFS; kept snapshots stay readable, and what only dropped ones held goes, packed or loose; every call under a hostile git configuration | [`crates/git-facts/tests/snapshot.rs`](../crates/git-facts/tests/snapshot.rs), [`compare.rs`](../crates/git-facts/tests/compare.rs) | `just test-crate git-facts` |
+| `Open` and `Edit` in memory: first and later looks, drafts holding the page, refresh moving drafts, placements (moved, outdated, file, compared, renamed, changed near), discarding and starting over, two agents in one folder, the base on a branch with no upstream, since-last after a merge, kept snapshots, two opens at once, the row entry and its counter, read-only opens, a rewritten base branch, the agent's command truthful and writing nothing, rounds closing exactly the named drafts when the agent takes the prompt, on the snapshot the text names through refreshes while it waits, the experiment switched off, deleting the agent while a snapshot is taken, and a dump holding nothing of a review | [`crates/node/tests/reviews.rs`](../crates/node/tests/reviews.rs) | `just test-crate node` |
 | `GetFiles`: colouring from whole files, scopes and outlines on either side, more context, since-last limits, caps, the object-id cache, snippets | [`crates/node/tests/review_files.rs`](../crates/node/tests/review_files.rs) | `just test-crate node` |
 | A person on a paired host reviewing through the carrier, the copy following the entry, deletion removing rows, folder and copy; agents, tools sockets, copies and hosts without the experiment refused | `spec_reviews` in [`crates/testnet/tests/`](../crates/testnet/tests/) | `just suite many-daemon-protocol-spec` |
 | The page as rows, compared comments, a removed-only hunk, the trailing gap; changed words | [`crates/ui-view/tests/reviews.rs`](../crates/ui-view/tests/reviews.rs) and its golden, `changed_words.rs` | `just test-crate ui-view` |

@@ -150,6 +150,7 @@ pub(crate) async fn open(
     let take = latest.is_none() || (moved && (drafts == 0 || request.refresh));
     let mut moved_drafts = 0;
     if take {
+        tree.make_folder()?;
         let taken_at = SystemTime::UNIX_EPOCH
             + Duration::from_millis(u64::try_from(runtime.clock_now()).unwrap_or(0));
         let taken = snapshot::take(&tree.root, &tree.store, &Limits::default(), taken_at)
@@ -941,16 +942,27 @@ impl Tree {
 
     /// What one call at a time on this agent's review holds.
     fn turn(&self) -> Arc<tokio::sync::Mutex<()>> {
-        type Turns = Mutex<HashMap<PathBuf, Weak<tokio::sync::Mutex<()>>>>;
-        static TURNS: LazyLock<Turns> = LazyLock::new(Default::default);
-        let mut turns = TURNS.lock().unwrap();
-        turns.retain(|_, turn| turn.strong_count() > 0);
-        if let Some(turn) = turns.get(&self.dir).and_then(Weak::upgrade) {
-            return turn;
+        turn(&self.dir)
+    }
+
+    /// Makes the review's folder for a snapshot to be taken into, but only
+    /// inside the agent's directory as it stands. A deleted agent's
+    /// directory is gone, and an open that read its row before the delete
+    /// must not make it again: the snapshot would leave a copy of the
+    /// tree's untracked files in the profile, which nothing removes until
+    /// the next start's sweep.
+    fn make_folder(&self) -> Result<(), Status> {
+        match std::fs::create_dir(self.folder()) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                Err(refused(ErrorCode::NotFound, "no agent with that id"))
+            }
+            Err(error) => Err(refused(
+                ErrorCode::Internal,
+                format!("making the review's folder: {error}"),
+            )),
         }
-        let turn = Arc::new(tokio::sync::Mutex::new(()));
-        turns.insert(self.dir.clone(), Arc::downgrade(&turn));
-        turn
     }
 
     async fn review(&self, runtime: &ProfileRuntime) -> Result<Option<Review>, Status> {
@@ -1091,6 +1103,24 @@ impl Tree {
             ..ReviewSummary::default()
         }
     }
+}
+
+/// What one call at a time on the review of the agent whose directory is
+/// `dir` holds. Removing that directory holds it too, so a delete waits for
+/// a snapshot being taken into it rather than removing the folder under
+/// git's writes, which fails the removal halfway or leaves what git writes
+/// after it.
+pub(crate) fn turn(dir: &Path) -> Arc<tokio::sync::Mutex<()>> {
+    type Turns = Mutex<HashMap<PathBuf, Weak<tokio::sync::Mutex<()>>>>;
+    static TURNS: LazyLock<Turns> = LazyLock::new(Default::default);
+    let mut turns = TURNS.lock().unwrap();
+    turns.retain(|_, turn| turn.strong_count() > 0);
+    if let Some(turn) = turns.get(dir).and_then(Weak::upgrade) {
+        return turn;
+    }
+    let turn = Arc::new(tokio::sync::Mutex::new(()));
+    turns.insert(dir.to_owned(), Arc::downgrade(&turn));
+    turn
 }
 
 /// What `git rev-parse args` answers in `cwd`; none when git refuses.

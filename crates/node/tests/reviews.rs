@@ -517,6 +517,43 @@ async fn starting_over_makes_the_next_look_a_first_one_and_removes_the_store() {
     host.stop().await;
 }
 
+/// Deleting an agent while a person opens its review waits for any
+/// snapshot of its tree being taken, so nothing of it stays in the profile:
+/// the folder's removal never fails halfway through git's writes, and an
+/// open that read the agent's row before the delete never makes the
+/// review's folder again after it, with a copy of the tree's untracked
+/// files inside. Tried with the delete landing at several points of the
+/// open, from before its snapshot begins to well into it.
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_an_agent_mid_snapshot_waits_for_it_and_leaves_nothing() {
+    let install = Install::new();
+    feature_branch(&install.work);
+    let bulk = install.work.join("bulk");
+    std::fs::create_dir_all(&bulk).unwrap();
+    for n in 0..500 {
+        std::fs::write(bulk.join(format!("{n}.txt")), format!("{n}\n")).unwrap();
+    }
+    let agents: Vec<_> = (0..6)
+        .map(|_| agent_in(&install, &install.work, Some("main")))
+        .collect();
+    let host = Host::start(install).await;
+    for (n, agent) in agents.iter().enumerate() {
+        let opened = host.open_with(agent, false, None);
+        let deleted = async {
+            tokio::time::sleep(std::time::Duration::from_millis(1 << n)).await;
+            host.runtime.delete(agent.id).await
+        };
+        let (_, deleted) = tokio::join!(opened, deleted);
+        deleted.unwrap();
+        assert!(
+            !agent.dir.exists(),
+            "the agent's directory stayed, deleted after {} ms",
+            1 << n
+        );
+    }
+    host.stop().await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn two_agents_in_one_folder_each_get_their_own_review() {
     let install = Install::new();

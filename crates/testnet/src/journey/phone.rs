@@ -200,22 +200,26 @@ fn is_volatile(identifier: &str, named: &[&str]) -> bool {
 /// still laid out underneath, where nobody can see them, and keep changing
 /// (a fleet re-sorting behind a chat).
 fn uncovered(elements: &[Value]) -> Vec<Value> {
-    if !elements
-        .iter()
-        .any(|element| PAGES.contains(&identifier(element)))
-    {
-        return elements.to_vec();
-    }
+    let paged = paged(elements);
     elements
         .iter()
-        .filter(|element| {
-            let name = identifier(element);
-            !TAB_ROOTS
-                .iter()
-                .any(|(_, root)| name.starts_with(root) || format!("{name}.") == *root)
-        })
+        .filter(|element| !(paged && tab_root(identifier(element))))
         .cloned()
         .collect()
+}
+
+/// Whether a page pushed over a tab is drawn, hiding the tab's root.
+fn paged(elements: &[Value]) -> bool {
+    elements
+        .iter()
+        .any(|element| PAGES.contains(&identifier(element)))
+}
+
+/// Whether `name` is a tab's root or drawn in one.
+fn tab_root(name: &str) -> bool {
+    TAB_ROOTS
+        .iter()
+        .any(|(_, root)| name.starts_with(root) || format!("{name}.") == *root)
 }
 
 fn on_screen(identifier: &str, screen: Option<&str>) -> bool {
@@ -350,11 +354,26 @@ fn same_geometry(approved: &str, drawn: &str) -> bool {
 /// What is drawn by name, in drawing order; a name drawn again (every
 /// prompt row is `chat.row.prompt`) gets `#2`, `#3`.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Drawn(Vec<(String, Value)>);
+pub(crate) struct Drawn {
+    named: Vec<(String, Value)>,
+    /// Whether each named element is where a person can see it, as a
+    /// compared screen takes them.
+    seen: Vec<bool>,
+}
 
 impl Drawn {
+    /// Every element seen, for a list with no screen beneath a page.
+    #[cfg(test)]
     pub(crate) fn of(elements: &[Value]) -> Drawn {
+        Self::on(elements, None)
+    }
+
+    /// What the app's door reported: the elements of a tab not showing, or
+    /// of the tab a pushed page covers, are drawn but not seen.
+    pub(crate) fn on(elements: &[Value], screen: Option<&str>) -> Drawn {
+        let paged = paged(elements);
         let mut named: Vec<(String, Value)> = Vec::new();
+        let mut seen = Vec::new();
         for element in elements {
             let base = identifier(element);
             let mut name = base.to_owned();
@@ -364,12 +383,13 @@ impl Drawn {
                 name = format!("{base}#{count}");
             }
             named.push((name, element.clone()));
+            seen.push(!(paged && tab_root(base)) && on_screen(base, screen));
         }
-        Drawn(named)
+        Drawn { named, seen }
     }
 
     pub(crate) fn get(&self, name: &str) -> Option<&Value> {
-        self.0
+        self.named
             .iter()
             .find(|(drawn, _)| drawn == name)
             .map(|(_, element)| element)
@@ -398,13 +418,21 @@ impl Drawn {
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&str, &Value)> {
-        self.0
+        self.named
             .iter()
             .map(|(name, element)| (name.as_str(), element))
     }
 
+    /// What a person can see: no tab a page covers, nor one not showing.
+    pub(crate) fn shown(&self) -> impl Iterator<Item = (&str, &Value)> {
+        self.iter()
+            .zip(&self.seen)
+            .filter(|(_, seen)| **seen)
+            .map(|(element, _)| element)
+    }
+
     pub(crate) fn names(&self) -> impl Iterator<Item = &str> {
-        self.0.iter().map(|(name, _)| name.as_str())
+        self.named.iter().map(|(name, _)| name.as_str())
     }
 }
 
@@ -1344,9 +1372,12 @@ impl Printing {
     }
 }
 
-/// Any element's label holds `text`.
+/// The label of an element a person can see holds `text`. A tab beneath a
+/// pushed page, or one not showing, still reports its elements: the fleet
+/// under a chat shows each agent's last words and offers to sign in to a
+/// machine out of reach, words a wait for the chat's own must not take.
 pub(crate) fn labelled(drawn: &Drawn, text: &str) -> bool {
-    drawn.iter().any(|(_, element)| {
+    drawn.shown().any(|(_, element)| {
         element["label"]
             .as_str()
             .is_some_and(|label| label.contains(text))
@@ -1665,5 +1696,26 @@ pub(crate) mod tests {
         assert!(on_screen("home.row.x", Some("agents")));
         assert!(!on_screen("home.row.x", Some("hosts")));
         assert!(on_screen("chat.field", Some("hosts")));
+    }
+
+    #[test]
+    fn a_label_out_of_sight_satisfies_no_wait() {
+        let under_chat = [
+            json!({"identifier": "home.signIn", "label": "desk is out of reach"}),
+            json!({"identifier": "chat"}),
+            json!({"identifier": "chat.field", "label": "Reply"}),
+        ];
+        let drawn = Drawn::on(&under_chat, None);
+        assert!(drawn.has("home.signIn"));
+        assert!(!labelled(&drawn, "out of reach"));
+        assert!(labelled(&drawn, "Reply"));
+        let other_tab = [
+            json!({"identifier": "home.row.x", "label": "desk, signed out"}),
+            json!({"identifier": "hosts.row.y", "label": "desk, offline"}),
+        ];
+        let drawn = Drawn::on(&other_tab, Some("hosts"));
+        assert!(!labelled(&drawn, "signed out"));
+        assert!(labelled(&drawn, "offline"));
+        assert!(labelled(&Drawn::of(&other_tab), "signed out"));
     }
 }

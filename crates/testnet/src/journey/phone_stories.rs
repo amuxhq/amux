@@ -222,6 +222,16 @@ fn kept_unsent(drawn: &Drawn, text: &str) -> bool {
     drawn.value("chat.field") == text && !drawn.enabled("chat.send")
 }
 
+/// The open chat says `host` is out of reach: its own field and header.
+/// Any label saying so is not enough: the fleet under the chat offers to
+/// sign in to a machine out of reach while the chat still reads as
+/// connecting, and the header says "<host> · out of reach" while the chat
+/// is detached from a machine still listed as reachable.
+fn out_of_reach(drawn: &Drawn, host: &str) -> bool {
+    drawn.label("chat.field") == format!("{host} is out of reach · your draft is kept")
+        && drawn.label("chat.header") == format!("{host} · away")
+}
+
 /// The chat is current: its header says its machine is linked and the
 /// composer sends. A chat still dialling its machine reads "Reply" too, but
 /// its header says it is detached.
@@ -1145,7 +1155,7 @@ fn send_while_away<D: Driver>(journey: &mut D) -> Proved {
     // The cabin goes out of reach: its daemon stops, its agent kept.
     journey.request(stop_daemon("cabin"), None)?;
     journey.wait(
-        |drawn| labelled(drawn, "out of reach"),
+        |drawn| out_of_reach(drawn, "cabin"),
         "the cabin out of reach",
     )?;
     // Send is off: the message stays in the composer, unsent, and is still
@@ -1155,7 +1165,9 @@ fn send_while_away<D: Driver>(journey: &mut D) -> Proved {
         |drawn| kept_unsent(drawn, BACKUP),
         "the message kept unsent",
     )?;
-    reopen(journey, &backups, |drawn| kept_unsent(drawn, BACKUP))?;
+    reopen(journey, &backups, |drawn| {
+        kept_unsent(drawn, BACKUP) && out_of_reach(drawn, "cabin")
+    })?;
     journey.screen("away", &[])?;
 
     // The cabin back: the message is still in the composer, and Send sends
@@ -1634,15 +1646,6 @@ const DRAFT: &str = "Pick up where we left off.";
 /// makes meanwhile, and the stories say so plainly when an outage outgrows it.
 const DESK_GRACE: Duration = Duration::from_secs(120);
 
-/// The open chat says the desk is out of reach: its own field and header.
-/// Any label saying so is not enough, as the fleet under the chat still
-/// reports its elements, and its offer to sign in names the desk out of
-/// reach while the chat itself still reads as connecting.
-fn desk_out_of_reach(drawn: &Drawn) -> bool {
-    drawn.label("chat.field") == "desk is out of reach · your draft is kept"
-        && drawn.label("chat.header") == "desk · away"
-}
-
 /// The open chat's header says the desk is away, its link not up: what a
 /// chat whose composer an ask has taken shows of the desk being gone.
 fn desk_away(drawn: &Drawn) -> bool {
@@ -1697,7 +1700,7 @@ fn leave_and_recover<D: Driver>(journey: &mut D) -> Proved {
     // the daemon's ten-second limit: the chat is waited on until its own
     // field and header say it is out of reach.
     let drawn = journey.wait(
-        |drawn| replies(drawn, FIRST) > 0 && desk_out_of_reach(drawn),
+        |drawn| replies(drawn, FIRST) > 0 && out_of_reach(drawn, "desk"),
         "the cached chat, out of reach",
     )?;
     if labelled(&drawn, SECOND) {
@@ -1712,7 +1715,7 @@ fn leave_and_recover<D: Driver>(journey: &mut D) -> Proved {
         return Err("the chat reads current with the desk out of reach".to_owned());
     }
     let detached = reopen(journey, &keeper, |drawn| {
-        drawn.value("chat.field") == DRAFT && desk_out_of_reach(drawn)
+        drawn.value("chat.field") == DRAFT && out_of_reach(drawn, "desk")
     })?;
     if replies(&detached, FIRST) == 0 || labelled(&detached, SECOND) {
         return Err("the chat opened again is not the cached tail out of reach".to_owned());
@@ -2975,7 +2978,7 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
     back_to_fleet(journey)?;
     journey.tap(&bystander_row)?;
     let drawn = journey.wait(
-        |drawn| labelled(drawn, "Watching the logs.") && desk_out_of_reach(drawn),
+        |drawn| labelled(drawn, "Watching the logs.") && out_of_reach(drawn, "desk"),
         "the bystander's chat, with the desk away",
     )?;
     if labelled(&drawn, "The logs are quiet.") {

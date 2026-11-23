@@ -65,7 +65,12 @@
           PATH: { value: "{{tool_bin}}:/usr/bin:/bin:/usr/sbin:/sbin" },
         },
         capacity: {},
-        directory_cache: {},
+        // No `directory_cache`. It keeps a copy of each action's whole
+        // input root, keyed by that root's digest, to clone into the next
+        // action with the same root; every Buck action's root is its own,
+        // so it never hits, and each action pays for building the cached
+        // copy and then cloning it. Without it, each input is hard-linked
+        // straight from the CAS into the action's directory.
         platform_properties: {
           OSFamily: { values: ["macos"] },
           cpu_count: { values: ["{{cores}}"] },

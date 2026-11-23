@@ -388,16 +388,22 @@ class PlayBillingStoreFront(
     ): PricedOffer? {
         if (details == null) return null
         val offers = details.subscriptionOfferDetails.orEmpty().mapNotNull { offer ->
-            val recurring = offer.pricingPhases.pricingPhaseList.lastOrNull { phase ->
+            val phases = offer.pricingPhases.pricingPhaseList
+            val recurring = phases.lastOrNull { phase ->
                 phase.priceAmountMicros > 0L
-            } ?: offer.pricingPhases.pricingPhaseList.lastOrNull()
+            } ?: phases.lastOrNull()
                 ?: return@mapNotNull null
+            val intro = phases.firstOrNull()?.takeIf { phase ->
+                phases.size > 1 && phase.priceAmountMicros < recurring.priceAmountMicros
+            }
             OfferCandidate(
                 basePlanId = offer.basePlanId,
                 offerId = offer.offerId,
                 offerToken = offer.offerToken,
                 formattedPrice = recurring.formattedPrice,
                 priceAmountMicros = recurring.priceAmountMicros,
+                introFormattedPrice = intro?.formattedPrice,
+                introPriceAmountMicros = intro?.priceAmountMicros,
             )
         }
         val chosen = selectBasePlanOffer(offers, preferredBasePlanId) ?: return null
@@ -409,6 +415,8 @@ class PlayBillingStoreFront(
             productId = details.productId,
             formattedPrice = chosen.formattedPrice,
             priceAmountMicros = chosen.priceAmountMicros,
+            introFormattedPrice = chosen.introFormattedPrice,
+            introPriceAmountMicros = chosen.introPriceAmountMicros,
         )
     }
 
@@ -418,12 +426,16 @@ class PlayBillingStoreFront(
         val offerToken: String,
         val formattedPrice: String,
         val priceAmountMicros: Long,
+        val introFormattedPrice: String? = null,
+        val introPriceAmountMicros: Long? = null,
     )
 
     internal data class PricedOffer(
         val productId: String,
         val formattedPrice: String,
         val priceAmountMicros: Long,
+        val introFormattedPrice: String? = null,
+        val introPriceAmountMicros: Long? = null,
     )
 
     companion object {
@@ -435,26 +447,42 @@ class PlayBillingStoreFront(
             preferredBasePlanId: String,
         ): OfferCandidate? {
             if (offers.isEmpty()) return null
-            // Prefer the matching base plan without a promotional offer override
-            // so standard recurring pricing is shown, falling back to any offer
-            // on the base plan or the first offer returned by Play.
-            return offers.firstOrNull { it.basePlanId == preferredBasePlanId && it.offerId == null }
-                ?: offers.firstOrNull { it.basePlanId == preferredBasePlanId }
-                ?: offers.firstOrNull { it.offerId == null }
-                ?: offers.first()
+            val onBasePlan = offers.filter { it.basePlanId == preferredBasePlanId }
+            val candidates = if (onBasePlan.isNotEmpty()) onBasePlan else offers
+            // Google Play only returns offers that the signed-in account is
+            // eligible for. Prefer the cheapest eligible discounted offer on
+            // the base plan (e.g. a one-time first-year intro price), falling
+            // back to the standard base plan offer when none applies.
+            val discounted = candidates
+                .filter { it.offerId != null && it.introPriceAmountMicros != null }
+                .minByOrNull { it.introPriceAmountMicros!! }
+            return discounted
+                ?: candidates.firstOrNull { it.offerId == null }
+                ?: candidates.first()
         }
 
         internal fun buildPlans(
             monthly: PricedOffer?,
             yearly: PricedOffer?,
         ): List<Plan> {
-            val saving = if (monthly != null && yearly != null && monthly.priceAmountMicros > 0L) {
-                val twelveMonths = monthly.priceAmountMicros * 12.0
-                val ratio = (twelveMonths - yearly.priceAmountMicros) / twelveMonths
-                val percent = (ratio * 100.0).roundToInt()
-                if (percent >= 1) "Save $percent%" else null
-            } else {
-                null
+            val yearlySaving = when {
+                yearly?.introFormattedPrice != null -> {
+                    if (yearly.introPriceAmountMicros == 0L) {
+                        "Free trial included"
+                    } else {
+                        "First year ${yearly.introFormattedPrice}"
+                    }
+                }
+                monthly != null && yearly != null && monthly.priceAmountMicros > 0L -> {
+                    val twelveMonths = monthly.priceAmountMicros * 12.0
+                    val ratio = (twelveMonths - yearly.priceAmountMicros) / twelveMonths
+                    val percent = (ratio * 100.0).roundToInt()
+                    if (percent >= 1) "Save $percent%" else null
+                }
+                else -> null
+            }
+            val monthlySaving = monthly?.introFormattedPrice?.let { intro ->
+                if (monthly.introPriceAmountMicros == 0L) "Free trial included" else "First month $intro"
             }
             return buildList {
                 if (monthly != null) {
@@ -463,6 +491,7 @@ class PlayBillingStoreFront(
                             id = monthly.productId,
                             period = Plan.Period.Monthly,
                             price = monthly.formattedPrice,
+                            saving = monthlySaving,
                         ),
                     )
                 }
@@ -472,7 +501,7 @@ class PlayBillingStoreFront(
                             id = yearly.productId,
                             period = Plan.Period.Yearly,
                             price = yearly.formattedPrice,
-                            saving = saving,
+                            saving = yearlySaving,
                         ),
                     )
                 }

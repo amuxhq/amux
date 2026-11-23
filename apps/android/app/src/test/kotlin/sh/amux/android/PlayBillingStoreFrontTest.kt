@@ -11,33 +11,61 @@ import sh.amux.core.runtime.StoreError
 
 class PlayBillingStoreFrontTest {
     @Test
-    fun selectBasePlanOfferPrefersMatchingBasePlanWithoutPromoOverride() {
-        val offers = listOf(
+    fun selectBasePlanOfferPrefersEligibleIntroDiscountAndFallsBackToBasePlan() {
+        val baseOnly = listOf(
             PlayBillingStoreFront.OfferCandidate(
-                basePlanId = "p1m",
-                offerId = "intro-trial",
-                offerToken = "tok-trial",
-                formattedPrice = "$10.00",
-                priceAmountMicros = 10_000_000L,
-            ),
-            PlayBillingStoreFront.OfferCandidate(
-                basePlanId = "p1m",
+                basePlanId = "p1y",
                 offerId = null,
                 offerToken = "tok-base",
-                formattedPrice = "$10.00",
-                priceAmountMicros = 10_000_000L,
+                formattedPrice = "$99.99",
+                priceAmountMicros = 99_990_000L,
             ),
             PlayBillingStoreFront.OfferCandidate(
                 basePlanId = "legacy",
-                offerId = null,
+                offerId = "old-promo",
                 offerToken = "tok-legacy",
-                formattedPrice = "$12.00",
-                priceAmountMicros = 12_000_000L,
+                formattedPrice = "$99.99",
+                priceAmountMicros = 99_990_000L,
+                introFormattedPrice = "$79.99",
+                introPriceAmountMicros = 79_990_000L,
+            ),
+        )
+        assertEquals("tok-base", PlayBillingStoreFront.selectBasePlanOffer(baseOnly, "p1y")?.offerToken)
+
+        val withIntro = baseOnly + PlayBillingStoreFront.OfferCandidate(
+            basePlanId = "p1y",
+            offerId = "intro-annual",
+            offerToken = "tok-intro",
+            formattedPrice = "$99.99",
+            priceAmountMicros = 99_990_000L,
+            introFormattedPrice = "$79.99",
+            introPriceAmountMicros = 79_990_000L,
+        )
+        assertEquals("tok-intro", PlayBillingStoreFront.selectBasePlanOffer(withIntro, "p1y")?.offerToken)
+    }
+
+    @Test
+    fun buildPlansShowsIntroductoryFirstYearPriceWhenEligible() {
+        val plans = PlayBillingStoreFront.buildPlans(
+            monthly = PlayBillingStoreFront.PricedOffer(
+                productId = Plan.MONTHLY_ID,
+                formattedPrice = "$9.99",
+                priceAmountMicros = 9_990_000L,
+            ),
+            yearly = PlayBillingStoreFront.PricedOffer(
+                productId = Plan.YEARLY_ID,
+                formattedPrice = "$99.99",
+                priceAmountMicros = 99_990_000L,
+                introFormattedPrice = "$79.99",
+                introPriceAmountMicros = 79_990_000L,
             ),
         )
 
-        val chosen = PlayBillingStoreFront.selectBasePlanOffer(offers, "p1m")
-        assertEquals("tok-base", chosen?.offerToken)
+        assertEquals(Plan(Plan.MONTHLY_ID, Plan.Period.Monthly, "$9.99", null), plans[0])
+        assertEquals(
+            Plan(Plan.YEARLY_ID, Plan.Period.Yearly, "$99.99", "First year $79.99"),
+            plans[1],
+        )
     }
 
     @Test

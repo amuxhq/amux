@@ -20,12 +20,14 @@ the App Store set (`marketing/store.py`):
 
 from __future__ import annotations
 
+from io import BytesIO
 import json
 import math
 import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
+import resvg_py
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from compose import INK, MUTED, ROOT, SHOTS, STAGE, fleet_window, mark, rounded, sans  # noqa: E402
@@ -142,21 +144,17 @@ def ground(width: int, height: int, glows: list[tuple[int, int, int, tuple]]) ->
     return canvas
 
 
-def colour_at(t: float) -> tuple[int, int, int]:
-    t = min(max(t, 0.0), 1.0) * (len(TRAIL) - 1)
-    i = min(int(t), len(TRAIL) - 2)
-    f = t - i
-    return tuple(round(a + (b - a) * f) for a, b in zip(TRAIL[i], TRAIL[i + 1]))
-
-
 def trail(canvas: Image.Image, points: list[tuple[float, float]], width: float) -> None:
-    path = []
+    """Render the tapered amux flight trail as an analytically anti-aliased SVG
+    ribbon via resvg so its edges stay crisp with zero stair-stepping."""
+    path: list[tuple[float, float]] = []
+    steps_per_seg = 120
     for i in range(len(points) - 1):
         p0 = points[max(i - 1, 0)]
         p1, p2 = points[i], points[i + 1]
         p3 = points[min(i + 2, len(points) - 1)]
-        for s in range(60):
-            t = s / 60
+        for s in range(steps_per_seg):
+            t = s / steps_per_seg
             path.append(tuple(
                 0.5 * (
                     2 * b
@@ -167,13 +165,46 @@ def trail(canvas: Image.Image, points: list[tuple[float, float]], width: float) 
                 for a, b, c, d in zip(p0, p1, p2, p3)
             ))
     path.append(points[-1])
-    layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(layer)
+
+    # Parameterise by cumulative arc length so the taper and gradient stay even.
+    lengths = [0.0]
+    for (x0, y0), (x1, y1) in zip(path, path[1:]):
+        lengths.append(lengths[-1] + math.hypot(x1 - x0, y1 - y0))
+    total = max(lengths[-1], 1.0)
+
+    left_edge: list[tuple[float, float]] = []
+    right_edge: list[tuple[float, float]] = []
+    n = len(path)
     for i, (x, y) in enumerate(path):
-        t = i / (len(path) - 1)
-        r = width / 2 * (0.25 + 0.75 * math.sin(math.pi * t))
-        draw.ellipse([x - r, y - r, x + r, y + r], fill=colour_at(t) + (255,))
-    glow = layer.filter(ImageFilter.GaussianBlur(64))
+        x_prev, y_prev = path[max(i - 1, 0)]
+        x_next, y_next = path[min(i + 1, n - 1)]
+        dx, dy = x_next - x_prev, y_next - y_prev
+        mag = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / mag, dx / mag
+        t = lengths[i] / total
+        r = width / 2.0 * (0.25 + 0.75 * math.sin(math.pi * t))
+        left_edge.append((x + nx * r, y + ny * r))
+        right_edge.append((x - nx * r, y - ny * r))
+
+    outline = left_edge + list(reversed(right_edge))
+    d = "M " + " L ".join(f"{x:.2f} {y:.2f}" for x, y in outline) + " Z"
+    x_start, y_start = path[0]
+    x_end, y_end = path[-1]
+    stops = "\n".join(
+        f'<stop offset="{idx * 100 / (len(TRAIL) - 1):.2f}%" stop-color="#{r:02x}{g:02x}{b:02x}"/>'
+        for idx, (r, g, b) in enumerate(TRAIL)
+    )
+    cw, ch = canvas.size
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{cw}" height="{ch}" viewBox="0 0 {cw} {ch}">'
+        f'<defs><linearGradient id="g" gradientUnits="userSpaceOnUse" '
+        f'x1="{x_start:.2f}" y1="{y_start:.2f}" x2="{x_end:.2f}" y2="{y_end:.2f}">'
+        f'{stops}</linearGradient></defs>'
+        f'<path d="{d}" fill="url(#g)"/>'
+        f'</svg>'
+    )
+    layer = Image.open(BytesIO(resvg_py.svg_to_bytes(svg_string=svg, width=cw, height=ch))).convert("RGBA")
+    glow = layer.filter(ImageFilter.GaussianBlur(max(18, round(width))))
     glow.putalpha(glow.getchannel("A").point(lambda a: a * 3 // 5))
     canvas.alpha_composite(glow)
     canvas.alpha_composite(layer)
@@ -367,7 +398,7 @@ def feature_graphic(shots: Path) -> Image.Image:
         (680, 140, 320, (151, 71, 255, 45)),
         (940, 380, 280, (255, 115, 116, 40)),
     ])
-    trail(card, [(-60, 440), (260, 380), (540, 290), (820, 170), (1100, 90)], 22)
+    trail(card, [(-60, 475), (260, 430), (540, 325), (820, 185), (1100, 95)], 22)
 
     term_shots = resolve_terminal_shots(shots)
     terminal = fleet_window(term_shots, 56, 17)

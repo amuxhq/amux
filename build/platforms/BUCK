@@ -1,7 +1,7 @@
 # Target platforms (what an output is for) and the execution platform (where
 # Buck2 sends an action). docs/BUILD.md, "Configurations", says how a target
 # picks its platform.
-load(":defs.bzl", "MODES", "TARGETS", "execution_platforms", "target_platform")
+load(":defs.bzl", "MODES", "TARGETS", "execution_platform", "execution_platforms", "target_platform")
 
 # One target platform per target, product, purpose and mode, named
 # `<target>-<product>-<purpose>-<mode>`: `macos-cli-shipping-dev` is a
@@ -22,17 +22,18 @@ load(":defs.bzl", "MODES", "TARGETS", "execution_platforms", "target_platform")
     for mode in MODES
 ]
 
-execution_platforms(
-    name = "execution",
-    # Build scripts, proc macros and code generators run here, so they are
-    # built as tools: a development build, with test features on.
-    constraints = [
-        "prelude//os:macos",
-        "prelude//cpu:arm64",
-        "root//build/constraints:cli",
-        "root//build/constraints:testing",
-        "root//build/constraints:dev",
-    ],
+# Build scripts, proc macros and code generators run on an execution
+# platform, so they are built as tools: a development build, with test
+# features on.
+TOOL_CONSTRAINTS = [
+    "root//build/constraints:cli",
+    "root//build/constraints:testing",
+    "root//build/constraints:dev",
+]
+
+execution_platform(
+    name = "exec-macos",
+    constraints = ["prelude//os:macos", "prelude//cpu:arm64"] + TOOL_CONSTRAINTS,
     properties = {
         "OSFamily": "macos",
         "cpu_count": "1",
@@ -40,4 +41,20 @@ execution_platforms(
         # every action's key here (scripts/buck-config.py).
         "xcode": read_root_config("apple", "xcode", ""),
     },
+)
+
+execution_platform(
+    name = "exec-linux",
+    constraints = ["prelude//os:linux", "prelude//cpu:x86_64"] + TOOL_CONSTRAINTS,
+    properties = {
+        "OSFamily": "linux",
+        "cpu_count": "1",
+    },
+)
+
+# A Mac prefers its own worker and sends what only Linux can run to nova's;
+# nova has no macOS worker to send anything to.
+execution_platforms(
+    name = "execution",
+    platforms = [":exec-macos", ":exec-linux"] if host_info().os.is_macos else [":exec-linux"],
 )

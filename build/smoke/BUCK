@@ -9,3 +9,19 @@ sh_test(
     test = "pass.sh",
 )
 
+
+# Where an action ran, for checking the routing: one that only Linux can
+# run, and one that only macOS can.
+genrule(
+    name = "uname-linux",
+    out = "uname.txt",
+    cmd = "uname -sm > $OUT",
+    exec_compatible_with = ["prelude//os:linux"],
+)
+
+genrule(
+    name = "uname-macos",
+    out = "uname.txt",
+    cmd = "uname -sm > $OUT",
+    exec_compatible_with = ["prelude//os:macos"],
+)

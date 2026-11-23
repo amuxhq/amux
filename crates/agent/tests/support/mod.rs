@@ -264,7 +264,7 @@ impl Agent {
         if let Some(name) = setup.replay {
             let played = root.path().join("replay");
             std::fs::create_dir_all(&played).unwrap();
-            let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            let fixture = source_tree::crate_dir!()
                 .join("tests/replay")
                 .join(name)
                 .join("io.jsonl");

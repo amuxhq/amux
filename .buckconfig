@@ -1,0 +1,41 @@
+# Buck2 configuration (docs/BUILD.md). The prelude is the copy bundled with
+# the pinned buck2 binary (build/tools.json), so bumping buck2 bumps both.
+[cells]
+  root = .
+  prelude = prelude
+  toolchains = build/toolchains
+  none = none
+
+[cell_aliases]
+  config = prelude
+  ovr_config = prelude
+  fbcode = none
+  fbsource = none
+  fbcode_macros = none
+  buck = none
+
+[external_cells]
+  prelude = bundled
+
+# [parser] target_platform_detector_spec is per machine: scripts/buck-config.py
+# writes it into .buckconfig.local with this host's development platform.
+
+[build]
+  execution_platforms = root//build/platforms:execution
+
+[buck2]
+  digest_algorithms = SHA256
+  materializations = deferred
+
+# Every action goes to NativeLink (scripts/nativelink.py): on a Mac, the one
+# on this machine. Buck2 records only remotely executed results in the
+# action cache, so this is what makes results shareable between worktrees.
+[buck2_re_client]
+  engine_address = grpc://127.0.0.1:50051
+  action_cache_address = grpc://127.0.0.1:50051
+  cas_address = grpc://127.0.0.1:50051
+  tls = false
+  instance_name = main
+
+# A machine's own settings (another NativeLink endpoint, for instance) go in
+# .buckconfig.local, which is not committed.

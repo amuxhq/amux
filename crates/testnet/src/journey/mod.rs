@@ -152,7 +152,7 @@ pub fn main(arguments: Vec<String>) -> ExitCode {
 
 /// The checkout the journeys, their goldens and the built binaries live in.
 pub(crate) fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    source_tree::crate_dir!()
         .join("../..")
         .canonicalize()
         .expect("the checkout")

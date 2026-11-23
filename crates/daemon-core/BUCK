@@ -1,0 +1,27 @@
+load("//build:rust.bzl", "amux_rust_library")
+
+DEPS = [
+    "//crates/core-ring:core-ring",
+    "//crates/journal:journal",
+    "//crates/store:store",
+    "//crates/wire:wire",
+    "//crates/workspace-core:workspace-core",
+    "//third-party/rust:curve25519-dalek",
+    "//third-party/rust:postcard",
+    "//third-party/rust:prost",
+    "//third-party/rust:ring",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:tracing",
+    "//third-party/rust:uuid",
+]
+
+TEST_DEPS = [
+    "//third-party/rust:tempfile",
+]
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    test_deps = TEST_DEPS,
+)

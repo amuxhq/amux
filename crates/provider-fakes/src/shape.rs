@@ -549,8 +549,7 @@ mod tests {
     }
 
     fn acp_corpus() -> Corpus {
-        let root =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../interpret/fixtures/acp/live");
+        let root = source_tree::crate_dir!().join("../interpret/fixtures/acp/live");
         Corpus::load(Kind::Acp, &[&root]).unwrap()
     }
 

@@ -1,0 +1,21 @@
+load("//build:rust.bzl", "amux_rust_library")
+
+DEPS = [
+    "//third-party/rust:async-trait",
+    "//third-party/rust:jiff",
+    "//third-party/rust:reqwest",
+    "//third-party/rust:semver",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:tokio",
+    "//third-party/rust:tracing",
+    "//third-party/rust:uuid",
+] + select({"DEFAULT": ["//third-party/rust:libc"], "prelude//os:windows": [], "prelude//os:none": []})
+
+TEST_DEPS = ["//crates/source-tree:source-tree"]
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    test_deps = TEST_DEPS,
+    test_resources = ["//:guide"],
+)

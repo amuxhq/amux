@@ -1,0 +1,31 @@
+# The third-party crates the workspace uses only in [dev-dependencies].
+#
+# reindeer (`just buckify`) turns the workspace's dependencies into
+# third-party/rust/BUCK, but it follows [dependencies] and
+# [build-dependencies] only, so a crate no member uses outside its tests
+# would be missing from Buck's build. Listing it here, as an ordinary
+# dependency of a workspace member, puts it in BUCK at the version
+# Cargo.lock already resolves for the tests. Nothing links this crate.
+#
+# A crate belongs here when the parity check (build/checks/parity.py) or
+# Buck reports `//third-party/rust:<name>` unknown.
+[package]
+name = "dev-only"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# Nothing to test or document.
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+proptest = { workspace = true }
+
+[package.metadata.cargo-shear]
+ignored = ["proptest"]
+
+[lints]
+workspace = true

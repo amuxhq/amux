@@ -142,7 +142,7 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
     // The corpus lives beside the interpreter goldens that replay it.
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../interpret/fixtures/codex/live");
+    let root = source_tree::crate_dir!().join("../interpret/fixtures/codex/live");
     let destination = live::join(&root, name, "codex", events, spawns, &rules, |events| {
         let (version, model, session_ids) = captured_facts(events)?;
         Ok(Captured {

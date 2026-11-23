@@ -1,0 +1,25 @@
+load("//build:rust.bzl", "DEBUG_TOOLS", "amux_rust_library")
+
+DEPS = [
+    "//crates/app-embedded:app-embedded",
+    "//crates/app-runtime:app-runtime",
+    "//crates/client:client",
+    "//crates/node:node",
+    "//crates/ui-code:ui-code",
+    "//crates/ui-state:ui-state",
+    "//crates/ui-view:ui-view",
+    "//crates/wire:wire",
+    "//third-party/rust:futures-util",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:tokio",
+] + select({"DEFAULT": ["//crates/installer:installer"], "prelude//os:iphoneos": [], "prelude//os:android": []})
+
+FEATURES = ["default"] + DEBUG_TOOLS
+
+amux_rust_library(
+    version = "0.2.0",
+    deps = DEPS,
+    features = FEATURES,
+    product = "app",
+)

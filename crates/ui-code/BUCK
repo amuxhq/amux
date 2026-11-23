@@ -1,0 +1,11 @@
+load("//build:rust.bzl", "amux_rust_library")
+
+DEPS = [
+    "//crates/highlight:highlight",
+    "//crates/ui-view:ui-view",
+]
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+)

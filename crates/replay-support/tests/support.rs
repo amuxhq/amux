@@ -21,7 +21,7 @@ use wire::{SessionEvent, session_event};
 /// removed after it.
 pub fn repro(named: &Path) -> std::process::Output {
     let keep = tempfile::tempdir().unwrap();
-    std::process::Command::new(env!("CARGO_BIN_EXE_repro"))
+    std::process::Command::new(source_tree::bin!("repro"))
         .arg(named)
         .arg("--keep")
         .arg(keep.path())

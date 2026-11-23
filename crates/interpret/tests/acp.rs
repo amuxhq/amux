@@ -2,14 +2,14 @@
 //! fixtures/acp/live, one fixture per recording, and the rules no recording
 //! shows on its own.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use acp_protocol::agent::InitializeResponse;
 use interpret::acp::{Acp, Opening, opening, quirks};
 use interpret::{Effect, Event, Interpreter, fixture_script, run_golden};
 
 fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/acp")
+    source_tree::crate_dir!().join("fixtures/acp")
 }
 
 fn golden(name: &str) {

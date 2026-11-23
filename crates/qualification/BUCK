@@ -1,0 +1,200 @@
+load("//build:rust.bzl", "TEST_BINARIES", "amux_binaries", "amux_rust_binary", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//crates/source-tree:source-tree",
+    "//crates/node:node",
+    "//crates/provider-fakes:provider-fakes",
+    "//crates/pty-host:pty-host",
+    "//crates/redaction:redaction",
+    "//crates/testnet:testnet",
+    "//crates/wire:wire",
+    "//third-party/rust:anyhow",
+    "//third-party/rust:jiff",
+    "//third-party/rust:quinn",
+    "//third-party/rust:rcgen",
+    "//third-party/rust:rustls",
+    "//third-party/rust:semver",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:sha2",
+    "//third-party/rust:thiserror",
+    "//third-party/rust:tokio",
+    "//third-party/rust:tokio-rustls",
+    "//third-party/rust:tonic",
+    "//third-party/rust:uuid",
+] + select({"DEFAULT": ["//third-party/rust:futures-util", "//third-party/rust:libc", "//third-party/rust:tokio-tungstenite"], "prelude//os:windows": [], "prelude//os:none": []})
+
+TEST_DEPS = [
+    "//crates/agent-dir:agent-dir",
+    "//crates/attachments:attachments",
+    "//crates/client:client",
+    "//crates/interpret:interpret",
+    "//crates/ui-state:ui-state",
+    "//third-party/rust:bytes",
+    "//third-party/rust:hyper-util",
+    "//third-party/rust:prost",
+    "//third-party/rust:tempfile",
+    "//third-party/rust:tower",
+    "//third-party/rust:unicode-width",
+    "//third-party/rust:vt100",
+]
+
+amux_rust_library(
+    version = "0.1.0",
+    tool = True,
+    deps = DEPS,
+    test_deps = TEST_DEPS,
+    test_resources = ["//crates/interpret:fixtures"],
+    binaries = True,
+)
+
+amux_rust_binary(
+    name = "acp-probe",
+    version = "0.1.0",
+    crate_root = "src/bin/acp_probe/main.rs",
+    deps = DEPS,
+    tool = True,
+)
+
+amux_rust_binary(
+    name = "claude-probe",
+    version = "0.1.0",
+    crate_root = "src/bin/claude_probe/main.rs",
+    deps = DEPS,
+    tool = True,
+    unit_tests = True,
+    test_deps = TEST_DEPS,
+)
+
+amux_rust_binary(
+    name = "codex-probe",
+    version = "0.1.0",
+    crate_root = "src/bin/codex_probe/main.rs",
+    deps = DEPS,
+    tool = True,
+)
+
+amux_rust_binary(
+    name = "perf",
+    version = "0.1.0",
+    crate_root = "src/bin/perf.rs",
+    deps = DEPS,
+    tool = True,
+)
+
+amux_rust_binary(
+    name = "perf-topology",
+    version = "0.1.0",
+    crate_root = "src/bin/perf_topology.rs",
+    deps = DEPS,
+    tool = True,
+)
+
+amux_rust_binary(
+    name = "relay-curve",
+    version = "0.1.0",
+    crate_root = "src/bin/relay_curve.rs",
+    deps = DEPS,
+    tool = True,
+)
+
+# The live lanes, which Cargo builds only with `--features live`: the
+# `live` label keeps them out of `just test`, and `just live` runs them.
+amux_rust_test(
+    name = "claude_pty_live",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    run_env = {
+        "TESTNET_BINARIES": "$(location :live-binaries)",
+        "CARGO_BIN_EXE_acp-probe": "$(location :acp-probe)",
+        "CARGO_BIN_EXE_claude-probe": "$(location :claude-probe)",
+        "CARGO_BIN_EXE_codex-probe": "$(location :codex-probe)",
+        "CARGO_BIN_EXE_perf": "$(location :perf)",
+        "CARGO_BIN_EXE_perf-topology": "$(location :perf-topology)",
+        "CARGO_BIN_EXE_relay-curve": "$(location :relay-curve)",
+    },
+    labels = ["live"],
+    harness = False,
+    resources = ["//crates/interpret:fixtures"],
+)
+
+amux_rust_test(
+    name = "claude_sdk_live",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    run_env = {
+        "TESTNET_BINARIES": "$(location :live-binaries)",
+        "CARGO_BIN_EXE_acp-probe": "$(location :acp-probe)",
+        "CARGO_BIN_EXE_claude-probe": "$(location :claude-probe)",
+        "CARGO_BIN_EXE_codex-probe": "$(location :codex-probe)",
+        "CARGO_BIN_EXE_perf": "$(location :perf)",
+        "CARGO_BIN_EXE_perf-topology": "$(location :perf-topology)",
+        "CARGO_BIN_EXE_relay-curve": "$(location :relay-curve)",
+    },
+    labels = ["live"],
+    harness = False,
+    resources = ["//crates/interpret:fixtures"],
+)
+
+amux_rust_test(
+    name = "codex_live",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    run_env = {
+        "TESTNET_BINARIES": "$(location :live-binaries)",
+        "CARGO_BIN_EXE_acp-probe": "$(location :acp-probe)",
+        "CARGO_BIN_EXE_claude-probe": "$(location :claude-probe)",
+        "CARGO_BIN_EXE_codex-probe": "$(location :codex-probe)",
+        "CARGO_BIN_EXE_perf": "$(location :perf)",
+        "CARGO_BIN_EXE_perf-topology": "$(location :perf-topology)",
+        "CARGO_BIN_EXE_relay-curve": "$(location :relay-curve)",
+    },
+    labels = ["live"],
+    harness = False,
+    resources = ["//crates/interpret:fixtures"],
+)
+
+amux_rust_test(
+    name = "acp_live",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    run_env = {
+        "TESTNET_BINARIES": "$(location :live-binaries)",
+        "CARGO_BIN_EXE_acp-probe": "$(location :acp-probe)",
+        "CARGO_BIN_EXE_claude-probe": "$(location :claude-probe)",
+        "CARGO_BIN_EXE_codex-probe": "$(location :codex-probe)",
+        "CARGO_BIN_EXE_perf": "$(location :perf)",
+        "CARGO_BIN_EXE_perf-topology": "$(location :perf-topology)",
+        "CARGO_BIN_EXE_relay-curve": "$(location :relay-curve)",
+    },
+    labels = ["live"],
+    harness = False,
+    resources = ["//crates/interpret:fixtures"],
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    run_env = {
+        "CARGO_BIN_EXE_acp-probe": "$(location :acp-probe)",
+        "CARGO_BIN_EXE_claude-probe": "$(location :claude-probe)",
+        "CARGO_BIN_EXE_codex-probe": "$(location :codex-probe)",
+        "CARGO_BIN_EXE_perf": "$(location :perf)",
+        "CARGO_BIN_EXE_perf-topology": "$(location :perf-topology)",
+        "CARGO_BIN_EXE_relay-curve": "$(location :relay-curve)",
+    },
+    resources = ["//crates/interpret:fixtures"],
+    binaries = True,
+)
+
+# The live lanes start a probe in front of the real provider, which they
+# find beside amux and the fakes.
+amux_binaries(
+    name = "live-binaries",
+    binaries = TEST_BINARIES | {
+        "acp-probe": ":acp-probe",
+        "claude-probe": ":claude-probe",
+        "codex-probe": ":codex-probe",
+    },
+)

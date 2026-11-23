@@ -7,7 +7,7 @@
 //! test of it. Exits non-zero when a stage fails, naming the step and what
 //! it broke. A developer's tool, never shipped.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use replay_support::fetch::Bucket;
@@ -33,7 +33,7 @@ fn main() -> ExitCode {
         return usage();
     };
     let keep = keep.unwrap_or_else(|| {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
+        source_tree::crate_dir!()
             .join("../../target/repro")
             .components()
             .collect()

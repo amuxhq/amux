@@ -1,0 +1,15 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This source code is dual-licensed under either the MIT license found in the
+# LICENSE-MIT file in the root directory of this source tree or the Apache
+# License, Version 2.0 found in the LICENSE-APACHE file in the root directory
+# of this source tree. You may select, at your option, one of the
+# above-listed licenses.
+
+buildscript.run = true
+
+# tree-sitter's build-dependency asks for preserve_order, which Cargo keeps
+# to the build script (its host dependencies resolve apart from the
+# product's); reindeer would turn it on for every crate. Nothing of ours
+# asks for it, and the build script never uses serde_json.
+omit_features = ["indexmap", "preserve_order"]

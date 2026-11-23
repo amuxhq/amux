@@ -1,0 +1,49 @@
+load("//build:rust.bzl", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//crates/analytics:analytics",
+    "//crates/app-runtime:app-runtime",
+    "//crates/client:client",
+    "//crates/log-file:log-file",
+    "//crates/node:node",
+    "//crates/wire:wire",
+    "//third-party/rust:sha2",
+    "//third-party/rust:thiserror",
+    "//third-party/rust:tokio",
+    "//third-party/rust:tonic",
+    "//third-party/rust:tracing-subscriber",
+    "//third-party/rust:uuid",
+]
+
+TEST_DEPS = [
+    "//crates/patience:patience",
+    "//crates/provider-fakes:provider-fakes",
+    "//crates/settings:settings",
+    "//crates/testnet:testnet",
+    "//crates/ui-state:ui-state",
+    "//crates/ui-view:ui-view",
+    "//third-party/rust:futures-util",
+    "//third-party/rust:tempfile",
+    "//third-party/rust:tracing",
+]
+
+amux_rust_library(
+    version = "0.2.0",
+    deps = DEPS,
+    test_deps = TEST_DEPS,
+    binaries = True,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.2.0",
+    deps = DEPS + TEST_DEPS,
+    binaries = True,
+)
+
+amux_rust_test(
+    name = "runtime_log",
+    version = "0.2.0",
+    deps = DEPS + TEST_DEPS,
+    binaries = True,
+)

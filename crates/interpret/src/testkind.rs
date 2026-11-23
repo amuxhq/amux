@@ -767,7 +767,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     use wire::Phase;
 
@@ -775,7 +775,7 @@ mod tests {
     use crate::{EndRules, check_invariants, run_golden};
 
     fn fixtures() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/core")
+        source_tree::crate_dir!().join("fixtures/core")
     }
 
     fn run(name: &str) {

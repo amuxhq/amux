@@ -48,17 +48,15 @@ cannot keep a promise is not made by breaking it: it is the next protocol
 - Build, test and lint through `just` (`just --list`); `wt` is for worktrees
   and this tree's daemon. Recipes carry timeouts; a firing timeout is a hang
   to diagnose.
-- Before a change reaches main, run `just premerge` and the tests of the
-  crates it touched. A failing golden is re-recorded in the same change,
-  after reading what moved.
-- Land a branch on main with a merge commit made in your tree:
-  `git fetch origin main && git switch --detach origin/main && git merge
-  --no-ff <branch>`, with a message saying what the branch does. Rerun those
-  checks on the merge, then `git push origin HEAD:main`. If a check fails, fix
-  it on the branch and land again; if the push is refused, someone landed
-  first, so start again from the fetch. Never force-push. Afterwards,
-  `git switch <branch>` to keep working. Without push access, open a pull
-  request instead.
+- Before a change reaches main, run `just premerge`: every check and every
+  test, through Buck2's cache, so only what the change affects runs. A
+  failing golden is re-recorded in the same change (`just goldens`), after
+  reading what moved.
+- Land a branch on main with `just land "What the branch does"`. It merges
+  your HEAD with `--no-ff` onto a fresh main in a worktree of its own, runs
+  the checks on the merge, pushes, and prints `LANDED <sha>`; your tree is
+  never touched. If it stops, fix the branch and land again. Never
+  force-push. Without push access, open a pull request instead.
 - The why of a change and its test evidence go in the commit message; search
   past decisions with `git log --grep`. A rejected alternative that should
   constrain future work goes in that component's page in `docs/`.

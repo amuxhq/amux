@@ -2,7 +2,7 @@
 """Measure line coverage per workspace crate and write it to target/coverage/coverage.md.
 
 Runs every workspace test target under cargo-llvm-cov with the desktop
-features, as `just test` does, then sums the per-file line counts of each
+features, as `just cargo-test` does, then sums the per-file line counts of each
 crate's own sources. The report names the commit it measured, so a reader
 can tell how stale it is. Coverage is a reading aid for judging which tests
 earn their keep, not a gate: nothing fails on a low number.

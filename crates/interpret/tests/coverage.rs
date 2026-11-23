@@ -3,7 +3,6 @@
 //! encoded in vocabulary.toml beside this file.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use prost::Message as _;
 use prost_types::{DescriptorProto, FileDescriptorSet};
@@ -119,9 +118,7 @@ fn carrier_exists(
 
 /// Every line of every golden a kind has.
 fn golden_lines(kind: &str) -> Vec<(String, String)> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("fixtures")
-        .join(kind);
+    let dir = source_tree::crate_dir!().join("fixtures").join(kind);
     let mut lines = Vec::new();
     let mut entries = std::fs::read_dir(&dir)
         .unwrap_or_else(|error| panic!("{}: {error}", dir.display()))
@@ -148,7 +145,7 @@ fn shows(line: &str, golden: &[String]) -> bool {
 
 #[test]
 fn vocabulary_coverage() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vocabulary.toml");
+    let path = source_tree::crate_dir!().join("tests/vocabulary.toml");
     let vocabulary: Vocabulary = toml::from_str(&std::fs::read_to_string(&path).unwrap())
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
     let ids = vocabulary

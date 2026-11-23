@@ -23,6 +23,7 @@ ui-state = { workspace = true }
 wire = { workspace = true }
 
 [dev-dependencies]
+source-tree = { workspace = true }
 interpret = { workspace = true }
 proptest = { workspace = true }
 prost = { workspace = true }

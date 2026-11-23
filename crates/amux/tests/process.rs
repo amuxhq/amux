@@ -103,7 +103,7 @@ impl Install {
             self.root.path().join("bin").display(),
             std::env::var("PATH").unwrap_or_default()
         );
-        let mut command = Command::new(env!("CARGO_BIN_EXE_amux"));
+        let mut command = Command::new(source_tree::bin!("amux"));
         command
             .args(args)
             .env("AMUX_CONFIG", &self.config)
@@ -217,7 +217,7 @@ impl Drop for Install {
             let _ = daemon.start_kill();
         }
         if self.detached {
-            let _ = std::process::Command::new(env!("CARGO_BIN_EXE_amux"))
+            let _ = std::process::Command::new(source_tree::bin!("amux"))
                 .args(["server", "stop"])
                 .env("AMUX_CONFIG", &self.config)
                 .env("AMUX_TEST_DISCOVERY_MODE", "disabled")

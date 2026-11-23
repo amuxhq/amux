@@ -447,7 +447,7 @@ def print_table(suites: list[dict[str, Any]], cargo: set[tuple[str, str, str]], 
 
 
 def run_suite(suites: list[dict[str, Any]], name: str, extra: list[str]) -> int:
-    """Run one suite's Cargo tests, and only those, under nextest."""
+    """Run one suite's Rust tests, and only those, through Buck2."""
     suite = next((suite for suite in suites if suite["name"] == name), None)
     if suite is None:
         print(f"tests catalogue: no suite {name!r}; `just tests-list` names them", file=sys.stderr)
@@ -455,16 +455,30 @@ def run_suite(suites: list[dict[str, Any]], name: str, extra: list[str]) -> int:
     if not suite.get("cargo"):
         print(f"tests catalogue: {name} has no Cargo tests; its recipe is {suite['recipe']}", file=sys.stderr)
         return 2
-    command = ["cargo", "nextest", "run", "--locked", *selections.selection(suite), *extra]
-    print("$", shlex.join(command), flush=True)
-    return subprocess.run(command, cwd=ROOT).returncode
+    if extra:
+        print(
+            "tests catalogue: a suite runs whole; to narrow it, run its target with a name filter, "
+            "as in `scripts/buck2 run //crates/node:integration -- ^store::`",
+            file=sys.stderr,
+        )
+        return 2
+    buck2 = str(ROOT / "scripts/buck2")
+    tests = set(run(buck2, "uquery", "kind(amux_test, //crates/...)").split())
+    status = 0
+    for target, filters in selections.buck_runs(suite):
+        if f"root{target}" not in tests:
+            continue
+        command = [buck2, "run", target, "--", *filters]
+        print("$", shlex.join(command), flush=True)
+        status = subprocess.run(command, cwd=ROOT).returncode or status
+    return status
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=("list", "check", "run"))
     parser.add_argument("suite", nargs="?", help="the suite `run` runs")
-    parser.add_argument("extra", nargs=argparse.REMAINDER, help="more `cargo nextest run` arguments")
+    parser.add_argument("extra", nargs=argparse.REMAINDER, help="unused: a suite runs whole")
     arguments = parser.parse_args()
     if arguments.mode == "run":
         if arguments.suite is None:

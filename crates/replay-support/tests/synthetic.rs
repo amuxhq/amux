@@ -7,7 +7,7 @@
 //! And a record a report carried reproduces the check its stream broke, at
 //! the step that broke it, from the record alone.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use interpret::acp::Acp;
 use interpret::claude_pty::ClaudePty;
@@ -24,7 +24,7 @@ const RECORDED: [u8; 16] = [7; 16];
 const AGAIN: [u8; 16] = [9; 16];
 
 fn fixtures(kind: &str) -> Vec<PathBuf> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let dir = source_tree::crate_dir!()
         .join("../interpret/fixtures")
         .join(kind);
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)

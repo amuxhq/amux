@@ -42,7 +42,7 @@ impl Agent {
         let log = handled.path().join("input");
         let line = Line::spawn_with(
             Kind::Acp,
-            env!("CARGO_BIN_EXE_fake-acp"),
+            source_tree::bin!("fake-acp"),
             &["acp"],
             script,
             &[],
@@ -222,7 +222,7 @@ fn scratch() -> tempfile::TempDir {
 /// it refuses of the fake is the fake's own.
 #[test]
 fn every_recorded_agent_frame_passes_the_corpus_check() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../interpret/fixtures/acp/live");
+    let root = source_tree::crate_dir!().join("../interpret/fixtures/acp/live");
     let corpus = support::corpus(Kind::Acp);
     let mut dirs: Vec<PathBuf> = std::fs::read_dir(&root)
         .unwrap()
@@ -259,8 +259,7 @@ fn every_recorded_agent_frame_passes_the_corpus_check() {
 
 #[test]
 fn a_recording_of_two_processes_plays_as_two() {
-    let recording =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../interpret/fixtures/acp/live/agy-load");
+    let recording = source_tree::crate_dir!().join("../interpret/fixtures/acp/live/agy-load");
     let processes = playback::load(&recording).unwrap();
     let transports: Vec<&str> = processes.iter().map(|p| p.transport.as_str()).collect();
     assert_eq!(transports, ["amux/1", "amux/2"]);

@@ -5,7 +5,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
-use std::path::Path;
 
 use proptest::collection::vec;
 use proptest::prelude::*;
@@ -1025,7 +1024,7 @@ fn authored_view_goldens() {
     let mut failures = Vec::new();
     for kind in KINDS {
         let rendered = authored(kind);
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        let path = source_tree::crate_dir!()
             .join("tests/goldens/authored")
             .join(format!("{}.golden", golden_name(kind)));
         if std::env::var("UI_VIEW_UPDATE_GOLDENS").as_deref() == Ok("1") {

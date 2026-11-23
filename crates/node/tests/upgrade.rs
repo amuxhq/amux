@@ -68,7 +68,7 @@ fn lan() -> node::EdgeOptions {
 }
 
 fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/upgrade")
+    source_tree::crate_dir!().join("tests/fixtures/upgrade")
 }
 
 /// Every release's profile starts under this build, with its identity, its

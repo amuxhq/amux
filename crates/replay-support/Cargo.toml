@@ -13,6 +13,7 @@ test = false
 doctest = false
 
 [dependencies]
+source-tree = { workspace = true }
 jiff.workspace = true
 core-ring.workspace = true
 daemon-core.workspace = true

@@ -4,7 +4,9 @@ A suite's `cargo` selectors name a package and either Cargo targets of a kind
 (`lib`, `bin`, or a `test` target with a harness of its own) or `modules`:
 suites of the package's one integration test binary, `integration`
 (tests/integration.rs, one module per suite). `selection` turns them into the
-packages, features and filterset that `cargo nextest run` takes.
+packages, features and filterset that `cargo nextest run` takes (CI, which
+runs Cargo), and `buck_runs` into the Buck2 test targets and name filters
+that `just suite` runs.
 """
 
 from __future__ import annotations
@@ -60,7 +62,7 @@ def filterset(selector: dict[str, Any]) -> str:
 def selection(suite: dict[str, Any]) -> list[str]:
     """`cargo nextest run` arguments that run exactly the suite's Cargo tests.
 
-    The workspace scope and features `just test` builds with, so a suite
+    The workspace scope and features `just cargo-test` builds with, so a suite
     reuses its build: naming the packages instead unifies the dependencies'
     features differently and rebuilds much of the graph beside it. A
     feature only the suite needs is added to that scope."""
@@ -74,3 +76,27 @@ def selection(suite: dict[str, Any]) -> list[str]:
     if features:
         scope += ["--features", ",".join(sorted(features))]
     return scope + ["-E", " | ".join(filterset(selector) for selector in selectors)]
+
+
+def buck_runs(suite: dict[str, Any]) -> list[tuple[str, list[str]]]:
+    """The Buck2 test targets that hold one suite's tests, each with the name
+    filters build/test-runner.py selects them by (none: all of them).
+
+    A crate's tests are Buck2 targets as build/rust.bzl names them: `unit`
+    for its library's, `<bin>-unit` for a binary's, one target per [[test]]
+    and `integration` for the suites of its integration binary. A Cargo
+    target with no tests has no test target, and a features list needs no
+    counterpart: a test target is built with its crate's test features."""
+    runs: dict[str, list[str]] = {}
+    for selector in suite.get("cargo", []):
+        package = f"//crates/{selector['package']}"
+        modules = selector.get("modules", [])
+        if modules:
+            runs.setdefault(f"{package}:{INTEGRATION}", []).extend(f"^{module}::" for module in sorted(modules))
+            continue
+        kind = selector.get("kind", "test")
+        if kind == "lib":
+            runs[f"{package}:unit"] = []
+        for target in selector.get("targets", []):
+            runs[f"{package}:{target}-unit" if kind == "bin" else f"{package}:{target}"] = []
+    return list(runs.items())

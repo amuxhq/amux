@@ -1,0 +1,49 @@
+load("//build:rust.bzl", "amux_files", "TESTING", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//crates/acp-protocol:acp-protocol",
+    "//crates/attachments:attachments",
+    "//crates/claude-protocol:claude-protocol",
+    "//crates/codex-protocol:codex-protocol",
+    "//crates/core-ring:core-ring",
+    "//crates/preview:preview",
+    "//crates/redaction:redaction",
+    "//crates/wire:wire",
+    "//third-party/rust:base64",
+    "//third-party/rust:jiff",
+    "//third-party/rust:prost",
+    "//third-party/rust:prost-types",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:sha2",
+    "//third-party/rust:shell-words",
+    "//third-party/rust:uuid",
+]
+
+TEST_DEPS = [
+    "//crates/source-tree:source-tree",
+    "//third-party/rust:toml",
+]
+
+FEATURES = select({"DEFAULT": [], TESTING: ["testkind"]})
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    features = FEATURES,
+    test_deps = TEST_DEPS,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    features = FEATURES,
+)
+
+# The recorded sessions: replayed by the interpreter's tests and read by
+# the fakes, the harness and the clients' tests.
+amux_files(
+    name = "fixtures",
+    srcs = native.glob(["fixtures/**"]),
+)

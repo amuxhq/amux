@@ -35,7 +35,7 @@ fn the_probe_carries_an_agents_stdio_through_and_records_it() {
     let request =
         r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}"#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_acp-probe"))
+    let mut child = Command::new(source_tree::bin!("acp-probe"))
         .args(["--", "sh"])
         .arg(&agent)
         .current_dir(root.path())
@@ -70,7 +70,7 @@ fn the_probe_carries_an_agents_stdio_through_and_records_it() {
 
 #[test]
 fn the_probe_refuses_to_run_an_agent_unrecorded() {
-    let output = Command::new(env!("CARGO_BIN_EXE_acp-probe"))
+    let output = Command::new(source_tree::bin!("acp-probe"))
         .args(["--", "true"])
         .env_remove("ACP_CAPTURE_DIR")
         .env_remove("ACP_REAL_PATH")
@@ -266,7 +266,7 @@ fn a_recording_name_must_be_one_plain_folder_inside_the_corpus() {
 /// Runs the probe in front of `agent` (a shell command) with `ACP_CAPTURE_DIR`
 /// at `capture`.
 fn probe(agent: &str, capture: &Path) -> std::process::Child {
-    Command::new(env!("CARGO_BIN_EXE_acp-probe"))
+    Command::new(source_tree::bin!("acp-probe"))
         .args(["--", "sh", "-c", agent])
         .current_dir(capture.parent().unwrap())
         .env("ACP_CAPTURE_DIR", capture)

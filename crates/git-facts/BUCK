@@ -1,0 +1,19 @@
+load("//build:rust.bzl", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//third-party/rust:sha2",
+    "//third-party/rust:tempfile",
+    "//third-party/rust:thiserror",
+    "//third-party/rust:tokio",
+]
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.1.0",
+    deps = DEPS,
+)

@@ -331,11 +331,8 @@ mod tests {
     /// small.
     #[tokio::test]
     async fn a_channel_compresses_each_message_against_the_ones_before() {
-        let journal = std::fs::read(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/journal"
-        ))
-        .unwrap();
+        let journal =
+            std::fs::read(source_tree::crate_dir!().join("tests/fixtures/journal")).unwrap();
         let mut frames = Vec::new();
         let mut rest = &journal[..];
         while !rest.is_empty() {

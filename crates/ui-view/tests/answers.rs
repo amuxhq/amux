@@ -6,7 +6,7 @@
 //! pick the settings view offers is likewise an input the interpreter takes.
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use interpret::acp::Acp;
 use interpret::claude_pty::ClaudePty;
@@ -25,7 +25,7 @@ use wire::{Kind, SessionEvent, send_input_response, session_event};
 use crate::support;
 
 fn fixtures(kind: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    source_tree::crate_dir!()
         .join("../interpret/fixtures")
         .join(kind)
 }

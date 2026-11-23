@@ -123,6 +123,7 @@ dependencies {
 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
+    implementation(libs.play.billing.ktx)
     // Play services, under Firebase, still ask for Fragment 1.1, whose
     // activity results lint refuses in a release build; raise it to one
     // that works with this Activity version.

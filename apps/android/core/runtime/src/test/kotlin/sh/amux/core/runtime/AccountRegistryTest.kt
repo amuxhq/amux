@@ -119,7 +119,7 @@ class AccountRegistryTest {
             override suspend fun forgetSession(id: AccountId) { forgotten = id }
             override suspend fun lend(lender: suspend (AccountId) -> String?) = Unit
             override suspend fun entitlement(id: AccountId): Entitlement = Entitlement.None
-            override suspend fun recordPurchase(id: AccountId, signedTransaction: String) = Unit
+            override suspend fun recordPurchase(id: AccountId, purchase: SignedPurchase) = Unit
             override suspend fun requestDeletion(id: AccountId, confirmedEmail: String): DeletionOutcome =
                 DeletionOutcome.BlockedByRenewal(EntitlementSource.Web, "https://amux.sh/portal")
             override suspend fun registerDevice(id: AccountId, host: HostId, device: PushDevice) = Unit

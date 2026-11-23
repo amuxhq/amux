@@ -260,9 +260,13 @@ class AmuxCloudService(
         return access.toEntitlement()
     }
 
-    override suspend fun recordPurchase(id: AccountId, signedTransaction: String) {
-        val body = AmuxJson.json.encodeToString(PurchaseBody(signedTransaction))
-            .toByteArray(StandardCharsets.UTF_8)
+    override suspend fun recordPurchase(id: AccountId, purchase: SignedPurchase) {
+        val body = AmuxJson.json.encodeToString(
+            PlayPurchaseBody(
+                purchaseToken = purchase.signed,
+                productId = purchase.productId,
+            ),
+        ).toByteArray(StandardCharsets.UTF_8)
         val response = sendAuthorized(
             CloudHttpRequest(
                 method = "POST",
@@ -342,11 +346,11 @@ class AmuxCloudService(
             409 -> {
                 val blocked = decodeJson<BlockedPayload>(response.body)
                 when (blocked.provider) {
-                    "revenuecat" -> DeletionOutcome.BlockedByRenewal(
+                    "app_store" -> DeletionOutcome.BlockedByRenewal(
                         source = EntitlementSource.AppStore,
                         manageUrl = APP_STORE_SUBSCRIPTIONS_URL,
                     )
-                    "google_play", "play_store" -> DeletionOutcome.BlockedByRenewal(
+                    "revenuecat", "google_play", "play_store" -> DeletionOutcome.BlockedByRenewal(
                         source = EntitlementSource.PlayStore,
                         manageUrl = PLAY_STORE_SUBSCRIPTIONS_URL,
                     )
@@ -489,8 +493,9 @@ class AmuxCloudService(
     )
 
     @Serializable
-    private data class PurchaseBody(
-        @SerialName("signed_transaction") val signedTransaction: String,
+    private data class PlayPurchaseBody(
+        @SerialName("purchase_token") val purchaseToken: String,
+        @SerialName("product_id") val productId: String,
     )
 
     @Serializable
@@ -574,7 +579,8 @@ class AmuxCloudService(
             fun toGrant(): Grant {
                 if (typeName != "Purchased" || provider == null) return Grant.Granted
                 val source = when (provider) {
-                    "REVENUE_CAT" -> EntitlementSource.AppStore
+                    "APP_STORE" -> EntitlementSource.AppStore
+                    "REVENUE_CAT", "GOOGLE_PLAY", "PLAY_STORE" -> EntitlementSource.PlayStore
                     else -> EntitlementSource.Web
                 }
                 return Grant.Purchased(source)
@@ -585,7 +591,7 @@ class AmuxCloudService(
     companion object {
         const val APP_STORE_SUBSCRIPTIONS_URL: String = "https://apps.apple.com/account/subscriptions"
         const val PLAY_STORE_SUBSCRIPTIONS_URL: String =
-            "https://play.google.com/store/account/subscriptions"
+            "https://play.google.com/store/account/subscriptions?package=sh.amux.android"
 
         internal const val ACCESS_QUERY: String =
             "{ me { access { pro until grant { __typename " +

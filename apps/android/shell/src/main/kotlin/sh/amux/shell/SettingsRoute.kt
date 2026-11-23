@@ -26,7 +26,7 @@ import sh.amux.features.SettingsNotificationStatus
 import sh.amux.features.SettingsScreen
 
 private const val GOOGLE_PLAY_SUBSCRIPTIONS_URL: String =
-    "https://play.google.com/store/account/subscriptions"
+    "https://play.google.com/store/account/subscriptions?package=sh.amux.android"
 
 /** What Settings shows that the app, not a store, decides. */
 internal data class SettingsChoices(

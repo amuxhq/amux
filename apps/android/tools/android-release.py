@@ -492,13 +492,17 @@ def build_bundle(version: str, build: int, facts: dict, *, rehearse: bool) -> Pa
 
 def verify_signature(aab: Path, jarsigner: str) -> None:
     print(f"verifying bundle signature ({aab.name})", flush=True)
+    # `-strict` rejects self-signed Google Play upload keys and AGP's bundle
+    # entry ordering (BundleConfig.pb precedes META-INF/MANIFEST.MF). Plain
+    # `-verify` still verifies every signed digest and fails on tampering, and
+    # checking for `jar verified.` refuses unsigned bundles (which exit 0).
     result = subprocess.run(
-        [jarsigner, "-verify", "-strict", str(aab)],
+        [jarsigner, "-verify", str(aab)],
         capture_output=True,
         text=True,
         timeout=300,
     )
-    if result.returncode != 0:
+    if result.returncode != 0 or "jar verified." not in result.stdout:
         detail = (result.stderr or result.stdout).strip()
         raise Refusal(f"bundle signature verification failed: {detail}")
 

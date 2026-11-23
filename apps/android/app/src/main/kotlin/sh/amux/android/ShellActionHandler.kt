@@ -28,6 +28,7 @@ import sh.amux.core.runtime.RuntimeCoordinator
 import sh.amux.core.runtime.SignInIntent
 import sh.amux.core.runtime.SignInStore
 import sh.amux.core.runtime.SignedInAccount
+import sh.amux.core.runtime.SignedPurchase
 import sh.amux.core.runtime.WebAuthPresenter
 import sh.amux.core.runtime.failureDescription
 import sh.amux.design.AppearanceMode
@@ -295,13 +296,27 @@ class ShellActionHandler(
 
     // --- Paywall -----------------------------------------------------------
 
-    private suspend fun settle(outcome: PurchaseOutcome?) {
-        if (outcome is PurchaseOutcome.Bought) {
-            val id = accounts.selected ?: return
-            if (paywall.confirm(outcome.purchase, cloud, id, billing)) {
+    fun confirmOutstandingPurchases() {
+        scope.launch {
+            val id = accounts.selected ?: return@launch
+            if (paywall.confirmOutstanding(billing, cloud, id)) {
                 entitlementWatch.look(force = true)
                 paywall.entitled(accounts.selectedAccount?.entitlement ?: Entitlement.None)
             }
+        }
+    }
+
+    suspend fun confirmPurchase(purchase: SignedPurchase) {
+        val id = accounts.selected ?: return
+        if (paywall.confirm(purchase, cloud, id, billing)) {
+            entitlementWatch.look(force = true)
+            paywall.entitled(accounts.selectedAccount?.entitlement ?: Entitlement.None)
+        }
+    }
+
+    private suspend fun settle(outcome: PurchaseOutcome?) {
+        if (outcome is PurchaseOutcome.Bought) {
+            confirmPurchase(outcome.purchase)
         }
     }
 

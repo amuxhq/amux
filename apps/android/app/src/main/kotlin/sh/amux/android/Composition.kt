@@ -82,6 +82,7 @@ data class CompositionOverrides(
     val discovery: DiscoverySource? = null,
     val useSystemDiscovery: Boolean = true,
     val useSystemPush: Boolean = true,
+    val useSystemBilling: Boolean = true,
     val networkWatch: NetworkWatcher? = null,
     val autoStart: Boolean = true,
     val attachProcessLifecycle: Boolean = true,
@@ -133,7 +134,14 @@ class Composition(
     private var coordinatorRef: RuntimeCoordinator? = null
 
     val cloud: CloudService = overrides.cloud ?: AmuxCloudService()
-    val billing: BillingStoreFront = overrides.billing ?: StubBillingStoreFront()
+    val billing: BillingStoreFront = overrides.billing ?: if (overrides.useSystemBilling) {
+        PlayBillingStoreFront(
+            context = appContext,
+            activityProvider = { activeActivity?.get() },
+        )
+    } else {
+        StubBillingStoreFront()
+    }
     val pushRegistrar: PushRegistrar = overrides.pushRegistrar ?: if (
         overrides.useSystemPush && FirebasePushBridge.isAvailable(appContext)
     ) {
@@ -207,6 +215,7 @@ class Composition(
 
     private val attachProcessLifecycle: Boolean = overrides.attachProcessLifecycle
     private var lifecycleAttached: Boolean = false
+    private var billingWatchStarted: Boolean = false
 
     init {
         val mainHandler = Handler(Looper.getMainLooper())
@@ -319,8 +328,17 @@ class Composition(
             lifecycleAttached = true
             lifecycleObserver.attach(ProcessLifecycleOwner.get().lifecycle)
         }
+        if (!billingWatchStarted) {
+            billingWatchStarted = true
+            scope.launch {
+                billing.approvals().collect { purchase ->
+                    actions.confirmPurchase(purchase)
+                }
+            }
+        }
         runtime.start()
         refreshFcmToken()
+        actions.confirmOutstandingPurchases()
     }
 
     /**
@@ -335,6 +353,7 @@ class Composition(
     fun shutdown() {
         oauthBrowser.cancelPending("App shutdown")
         dictation.destroy()
+        (billing as? PlayBillingStoreFront)?.close()
         if (lifecycleAttached) {
             lifecycleAttached = false
             lifecycleObserver.detach(ProcessLifecycleOwner.get().lifecycle)
@@ -373,6 +392,7 @@ class Composition(
         syncNotifications(activity)
         refreshFcmToken()
         oauthBrowser.onActivityResumed()
+        actions.confirmOutstandingPurchases()
     }
 
     private fun refreshFcmToken() {

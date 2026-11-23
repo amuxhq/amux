@@ -175,7 +175,7 @@ class PaywallStore(
     ): Boolean {
         _state.update { it.copy(holding = purchase, phase = Phase.Confirming) }
         try {
-            cloud.recordPurchase(account, purchase.signed)
+            cloud.recordPurchase(account, purchase)
         } catch (e: CloudException) {
             _state.update { it.copy(phase = Phase.Unconfirmed(unconfirmedAfter(e.error))) }
             return false

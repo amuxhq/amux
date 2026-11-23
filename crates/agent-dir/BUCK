@@ -1,0 +1,17 @@
+load("//build:rust.bzl", "amux_rust_library")
+
+DEPS = [
+    "//crates/wire:wire",
+    "//third-party/rust:prost",
+    "//third-party/rust:tokio",
+] + select({"DEFAULT": ["//third-party/rust:libc"], "prelude//os:windows": [], "prelude//os:none": []}) + select({"DEFAULT": [], "prelude//os:windows": ["//third-party/rust:windows-sys"]})
+
+TEST_DEPS = [
+    "//third-party/rust:tempfile",
+]
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    test_deps = TEST_DEPS,
+)

@@ -1,0 +1,32 @@
+load("//build:rust.bzl", "TESTING", "amux_rust_library")
+
+# gRPC (tonic) is on everywhere but the browser's wasm build, which talks to
+# the daemon over the extension's message port instead. The JSON schemas
+# are for tests and the schema dumps only.
+amux_rust_library(
+    version = "0.1.0",
+    deps = [
+        "//third-party/rust:base64",
+        "//third-party/rust:prost",
+        "//third-party/rust:prost-types",
+        "//third-party/rust:serde",
+        "//third-party/rust:tracing",
+        "//third-party/rust:uuid",
+    ] + select({
+        "DEFAULT": ["//third-party/rust:tonic", "//third-party/rust:tonic-prost"],
+        "prelude//os:none": [],
+    }) + select({
+        "DEFAULT": [],
+        TESTING: ["//third-party/rust:schemars"],
+    }),
+    features = select({
+        "DEFAULT": ["default", "grpc"],
+        "prelude//os:none": [],
+    }) + select({
+        "DEFAULT": [],
+        TESTING: ["schema"],
+    }),
+    test_deps = ["//crates/source-tree:source-tree"],
+    # The pinned-strings test reads these crates' sources.
+    test_resources = ["//crates/daemon-core:files", "//crates/node:files"],
+)

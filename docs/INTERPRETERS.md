@@ -36,7 +36,7 @@ provider update reads as `Unknown` where it is new rather than stopping the
 agent. What stays JSON is what no protocol fixes: a tool's input and result,
 which are whatever the tool wrote, and a tool server's form content; small
 `Deserialize` structs read the fields an interpreter needs out of them.
-`just typed-provider-check`, part of `just ci`, fails on `json!`, a field
+`just typed-provider-check`, part of `just premerge`, fails on `json!`, a field
 looked up by name or bytes parsed into a `serde_json::Value` anywhere else
 in the interpreters, the agent's provider handshake or Claude's messaging
 socket.

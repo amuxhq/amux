@@ -1,0 +1,3 @@
+# winapi's build script only tells Cargo which Windows import libraries to
+# link; the Windows toolchain links them itself.
+buildscript.run = false

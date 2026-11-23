@@ -7,7 +7,7 @@
 //! breaks the window, and so does a real daemon's dump with that break
 //! planted. And nothing anybody wrote reaches the record's bytes.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
@@ -27,7 +27,7 @@ use crate::support;
 const CAP: usize = 12;
 
 fn fixtures(kind: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    source_tree::crate_dir!()
         .join("../interpret/fixtures")
         .join(kind)
 }

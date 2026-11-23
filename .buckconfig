@@ -1,9 +1,9 @@
 # Buck2 configuration (docs/BUILD.md). The prelude is the copy bundled with
-# the pinned buck2 binary (buck/tools.json), so bumping buck2 bumps both.
+# the pinned buck2 binary (build/tools.json), so bumping buck2 bumps both.
 [cells]
   root = .
   prelude = prelude
-  toolchains = buck/toolchains
+  toolchains = build/toolchains
   none = none
 
 [cell_aliases]
@@ -17,13 +17,11 @@
 [external_cells]
   prelude = bundled
 
-[parser]
-  target_platform_detector_spec = target:root//...->prelude//platforms:default \
-    target:prelude//...->prelude//platforms:default \
-    target:toolchains//...->prelude//platforms:default
+# [parser] target_platform_detector_spec is per machine: scripts/buck-config.py
+# writes it into .buckconfig.local with this host's development platform.
 
 [build]
-  execution_platforms = root//buck/platforms:execution
+  execution_platforms = root//build/platforms:execution
 
 [buck2]
   digest_algorithms = SHA256

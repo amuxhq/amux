@@ -10,8 +10,10 @@ fn main() {
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let config = cbindgen::Config::from_file(crate_dir.join("cbindgen.toml"))
         .expect("read app C header configuration");
+    // The sources alone, as `ios-tools app-header` (which Buck runs)
+    // reads them: with_crate would ask Cargo for the workspace's metadata.
     cbindgen::Builder::new()
-        .with_crate(crate_dir)
+        .with_src(crate_dir.join("src/lib.rs"))
         .with_config(config)
         .generate()
         .expect("generate app C header")

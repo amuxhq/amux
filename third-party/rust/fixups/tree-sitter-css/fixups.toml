@@ -1,0 +1,3 @@
+# The build script compiles the C sources with the cc crate, through the
+# C toolchain Buck2 gives build scripts.
+buildscript.run = true

@@ -1,0 +1,70 @@
+load("//build:rust.bzl", "amux_rust_binary", "amux_rust_test")
+
+DEPS = [
+    "//crates/agent-dir:agent-dir",
+    "//crates/agent:agent",
+    "//crates/analytics:analytics",
+    "//crates/client:client",
+    "//crates/log-file:log-file",
+    "//crates/node:node",
+    "//crates/settings:settings",
+    "//crates/tui:tui",
+    "//crates/wire:wire",
+    "//third-party/rust:anyhow",
+    "//third-party/rust:base64",
+    "//third-party/rust:bytes",
+    "//third-party/rust:clap",
+    "//third-party/rust:crossterm",
+    "//third-party/rust:futures-util",
+    "//third-party/rust:hyper-util",
+    "//third-party/rust:semver",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_ignored",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:tokio",
+    "//third-party/rust:toml",
+    "//third-party/rust:toml_edit",
+    "//third-party/rust:tonic",
+    "//third-party/rust:tower",
+    "//third-party/rust:tracing",
+    "//third-party/rust:tracing-subscriber",
+    "//third-party/rust:uuid",
+    "//third-party/rust:vt100",
+] + select({"DEFAULT": ["//third-party/rust:libc"], "prelude//os:windows": [], "prelude//os:none": []})
+
+TEST_DEPS = [
+    "//crates/source-tree:source-tree",
+    "//crates/journal:journal",
+    "//crates/patience:patience",
+    "//crates/provider-fakes:provider-fakes",
+    "//crates/pty-host:pty-host",
+    "//crates/release:release",
+    "//third-party/rust:http-body-util",
+    "//third-party/rust:hyper",
+    "//third-party/rust:prost",
+    "//third-party/rust:rcgen",
+    "//third-party/rust:ring",
+    "//third-party/rust:tempfile",
+] + select({"DEFAULT": ["//third-party/rust:libc"], "prelude//os:windows": [], "prelude//os:none": []})
+
+amux_rust_binary(
+    name = "amux",
+    version = "0.10.0",
+    crate_root = "src/main.rs",
+    deps = DEPS,
+    link_library = False,
+    unit_tests = True,
+    test_deps = TEST_DEPS,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.10.0",
+    deps = DEPS + TEST_DEPS,
+    run_env = {
+        "CARGO_BIN_EXE_amux": "$(location :amux)",
+    },
+    link_library = False,
+    include = {"//crates/node:test_signing_key": "crates/node/src/auth/test_signing_key.rs"},
+    binaries = True,
+)

@@ -251,7 +251,7 @@ To try a change, run `just browser build --dev`, load `js/extension/dist-dev`
 unpacked from `chrome://extensions`, and run `just browser dev-host` with
 `AMUX_CONFIG` naming this tree's installation (`wt exec <tree> --` sets it).
 The development copy is named "amux (dev)" and starts the
-`sh.amux.browser.dev` host, which runs this tree's `target/debug/amux`, so it
+`sh.amux.browser.dev` host, which runs this tree's `.wt/bin/amux` (`just build`), so it
 never reaches an installed amux; the installed extension's host is left alone.
 `just browser dev-host remove` takes it out.
 

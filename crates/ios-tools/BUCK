@@ -1,0 +1,55 @@
+load("//build:rust.bzl", "amux_rust_binary", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//third-party/rust:cbindgen",
+    "//crates/source-tree:source-tree",
+    "//crates/app-runtime:app-runtime",
+    "//crates/ui-state:ui-state",
+    "//crates/ui-view:ui-view",
+    "//crates/wire:wire",
+    "//third-party/rust:schemars",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+]
+
+TEST_DEPS = [
+    "//third-party/rust:tempfile",
+]
+
+amux_rust_library(
+    version = "0.1.0",
+    tool = True,
+    deps = DEPS,
+    test_deps = TEST_DEPS,
+    test_include = {
+        "//:apps/apple/justfile": "apps/apple/justfile",
+        "//:journeys/manifest.json": "journeys/manifest.json",
+        "//:justfile": "justfile",
+    },
+    test_resources = [
+        "//:mirrors",
+        "//:scripts",
+        "//crates/app-runtime:files",
+        "//crates/ui-state:files",
+        "//crates/ui-view:files",
+    ],
+)
+
+amux_rust_binary(
+    name = "ios-tools",
+    version = "0.1.0",
+    crate_root = "src/main.rs",
+    deps = DEPS,
+    tool = True,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    run_env = {
+        "CARGO_BIN_EXE_ios-tools": "$(location :ios-tools-bin)",
+    },
+    include = {"//:journeys/manifest.json": "journeys/manifest.json"},
+    resources = ["//:journeys", "//:scripts"],
+)

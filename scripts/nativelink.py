@@ -22,12 +22,14 @@ import argparse
 import os
 import plistlib
 import socket
+import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE = ROOT / "buck/nativelink/mac.json5"
+TEMPLATE = ROOT / "build/nativelink/mac.json5"
 LABEL = "sh.amux.nativelink"
 CACHE = Path.home() / "Library/Caches/amux/nativelink"
 CONFIG = CACHE / "config.json5"
@@ -43,8 +45,37 @@ def binary() -> str:
     ).strip()
 
 
+def tool_bin() -> Path:
+    """A directory holding only the tools actions find by name beyond the
+    operating system's own: python3, which the prelude's helper scripts
+    call and which must be 3.12 or newer, while macOS's /usr/bin/python3
+    is 3.9 (the interpreter scripts/py picks), and tmux."""
+    bin = CACHE / "bin"
+    bin.mkdir(parents=True, exist_ok=True)
+    python = subprocess.check_output(
+        [str(ROOT / "scripts/py"), "-c", "import sys, os; print(os.path.realpath(sys.executable))"],
+        text=True,
+    ).strip()
+    tools = {"python3": python}
+    # tmux, for the harness's terminal sessions (testnet's `ctl tui`), as
+    # the tests find it on a developer's PATH under Cargo.
+    if tmux := shutil.which("tmux"):
+        tools["tmux"] = os.path.realpath(tmux)
+    for name, target in tools.items():
+        link = bin / name
+        if not link.is_symlink() or os.readlink(link) != target:
+            link.unlink(missing_ok=True)
+            link.symlink_to(target)
+    return bin
+
+
 def render(cores: int, background: bool) -> None:
+    # The cores the worker offers, for scripts/buck-config.py: a test that
+    # uses every core reserves them all (build/toolchains/BUCK).
+    CACHE.mkdir(parents=True, exist_ok=True)
+    (CACHE / "cores").write_text(f"{cores}\n")
     values = {
+        "tool_bin": str(tool_bin()),
         "cache": str(CACHE),
         "cas_bytes": str(40 * GIB),
         "ac_bytes": str(4 * GIB),
@@ -88,16 +119,42 @@ def install(cores: int, background: bool) -> None:
         "StandardOutPath": str(LOG),
         "StandardErrorPath": str(LOG),
         "EnvironmentVariables": {"RUST_LOG": "warn"},
+        # NativeLink drains on SIGTERM; a restart shouldn't wait for that.
+        "ExitTimeOut": 2,
     }
     PLIST.write_bytes(plistlib.dumps(plist))
     domain = f"gui/{os.getuid()}"
-    launchctl("bootout", f"{domain}/{LABEL}", check=False)
+    stop(domain)
     launchctl("bootstrap", domain, str(PLIST))
     print(f"nativelink: running under launchd as {LABEL}, {cores} cores, log {LOG}")
+    # macOS's Developer Tools exemption belongs to one binary, and without
+    # it Gatekeeper scans every binary a build links before it first runs
+    # (docs/BUILD.md, "The build cache").
+    exempted = CACHE / "exempted-binary"
+    if not exempted.exists() or exempted.read_text() != binary():
+        print(
+            "nativelink: a new nativelink binary. Add it under System Settings > Privacy & Security >"
+            f" Developer Tools ({binary()}), then run this again so it starts exempt.",
+        )
+        exempted.write_text(binary())
+
+
+def stop(domain: str) -> None:
+    """Stop the agent and wait until launchd has let it go: bootout returns
+    before the service is gone, and bootstrapping it again before then fails."""
+    launchctl("bootout", f"{domain}/{LABEL}", check=False)
+    for _ in range(100):
+        loaded = subprocess.run(
+            ["launchctl", "print", f"{domain}/{LABEL}"], capture_output=True
+        ).returncode == 0
+        if not loaded:
+            return
+        time.sleep(0.1)
+    sys.exit(f"nativelink: launchd still holds {LABEL} after 10 s")
 
 
 def uninstall() -> None:
-    launchctl("bootout", f"gui/{os.getuid()}/{LABEL}", check=False)
+    stop(f"gui/{os.getuid()}")
     PLIST.unlink(missing_ok=True)
     print(f"nativelink: stopped; the cache under {CACHE} is kept")
 

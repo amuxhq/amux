@@ -489,7 +489,7 @@ async fn the_door_serves_a_topology_to_a_real_client_once_it_publishes_readiness
     )
     .unwrap();
     let mut served = Served(
-        Command::new(env!("CARGO_BIN_EXE_testnet"))
+        Command::new(source_tree::bin!("testnet"))
             .arg("serve")
             .arg(&topology)
             .stdout(Stdio::piped())

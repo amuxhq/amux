@@ -1,0 +1,6 @@
+# The runner every Rust test binary runs under (build/rust.bzl).
+export_file(
+    name = "test-runner.py",
+    src = "test-runner.py",
+    visibility = ["PUBLIC"],
+)

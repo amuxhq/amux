@@ -1,13 +1,14 @@
 # wt owns the tree, its environment, its daemon and the simulator pools;
 # `just --list` is the task list.
 
-# Start a new tree with the main checkout's build output: third-party crates
-# stay fresh, so the first build only compiles this workspace.
-copy = ["target"]
+# A new tree copies no build output: Buck2 builds through NativeLink, whose
+# cache every tree shares (docs/BUILD.md), so a tree's first build is mostly
+# cache hits.
 
-# `amux` inside a tree is the tree's own build, never the installed one.
+# `amux` inside a tree is the tree's own build, never the installed one:
+# what `just build` puts at .wt/bin/amux.
 [bin]
-amux = "target/debug/amux"
+amux = ".wt/bin/amux"
 
 [env]
 AMUX_CONFIG = "{{root}}/.wt/amux/config.toml"
@@ -33,10 +34,9 @@ scope = "{{name}}"
 create = "just build"
 # No start hook: most trees never use their daemon, and the first `amux`
 # command in a tree starts it. Stopping still stops it, so a daemon never
-# outlives its tree, and also drops target/*/incremental/ and caps deps/
-# (`just sweep --cold`): suspended trees keep compiled third-party deps
-# without carrying gigabytes of stale incremental caches.
-stop = "amux server stop && just sweep --cold"
+# outlives its tree, and stops the tree's Buck2 daemon, whose memory a
+# suspended tree has no use for.
+stop = "amux server stop; scripts/buck2 kill"
 
 # The pinned iPhones this Mac owns. A recipe leases one and gets it clean;
 # a tree prefers the one it used last, so a series of recipes reuses a booted

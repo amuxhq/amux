@@ -8,8 +8,7 @@ set -eu
 # detector sized above the honest duration of its one phase on the slowest
 # CI runner (docs/CI.md records the measurements); it is never raised to hide
 # a failing or slow test. One test that hangs is nextest's to end
-# (`slow-timeout`); these bound the phases. The compile bound is the one
-# `just test-build` carries.
+# (`slow-timeout`); these bound the phases.
 compile_bound=1200
 run_bound=1000
 

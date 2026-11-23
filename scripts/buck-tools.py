@@ -4,7 +4,7 @@
 `buck-tools.py path NAME` prints the path of NAME's binary, fetching it first
 when this machine doesn't have the pinned version yet. `buck-tools.py fetch`
 fetches every tool. The pins and their SHA-256 digests live in
-buck/tools.json; a download whose digest differs is refused.
+build/tools.json; a download whose digest differs is refused.
 
 Tools land in ~/.cache/amux/tools/NAME/VERSION/, so every worktree on a
 machine shares one copy, and a version bump never overwrites a binary a
@@ -23,7 +23,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PINS = ROOT / "buck/tools.json"
+PINS = ROOT / "build/tools.json"
 CACHE = Path(os.environ.get("AMUX_TOOLS_CACHE", Path.home() / ".cache/amux/tools"))
 
 
@@ -61,7 +61,7 @@ def fetch(name: str) -> Path:
     if digest != asset["sha256"]:
         sys.exit(
             f"buck-tools: {asset['url']} has SHA-256 {digest}, "
-            f"but buck/tools.json pins {asset['sha256']}"
+            f"but build/tools.json pins {asset['sha256']}"
         )
     if asset["url"].endswith(".zst"):
         from compression import zstd

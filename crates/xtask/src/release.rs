@@ -736,7 +736,7 @@ pub(crate) fn gh(args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
 }
 
 pub(crate) fn repository_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    source_tree::crate_dir!()
         .parent()
         .and_then(Path::parent)
         .expect("xtask lives under crates/")

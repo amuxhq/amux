@@ -496,7 +496,7 @@ fn every_ask_body_draws_in_the_box_with_the_way_to_stop() {
         (Kind::ClaudeSdk, "claude_sdk"),
         (Kind::Codex, "codex"),
     ] {
-        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        let fixtures = source_tree::crate_dir!()
             .join("../interpret/fixtures")
             .join(dir);
         let mut names: Vec<String> = std::fs::read_dir(&fixtures)

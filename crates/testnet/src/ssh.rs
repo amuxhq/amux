@@ -16,7 +16,7 @@ const LOGIN_DIR: &str = "ssh-path";
 
 /// Where the stand-in lives: beside this crate's sources.
 fn stand_in_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("stand-in")
+    source_tree::crate_dir!().join("stand-in")
 }
 
 /// Puts the stand-in first on this process's PATH, once: daemons in the

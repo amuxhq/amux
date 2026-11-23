@@ -1,0 +1,3 @@
+# Cargo.toml optimises stateright in development builds too: the protocol
+# models explore through it, ten times slower unoptimised.
+rustc_flags = ["-Copt-level=3"]

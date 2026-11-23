@@ -1,5 +1,3 @@
-use std::path::Path;
-
 mod mac;
 mod release;
 mod signing;
@@ -101,9 +99,8 @@ const INTERNAL_PROTO_FILES: &[&str] = &[
 /// rust-analyzer, and every build cache — and so building amux needs no
 /// protoc. CI regenerates and fails if the committed output is stale.
 fn codegen() -> Result<(), Box<dyn std::error::Error>> {
-    let crates = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("xtask lives under crates/");
+    let xtask_dir = source_tree::crate_dir!();
+    let crates = xtask_dir.parent().expect("xtask lives under crates/");
     let wire_dir = crates.join("wire");
     let contract_dir = crates
         .parent()

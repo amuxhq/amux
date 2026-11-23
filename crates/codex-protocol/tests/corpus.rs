@@ -3,7 +3,7 @@
 //! drift, or a type that does not match what Codex writes.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use codex_protocol::server::{
     AccountReadResponse, BackgroundTerminalsResponse, InitializeResponse, ModelListResponse,
@@ -15,7 +15,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    source_tree::crate_dir!().join("../..")
 }
 
 /// Every io.jsonl recorded from Codex: the live lane's captures.

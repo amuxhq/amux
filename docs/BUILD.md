@@ -1,6 +1,6 @@
 # Building amux
 
-*For developers building amux from source: the toolchain, the build profiles, the task recipes and the generated code that is committed.*
+*For developers building amux from source: the toolchain, the build system and its cache, the build profiles, the task recipes and the generated code that is committed.*
 
 ## Toolchains
 
@@ -67,9 +67,106 @@ generation uses a vendored `protoc`, so none needs installing.
 which `nix/toolchain.nix` provides and CI pins to 1.75.0 in
 `.github/actions/setup-buf`; outside Nix, `brew install bufbuild/buf/buf`.
 
+## Buck2 and Cargo
+
+[Buck2](https://buck2.build) builds and tests the workspace for every
+`just` recipe a person or agent types. Cargo still builds the same crates
+from the same `Cargo.toml` files for what Buck2 doesn't do: CI (whose
+runners have no Buck2 yet, through the `cargo-` recipes), rust-analyzer,
+`just miri`, `just fuzz-smoke` and `just doctest`, and the release and
+phone builds, which move later.
+
+Each crate describes itself twice, so the two stay in step by hand:
+
+- A crate's `BUCK` file, beside its `Cargo.toml`, declares its library,
+  binaries and tests with the macros in
+  [`build/rust.bzl`](../build/rust.bzl). `just parity` fails when a crate's
+  `BUCK` and `Cargo.toml` disagree on its targets or dependencies; `just
+  premerge` runs it.
+- [`third-party/rust/BUCK`](../third-party/rust/BUCK) is generated from
+  `Cargo.toml` and `Cargo.lock` by reindeer: run `just buckify` after a
+  dependency changes. reindeer reads no `[dev-dependencies]`, so a crate
+  only tests use is also listed in `third-party/rust/dev-only`, a workspace
+  member with no code. A crate whose build script reindeer can't run gets a
+  fixup under `third-party/rust/fixups/`.
+- A test finds its crate's files and binaries through the
+  [`source-tree`](../crates/source-tree) crate (`crate_dir!()`, `bin!()`)
+  rather than `env!("CARGO_MANIFEST_DIR")` and `env!("CARGO_BIN_EXE_…")`,
+  which Buck2 sets to paths inside the build's sandbox. Under Cargo both
+  macros give what those variables give.
+
+### Configurations
+
+A target is built for a target platform named
+`<target>-<product>-<purpose>-<mode>` ([`build/platforms`](../build/platforms)):
+`macos-cli-shipping-dev` is a development build of the desktop product for
+this Mac. The purpose is what keeps test code out of what ships:
+
+- **shipping** builds a crate with only the features its product has.
+- **testing** turns on the test features (`release/test-key`,
+  `store/explore`, `tui/fixtures` and the rest). Every test builds this
+  way, and so do the crates that only tests and tools use (`testnet`,
+  `provider-fakes`, `models`, `qualification`, `shot`, `replay-support`):
+  nothing shipping can depend on them.
+
+The mode is the profile: `dev`, `release`, `full-debug`, `phone-dev`,
+`wasm` and `models`, with the flags the profiles below give Cargo, set in
+[`build/toolchains`](../build/toolchains). `--target-platforms` picks
+another configuration: the browser extension's WebAssembly is
+`//crates/browser-core:browser-core[shared]` built for
+`wasm-app-shipping-wasm`.
+
+### The build cache
+
+Buck2 sends every compile, link and test to
+[NativeLink](https://github.com/TraceMachina/nativelink), which keeps each
+result keyed by its inputs, so a result is computed once and every
+worktree on the machine reuses it. On a Mac it runs as a login agent on
+`127.0.0.1:50051` with a worker that leaves three cores to the rest of the
+machine:
+
+```sh
+scripts/nativelink.py install      # once, and after its version changes
+scripts/nativelink.py status
+```
+
+Two macOS settings make it usable, both once per machine and again after an
+upgrade to NativeLink changes its binary:
+
+- **Developer Tools.** Gatekeeper scans every newly linked binary before it
+  first runs, which turns each test binary's first start into seconds and,
+  under a full build, makes NativeLink's own uploads time out. Add the
+  `nativelink` binary (`~/.cache/amux/tools/nativelink/<version>/`) under
+  System Settings → Privacy & Security → Developer Tools, then run
+  `scripts/nativelink.py install` again so the running process gets the
+  exemption. What it starts inherits it.
+- **Local Network.** The first test that opens a local socket other than
+  loopback makes macOS ask whether `nativelink` may find devices on the
+  local network, since the tests run as its children. Allow it: the
+  discovery and pairing tests need it.
+
+A test result is cached too: a passing test is not run again until
+something it reads changes. Each test runs in a process of its own under
+[`build/test-runner.py`](../build/test-runner.py), with a `HOME` and
+`TMPDIR` of its own, made empty for it, and the bounds
+`.config/nextest.toml` gives nextest: reported slow after a minute and
+ended after three. A test that leaves a process running behind it fails.
+Tests labelled `live` (the live provider lanes) are never cached and never
+run by `just test`.
+
+A golden test writes its file into the sandbox, where nothing reaches the
+checkout, so `just goldens` re-records them instead: it runs the golden
+tests here, with every update switch on. The next `just test` reruns only
+the tests that read what changed.
+
+Build output is under `buck-out/`, which holds only what was asked for:
+everything else stays in the cache until something needs it. `scripts/buck2
+clean` empties it without losing the cache.
+
 ## Profiles
 
-Five profiles are defined in the workspace [`Cargo.toml`](../Cargo.toml):
+Five profiles are defined in the workspace [`Cargo.toml`](../Cargo.toml),
+and Buck2's modes give the same flags:
 
 | Profile | Purpose |
 | --- | --- |
@@ -118,15 +215,20 @@ The recipes a build or change usually needs:
 
 | Recipe | What it runs |
 | --- | --- |
-| `just build` | `cargo build -p amux --bins`: the desktop binary |
-| `just check` | `cargo check` of every workspace library and binary |
+| `just build` | The desktop binary, at `.wt/bin/amux` |
+| `just check` | Builds every workspace library, binary and test |
 | `just full-debug` | The desktop binary under the `full-debug` profile |
 | `just release-check` | The shipping binary under `release`, then the release policy check (see [Release](RELEASE.md)) |
-| `just test` | Every workspace test target; arguments after `--` go to Cargo |
+| `just test` | Every workspace test whose inputs changed; target patterns narrow it (`just test //crates/node:`) |
 | `just test-crate <crate>` | One crate's tests |
-| `just test-build` | Compiles every ordinary test target without running it |
-| `just doctest` | Documentation tests |
+| `just test-build` | Compiles every test target without running it |
+| `just goldens` | Re-records the goldens in the checkout |
+| `just doctest` | Documentation tests, under Cargo |
 | `just lint` | Clippy on every target, warnings denied |
+| `just parity` | Fails when a crate's `BUCK` and `Cargo.toml` disagree |
+| `just shipping-check` | Fails when a test-only crate or test feature reaches the desktop binary or the extension's WebAssembly as they ship |
+| `just buckify` | Regenerates `third-party/rust/BUCK` after a dependency changes |
+| `just cargo-test`, `just cargo-test-crate`, `just cargo-lint` | The same under Cargo and nextest, as CI runs them |
 | `just fmt`, `just fmt-check` | Format, or check formatting, with the pinned nightly |
 | `just protobuf` | Regenerates the committed protobuf output |
 | `just codegen-check` | Fails if the committed protobuf output is stale |
@@ -142,8 +244,8 @@ The recipes a build or change usually needs:
 | `just android scope-audit` | Build the Release APK and verify, from R8's mapping and the library's symbols, that no debug surfaces or `debug-tools` symbols ship and SQLite is bundled |
 | `just android release-smoke` | Run the launch smoke test on the minified Release APK on an emulator or phone |
 | `just android verify` | Run the full ordered Android verification sequence (lint, graph check, script tests, unit with the accessibility audit, storybook, scope audit, release launch, journeys) |
-| `just premerge` | The quick checks before a change reaches main; see [CI](CI.md) |
-| `just ci` | The whole check sequence; see [CI](CI.md) |
+| `just premerge` | Every check and test before a change reaches main; see [CI](CI.md) |
+| `just land "<message>"` | Merges this tree's HEAD onto main, runs the checks on the merge and pushes it |
 
 [Testing](TESTING.md) covers the test recipes (`suite`, `test-tui`,
 `spec`, `journey`, `live`, `perf`, `tests-list`) in detail.
@@ -185,21 +287,22 @@ Development happens in git worktrees managed by `wt`, which owns each tree's
 environment, its daemon and the simulator pools; `just` owns every build and
 test task. [`.wt.toml`](../.wt.toml) holds the tree's side:
 
-- A new tree starts with a copy-on-write copy of the main checkout's `target`
-  directory, so third-party crates that haven't changed are already built.
-  Then `just build` runs in the background, logging to `.wt/create.log`;
-  `wt ls` shows whether it is still running or failed. Each tree owns its
-  build output, and removing the tree removes it.
-- `amux` inside a tree is a wrapper that runs that tree's
-  `target/debug/amux`. Until the tree's first build has succeeded it refuses
-  and says why, rather than run the binary copied from the main checkout.
+- A new tree runs `just build` in the background, logging to
+  `.wt/create.log`; `wt ls` shows whether it is still running or failed.
+  It copies no build output: what another tree built is already in the
+  cache. A tree that uses Cargo (the phone apps, `just miri`) builds its
+  own `target/`.
+- `amux` inside a tree is a wrapper that runs that tree's `.wt/bin/amux`.
+  Until the tree's first build has succeeded it refuses and says why.
 - Each tree gets its own amux installation under `.wt/amux/`:
   `AMUX_CONFIG` names its installation file and `AMUX_LOG` its daemon log.
   The installation sets its own discovery scope, so a tree's daemon never
   meets real machines or other trees. It has no supervisor, so it never
   installs a release, and it turns `keep_awake` off. Its daemon starts the
   first time an `amux` command runs in the tree, and `wt stop` (or removing
-  the tree) stops it.
+  the tree) stops it, and the tree's Buck2 daemon with it.
 - The pinned iPhone simulators are machine-wide resources that the iOS
   recipes lease through `scripts/with`.
-- [AGENTS.md](../AGENTS.md) says how a branch lands on main.
+- `just land` lands a branch from a worktree of its own under
+  `~/.cache/amux/land`, one landing at a time per machine, so it never
+  touches the tree it is run from ([AGENTS.md](../AGENTS.md)).

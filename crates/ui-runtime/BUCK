@@ -1,0 +1,45 @@
+load("//build:rust.bzl", "amux_rust_binary", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//crates/client:client",
+    "//crates/ui-state:ui-state",
+    "//crates/ui-view:ui-view",
+    "//crates/wire:wire",
+    "//third-party/rust:futures-util",
+    "//third-party/rust:prost",
+    "//third-party/rust:thiserror",
+    "//third-party/rust:tokio",
+    "//third-party/rust:uuid",
+]
+
+TEST_DEPS = [
+    "//crates/installer:installer",
+    "//crates/provider-fakes:provider-fakes",
+    "//crates/replay-support:replay-support",
+    "//crates/testnet:testnet",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:tonic",
+    "//third-party/rust:tower",
+]
+
+amux_rust_library(
+    version = "0.5.0",
+    deps = DEPS,
+    test_deps = TEST_DEPS,
+    binaries = True,
+)
+
+amux_rust_binary(
+    name = "fleet",
+    version = "0.5.0",
+    crate_root = "examples/fleet.rs",
+    deps = DEPS + TEST_DEPS,
+    tool = True,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.5.0",
+    deps = DEPS + TEST_DEPS,
+    binaries = True,
+)

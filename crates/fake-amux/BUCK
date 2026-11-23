@@ -1,0 +1,17 @@
+load("//build:rust.bzl", "amux_rust_binary")
+
+DEPS = [
+    "//crates/agent-dir:agent-dir",
+    "//crates/node:node",
+    "//third-party/rust:tokio",
+    "//third-party/rust:tracing-subscriber",
+]
+
+amux_rust_binary(
+    name = "fake-amux",
+    version = "0.1.0",
+    crate_root = "src/main.rs",
+    deps = DEPS,
+    tool = True,
+    link_library = False,
+)

@@ -12,7 +12,7 @@
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value};
@@ -170,7 +170,7 @@ pub(crate) fn write_or_check(
 }
 
 pub(crate) fn repository() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    source_tree::crate_dir!()
         .ancestors()
         .nth(2)
         .expect("ios-tools lives two levels under the repository")

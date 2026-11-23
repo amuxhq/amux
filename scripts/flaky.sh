@@ -1,9 +1,10 @@
 #!/bin/sh
 
-# Usage: scripts/flaky.sh [--load] TEST [COUNT]
+# Usage: scripts/flaky.sh [--load] TARGET TEST [COUNT]
 #
-# Runs every test whose name contains TEST COUNT times (default 50), one
-# run after another, and stops at the first failure with its output: how a
+# Runs the tests of the Buck2 test target TARGET whose names contain TEST
+# COUNT times (default 50), one round after another, and stops at the round
+# a test fails in, with its output (build/test-runner.py): how a
 # test that fails now and then is made to fail on demand. --load keeps
 # every core busy meanwhile, as a full parallel run or a slow CI runner
 # does, which is where most timing failures show.
@@ -15,12 +16,13 @@ if [ "${1-}" = --load ]; then
     load=yes
     shift
 fi
-if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-    echo "usage: just flaky [--load] TEST [COUNT]" >&2
+if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+    echo "usage: just flaky [--load] TARGET TEST [COUNT], as in just flaky //crates/node:integration reconnects" >&2
     exit 2
 fi
-test=$1
-count=${2:-50}
+target=$1
+test=$2
+count=${3:-50}
 
 if [ -n "$load" ]; then
     cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
@@ -39,7 +41,6 @@ if [ -n "$load" ]; then
     echo "flaky: $cores busy loops running beside the test" >&2
 fi
 
-# The workspace scope `just test` builds with, so this reuses its build.
-cargo nextest run --locked --workspace --all-targets \
-    --stress-count "$count" --max-fail 1 --failure-output immediate \
-    -E "test($test)"
+# Run here rather than in the build's sandbox, so nothing is cached and
+# every round runs.
+AMUX_TEST_REPEAT=$count exec "$(dirname "$0")/buck2" run "$target" -- "$test"

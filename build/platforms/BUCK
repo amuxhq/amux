@@ -1,0 +1,43 @@
+# Target platforms (what an output is for) and the execution platform (where
+# Buck2 sends an action). docs/BUILD.md, "Configurations", says how a target
+# picks its platform.
+load(":defs.bzl", "MODES", "TARGETS", "execution_platforms", "target_platform")
+
+# One target platform per target, product, purpose and mode, named
+# `<target>-<product>-<purpose>-<mode>`: `macos-cli-shipping-dev` is a
+# development build of the desktop product for this Mac.
+[
+    target_platform(
+        name = "{}-{}-{}-{}".format(target, product, purpose, mode),
+        constraints = constraints + [
+            "root//build/constraints:" + product,
+            "root//build/constraints:" + purpose,
+            "root//build/constraints:" + mode,
+        ],
+        visibility = ["PUBLIC"],
+    )
+    for target, constraints in TARGETS.items()
+    for product in ["cli", "app"]
+    for purpose in ["shipping", "testing"]
+    for mode in MODES
+]
+
+execution_platforms(
+    name = "execution",
+    # Build scripts, proc macros and code generators run here, so they are
+    # built as tools: a development build, with test features on.
+    constraints = [
+        "prelude//os:macos",
+        "prelude//cpu:arm64",
+        "root//build/constraints:cli",
+        "root//build/constraints:testing",
+        "root//build/constraints:dev",
+    ],
+    properties = {
+        "OSFamily": "macos",
+        "cpu_count": "1",
+        # Xcode isn't named by a versioned path, so its version goes into
+        # every action's key here (scripts/buck-config.py).
+        "xcode": read_root_config("apple", "xcode", ""),
+    },
+)

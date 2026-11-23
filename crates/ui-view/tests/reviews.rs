@@ -4,7 +4,6 @@
 //! beside it.
 
 use std::fmt::Write as _;
-use std::path::Path;
 
 use ui_view::*;
 use wire::experimental::{
@@ -823,7 +822,7 @@ fn review_page_goldens() {
         page(&summary(), &[], &toggled),
     );
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/goldens/reviews.golden");
+    let path = source_tree::crate_dir!().join("tests/goldens/reviews.golden");
     if std::env::var("UI_VIEW_UPDATE_GOLDENS").as_deref() == Ok("1") {
         std::fs::write(&path, &out).unwrap();
         return;

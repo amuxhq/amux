@@ -1407,3 +1407,19 @@ evidence = "js/test-results with AMUX_E2E_KEEP=1: what the provider read; `just 
 update = ""
 cases = ["js/extension/test/e2e/review.spec.ts", "js/page-review/test/blocks.test.ts"]
 cargo = []
+
+[[suite]]
+name = "source-tree"
+contract = "A test finds its crate's files and the binaries Cargo or Buck2 built for it, as absolute paths, wherever the build ran and whatever directory it runs in."
+paths = ["crates/source-tree/src"]
+recipe = "just suite source-tree"
+boundary = "System composition"
+oracle = "The paths the macros resolve, against the environment each build tool sets."
+real = ["environment variables", "the checkout's paths"]
+substituted = []
+time = "none"
+capabilities = ["desktop"]
+lane = "tool"
+evidence = ""
+update = ""
+cargo = [{ package = "source-tree", kind = "lib", targets = ["source_tree"], features = [] }]

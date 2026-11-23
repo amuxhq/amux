@@ -41,6 +41,7 @@ members = [
     "crates/settings",
     "crates/shot",
     "crates/socket-core",
+    "crates/source-tree",
     "crates/store",
     "crates/supervisor-core",
     "crates/workspace-core",
@@ -53,6 +54,7 @@ members = [
     "crates/release",
     "crates/wire",
     "crates/xtask",
+    "third-party/rust/dev-only",
 ]
 
 [workspace.package]
@@ -73,6 +75,7 @@ log-file = { path = "crates/log-file" }
 daemon-core = { path = "crates/daemon-core" }
 relay-core = { path = "crates/relay-core" }
 path-core = { path = "crates/path-core" }
+source-tree = { path = "crates/source-tree" }
 socket-core = { path = "crates/socket-core" }
 supervisor-core = { path = "crates/supervisor-core" }
 workspace-core = { path = "crates/workspace-core" }

@@ -161,10 +161,15 @@ fmt-check:
 
 # Regenerate the committed protobuf bindings.
 protobuf:
-    {{bounded}} 600 cargo run --locked -p xtask -- codegen
+    out=$({{bounded}} 600 scripts/built //crates/wire:protobuf) && rm -rf crates/wire/src/generated && cp -R "$out" crates/wire/src/generated && chmod -R u+w crates/wire/src/generated
 
 # Check that committed protobuf bindings match their sources.
 codegen-check:
+    out=$({{bounded}} 600 scripts/built //crates/wire:protobuf) && if ! diff -r "$out" crates/wire/src/generated >/dev/null; then diff -ru crates/wire/src/generated "$out" | head -200; echo "committed wire output is stale; run 'just protobuf' and commit it" >&2; exit 1; fi
+
+# CI's twin of `codegen-check`, generating with Cargo's xtask.
+# Check the committed protobuf bindings with Cargo, as CI does.
+cargo-codegen-check:
     {{bounded}} 600 scripts/codegen-check.sh
 
 # Lint amux.v1, and check it still reads what the latest release wrote; with

@@ -156,7 +156,7 @@ jobs:
       - uses: ./.github/actions/setup-rust
       - uses: ./.github/actions/setup-buf
       - name: Check committed protobuf code
-        run: just codegen-check
+        run: just cargo-codegen-check
       - name: Lint the protocol and check it still reads what the latest release wrote
         run: just proto-compat
       - name: Check the store only grew since the latest release

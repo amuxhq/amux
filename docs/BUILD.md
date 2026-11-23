@@ -265,8 +265,13 @@ just protobuf
 just codegen-check
 ```
 
-`just protobuf` runs `cargo run -p xtask -- codegen`. `just codegen-check`
-regenerates and fails if the committed result differs. `just proto-compat`
+Both build `//crates/wire:protobuf`, which runs `xtask codegen` into
+Buck2's output with protoc 31.1 from protobuf's releases, so it runs again
+only when a schema changes. `just protobuf` copies the result into
+`crates/wire/src/generated`; `just codegen-check` fails if the committed
+files differ from it. Under Cargo, `cargo run -p xtask -- codegen` writes the
+same files with the protoc the `protoc-bin-vendored` crate carries, which is
+what CI checks (`just cargo-codegen-check`). `just proto-compat`
 lints the schemas with buf, and fails when they no longer read what the latest
 release wrote: a field removed without reserving its number, a number reused
 or retyped, a name changed; [the wire](WIRE.md#compatibility) has the rules.

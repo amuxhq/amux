@@ -30,3 +30,15 @@ amux_rust_library(
     # The pinned-strings test reads these crates' sources.
     test_resources = ["//crates/daemon-core:files", "//crates/node:files"],
 )
+
+# What xtask generates from the schemas (the Rust and the descriptor set),
+# built into Buck2's output rather than the checkout: `just codegen-check`
+# compares it with the committed src/generated, and `just protobuf` copies
+# it there. Cached, so it runs again only when a schema changes.
+genrule(
+    name = "protobuf",
+    srcs = glob(["proto/**"]),
+    out = "generated",
+    cmd = "mkdir -p $OUT && AMUX_PROTOC=$(exe //build:protoc) $(exe //crates/xtask:xtask) codegen --contract $(location //:proto) --internal $SRCDIR/proto --out $OUT",
+    visibility = ["PUBLIC"],
+)

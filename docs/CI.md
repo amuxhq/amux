@@ -76,7 +76,7 @@ takes seconds shares a job, and the models run a few to a job.
 | Job | Runner | Runs |
 | --- | --- | --- |
 | Format, Check and Clippy | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30`, then `just cargo-lint`: Clippy under Cargo |
-| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just client-kind-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat`, `just store-check` |
+| Codegen and dependency policy | `ubuntu-latest` | `just cargo-codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just client-kind-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat`, `just store-check` |
 | Test | `ubuntu-latest` (2 halves), `macos-latest` (2 halves), `windows-latest` (1 job) | `scripts/no-update-flags.sh`, `just cargo-test -- --profile ci --exclude models` (partitioned `count:N/2` on Linux and macOS; whole suite on Windows, which compiles out the slow Unix suites) |
 | Simulated stories and doctests | `ubuntu-latest` | `just sim`, `just doctest`: what reads the same on every platform, run once |
 | Models | `ubuntu-latest`, three jobs | `just cargo-test-crate models -- --cargo-profile models --no-fail-fast` filtered to each job's models at their CI bounds |

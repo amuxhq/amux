@@ -70,3 +70,10 @@ amux_files(
     name = "release-workflow",
     srcs = [".github/workflows/release.yml"],
 )
+
+# The protobuf schemas, as one directory, for //crates/wire:protobuf.
+export_file(
+    name = "proto",
+    src = "proto",
+    visibility = ["PUBLIC"],
+)

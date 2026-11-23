@@ -1,0 +1,68 @@
+load("//build:rust.bzl", "amux_rust_binary", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//crates/source-tree:source-tree",
+    "//crates/core-ring:core-ring",
+    "//crates/daemon-core:daemon-core",
+    "//crates/interpret:interpret",
+    "//crates/journal:journal",
+    "//crates/models:models",
+    "//crates/provider-fakes:provider-fakes",
+    "//crates/relay-core:relay-core",
+    "//crates/store:store",
+    "//crates/supervisor-core:supervisor-core",
+    "//crates/ui-state:ui-state",
+    "//crates/wire:wire",
+    "//third-party/rust:jiff",
+    "//third-party/rust:prost",
+    "//third-party/rust:prost-types",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:tempfile",
+    "//third-party/rust:thiserror",
+    "//third-party/rust:zstd",
+]
+
+TEST_DEPS = [
+    "//crates/testnet:testnet",
+    "//third-party/rust:postcard",
+    "//third-party/rust:tokio",
+    "//third-party/rust:uuid",
+]
+
+amux_rust_library(
+    version = "0.1.0",
+    tool = True,
+    deps = DEPS,
+    test_deps = TEST_DEPS,
+    test_resources = ["//crates/interpret:fixtures"],
+    binaries = True,
+)
+
+amux_rust_binary(
+    name = "dump-show",
+    version = "0.1.0",
+    crate_root = "src/bin/dump-show.rs",
+    deps = DEPS,
+    tool = True,
+)
+
+amux_rust_binary(
+    name = "repro",
+    version = "0.1.0",
+    crate_root = "src/bin/repro.rs",
+    deps = DEPS,
+    tool = True,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    run_env = {
+        "CARGO_BIN_EXE_dump-show": "$(location :dump-show)",
+        "CARGO_BIN_EXE_repro": "$(location :repro)",
+    },
+    resources = ["//crates/interpret:fixtures"],
+    binaries = True,
+)

@@ -1,0 +1,64 @@
+load("//build:rust.bzl", "amux_rust_binary", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//crates/acp-protocol:acp-protocol",
+    "//crates/agent-core:agent-core",
+    "//crates/agent-dir:agent-dir",
+    "//crates/attachments:attachments",
+    "//crates/claude-protocol:claude-protocol",
+    "//crates/codex-protocol:codex-protocol",
+    "//crates/core-ring:core-ring",
+    "//crates/git-facts:git-facts",
+    "//crates/interpret:interpret",
+    "//crates/journal:journal",
+    "//crates/log-file:log-file",
+    "//crates/pty-host:pty-host",
+    "//crates/wire:wire",
+    "//third-party/rust:anyhow",
+    "//third-party/rust:base64",
+    "//third-party/rust:hyper-util",
+    "//third-party/rust:notify",
+    "//third-party/rust:prost",
+    "//third-party/rust:semver",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:sha2",
+    "//third-party/rust:thiserror",
+    "//third-party/rust:tokio",
+    "//third-party/rust:tonic",
+    "//third-party/rust:tower",
+    "//third-party/rust:url",
+    "//third-party/rust:uuid",
+    "//third-party/rust:zstd",
+] + select({"DEFAULT": ["//third-party/rust:futures-util", "//third-party/rust:libc", "//third-party/rust:tokio-tungstenite"], "prelude//os:windows": [], "prelude//os:none": []}) + select({"DEFAULT": [], "prelude//os:windows": ["//third-party/rust:windows-sys"]})
+
+TEST_DEPS = [
+    "//crates/source-tree:source-tree",
+    "//crates/patience:patience",
+    "//crates/provider-fakes:provider-fakes",
+    "//third-party/rust:tempfile",
+] + select({"DEFAULT": [], "prelude//os:windows": ["//third-party/rust:futures-util"], "prelude//os:none": ["//third-party/rust:futures-util"]})
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    test_deps = TEST_DEPS,
+    test_resources = ["//crates/interpret:fixtures"],
+    binaries = True,
+)
+
+amux_rust_binary(
+    name = "amux_stand_in",
+    version = "0.1.0",
+    crate_root = "examples/amux_stand_in.rs",
+    deps = DEPS + TEST_DEPS,
+    tool = True,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    resources = ["//crates/interpret:fixtures"],
+    binaries = True,
+)

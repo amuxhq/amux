@@ -8,7 +8,7 @@ use interpret::claude_pty::ClaudePty;
 use interpret::{Effect, Event, Interpreter, claude_pty_input, run_golden};
 
 fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/claude_pty")
+    source_tree::crate_dir!().join("fixtures/claude_pty")
 }
 
 fn golden(name: &str) {
@@ -143,7 +143,7 @@ fn agent_messages_leave_the_pending_set_when_claude_shows_them_to_the_model() {
     assert_eq!(state.shared().pending_messages().len(), 2);
     assert!(!state.shared().quiescent());
     let recording = std::fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
+        source_tree::crate_dir!()
             .join("fixtures/claude_pty/transcripts/socket_delivery.rows.jsonl"),
     )
     .unwrap();

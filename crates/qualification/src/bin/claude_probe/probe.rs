@@ -196,7 +196,7 @@ fn join(capture: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
     // The corpus lives beside the interpreter goldens that replay it.
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let root = source_tree::crate_dir!()
         .join("../interpret/fixtures")
         .join(if pty { "claude_pty" } else { "claude_sdk" })
         .join("live");

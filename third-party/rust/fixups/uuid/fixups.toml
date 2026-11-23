@@ -1,0 +1,7 @@
+# reindeer resolves features across the whole workspace, so the version-4
+# ids the desktop crates make (`rng`, `v4`) would reach the browser
+# extension's WebAssembly too, where uuid has no source of randomness
+# unless it pulls in JavaScript's. Cargo, building only browser-core's
+# graph for wasm, never turns them on there; nor does this.
+['cfg(target_arch = "wasm32")']
+omit_features = ["rng", "v4"]

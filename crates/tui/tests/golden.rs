@@ -10,7 +10,7 @@
 #![cfg(feature = "fixtures")]
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use ratatui::buffer::Buffer;
 use tui::Theme;
@@ -84,7 +84,7 @@ fn every_row_kind_has_a_component() {
 }
 
 fn golden_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
+    source_tree::crate_dir!().join("tests/golden")
 }
 
 /// The buffer's text, then its style classes, one character per cell.

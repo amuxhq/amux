@@ -14,9 +14,7 @@ use wire::AgentSpec;
 
 /// Every fixture of one kind, by path.
 fn fixtures(kind: &str) -> Vec<PathBuf> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("fixtures")
-        .join(kind);
+    let dir = source_tree::crate_dir!().join("fixtures").join(kind);
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
         .unwrap()
         .map(|entry| entry.unwrap().path())

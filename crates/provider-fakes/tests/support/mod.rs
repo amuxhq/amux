@@ -29,7 +29,7 @@ pub fn corpus(kind: Kind) -> &'static Corpus {
         Kind::Acp => (&ACP, "../interpret/fixtures/acp/live"),
     };
     cell.get_or_init(|| {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(root);
+        let root = source_tree::crate_dir!().join(root);
         Corpus::load(kind, &[&root]).unwrap()
     })
 }

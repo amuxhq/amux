@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
 use std::net::TcpListener;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Output};
 
 use release::{Manifest, Release};
@@ -30,7 +30,7 @@ const TARGETS: &[&str] = &[
 ];
 
 fn script(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    source_tree::crate_dir!()
         .join("../../scripts/install")
         .join(name)
 }

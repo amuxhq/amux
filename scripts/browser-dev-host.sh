@@ -41,7 +41,7 @@ mkdir -p "$here/target"
     if [ -n "${AMUX_CONFIG-}" ]; then
         printf 'export AMUX_CONFIG=%s\n' "'$(printf %s "$AMUX_CONFIG" | sed "s/'/'\\\\''/g")'"
     fi
-    printf 'exec %s internal browser "$@"\n' "'$here/target/debug/amux'"
+    printf 'exec %s internal browser "$@"\n' "'$here/.wt/bin/amux'"
 } > "$script"
 chmod 755 "$script"
 
@@ -54,4 +54,4 @@ for browser in $browsers; do
     printf '%s' "$manifest" > "$base/$browser/NativeMessagingHosts/$name.json"
     echo "Registered $name with $browser."
 done
-echo "It runs $here/target/debug/amux${AMUX_CONFIG:+ with $AMUX_CONFIG}; build it with \`cargo build -p amux\`."
+echo "It runs $here/.wt/bin/amux${AMUX_CONFIG:+ with $AMUX_CONFIG}; build it with \`just build\`."

@@ -8,17 +8,15 @@ use provider_fakes::{Kind, conformance};
 
 fn binary(kind: Kind) -> &'static str {
     match kind {
-        Kind::ClaudeSdk => env!("CARGO_BIN_EXE_fake-claude-sdk"),
-        Kind::ClaudePty => env!("CARGO_BIN_EXE_fake-claude-pty"),
-        Kind::Codex => env!("CARGO_BIN_EXE_fake-codex"),
-        Kind::Acp => env!("CARGO_BIN_EXE_fake-acp"),
+        Kind::ClaudeSdk => source_tree::bin!("fake-claude-sdk"),
+        Kind::ClaudePty => source_tree::bin!("fake-claude-pty"),
+        Kind::Codex => source_tree::bin!("fake-codex"),
+        Kind::Acp => source_tree::bin!("fake-acp"),
     }
 }
 
 fn root(relative: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join(relative)
+    source_tree::crate_dir!().join("..").join(relative)
 }
 
 /// Every directory under a corpus root that holds a recording.

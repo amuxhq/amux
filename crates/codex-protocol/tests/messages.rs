@@ -1,8 +1,6 @@
 //! Recorded lines read into the fields amux uses, and what amux writes
 //! comes out as the bytes it has always written.
 
-use std::path::Path;
-
 use codex_protocol::client::{
     ClientInfo, InitializeParams, ModelListParams, ThreadStartParams, TurnStartParams,
 };
@@ -26,7 +24,7 @@ fn recorded(spec: &str, needles: &[&str]) -> ServerMessage {
 }
 
 fn recorded_line(spec: &str, needles: &[&str]) -> String {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = source_tree::crate_dir!()
         .join("../interpret/fixtures/codex/live")
         .join(spec)
         .join("io.jsonl");

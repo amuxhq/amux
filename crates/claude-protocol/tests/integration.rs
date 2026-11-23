@@ -5,13 +5,13 @@ mod frames;
 mod pty_corpus;
 mod stream_corpus;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde_json::Value;
 
 /// The Claude corpus both corpus suites read.
 fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../interpret/fixtures")
+    source_tree::crate_dir!().join("../interpret/fixtures")
 }
 
 /// Where two JSON values differ, as paths with what each side holds.

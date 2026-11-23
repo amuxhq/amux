@@ -9,7 +9,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 fn ctl(folder: &Path, args: &[&str]) -> Output {
-    let output = Command::new(env!("CARGO_BIN_EXE_testnet"))
+    let output = Command::new(source_tree::bin!("testnet"))
         .arg("ctl")
         .args(args)
         .current_dir(folder)
@@ -40,7 +40,7 @@ struct Down<'a>(&'a Path);
 
 impl Drop for Down<'_> {
     fn drop(&mut self) {
-        let _ = Command::new(env!("CARGO_BIN_EXE_testnet"))
+        let _ = Command::new(source_tree::bin!("testnet"))
             .args(["ctl", "down"])
             .current_dir(self.0)
             .output();
@@ -215,7 +215,7 @@ fn ledger(run: &Path, tester: &str, finding: Option<(&str, &str)>, args: &[&str]
             .expect("a finding");
     }
     std::fs::create_dir_all(&folder).expect("the tester's folder");
-    Command::new(env!("CARGO_BIN_EXE_testnet"))
+    Command::new(source_tree::bin!("testnet"))
         .args(["ctl", "ledger"])
         .args(args)
         .current_dir(&folder)
@@ -451,7 +451,7 @@ fn a_qa_tester_is_refused_fake_agents() {
         ],
         &["up", "topology.json"],
     ] {
-        let refused = Command::new(env!("CARGO_BIN_EXE_testnet"))
+        let refused = Command::new(source_tree::bin!("testnet"))
             .arg("ctl")
             .args(args)
             .current_dir(run.path())
@@ -479,7 +479,7 @@ fn a_session_named_in_the_environment_is_found_from_any_folder() {
     let elsewhere = session.join("findings/lost-row");
     std::fs::create_dir_all(&elsewhere).expect("a folder inside it");
     let run = |args: &[&str], named: bool| {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_testnet"));
+        let mut command = Command::new(source_tree::bin!("testnet"));
         command
             .arg("ctl")
             .args(args)

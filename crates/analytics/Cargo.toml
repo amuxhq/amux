@@ -20,6 +20,7 @@ uuid = { workspace = true }
 libc = { workspace = true }
 
 [dev-dependencies]
+source-tree = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
 [lints]

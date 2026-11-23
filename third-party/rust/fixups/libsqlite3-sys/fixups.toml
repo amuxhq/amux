@@ -1,0 +1,7 @@
+# The bundled SQLite, compiled by the crate's own build script as under
+# Cargo, with the same flags: .cargo/config.toml's LIBSQLITE3_FLAGS leave out
+# the extensions the store never uses. Optimised in every profile, as
+# Cargo.toml's [profile.dev.package.libsqlite3-sys] does.
+[buildscript.run.env]
+LIBSQLITE3_FLAGS = "-USQLITE_ENABLE_FTS3 -USQLITE_ENABLE_FTS3_PARENTHESIS -USQLITE_ENABLE_FTS5 -USQLITE_ENABLE_RTREE -USQLITE_ENABLE_DBSTAT_VTAB -USQLITE_ENABLE_STAT4 -USQLITE_SOUNDEX -USQLITE_ENABLE_COLUMN_METADATA -USQLITE_ENABLE_LOAD_EXTENSION -DSQLITE_OMIT_LOAD_EXTENSION -USQLITE_ENABLE_JSON1 -DSQLITE_OMIT_JSON"
+OPT_LEVEL = "3"

@@ -576,8 +576,7 @@ fn experiment_tables_are_named_by_their_version_and_kept_out_of_the_migrations()
             }
         }
     }
-    let schema =
-        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/schema.rs")).unwrap();
+    let schema = std::fs::read_to_string(source_tree::crate_dir!().join("src/schema.rs")).unwrap();
     assert!(
         !schema.contains("exp_"),
         "a migration names an experiment's table"

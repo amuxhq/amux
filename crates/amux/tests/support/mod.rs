@@ -33,7 +33,7 @@ pub use ::release::TEST_SEED;
 
 /// The amux binary cargo built for these tests.
 pub fn amux_binary() -> &'static Path {
-    Path::new(env!("CARGO_BIN_EXE_amux"))
+    Path::new(source_tree::bin!("amux"))
 }
 
 /// The fake providers, beside the amux binary.

@@ -49,6 +49,7 @@ libc = { workspace = true }
 libc = { workspace = true }
 
 [dev-dependencies]
+source-tree = { workspace = true }
 release = { workspace = true, features = ["test-key"] }
 pty-host = { workspace = true }
 patience = { workspace = true }

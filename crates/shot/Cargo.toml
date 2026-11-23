@@ -7,6 +7,7 @@ description = "Deterministic PNG renderer and storybook for named amux TUI state
 publish = false
 
 [dependencies]
+source-tree = { workspace = true }
 tui = { workspace = true, features = ["fixtures"] }
 # The storybook replays recorded sessions through the interpreters, which
 # the client itself never links.
@@ -32,6 +33,8 @@ path = "src/main.rs"
 [[bin]]
 name = "amux-storybook"
 path = "src/storybook.rs"
+
+[dev-dependencies]
 
 [lints]
 workspace = true

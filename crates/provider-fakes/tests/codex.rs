@@ -36,7 +36,7 @@ impl Host {
     async fn start_exempt(script: Value, exempt: &'static [&'static str]) -> Self {
         let line = Line::spawn(
             Kind::Codex,
-            env!("CARGO_BIN_EXE_fake-codex"),
+            source_tree::bin!("fake-codex"),
             &["app-server", "--listen", "stdio://"],
             script,
             exempt,
@@ -487,7 +487,9 @@ mod socket {
     use super::{EXEMPT, Kind};
     use crate::support::{Client, Server};
 
-    const FAKE: &str = env!("CARGO_BIN_EXE_fake-codex");
+    fn fake() -> &'static str {
+        source_tree::bin!("fake-codex")
+    }
 
     /// A command that needs the operator's approval, then a reply.
     fn asks_twice() -> Value {
@@ -601,7 +603,7 @@ mod socket {
 
     #[tokio::test]
     async fn a_thread_with_no_turn_can_be_joined_once_named_and_not_before() {
-        let server = Server::start(FAKE, json!({"steps": []}));
+        let server = Server::start(fake(), json!({"steps": []}));
         let mut amux = Peer::connect(&server, "amux").await;
         let thread = amux.start_thread().await;
         let mut app = Peer::connect(&server, "app").await;
@@ -631,7 +633,7 @@ mod socket {
     /// with no read of the thread's turns.
     #[tokio::test]
     async fn codexs_app_joins_a_thread_with_no_turn_once_it_is_named() {
-        let server = Server::start(FAKE, json!({"steps": []}));
+        let server = Server::start(fake(), json!({"steps": []}));
         let mut amux = Peer::connect(&server, "amux").await;
         let thread = amux.start_thread().await;
         let mut app = Peer::connect(&server, "app").await;
@@ -652,7 +654,7 @@ mod socket {
 
     #[tokio::test]
     async fn every_client_sees_the_turn_and_any_may_answer_its_approval() {
-        let server = Server::start(FAKE, asks_twice());
+        let server = Server::start(fake(), asks_twice());
         let mut amux = Peer::connect(&server, "amux").await;
         let thread = amux.start_thread().await;
         amux.call(
@@ -698,7 +700,7 @@ mod socket {
 
     #[tokio::test]
     async fn a_client_that_leaves_leaves_its_turns_request_open() {
-        let mut server = Server::start(FAKE, asks_twice());
+        let mut server = Server::start(fake(), asks_twice());
         let mut amux = Peer::connect(&server, "amux").await;
         let thread = amux.start_thread().await;
         // Named, as amux names every thread, so the resume answer has the
@@ -729,7 +731,7 @@ mod socket {
     async fn a_client_that_skips_the_websocket_upgrade_is_hung_up_on() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-        let server = Server::start(FAKE, json!({"steps": []}));
+        let server = Server::start(fake(), json!({"steps": []}));
         // Wait until it listens.
         drop(server.connect(Kind::Codex, EXEMPT).await);
         let mut raw = tokio::net::UnixStream::connect(&server.socket)
@@ -761,7 +763,7 @@ mod socket {
 
     impl View {
         fn open(server: &Server, thread: &str) -> Self {
-            let mut child = tokio::process::Command::new(FAKE)
+            let mut child = tokio::process::Command::new(fake())
                 .args(["resume", thread, "--remote"])
                 .arg(format!("unix://{}", server.socket.display()))
                 .stdin(std::process::Stdio::piped())
@@ -805,7 +807,7 @@ mod socket {
 
     #[tokio::test]
     async fn codexs_app_on_the_socket_prompts_and_answers_beside_amux() {
-        let server = Server::start(FAKE, asks_twice());
+        let server = Server::start(fake(), asks_twice());
         let mut amux = Peer::connect(&server, "amux").await;
         let thread = amux.start_thread().await;
 

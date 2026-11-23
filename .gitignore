@@ -70,3 +70,7 @@ apps/apple/Signing.local.xcconfig
 *.jks
 *.keystore
 apps/android/app/google-services.json
+
+# Buck2 output
+buck-out/
+.buckconfig.local

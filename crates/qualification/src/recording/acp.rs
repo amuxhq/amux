@@ -27,7 +27,7 @@ pub const CLIENT: &str = "amux";
 /// Where the ACP corpus lives, beside the interpreter goldens that will
 /// replay it.
 pub fn corpus_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../interpret/fixtures/acp/live")
+    source_tree::crate_dir!().join("../interpret/fixtures/acp/live")
 }
 
 /// Variables holding credentials an ACP agent may read, whose values no

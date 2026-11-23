@@ -38,7 +38,7 @@ fn a_wrapper_ahead_of_the_probe_reaches_the_real_claude() {
     for folder in [&shim, &wrapper, &real, &capture] {
         std::fs::create_dir_all(folder).unwrap();
     }
-    symlink(env!("CARGO_BIN_EXE_claude-probe"), shim.join("claude")).unwrap();
+    symlink(source_tree::bin!("claude-probe"), shim.join("claude")).unwrap();
     script(&wrapper.join("claude"), WRAPPER);
     script(&real.join("claude"), "#!/bin/sh\necho reached\n");
     let path = std::env::join_paths([

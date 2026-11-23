@@ -1,0 +1,28 @@
+load("//build:rust.bzl", "TESTING", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//crates/wire:wire",
+    "//third-party/rust:prost",
+    "//third-party/rust:serde",
+] + select({"DEFAULT": [], TESTING: ["//third-party/rust:schemars"]})
+
+TEST_DEPS = [
+    "//third-party/rust:proptest",
+    "//third-party/rust:serde_json",
+]
+
+FEATURES = ["default"] + select({"DEFAULT": [], TESTING: ["schema"]})
+
+amux_rust_library(
+    version = "0.5.0",
+    deps = DEPS,
+    features = FEATURES,
+    test_deps = TEST_DEPS,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.5.0",
+    deps = DEPS + TEST_DEPS,
+    features = FEATURES,
+)

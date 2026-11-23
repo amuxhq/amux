@@ -1,0 +1,18 @@
+load("//build:rust.bzl", "DEBUG_TOOLS", "amux_rust_library")
+
+DEPS = [
+    "//crates/app-bridge:app-bridge",
+    "//third-party/rust:jni",
+    "//third-party/rust:libc",
+]
+
+FEATURES = ["default"] + DEBUG_TOOLS
+
+amux_rust_library(
+    version = "0.2.0",
+    deps = DEPS,
+    features = FEATURES,
+    product = "app",
+    # Cargo builds a cdylib for Android; Buck has the library's shared
+    # object as a subtarget, which the Android build takes.
+)

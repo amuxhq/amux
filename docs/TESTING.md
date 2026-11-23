@@ -108,8 +108,8 @@ A lane says when and where a suite runs.
 | qualification | Live providers, measured performance, production cloud and purchases. | Only on request, on enrolled machines; results are `pass`, `fail`, `unavailable` or `not_run` |
 
 Nothing in an ordinary push inherits credentials, spending or hardware. The live lane is the `live` feature of the
-qualification crate; `just test` and `just ci` never select it. `just ci` refuses to start when an `UPDATE_*`
-variable is set, so no asserted run can rewrite a golden.
+qualification crate, and its targets carry the `live` label; `just test` never selects them. `just premerge` refuses to
+start when an `UPDATE_*` variable is set, so no asserted run can rewrite a golden.
 
 ## Two modes of the many-daemons harness
 
@@ -144,8 +144,8 @@ what is real and what is substituted, its time requirement (`none`, `driven` or 
 lane, evidence location, update command, and the Cargo targets, features and journeys it owns. A crate's
 integration suites are modules of its one integration test binary (`tests/integration.rs` declares one per suite, so
 the crate links its tests once rather than once a suite), and a suite names them as `modules`; `just suite <name>`
-runs exactly what a suite lists. A suite that must be the only one in its process under every runner, not only
-nextest (the sanitizers and the iOS store run use one process per binary), keeps a test target of its own:
+runs exactly what a suite lists, as the Buck2 test targets and test-name filters that hold it. A suite that must be the
+only one in its process under every runner, not only Buck2's and nextest (the sanitizers and the iOS store run use one process per binary), keeps a test target of its own:
 app-embedded's `runtime_log`, whose log is the process's one trace subscriber, and the live lane's harnessless
 targets.
 
@@ -157,23 +157,27 @@ just tests-check   # fail on a missing recipe, target, module, feature, journey 
 
 ## Running tests
 
-Every Rust test runs under [cargo-nextest](https://nexte.st), each in a process of its own, configured in
-[`.config/nextest.toml`](../.config/nextest.toml); the `just` test recipes refuse to start without it (`brew install
-cargo-nextest`, or `cargo install --locked cargo-nextest`). A process per test means no test shares a global, an
-environment variable or a once-built fixture with another, whatever runs beside it. No test builds a binary: a
-setup script ([`scripts/test-binaries.sh`](../scripts/test-binaries.sh)) builds `amux`, the fake providers,
-`fake-amux` and the agent's install-path stand-in once before any test starts and names their directory in
-`TESTNET_BINARIES`, and a test started without it fails saying so rather than running binaries older than the
-source. A test is reported slow after a minute and ended after three; a test that ends while a process it started
-still holds its output fails, since that process would outlive it. The documentation tests, the live lane (whose
-tests have their own harness), the C ABI's pointer checks (`just miri`) and the sanitizers still run under
-`cargo test`.
+Every Rust test runs through Buck2, each in a process of its own under
+[`build/test-runner.py`](../build/test-runner.py), and a passing result is kept in the build cache, so a test runs
+again only when something it reads changes ([Building](BUILD.md#the-build-cache)). A process per test means no test
+shares a global, an environment variable or a once-built fixture with another, whatever runs beside it; each gets a
+`HOME` and `TMPDIR` of its own, made empty for it, so none reads the machine's. No test builds a binary: a test that
+starts `amux`, a fake provider, `fake-amux` or the agent's install-path stand-in is given the directory Buck2 built
+them into as `TESTNET_BINARIES`. A test is reported slow after a minute and ended after three; a test that ends while
+a process it started still holds its output fails, since that process would outlive it. The documentation tests,
+the C ABI's pointer checks (`just miri`) and the sanitizers run under `cargo test`.
+
+CI's runners have no Buck2 yet, so CI runs the same tests under [cargo-nextest](https://nexte.st), configured in
+[`.config/nextest.toml`](../.config/nextest.toml) to the same bounds, through `just cargo-test` and `just
+cargo-test-crate` (`brew install cargo-nextest`). There a setup script
+([`scripts/test-binaries.sh`](../scripts/test-binaries.sh)) builds the binaries the tests start before any test runs.
 
 ```sh
-just test                                  # every ordinary workspace target
-just suite many-daemon-protocol-spec       # one suite of tests/catalog.toml, on `just test`'s build
-just suite link-stories relaunch           # the same, then a test-name filter
-just test-crate interpret -- codex::       # one crate, then nextest arguments
+just test                                  # every workspace test whose inputs changed
+just test //crates/node:integration        # one test target
+just suite many-daemon-protocol-spec       # one suite of tests/catalog.toml
+scripts/buck2 run //crates/node:integration -- ^link_stories::relaunch   # some of a target's tests, by name
+just test-crate interpret                  # one crate
 just suite sqlite-store-contract           # the store's reader and writer suite, retention and SQLite file
 just suite client-model-spec               # the client model spec
 just test-tui                              # terminal presentation and goldens
@@ -192,19 +196,20 @@ just live claude_sdk all                   # live compatibility for one kind (qu
 just live codex attach                     # Codex's own app co-driving a fresh agent; capture in target/live/codex-attach
 just perf                                  # performance qualification (see Performance)
 just coverage                              # every workspace test with line coverage per crate
-just flaky <test> 200                      # one test 200 times in a row, stopping at its first failure
-just flaky --load <test>                   # the same with every core kept busy beside it
+just flaky <target> <test> 200             # one test 200 times in a row, stopping at its first failure
+just flaky --load <target> <test>          # the same with every core kept busy beside it
 just fuzz-smoke                            # each fuzz target for 30 s; fails on a crash
 just sanitize address                      # the unsafe code's tests under the address sanitizer
 just sanitize thread                       # the same under the thread sanitizer (Linux only)
 ```
 
-`just flaky` is how a test that fails now and then is made to fail on demand: it runs every test whose name contains
-its argument, one run after another (50 by default), and stops at the first failure with that run's output.
+`just flaky` is how a test that fails now and then is made to fail on demand: it runs the tests of one test target
+(`//crates/node:integration`) whose names contain its argument, one round after another (50 by default), and stops
+at the round one fails in, with its output.
 `--load` keeps every core busy meanwhile, as a full parallel run or a slow CI runner does, which is where most
 timing failures show; a failure that `--load` cannot bring back but a full run can is contention with other tests
 rather than with the CPU. To see what the net's in-process hosts did in a failing test, set `RUST_LOG`
-(`RUST_LOG=warn,daemon_core=debug,node=info`): their tracing goes to the test's standard error, which nextest shows
+(`RUST_LOG=warn,daemon_core=debug,node=info`): their tracing goes to the test's standard error, which the runner shows
 for a test that failed. Hosts the net runs as processes do not inherit it; their daemon logs are theirs.
 
 `just coverage` writes `target/coverage/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
@@ -261,16 +266,17 @@ its inputs alone.
 ## Fixtures and goldens
 
 Three kinds of fixture, kept distinguishable: recordings of a real provider, reviewed derivations produced by the
-production code, and small authored scenarios. Ordinary runs compare and never regenerate.
+production code, and small authored scenarios. Ordinary runs compare and never regenerate; `just goldens` with no
+targets re-records every Rust golden in the table.
 
 | Fixture | Where | Updated by |
 | --- | --- | --- |
 | Live-run captures: sessions amux's own agent drove on the installed provider; each kind's folder is its whole corpus, terminal Claude's played back on Unix only | `crates/interpret/fixtures/{claude_sdk,claude_pty,codex}/live` | `just live <kind>`, then `claude-probe join` or `codex-probe join` from `target/live/recordings/<kind>/<scenario>`; see each README |
 | Terminal Claude transcripts no recording covers | `crates/interpret/fixtures/claude_pty/transcripts` | a new capture; see its README |
 | Agent-process replays cut from those recordings | `crates/agent/tests/replay` | by hand; see its README |
-| Interpreter emission goldens (`*.json` input, `*.golden` output) per kind | `crates/interpret/fixtures` | `INTERPRET_UPDATE_GOLDENS=1` |
-| View data goldens | `crates/ui-view/tests/goldens` | `UI_VIEW_UPDATE_GOLDENS=1` |
-| Terminal component goldens (text plus style map) | `crates/tui/tests/golden` | `UPDATE_GOLDENS=1 just test-tui` |
+| Interpreter emission goldens (`*.json` input, `*.golden` output) per kind | `crates/interpret/fixtures` | `just goldens //crates/interpret:unit //crates/interpret:integration` |
+| View data goldens | `crates/ui-view/tests/goldens` | `just goldens //crates/ui-view:integration` |
+| Terminal component goldens (text plus style map) | `crates/tui/tests/golden` | `just goldens //crates/tui:unit //crates/tui:integration` |
 | Fake-provider scripts and served topologies | `journeys/scripts`, `journeys/topologies` | by hand |
 | Journey screen goldens: terminal frames and styles, phone element geometry | `journeys/goldens/terminal/<story>`, `journeys/goldens/phone/<story>`, `journeys/goldens/android/<story>` | `UPDATE_JOURNEY_GOLDENS=1` |
 | Performance baselines | `perf/baselines` | `just perf --baseline` and `just ios perf --baseline`; see [Performance](PERFORMANCE.md) |

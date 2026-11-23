@@ -52,6 +52,7 @@ libc = { workspace = true }
 tokio-tungstenite = { workspace = true }
 
 [dev-dependencies]
+source-tree = { workspace = true }
 futures-util = { workspace = true }
 patience = { workspace = true }
 provider-fakes = { workspace = true }

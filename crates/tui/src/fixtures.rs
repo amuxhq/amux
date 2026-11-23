@@ -2,8 +2,6 @@
 //! way the owning daemon commits them, and frames drawn from them: what
 //! the TUI's tests look at.
 
-use std::path::Path;
-
 pub use interpret::Committer;
 use interpret::acp::Acp;
 use interpret::claude_pty::ClaudePty;
@@ -29,7 +27,7 @@ pub fn frames(kind: Kind, name: &str) -> Vec<(String, SessionState, i64)> {
         Kind::Acp => "acp",
         _ => "codex",
     };
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = source_tree::crate_dir!()
         .join("../interpret/fixtures")
         .join(dir)
         .join(format!("{name}.json"));
@@ -208,7 +206,7 @@ pub fn family_frames(kind: Kind, name: &str) -> Vec<Family> {
         Kind::ClaudeSdk => "claude_sdk",
         _ => "codex",
     };
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = source_tree::crate_dir!()
         .join("../interpret/fixtures")
         .join(dir)
         .join(format!("{name}.json"));

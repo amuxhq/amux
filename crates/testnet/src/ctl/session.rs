@@ -202,8 +202,16 @@ pub(crate) fn names(hosts: &Value) -> Vec<String> {
         .collect()
 }
 
-/// The `testnet` and `amux` binaries this session uses: beside this one.
+/// The binaries this session uses: this one, and each other where the
+/// harness was told they are (TESTNET_BINARIES) when it is there, else
+/// beside this one, where Cargo builds them all.
 pub(crate) fn binary(name: &str) -> PathBuf {
+    if name != "testnet" && std::env::var_os(provider_fakes::binaries::ENV).is_some() {
+        let told = provider_fakes::binaries::path(name);
+        if told.exists() {
+            return told;
+        }
+    }
     let here = std::env::current_exe().unwrap_or_default();
     here.with_file_name(format!("{name}{}", std::env::consts::EXE_SUFFIX))
 }

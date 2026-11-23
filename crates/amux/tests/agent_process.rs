@@ -97,7 +97,7 @@ impl Fixture {
             config: Some(EffectiveConfig {
                 grace_ms: GRACE_MS,
                 drain_ms: GRACE_MS,
-                install_path: env!("CARGO_BIN_EXE_amux").to_owned(),
+                install_path: source_tree::bin!("amux").to_owned(),
                 ..Default::default()
             }),
             incarnation: n,
@@ -111,7 +111,7 @@ impl Fixture {
     fn spawn(&self, n: u32) -> Child {
         use std::os::unix::process::CommandExt as _;
         let log = std::fs::File::create(self.root.path().join(format!("agent.{n}.log"))).unwrap();
-        Command::new(env!("CARGO_BIN_EXE_amux"))
+        Command::new(source_tree::bin!("amux"))
             .args(["internal", "agent"])
             .arg(&self.dir)
             .stdin(Stdio::null())

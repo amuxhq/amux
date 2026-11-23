@@ -21,8 +21,11 @@ import sh.amux.core.runtime.EntitlementSource
 import sh.amux.core.runtime.FrozenFrame
 import sh.amux.core.runtime.Grant
 import sh.amux.core.runtime.PaywallStore
+import sh.amux.core.runtime.Plan
+import sh.amux.core.runtime.PurchaseOutcome
 import sh.amux.core.runtime.ReportCapture
 import sh.amux.core.runtime.SignInIntent
+import sh.amux.core.runtime.SignedPurchase
 import sh.amux.core.runtime.StubBillingStoreFront
 import sh.amux.features.DiagnosticsExportState
 import sh.amux.shell.DictationController
@@ -318,6 +321,68 @@ class CompositionTest {
             )
         } finally {
             customComp.shutdown()
+            tempRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun onActivityResumedConfirmsOutstandingPurchasesAndFinishesThemAfterCloudAccepts() {
+        val cloud = ScriptedCloudService(
+            ScriptedCloudState(
+                entitlement = Entitlement.None,
+                purchase = ScriptedCloudState.PurchaseRecording.Accepted,
+            ),
+        )
+        val pendingPurchase = SignedPurchase(
+            id = "GPA.9999",
+            productId = Plan.YEARLY_ID,
+            signed = "play.token.unfinished",
+        )
+        val finished = mutableListOf<SignedPurchase>()
+        val billing = object : sh.amux.core.runtime.BillingStoreFront {
+            override suspend fun plans(): List<Plan> = emptyList()
+            override suspend fun buy(plan: Plan): PurchaseOutcome = PurchaseOutcome.Cancelled
+            override suspend fun restore(): PurchaseOutcome = PurchaseOutcome.NothingToRestore
+            override suspend fun finish(purchase: SignedPurchase) {
+                finished.add(purchase)
+            }
+            override suspend fun unfinished(): List<SignedPurchase> =
+                if (finished.isEmpty()) listOf(pendingPurchase) else emptyList()
+            override fun approvals(): kotlinx.coroutines.flow.Flow<SignedPurchase> =
+                kotlinx.coroutines.flow.emptyFlow()
+        }
+
+        val tempRoot = Files.createTempDirectory("amux-comp-billing-test").toFile()
+        val app = RuntimeEnvironment.getApplication()
+        val comp = Composition(
+            context = app,
+            overrides = CompositionOverrides(
+                cloud = cloud,
+                billing = billing,
+                authPresenter = ScriptedWebAuth(),
+                dictation = FakeDictation(),
+                useSystemDiscovery = false,
+                useSystemPush = false,
+                useSystemBilling = false,
+                autoStart = false,
+                attachProcessLifecycle = false,
+                installationDir = File(tempRoot, "install"),
+                accountsFile = File(tempRoot, "accounts.json"),
+                prefsName = "amux_test_${tempRoot.name}",
+            ),
+        )
+        val activity = Robolectric.buildActivity(Activity::class.java).create().get()
+        try {
+            seedTwoAccounts(comp)
+            comp.accounts.select(AccountId("sub-b"))
+
+            comp.onActivityResumed(activity)
+            shadowOf(app.mainLooper).idle()
+
+            assertTrue(CloudCall.RecordPurchase(AccountId("sub-b")) in cloud.calls)
+            assertEquals(listOf(pendingPurchase), finished)
+        } finally {
+            comp.shutdown()
             tempRoot.deleteRecursively()
         }
     }

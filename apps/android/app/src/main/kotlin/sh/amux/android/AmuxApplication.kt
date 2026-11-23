@@ -33,6 +33,7 @@ class AmuxApplication : Application() {
             CompositionOverrides(
                 useSystemDiscovery = false,
                 useSystemPush = false,
+                useSystemBilling = false,
                 networkWatch = NoOpNetworkWatcher,
                 autoStart = false,
                 attachProcessLifecycle = false,

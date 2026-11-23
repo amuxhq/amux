@@ -21,6 +21,7 @@ import sh.amux.core.runtime.HostId
 import sh.amux.core.runtime.PushDevice
 import sh.amux.core.runtime.SignInIntent
 import sh.amux.core.runtime.SignedInAccount
+import sh.amux.core.runtime.SignedPurchase
 import sh.amux.core.runtime.WebAuthPresenter
 
 /**
@@ -170,7 +171,7 @@ class ScriptedCloudService(
         return snapshot.entitlement
     }
 
-    override suspend fun recordPurchase(id: AccountId, signedTransaction: String) {
+    override suspend fun recordPurchase(id: AccountId, purchase: SignedPurchase) {
         val snapshot = record(CloudCall.RecordPurchase(id))
         waitLatency(snapshot)
         when (val outcome = snapshot.purchase) {

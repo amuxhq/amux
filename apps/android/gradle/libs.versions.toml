@@ -12,6 +12,7 @@ kotlinxCoroutines = "1.10.2"
 okhttp = "5.3.2"
 firebaseBom = "35.2.0"
 googleServices = "4.6.0"
+playBilling = "9.1.0"
 junit = "4.13.2"
 androidxTestRunner = "1.7.0"
 robolectric = "4.16.1"
@@ -41,6 +42,7 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
+play-billing-ktx = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "playBilling" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }

@@ -107,7 +107,7 @@ class AmuxCloudTest {
         val rc = cloud.entitlement(signedIn.id)
         assertEquals(
             Entitlement.Active(
-                grant = Grant.Purchased(EntitlementSource.AppStore),
+                grant = Grant.Purchased(EntitlementSource.PlayStore),
                 renewsAtMs = AmuxCloudService.parseIsoTimestampMs("2026-11-30T00:00:00Z"),
             ),
             rc,
@@ -155,9 +155,15 @@ class AmuxCloudTest {
             cloud.entitlement(signedIn.id),
         )
 
-        // 5. Purchase recording accepts 202.
-        cloud.recordPurchase(signedIn.id, "signed.jws.payload")
-        assertTrue(requests.any { it.url.endsWith("/api/purchases") && it.method == "POST" })
+        // 5. Purchase recording posts Google Play purchase_token and product_id and accepts 202.
+        cloud.recordPurchase(
+            signedIn.id,
+            SignedPurchase(id = "GPA.1234", productId = Plan.YEARLY_ID, signed = "play.purchase.token"),
+        )
+        val purchaseReq = requests.last { it.url.endsWith("/api/purchases") && it.method == "POST" }
+        val purchaseBody = purchaseReq.body?.toString(StandardCharsets.UTF_8).orEmpty()
+        assertTrue("expected purchase_token in $purchaseBody", purchaseBody.contains(""""purchase_token":"play.purchase.token""""))
+        assertTrue("expected product_id in $purchaseBody", purchaseBody.contains(""""product_id":"amux_pro_yearly""""))
     }
 
     @Test
@@ -180,12 +186,12 @@ class AmuxCloudTest {
         )
         cloud.lend { "lent-bearer" }
 
-        // RevenueCat 409 routes to App Store subscriptions page.
+        // RevenueCat 409 routes to Google Play subscriptions page on Android.
         val rcBlocked = cloud.requestDeletion(AccountId("acct-1"), "ADA@EXAMPLE.COM")
         assertEquals(
             DeletionOutcome.BlockedByRenewal(
-                EntitlementSource.AppStore,
-                AmuxCloudService.APP_STORE_SUBSCRIPTIONS_URL,
+                EntitlementSource.PlayStore,
+                AmuxCloudService.PLAY_STORE_SUBSCRIPTIONS_URL,
             ),
             rcBlocked,
         )

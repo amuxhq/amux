@@ -35,6 +35,10 @@ compose *ARGS:
 store *ARGS:
     {{bounded}} 300 uv run --script marketing/store.py "$@"
 
+# Compose the Google Play Store's screenshots, feature graphic and icon from the scene's Android shots.
+play-store *ARGS:
+    {{bounded}} 300 uv run --script marketing/play_store.py "$@"
+
 # The amux binary's release recipes: `just amux release`, `just amux deploy` (`just --list amux`).
 mod amux 'crates/amux/justfile'
 

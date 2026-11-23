@@ -33,7 +33,7 @@ interface CloudService {
     suspend fun entitlement(id: AccountId): Entitlement
 
     @Throws(CloudException::class)
-    suspend fun recordPurchase(id: AccountId, signedTransaction: String)
+    suspend fun recordPurchase(id: AccountId, purchase: SignedPurchase)
 
     @Throws(CloudException::class)
     suspend fun requestDeletion(id: AccountId, confirmedEmail: String): DeletionOutcome

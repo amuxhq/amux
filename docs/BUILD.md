@@ -88,7 +88,11 @@ Each crate describes itself twice, so the two stay in step by hand:
   dependency changes. reindeer reads no `[dev-dependencies]`, so a crate
   only tests use is also listed in `third-party/rust/dev-only`, a workspace
   member with no code. A crate whose build script reindeer can't run gets a
-  fixup under `third-party/rust/fixups/`.
+  fixup under `third-party/rust/fixups/`. Each library there is built
+  through [`build/third_party.bzl`](../build/third_party.bzl), which keeps
+  a crate's sources out of every dependent's compile: the prelude would
+  otherwise stage the sources of all of a crate's dependencies on the
+  worker for each compile, 11,000 files for a crate near the top.
 - A test finds its crate's files and binaries through the
   [`source-tree`](../crates/source-tree) crate (`crate_dir!()`, `bin!()`)
   rather than `env!("CARGO_MANIFEST_DIR")` and `env!("CARGO_BIN_EXE_…")`,

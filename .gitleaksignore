@@ -11,3 +11,7 @@ fd02e8ec04c046a857f339e1c75fb6b9fcb40086:crates/e2e-runner/src/executor.rs:priva
 # fixed ID from and which its docs say to publish in the manifest. The
 # private half never enters the repository.
 55ae04bcbc71b3a35b1030e775585814f1c1837b:js/extension/static/manifest.json:generic-api-key:6
+
+# A made-up door token the Android journey's redaction test plants, to
+# prove the token never reaches an error message.
+71d5808880e4f40d4216e170cc8e2ddf09d79053:crates/testnet/src/journey/android.rs:generic-api-key:3380

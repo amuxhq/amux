@@ -1,6 +1,6 @@
 # Releasing amux
 
-*For maintainers cutting a release of the iPhone app, the Mac app, the browser extension or the `amux` binary, and developers working on how installed daemons find and verify new builds.*
+*For maintainers cutting a release of the iPhone app, the Android app, the Mac app, the browser extension or the `amux` binary, and developers working on how installed daemons find and verify new builds.*
 
 Each product that ships from this repository has its own `just` module and
 the same two commands, on its own schedule:
@@ -13,6 +13,7 @@ the same two commands, on its own schedule:
 | Product | `release` | `deploy` | Tags |
 | --- | --- | --- | --- |
 | The iPhone app | `just ios release`: archive, validate, upload to App Store Connect | `just ios deploy <version>`: submit it for review, or give it to TestFlight's external testers | `ios-v<version>-b<build>` |
+| The Android app | `just android release`: audit, build and sign `.aab`, upload to Google Play internal testing | `just android deploy <version>`: promote the build to closed testing, open testing, or production | `android-v<version>-b<build>` |
 | The `amux` binary | `just amux release <version>`: the Release workflow builds the pushed tag | `just amux deploy <version>`: sign the channel manifest and publish it to amux.sh | `v<version>` |
 | The Mac app | `just mac release <version>`: build, sign with Developer ID, make the update zip and the disk image ([MAC](MAC.md#releases)) | `just mac deploy <version>`: sign the channel's Mac feed and publish it with the disk image | `mac-v<version>` |
 | The browser extension | `just browser release <version>`: raise the manifest's version, build, zip, and keep the zip as the tag's GitHub Release asset | `just browser deploy <version>`: upload that zip to the Chrome Web Store and submit it for review | `browser-v<version>` |
@@ -611,6 +612,123 @@ the arrangement works end to end.
 
 None of the values above — the key, its id, the issuer id or the Team ID —
 appear in any committed file, and none of them should be pasted into one.
+
+## The Android app
+
+The Android app ships from this repository as a signed Android App Bundle
+(`.aab`, application ID `sh.amux.android`) built by Gradle from
+`apps/android/` with the shipping Rust JNI library (`libamux_app.so`, built
+without `debug-tools`).
+
+```sh
+just android release --preflight                       # check keystore, keychain & service account
+just android release --rehearse                        # audit, build & sign .aab without touching git or Play
+just android release --version 1.0.0                   # audit, build, sign, upload to internal testing, tag & push
+just android release --draft                           # same, leaving the internal release in draft state
+just android status                                    # show what every Google Play track holds
+just android deploy 1.0.0 --channel preview --dry-run  # preview promotion to beta (open testing)
+just android deploy 1.0.0 --channel closed             # promote to alpha (closed testing)
+just android deploy 1.0.0 --rollout 10                 # 10% staged rollout to production
+just android deploy 1.0.0 --notes-file whats-new.txt   # 100% production release with en-US notes
+```
+
+`just android release` runs `just android scope-audit` first, then writes
+`versionName` and `versionCode` in `apps/android/app/build.gradle.kts`, builds
+and signs `:app:bundleRelease` (embedding the R8 ProGuard mapping inside the
+`.aab`), verifies the signature with `jarsigner -verify -strict`, copies the
+bundle, `mapping.txt` and `ReleaseNotes.txt` under
+`target/android/release/android-v<version>-b<build>/`, uploads the `.aab` to
+Google Play's `internal` track through the Google Play Android Publisher API v3
+([`apps/android/tools/googleplay.py`](../apps/android/tools/googleplay.py)),
+and only then commits, cuts the annotated `android-v<version>-b<build>` tag,
+and pushes `HEAD:main` and the tag.
+
+- `--rehearse` passes `-Pamux.versionName` and `-Pamux.versionCode` to Gradle
+  so it signs and verifies the exact would-be bundle without editing
+  `build.gradle.kts`, cutting a tag, or uploading anything.
+- `--no-upload` and `--no-push` each stop short of their step.
+- `--draft` creates the track release in `draft` status (required on a
+  brand-new Play Console app before its first release has been published), and
+  `--changes-not-sent-for-review` passes `changesNotSentForReview=true` when
+  committing the edit (useful when Managed Publishing is enabled or Play asks
+  you to click **Send for review** in the UI).
+
+`just android deploy <version>` promotes the `versionCode` recorded by the
+highest `android-v<version>-b<build>` tag (or `--build N`) to a Play track:
+`stable` (`production`, the default), `preview` (`beta`), `closed` (`alpha`),
+`internal` (`internal`), or any custom closed-testing track via `--track NAME`.
+
+### One-time Android operator setup
+
+None of these credentials are ever committed. Keep the upload keystore backed
+up safely outside this repository — Google Play App Signing uses it to verify
+every upload, and losing it requires a Play Console key reset.
+
+**1. Generate the upload keystore and store its credentials in Keychain.**
+
+```sh
+mkdir -p ~/.googleplay
+chmod 700 ~/.googleplay
+
+keytool -genkeypair -v \
+  -storetype PKCS12 \
+  -keystore ~/.googleplay/upload-keystore.jks \
+  -alias amux-upload \
+  -keyalg RSA -keysize 4096 -validity 10000 \
+  -dname "CN=amux, O=amux, C=US"
+chmod 600 ~/.googleplay/upload-keystore.jks
+```
+
+Save the alias and passwords in this Mac's login keychain under
+`amux-googleplay` (for PKCS12 keystores, store password and key password are
+the same):
+
+```sh
+security add-generic-password -s amux-googleplay -a key-alias      -w amux-upload
+security add-generic-password -s amux-googleplay -a store-password -w '<your keystore password>'
+security add-generic-password -s amux-googleplay -a key-password   -w '<your keystore password>'
+```
+
+*(For non-macOS hosts or CI, `AMUX_ANDROID_KEYSTORE`, `AMUX_ANDROID_KEY_ALIAS`,
+`AMUX_ANDROID_STORE_PASSWORD`, `AMUX_ANDROID_KEY_PASSWORD`, and
+`AMUX_GOOGLEPLAY_KEY_FILE` override the defaults.)*
+
+**2. Create the Google Cloud service account.**
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), pick your
+   existing amux project (or create one) and enable the **Google Play Android
+   Developer API** (`androidpublisher.googleapis.com`) under **APIs & Services
+   → Library**.
+2. Under **IAM & Admin → Service Accounts**, create a service account (e.g.
+   `amux-play-release`). It needs no GCP IAM roles.
+3. On its **Keys** tab, **Add key → Create new key → JSON**, and move the
+   download into place:
+
+   ```sh
+   mv ~/Downloads/<project>-<id>.json ~/.googleplay/service-account.json
+   chmod 600 ~/.googleplay/service-account.json
+   ```
+
+**3. Link the service account in Google Play Console.**
+
+1. Once your app (`sh.amux.android`) exists in Play Console, go to **Users and
+   permissions → Invite new users**.
+2. Paste the service account email (`<name>@<project>.iam.gserviceaccount.com`).
+3. Under **App permissions**, add `amux` (`sh.amux.android`) and grant:
+   - **View app information and download bulk reports (read-only)**
+   - **Release to production, exclude devices, and use Play App Signing**
+   - **Release apps to testing tracks**
+   - **Manage store presence** *(optional, for listing/screenshot updates)*
+4. Click **Invite user** → **Send invite**. *(Play Console permissions can take
+   a few minutes to propagate to the API.)*
+
+**4. Check it.**
+
+```sh
+just android release --preflight   # verifies keystore, keychain, tools and JSON key
+just android release --rehearse    # audits, builds, signs and verifies a real .aab
+just android status                # reads live tracks once the app & service account are linked
+```
 
 ## The browser extension
 

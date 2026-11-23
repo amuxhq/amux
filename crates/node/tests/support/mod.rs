@@ -287,11 +287,19 @@ pub fn copy_files(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for entry in std::fs::read_dir(from).unwrap() {
         let entry = entry.unwrap();
-        let kind = entry.file_type().unwrap();
+        // Through links: a build that stages a fixture may link it in.
+        let kind = std::fs::metadata(entry.path()).unwrap().file_type();
         if kind.is_dir() {
             copy_files(&entry.path(), &to.join(entry.file_name()));
         } else if kind.is_file() {
-            std::fs::copy(entry.path(), to.join(entry.file_name())).unwrap();
+            let copy = to.join(entry.file_name());
+            std::fs::copy(entry.path(), &copy).unwrap();
+            // The copy is the test's to write, whatever mode the fixture
+            // was staged with (a build's inputs are read-only).
+            let mut permissions = std::fs::metadata(&copy).unwrap().permissions();
+            #[allow(clippy::permissions_set_readonly_false)]
+            permissions.set_readonly(false);
+            std::fs::set_permissions(&copy, permissions).unwrap();
         }
     }
 }

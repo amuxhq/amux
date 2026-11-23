@@ -16,7 +16,6 @@
 //! interpreter fixture up to the moment it shows. The first segment of a
 //! name is its group.
 
-use std::path::Path;
 use std::sync::LazyLock;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -534,7 +533,7 @@ fn replayed_as(
         Kind::Acp => "acp",
         _ => "codex",
     };
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = source_tree::crate_dir!()
         .join("../interpret/fixtures")
         .join(dir)
         .join(format!("{fixture}.json"));
@@ -633,7 +632,7 @@ fn family(kind: Kind, fixture: &str) -> Vec<(SessionState, Vec<SessionState>, Fl
         Kind::ClaudeSdk => "claude_sdk",
         _ => "codex",
     };
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = source_tree::crate_dir!()
         .join("../interpret/fixtures")
         .join(dir)
         .join(format!("{fixture}.json"));

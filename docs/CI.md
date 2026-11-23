@@ -13,6 +13,7 @@ recipes; [Testing](TESTING.md) describes the suites they run.
 | --- | --- | --- | --- |
 | CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main` | Every check a change is held to, on Linux, macOS and Windows; only the jobs the change can affect run |
 | iOS gate | [`ios.yml`](../.github/workflows/ios.yml) | Pushes to `main` and pull requests into `main` that touch the phone's paths, and by hand | `just ios gate` on Xcode 26.6 |
+| Android gate | [`android.yml`](../.github/workflows/android.yml) | Pushes to `main` and pull requests into `main` that touch Android's paths, and by hand | Android lint, script tests, bridge graph check, host JNI build and Gradle JVM/Robolectric unit tests on `ubuntu-latest` |
 | Weekly offline tests | [`offline.yml`](../.github/workflows/offline.yml) | Sundays 04:00 UTC (GitHub often starts it hours late), and by hand | The workspace tests with no external network |
 | iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | By hand | The phone's store suite on the simulator, journeys and the accessibility audit |
 | Models at nightly bounds | [`models-nightly.yml`](../.github/workflows/models-nightly.yml) | Daily 02:00 UTC (GitHub often starts it hours late), and by hand | Every protocol model at its nightly bounds, one Linux job per model, and every simulated testnet story under 2000 seeds |
@@ -48,8 +49,9 @@ every other job but the policy job runs only if the change can reach it:
 | --- | --- |
 | Documentation, another workflow or a manual script (`docs/`, `images/`, `marketing/`, top-level `*.md`, non-CI workflows, manual scripts) | The policy job, which holds the documentation and script checks: about a minute |
 | The phone app only (`apps/apple/`) | Only `ios-tools` tests (Swift mirrors and verification CLI) unless a fixture read by another Rust test changed; the iOS gate judges the rest |
+| The Android app only (`apps/android/`) | Only `ios-tools` tests (Kotlin mirror and markdown fixture parity); the Android gate judges the rest |
 | The browser extension only (`js/`) | The browser extension's job |
-| A crate | Format, Clippy and the workspace tests; the journeys and simulated stories when `amux` or `testnet` is built from that crate; the models when the models crate is built from that crate; the pointer checks and the iOS target check when the bridge is; the sanitizers when it is one of the crates whose tests they run; the browser extension's job when its WebAssembly is built from the crate, or the crate is the `amux` binary, whose bridge the extension starts |
+| A crate | Format, Clippy and the workspace tests; the journeys and simulated stories when `amux` or `testnet` is built from that crate; the models when the models crate is built from that crate; the pointer checks and the iOS and Android target checks when either phone's bridge is; the sanitizers when it is one of the crates whose tests they run; the browser extension's job when its WebAssembly is built from the crate, or the crate is the `amux` binary, whose bridge the extension starts |
 | Anything else: a manifest, a CI script, `ci.yml`, a journey, a schema | Every job |
 
 Which crates a crate is built from is read from the manifests. A newer push
@@ -73,16 +75,17 @@ takes seconds shares a job, and the models run a few to a job.
 
 | Job | Runner | Runs |
 | --- | --- | --- |
-| Format, Check and Clippy | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30`, then `just lint` |
-| Codegen and dependency policy | `ubuntu-latest` | `just codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just client-kind-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat`, `just store-check` |
-| Test | `ubuntu-latest` (2 halves), `macos-latest` (2 halves), `windows-latest` (1 job) | `scripts/no-update-flags.sh`, `just test -- --profile ci --exclude models` (partitioned `count:N/2` on Linux and macOS; whole suite on Windows, which compiles out the slow Unix suites) |
+| Format, Check and Clippy | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30`, then `just cargo-lint`: Clippy under Cargo |
+| Codegen and dependency policy | `ubuntu-latest` | `just cargo-codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just client-kind-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat`, `just store-check` |
+| Test | `ubuntu-latest` (2 halves), `macos-latest` (2 halves), `windows-latest` (1 job) | `scripts/no-update-flags.sh`, `just cargo-test -- --profile ci --exclude models` (partitioned `count:N/2` on Linux and macOS; whole suite on Windows, which compiles out the slow Unix suites) |
 | Simulated stories and doctests | `ubuntu-latest` | `just sim`, `just doctest`: what reads the same on every platform, run once |
-| Models | `ubuntu-latest`, three jobs | `just test-crate models -- --cargo-profile models --no-fail-fast` filtered to each job's models at their CI bounds |
-| Terminal journeys | `ubuntu-latest`, `macos-latest` | Installs `tmux` on macOS (Linux runners include it), then `just journey terminal all`: every terminal story in the manifest |
+| Models | `ubuntu-latest`, three jobs | `just cargo-test-crate models -- --cargo-profile models --no-fail-fast` filtered to each job's models at their CI bounds |
+| Terminal journeys | `ubuntu-latest`, `macos-latest` | Installs `tmux` on macOS (Linux runners include it), then `just cargo-journey-terminal all`: every terminal story in the manifest, on Cargo's build |
 | Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why |
 | Sanitizers | `ubuntu-latest`, one job for each of `address` and `thread` | `just sanitize <kind>`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race |
 | iOS target check | `macos-latest` | `just mobile-check` |
-| Browser extension | `ubuntu-latest` | Node 24 and Playwright's Chromium; an audit of the dependencies the extension ships for known vulnerabilities; then `just browser test`: Biome's format and lint, the overlay's and extension's types and unit tests, and the extension in Chromium against the built `amux` and the fake providers |
+| Android target check | `ubuntu-latest` | `cargo-ndk` and the runner's Android NDK, then `just android check`: the provider-free graph and `app-jni` compiled for `aarch64-linux-android`, which no other job builds |
+| Browser extension | `ubuntu-latest` | Node 24 and Playwright's Chromium; an audit of the dependencies the extension ships for known vulnerabilities; then `just browser cargo-test`: Biome's format and lint, the overlay's and extension's types and unit tests, and the extension in Chromium against the built `amux` and the fake providers |
 
 The test job runs nextest's `ci` profile, which does not stop at the first
 failure, so a platform reports every failing test; the job's log holds each
@@ -257,6 +260,31 @@ shipping stages (`ios package`, `ios scope-audit`). It refuses to start if
 any stage names a recipe the justfiles no longer declare. `just ios captures`
 and `just ios shipping` run those halves alone.
 
+### The Android gate
+
+The Android gate ([`android.yml`](../.github/workflows/android.yml)) is its own
+workflow on `ubuntu-latest` so that it runs only when a push or pull request
+touches a file its steps read: `apps/android`, `crates/app-jni`,
+`crates/app-bridge`, `crates/app-embedded`, `crates/app-runtime`,
+`crates/ios-tools`, the files the app's tests share with the iPhone's (the
+markdown fixtures and sealed pushes under `apps/apple/Packages`, and
+`tests/stories.json`), the Cargo manifests and `.cargo/`, the toolchain pin,
+the shared runner scripts (`scripts/bounded`, `scripts/no-update-flags.sh`,
+`scripts/py`), the `setup-just` and `setup-rust` actions, or `android.yml`
+itself. The rest of the bridge's Rust graph is the workspace tests' to judge,
+and the Android target check in `ci.yml` compiles it for Android.
+
+The job installs the pinned Rust toolchain with `aarch64-linux-android` through
+`.github/actions/setup-rust`, sets up Temurin JDK 21 with Gradle caching, and
+restores the host JNI bridge from the Actions cache keyed by
+`android-rust.py --host --fingerprint` (which hashes only `app-jni`'s
+transitive workspace crate closure, so Kotlin-only or unrelated-crate edits
+skip compiling Rust). It then runs `just android lint`,
+`just android script-tests`, `just android graph-check`, and
+`just android unit --no-daemon`. Its 30-minute bound comes from a local run
+of those steps (three minutes on a 12-core Mac with no Rust built), scaled to a
+four-core runner with cold caches and doubled; the workflow says how.
+
 ### iOS captures
 
 Run by hand, the workflow boots the golden simulator on `macos-26` and runs
@@ -293,7 +321,7 @@ journey or baseline that does not exist.
 | --- | --- | --- |
 | `fast` | Offline, credential-free tests with no wall-time settling: unit tests, spec suites, adapter replays, store and effect integration, renderer goldens | `just test` on every push, on all three platforms |
 | `system` | Real processes and transports with bounded deadlines: the built `amux` binary and its supervisor, the store on iOS | The desktop suites in `just test` on every push (Unix runners); `test-store-ios` in `just ios captures` |
-| `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests` on every push; `ios script-tests` and `ios lint` in the iOS gate; `ios scope-audit` before every app release |
+| `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests` on every push; `ios script-tests` and `ios lint` in the iOS gate; `android script-tests` and `android lint` in the Android gate; `ios scope-audit` before every app release |
 | `journey` | Complete client stories through the shared manifest, and the phone's accessibility sweep | The terminal journeys job and the system journey inside `just test` on every push; phone journeys and the accessibility sweep in iOS captures run by hand |
 | `qualification` | Real providers, real cloud accounts and measured performance | Never on an ordinary push: `just live`, `just perf` and the `just ios qa-*` recipes by hand, on machines that have the credentials or hardware; `just ios perf` by hand on the enrolled Mac, last in `just ios verify` |
 
@@ -302,34 +330,28 @@ journey or baseline that does not exist.
 ## `just premerge`
 
 `just premerge` is what a change passes on the machine it was written on
-before it reaches main. It takes about a minute and a half on a warm tree, so that it is
-run every time: every check of `just ci` that takes seconds (formatting,
-generated code, the schema and store checks, dependency policy, advisories,
-the typed-provider check, the docs and catalogue checks, the scripts' own
-tests), Clippy, the phone's writing lint and script tests, and every terminal
-journey. The journeys run several at once, each in a scratch folder of its
-own, and share those folders with every other checkout on the machine.
+before it reaches main, and what `just land` runs on the merge before
+pushing it. It runs every check below, the iOS and Android writing lints
+and script tests, every terminal journey, the browser extension's fast
+checks when anything under `js/` changed, and every workspace test.
 
-It also runs the tests of four crates, `interpret`, `replay-support`, `tui`
-and `ui-view`, because they read fixtures and goldens that a change
-elsewhere moves: a provider fixture added in one crate needs its view golden
-in another.
+The tests run through Buck2 and its cache ([Building](BUILD.md#the-build-cache)),
+so a test runs only when something it reads changed since it last passed,
+in this tree or any other on the machine. A change to a leaf crate or a
+document reruns a handful of tests, and premerge takes a minute or two; a
+change to a crate most of the workspace depends on, such as `wire`, reruns
+most of the suite, about a quarter of an hour on a laptop.
 
-It leaves out what is slow. The whole workspace's tests take a quarter of an
-hour; run the touched crates' with `just test-crate`. The phone's unit suites
+It leaves out what needs more than the machine: the phone's unit suites
 need a simulator and a build of the app (`just ios gate`). Windows, the
-sanitizers, the models and the release build run only in CI.
+sanitizers, the models' CI bounds and the release build run only in CI.
 
-## `just ci`
-
-`just ci` runs the check sequence the CI jobs are built from, in one process,
-stopping at the first failure:
+The checks, in the order it runs them:
 
 | Recipe | Checks |
 | --- | --- |
 | `no-update-flags` | No environment variable starting with `UPDATE_` is set, so no fixture is rewritten during an asserted run |
-| `check` | The workspace compiles |
-| `lint` | Clippy, warnings denied |
+| `lint` | Clippy over every library, binary and test of the workspace, warnings denied, with the workspace's `clippy.toml` ([`build/checks/clippy.py`](../build/checks/clippy.py)) |
 | `fmt-check` | Formatting, with the pinned nightly |
 | `codegen-check` | The committed protobuf output matches the schemas |
 | `proto-compat` | The schemas pass buf's lint, and `amux.v1` still reads what the latest release from 0.11.0 wrote; with a ref, what that ref wrote ([`buf.yaml`](../buf.yaml)) |
@@ -342,12 +364,10 @@ stopping at the first failure:
 | `client-kind-check` | The client crates (ui-state, ui-view, ui-runtime, tui, app-runtime, browser-core) decide nothing by an agent's `Kind` or by a provider id written out (Claude's, Codex's or a built-in ACP agent's, read from `wire::agents::BUILT_INS`), outside the listed places, each with its reason; a listed place that matches nothing fails too ([`scripts/client-kind-check.py`](../scripts/client-kind-check.py)) |
 | `docs-check` | Every link, image and heading anchor under `docs/` resolves, every figure is referenced and standalone, and `docs/README.md` lists every page once ([`scripts/docs-check.py`](../scripts/docs-check.py)) |
 | `tests-check` | The suite catalogue names only things that exist |
-| `test` | Every workspace test, under nextest |
-| `doctest` | Documentation tests |
-| `release-check` | The shipping binary builds and passes the release policy check |
-| `mobile-check` | The provider-free graph for iOS devices and simulators |
-
-The terminal journeys are in `ci.yml` but not in `just ci`, and neither is the iOS gate.
+| `script-tests` | The unit tests of the repository's own scripts |
+| `shipping-check` | No crate that exists for tests and no test feature is in the desktop binary's or the browser extension's graph as they ship ([`build/checks/shipping.py`](../build/checks/shipping.py)) |
+| `parity` | Every crate's `BUCK` file and `Cargo.toml` agree on its targets and dependencies ([`build/checks/parity.py`](../build/checks/parity.py)) |
+| `test` | Every workspace test, through Buck2: only the tests whose inputs changed since a passing run, in any tree on the machine, run again |
 
 ## Checking Windows from a Mac
 

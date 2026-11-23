@@ -175,6 +175,7 @@ pub(crate) fn local_platform() -> wire::Platform {
         "linux" => wire::Platform::Linux,
         "windows" => wire::Platform::Windows,
         "ios" => wire::Platform::Ios,
+        "android" => wire::Platform::Android,
         _ => wire::Platform::Unspecified,
     }
 }

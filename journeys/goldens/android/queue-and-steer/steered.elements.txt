@@ -1,0 +1,25 @@
+shell |  |  | 0,0,411,923
+chat |  |  | 0,0,411,923
+chat.feed |  |  | 0,118,411,576
+chat.row.<id> |  |  | 16,130,379,52
+chat.row.kind.prompt |  |  | 16,130,379,40
+markdown.root | Run the soak. |  | 283,140,98,20
+chat.row.msg_fake<run>0000000000000002:0 |  |  | 16,182,379,32
+chat.row.kind.prose |  |  | 16,182,379,20
+markdown.root | Starting the long run. |  | 16,182,379,20
+chat.row.toolu_fake<run>0000000000000003 |  |  | 16,214,379,53
+chat.row.kind.command | Soak, running, $ scripts/soak --for <t> |  | 16,214,379,53
+chat.composer | Running Soak · <t>, Queue a message, Attach, Chat Settings, claude-fake-1 · medium, Dictate, Interrupt |  | 12,698,387,192
+chat.dock |  |  | 12,698,387,54
+chat.queued.0 | Also log the peak. | steered | 12,698,387,54
+chat.activity | <volatile>
+chat.field | Queue a message |  | 28,784,355,48
+chat.attach | Attach |  | 21,837,48,48
+chat.model | Chat Settings, claude-fake-1 · medium |  | 70,837,177,48
+chat.dictate | Dictate |  | 287,837,48,48
+chat.stop | Interrupt |  | 342,837,48,48
+chat.topBar | Back, worker, /p/t/a/n/d/work · desk, Open Overview, More |  | 0,0,411,118
+nav.back | Back |  | 8,66,40,40
+chat.title | worker | worker | 56,62,299,48
+chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
+chat.more | More |  | 363,66,40,40

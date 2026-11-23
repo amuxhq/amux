@@ -502,17 +502,13 @@ impl Book {
             return None;
         }
         watch.seen = newest;
+        let _ = std::fs::create_dir_all(root().join("target/storybook"));
         let log = std::fs::File::create(build_log()).ok()?;
-        watch.building = Command::new("cargo")
-            .args([
-                "build",
-                "--locked",
-                "-q",
-                "-p",
-                "shot",
-                "--bin",
-                "amux-storybook",
-            ])
+        // Buck2 writes the new binary where this one was started from
+        // (`just storybook` runs it from Buck2's output), which `restart`
+        // then becomes.
+        watch.building = Command::new(root().join("scripts/buck2"))
+            .args(["build", "root//crates/shot:amux-storybook"])
             .current_dir(root())
             .stdout(log.try_clone().ok()?)
             .stderr(log)
@@ -540,7 +536,7 @@ fn restart(exe: &Path, book: &Book) -> anyhow_free::Result {
 }
 
 fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    source_tree::crate_dir!().join("../..")
 }
 
 fn place_file() -> PathBuf {

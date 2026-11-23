@@ -23,8 +23,8 @@ env:
 jobs:
   # Which jobs this change can affect (scripts/ci-affected.py): a change to
   # documentation, another workflow or a manual script runs only the policy
-  # job, the phone app alone runs ios-tools and leaves the rest to the iOS
-  # gate, and product, models, sanitizers, bridge and browser run when a crate
+  # job, either phone app alone runs the mirror tests and leaves the rest to
+  # its own gate, and product, models, sanitizers, bridge and browser run when a crate
   # they are built from changed.
   changes:
     name: What this change affects
@@ -35,7 +35,7 @@ jobs:
       actions: read
     outputs:
       tests: ${{ steps.affected.outputs.tests }}
-      ios_tools: ${{ steps.affected.outputs.ios_tools }}
+      mirrors: ${{ steps.affected.outputs.mirrors }}
       product: ${{ steps.affected.outputs.product }}
       models: ${{ steps.affected.outputs.models }}
       sanitizers: ${{ steps.affected.outputs.sanitizers }}
@@ -90,12 +90,12 @@ jobs:
         run: just fmt-check
       - name: Run Clippy
         if: always()
-        run: just lint
+        run: just cargo-lint
 
   ios-tools:
     name: Phone mirror and CLI tests
     needs: changes
-    if: needs.changes.outputs.ios_tools == 'true'
+    if: needs.changes.outputs.mirrors == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -107,7 +107,7 @@ jobs:
           nextest: "true"
           sccache: "true"
       - name: Run ios-tools tests
-        run: just test-crate ios-tools
+        run: just cargo-test-crate ios-tools
 
   miri:
     name: Pointer checks over the C ABI
@@ -156,7 +156,7 @@ jobs:
       - uses: ./.github/actions/setup-rust
       - uses: ./.github/actions/setup-buf
       - name: Check committed protobuf code
-        run: just codegen-check
+        run: just cargo-codegen-check
       - name: Lint the protocol and check it still reads what the latest release wrote
         run: just proto-compat
       - name: Check the store only grew since the latest release
@@ -244,7 +244,7 @@ jobs:
         # suites, node's supervisor suite and the survive-daemon system
         # journey are ordinary test suites, compiled out on Windows. The
         # protocol models run in the models job instead, on Linux only.
-        run: just test -- --profile ci --exclude models ${{ matrix.partition }}
+        run: just cargo-test -- --profile ci --exclude models ${{ matrix.partition }}
       - name: Say what sccache fetched and compiled
         if: always()
         shell: bash
@@ -306,7 +306,7 @@ jobs:
         # Every model of the job runs, whichever fails.
         run: |
           pattern=$(echo "${{ matrix.models }}" | tr ' ' '|')
-          just test-crate models -- --cargo-profile models --no-fail-fast -E "binary_id(models::integration) & test(/^($pattern)::/)"
+          just cargo-test-crate models -- --cargo-profile models --no-fail-fast -E "binary_id(models::integration) & test(/^($pattern)::/)"
 
   terminal-journeys:
     name: Terminal journeys (${{ matrix.os }})
@@ -320,7 +320,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Shares the test job's cache read-only (`just journey terminal` uses
+      # Shares the test job's cache read-only (`just cargo-journey-terminal` uses
       # --workspace feature unification so it reuses those rlibs directly).
       - uses: ./.github/actions/setup-rust
         with:
@@ -333,7 +333,7 @@ jobs:
       - name: Run terminal journeys
         # Every terminal story in the manifest, one after another; a failure
         # does not stop the rest, and the job fails if any story did.
-        run: just journey terminal all
+        run: just cargo-journey-terminal all
       - name: Upload the terminal journeys' results
         if: always()
         # The upload has waited on a failing artifact service for twenty
@@ -359,6 +359,26 @@ jobs:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
       - name: Check iOS device and simulator graphs
         run: just mobile-check
+
+  android:
+    name: Android target check
+    needs: changes
+    if: needs.changes.outputs.bridge == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          targets: aarch64-linux-android
+          shared-key: android-check
+      # The runner image carries the Android NDK and names it in
+      # ANDROID_NDK_HOME, which cargo-ndk reads.
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: cargo-ndk@4.1.2
+      - name: Check the Android bridge graph
+        run: just android check
 
   browser:
     name: Browser extension
@@ -393,7 +413,7 @@ jobs:
         env:
           AMUX_NPM_READY: "1"
           AMUX_PLAYWRIGHT_READY: "1"
-        run: just browser test
+        run: just browser cargo-test
       - name: Upload the browser test's results
         if: failure()
         timeout-minutes: 5

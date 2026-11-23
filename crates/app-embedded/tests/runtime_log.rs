@@ -8,7 +8,7 @@ use std::sync::{Arc, Condvar, Mutex};
 
 use app_embedded::{Cores, EdgeOverrides, EmbeddedRuntime, ProfileId, StartConfig};
 use app_runtime::{AppRuntime, Wake};
-use client::SystemClock;
+use client::{Surface, SystemClock};
 
 fn config(dir: &std::path::Path) -> StartConfig {
     StartConfig {
@@ -100,6 +100,7 @@ async fn a_phone_dump_carries_the_runtimes_log_redacted() {
         loopback(),
         Arc::new(SystemClock),
         queue(),
+        Surface::Ios,
     )
     .await
     .unwrap();

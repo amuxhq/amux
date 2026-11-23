@@ -1,0 +1,36 @@
+load("//build:rust.bzl", "TESTING", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//crates/attachments:attachments",
+    "//crates/preview:preview",
+    "//crates/ui-state:ui-state",
+    "//crates/wire:wire",
+    "//third-party/rust:pulldown-cmark",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+] + select({"DEFAULT": [], TESTING: ["//third-party/rust:schemars"]})
+
+TEST_DEPS = [
+    "//crates/source-tree:source-tree",
+    "//crates/interpret:interpret",
+    "//third-party/rust:proptest",
+    "//third-party/rust:prost",
+]
+
+FEATURES = ["default"] + select({"DEFAULT": [], TESTING: ["schema"]})
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    features = FEATURES,
+    test_deps = TEST_DEPS,
+    test_resources = ["//crates/interpret:fixtures"],
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    features = FEATURES,
+    resources = ["//crates/interpret:fixtures"],
+)

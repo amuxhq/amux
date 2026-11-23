@@ -1,0 +1,30 @@
+load("//build:rust.bzl", "amux_rust_library")
+
+DEPS = [
+    "//third-party/rust:tree-sitter",
+    "//third-party/rust:tree-sitter-bash",
+    "//third-party/rust:tree-sitter-c",
+    "//third-party/rust:tree-sitter-cpp",
+    "//third-party/rust:tree-sitter-css",
+    "//third-party/rust:tree-sitter-go",
+    "//third-party/rust:tree-sitter-highlight",
+    "//third-party/rust:tree-sitter-html",
+    "//third-party/rust:tree-sitter-java",
+    "//third-party/rust:tree-sitter-javascript",
+    "//third-party/rust:tree-sitter-json",
+    "//third-party/rust:tree-sitter-language",
+    "//third-party/rust:tree-sitter-md",
+    "//third-party/rust:tree-sitter-python",
+    "//third-party/rust:tree-sitter-rust",
+    "//third-party/rust:tree-sitter-swift",
+    "//third-party/rust:tree-sitter-toml-ng",
+    "//third-party/rust:tree-sitter-typescript",
+    "//third-party/rust:tree-sitter-yaml",
+]
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    srcs = native.glob(["src/**", "queries/**"]),
+    test_srcs = native.glob(["testdata/**"]),
+)

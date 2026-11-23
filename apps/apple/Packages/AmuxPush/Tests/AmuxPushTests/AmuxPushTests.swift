@@ -79,7 +79,7 @@ final class SealedPushTests: XCTestCase {
             "plan with a title": "Has a plan for you to decide: Move the cache",
             "plan without one": "Has a plan for you to decide",
             "the provider's sentence": "Sign in to Linear to go on · 1 more",
-            "signed out": "Signed out of its provider · sign in on its host",
+            "signed out": "Signed out of its provider · sign in on its device",
             "usage limit with a reset": "Usage limit reached · resets \(reset)",
             "usage limit without one": "Usage limit reached",
             "failed": "Connection refused",
@@ -168,7 +168,7 @@ final class PushWordsTests: XCTestCase {
 
     func testARowNamesTheProviderAndAPushCannot() {
         XCTAssertEqual(PushWords.body(.signedOut, provider: "Codex"), "Signed out of Codex")
-        XCTAssertEqual(PushWords.body(.signedOut), "Signed out of its provider · sign in on its host")
+        XCTAssertEqual(PushWords.body(.signedOut), "Signed out of its provider · sign in on its device")
     }
 
     func testANotificationGivesTheProvidersReasonBelowWhatItWants() {

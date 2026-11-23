@@ -303,7 +303,7 @@
         "phone"
       ],
       "topology": "journeys/topologies/phone-acp.json",
-      "claim": "An Agent Client Protocol agent that is signed out on its host is created from the phone; its chat says it needs signing in, in the agent's own words for how, on that computer. Once it is signed in there, a message sent from the same chat opens its conversation and is answered."
+      "claim": "An Agent Client Protocol agent that is signed out on its host is created from the phone; its chat says it needs signing in, in the agent's own words for how, on that device. Once it is signed in there, a message sent from the same chat opens its conversation and is answered."
     },
     {
       "id": "survive-daemon",

@@ -296,7 +296,7 @@ pub async fn update(config: &InstallationConfig, retry: bool) -> Result<()> {
     if !config.supervisor {
         println!(
             "This install has no supervisor, so updates are deploys: install the new build \
-             the way this host's amux was installed."
+             the way this device's amux was installed."
         );
         return Ok(());
     }

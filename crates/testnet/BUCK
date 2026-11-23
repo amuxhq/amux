@@ -1,0 +1,85 @@
+load("//build:rust.bzl", "amux_rust_binary", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//crates/source-tree:source-tree",
+    "//crates/agent-dir:agent-dir",
+    "//crates/client:client",
+    "//crates/daemon-core:daemon-core",
+    "//crates/interpret:interpret",
+    "//crates/journal:journal",
+    "//crates/models:models",
+    "//crates/node:node",
+    "//crates/patience:patience",
+    "//crates/provider-fakes:provider-fakes",
+    "//crates/release:release",
+    "//crates/settings:settings",
+    "//crates/shot:shot",
+    "//crates/store:store",
+    "//crates/tui:tui",
+    "//crates/wire:wire",
+    "//third-party/rust:anyhow",
+    "//third-party/rust:base64",
+    "//third-party/rust:bytes",
+    "//third-party/rust:clap",
+    "//third-party/rust:futures-util",
+    "//third-party/rust:http-body-util",
+    "//third-party/rust:hyper",
+    "//third-party/rust:hyper-util",
+    "//third-party/rust:jiff",
+    "//third-party/rust:prost",
+    "//third-party/rust:quinn",
+    "//third-party/rust:rcgen",
+    "//third-party/rust:regex",
+    "//third-party/rust:rustls",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:tempfile",
+    "//third-party/rust:thiserror",
+    "//third-party/rust:tokio",
+    "//third-party/rust:toml",
+    "//third-party/rust:tonic",
+    "//third-party/rust:tower",
+    "//third-party/rust:tracing",
+    "//third-party/rust:tracing-subscriber",
+    "//third-party/rust:unicode-width",
+    "//third-party/rust:uuid",
+    "//third-party/rust:zstd",
+]
+
+TEST_DEPS = [
+    "//crates/analytics:analytics",
+    "//crates/app-runtime:app-runtime",
+    "//crates/ui-runtime:ui-runtime",
+    "//crates/ui-state:ui-state",
+    "//crates/ui-view:ui-view",
+]
+
+amux_rust_library(
+    version = "0.1.0",
+    tool = True,
+    deps = DEPS,
+    test_deps = TEST_DEPS,
+    include = {"//:qa/FINDING.md": "qa/FINDING.md"},
+    test_resources = ["//crates/interpret:fixtures", "//:environments", "//:journeys", "//:performance"],
+    binaries = True,
+)
+
+amux_rust_binary(
+    name = "testnet",
+    version = "0.1.0",
+    crate_root = "src/bin/testnet.rs",
+    deps = DEPS,
+    tool = True,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    run_env = {
+        "CARGO_BIN_EXE_testnet": "$(location :testnet-bin)",
+    },
+    include = {"//:qa/FINDING.md": "qa/FINDING.md"},
+    resources = ["//crates/interpret:fixtures", "//:environments", "//:journeys"],
+    binaries = True,
+)

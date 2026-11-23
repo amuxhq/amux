@@ -10,7 +10,7 @@
       Ready to writ│  Name      desk-notes                                                │
                    │  Agent      Claude · not signed in   Codex · not signed in   Fake A… │
     ○ backups  Clau│  Folder    /tmp/journey/aj-xxxxxxxx/net/cabin/work                   │            now
-                   │  Computer   cabin   desk   laptop                                    │
+                   │  Device     cabin   desk   laptop                                    │
     ○ expired  Clau│  Worktree  [ ] new worktree                                          │            now
       Tidied.      │                                                                      │
                    │  [Start]  [Cancel]                                                   │

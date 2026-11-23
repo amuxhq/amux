@@ -54,6 +54,7 @@ name = "acp-probe"
 path = "src/bin/acp_probe/main.rs"
 
 [dependencies]
+source-tree = { workspace = true }
 anyhow = { workspace = true }
 jiff = { workspace = true }
 node = { workspace = true }

@@ -1,0 +1,37 @@
+load("//build:rust.bzl", "amux_rust_binary", "amux_rust_test")
+
+DEPS = [
+    "//crates/source-tree:source-tree",
+    "//crates/release:release",
+    "//third-party/rust:protoc-bin-vendored",
+    "//third-party/rust:semver",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:tonic-prost-build",
+]
+
+TEST_DEPS = [
+    "//third-party/rust:tempfile",
+]
+
+amux_rust_binary(
+    name = "xtask",
+    version = "0.1.0",
+    crate_root = "src/main.rs",
+    deps = DEPS,
+    tool = True,
+    link_library = False,
+    unit_tests = True,
+    test_deps = TEST_DEPS,
+    test_resources = ["//:release-workflow"],
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    run_env = {
+        "CARGO_BIN_EXE_xtask": "$(location :xtask)",
+    },
+    link_library = False,
+    resources = ["//:scripts"],
+)

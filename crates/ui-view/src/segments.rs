@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use wire::{Attachment, BlobRef};
 
+use crate::markdown::Markdown;
 use crate::text::without_direction_controls;
 
 /// A run of text or one attachment, in reading order. Each placeholder in
@@ -15,6 +16,39 @@ use crate::text::without_direction_controls;
 pub enum Segment {
     Text(String),
     Attachment(AttachmentView),
+}
+
+/// A row's words read as markdown, or one attachment, in reading order:
+/// [`Segment`]s as a chat row carries them, parsed once for every client.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum ProsePart {
+    Text(Markdown),
+    Attachment(AttachmentView),
+}
+
+impl ProsePart {
+    /// The words as written, or None for an attachment.
+    pub fn source(&self) -> Option<&str> {
+        match self {
+            ProsePart::Text(markdown) => Some(&markdown.source),
+            ProsePart::Attachment(_) => None,
+        }
+    }
+}
+
+/// `segments` with their words parsed. `streaming` is for a message still
+/// being written, whose last words are the ones still arriving.
+pub fn prose_parts(segments: Vec<Segment>, streaming: bool) -> Vec<ProsePart> {
+    let last = segments.len().saturating_sub(1);
+    segments
+        .into_iter()
+        .enumerate()
+        .map(|(at, segment)| match segment {
+            Segment::Text(text) => ProsePart::Text(Markdown::parse(&text, streaming && at == last)),
+            Segment::Attachment(view) => ProsePart::Attachment(view),
+        })
+        .collect()
 }
 
 /// What a chip or placeholder shows before any bytes arrive: the

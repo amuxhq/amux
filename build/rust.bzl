@@ -1,0 +1,416 @@
+"""Macros for the workspace's own Rust crates (docs/BUILD.md, "Rust").
+
+Each crate's BUCK file sits beside its Cargo.toml and says the same things
+in Buck's terms: its library, binaries and tests, their dependencies and
+features. The two are kept in step by hand; the parity check
+(//build/checks:parity) fails when they disagree.
+
+Naming: a crate's library target has the crate's own name
+(`//crates/wire:wire`), its unit tests are `:unit`, each integration test
+binary is named after its `[[test]]`, and each binary after its `[[bin]]`.
+
+Sources are laid out as they sit in the checkout. Cargo compiles a crate in
+place, so a relative `include_str!("../../../justfile")` reaches the
+checkout's root; Buck compiles in a sandbox holding only what the target
+declares. Each target's sources are therefore a directory shaped like the
+checkout: the crate's files under `crates/<name>/`, and any file of another
+package it includes at compile time (`include`, a map from that file's
+target to its path in the checkout) at its own path.
+
+At run time a test finds its files and the crate's binaries through the
+source-tree crate (`crate_dir!()`, `bin!()`), which reads what these macros
+set: `AMUX_CRATE_DIR` when it compiles, `CARGO_BIN_EXE_<name>` when it runs.
+A test's `resources` are the crate's own files plus any `test_resources`
+(targets such as `//crates/interpret:fixtures`), present at their paths in
+the checkout when it runs.
+
+A test binary is built as a binary compiled with `--test` and run by
+build/test-runner.py, which gives each of its tests a process of its own as
+cargo-nextest does: `buck2 test` reports one result per binary, and its
+output names each test that failed.
+"""
+
+load("@prelude//decls:re_test_common.bzl", "re_test_common")
+load("@prelude//rust:sources.bzl", "RustSources", "RustSourcesTSet")
+load("@prelude//tests:re_utils.bzl", "get_re_executors_from_props")
+load("//build/platforms:defs.bzl", "host_platform")
+
+# Cargo.toml's [profile.dev.package.*]: crates the model checker runs
+# through, optimised in every build (`rustc_flags = OPTIMISED`).
+OPTIMISED = ["-Copt-level=3"]
+
+TESTING = "root//build/constraints:testing"
+APP = "root//build/constraints:app"
+
+# The phone bridges' in-app debug tools: in every build but a release.
+DEBUG_TOOLS = select({
+    "DEFAULT": ["debug-tools"],
+    "root//build/constraints:release": [],
+})
+
+def _srcs_impl(ctx: AnalysisContext) -> list[Provider]:
+    tree = ctx.actions.symlinked_dir("srcs", {path: src for src, path in ctx.attrs.srcs.items()})
+    return [
+        DefaultInfo(default_output = tree),
+        RustSources(tset = ctx.actions.tset(RustSourcesTSet, value = tree, children = [])),
+    ]
+
+# A target's sources at their paths in the checkout (the module docstring).
+_rust_srcs = rule(
+    impl = _srcs_impl,
+    attrs = {"srcs": attrs.dict(key = attrs.source(), value = attrs.string(), sorted = False)},
+)
+
+def _files_impl(ctx: AnalysisContext) -> list[Provider]:
+    # Named by its package too: a test's resources are keyed by name, and
+    # many packages have a `files` target.
+    listing = ctx.actions.write(
+        "/".join([p for p in [ctx.label.package, ctx.label.name + ".files"] if p]),
+        [src.short_path for src in ctx.attrs.srcs],
+    )
+    return [DefaultInfo(default_output = listing, other_outputs = ctx.attrs.srcs)]
+
+_files = rule(
+    impl = _files_impl,
+    attrs = {"srcs": attrs.list(attrs.source())},
+)
+
+def amux_files(name, srcs, visibility = ["PUBLIC"]):
+    """Files of this package a test of another reads at run time, as one
+    target for its `test_resources`. They are present at their paths in the
+    checkout when the test runs."""
+    _files(name = name, srcs = srcs, visibility = visibility)
+
+def _binaries_impl(ctx: AnalysisContext) -> list[Provider]:
+    tree = ctx.actions.symlinked_dir(
+        "binaries",
+        {path: dep[DefaultInfo].default_outputs[0] for path, dep in ctx.attrs.binaries.items()},
+    )
+    return [DefaultInfo(default_output = tree)]
+
+# The binaries the integration suites start, in one directory, as
+# scripts/test-binaries.sh builds them for nextest: provider-fakes'
+# `binaries` module finds them through TESTNET_BINARIES. They are built for
+# the machine the tests run on, as the desktop product with test features,
+# whatever the test itself builds as (the phone bridge's tests are "app").
+amux_binaries = rule(
+    impl = _binaries_impl,
+    attrs = {"binaries": attrs.dict(key = attrs.string(), value = attrs.exec_dep(), sorted = False)},
+)
+
+# The binaries in that directory (//crates/provider-fakes:binaries), by the
+# name provider_fakes::binaries finds each under.
+TEST_BINARIES = {
+    "amux": "//crates/amux:amux",
+    "examples/amux_stand_in": "//crates/agent:amux_stand_in",
+    "fake-acp": "//crates/provider-fakes:fake-acp",
+    "fake-amux": "//crates/fake-amux:fake-amux",
+    "fake-claude-pty": "//crates/provider-fakes:fake-claude-pty",
+    "fake-claude-sdk": "//crates/provider-fakes:fake-claude-sdk",
+    "fake-codex": "//crates/provider-fakes:fake-codex",
+}
+
+# What a test that starts those binaries runs with (`binaries = True`).
+_BINARIES_ENV = {"TESTNET_BINARIES": "$(location //crates/provider-fakes:binaries)"}
+
+def _test_impl(ctx: AnalysisContext) -> list[Provider]:
+    # A test with a `main` of its own (Cargo's `harness = false`) is a
+    # program, run as it is.
+    command = cmd_args(ctx.attrs.binary[RunInfo]) if not ctx.attrs.harness else cmd_args(
+        "python3",
+        ctx.attrs._runner,
+        "--threads",
+        str(ctx.attrs.threads),
+        "--slow",
+        str(ctx.attrs.slow),
+        "--terminate-after",
+        str(ctx.attrs.terminate_after),
+        "--",
+        ctx.attrs.binary[RunInfo],
+    )
+    executors = get_re_executors_from_props(ctx)
+    # `buck2 run` (how `just goldens` re-records) runs the runner here, in
+    # the checkout, so its environment rides on the command line.
+    run = cmd_args(
+        "/usr/bin/env",
+        [cmd_args(key, "=", value, delimiter = "") for key, value in ctx.attrs.env.items()],
+        command,
+    )
+    return [
+        DefaultInfo(default_output = ctx.attrs.binary[DefaultInfo].default_outputs[0]),
+        RunInfo(args = run),
+        ExternalRunnerTestInfo(
+            type = "custom",
+            command = [command],
+            env = ctx.attrs.env,
+            labels = ctx.attrs.labels,
+            default_executor = executors.default_executor,
+            executor_overrides = executors.executor_overrides,
+            run_from_project_root = True,
+            use_project_relative_paths = True,
+            # A passing result is kept in NativeLink's action cache, so the
+            # same test on the same inputs isn't run again, in this tree or
+            # another. Failures aren't kept. The live lanes check the world
+            # outside the repository, which no input describes, so they
+            # always run.
+            supports_test_execution_caching = "live" not in ctx.attrs.labels,
+        ),
+    ]
+
+_amux_test = rule(
+    impl = _test_impl,
+    attrs = {
+        "binary": attrs.dep(providers = [RunInfo]),
+        "env": attrs.dict(key = attrs.string(), value = attrs.arg(), sorted = False, default = {}),
+        "harness": attrs.bool(default = True),
+        "labels": attrs.list(attrs.string(), default = []),
+        # .config/nextest.toml's bounds: slow after a minute, ended at three.
+        "slow": attrs.int(default = 60),
+        "terminate_after": attrs.int(default = 3),
+        "threads": attrs.int(default = 4),
+        "_runner": attrs.source(default = "root//build:test-runner.py"),
+    } | re_test_common.test_args(),
+)
+
+def _test(name, env, run_env, labels, product, timeouts, whole_worker = False, harness = True, **binary):
+    """A test binary `name` built from `binary` (rust_binary's attributes),
+    run by the test runner with `run_env` and the compile-time `env`, as
+    the prelude's rust_test runs with both."""
+    rustc_flags = (["--test"] if harness else []) + binary.pop("rustc_flags", [])
+    native.rust_binary(
+        name = name + "-binary",
+        env = env,
+        rustc_flags = rustc_flags,
+        default_target_platform = host_platform(product = product, purpose = "testing"),
+        visibility = [],
+        **binary
+    )
+    _amux_test(
+        name = name,
+        binary = ":" + name + "-binary",
+        env = env | run_env,
+        harness = harness,
+        labels = labels,
+        remote_execution = "whole-worker" if whole_worker else None,
+        default_target_platform = host_platform(product = product, purpose = "testing"),
+        **timeouts
+    )
+
+def _crate_name() -> str:
+    return native.package_name().split("/")[-1]
+
+def _tree(name, files, include):
+    """The `srcs_filegroup` of target `name` (a crate's library and binary
+    may share a name, so it carries the kind too): `files` of this package,
+    by their paths in it, and `include`, cross-package files by their paths
+    in the checkout."""
+    package = native.package_name()
+    mapped = {f: package + "/" + f for f in files}
+    mapped.update(include)
+    _rust_srcs(name = name + "-srcs", srcs = mapped)
+    return ":" + name + "-srcs"
+
+def _env(crate: str, version: str, extra: dict) -> dict:
+    package = native.package_name()
+    env = {
+        "AMUX_CRATE_DIR": package,
+        "CARGO_CRATE_NAME": crate.replace("-", "_"),
+        # Within the target's sources, which are laid out as in the checkout.
+        "CARGO_MANIFEST_DIR": package,
+        "CARGO_PKG_NAME": crate,
+        "CARGO_PKG_VERSION": version,
+    }
+    env.update(extra)
+    return env
+
+def _package_files():
+    return native.glob(["**"], exclude = ["BUCK"])
+
+def amux_rust_library(
+        version,
+        deps = [],
+        features = [],
+        srcs = None,
+        include = {},
+        crate_root = "src/lib.rs",
+        proc_macro = False,
+        env = {},
+        rustc_flags = [],
+        test_deps = [],
+        test_srcs = [],
+        test_include = {},
+        test_env = {},
+        test_run_env = {},
+        test_resources = [],
+        binaries = False,
+        test_timeouts = {},
+        test_whole_worker = False,
+        unit_tests = True,
+        tool = False,
+        product = "cli",
+        visibility = ["PUBLIC"],
+        **kwargs):
+    """A crate's library, and its unit tests unless `unit_tests = False`.
+
+    `deps` are Cargo's [dependencies]; `test_deps` its [dev-dependencies]
+    (added to the unit tests; integration tests list their own).
+    `binaries = True` when the unit tests start amux or a fake provider. `srcs`
+    defaults to everything under src/; `test_srcs` adds this package's files
+    the unit tests include at compile time, `test_env` what they compile
+    with and `test_run_env` what they run with. `product` is the
+    configuration the unit tests build in: "app" for the client bridges.
+    `tool = True` for a test harness's or build tool's library, which
+    builds with test features on, as its binaries do.
+    """
+    crate = _crate_name()
+    package = native.package_name()
+    files = srcs if srcs != None else native.glob(["src/**"])
+    common = dict(
+        crate = crate.replace("-", "_"),
+        crate_root = package + "/" + crate_root,
+        edition = "2024",
+        features = features,
+        rustc_flags = rustc_flags,
+    )
+    # The sources, for another crate's test that reads them.
+    amux_files(name = "files", srcs = files)
+    native.rust_library(
+        name = crate,
+        srcs_filegroup = _tree(crate + ".lib", files, include),
+        deps = deps,
+        proc_macro = proc_macro,
+        env = _env(crate, version, env),
+        default_target_platform = host_platform(product = product, purpose = "testing" if tool else "shipping"),
+        visibility = visibility,
+        **(common | kwargs)
+    )
+    if unit_tests and not proc_macro:
+        _test(
+            name = "unit",
+            env = _env(crate, version, env | test_env),
+            run_env = test_run_env | (_BINARIES_ENV if binaries else {}),
+            labels = [],
+            product = product,
+            timeouts = test_timeouts,
+            whole_worker = test_whole_worker,
+            srcs_filegroup = _tree("unit.test", files + test_srcs, include | test_include),
+            deps = deps + test_deps,
+            resources = _package_files() + test_resources,
+            crate = common["crate"],
+            crate_root = common["crate_root"],
+            edition = common["edition"],
+            features = common["features"],
+            rustc_flags = rustc_flags,
+        )
+
+def amux_rust_test(
+        name,
+        version,
+        crate_root = None,
+        srcs = None,
+        include = {},
+        deps = [],
+        features = [],
+        env = {},
+        run_env = {},
+        resources = [],
+        product = "cli",
+        labels = [],
+        link_library = True,
+        binaries = False,
+        timeouts = {},
+        whole_worker = False,
+        harness = True,
+        **kwargs):
+    """One integration-test binary: Cargo's `[[test]] name = ...`, which
+    `autotests = false` crates keep to one per crate, built from
+    tests/<name>.rs and the modules beside it. `run_env` is set when it
+    runs (`CARGO_BIN_EXE_<bin>` for each of the crate's binaries);
+    `resources` adds other packages' files to the crate's own.
+    `link_library = False` in a crate with no library; `binaries = True`
+    when it starts amux or a fake provider. `timeouts` overrides the
+    runner's `slow`, `terminate_after` and `threads`; `whole_worker = True`
+    reserves every core of the worker for a test that uses them all.
+    `harness = False` for Cargo's `harness = false`: a test with its own
+    `main`, run as a program rather than by the test runner."""
+    crate = _crate_name()
+    package = native.package_name()
+    _test(
+        name = name,
+        harness = harness,
+        env = _env(crate, version, env),
+        run_env = run_env | (_BINARIES_ENV if binaries else {}),
+        labels = labels,
+        product = product,
+        timeouts = timeouts,
+        whole_worker = whole_worker,
+        crate = name.replace("-", "_"),
+        crate_root = package + "/" + (crate_root or "tests/{}.rs".format(name)),
+        srcs_filegroup = _tree(name + ".test", srcs if srcs != None else native.glob(["tests/**"]), include),
+        edition = "2024",
+        deps = ([":" + crate] if link_library else []) + deps,
+        features = features,
+        resources = _package_files() + resources,
+        **kwargs
+    )
+
+def amux_rust_binary(
+        name,
+        version,
+        crate_root,
+        srcs = None,
+        include = {},
+        deps = [],
+        features = [],
+        env = {},
+        tool = False,
+        link_library = True,
+        product = "cli",
+        unit_tests = False,
+        test_deps = [],
+        test_resources = [],
+        binaries = False,
+        visibility = ["PUBLIC"],
+        **kwargs):
+    """A crate's `[[bin]]` (or `[[example]]`). `tool = True` for test
+    harnesses and build tools, which build with test features on; the
+    product's binaries build as they ship. `link_library = False` for a
+    binary in a crate with no library. A binary named after its crate's
+    library is the target `<name>-bin`, since the library has the name.
+    `unit_tests = True` for a binary with tests of its own, which Cargo
+    runs as the binary's tests: they are the target `<name>-unit`, with
+    `test_deps`, `test_resources` and `binaries` as a library's."""
+    crate = _crate_name()
+    package = native.package_name()
+    if srcs == None:
+        top = crate_root.split("/")[0]
+        srcs = native.glob([top + "/**"])
+    native.rust_binary(
+        name = name + "-bin" if link_library and name == crate else name,
+        crate = name.replace("-", "_"),
+        crate_root = package + "/" + crate_root,
+        srcs_filegroup = _tree(name + ".bin", srcs, include),
+        edition = "2024",
+        deps = ([":" + crate] if link_library else []) + deps,
+        features = features,
+        env = _env(crate, version, env),
+        default_target_platform = host_platform(product = product, purpose = "testing" if tool else "shipping"),
+        visibility = visibility,
+        **kwargs
+    )
+    if unit_tests:
+        _test(
+            name = name + "-unit",
+            env = _env(crate, version, env),
+            run_env = _BINARIES_ENV if binaries else {},
+            labels = [],
+            product = product,
+            timeouts = {},
+            crate = name.replace("-", "_"),
+            crate_root = package + "/" + crate_root,
+            srcs_filegroup = _tree(name + ".unit", srcs, include),
+            edition = "2024",
+            deps = ([":" + crate] if link_library else []) + deps + test_deps,
+            features = features,
+            resources = _package_files() + test_resources,
+        )

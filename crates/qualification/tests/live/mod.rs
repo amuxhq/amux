@@ -493,7 +493,7 @@ impl Driver {
 
     fn fixture(&self, scenario: Scenario) -> Option<PathBuf> {
         (self.recording)(scenario).map(|recording| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
+            source_tree::crate_dir!()
                 .join("../interpret/fixtures")
                 .join(self.tag())
                 .join(format!("{recording}.json"))

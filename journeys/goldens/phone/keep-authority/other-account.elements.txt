@@ -1,19 +1,19 @@
 shell |  | hosts | 0,62,402,778
 home |  | ready | 0,174,402,617
 hosts |  |  | 0,174,402,617
-hosts.empty |  | No computers yet | 22,204,211,32
-hosts.empty.howToPair |  |  | 22,299,357,37
- | No computers yet |  | 22,204,211,32
- | A computer running amux on this network appears here, ready to pair. |  | 22,244,351,37
- | Open amux on a computer on this network to pair it, or scan the code it shows with the Camera app. |  | 22,299,357,37
- | Computers |  | 16,127,183,42
- | Agents |  | 110,795,95,54
+hosts.empty |  | No devices yet | 18,204,171,32
+hosts.empty.howToPair |  |  | 18,299,352,37
+ | No devices yet |  | 18,204,171,32
+ | A device running amux on this network appears here, ready to pair. |  | 18,244,365,37
+ | Open amux on a device on this network to pair it, or scan the code it shows with the Camera app. |  | 18,299,352,37
+ | Devices |  | 16,127,127,42
+ | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 216,830,56,12
- | Agents |  | 110,795,95,54
- | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 217,830,55,12
- | Agents |  | 110,795,95,54
- | Computers | selected | 197,795,95,54
+ | Devices |  | 197,795,94,54
+ | Devices |  | 224,830,40,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Devices |  | 197,795,94,54
+ | Devices |  | 225,830,39,12
+ | Agents |  | 111,795,94,54
+ | Devices | selected | 197,795,94,54

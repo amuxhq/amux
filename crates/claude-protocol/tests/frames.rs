@@ -1,8 +1,6 @@
 //! The initialize exchange and the tolerance rules, on recorded and made-up
 //! frames.
 
-use std::path::Path;
-
 use claude_protocol::stream::control::{ControlOutcome, InitializeRequestBody};
 use claude_protocol::stream::{
     self, ContentBlock, ControlRequest, ControlRequestBody, ControlResponse, Extensions,
@@ -14,7 +12,7 @@ use serde_json::Value;
 
 /// The lines of one recording that contain every needle, in order.
 fn recorded(spec: &str, stdout: bool, needles: &[&str]) -> String {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = source_tree::crate_dir!()
         .join("../interpret/fixtures/claude_sdk/live")
         .join(spec)
         .join("io.jsonl");

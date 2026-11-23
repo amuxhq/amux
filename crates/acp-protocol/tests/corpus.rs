@@ -4,7 +4,7 @@
 //! what it writes, or a type that does not match what it writes.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use acp_protocol::xai::ExtensionAnswer;
 use acp_protocol::{AgentMessage, AgentResponse, ClientMessage, ClientResponse, RequestId};
@@ -14,7 +14,7 @@ use serde_json::Value;
 const AGENTS: &[&str] = &["antigravity", "opencode", "grok"];
 
 fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    source_tree::crate_dir!().join("../..")
 }
 
 /// Every io.jsonl recorded from an ACP agent: the live lane's captures.

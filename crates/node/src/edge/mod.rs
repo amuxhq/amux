@@ -132,7 +132,7 @@ pub type DiscoveryFactory = Arc<dyn Fn() -> Result<Arc<dyn Discovery>, String> +
 /// profile the factory serves. (The phone has none; only the system may
 /// browse there, and the app hands its results over.) A debug build can
 /// swap in a scripted stand-in with `AMUX_TEST_DISCOVERY_MODE`.
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn mdns_discovery() -> DiscoveryFactory {
     let shared = crate::discovery::MdnsShared::default();
     Arc::new(move || {
@@ -160,7 +160,7 @@ pub fn mdns_discovery() -> DiscoveryFactory {
 /// process hosts list none, as its in-process hosts on loopback do, so no
 /// link finds a way around the network the test imitates.
 pub fn test_interfaces() -> Option<Vec<std::net::IpAddr>> {
-    #[cfg(all(debug_assertions, not(target_os = "ios")))]
+    #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
     if let Ok(listed) = std::env::var("AMUX_TEST_INTERFACES") {
         return Some(
             listed

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The agent's review page -->
+    <string name="review_title">Review</string>
+    <string name="review_goes_to_top">Go to the top</string>
+    <string name="review_files">Files</string>
+    <string name="review_refresh">Refresh</string>
+    <string name="review_discard_drafts">Discard Drafts</string>
+    <string name="review_start_over">Start Over</string>
+    <string name="review_comment_on_file">Comment on the File</string>
+    <string name="review_open_file">Open</string>
+    <string name="review_fold_file">Fold</string>
+    <string name="review_loading">Loading…</string>
+    <string name="review_add_comment">Add Comment</string>
+    <string name="review_save">Save</string>
+    <string name="review_delete">Delete</string>
+    <string name="review_comment_field">Comment</string>
+    <string name="review_binary_file">Binary file</string>
+    <string name="review_select_line">Select line</string>
+    <string name="review_open_comment">Open the comment</string>
+    <string name="review_edit_comment">Edit the comment</string>
+    <string name="review_folded">Folded</string>
+    <string name="review_line_added">added</string>
+    <string name="review_line_removed">removed</string>
+    <string name="review_reading_changes">Reading the changes</string>
+    <string name="review_diff_added">+%1$d</string>
+    <string name="review_diff_removed">−%1$d</string>
+    <!-- A sent review's round -->
+    <string name="review_round_done">Done</string>
+    <!-- The composer's review chip -->
+    <string name="review_chip_open">Open the review</string>
+    <!-- Marks lines of the file not shown, beside a hunk's place or a gap. -->
+    <string name="review_elided">⋯</string>
+</resources>

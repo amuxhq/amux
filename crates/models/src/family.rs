@@ -1658,6 +1658,7 @@ impl<'a> Transition<'a> {
                 link,
                 peer: HOSTS[PARENTS],
                 kind: CarrierKind::Direct,
+                lan: false,
                 resumed: None,
             },
         );

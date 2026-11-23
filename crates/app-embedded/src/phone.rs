@@ -40,6 +40,7 @@ impl Phone {
         config: &StartConfig,
         overrides: EdgeOverrides,
         clock: Arc<dyn Clock>,
+        surface: client::Surface,
     ) -> Result<Phone, EmbeddedError> {
         let wake = Arc::new(Wake::new()?);
         let ringing = wake.clone();
@@ -53,9 +54,9 @@ impl Phone {
         };
         let config = config.clone();
         let embedded = phone
-            .wait(
-                async move { EmbeddedRuntime::start_with(&config, overrides, clock, cores).await },
-            )
+            .wait(async move {
+                EmbeddedRuntime::start_with(&config, overrides, clock, cores, surface).await
+            })
             .ok_or_else(stopped)??;
         phone.embedded = Some(Arc::new(embedded));
         Ok(phone)

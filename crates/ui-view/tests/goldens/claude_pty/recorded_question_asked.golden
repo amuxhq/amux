@@ -7,12 +7,12 @@
 ## 40 recorded 38: fact Hook hook_event_name=PermissionRequest
   ask ask:1 -> "" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false }, OptionView { label: "Blue", description: "Choose blue.", preview: "", recommended: false }], allow_other: true, secret: false }])
+    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", header_runs: ["Color"], question_runs: ["Which color do you prefer?"], multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false, label_runs: ["Red"], description_runs: ["Choose red."] }, OptionView { label: "Blue", description: "Choose blue.", preview: "", …
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 44 recorded 42: fact Transcript type=assistant uuid=ffad1453-0395-4fbc-b1bd-e2f0cb3325ab
   ask ask:1 -> "toolu_01GJtuEUcGE4C2x6rxm8S2Vp" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false }, OptionView { label: "Blue", description: "Choose blue.", preview: "", recommended: false }], allow_other: true, secret: false }])
+    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", header_runs: ["Color"], question_runs: ["Which color do you prefer?"], multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false, label_runs: ["Red"], description_runs: ["Choose red."] }, OptionView { label: "Blue", description: "Choose blue.", preview: "", …
 ## 50 recorded 48: fact Transcript type=user uuid=8c9bb2bf-69fc-44cd-9100-cb1bde9ee97f
   ask none
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
@@ -21,7 +21,7 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 fda75653-3ce5-4c7c-8ab2-d6db8158decb Prompt { text: [Text("Use AskUserQuestion to ask exactly one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue. Then repeat my answer.")], steered: false }
-     3 toolu_01GJtuEUcGE4C2x6rxm8S2Vp [Answered: Color = Blue skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false }, OptionView { label: "Blue", description: "Choose blue.", preview: "", recommended: false }], allow_other: tr…
+     3 toolu_01GJtuEUcGE4C2x6rxm8S2Vp [Answered: Color = Blue skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", header_runs: ["Color"], question_runs: ["Which color do you prefer?"], multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false, label_runs: ["Red"], description_runs: …
      4 stream:caa8ac92-c273-47be-85bf-24ac9dabc07c Prose { text: [Text("You prefer **Blue**.")], streaming: false, working_note: false }
      5 turn:1 TurnEnd { duration_ms: Some(2509), failed: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

@@ -83,8 +83,8 @@ impl Attacher {
             ))
         } else if agent.host_id != self.local_host {
             Some(format!(
-                "{name} runs on another host, and its own interface opens only on its own \
-                 machine; `amux attach {name} --in amux` opens its chat"
+                "{name} runs on another device, and its own interface opens only on that \
+                 device; `amux attach {name} --in amux` opens its chat"
             ))
         } else if agent.lifecycle() == Lifecycle::Exited
             && agent.exit_cause() == wire::ExitCause::CouldNotStart
@@ -669,7 +669,7 @@ mod tests {
             assert_eq!(codex, None);
         }
         let remote = attacher.refusal(&agent([8; 16], Kind::ClaudePty)).unwrap();
-        assert!(remote.contains("another host"), "{remote}");
+        assert!(remote.contains("another device"), "{remote}");
         assert!(
             remote.contains("`amux attach scout --in amux` opens its chat"),
             "{remote}"

@@ -1,0 +1,82 @@
+# Constraints the prelude doesn't define (docs/BUILD.md, "Configurations").
+
+# An iOS build is either for a device or for the simulator; the two are
+# different Rust targets (aarch64-apple-ios and aarch64-apple-ios-sim).
+constraint_setting(
+    name = "apple-sdk",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "device",
+    constraint_setting = ":apple-sdk",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "simulator",
+    constraint_setting = ":apple-sdk",
+    visibility = ["PUBLIC"],
+)
+
+# What a build is for, which decides the features of the workspace's own
+# crates. Cargo unifies features per build: `cargo build -p amux` turns on
+# what amux's graph asks for, `cargo build -p app-ffi` what the bridge's
+# does, and `cargo test` adds what dev-dependencies ask for. A Buck target
+# has one feature list per configuration, so the build's purpose is a
+# constraint and each crate selects its features on it.
+#
+#   cli      the desktop product: amux, the daemon, the relay.
+#   app      a client app's bridge: app-ffi, app-jni, browser-core.
+constraint_setting(
+    name = "product",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "cli",
+    constraint_setting = ":product",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "app",
+    constraint_setting = ":product",
+    visibility = ["PUBLIC"],
+)
+
+# Tests, test harnesses and build tools. Turns on the features only
+# dev-dependencies and test infrastructure ask for: release's test key,
+# journal's synthetic records, store's exploration hooks and the like.
+# Nothing shipped is built in this configuration.
+constraint_setting(
+    name = "purpose",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "shipping",
+    constraint_setting = ":purpose",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "testing",
+    constraint_setting = ":purpose",
+    visibility = ["PUBLIC"],
+)
+
+# Cargo's profiles (Cargo.toml's [profile.*]).
+constraint_setting(
+    name = "mode",
+    visibility = ["PUBLIC"],
+)
+
+[
+    constraint_value(
+        name = mode,
+        constraint_setting = ":mode",
+        visibility = ["PUBLIC"],
+    )
+    for mode in ["dev", "models", "release", "phone-dev", "wasm", "full-debug"]
+]

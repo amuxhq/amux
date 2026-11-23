@@ -9,7 +9,7 @@ use interpret::{Channel, Effect, Event, Fact, Housekeeping, Interpreter, run_gol
 use serde_json::{Value, json};
 
 fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/codex")
+    source_tree::crate_dir!().join("fixtures/codex")
 }
 
 fn golden(name: &str) {

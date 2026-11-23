@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 wire = { workspace = true }
 
 [dev-dependencies]
+source-tree = { workspace = true }
 store = { path = ".", features = ["explore"] }
 tempfile = { workspace = true }
 

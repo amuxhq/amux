@@ -1,0 +1,2 @@
+# The build script only probes the compiler and target and prints cfgs.
+buildscript.run = true

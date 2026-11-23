@@ -12,7 +12,7 @@
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value};
@@ -26,7 +26,7 @@ pub const OUTPUT: &str = "apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values
 pub const PUSH_OUTPUT: &str = "apps/apple/Packages/AmuxPush/Sources/AmuxPush/Said.swift";
 
 /// Which definitions go to `PUSH_OUTPUT`: what a push says and what that holds.
-const PUSH_VALUES: &[&str] = &["Said", "Wants"];
+pub(crate) const PUSH_VALUES: &[&str] = &["Said", "Wants"];
 
 /// Every value the bridge hands over or takes, by its root types; what
 /// they hold comes along.
@@ -130,16 +130,28 @@ pub fn main(args: &[String]) -> std::result::Result<(), Box<dyn std::error::Erro
         _ => return Err("usage: ios-tools swift-types [--check]".into()),
     };
     let definitions = definitions();
-    for (output, generated) in [
+    let files = [
         (OUTPUT, generate(&definitions)?),
         (PUSH_OUTPUT, generate_push(&definitions)?),
-    ] {
+    ];
+    write_or_check("swift-types", &files, check)
+}
+
+/// Writes each generated file under the repository, or with `check` fails on
+/// the first committed file that differs, naming the `command` that
+/// regenerates it.
+pub(crate) fn write_or_check(
+    command: &str,
+    files: &[(&str, String)],
+    check: bool,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    for (output, generated) in files {
         let path = repository().join(output);
         if check {
             let committed = std::fs::read_to_string(&path).unwrap_or_default();
-            if committed != generated {
+            if committed != *generated {
                 return Err(format!(
-                    "{} differs from the Rust definitions; run `cargo run -p ios-tools -- swift-types` \
+                    "{} differs from the Rust definitions; run `cargo run -p ios-tools -- {command}` \
                      and commit the result (the file is generated: never edit it by hand)",
                     path.display()
                 )
@@ -157,8 +169,8 @@ pub fn main(args: &[String]) -> std::result::Result<(), Box<dyn std::error::Erro
     Ok(())
 }
 
-fn repository() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+pub(crate) fn repository() -> PathBuf {
+    source_tree::crate_dir!()
         .ancestors()
         .nth(2)
         .expect("ios-tools lives two levels under the repository")
@@ -693,7 +705,7 @@ fn referenced(owner: &str, reference: &str) -> Result<String> {
 
 // --- names and docs --------------------------------------------------------
 
-fn camel(snake: &str) -> String {
+pub(crate) fn camel(snake: &str) -> String {
     let mut out = String::new();
     let mut upper = false;
     for c in snake.chars() {
@@ -717,7 +729,7 @@ fn lower_first(name: &str) -> String {
         .unwrap_or_default()
 }
 
-fn upper_first(name: &str) -> String {
+pub(crate) fn upper_first(name: &str) -> String {
     let mut chars = name.chars();
     chars
         .next()
@@ -786,10 +798,13 @@ fn identifier(name: &str) -> String {
     }
 }
 
+/// The doc comment a schema's Rust docs carry, if any.
+pub(crate) fn description(schema: &Value) -> Option<&str> {
+    schema.get("description").and_then(Value::as_str)
+}
+
 fn docs(schema: &Value, indent: &str) -> String {
-    schema
-        .get("description")
-        .and_then(Value::as_str)
+    description(schema)
         .map(|text| doc_lines(text, indent))
         .unwrap_or_default()
 }
@@ -819,6 +834,80 @@ fn undoc(doc: &str) -> String {
 }
 
 #[cfg(test)]
+pub(crate) fn missing_public_view_values(definitions: &Map<String, Value>) -> Vec<String> {
+    const STAY_IN_RUST: &[&str] = &[
+        // What a client asks of an agent before its kind's input is
+        // built: app-runtime and the browser bridge build it, and the
+        // phone names the act through them.
+        "Act",
+        // Which attachment an agent does not take: app-runtime words
+        // the refusal, and the phone shows the words.
+        "Untaken",
+        // The answer body a choice sends: the phone names the choice.
+        "Answer",
+        // Borrowed option types; the chat holds its own open runs.
+        "ToolRows",
+        // A landed edit's first patch lines, which only the terminal
+        // draws: ui_view::patch_head is called by no bridge function.
+        "PatchHead",
+        // What a session knows for its fleet row: the runtime reads it
+        // and hands it to ui_view::fleet_view, which returns the cards
+        // the phone draws.
+        "SessionLine",
+        // What a typed draft is to the terminal; the phone asks the
+        // bridge's command call, which answers a CommandOutcome.
+        "Slash",
+        // What a review page is composed with: app-runtime keeps it and
+        // hands the apps the page it composes, with its notices drawn
+        // as banners.
+        "ReviewPageState",
+        "ReviewNotice",
+    ];
+    let root = repository();
+    let mut missing = Vec::new();
+    for dir in [
+        "crates/ui-state/src/model.rs",
+        "crates/ui-view/src",
+        "crates/app-runtime/src/values.rs",
+    ] {
+        let path = root.join(dir);
+        let mut files = Vec::new();
+        let mut folders = vec![path];
+        while let Some(path) = folders.pop() {
+            if path.is_dir() {
+                folders.extend(
+                    std::fs::read_dir(&path)
+                        .unwrap()
+                        .map(|entry| entry.unwrap().path()),
+                );
+            } else {
+                files.push(path);
+            }
+        }
+        for file in files {
+            let text = std::fs::read_to_string(&file).unwrap();
+            for line in text.lines() {
+                let line = line.trim_start();
+                let Some(rest) = line
+                    .strip_prefix("pub struct ")
+                    .or_else(|| line.strip_prefix("pub enum "))
+                else {
+                    continue;
+                };
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect();
+                if !STAY_IN_RUST.contains(&name.as_str()) && !definitions.contains_key(&name) {
+                    missing.push(format!("{name} ({})", file.display()));
+                }
+            }
+        }
+    }
+    missing
+}
+
+#[cfg(test)]
 mod tests {
     use serde_json::json;
 
@@ -837,76 +926,7 @@ mod tests {
     /// mirror, except the ones that never cross it.
     #[test]
     fn every_public_view_value_has_a_swift_mirror() {
-        const STAY_IN_RUST: &[&str] = &[
-            // What a client asks of an agent before its kind's input is
-            // built: app-runtime and the browser bridge build it, and the
-            // phone names the act through them.
-            "Act",
-            // Which attachment an agent does not take: app-runtime words
-            // the refusal, and the phone shows the words.
-            "Untaken",
-            // The answer body a choice sends: the phone names the choice.
-            "Answer",
-            // Borrowed option types; the chat holds its own open runs.
-            "ToolRows",
-            // A landed edit's first patch lines, which only the terminal
-            // draws: ui_view::patch_head is called by no bridge function.
-            "PatchHead",
-            // What a session knows for its fleet row: the runtime reads it
-            // and hands it to ui_view::fleet_view, which returns the cards
-            // the phone draws.
-            "SessionLine",
-            // What a typed draft is to the terminal; the phone asks the
-            // bridge's command call, which answers a CommandOutcome.
-            "Slash",
-            // What a review page is composed with: app-runtime keeps it and
-            // hands the apps the page it composes, with its notices drawn
-            // as banners.
-            "ReviewPageState",
-            "ReviewNotice",
-        ];
-        let definitions = definitions();
-        let root = repository();
-        let mut missing = Vec::new();
-        for dir in [
-            "crates/ui-state/src/model.rs",
-            "crates/ui-view/src",
-            "crates/app-runtime/src/values.rs",
-        ] {
-            // A folder's modules, its submodules' folders included.
-            let mut files = Vec::new();
-            let mut pending = vec![root.join(dir)];
-            while let Some(path) = pending.pop() {
-                if path.is_dir() {
-                    pending.extend(
-                        std::fs::read_dir(&path)
-                            .unwrap()
-                            .map(|entry| entry.unwrap().path()),
-                    );
-                } else {
-                    files.push(path);
-                }
-            }
-            for file in files {
-                let text = std::fs::read_to_string(&file).unwrap();
-                for line in text.lines() {
-                    let line = line.trim_start();
-                    let Some(rest) = line
-                        .strip_prefix("pub struct ")
-                        .or_else(|| line.strip_prefix("pub enum "))
-                    else {
-                        continue;
-                    };
-                    let name: String = rest
-                        .chars()
-                        .take_while(|c| c.is_alphanumeric() || *c == '_')
-                        .collect();
-                    if !STAY_IN_RUST.contains(&name.as_str()) && !definitions.contains_key(&name) {
-                        missing.push(format!("{name} ({})", file.display()));
-                    }
-                }
-            }
-        }
+        let missing = missing_public_view_values(&definitions());
         assert!(missing.is_empty(), "no Swift mirror for: {missing:#?}");
     }
 

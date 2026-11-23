@@ -15,8 +15,8 @@ ask.choice.1 | Always allow Bash In this project, from now on |  | 28,699,346,59
 ask.choice.0 | Allow |  | 28,770,169,44
 ask.deny | Deny… |  | 205,770,169,44
 chat.more | More |  | 350,66,28,36
-chat.header | /p/t/a/n/d/work · desk | detached | 76,66,183,36
-chat.title | asker | asker | 76,66,183,36
+chat.header | desk · away | detached | 76,66,119,36
+chat.title | asker | asker | 76,66,119,36
  | Wants to run a command |  | 62,611,189,20
  | More |  | 338,599,44,44
  | deploy --prod |  | 28,647,346,40
@@ -29,6 +29,6 @@ chat.title | asker | asker | 76,66,183,36
  | Deploy it. |  | 16,233,370,40
  | Wants to run, deploy --prod |  | 16,285,370,20
 BackButton | Agents |  | 16,62,44,44
- | asker, /p/t/a/n/d/work · desk |  | 76,66,183,36
+ | asker, desk · away |  | 76,66,119,36
  | More |  | 350,66,28,36
  | Back |  | 16,73,44,23

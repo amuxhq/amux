@@ -2,7 +2,7 @@ shell |  | you | 0,62,402,778
 home |  | ready | 0,174,402,617
 hosts |  | 1 reachable | 0,174,402,617
 you |  | ada@example.com | 0,132,402,708
-account.ada@example.com | ada, 1 host | selected | 30,156,342,59
+account.ada@example.com | ada, 1 device | selected | 30,156,342,59
 you.add | Add Account |  | 16,215,370,46
 you.subscription | Pro | Subscribed | 16,303,370,46
 you.signOut | Sign Out |  | 16,349,370,46
@@ -23,21 +23,21 @@ you.dump | Export Diagnostics |  | 16,1014,370,46
 you.help.caption |  |  | 16,1068,310,32
 you.close | Close |  | 342,82,40,36
  | No agents yet |  | 16,204,162,32
- | Start an agent on a computer and it appears here. |  | 16,244,337,18
+ | Start an agent on a device and it appears here. |  | 16,244,314,18
  | New Agent |  | 16,280,370,44
  | Agents |  | 16,127,116,42
  | Switch account | ada | 20,66,36,36
  | New Agent |  | 350,66,27,36
- | Agents |  | 110,795,95,54
+ | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 216,830,56,12
- | Agents |  | 110,795,95,54
- | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 217,830,55,12
+ | Devices |  | 197,795,94,54
+ | Devices |  | 224,830,40,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Devices |  | 197,795,94,54
+ | Devices |  | 225,830,39,12
  | ACCOUNTS |  | 18,132,74,16
- | ada, 1 host |  | 30,156,342,59
+ | ada, 1 device |  | 30,156,342,59
  | Add Account |  | 16,215,370,45
  | ADA |  | 18,279,28,16
  | Pro, Subscribed |  | 16,303,370,45
@@ -61,5 +61,5 @@ you.close | Close |  | 342,82,40,36
  | A report includes a screenshot and this phone’s diagnostic dump. |  | 30,1068,282,32
  | Settings |  | 167,89,68,21
  | Close |  | 342,82,40,36
- | Agents | selected | 110,795,95,54
- | Computers |  | 197,795,95,54
+ | Agents | selected | 111,795,94,54
+ | Devices |  | 197,795,94,54

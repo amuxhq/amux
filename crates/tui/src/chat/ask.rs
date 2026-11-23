@@ -313,7 +313,7 @@ struct Typed<'a> {
 const FIELD_LINES: usize = 4;
 /// Under a link whose page is on the agent's own machine: a browser
 /// anywhere else reads `localhost` as itself.
-const LOCAL_PAGE: &str = "This page is on the agent's computer; open the link in a browser there.";
+const LOCAL_PAGE: &str = "This page is on the agent's device; open the link in a browser there.";
 
 impl BoxLines {
     /// Pushes `row`, which ends where a typed field starts, with the
@@ -2733,6 +2733,8 @@ impl AskUi {
 /// number is typed.
 fn form_questions(fields: &[Field]) -> Vec<QuestionView> {
     let option = |label: &str| ui_view::OptionView {
+        label_runs: Vec::new(),
+        description_runs: Vec::new(),
         label: label.to_owned(),
         description: String::new(),
         preview: String::new(),
@@ -2752,6 +2754,8 @@ fn form_questions(fields: &[Field]) -> Vec<QuestionView> {
                 FieldKind::Text { .. } | FieldKind::Number { .. } => (Vec::new(), false),
             };
             QuestionView {
+                header_runs: Vec::new(),
+                question_runs: Vec::new(),
                 header: field.title.clone(),
                 question: field.title.clone(),
                 multi_select,

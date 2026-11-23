@@ -238,7 +238,7 @@ enum StoryFleet {
     ) -> HostView {
         HostView(
             hostId: Array(repeating: index, count: 16), name: name, local: false, trusted: trusted,
-            candidate: candidate, reach: .online(.direct), link: 0,
+            candidate: candidate, reach: .online(.direct), sameNetwork: false, link: 0,
             addrs: candidate && !relayOnly ? ["192.168.1.\(index):4433"] : [], relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
             providers: CatalogFixtures.agents(claudeSignedIn: true),
             lastDialError: nil, platform: platform, signedIn: nil, through: nil, version: nil)

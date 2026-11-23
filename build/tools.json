@@ -1,0 +1,44 @@
+{
+  "//": "Pinned build tools, fetched by scripts/buck-tools.py into ~/.cache/amux/tools. Bump a version and its digests together; the digests are GitHub's own SHA-256 for each release asset.",
+  "buck2": {
+    "version": "2026-11-15",
+    "assets": {
+      "aarch64-apple-darwin": {
+        "url": "https://github.com/facebook/buck2/releases/download/2026-11-15/buck2-aarch64-apple-darwin.zst",
+        "sha256": "3464db0c4514fb3ff7a3f37050c737bd5dd100a2e210886530e95ac767d3a109"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/facebook/buck2/releases/download/2026-11-15/buck2-x86_64-unknown-linux-gnu.zst",
+        "sha256": "51d209f834c3509bc83024bf4ede62cd907135e7b289b29ed69d763dcde67b04"
+      }
+    }
+  },
+  "reindeer": {
+    "version": "v2026.11.16.00",
+    "assets": {
+      "aarch64-apple-darwin": {
+        "url": "https://github.com/facebookincubator/reindeer/releases/download/v2026.11.16.00/reindeer-aarch64-apple-darwin.zst",
+        "sha256": "e9bde13c0218fe36424714b332b9dbec7220f420b671b7420e3970c4e81d58b7"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/facebookincubator/reindeer/releases/download/v2026.11.16.00/reindeer-x86_64-unknown-linux-gnu.zst",
+        "sha256": "4259dd1b311192053ad13062c24bc748fd4cca2496366bc940c561b29a998b0c"
+      }
+    }
+  },
+  "nativelink": {
+    "version": "1.8.7",
+    "assets": {
+      "aarch64-apple-darwin": {
+        "url": "https://github.com/TraceMachina/nativelink/releases/download/v1.8.7/nativelink-1.8.7-aarch64-apple-darwin.tar.gz",
+        "sha256": "596c3fabbbcb67ccf33f93245e271c6d948a2196c589ad14730f103867e2293e",
+        "member": "nativelink"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "url": "https://github.com/TraceMachina/nativelink/releases/download/v1.8.7/nativelink-1.8.7-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "7986f657408b96e99705dd64d0f90f63a2e0c0c98e11edbd4c310a0ec3ae9b55",
+        "member": "nativelink"
+      }
+    }
+  }
+}

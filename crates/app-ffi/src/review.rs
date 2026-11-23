@@ -12,57 +12,25 @@
 //! page.
 
 use std::ffi::c_char;
-use std::sync::Arc;
 
-use app_runtime::ReviewSession;
-use app_runtime::values::{ReviewChange, ReviewChoice, ReviewOutcome};
-use serde::Deserialize;
-use ui_view::ReviewContextAsk;
+use crate::{AmuxChat, guard, held_chat, into_c_string, text};
 
-use crate::helpers::{act, guard, held_chat, owned, parse, text};
-use crate::{AmuxChat, Chat};
-
-/// What an act on the review page answers while none is open.
-fn not_open() -> ReviewOutcome {
-    ReviewOutcome::Failed("no review page is open on the chat".into())
-}
-
-/// Starts an act on the chat's open review page.
-///
-/// # Safety
-/// `chat` is from `amux_session_open`.
-unsafe fn page_act<F, Fut>(chat: *const AmuxChat, act: F) -> u64
-where
-    F: FnOnce(Arc<ReviewSession>) -> Fut + Send + 'static,
-    Fut: Future<Output = ReviewOutcome> + Send + 'static,
-{
-    // SAFETY: the caller's contract.
-    unsafe {
-        self::act(chat, move |chat| async move {
-            match chat.review_page() {
-                Some(page) => act(page).await,
-                None => not_open(),
-            }
-        })
-    }
-}
-
-/// Runs `call` on an open chat inside its runtime.
+/// Runs `call` on an open chat, answering `failed` for a null chat or a
+/// panic.
 ///
 /// # Safety
 /// `chat` is null or from `amux_session_open`.
 unsafe fn on_chat<T: Copy>(
     chat: *const AmuxChat,
     failed: T,
-    call: impl FnOnce(&Arc<Chat>) -> T,
+    call: impl FnOnce(&AmuxChat) -> T,
 ) -> T {
     guard(failed, || {
         // SAFETY: the caller's contract.
-        let Some(open) = (unsafe { held_chat(chat) }) else {
-            return failed;
-        };
-        let _entered = open.shared.handle().enter();
-        call(&open.chat)
+        match unsafe { held_chat(chat) } {
+            Some(open) => call(open),
+            None => failed,
+        }
     })
 }
 
@@ -82,21 +50,9 @@ pub unsafe extern "C" fn amux_review_open(
     refresh: bool,
 ) -> u64 {
     // SAFETY: the caller's contract.
-    let base_branch = unsafe { text(base_branch) }.map(str::to_owned);
+    let base_branch = unsafe { text(base_branch) };
     // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, move |chat| async move {
-            chat.open_review(base_branch, refresh).await
-        })
-    }
-}
-
-/// What a sent review's attachment names of its round, as the chat's rows
-/// carry it (`SentReviewRef`).
-#[derive(Deserialize)]
-struct SentRound {
-    review_id: Vec<u8>,
-    input_id: Vec<u8>,
+    unsafe { on_chat(chat, 0, |open| open.0.review_open(base_branch, refresh)) }
 }
 
 /// Opens the round a review sent into the chat closed: `sent` is the
@@ -105,22 +61,17 @@ struct SentRound {
 /// from the agent's host (or with the host out of reach, from what was
 /// loaded, saying so: with none of it loaded, a page with no header and
 /// only that banner), or JSON null when the message closed no round or the
-/// host no longer holds it, and the chip shows its text instead. It opens no page on the chat and
-/// moves none open there.
+/// host no longer holds it, and the chip shows its text instead. It opens
+/// no page on the chat and moves none open there.
 ///
 /// # Safety
 /// `chat` is from `amux_session_open`; `sent` is a NUL-terminated string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_review_round(chat: *const AmuxChat, sent: *const c_char) -> u64 {
     // SAFETY: the caller's contract.
-    let sent: Option<SentRound> = unsafe { parse(sent) };
+    let sent = unsafe { text(sent) };
     // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, move |chat| async move {
-            let sent = sent?;
-            chat.review_round(&sent.review_id, &sent.input_id).await
-        })
-    }
+    unsafe { on_chat(chat, 0, |open| open.0.review_round(sent)) }
 }
 
 /// Fetches file bodies for the view the page shows: `paths` as a JSON
@@ -133,21 +84,16 @@ pub unsafe extern "C" fn amux_review_round(chat: *const AmuxChat, sent: *const c
 /// string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_review_files(chat: *const AmuxChat, paths: *const c_char) -> u64 {
-    let paths: Option<Vec<String>> = if paths.is_null() {
-        Some(Vec::new())
+    // Null asks for every file the page lists; a list that is not UTF-8 is
+    // not a JSON array of strings, and fails the act.
+    let paths = if paths.is_null() {
+        None
     } else {
         // SAFETY: the caller's contract.
-        unsafe { parse(paths) }
+        Some(unsafe { text(paths) }.unwrap_or_default())
     };
     // SAFETY: the caller's contract.
-    unsafe {
-        page_act(chat, move |page| async move {
-            match paths {
-                Some(paths) => page.files(paths).await,
-                None => ReviewOutcome::Failed("the paths are not a JSON array of strings".into()),
-            }
-        })
-    }
+    unsafe { on_chat(chat, 0, |open| open.0.review_files(paths)) }
 }
 
 /// Loads more context: a `ReviewContextAsk` as JSON, one of a gap's asks.
@@ -159,16 +105,9 @@ pub unsafe extern "C" fn amux_review_files(chat: *const AmuxChat, paths: *const 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_review_context(chat: *const AmuxChat, ask: *const c_char) -> u64 {
     // SAFETY: the caller's contract.
-    let ask: Option<ReviewContextAsk> = unsafe { parse(ask) };
+    let ask = unsafe { text(ask) };
     // SAFETY: the caller's contract.
-    unsafe {
-        page_act(chat, move |page| async move {
-            match ask {
-                Some(ask) => page.context(ask).await,
-                None => ReviewOutcome::Failed("the ask is not a ReviewContextAsk".into()),
-            }
-        })
-    }
+    unsafe { on_chat(chat, 0, |open| open.0.review_context(ask)) }
 }
 
 /// Changes the review at the agent's host: a JSON array of `ReviewChange`,
@@ -181,16 +120,9 @@ pub unsafe extern "C" fn amux_review_context(chat: *const AmuxChat, ask: *const 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_review_edit(chat: *const AmuxChat, changes: *const c_char) -> u64 {
     // SAFETY: the caller's contract.
-    let changes: Option<Vec<ReviewChange>> = unsafe { parse(changes) };
+    let changes = unsafe { text(changes) };
     // SAFETY: the caller's contract.
-    unsafe {
-        act(chat, move |chat| async move {
-            match changes {
-                Some(changes) => chat.edit_review(changes).await,
-                None => ReviewOutcome::Failed("the changes are not ReviewChanges".into()),
-            }
-        })
-    }
+    unsafe { on_chat(chat, 0, |open| open.0.review_edit(changes)) }
 }
 
 /// Takes a `ReviewChoice`, as JSON: a view switched to, a file folded or
@@ -203,17 +135,9 @@ pub unsafe extern "C" fn amux_review_edit(chat: *const AmuxChat, changes: *const
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_review_choose(chat: *const AmuxChat, choice: *const c_char) {
     // SAFETY: the caller's contract.
-    let Some(choice) = (unsafe { parse::<ReviewChoice>(choice) }) else {
-        return;
-    };
+    let choice = unsafe { text(choice) };
     // SAFETY: the caller's contract.
-    unsafe {
-        on_chat(chat, (), |chat| {
-            if let Some(page) = chat.review_page() {
-                page.choose(choice);
-            }
-        })
-    }
+    unsafe { on_chat(chat, (), |open| open.0.review_choose(choice)) }
 }
 
 /// The open review page as a `ReviewPage`, or JSON null with none open:
@@ -226,8 +150,8 @@ pub unsafe extern "C" fn amux_review_choose(chat: *const AmuxChat, choice: *cons
 pub unsafe extern "C" fn amux_review_page(chat: *const AmuxChat) -> *mut c_char {
     // SAFETY: the caller's contract.
     unsafe {
-        on_chat(chat, std::ptr::null_mut(), |chat| {
-            owned(&chat.review_page().map(|page| page.read()))
+        on_chat(chat, std::ptr::null_mut(), |open| {
+            into_c_string(open.0.review_page())
         })
     }
 }
@@ -247,12 +171,8 @@ pub unsafe extern "C" fn amux_review_anchor(
 ) -> *mut c_char {
     // SAFETY: the caller's contract.
     unsafe {
-        on_chat(chat, std::ptr::null_mut(), |chat| {
-            owned(
-                &chat
-                    .review_page()
-                    .and_then(|page| page.anchor(from as usize, to as usize)),
-            )
+        on_chat(chat, std::ptr::null_mut(), |open| {
+            into_c_string(open.0.review_anchor(from, to))
         })
     }
 }
@@ -266,5 +186,5 @@ pub unsafe extern "C" fn amux_review_anchor(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn amux_review_close(chat: *const AmuxChat) {
     // SAFETY: the caller's contract.
-    unsafe { on_chat(chat, (), |chat| chat.close_review()) }
+    unsafe { on_chat(chat, (), |open| open.0.review_close()) }
 }

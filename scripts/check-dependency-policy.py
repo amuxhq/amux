@@ -61,14 +61,21 @@ ALLOWED_LOCAL = {
     # version stamp a release tool can rewrite in a built binary; the xtask
     # shares both without building the daemon.
     "release": set(),
-    "xtask": {"release"},
+    "xtask": {"release", "source-tree"},
+    # Where a crate's files in the checkout are when a test or a developer
+    # tool reads them at run time, under Cargo and under Buck alike: a leaf,
+    # and nothing shipped depends on it.
+    "source-tree": set(),
+    # Lists the third-party crates only tests use, so reindeer puts them in
+    # Buck's build (third-party/rust/dev-only/Cargo.toml); nothing links it.
+    "dev-only": set(),
     # What a client calls to find, install and start amux: the front door
     # from the settings, a download checked against the release manifest,
     # and the local socket it waits on, without linking the daemon.
     "installer": {"agent-dir", "release", "settings"},
     # The Swift mirrors of the view values are generated from their
     # definitions, so the generator reads them.
-    "ios-tools": {"app-runtime", "ui-state", "ui-view", "wire"},
+    "ios-tools": {"app-runtime", "source-tree", "ui-state", "ui-view", "wire"},
     # The seam both clients call the local runtime through: the local socket
     # and the shared clock trait come from the agent directory contract.
     "client": {"agent-dir", "wire"},
@@ -92,12 +99,16 @@ ALLOWED_LOCAL = {
     "app-runtime": {"client", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The daemon's profile runtime hosted in the phone's process.
     "app-embedded": {"analytics", "app-runtime", "client", "log-file", "node", "wire"},
-    # The C ABI over both.
+    # The language-neutral bridge over both.
     # The installer only off the phone, for a desktop app's first call.
-    "app-ffi": {
+    "app-bridge": {
         "app-embedded", "app-runtime", "client", "installer", "node", "ui-code", "ui-state", "ui-view",
         "wire",
     },
+    # The C ABI facade over the bridge.
+    "app-ffi": {"app-bridge"},
+    # The JNI facade over the bridge.
+    "app-jni": {"app-bridge"},
     # The terminal client composes the views over the drivers' state.
     "tui": {"attachments", "client", "settings", "ui-code", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The bounded ring of a core's inputs since its last checkpoint, in
@@ -128,7 +139,7 @@ CORES_ALLOWED_LOCAL = {
 # The UI library and the clients built on it reach the daemon only through
 # the client seam: none of them may link, directly or through another crate,
 # the daemon, its store, the interpreters or a provider. The phone bridge
-# (app-ffi, app-embedded) hosts the runtime in process and is not one of them.
+# (app-bridge, app-ffi, app-jni, app-embedded) hosts the runtime in process and is not one of them.
 UI_CRATES = {"client", "ui-state", "ui-view", "ui-code", "ui-runtime", "tui", "app-runtime"}
 FORBIDDEN_FOR_UI = {
     "node", "store", "interpret", "agent", "acp-protocol", "claude-protocol", "codex-protocol",
@@ -166,14 +177,14 @@ SUPPORT_ALLOWED_LOCAL = {
     # agent's tools do.
     "testnet": {
         "agent-dir", "client", "daemon-core", "interpret", "journal", "models", "node", "patience",
-        "provider-fakes", "release", "settings", "shot", "store", "tui", "wire",
+        "provider-fakes", "release", "settings", "shot", "source-tree", "store", "tui", "wire",
     },
     # Qualification owns environment-dependent provider and performance
     # checks while reusing the network harness rather than shipping it. Its
     # two probes stand in for the providers in the live lane: terminal
     # Claude's runs on a pseudo-terminal of its own, and both sanitize what
     # they record before it joins a corpus.
-    "qualification": {"node", "provider-fakes", "pty-host", "redaction", "testnet", "wire"},
+    "qualification": {"node", "provider-fakes", "pty-host", "redaction", "source-tree", "testnet", "wire"},
     # The fake providers speak each protocol from its recordings, and check
     # what they compose against the protocol crates' types. They never use
     # the host crates, so a host bug cannot hide behind shared host code.
@@ -184,7 +195,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # Renders the terminal client's named states to PNG for review, and
     # its storybook, whose chats are recorded sessions replayed through the
     # interpreters.
-    "shot": {"interpret", "settings", "tui", "ui-code", "ui-state", "ui-view", "wire"},
+    "shot": {"interpret", "settings", "source-tree", "tui", "ui-code", "ui-state", "ui-view", "wire"},
     # Replays a report's records with the models' properties judged at every
     # step: the daemon core from its checkpoint over its store, and each
     # chat's record through the session model. A debugging tool: nothing
@@ -196,7 +207,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # their cores.
     "replay-support": {
         "core-ring", "daemon-core", "interpret", "journal", "models", "provider-fakes",
-        "relay-core", "store", "supervisor-core", "ui-state", "wire",
+        "relay-core", "source-tree", "store", "supervisor-core", "ui-state", "wire",
     },
     # The protocol's properties, explored over the real code: the store, the
     # journal and the message types, each state-machine core, and the

@@ -605,12 +605,12 @@ impl ChatView {
             entries.push(match prompt.underway {
                 ui_view::Underway::Sending { waiting } => QueueEntry::Sending {
                     input_id: prompt.input_id,
-                    text: prompt.text,
+                    text: rows::segments_of(&prompt.text),
                     waiting: waiting.then(|| host.to_owned()),
                 },
                 ui_view::Underway::MayNotHaveArrived => QueueEntry::Unconfirmed {
                     input_id: prompt.input_id,
-                    text: prompt.text,
+                    text: rows::segments_of(&prompt.text),
                 },
             });
         }

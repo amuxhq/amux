@@ -49,7 +49,7 @@ async fn desk(
         machine: if cfg!(target_os = "macos") {
             "Mac"
         } else {
-            "computer"
+            "device"
         }
         .to_owned(),
         cloud_url: cloud_url.to_owned(),

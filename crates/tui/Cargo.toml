@@ -55,6 +55,7 @@ signal-hook = { workspace = true }
 windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [dev-dependencies]
+source-tree = { workspace = true }
 interpret = { workspace = true }
 node = { workspace = true }
 prost = { workspace = true }

@@ -439,6 +439,7 @@ impl Machine for PresenceRouting {
                     link,
                     peer,
                     kind,
+                    lan: false,
                     resumed: None,
                 },
                 &mut out,
@@ -685,6 +686,7 @@ impl Machine for PresenceRouting {
                 let carried = Input::LinkCarried {
                     link,
                     kind: CarrierKind::Direct,
+                    lan: false,
                 };
                 (vec![carried], Step::Other)
             }
@@ -951,6 +953,7 @@ fn link_up(next: &mut State, kind: CarrierKind) -> Input {
         link,
         peer: TARGET,
         kind,
+        lan: false,
         resumed: None,
     }
 }

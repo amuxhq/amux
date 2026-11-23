@@ -350,6 +350,14 @@ public enum ChatWords {
             .first ?? "")
     }
 
+    public static func text(of parts: [ProsePart]) -> String {
+        text(of: parts.map(\.segment))
+    }
+
+    public static func spoken(of parts: [ProsePart]) -> String {
+        spoken(of: parts.map(\.segment))
+    }
+
     /// What an agent's notice says: its own title, else its words' first
     /// line, else what cut the turn short; and what is left of its words.
     public static func notice(
@@ -664,14 +672,14 @@ public enum ChatWords {
         case .mergeUnderway:
             String(localized: "A merge or rebase was under way, so conflicted files hold their markers.")
         case .notOffered:
-            String(localized: "This agent’s computer doesn’t offer reviews. Its reviews experiment is off, or its amux is older than reviews.")
+            String(localized: "This agent’s device doesn’t offer reviews. Its reviews experiment is off, or its amux is older than reviews.")
         case .notARepository: String(localized: "This agent’s folder isn’t a git repository, so it has no review.")
         case .roundGone:
-            String(localized: "The round’s snapshot is gone from the agent’s computer. Its comments show with the code saved with them.")
+            String(localized: "The round’s snapshot is gone from the agent’s device. Its comments show with the code saved with them.")
         case .snapshotFailed(let message):
             String(localized: "Couldn’t take a snapshot of the working tree: \(message)")
         case .unreachable:
-            String(localized: "This agent’s computer can’t be reached. What was loaded still reads, but comments can’t be saved until it’s back.")
+            String(localized: "This agent’s device can’t be reached. What was loaded still reads, but comments can’t be saved until it’s back.")
         }
     }
 
@@ -783,12 +791,12 @@ public enum ChatWords {
     /// Above a sent review's text, when the agent's computer no longer holds
     /// its round.
     public static let reviewRoundGone = String(
-        localized: "The agent’s computer no longer holds this round, so this is what the agent read.")
+        localized: "The agent’s device no longer holds this round, so this is what the agent read.")
 
     /// Above a sent review's text, when the agent's computer can't be
     /// reached and none of its round was loaded.
     public static let reviewRoundUnreachable = String(
-        localized: "The agent’s computer can’t be reached and none of this round was loaded, so this is what the agent read.")
+        localized: "The agent’s device can’t be reached and none of this round was loaded, so this is what the agent read.")
 
     /// From a sent review's round to the review as it is now.
     public static let reviewOpenReview = String(localized: "Open the Review")
@@ -798,9 +806,9 @@ public enum ChatWords {
     public static func reviewNotice(_ outcome: ReviewOutcome?) -> String? {
         switch outcome {
         case .done?, .unavailable?: nil
-        case .unreachable?: String(localized: "This agent’s computer can’t be reached, so nothing changed.")
+        case .unreachable?: String(localized: "This agent’s device can’t be reached, so nothing changed.")
         case .notConfirmed?:
-            String(localized: "The connection dropped before the agent’s computer answered. The page shows what it says next.")
+            String(localized: "The connection dropped before the agent’s device answered. The page shows what it says next.")
         case .failed(let reason)?: reason
         case nil: String(localized: "This chat is closed.")
         }
@@ -1239,6 +1247,13 @@ public enum ChatWords {
     public static func planSwitch(_ choice: Choice) -> String {
         guard case .approvePlan(let mode, let modeName) = choice.outcome else { return "" }
         return String(localized: "Switch to \(modeName.isEmpty ? mode : modeName)")
+    }
+
+    /// What Approve does when approving the plan is offered only with a
+    /// switch of permission mode: "Switches to Accept edits".
+    public static func planSwitches(_ choice: Choice) -> String {
+        guard case .approvePlan(let mode, let modeName) = choice.outcome else { return "" }
+        return String(localized: "Switches to \(modeName.isEmpty ? mode : modeName)")
     }
 
     /// A choice on a button: the likely allow reads "Allow" beside Deny,

@@ -93,7 +93,7 @@ public struct Paywall: View {
     }
 
     private var explanation: String {
-        "Pro reaches your computers from anywhere. Computers on this network work without it."
+        "Pro relays connections when your phone and device aren’t on the same network. Devices on the same network connect without it."
     }
 
     private var plans: some View {

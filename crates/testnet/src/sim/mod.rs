@@ -1287,7 +1287,7 @@ fn refuse_agent(agent: &AgentDecl) -> Result<(), NetError> {
 /// with empty steps left out as the journal's writer leaves them out.
 pub fn recorded_journal(name: &str) -> Result<Vec<wire::Step>, NetError> {
     use prost::Message as _;
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = source_tree::crate_dir!()
         .join("../interpret/fixtures/claude_sdk")
         .join(format!("{name}.json"));
     let replayed =

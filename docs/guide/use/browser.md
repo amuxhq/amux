@@ -16,16 +16,16 @@ want done. You say that in the message you send with them, such as "fix
 these" or "revise the doc".
 
 The extension works in Chrome and in browsers built on it, such as Edge,
-Brave, Arc and Vivaldi. It needs amux on the same computer.
+Brave, Arc and Vivaldi. It needs amux on the same device.
 
 ## Install
 
 1. Install **amux** from the
    [Chrome Web Store](https://chromewebstore.google.com/detail/omnhphmiepghpgpbfgjebeaajfppkhie).
-2. Make sure amux is running on this computer. amux connects itself to your
+2. Make sure amux is running on this device. amux connects itself to your
    browsers when it starts, so if you installed the browser after amux,
    restart amux (`amux server stop`, then `amux server start`) or your
-   computer.
+   device.
 3. Pin the extension to the toolbar so its button is at hand.
 
 ## Comment on a page
@@ -54,7 +54,7 @@ Hold **Shift** to use the page normally for a moment. Press **Esc**, or click
 
 Your comments are listed in the side panel. Choose an agent under **To**, add a
 message if you like, and press **Send**. You can send to any agent on any of
-your computers, or start a new agent in one of your folders. When the page is
+your devices, or start a new agent in one of your folders. When the page is
 a file inside an agent's folder, that agent is chosen for you. Otherwise the
 agent you last sent to from that site is.
 
@@ -81,7 +81,7 @@ offers to take you there the first time.
 
 The extension can't read any page until you click its button, press its
 shortcut or use its menu on that page. It has no access to your sites
-otherwise. What you send goes to amux on this computer and from there to the
+otherwise. What you send goes to amux on this device and from there to the
 agent you chose, the same way a message you type does. Nothing goes to amux's
 servers.
 

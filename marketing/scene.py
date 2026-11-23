@@ -18,10 +18,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -113,7 +116,13 @@ def topology() -> dict:
     folders = {name: clone(name) for name in HOSTS}
     hosts = []
     for name in HOSTS:
-        host = {"name": name, "lan": True, "bonjour": True, "account": "ada"}
+        host = {
+            "name": name,
+            "lan": True,
+            "bonjour": True,
+            "account": "ada",
+            "experiments": ["reviews"],
+        }
         if name in HOST_SCRIPTS:
             host["script"] = script(HOST_SCRIPTS[name])
         hosts.append(host)
@@ -380,6 +389,357 @@ def store() -> int:
     return 0
 
 
+def android_store(skip_ready: bool = False) -> int:
+    """The Android phone's screens the Google Play frames are composed from
+    (`marketing/play_store.py`), dark, captured on the pinned Pixel 9 emulator
+    against this exact Tally scene."""
+    if not skip_ready:
+        ready()
+    record = json.loads((FOLDER / ".testnet/net.json").read_text())
+    readiness = record["readiness"]
+    scope = record.get("scope", "")
+    apk = ROOT / "apps/android/app/build/outputs/apk/debug/app-debug.apk"
+    if not apk.is_file():
+        raise SystemExit(f"scene: missing debug APK at {apk}; run `just android build` first")
+
+    sys.path.insert(0, str(ROOT / "apps/android/tools"))
+    import android_sdk  # noqa: E402
+    sdk_root = android_sdk.require_sdk()
+    adb = str(sdk_root / "platform-tools/adb")
+    serial = subprocess.run(
+        [str(ROOT / "scripts/py"), "-B", str(ROOT / "apps/android/tools/android-emulator.py"), "--serial"],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    if not serial:
+        booted = subprocess.run(
+            [str(ROOT / "scripts/py"), "-B", str(ROOT / "apps/android/tools/android-emulator.py")],
+            cwd=ROOT, check=True, capture_output=True, text=True,
+        ).stdout
+        m = re.search(r"android \(amux-android-1\):\s+(\S+)", booted)
+        if not m:
+            raise SystemExit(f"scene: could not parse emulator serial from:\n{booted}")
+        serial = m.group(1)
+
+    def adb_run(*args: str, check: bool = True, timeout: int = 60) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [adb, "-s", serial, *args],
+            check=check, capture_output=True, text=True, timeout=timeout,
+        )
+
+    def rewrite_host(addr: str) -> str:
+        return addr.replace("127.0.0.1:", "10.0.2.2:").replace("localhost:", "10.0.2.2:")
+
+    def free_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    door_port = free_port()
+    door_token = str(uuid.uuid4())
+    cloud_url = readiness.get("cloud_url")
+    cloud_port = None
+    if cloud_url:
+        m = re.search(r":(\d+)", cloud_url)
+        if m:
+            cloud_port = int(m.group(1))
+
+    def door_call(payload: dict, timeout: float = 30.0) -> dict:
+        body = dict(payload)
+        body["door_token"] = door_token
+        raw = (json.dumps(body) + "\n").encode("utf-8")
+        with socket.create_connection(("127.0.0.1", door_port), timeout=timeout) as sock:
+            sock.settimeout(timeout)
+            sock.sendall(raw)
+            buf = bytearray()
+            while b"\n" not in buf:
+                chunk = sock.recv(65536)
+                if not chunk:
+                    break
+                buf.extend(chunk)
+        line = bytes(buf).split(b"\n", 1)[0].decode("utf-8")
+        if not line:
+            raise RuntimeError(f"empty reply from Android door for {payload.get('kind')}")
+        reply = json.loads(line)
+        if reply.get("kind") == "error":
+            raise RuntimeError(f"Android door refused {payload.get('kind')}: {reply.get('message')}")
+        return reply
+
+    def query_elements() -> list[dict]:
+        return door_call({"kind": "query"})["state"]["elements"]
+
+    def find_element(prefix: str, text: str, timeout: float = 30.0) -> dict:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for el in query_elements():
+                ident = el.get("identifier", "")
+                label = el.get("label") or ""
+                value = el.get("value") or ""
+                if ident.startswith(prefix) and (text in label or text in value):
+                    return el
+            time.sleep(0.5)
+        raise SystemExit(f"scene: no Android element starting with {prefix!r} holding {text!r}")
+
+    def wait_tag(identifier: str, timeout: float = 30.0) -> dict:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for el in query_elements():
+                if el.get("identifier") == identifier and el.get("enabled", True):
+                    return el
+            time.sleep(0.5)
+        raise SystemExit(f"scene: Android element {identifier!r} never appeared")
+
+    def tap(identifier: str) -> None:
+        wait_tag(identifier)
+        door_call({"kind": "tap", "identifier": identifier})
+        door_call({"kind": "settle"})
+
+    def type_into(identifier: str, text: str) -> None:
+        wait_tag(identifier)
+        door_call({"kind": "type", "identifier": identifier, "text": text})
+        door_call({"kind": "settle"})
+
+    def back() -> None:
+        els = {el.get("identifier") for el in query_elements()}
+        if "nav.back" in els:
+            tap("nav.back")
+        elif "review.back" in els:
+            tap("review.back")
+        elif "new-agent.back" in els:
+            tap("new-agent.back")
+        else:
+            door_call({"kind": "back"})
+            door_call({"kind": "settle"})
+
+    saved_elements: dict[str, list[dict]] = {}
+
+    def android_shoot(name: str) -> None:
+        door_call({"kind": "settle"})
+        time.sleep(0.6)
+        saved_elements[name] = query_elements()
+        IMAGES.mkdir(parents=True, exist_ok=True)
+        out = IMAGES / f"android-{name}-dark.png"
+        png = subprocess.run(
+            [adb, "-s", serial, "exec-out", "screencap", "-p"],
+            check=True, capture_output=True, timeout=30,
+        ).stdout
+        if not png:
+            raise SystemExit(f"scene: empty adb screencap for {name}")
+        out.write_bytes(png)
+        print(f"scene: {out.name} ({len(png)} bytes)", flush=True)
+
+    def start_host_pairing(host_name: str, config_path: str) -> tuple[str, subprocess.Popen[str]]:
+        amux_bin = ROOT / "target/debug/amux"
+        proc = subprocess.Popen(
+            [str(amux_bin), "--config", config_path, "pair"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        deadline = time.monotonic() + 30
+        lines: list[str] = []
+        assert proc.stdout is not None
+        while time.monotonic() < deadline:
+            line = proc.stdout.readline()
+            if not line:
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.1)
+                continue
+            lines.append(line)
+            m = re.search(r"\b(\d{3})[\s-]?(\d{3})\b", line)
+            if m:
+                return m.group(1) + m.group(2), proc
+        proc.terminate()
+        raise SystemExit(f"scene: no pairing PIN from {host_name}: {''.join(lines)}")
+
+    try:
+        # Clean status bar (9:41, 100% battery, 5G + full Wi-Fi, no stray icons).
+        adb_run("shell", "settings", "put", "global", "sysui_demo_allowed", "1", check=False)
+        adb_run("shell", "am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "enter", check=False)
+        adb_run("shell", "am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "clock", "-e", "hhmm", "0941", check=False)
+        adb_run("shell", "am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "battery", "-e", "level", "100", "-e", "plugged", "false", check=False)
+        adb_run("shell", "am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "network", "-e", "wifi", "show", "-e", "level", "4", "-e", "fully", "true", check=False)
+        adb_run("shell", "am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "network", "-e", "mobile", "show", "-e", "datatype", "5g", "-e", "level", "4", "-e", "fully", "true", check=False)
+        adb_run("shell", "am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "notifications", "-e", "visible", "false", check=False)
+
+        adb_run("shell", "am", "force-stop", "sh.amux.android", check=False)
+        adb_run("install", "-r", "-t", str(apk), timeout=180)
+        adb_run("shell", "pm", "clear", "sh.amux.android")
+        adb_run("forward", f"tcp:{door_port}", "tcp:19876")
+        if cloud_port:
+            adb_run("reverse", f"tcp:{cloud_port}", f"tcp:{cloud_port}")
+
+        start_config: dict = {
+            "device_name": "Pixel 9",
+            "discovery_scope": scope,
+            "lan": True,
+            "lan_bind": "0.0.0.0:0",
+            "scripted_cloud": False,
+            "use_system_discovery": False,
+            "fresh_start": True,
+            "notifications_dismissed": True,
+        }
+        if cloud_url:
+            start_config["cloud_url"] = rewrite_host(cloud_url)
+        if readiness.get("relay_tcp"):
+            start_config["relay_tcp"] = rewrite_host(readiness["relay_tcp"])
+        if readiness.get("relay_quic"):
+            start_config["relay_quic"] = rewrite_host(readiness["relay_quic"])
+        if readiness.get("relay_root"):
+            start_config["relay_root"] = readiness["relay_root"]
+
+        def sh_quote(s: str) -> str:
+            return "'" + s.replace("'", "'\\''") + "'"
+
+        launch_cmd = (
+            f"am start -W -n sh.amux.android/.MainActivity "
+            f"--ei amux_door_port 19876 "
+            f"--es amux_door_token {sh_quote(door_token)} "
+            f"--es amux_start_config {sh_quote(json.dumps(start_config))}"
+        )
+        adb_run("shell", launch_cmd, timeout=60)
+
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            try:
+                door_call({"kind": "ready"}, timeout=5.0)
+                break
+            except Exception:
+                time.sleep(0.3)
+        else:
+            raise SystemExit("scene: Android debug door never opened")
+
+        door_call({"kind": "awaitReconciled", "seconds": 30.0}, timeout=40.0)
+        door_call({"kind": "appearance", "appearance": "dark"})
+
+        # Inject LAN discovery for studio, build, laptop and pair each.
+        hosts_meta = readiness["hosts"]
+        found = [
+            {
+                "host_id": h["host_id"],
+                "name": h["name"],
+                "addrs": [f"10.0.2.2:{h['lan_port']}"],
+                "scope": scope,
+                "pairing_open": True,
+            }
+            for h in hosts_meta
+        ]
+        door_call({"kind": "discovered", "found": found})
+        door_call({"kind": "settle"})
+        for h in hosts_meta:
+            pin, proc = start_host_pairing(h["name"], h["config"])
+            try:
+                pair_deadline = time.monotonic() + 20.0
+                while True:
+                    try:
+                        door_call({"kind": "pairByCode", "host": h["host_id"], "pin": pin}, timeout=30.0)
+                        break
+                    except RuntimeError as exc:
+                        if "no host named" in str(exc) and time.monotonic() < pair_deadline:
+                            door_call({"kind": "discovered", "found": found})
+                            time.sleep(0.5)
+                            continue
+                        raise
+                print(f"scene: paired Android with {h['name']}", flush=True)
+            finally:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+
+        if cloud_url:
+            door_call({
+                "kind": "connect",
+                "relay": rewrite_host(cloud_url),
+                "token": "refresh-ada",
+                "user": "ada",
+                "tier": "pro",
+            }, timeout=30.0)
+            door_call({"kind": "awaitReconciled", "seconds": 30.0}, timeout=40.0)
+
+        # Wait until fleet shows checkout-redesign and flaky-sync-test.
+        find_element("home.row.", "flaky-sync-test", timeout=45.0)
+        find_element("home.row.", "checkout-redesign", timeout=45.0)
+
+        # Expand checkout-redesign's subagent family.
+        tap("home.family.checkout-redesign")
+        android_shoot("fleet")
+
+        # 2: flaky-sync-test ask card.
+        flaky = find_element("home.row.", "flaky-sync-test")
+        tap(flaky["identifier"])
+        time.sleep(1.0)
+        android_shoot("ask")
+
+        # 3: checkout-redesign chat with subagent run expanded.
+        back()
+        checkout = find_element("home.row.", "checkout-redesign")
+        tap(checkout["identifier"])
+        tap("chat.row.run")
+        # Scroll to top so the prompt + two subagent rows are both visible.
+        adb_run("shell", "input", "swipe", "540", "650", "540", "1950", "300", check=False)
+        time.sleep(0.8)
+        adb_run("shell", "input", "swipe", "540", "650", "540", "1950", "300", check=False)
+        time.sleep(0.8)
+        android_shoot("chat")
+
+        # 4: review diff with a comment on MissingCard.
+        tap("chat.changes")
+        missing_card = None
+        for attempt in range(4):
+            try:
+                missing_card = find_element("review.line.", "MissingCard", timeout=15.0 if attempt == 0 else 4.0)
+                break
+            except SystemExit:
+                adb_run("shell", "input", "swipe", "540", "1750", "540", "950", "300", check=False)
+                time.sleep(0.5)
+        if missing_card is None:
+            raise SystemExit("scene: no Android review.line.* element holding 'MissingCard'")
+        tap(missing_card["identifier"])
+        tap("review.commentOn")
+        type_into("review.note", "Answer 422 with a message the page can show, not a 500.")
+        tap("review.add")
+        android_shoot("review")
+
+        # 5: new agent sheet (select build + Codex to match iOS frame 5).
+        back()
+        back()
+        tap("home.newAgent")
+        # Pick `build` host if available, then Codex provider.
+        els = query_elements()
+        if any(e.get("identifier") == "new-agent.host" for e in els):
+            tap("new-agent.host")
+            try:
+                build_opt = find_element("new-agent.host.", "build", timeout=5.0)
+                tap(build_opt["identifier"])
+            except SystemExit:
+                back()
+        els = query_elements()
+        if any(e.get("identifier") == "new-agent.provider" for e in els):
+            tap("new-agent.provider")
+            try:
+                codex_opt = find_element("new-agent.provider.", "Codex", timeout=5.0)
+                tap(codex_opt["identifier"])
+            except SystemExit:
+                back()
+        android_shoot("new")
+
+        # 6: studio host detail page.
+        back()
+        tap("tab.hosts")
+        studio = find_element("hosts.row.", "studio")
+        tap(studio["identifier"])
+        android_shoot("host")
+
+        (IMAGES / "android-store-elements.json").write_text(json.dumps(saved_elements, indent=2))
+        print(f"scene: saved 6 Android screenshots in {IMAGES}", flush=True)
+        return 0
+    finally:
+        adb_run("shell", "am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "exit", check=False)
+        adb_run("forward", "--remove", f"tcp:{door_port}", check=False)
+        if cloud_port:
+            adb_run("reverse", "--remove", f"tcp:{cloud_port}", check=False)
+
+
 class Takes:
     """The film's recordings, each started at a moment this keeps, so the
     edit can lay them on one clock. `takes.json` lists every take and every
@@ -578,16 +938,31 @@ def native() -> int:
 
 def main(arguments: list[str]) -> int:
     verb = arguments[0] if arguments else "up"
+    reuse = "--reuse" in arguments[1:]
     FOLDER.mkdir(parents=True, exist_ok=True)
-    if verb in ("up", "shots", "film", "store"):
-        build()
+    if verb == "android-store" and reuse:
+        return android_store(skip_ready=True)
+    if verb in ("up", "shots", "film", "store", "android-store"):
+        if verb == "android-store":
+            subprocess.run(
+                [str(ROOT / "scripts/bounded"), "1800", "cargo", "build", "--locked",
+                 "-p", "amux", "-p", "testnet", "-p", "provider-fakes", "--bins"],
+                cwd=ROOT, check=True,
+            )
+        else:
+            build()
         ctl("down")
         path = FOLDER / "topology.json"
         path.write_text(json.dumps(topology(), indent=2))
         print(f"scene: {FOLDER}", flush=True)
         if ctl("up", str(path)):
             return 1
-        return {"shots": shots, "film": film, "store": store}.get(verb, lambda: 0)()
+        return {
+            "shots": shots,
+            "film": film,
+            "store": store,
+            "android-store": android_store,
+        }.get(verb, lambda: 0)()
     if verb == "native":
         build()
         ctl("down")
@@ -603,7 +978,7 @@ def main(arguments: list[str]) -> int:
             if parent != HOME and parent.exists() and not any(parent.iterdir()):
                 parent.rmdir()
         return code
-    print("usage: scene.py up|shots|film|store|native|down", file=sys.stderr)
+    print("usage: scene.py up|shots|film|store|android-store|native|down", file=sys.stderr)
     return 2
 
 

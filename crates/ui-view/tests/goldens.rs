@@ -17,7 +17,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use interpret::acp::Acp;
 use interpret::claude_pty::ClaudePty;
@@ -36,15 +36,13 @@ use crate::support;
 const UPDATE: &str = "UI_VIEW_UPDATE_GOLDENS";
 
 fn fixtures(kind: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    source_tree::crate_dir!()
         .join("../interpret/fixtures")
         .join(kind)
 }
 
 fn goldens(kind: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/goldens")
-        .join(kind)
+    source_tree::crate_dir!().join("tests/goldens").join(kind)
 }
 
 fn clip(line: String) -> String {

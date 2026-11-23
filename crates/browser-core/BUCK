@@ -1,0 +1,21 @@
+load("//build:rust.bzl", "amux_rust_library")
+
+DEPS = [
+    "//crates/attachments:attachments",
+    "//crates/ui-state:ui-state",
+    "//crates/ui-view:ui-view",
+    "//crates/wire:wire",
+    "//third-party/rust:base64",
+    "//third-party/rust:prost",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:uuid",
+]
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    product = "app",
+    # Cargo builds a cdylib for wasm-bindgen; Buck has the library's
+    # shared object as a subtarget, which the extension's build takes.
+)

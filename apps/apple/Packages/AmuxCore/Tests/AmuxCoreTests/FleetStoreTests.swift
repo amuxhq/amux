@@ -75,7 +75,7 @@ enum Cards {
     ) -> HostView {
         HostView(
             hostId: id.bytes, name: name, local: local, trusted: trusted, candidate: candidate,
-            reach: reach, link: link, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
+            reach: reach, sameNetwork: false, link: link, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
             providers: [], lastDialError: nil, platform: nil,
             signedIn: signedIn, through: through, version: nil)
     }
@@ -204,9 +204,9 @@ final class FleetStoreTests: XCTestCase {
         XCTAssertEqual(fleet.unreachableHost, "desk")
         XCTAssertNil(fleet.relayTrouble, "an offline machine is its rows' to show")
         fleet.relay(.signInAgain)
-        XCTAssertEqual(fleet.relayTrouble, "Sign in again to reach your computers from anywhere")
+        XCTAssertEqual(fleet.relayTrouble, "Sign in again for relayed connections")
         fleet.relay(.versionMismatch)
-        XCTAssertEqual(fleet.relayTrouble, "Update amux to reach your computers from anywhere")
+        XCTAssertEqual(fleet.relayTrouble, "Update amux for relayed connections")
         fleet.relay(.connecting)
         XCTAssertNil(fleet.relayTrouble, "a link coming up is not trouble")
         fleet.relay(.retrying)

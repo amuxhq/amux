@@ -135,6 +135,12 @@ pub struct HostDecl {
     /// switches them on in its installation config.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub experiments: Vec<String>,
+    /// How long, in seconds, the host's agents outlive its stopped daemon,
+    /// where a story keeps the host away for longer than the net's own
+    /// grace allows: a real installation waits five minutes, and a story
+    /// about a host coming back must not race a shorter clock.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_grace_secs: Option<u64>,
 }
 
 /// An agent a host's config adds: what people call it and what the fake

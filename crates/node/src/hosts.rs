@@ -36,6 +36,7 @@ impl ProfileRuntime {
                     wire::RouteKind::Unspecified as i32,
                 )),
                 current: true,
+                same_network: false,
             })),
             folders: self.folders(),
             push_key: self
@@ -84,19 +85,72 @@ impl ProfileRuntime {
     }
 
     /// Whether the profile trusts a phone: a host whose own entry says it
-    /// runs on iOS.
+    /// runs on iOS or Android.
     pub(crate) fn trusts_a_phone(&self) -> bool {
-        self.hosts.borrow().iter().any(|entry| {
-            matches!(entry.standing, Some(wire::host_entry::Standing::Trusted(_)))
-                && entry.host.as_ref().is_some_and(|host| {
-                    host.platform == wire::Platform::Ios as i32
-                        && host.host_id != self.host().as_bytes()
-                })
-        })
+        hosts_trust_a_phone(&self.hosts.borrow(), self.host())
     }
 
     /// The core published the host set anew.
     pub(crate) fn hosts_published(&self, entries: Vec<HostEntry>) {
         self.hosts.send_replace(entries);
+    }
+}
+
+fn hosts_trust_a_phone(entries: &[HostEntry], self_host: crate::HostId) -> bool {
+    entries.iter().any(|entry| {
+        entry.trusted().is_some()
+            && entry.platform().is_phone()
+            && entry.host_id() != self_host.as_bytes()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use uuid::Uuid;
+
+    use super::*;
+
+    fn entry(host_id: Uuid, platform: wire::Platform, trusted: bool) -> HostEntry {
+        HostEntry {
+            host: Some(wire::Host {
+                host_id: host_id.as_bytes().to_vec(),
+                name: "peer".to_owned(),
+                platform: platform as i32,
+                ..wire::Host::default()
+            }),
+            standing: Some(if trusted {
+                wire::host_entry::Standing::Trusted(wire::Trusted::default())
+            } else {
+                wire::host_entry::Standing::Candidate(wire::Candidate::default())
+            }),
+            ..HostEntry::default()
+        }
+    }
+
+    #[test]
+    fn trusts_a_phone_recognizes_trusted_ios_and_android_peers() {
+        let desktop = Uuid::from_u128(1);
+        let phone = Uuid::from_u128(2);
+
+        assert!(!hosts_trust_a_phone(
+            &[entry(phone, wire::Platform::Macos, true)],
+            desktop
+        ));
+        assert!(!hosts_trust_a_phone(
+            &[entry(phone, wire::Platform::Android, false)],
+            desktop
+        ));
+        assert!(!hosts_trust_a_phone(
+            &[entry(desktop, wire::Platform::Android, true)],
+            desktop
+        ));
+        assert!(hosts_trust_a_phone(
+            &[entry(phone, wire::Platform::Ios, true)],
+            desktop
+        ));
+        assert!(hosts_trust_a_phone(
+            &[entry(phone, wire::Platform::Android, true)],
+            desktop
+        ));
     }
 }

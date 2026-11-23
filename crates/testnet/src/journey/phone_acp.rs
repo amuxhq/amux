@@ -11,6 +11,7 @@
 use serde_json::{Value, json};
 
 use super::common::*;
+use super::driver::{Driver, Tab};
 use super::phone::{Drawn, Launch, PhoneJourney, labelled};
 use super::phone_stories::{
     choice, open_settled, pair_by_code, photograph_running, queued, reopen, replies, send,
@@ -51,7 +52,7 @@ const SIGNED_IN_REPLY: &str = "Signed in and ready.";
 /// agent the host lists that it did not before, with its chat open.
 fn create(journey: &mut PhoneJourney, host: &str, name: &str) -> Result<String, String> {
     let before = ids(&journey.wait_inventory(host, |_| true, "inventory-before")?);
-    journey.tab("Agents")?;
+    journey.tab(Tab::Agents)?;
     journey.tap("home.newAgent")?;
     let drawn = journey.wait_for(&["new-agent"])?;
     if drawn.value("new-agent.host") != host {

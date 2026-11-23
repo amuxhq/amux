@@ -5,7 +5,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
-use std::path::Path;
 
 use proptest::collection::vec;
 use proptest::prelude::*;
@@ -421,8 +420,8 @@ fn attachments_keep_their_positions() {
             rows[0].kind,
             RowKind::Prompt {
                 text: vec![
-                    Segment::Attachment(AttachmentView::of(&image, &[])),
-                    Segment::Text("first".into())
+                    ProsePart::Attachment(AttachmentView::of(&image, &[])),
+                    ProsePart::Text(Markdown::parse("first", false))
                 ],
                 steered: false
             }
@@ -1025,7 +1024,7 @@ fn authored_view_goldens() {
     let mut failures = Vec::new();
     for kind in KINDS {
         let rendered = authored(kind);
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        let path = source_tree::crate_dir!()
             .join("tests/goldens/authored")
             .join(format!("{}.golden", golden_name(kind)));
         if std::env::var("UI_VIEW_UPDATE_GOLDENS").as_deref() == Ok("1") {
@@ -1159,6 +1158,7 @@ fn host_entry(host: &str, signed_in: Option<bool>) -> FleetMsg {
                     wire::RouteKind::Unspecified as i32,
                 )),
                 current: false,
+                same_network: false,
             })),
             ..Default::default()
         })),
@@ -1170,6 +1170,7 @@ fn reads(entry: &mut wire::HostEntry, reach: wire::trusted::Reach) {
     entry.standing = Some(wire::host_entry::Standing::Trusted(wire::Trusted {
         reach: Some(reach),
         current: false,
+        same_network: false,
     }));
 }
 
@@ -2426,8 +2427,8 @@ fn an_agent_message_carries_its_attachments_as_chips() {
     assert_eq!(
         *text,
         vec![
-            Segment::Text("second look at this ".into()),
-            Segment::Attachment(AttachmentView::of(&file, &[])),
+            ProsePart::Text(Markdown::parse("second look at this ", false)),
+            ProsePart::Attachment(AttachmentView::of(&file, &[])),
         ]
     );
 }

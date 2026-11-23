@@ -1,0 +1,62 @@
+load("//build:rust.bzl", "TESTING", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//crates/attachments:attachments",
+    "//crates/client:client",
+    "//crates/settings:settings",
+    "//crates/ui-code:ui-code",
+    "//crates/ui-runtime:ui-runtime",
+    "//crates/ui-state:ui-state",
+    "//crates/ui-view:ui-view",
+    "//crates/wire:wire",
+    "//third-party/rust:anyhow",
+    "//third-party/rust:arboard",
+    "//third-party/rust:base64",
+    "//third-party/rust:crossterm",
+    "//third-party/rust:futures-util",
+    "//third-party/rust:image",
+    "//third-party/rust:jiff",
+    "//third-party/rust:png",
+    "//third-party/rust:prost",
+    "//third-party/rust:pulldown-cmark",
+    "//third-party/rust:qrcode",
+    "//third-party/rust:ratatui",
+    "//third-party/rust:ratatui-image",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:sha2",
+    "//third-party/rust:tempfile",
+    "//third-party/rust:tokio",
+    "//third-party/rust:unicode-segmentation",
+    "//third-party/rust:unicode-width",
+] + select({"DEFAULT": ["//third-party/rust:libc", "//third-party/rust:signal-hook"], "prelude//os:windows": [], "prelude//os:none": []}) + select({"DEFAULT": [], "prelude//os:windows": ["//third-party/rust:windows-sys"]})
+
+TEST_DEPS = [
+    "//crates/source-tree:source-tree",
+    "//crates/interpret:interpret",
+    "//crates/node:node",
+    "//crates/provider-fakes:provider-fakes",
+    "//crates/testnet:testnet",
+    "//third-party/rust:tonic",
+    "//third-party/rust:tower",
+]
+
+FEATURES = ["default"] + select({"DEFAULT": [], TESTING: ["fixtures"]})
+
+amux_rust_library(
+    version = "0.5.0",
+    deps = DEPS,
+    features = FEATURES,
+    test_deps = TEST_DEPS,
+    test_resources = ["//crates/interpret:fixtures"],
+    binaries = True,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.5.0",
+    deps = DEPS + TEST_DEPS,
+    features = FEATURES,
+    resources = ["//crates/interpret:fixtures"],
+    binaries = True,
+)

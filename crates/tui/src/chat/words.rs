@@ -60,16 +60,12 @@ pub(super) fn problem_words(
     theme: Theme,
 ) -> Option<(String, ratatui::style::Style)> {
     let away_words = || {
-        let host = if host.is_empty() {
-            "its computer"
-        } else {
-            host
-        };
+        let host = if host.is_empty() { "its device" } else { host };
         match reach {
             Reach::Offline(Offline::SignedOut) => {
-                format!("{host} away · this computer is signed out")
+                format!("{host} away · this device is signed out")
             }
-            Reach::Offline(Offline::Revoked) => format!("{host} unpaired this computer"),
+            Reach::Offline(Offline::Revoked) => format!("{host} unpaired this device"),
             Reach::Away => format!("{host} away · {FREE_PLAN_AWAY}"),
             Reach::Online(_) | Reach::Offline(Offline::Plain) => {
                 format!("{host} away · not current")
@@ -344,16 +340,16 @@ fn sign_in_steps(who: &str, hint: &str) -> Vec<(String, bool)> {
 
 /// Why a host is away when its daemon lists it so: the relay alone sees
 /// it, and on the free plan the relay opens no connection between hosts.
-pub(crate) const FREE_PLAN_AWAY: &str = "reaching it from another network needs Pro";
+pub(crate) const FREE_PLAN_AWAY: &str = "relayed connections need Pro";
 
 /// Why the composer cannot send while the link to the agent's host is
 /// down, for the box's edge; None when it can.
 pub(super) fn waiting_words(composer: &Composer, host: &str, reach: Reach) -> Option<String> {
     Some(match composer {
         Composer::Waiting(Waiting::Detached) => match reach {
-            Reach::Offline(Offline::Revoked) => format!("{host} unpaired this computer"),
+            Reach::Offline(Offline::Revoked) => format!("{host} unpaired this device"),
             Reach::Offline(Offline::SignedOut) => {
-                format!("{host} is away · this computer is signed out")
+                format!("{host} is away · this device is signed out")
             }
             Reach::Away => format!("{host} is away · {FREE_PLAN_AWAY}"),
             Reach::Online(_) | Reach::Offline(Offline::Plain) => format!("{host} is away"),
@@ -455,8 +451,8 @@ pub(crate) fn refusal_words(refusal: &Refusal) -> String {
         wire::Refusal::Exited => "it had exited",
         wire::Refusal::AgentClosed => "it was settled",
         wire::Refusal::Exiting => "it was exiting",
-        wire::Refusal::Draining => "its computer is shutting down",
-        wire::Refusal::HostUnreachable => "its computer is away",
+        wire::Refusal::Draining => "its device is shutting down",
+        wire::Refusal::HostUnreachable => "its device is away",
         wire::Refusal::Unsupported => "this agent can't take it",
         wire::Refusal::ClosedAsk => "the ask had already closed",
         wire::Refusal::NotQueued => "it was no longer queued",
@@ -577,13 +573,13 @@ pub(super) fn turn_hint(state: &SessionState, editor: &Editor, reach: Reach, lea
         Composer::Resume => pairs.push(("enter", "resume")),
         Composer::Native { .. } | Composer::Ended => {}
         Composer::Waiting(Waiting::Detached) if reach == Reach::Offline(Offline::SignedOut) => {
-            return waits("can't send until this computer signs in");
+            return waits("can't send until this device signs in");
         }
         Composer::Waiting(Waiting::Detached) if reach == Reach::Offline(Offline::Revoked) => {
             return waits("can't send until you pair again");
         }
         Composer::Waiting(Waiting::Detached) => {
-            return waits("can't send until its computer is back");
+            return waits("can't send until its device is back");
         }
         Composer::Waiting(Waiting::Reconnecting) => {
             return waits("can't send until amux is back");

@@ -1,0 +1,121 @@
+# The Android app's recipes. `just android <recipe>` from anywhere in the
+# checkout; every recipe runs from the repository root so paths mean the same
+# thing in the scripts, the Gradle project and the Rust workspace.
+
+set shell := ["sh", "-cu"]
+set positional-arguments
+set working-directory := "../.."
+
+# Wall-clock bound for every recipe; portable where GNU timeout is absent.
+bounded := "scripts/bounded"
+
+# The interpreter these scripts are written to, chosen rather than assumed;
+# scripts/py explains why and picks it.
+python := "scripts/py"
+
+# Wrapper that discovers JAVA_HOME and ANDROID_HOME if unset and invokes ./gradlew.
+gradle := "sh apps/android/tools/gradle-run.sh"
+
+# List the Android app's recipes.
+default:
+    @just --list android
+
+# Check the provider-free client and JNI bridge graph for Android.
+check:
+    {{bounded}} 1200 cargo ndk -t arm64-v8a -P 34 check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded -p app-bridge -p app-jni
+
+# Check the Kotlin sources and string resources against the app's writing
+# rules. The generated Kotlin mirrors and markdown fixtures are held to their
+# Rust sources by ios-tools' own tests, which `just premerge` and CI run.
+lint:
+    {{bounded}} 300 sh -c 'sh apps/android/tools/feature-lint.sh && sh apps/android/tools/test-waits-lint.sh && sh apps/android/tools/strings-lint.sh'
+
+# The driving tools are the one deliberate exception, checked below with
+# them enabled.
+#
+# Prove the JNI bridge graph carries no provider, host or test crate onto the phone.
+graph-check:
+    mkdir -p target/android
+    {{bounded}} 300 cargo tree --locked -p app-jni --target aarch64-linux-android -e normal --prefix none --format "{p}" > target/android/graph-shipping.txt
+    ! grep -E "^(pty-host|agent|interpret|claude-protocol|codex-protocol|schemars|testnet|qualification|replay-support) v" target/android/graph-shipping.txt
+    {{bounded}} 300 cargo tree --locked -p app-jni --features debug-tools --target aarch64-linux-android -e normal --prefix none --format "{p}" > target/android/graph-driving.txt
+    ! grep -E "^(pty-host|agent|interpret|claude-protocol|codex-protocol|schemars) v" target/android/graph-driving.txt
+
+# Build the Rust JNI bridge libraries for Android and/or the host JVM.
+rust *ARGS:
+    {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py "$@"
+
+# Build the Rust tools the Android journey recipes drive.
+tools:
+    {{bounded}} 900 cargo build --locked -p testnet -p amux -p provider-fakes --bins
+
+# Boot and pin the Android emulator AVD (`amux-android-1`).
+emulator *ARGS:
+    {{bounded}} 600 {{python}} -B apps/android/tools/android-emulator.py "$@"
+
+# Build the debug Android APK.
+build *ARGS:
+    {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py
+    {{bounded}} 1800 {{gradle}} :app:assembleDebug "$@"
+
+# Drive the Android app on the pinned emulator against real daemons and a real relay.
+journey *ARGS: build tools
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 target/debug/testnet journey android "$@"
+
+# Run all JVM and Android Robolectric unit test suites.
+unit *ARGS:
+    {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py --host
+    {{bounded}} 1800 {{gradle}} testDebugUnitTest :core:values:test :core:words:test :push:test "$@"
+
+# Run the automated Compose accessibility audit across every registered story.
+accessibility *ARGS:
+    {{bounded}} 1800 {{gradle}} :app:testDebugUnitTest --tests sh.amux.android.AccessibilityAuditTest "$@"
+
+# Render the headless Robolectric/Roborazzi storybook gallery.
+storybook *ARGS:
+    {{bounded}} 1800 {{python}} -B apps/android/tools/android-storybook.py "$@"
+
+# Build the release APK and shipping JNI library and prove no debug/test code or dynamic SQLite ships.
+scope-audit *ARGS:
+    {{bounded}} 2400 {{python}} -B apps/android/tools/android-scope-audit.py "$@"
+
+# The runtime starts, steps, acts, and refuses a call through the bridge, on
+# the device ANDROID_SERIAL names or else the pinned emulator.
+# Run the launch smoke test on the minified release APK.
+release-smoke *ARGS:
+    {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py --release
+    if [ -z "${ANDROID_SERIAL-}" ]; then {{bounded}} 600 {{python}} -B apps/android/tools/android-emulator.py >&2 && ANDROID_SERIAL=$({{python}} -B apps/android/tools/android-emulator.py --serial) && export ANDROID_SERIAL; fi; {{bounded}} 1800 {{gradle}} :app:connectedReleaseAndroidTest -Pamux.releaseSmoke "$@"
+
+# Run the unit tests of the Android recipe and lint scripts.
+script-tests:
+    {{bounded}} 120 {{python}} -m unittest discover -s apps/android/tools/tests -p '*_test.py' -t apps/android/tools/tests
+
+# Version, audit, build, sign, verify and upload the Android App Bundle (.aab)
+# to Google Play internal testing, then commit, tag `android-v<version>-b<build>`
+# and push (--preflight reports inputs immediately; --rehearse builds and verifies
+# without writing the tree or tagging; --no-upload and --no-push stop short).
+# Version, sign, verify and upload the Android bundle, then tag and push.
+release *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 4800 {{python}} -B apps/android/tools/android-release.py "$@"
+
+# Promote a released Android versionCode on Google Play (`--channel stable|preview|closed|internal`,
+# `--track NAME`, `--rollout PCT`, `--notes-file PATH`, `--draft`, `--dry-run`).
+# Put a released Android build in front of people on Google Play.
+deploy VERSION *ARGS:
+    shift; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 600 {{python}} -B apps/android/tools/android-deploy.py deploy {{VERSION}} "$@"
+
+# Show what each Google Play track currently holds for sh.amux.android.
+status:
+    {{bounded}} 120 {{python}} -B apps/android/tools/android-deploy.py status
+
+# Run the full Android verification gate in deterministic order. `unit`
+# runs the accessibility audit with the rest of :app's unit tests.
+verify:
+    just android lint
+    just android graph-check
+    just android script-tests
+    just android unit --no-daemon
+    just android storybook fleet.busy --no-daemon
+    just android scope-audit
+    just android release-smoke --no-daemon
+    just android journey

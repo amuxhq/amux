@@ -598,7 +598,8 @@ phone app, and removes the net's root; the session log, shots, findings and reco
 readable text; `--json` prints the door's reply instead.
 
 A net's agents outlive a stopped daemon by 20 seconds, where a real installation waits five minutes: long enough to
-ride out a restart, short enough that a failed run's agents go away on their own. A host kept down for longer ends
+ride out a restart, short enough that a failed run's agents go away on their own. A topology host's
+`agent_grace_secs` gives its agents longer, for a story that keeps the host down past that on purpose. A host kept down for longer ends
 every agent on it, and a finished child then reads as having exited while the daemon was away, correctly; `ctl
 status` says so. Every host `up` declares and `host add` makes is an installation set up long ago, so a client opens on home; `host add --first-run` leaves one new, for walking through setting up. `host add --lan` brings discovery with it, as a daemon on a real LAN has, unless `--bonjour` puts
 the host on the machine's real mDNS instead; a process host with a LAN listener is announced on the net's

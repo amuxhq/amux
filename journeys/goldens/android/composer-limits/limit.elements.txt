@@ -1,0 +1,23 @@
+shell |  |  | 0,0,411,923
+chat |  |  | 0,0,411,923
+chat.feed |  |  | 0,118,411,674
+chat.row.<id> |  |  | 16,130,379,52
+chat.row.kind.prompt |  |  | 16,130,379,40
+markdown.root | Rewrite the pricing page's FAQ. |  | 156,140,226,20
+chat.row.msg_fake<run>0000000000000002:0 |  |  | 16,182,379,32
+chat.row.kind.prose |  |  | 16,182,379,20
+markdown.root | The FAQ is rewritten. |  | 16,182,379,20
+chat.row.turn:1 | Worked for <t> |  | 16,214,379,30
+chat.row.turn-end | Worked for <t> |  | 16,214,81,16
+chat.composer | 5-hour limit reached · resets <time>, Attach, Chat Settings, claude-fake-1 · medium, Dictate, Send |  | 12,796,387,94
+chat.field | <volatile>
+chat.attach | Attach |  | 21,837,48,48
+chat.model | Chat Settings, claude-fake-1 · medium |  | 70,837,177,48
+chat.dictate | Dictate |  | 287,837,48,48
+chat.send | Send |  | 342,837,48,48 (disabled)
+chat.topBar | Back, limited, /p/t/a/n/d/work · desk, Open Overview, Open Overview, More |  | 0,0,411,118
+nav.back | Back |  | 8,66,40,40
+chat.title | limited | limited | 56,62,251,48
+chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
+chat.overview.action | Open Overview |  | 315,66,40,40
+chat.more | More |  | 363,66,40,40

@@ -43,6 +43,7 @@ name = "fake-acp"
 path = "src/bin/fake_acp.rs"
 
 [dev-dependencies]
+source-tree = { workspace = true }
 patience = { workspace = true }
 
 [[test]]

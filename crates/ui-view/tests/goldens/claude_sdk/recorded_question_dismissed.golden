@@ -5,7 +5,7 @@
 ## 45 recorded 44: fact Stream type=control_request
   ask 3797be2f-8462-4d55-9c40-71950ff22c4b -> "toolu_01KMFniM4Rn45nwzvvkMu3fE" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false }, OptionView { label: "Blue", description: "Choose blue.", preview: "", recommended: false }], allow_other: true, secret: false }])
+    body Question([QuestionView { header: "Color", question: "Which color do you prefer?", header_runs: ["Color"], question_runs: ["Which color do you prefer?"], multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false, label_runs: ["Red"], description_runs: ["Choose red."] }, OptionView { label: "Blue", description: "Choose blue.", preview: "", …
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 55 recorded 54: fact Stream type=control_cancel_request
   ask none
@@ -16,7 +16,7 @@
      1 boundary:1 Hidden collapsed
      2 ca2704ca-814f-41fc-80bc-7190e0aff054 Prompt { text: [Text("Use AskUserQuestion to ask one single-select question with header Color, question 'Which color do you prefer?', and options Red and Blue.")], steered: false }
      3 776246e6-9c0c-4d7d-bad7-d48f96aa0f69 Hidden collapsed
-     4 toolu_01KMFniM4Rn45nwzvvkMu3fE [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false }, OptionView { label: "Blue", description: "Choose blue.", preview: "", recommended: false }], allow_other: true, secret:…
+     4 toolu_01KMFniM4Rn45nwzvvkMu3fE [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Color", question: "Which color do you prefer?", header_runs: ["Color"], question_runs: ["Which color do you prefer?"], multi_select: false, options: [OptionView { label: "Red", description: "Choose red.", preview: "", recommended: false, label_runs: ["Red"], description_runs: ["Choose re…
      5 turn:1 Stopped
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context Some(ContextView { used_tokens: 20396, window_tokens: Some(1000000), percent: Some(2), near_full: false }) sign-in None

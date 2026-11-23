@@ -680,7 +680,9 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | [`amux`](../crates/amux/src/main.rs) | The one binary: CLI verbs, the terminal client, the daemon, the supervisor, the relay, and the hidden subcommands agents run. |
 | [`app-runtime`](../crates/app-runtime/src/lib.rs) | The phone's chats and fleet over the local runtime, with changes gathered for the host's next turn. |
 | [`app-embedded`](../crates/app-embedded/src/lib.rs) | The daemon's profile runtime hosted in the phone's process. |
-| [`app-ffi`](../crates/app-ffi/README.md) | The C ABI the iPhone app calls, with view values as JSON. See [embedding](EMBEDDED.md). |
+| [`app-bridge`](../crates/app-bridge/src/lib.rs) | The language-neutral bridge over the embedded runtime, its chats and fleet, with view values as JSON. |
+| [`app-ffi`](../crates/app-ffi/README.md) | The C ABI facade over `app-bridge` that the iPhone and Mac apps call. See [embedding](EMBEDDED.md). |
+| [`app-jni`](../crates/app-jni/src/lib.rs) | The JNI facade over `app-bridge` that the Android app and JVM tests call. |
 | [`browser-core`](../crates/browser-core/src/lib.rs) | The client crates the browser extension runs, compiled to WebAssembly: the fleet model, the rows its agent picker draws, and the `amux.v1` messages it sends and reads, behind one JSON entry point. |
 
 **Verification and tools** — never linked by production code.
@@ -753,7 +755,9 @@ The allowed sets encode the layering above:
 | `tui` | `attachments`, `client`, `settings`, `ui-code`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
 | `app-runtime` | `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | the phone's chats with no `node` |
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` | the daemon in the phone's process |
-| `app-ffi` | `app-embedded`, `app-runtime`, `client`, `installer`, `node`, `ui-code`, `ui-state`, `ui-view`, `wire` | the C ABI over both; the installer only off the phone, for a desktop app's first call |
+| `app-bridge` | `app-embedded`, `app-runtime`, `client`, `installer` (desktop only), `node`, `ui-code`, `ui-state`, `ui-view`, `wire` | the language-neutral bridge over both |
+| `app-ffi` | `app-bridge` | the C ABI facade over the bridge |
+| `app-jni` | `app-bridge` | the JNI facade over the bridge |
 | `browser-core` | `attachments`, `ui-state`, `ui-view`, `wire` | the pure client crates, with no runtime, socket or driver, since the extension does its own I/O |
 | `amux` | `agent`, `agent-dir`, `analytics`, `client`, `log-file`, `node`, `settings`, `tui`, `wire` | the one binary |
 | `models` | `agent-core`, `daemon-core`, `interpret`, `journal`, `path-core`, `provider-fakes`, `relay-core`, `release`, `socket-core`, `store`, `supervisor-core`, `ui-state`, `wire`, `workspace-core` | the properties, explored over the real cores, store and session state |
@@ -761,11 +765,11 @@ The allowed sets encode the layering above:
 | `qualification` | `node`, `provider-fakes`, `pty-host`, `redaction`, `testnet`, `wire` | the live lane and the performance workloads over the harness; its probes host terminal Claude on a pseudo-terminal of their own and sanitize what they record |
 | `xtask` | `release` | signs releases |
 | `installer` | `agent-dir`, `release`, `settings` | finds the front door from the settings, checks a download against the manifest, and waits on the local socket, without the daemon |
-| `ios-tools` | `app-runtime`, `ui-state`, `ui-view`, `wire` | generates the Swift mirrors |
+| `ios-tools` | `app-runtime`, `ui-state`, `ui-view`, `wire` | generates the Swift and Kotlin mirrors and the markdown fixtures |
 
-The phone bridge (`app-embedded`, `app-ffi`) links `node` on purpose: it
+The phone bridge (`app-embedded`, `app-bridge`, `app-ffi`, `app-jni`) links `node` on purpose: it
 hosts the runtime in process. `just mobile-check` checks
-that provider-free graph for iOS.
+that provider-free graph for iOS, and `just android check` for Android.
 
 ### The rustls patch
 

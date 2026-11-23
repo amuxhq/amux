@@ -29,5 +29,8 @@ tracing = { workspace = true }
 # A host id, which a call's authority names.
 uuid = { workspace = true }
 
+[dev-dependencies]
+source-tree = { workspace = true }
+
 [lints]
 workspace = true

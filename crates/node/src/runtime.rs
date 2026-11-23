@@ -254,13 +254,13 @@ pub enum RegistryError {
     UnreadableAttachment,
     /// An ACP agent no built-in and no `[agents.<id>]` entry names.
     #[error(
-        "this computer knows no agent {0:?}; an agent of your own is added to the config \
+        "this device knows no agent {0:?}; an agent of your own is added to the config \
          under [agents.{0}]"
     )]
     UnknownAgent(String),
     /// An ACP agent whose command is not found where it is looked for.
     #[error(
-        "{name} is not installed on this computer: amux runs {command:?} and it is not on \
+        "{name} is not installed on this device: amux runs {command:?} and it is not on \
          the PATH amux starts agents with"
     )]
     AgentNotInstalled { name: String, command: String },

@@ -113,8 +113,8 @@ enum HostWords {
         switch host.reach {
         case .online(let via):
             return switch via {
-            case .direct: "Connected on this network"
-            case .relay: "Connected over the internet"
+            case .direct: host.sameNetwork ? "Connected · Local" : "Connected · Direct"
+            case .relay: "Connected · Relayed"
             case .ssh: "Connected over SSH"
             case .unspecified: "Connected"
             }
@@ -130,7 +130,7 @@ enum HostWords {
     /// The host's kind as one of the app's icons.
     static func lucide(_ host: HostView) -> String {
         switch host.platform {
-        case .ios: "smartphone"
+        case .ios, .android: "smartphone"
         case .linux, .windows: "server"
         case .macos, .unspecified, nil: "laptop"
         }

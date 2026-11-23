@@ -8,6 +8,7 @@ publish = false
 autotests = false
 
 [dependencies]
+source-tree = { workspace = true }
 release = { workspace = true }
 semver = { workspace = true }
 tonic-prost-build = { workspace = true }

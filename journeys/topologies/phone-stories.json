@@ -8,6 +8,7 @@
       ],
       "lan": true,
       "bonjour": true,
+      "agent_grace_secs": 120,
       "script": {
         "steps": [
           {

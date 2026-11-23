@@ -5,8 +5,6 @@
 //! notifications. A clean-up of these is the next protocol, `amux/2`, served
 //! beside this one, as `docs/WIRE.md` says.
 
-use std::path::Path;
-
 /// Each file with the lines it must hold, exactly.
 const PINNED: &[(&str, &[&str])] = &[
     (
@@ -68,7 +66,7 @@ const PINNED: &[(&str, &[&str])] = &[
 
 #[test]
 fn the_strings_outside_protobuf_have_not_changed() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = source_tree::crate_dir!().join("../..");
     for (file, lines) in PINNED {
         let source = std::fs::read_to_string(root.join(file)).unwrap();
         for line in *lines {

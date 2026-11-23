@@ -2,6 +2,7 @@
 
 load("@prelude//rust:cargo_buildscript.bzl", "buildscript_run")
 load("@prelude//rust:cargo_package.bzl", "cargo")
+load("//build:third_party.bzl", "third_party_rust_library")
 
 git_fetch(
     name = "rustls-6fb7c0c896042498.git",
@@ -26,7 +27,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "adler2-2",
     srcs = [":adler2-2.0.1.crate"],
     crate = "adler2",
@@ -61,7 +62,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "aead-0.6",
     srcs = [":aead-0.6.1.crate"],
     crate = "aead",
@@ -100,7 +101,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ahash-0.8",
     srcs = [":ahash-0.8.12.crate"],
     crate = "ahash",
@@ -147,7 +148,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "aho-corasick-1",
     srcs = [":aho-corasick-1.1.5.crate"],
     crate = "aho_corasick",
@@ -187,7 +188,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "allocator-api2-0.2",
     srcs = [":allocator-api2-0.2.21.crate"],
     crate = "allocator_api2",
@@ -223,7 +224,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "anstream-1",
     srcs = [":anstream-1.0.0.crate"],
     crate = "anstream",
@@ -276,7 +277,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "anstyle-1",
     srcs = [":anstyle-1.0.14.crate"],
     crate = "anstyle",
@@ -315,7 +316,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "anstyle-parse-1",
     srcs = [":anstyle-parse-1.0.0.crate"],
     crate = "anstyle_parse",
@@ -355,7 +356,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "anstyle-query-1",
     srcs = [":anstyle-query-1.1.5.crate"],
     crate = "anstyle_query",
@@ -395,7 +396,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "anstyle-wincon-3",
     srcs = [":anstyle-wincon-3.0.11.crate"],
     crate = "anstyle_wincon",
@@ -441,7 +442,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "anyhow-1",
     srcs = [":anyhow-1.0.104.crate"],
     crate = "anyhow",
@@ -486,7 +487,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "arboard-3",
     srcs = [":arboard-3.6.1.crate"],
     crate = "arboard",
@@ -575,7 +576,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "arrayvec-0.7",
     srcs = [":arrayvec-0.7.8.crate"],
     crate = "arrayvec",
@@ -610,7 +611,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ascii-1",
     srcs = [":ascii-1.1.0.crate"],
     crate = "ascii",
@@ -656,7 +657,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "async-trait-0.1",
     srcs = [":async-trait-0.1.92.crate"],
     crate = "async_trait",
@@ -697,7 +698,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "atomic-waker-1",
     srcs = [":atomic-waker-1.1.2.crate"],
     crate = "atomic_waker",
@@ -732,7 +733,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "autocfg-1",
     srcs = [":autocfg-1.5.1.crate"],
     crate = "autocfg",
@@ -767,7 +768,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "axum-0.8",
     srcs = [":axum-0.8.9.crate"],
     crate = "axum",
@@ -821,7 +822,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "axum-core-0.5",
     srcs = [":axum-core-0.5.6.crate"],
     crate = "axum_core",
@@ -874,7 +875,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "base64-0.22",
     srcs = [":base64-0.22.1.crate"],
     crate = "base64",
@@ -914,7 +915,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "base64-0.23",
     srcs = [":base64-0.23.1.crate"],
     crate = "base64",
@@ -953,7 +954,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "base64-simd-0.8",
     srcs = [":base64-simd-0.8.0.crate"],
     crate = "base64_simd",
@@ -998,7 +999,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "bitflags-1",
     srcs = [":bitflags-1.3.2.crate"],
     crate = "bitflags",
@@ -1034,7 +1035,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "bitflags-2",
     srcs = [":bitflags-2.13.1.crate"],
     crate = "bitflags",
@@ -1070,7 +1071,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "bitvec-1",
     srcs = [":bitvec-1.1.1.crate"],
     crate = "bitvec",
@@ -1124,7 +1125,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "blake3-1",
     srcs = [":blake3-1.8.7.crate"],
     crate = "blake3",
@@ -1233,7 +1234,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "block-buffer-0.10",
     srcs = [":block-buffer-0.10.4.crate"],
     crate = "block_buffer",
@@ -1269,7 +1270,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "block-buffer-0.12",
     srcs = [":block-buffer-0.12.1.crate"],
     crate = "block_buffer",
@@ -1305,7 +1306,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "bumpalo-3",
     srcs = [":bumpalo-3.20.3.crate"],
     crate = "bumpalo",
@@ -1341,7 +1342,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "by_address-1",
     srcs = [":by_address-1.2.1.crate"],
     crate = "by_address",
@@ -1376,7 +1377,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "bytemuck-1",
     srcs = [":bytemuck-1.25.2.crate"],
     crate = "bytemuck",
@@ -1418,7 +1419,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "bytemuck_derive-1",
     srcs = [":bytemuck_derive-1.12.1.crate"],
     crate = "bytemuck_derive",
@@ -1459,7 +1460,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "byteorder-lite-0.1",
     srcs = [":byteorder-lite-0.1.0.crate"],
     crate = "byteorder_lite",
@@ -1504,7 +1505,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "bytes-1",
     srcs = [":bytes-1.12.1.crate"],
     crate = "bytes",
@@ -1543,7 +1544,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "castaway-0.2",
     srcs = [":castaway-0.2.4.crate"],
     crate = "castaway",
@@ -1586,7 +1587,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "cbindgen-0.29",
     srcs = [":cbindgen-0.29.4.crate"],
     crate = "cbindgen",
@@ -1633,7 +1634,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "cc-1",
     srcs = [":cc-1.4.4.crate"],
     crate = "cc",
@@ -1694,7 +1695,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "cesu8-1",
     srcs = [":cesu8-1.1.0.crate"],
     crate = "cesu8",
@@ -1729,7 +1730,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "cfg-if-1",
     srcs = [":cfg-if-1.0.4.crate"],
     crate = "cfg_if",
@@ -1764,7 +1765,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "cfg_aliases-0.1",
     srcs = [":cfg_aliases-0.1.1.crate"],
     crate = "cfg_aliases",
@@ -1799,7 +1800,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "cfg_aliases-0.2",
     srcs = [":cfg_aliases-0.2.2.crate"],
     crate = "cfg_aliases",
@@ -1834,7 +1835,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "chacha20-0.10",
     srcs = [":chacha20-0.10.2.crate"],
     crate = "chacha20",
@@ -1892,7 +1893,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "chacha20poly1305-0.11",
     srcs = [":chacha20poly1305-0.11.0.crate"],
     crate = "chacha20poly1305",
@@ -1935,7 +1936,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "choice-0.0.2",
     srcs = [":choice-0.0.2.crate"],
     crate = "choice",
@@ -1970,7 +1971,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "chunked_transfer-1",
     srcs = [":chunked_transfer-1.5.0.crate"],
     crate = "chunked_transfer",
@@ -2005,7 +2006,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "cipher-0.5",
     srcs = [":cipher-0.5.2.crate"],
     crate = "cipher",
@@ -2057,7 +2058,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "clap-4",
     srcs = [":clap-4.6.7.crate"],
     crate = "clap",
@@ -2107,7 +2108,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "clap_builder-4",
     srcs = [":clap_builder-4.6.7.crate"],
     crate = "clap_builder",
@@ -2157,7 +2158,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "clap_derive-4",
     srcs = [":clap_derive-4.6.7.crate"],
     crate = "clap_derive",
@@ -2200,7 +2201,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "clap_lex-1",
     srcs = [":clap_lex-1.1.1.crate"],
     crate = "clap_lex",
@@ -2235,7 +2236,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "clipboard-win-5",
     srcs = [":clipboard-win-5.4.3.crate"],
     crate = "clipboard_win",
@@ -2272,7 +2273,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "cmov-0.5",
     srcs = [":cmov-0.5.4.crate"],
     crate = "cmov",
@@ -2307,7 +2308,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "cobs-0.3",
     srcs = [":cobs-0.3.0.crate"],
     crate = "cobs",
@@ -2343,7 +2344,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "color_quant-1",
     srcs = [":color_quant-1.1.0.crate"],
     crate = "color_quant",
@@ -2378,7 +2379,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "colorchoice-1",
     srcs = [":colorchoice-1.0.5.crate"],
     crate = "colorchoice",
@@ -2413,7 +2414,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "combine-4",
     srcs = [":combine-4.6.9.crate"],
     crate = "combine",
@@ -2458,7 +2459,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "compact_str-0.9",
     srcs = [":compact_str-0.9.1.crate"],
     crate = "compact_str",
@@ -2502,7 +2503,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "const-oid-0.10",
     srcs = [":const-oid-0.10.2.crate"],
     crate = "const_oid",
@@ -2537,7 +2538,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "constant_time_eq-0.4",
     srcs = [":constant_time_eq-0.4.2.crate"],
     crate = "constant_time_eq",
@@ -2573,7 +2574,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "convert_case-0.10",
     srcs = [":convert_case-0.10.0.crate"],
     crate = "convert_case",
@@ -2609,7 +2610,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "core_maths-0.1",
     srcs = [":core_maths-0.1.1.crate"],
     crate = "core_maths",
@@ -2645,7 +2646,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "cpufeatures-0.2",
     srcs = [":cpufeatures-0.2.17.crate"],
     crate = "cpufeatures",
@@ -2694,7 +2695,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "cpufeatures-0.3",
     srcs = [":cpufeatures-0.3.1.crate"],
     crate = "cpufeatures",
@@ -2743,7 +2744,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "crc32fast-1",
     srcs = [":crc32fast-1.5.1.crate"],
     crate = "crc32fast",
@@ -2783,7 +2784,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "crossbeam-utils-0.8",
     srcs = [":crossbeam-utils-0.8.23.crate"],
     crate = "crossbeam_utils",
@@ -2828,7 +2829,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "crossterm-0.29",
     srcs = [":crossterm-0.29.0.crate"],
     crate = "crossterm",
@@ -2934,7 +2935,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "crossterm_winapi-0.9",
     srcs = [":crossterm_winapi-0.9.1.crate"],
     crate = "crossterm_winapi",
@@ -2970,7 +2971,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "crypto-common-0.1",
     srcs = [":crypto-common-0.1.6.crate"],
     crate = "crypto_common",
@@ -3010,7 +3011,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "crypto-common-0.2",
     srcs = [":crypto-common-0.2.2.crate"],
     crate = "crypto_common",
@@ -3046,7 +3047,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ctutils-0.4",
     srcs = [":ctutils-0.4.8.crate"],
     crate = "ctutils",
@@ -3088,7 +3089,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "curve25519-dalek-5",
     srcs = [":curve25519-dalek-5.0.0.crate"],
     crate = "curve25519_dalek",
@@ -3216,7 +3217,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "curve25519-dalek-derive-0.1",
     srcs = [":curve25519-dalek-derive-0.1.1.crate"],
     crate = "curve25519_dalek_derive",
@@ -3257,7 +3258,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "darling-0.24",
     srcs = [":darling-0.24.1.crate"],
     crate = "darling",
@@ -3300,7 +3301,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "darling_core-0.24",
     srcs = [":darling_core-0.24.1.crate"],
     crate = "darling_core",
@@ -3346,7 +3347,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "darling_macro-0.24",
     srcs = [":darling_macro-0.24.1.crate"],
     crate = "darling_macro",
@@ -3387,7 +3388,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "dashmap-6",
     srcs = [":dashmap-6.2.1.crate"],
     crate = "dashmap",
@@ -3430,7 +3431,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "data-encoding-2",
     srcs = [":data-encoding-2.11.1.crate"],
     crate = "data_encoding",
@@ -3470,7 +3471,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "deranged-0.5",
     srcs = [":deranged-0.5.8.crate"],
     crate = "deranged",
@@ -3506,7 +3507,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "derive_more-2",
     srcs = [":derive_more-2.1.1.crate"],
     crate = "derive_more",
@@ -3547,7 +3548,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "derive_more-impl-2",
     srcs = [":derive_more-impl-2.1.1.crate"],
     crate = "derive_more_impl",
@@ -3593,7 +3594,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "digest-0.10",
     srcs = [":digest-0.10.7.crate"],
     crate = "digest",
@@ -3639,7 +3640,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "digest-0.11",
     srcs = [":digest-0.11.3.crate"],
     crate = "digest",
@@ -3689,7 +3690,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "displaydoc-0.2",
     srcs = [":displaydoc-0.2.7.crate"],
     crate = "displaydoc",
@@ -3730,7 +3731,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "document-features-0.2",
     srcs = [":document-features-0.2.12.crate"],
     crate = "document_features",
@@ -3768,7 +3769,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "downcast-rs-1",
     srcs = [":downcast-rs-1.2.1.crate"],
     crate = "downcast_rs",
@@ -3807,7 +3808,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "dyn-clone-1",
     srcs = [":dyn-clone-1.0.20.crate"],
     crate = "dyn_clone",
@@ -3842,7 +3843,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "either-1",
     srcs = [":either-1.18.0.crate"],
     crate = "either",
@@ -3881,7 +3882,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "equivalent-1",
     srcs = [":equivalent-1.0.2.crate"],
     crate = "equivalent",
@@ -3916,7 +3917,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "errno-0.3",
     srcs = [":errno-0.3.14.crate"],
     crate = "errno",
@@ -3978,7 +3979,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "error-code-3",
     srcs = [":error-code-3.4.0.crate"],
     crate = "error_code",
@@ -4014,7 +4015,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "fallible-iterator-0.3",
     srcs = [":fallible-iterator-0.3.0.crate"],
     crate = "fallible_iterator",
@@ -4053,7 +4054,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "fallible-streaming-iterator-0.1",
     srcs = [":fallible-streaming-iterator-0.1.9.crate"],
     crate = "fallible_streaming_iterator",
@@ -4088,7 +4089,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "fastrand-2",
     srcs = [":fastrand-2.5.0.crate"],
     crate = "fastrand",
@@ -4128,7 +4129,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "fax-0.2",
     srcs = [":fax-0.2.7.crate"],
     crate = "fax",
@@ -4163,7 +4164,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "fdeflate-0.3",
     srcs = [":fdeflate-0.3.7.crate"],
     crate = "fdeflate",
@@ -4199,7 +4200,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "filedescriptor-0.8",
     srcs = [":filedescriptor-0.8.3.crate"],
     crate = "filedescriptor",
@@ -4243,7 +4244,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "find-msvc-tools-0.1",
     srcs = [":find-msvc-tools-0.1.11.crate"],
     crate = "find_msvc_tools",
@@ -4278,7 +4279,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "fixedbitset-0.5",
     srcs = [":fixedbitset-0.5.7.crate"],
     crate = "fixedbitset",
@@ -4313,7 +4314,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "flate2-1",
     srcs = [":flate2-1.1.10.crate"],
     crate = "flate2",
@@ -4359,7 +4360,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "flume-0.12",
     srcs = [":flume-0.12.0.crate"],
     crate = "flume",
@@ -4406,7 +4407,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "fnv-1",
     srcs = [":fnv-1.0.7.crate"],
     crate = "fnv",
@@ -4445,7 +4446,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "foldhash-0.1",
     srcs = [":foldhash-0.1.5.crate"],
     crate = "foldhash",
@@ -4480,7 +4481,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "foldhash-0.2",
     srcs = [":foldhash-0.2.0.crate"],
     crate = "foldhash",
@@ -4521,7 +4522,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "fontdue-0.9",
     srcs = [":fontdue-0.9.4.crate"],
     crate = "fontdue",
@@ -4565,7 +4566,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "form_urlencoded-1",
     srcs = [":form_urlencoded-1.2.3.crate"],
     crate = "form_urlencoded",
@@ -4606,7 +4607,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "funty-2",
     srcs = [":funty-2.0.0.crate"],
     crate = "funty",
@@ -4641,7 +4642,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "futures-channel-0.3",
     srcs = [":futures-channel-0.3.34.crate"],
     crate = "futures_channel",
@@ -4682,7 +4683,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "futures-core-0.3",
     srcs = [":futures-core-0.3.34.crate"],
     crate = "futures_core",
@@ -4722,7 +4723,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "futures-io-0.3",
     srcs = [":futures-io-0.3.34.crate"],
     crate = "futures_io",
@@ -4761,7 +4762,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "futures-macro-0.3",
     srcs = [":futures-macro-0.3.34.crate"],
     crate = "futures_macro",
@@ -4802,7 +4803,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "futures-sink-0.3",
     srcs = [":futures-sink-0.3.34.crate"],
     crate = "futures_sink",
@@ -4842,7 +4843,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "futures-task-0.3",
     srcs = [":futures-task-0.3.34.crate"],
     crate = "futures_task",
@@ -4887,7 +4888,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "futures-util-0.3",
     srcs = [":futures-util-0.3.34.crate"],
     crate = "futures_util",
@@ -4941,7 +4942,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "generic-array-0.14",
     srcs = [":generic-array-0.14.9.crate"],
     crate = "generic_array",
@@ -4984,7 +4985,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "gethostname-1",
     srcs = [":gethostname-1.1.0.crate"],
     crate = "gethostname",
@@ -5045,7 +5046,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "getrandom-0.2",
     srcs = [":getrandom-0.2.17.crate"],
     crate = "getrandom",
@@ -5113,7 +5114,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "getrandom-0.3",
     srcs = [":getrandom-0.3.4.crate"],
     crate = "getrandom",
@@ -5170,7 +5171,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "getrandom-0.4",
     srcs = [":getrandom-0.4.3.crate"],
     crate = "getrandom",
@@ -5237,7 +5238,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "gif-0.14",
     srcs = [":gif-0.14.2.crate"],
     crate = "gif",
@@ -5282,7 +5283,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "h2-0.4",
     srcs = [":h2-0.4.18.crate"],
     crate = "h2",
@@ -5330,7 +5331,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "half-2",
     srcs = [":half-2.7.1.crate"],
     crate = "half",
@@ -5374,7 +5375,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "hashbrown-0.14",
     srcs = [":hashbrown-0.14.5.crate"],
     crate = "hashbrown",
@@ -5410,7 +5411,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "hashbrown-0.15",
     srcs = [":hashbrown-0.15.5.crate"],
     crate = "hashbrown",
@@ -5458,7 +5459,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "hashbrown-0.16",
     srcs = [":hashbrown-0.16.1.crate"],
     crate = "hashbrown",
@@ -5506,7 +5507,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "hashbrown-0.17",
     srcs = [":hashbrown-0.17.1.crate"],
     crate = "hashbrown",
@@ -5554,7 +5555,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "hashlink-0.12",
     srcs = [":hashlink-0.12.1.crate"],
     crate = "hashlink",
@@ -5590,7 +5591,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "heck-0.5",
     srcs = [":heck-0.5.0.crate"],
     crate = "heck",
@@ -5625,7 +5626,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "hkdf-0.13",
     srcs = [":hkdf-0.13.0.crate"],
     crate = "hkdf",
@@ -5661,7 +5662,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "hmac-0.13",
     srcs = [":hmac-0.13.0.crate"],
     crate = "hmac",
@@ -5703,7 +5704,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "hpke-0.15",
     srcs = [":hpke-0.15.1.crate"],
     crate = "hpke",
@@ -5758,7 +5759,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "http-1",
     srcs = [":http-1.5.0.crate"],
     crate = "http",
@@ -5807,7 +5808,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "http-body-1",
     srcs = [":http-body-1.1.0.crate"],
     crate = "http_body",
@@ -5852,7 +5853,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "http-body-util-0.1",
     srcs = [":http-body-util-0.1.5.crate"],
     crate = "http_body_util",
@@ -5895,7 +5896,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "httparse-1",
     srcs = [":httparse-1.10.1.crate"],
     crate = "httparse",
@@ -5934,7 +5935,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "httpdate-1",
     srcs = [":httpdate-1.0.3.crate"],
     crate = "httpdate",
@@ -5969,7 +5970,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "hybrid-array-0.4",
     srcs = [":hybrid-array-0.4.15.crate"],
     crate = "hybrid_array",
@@ -6011,7 +6012,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "hyper-1",
     srcs = [":hyper-1.11.0.crate"],
     crate = "hyper",
@@ -6069,7 +6070,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "hyper-rustls-0.27",
     srcs = [":hyper-rustls-0.27.10.crate"],
     crate = "hyper_rustls",
@@ -6121,7 +6122,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "hyper-timeout-0.5",
     srcs = [":hyper-timeout-0.5.2.crate"],
     crate = "hyper_timeout",
@@ -6169,7 +6170,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "hyper-util-0.1",
     srcs = [":hyper-util-0.1.20.crate"],
     crate = "hyper_util",
@@ -6287,7 +6288,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "icu_collections-2",
     srcs = [":icu_collections-2.3.0.crate"],
     crate = "icu_collections",
@@ -6330,7 +6331,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "icu_locale_core-2",
     srcs = [":icu_locale_core-2.3.0.crate"],
     crate = "icu_locale_core",
@@ -6373,7 +6374,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "icu_normalizer-2",
     srcs = [":icu_normalizer-2.3.0.crate"],
     crate = "icu_normalizer",
@@ -6416,7 +6417,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "icu_normalizer_data-2",
     srcs = [":icu_normalizer_data-2.3.0.crate"],
     crate = "icu_normalizer_data",
@@ -6451,7 +6452,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "icu_properties-2",
     srcs = [":icu_properties-2.3.0.crate"],
     crate = "icu_properties",
@@ -6496,7 +6497,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "icu_properties_data-2",
     srcs = [":icu_properties_data-2.3.0.crate"],
     crate = "icu_properties_data",
@@ -6531,7 +6532,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "icu_provider-2",
     srcs = [":icu_provider-2.3.1.crate"],
     crate = "icu_provider",
@@ -6576,7 +6577,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "icy_sixel-0.5",
     srcs = [":icy_sixel-0.5.1.crate"],
     crate = "icy_sixel",
@@ -6615,7 +6616,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "id-set-0.2",
     srcs = [":id-set-0.2.2.crate"],
     crate = "id_set",
@@ -6650,7 +6651,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ident_case-1",
     srcs = [":ident_case-1.0.1.crate"],
     crate = "ident_case",
@@ -6685,7 +6686,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "idna-1",
     srcs = [":idna-1.1.0.crate"],
     crate = "idna",
@@ -6730,7 +6731,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "idna_adapter-1",
     srcs = [":idna_adapter-1.2.2.crate"],
     crate = "idna_adapter",
@@ -6776,7 +6777,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "if-addrs-0.15",
     srcs = [":if-addrs-0.15.0.crate"],
     crate = "if_addrs",
@@ -6832,7 +6833,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "image-0.25",
     srcs = [":image-0.25.10.crate"],
     crate = "image",
@@ -6894,7 +6895,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "image-webp-0.2",
     srcs = [":image-webp-0.2.4.crate"],
     crate = "image_webp",
@@ -6933,7 +6934,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "indexmap-2",
     srcs = [":indexmap-2.14.0.crate"],
     crate = "indexmap",
@@ -6976,7 +6977,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "indoc-2",
     srcs = [":indoc-2.0.7.crate"],
     crate = "indoc",
@@ -7012,7 +7013,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "inotify-0.11",
     srcs = [":inotify-0.11.5.crate"],
     crate = "inotify",
@@ -7052,7 +7053,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "inotify-sys-0.1",
     srcs = [":inotify-sys-0.1.8.crate"],
     crate = "inotify_sys",
@@ -7088,7 +7089,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "inout-0.2",
     srcs = [":inout-0.2.5.crate"],
     crate = "inout",
@@ -7124,7 +7125,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "instability-0.3",
     srcs = [":instability-0.3.14.crate"],
     crate = "instability",
@@ -7167,7 +7168,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ipnet-2",
     srcs = [":ipnet-2.12.2.crate"],
     crate = "ipnet",
@@ -7206,7 +7207,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "is_terminal_polyfill-1",
     srcs = [":is_terminal_polyfill-1.70.2.crate"],
     crate = "is_terminal_polyfill",
@@ -7242,7 +7243,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "itertools-0.14",
     srcs = [":itertools-0.14.0.crate"],
     crate = "itertools",
@@ -7283,7 +7284,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "itoa-1",
     srcs = [":itoa-1.0.18.crate"],
     crate = "itoa",
@@ -7324,7 +7325,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "jiff-0.2",
     srcs = [":jiff-0.2.38.crate"],
     crate = "jiff",
@@ -7386,7 +7387,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "jiff-core-0.1",
     srcs = [":jiff-core-0.1.1.crate"],
     crate = "jiff_core",
@@ -7426,7 +7427,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "jiff-tzdb-0.1",
     srcs = [":jiff-tzdb-0.1.9.crate"],
     crate = "jiff_tzdb",
@@ -7461,7 +7462,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "jiff-tzdb-platform-0.1",
     srcs = [":jiff-tzdb-platform-0.1.3.crate"],
     crate = "jiff_tzdb_platform",
@@ -7503,7 +7504,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "jni-0.21",
     srcs = [":jni-0.21.1.crate"],
     crate = "jni",
@@ -7551,7 +7552,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "jni-sys-0.3",
     srcs = [":jni-sys-0.3.1.crate"],
     crate = "jni_sys",
@@ -7641,7 +7642,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "jni-sys-0.4",
     srcs = [":jni-sys-0.4.1.crate"],
     crate = "jni_sys",
@@ -7677,7 +7678,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "jni-sys-macros-0.4",
     srcs = [":jni-sys-macros-0.4.1.crate"],
     crate = "jni_sys_macros",
@@ -7717,7 +7718,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "jobserver-0.1",
     srcs = [":jobserver-0.1.35.crate"],
     crate = "jobserver",
@@ -7775,7 +7776,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "js-sys-0.3",
     srcs = [":js-sys-0.3.104.crate"],
     crate = "js_sys",
@@ -7820,7 +7821,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "kasuari-0.4",
     srcs = [":kasuari-0.4.12.crate"],
     crate = "kasuari",
@@ -7860,7 +7861,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "kqueue-1",
     srcs = [":kqueue-1.2.1.crate"],
     crate = "kqueue",
@@ -7899,7 +7900,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "kqueue-sys-1",
     srcs = [":kqueue-sys-1.1.2.crate"],
     crate = "kqueue_sys",
@@ -7938,7 +7939,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "lazy_static-1",
     srcs = [":lazy_static-1.5.0.crate"],
     crate = "lazy_static",
@@ -7979,7 +7980,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "libc-0.2",
     srcs = [":libc-0.2.189.crate"],
     crate = "libc",
@@ -8078,7 +8079,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "libm-0.2",
     srcs = [":libm-0.2.16.crate"],
     crate = "libm",
@@ -8117,7 +8118,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "libsqlite3-sys-0.39",
     srcs = [":libsqlite3-sys-0.39.1.crate"],
     crate = "libsqlite3_sys",
@@ -8236,7 +8237,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "line-clipping-0.3",
     srcs = [":line-clipping-0.3.8.crate"],
     crate = "line_clipping",
@@ -8272,7 +8273,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "linux-raw-sys-0.4",
     srcs = [":linux-raw-sys-0.4.15.crate"],
     crate = "linux_raw_sys",
@@ -8320,7 +8321,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "linux-raw-sys-0.12",
     srcs = [":linux-raw-sys-0.12.1.crate"],
     crate = "linux_raw_sys",
@@ -8374,7 +8375,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "litemap-0.8",
     srcs = [":litemap-0.8.3.crate"],
     crate = "litemap",
@@ -8409,7 +8410,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "litrs-1",
     srcs = [":litrs-1.0.0.crate"],
     crate = "litrs",
@@ -8444,7 +8445,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "lock_api-0.4",
     srcs = [":lock_api-0.4.14.crate"],
     crate = "lock_api",
@@ -8484,7 +8485,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "log-0.4",
     srcs = [":log-0.4.34.crate"],
     crate = "log",
@@ -8523,7 +8524,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "lru-0.18",
     srcs = [":lru-0.18.5.crate"],
     crate = "lru",
@@ -8563,7 +8564,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "lru-slab-0.1",
     srcs = [":lru-slab-0.1.3.crate"],
     crate = "lru_slab",
@@ -8598,7 +8599,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "matchers-0.2",
     srcs = [":matchers-0.2.0.crate"],
     crate = "matchers",
@@ -8634,7 +8635,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "matchit-0.8",
     srcs = [":matchit-0.8.4.crate"],
     crate = "matchit",
@@ -8676,7 +8677,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "mdns-sd-0.21",
     srcs = [":mdns-sd-0.21.4.crate"],
     crate = "mdns_sd",
@@ -8726,7 +8727,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "memchr-2",
     srcs = [":memchr-2.8.3.crate"],
     crate = "memchr",
@@ -8766,7 +8767,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "mime-0.3",
     srcs = [":mime-0.3.17.crate"],
     crate = "mime",
@@ -8801,7 +8802,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "miniz_oxide-0.8",
     srcs = [":miniz_oxide-0.8.9.crate"],
     crate = "miniz_oxide",
@@ -8846,7 +8847,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "miniz_oxide-0.9",
     srcs = [":miniz_oxide-0.9.1.crate"],
     crate = "miniz_oxide",
@@ -8891,7 +8892,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "mio-1",
     srcs = [":mio-1.2.2.crate"],
     crate = "mio",
@@ -8957,7 +8958,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "moxcms-0.8",
     srcs = [":moxcms-0.8.1.crate"],
     crate = "moxcms",
@@ -9012,7 +9013,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "multimap-0.10",
     srcs = [":multimap-0.10.1.crate"],
     crate = "multimap",
@@ -9047,7 +9048,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "nix-0.28",
     srcs = [":nix-0.28.0.crate"],
     crate = "nix",
@@ -9152,7 +9153,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "nohash-hasher-0.2",
     srcs = [":nohash-hasher-0.2.0.crate"],
     crate = "nohash_hasher",
@@ -9197,7 +9198,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "notify-8",
     srcs = [":notify-8.2.2.crate"],
     crate = "notify",
@@ -9285,7 +9286,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "notify-types-2",
     srcs = [":notify-types-2.3.1.crate"],
     crate = "notify_types",
@@ -9321,7 +9322,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "nu-ansi-term-0.50",
     srcs = [":nu-ansi-term-0.50.3.crate"],
     crate = "nu_ansi_term",
@@ -9367,7 +9368,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "num-conv-0.2",
     srcs = [":num-conv-0.2.2.crate"],
     crate = "num_conv",
@@ -9402,7 +9403,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "num-traits-0.2",
     srcs = [":num-traits-0.2.19.crate"],
     crate = "num_traits",
@@ -9503,7 +9504,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "num_threads-0.1",
     srcs = [":num_threads-0.1.7.crate"],
     crate = "num_threads",
@@ -9549,7 +9550,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "objc2-0.6",
     srcs = [":objc2-0.6.4.crate"],
     crate = "objc2",
@@ -9590,7 +9591,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "objc2-app-kit-0.3",
     srcs = [":objc2-app-kit-0.3.2.crate"],
     crate = "objc2_app_kit",
@@ -9640,7 +9641,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "objc2-core-foundation-0.3",
     srcs = [":objc2-core-foundation-0.3.2.crate"],
     crate = "objc2_core_foundation",
@@ -9702,7 +9703,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "objc2-core-graphics-0.3",
     srcs = [":objc2-core-graphics-0.3.2.crate"],
     crate = "objc2_core_graphics",
@@ -9757,7 +9758,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "objc2-encode-4",
     srcs = [":objc2-encode-4.1.0.crate"],
     crate = "objc2_encode",
@@ -9796,7 +9797,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "objc2-foundation-0.3",
     srcs = [":objc2-foundation-0.3.2.crate"],
     crate = "objc2_foundation",
@@ -9858,7 +9859,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "once_cell-1",
     srcs = [":once_cell-1.21.4.crate"],
     crate = "once_cell",
@@ -9899,7 +9900,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "once_cell_polyfill-1",
     srcs = [":once_cell_polyfill-1.70.2.crate"],
     crate = "once_cell_polyfill",
@@ -9935,7 +9936,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ordered-float-5",
     srcs = [":ordered-float-5.5.1.crate"],
     crate = "ordered_float",
@@ -9971,7 +9972,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "outref-0.5",
     srcs = [":outref-0.5.2.crate"],
     crate = "outref",
@@ -10006,7 +10007,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "palette-0.7",
     srcs = [":palette-0.7.7.crate"],
     crate = "palette",
@@ -10053,7 +10054,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "palette_derive-0.7",
     srcs = [":palette_derive-0.7.7.crate"],
     crate = "palette_derive",
@@ -10095,7 +10096,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "palette_math-0.7",
     srcs = [":palette_math-0.7.7.crate"],
     crate = "palette_math",
@@ -10136,7 +10137,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "parking_lot-0.12",
     srcs = [":parking_lot-0.12.5.crate"],
     crate = "parking_lot",
@@ -10176,7 +10177,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "parking_lot_core-0.9",
     srcs = [":parking_lot_core-0.9.12.crate"],
     crate = "parking_lot_core",
@@ -10287,7 +10288,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "pem-4",
     srcs = [":pem-4.0.0.crate"],
     crate = "pem",
@@ -10327,7 +10328,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "percent-encoding-2",
     srcs = [":percent-encoding-2.3.2.crate"],
     crate = "percent_encoding",
@@ -10367,7 +10368,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "petgraph-0.8",
     srcs = [":petgraph-0.8.3.crate"],
     crate = "petgraph",
@@ -10408,7 +10409,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "pin-project-1",
     srcs = [":pin-project-1.1.13.crate"],
     crate = "pin_project",
@@ -10444,7 +10445,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "pin-project-internal-1",
     srcs = [":pin-project-internal-1.1.13.crate"],
     crate = "pin_project_internal",
@@ -10485,7 +10486,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "pin-project-lite-0.2",
     srcs = [":pin-project-lite-0.2.17.crate"],
     crate = "pin_project_lite",
@@ -10520,7 +10521,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "pkg-config-0.3",
     srcs = [":pkg-config-0.3.34.crate"],
     crate = "pkg_config",
@@ -10561,7 +10562,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "png-0.18",
     srcs = [":png-0.18.1.crate"],
     crate = "png",
@@ -10603,7 +10604,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "poly1305-0.9",
     srcs = [":poly1305-0.9.1.crate"],
     crate = "poly1305",
@@ -10656,7 +10657,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "portable-pty-0.9",
     srcs = [":portable-pty-0.9.0.crate"],
     crate = "portable_pty",
@@ -10719,7 +10720,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "postcard-1",
     srcs = [":postcard-1.1.3.crate"],
     crate = "postcard",
@@ -10759,7 +10760,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "potential_utf-0.1",
     srcs = [":potential_utf-0.1.6.crate"],
     crate = "potential_utf",
@@ -10796,7 +10797,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "powerfmt-0.2",
     srcs = [":powerfmt-0.2.0.crate"],
     crate = "powerfmt",
@@ -10831,7 +10832,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ppv-lite86-0.2",
     srcs = [":ppv-lite86-0.2.21.crate"],
     crate = "ppv_lite86",
@@ -10871,7 +10872,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "prettyplease-0.2",
     srcs = [":prettyplease-0.2.37.crate"],
     crate = "prettyplease",
@@ -10910,7 +10911,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "proc-macro2-1",
     srcs = [":proc-macro2-1.0.107.crate"],
     crate = "proc_macro2",
@@ -11013,7 +11014,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "proptest-1",
     srcs = [":proptest-1.11.0.crate"],
     crate = "proptest",
@@ -11067,7 +11068,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "prost-0.14",
     srcs = [":prost-0.14.4.crate"],
     crate = "prost",
@@ -11111,7 +11112,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "prost-build-0.14",
     srcs = [":prost-build-0.14.4.crate"],
     crate = "prost_build",
@@ -11166,7 +11167,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "prost-derive-0.14",
     srcs = [":prost-derive-0.14.4.crate"],
     crate = "prost_derive",
@@ -11215,7 +11216,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "prost-types-0.14",
     srcs = [":prost-types-0.14.4.crate"],
     crate = "prost_types",
@@ -11261,7 +11262,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "protoc-bin-vendored-3",
     srcs = [":protoc-bin-vendored-3.2.0.crate"],
     crate = "protoc_bin_vendored",
@@ -11306,7 +11307,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "protoc-bin-vendored-linux-aarch_64-3",
     srcs = [":protoc-bin-vendored-linux-aarch_64-3.2.0.crate"],
     crate = "protoc_bin_vendored_linux_aarch_64",
@@ -11341,7 +11342,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "protoc-bin-vendored-linux-ppcle_64-3",
     srcs = [":protoc-bin-vendored-linux-ppcle_64-3.2.0.crate"],
     crate = "protoc_bin_vendored_linux_ppcle_64",
@@ -11376,7 +11377,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "protoc-bin-vendored-linux-s390_64-3",
     srcs = [":protoc-bin-vendored-linux-s390_64-3.2.0.crate"],
     crate = "protoc_bin_vendored_linux_s390_64",
@@ -11411,7 +11412,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "protoc-bin-vendored-linux-x86_32-3",
     srcs = [":protoc-bin-vendored-linux-x86_32-3.2.0.crate"],
     crate = "protoc_bin_vendored_linux_x86_32",
@@ -11446,7 +11447,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "protoc-bin-vendored-linux-x86_64-3",
     srcs = [":protoc-bin-vendored-linux-x86_64-3.2.0.crate"],
     crate = "protoc_bin_vendored_linux_x86_64",
@@ -11481,7 +11482,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "protoc-bin-vendored-macos-aarch_64-3",
     srcs = [":protoc-bin-vendored-macos-aarch_64-3.2.0.crate"],
     crate = "protoc_bin_vendored_macos_aarch_64",
@@ -11516,7 +11517,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "protoc-bin-vendored-macos-x86_64-3",
     srcs = [":protoc-bin-vendored-macos-x86_64-3.2.0.crate"],
     crate = "protoc_bin_vendored_macos_x86_64",
@@ -11551,7 +11552,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "protoc-bin-vendored-win32-3",
     srcs = [":protoc-bin-vendored-win32-3.2.0.crate"],
     crate = "protoc_bin_vendored_win32",
@@ -11592,7 +11593,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "pulldown-cmark-0.13",
     srcs = [":pulldown-cmark-0.13.6.crate"],
     crate = "pulldown_cmark",
@@ -11632,7 +11633,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "pulldown-cmark-to-cmark-22",
     srcs = [":pulldown-cmark-to-cmark-22.0.1.crate"],
     crate = "pulldown_cmark_to_cmark",
@@ -11668,7 +11669,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "pxfm-0.1",
     srcs = [":pxfm-0.1.30.crate"],
     crate = "pxfm",
@@ -11709,7 +11710,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "qrcode-0.14",
     srcs = [":qrcode-0.14.1.crate"],
     crate = "qrcode",
@@ -11744,7 +11745,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "quantette-0.6",
     srcs = [":quantette-0.6.0.crate"],
     crate = "quantette",
@@ -11796,7 +11797,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "quick-error-2",
     srcs = [":quick-error-2.0.1.crate"],
     crate = "quick_error",
@@ -11837,7 +11838,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "quinn-0.11",
     srcs = [":quinn-0.11.12.crate"],
     crate = "quinn",
@@ -11976,7 +11977,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "quinn-proto-0.11",
     srcs = [":quinn-proto-0.11.19.crate"],
     crate = "quinn_proto",
@@ -12037,7 +12038,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "quinn-udp-0.5",
     srcs = [":quinn-udp-0.5.16.crate"],
     crate = "quinn_udp",
@@ -12156,7 +12157,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "quote-1",
     srcs = [":quote-1.0.47.crate"],
     crate = "quote",
@@ -12196,7 +12197,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "radium-0.7",
     srcs = [":radium-0.7.0.crate"],
     crate = "radium",
@@ -12231,7 +12232,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rand-0.8",
     srcs = [":rand-0.8.8.crate"],
     crate = "rand",
@@ -12299,7 +12300,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rand-0.9",
     srcs = [":rand-0.9.5.crate"],
     crate = "rand",
@@ -12347,7 +12348,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rand-0.10",
     srcs = [":rand-0.10.3.crate"],
     crate = "rand",
@@ -12395,7 +12396,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rand_chacha-0.3",
     srcs = [":rand_chacha-0.3.1.crate"],
     crate = "rand_chacha",
@@ -12435,7 +12436,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rand_chacha-0.9",
     srcs = [":rand_chacha-0.9.0.crate"],
     crate = "rand_chacha",
@@ -12475,7 +12476,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rand_core-0.6",
     srcs = [":rand_core-0.6.4.crate"],
     crate = "rand_core",
@@ -12516,7 +12517,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rand_core-0.9",
     srcs = [":rand_core-0.9.5.crate"],
     crate = "rand_core",
@@ -12556,7 +12557,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rand_core-0.10",
     srcs = [":rand_core-0.10.1.crate"],
     crate = "rand_core",
@@ -12591,7 +12592,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rand_pcg-0.10",
     srcs = [":rand_pcg-0.10.2.crate"],
     crate = "rand_pcg",
@@ -12627,7 +12628,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rand_xorshift-0.4",
     srcs = [":rand_xorshift-0.4.0.crate"],
     crate = "rand_xorshift",
@@ -12663,7 +12664,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rand_xoshiro-0.8",
     srcs = [":rand_xoshiro-0.8.1.crate"],
     crate = "rand_xoshiro",
@@ -12705,7 +12706,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ratatui-0.30",
     srcs = [":ratatui-0.30.2.crate"],
     crate = "ratatui",
@@ -12750,7 +12751,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ratatui-core-0.1",
     srcs = [":ratatui-core-0.1.2.crate"],
     crate = "ratatui_core",
@@ -12803,7 +12804,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ratatui-crossterm-0.1",
     srcs = [":ratatui-crossterm-0.1.2.crate"],
     crate = "ratatui_crossterm",
@@ -12857,7 +12858,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ratatui-image-11",
     srcs = [":ratatui-image-11.1.0.crate"],
     crate = "ratatui_image",
@@ -12929,7 +12930,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ratatui-widgets-0.3",
     srcs = [":ratatui-widgets-0.3.2.crate"],
     crate = "ratatui_widgets",
@@ -12983,7 +12984,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rcgen-0.14",
     srcs = [":rcgen-0.14.10.crate"],
     crate = "rcgen",
@@ -13032,7 +13033,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ref-cast-1",
     srcs = [":ref-cast-1.0.27.crate"],
     crate = "ref_cast",
@@ -13080,7 +13081,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ref-cast-impl-1",
     srcs = [":ref-cast-impl-1.0.27.crate"],
     crate = "ref_cast_impl",
@@ -13127,7 +13128,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "regex-1",
     srcs = [":regex-1.13.1.crate"],
     crate = "regex",
@@ -13187,7 +13188,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "regex-automata-0.4",
     srcs = [":regex-automata-0.4.18.crate"],
     crate = "regex_automata",
@@ -13253,7 +13254,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "regex-syntax-0.8",
     srcs = [":regex-syntax-0.8.11.crate"],
     crate = "regex_syntax",
@@ -13306,7 +13307,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "reqwest-0.12",
     srcs = [":reqwest-0.12.28.crate"],
     crate = "reqwest",
@@ -13612,7 +13613,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ring-0.17",
     srcs = [":ring-0.17.14.crate"],
     crate = "ring",
@@ -14133,7 +14134,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rusqlite-0.41",
     srcs = [":rusqlite-0.41.1.crate"],
     crate = "rusqlite",
@@ -14206,7 +14207,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rustc-hash-2",
     srcs = [":rustc-hash-2.1.3.crate"],
     crate = "rustc_hash",
@@ -14245,7 +14246,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rustc_version-0.4",
     srcs = [":rustc_version-0.4.1.crate"],
     crate = "rustc_version",
@@ -14281,7 +14282,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rustix-0.38",
     srcs = [":rustix-0.38.44.crate"],
     crate = "rustix",
@@ -14443,7 +14444,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rustix-1",
     srcs = [":rustix-1.1.4.crate"],
     crate = "rustix",
@@ -14765,7 +14766,7 @@ alias(
     visibility = ["PUBLIC"],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rustls-0.23",
     srcs = [":rustls-6fb7c0c896042498.git"],
     crate = "rustls",
@@ -14837,7 +14838,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rustls-pki-types-1",
     srcs = [":rustls-pki-types-1.15.1.crate"],
     crate = "rustls_pki_types",
@@ -14887,7 +14888,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rustls-webpki-0.103",
     srcs = [":rustls-webpki-0.103.16.crate"],
     crate = "webpki",
@@ -14934,7 +14935,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "rustversion-1",
     srcs = [":rustversion-1.0.23.crate"],
     crate = "rustversion",
@@ -15019,7 +15020,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ryu-1",
     srcs = [":ryu-1.0.23.crate"],
     crate = "ryu",
@@ -15054,7 +15055,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "safe_arch-1",
     srcs = [":safe_arch-1.2.0.crate"],
     crate = "safe_arch",
@@ -15094,7 +15095,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "same-file-1",
     srcs = [":same-file-1.0.6.crate"],
     crate = "same_file",
@@ -15140,7 +15141,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "schemars-1",
     srcs = [":schemars-1.2.2.crate"],
     crate = "schemars",
@@ -15188,7 +15189,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "schemars_derive-1",
     srcs = [":schemars_derive-1.2.2.crate"],
     crate = "schemars_derive",
@@ -15230,7 +15231,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "scopeguard-1",
     srcs = [":scopeguard-1.2.0.crate"],
     crate = "scopeguard",
@@ -15265,7 +15266,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "self_cell-1",
     srcs = [":self_cell-1.3.0.crate"],
     crate = "self_cell",
@@ -15306,7 +15307,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "semver-1",
     srcs = [":semver-1.0.28.crate"],
     crate = "semver",
@@ -15355,7 +15356,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "serde-1",
     srcs = [":serde-1.0.229.crate"],
     crate = "serde",
@@ -15430,7 +15431,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "serde_core-1",
     srcs = [":serde_core-1.0.229.crate"],
     crate = "serde_core",
@@ -15498,7 +15499,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "serde_derive-1",
     srcs = [":serde_derive-1.0.229.crate"],
     crate = "serde_derive",
@@ -15540,7 +15541,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "serde_derive_internals-0.30",
     srcs = [":serde_derive_internals-0.30.0.crate"],
     crate = "serde_derive_internals",
@@ -15586,7 +15587,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "serde_ignored-0.1",
     srcs = [":serde_ignored-0.1.14.crate"],
     crate = "serde_ignored",
@@ -15628,7 +15629,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "serde_json-1",
     srcs = [":serde_json-1.0.151.crate"],
     crate = "serde_json",
@@ -15736,7 +15737,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "serde_spanned-1",
     srcs = [":serde_spanned-1.1.1.crate"],
     crate = "serde_spanned",
@@ -15777,7 +15778,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "serde_urlencoded-0.7",
     srcs = [":serde_urlencoded-0.7.1.crate"],
     crate = "serde_urlencoded",
@@ -15818,7 +15819,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "serial2-0.2",
     srcs = [":serial2-0.2.38.crate"],
     crate = "serial2",
@@ -15894,7 +15895,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "sha1-0.10",
     srcs = [":sha1-0.10.7.crate"],
     crate = "sha1",
@@ -15960,7 +15961,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "sha1_smol-1",
     srcs = [":sha1_smol-1.0.1.crate"],
     crate = "sha1_smol",
@@ -16001,7 +16002,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "sha2-0.11",
     srcs = [":sha2-0.11.1.crate"],
     crate = "sha2",
@@ -16068,7 +16069,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "sharded-slab-0.1",
     srcs = [":sharded-slab-0.1.7.crate"],
     crate = "sharded_slab",
@@ -16104,7 +16105,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "shared_library-0.1",
     srcs = [":shared_library-0.1.9.crate"],
     crate = "shared_library",
@@ -16149,7 +16150,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "shell-words-1",
     srcs = [":shell-words-1.1.1.crate"],
     crate = "shell_words",
@@ -16188,7 +16189,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "shlex-2",
     srcs = [":shlex-2.0.1.crate"],
     crate = "shlex",
@@ -16233,7 +16234,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "signal-hook-0.3",
     srcs = [":signal-hook-0.3.18.crate"],
     crate = "signal_hook",
@@ -16277,7 +16278,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "signal-hook-mio-0.2",
     srcs = [":signal-hook-mio-0.2.5.crate"],
     crate = "signal_hook_mio",
@@ -16323,7 +16324,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "signal-hook-registry-1",
     srcs = [":signal-hook-registry-1.4.8.crate"],
     crate = "signal_hook_registry",
@@ -16362,7 +16363,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "simd-adler32-0.3",
     srcs = [":simd-adler32-0.3.10.crate"],
     crate = "simd_adler32",
@@ -16402,7 +16403,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "slab-0.4",
     srcs = [":slab-0.4.12.crate"],
     crate = "slab",
@@ -16441,7 +16442,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "smallvec-1",
     srcs = [":smallvec-1.15.2.crate"],
     crate = "smallvec",
@@ -16480,7 +16481,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "socket-pktinfo-0.4",
     srcs = [":socket-pktinfo-0.4.1.crate"],
     crate = "socket_pktinfo",
@@ -16536,7 +16537,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "socket2-0.6",
     srcs = [":socket2-0.6.5.crate"],
     crate = "socket2",
@@ -16595,7 +16596,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "spin-0.9",
     srcs = [":spin-0.9.9.crate"],
     crate = "spin",
@@ -16644,7 +16645,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "stable_deref_trait-1",
     srcs = [":stable_deref_trait-1.2.1.crate"],
     crate = "stable_deref_trait",
@@ -16685,7 +16686,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "stateright-0.31",
     srcs = [":stateright-0.31.0.crate"],
     crate = "stateright",
@@ -16735,7 +16736,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "static_assertions-1",
     srcs = [":static_assertions-1.1.0.crate"],
     crate = "static_assertions",
@@ -16770,7 +16771,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "streaming-iterator-0.1",
     srcs = [":streaming-iterator-0.1.9.crate"],
     crate = "streaming_iterator",
@@ -16805,7 +16806,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "strsim-0.11",
     srcs = [":strsim-0.11.1.crate"],
     crate = "strsim",
@@ -16840,7 +16841,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "strum-0.28",
     srcs = [":strum-0.28.0.crate"],
     crate = "strum",
@@ -16881,7 +16882,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "strum_macros-0.28",
     srcs = [":strum_macros-0.28.0.crate"],
     crate = "strum_macros",
@@ -16923,7 +16924,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "subtle-2",
     srcs = [":subtle-2.6.1.crate"],
     crate = "subtle",
@@ -16959,7 +16960,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "syn-2",
     srcs = [":syn-2.0.119.crate"],
     crate = "syn",
@@ -17012,7 +17013,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "syn-3",
     srcs = [":syn-3.0.3.crate"],
     crate = "syn",
@@ -17065,7 +17066,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "sync_wrapper-1",
     srcs = [":sync_wrapper-1.0.2.crate"],
     crate = "sync_wrapper",
@@ -17105,7 +17106,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "synstructure-0.14",
     srcs = [":synstructure-0.14.0.crate"],
     crate = "synstructure",
@@ -17149,7 +17150,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tap-1",
     srcs = [":tap-1.0.1.crate"],
     crate = "tap",
@@ -17190,7 +17191,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tempfile-3",
     srcs = [":tempfile-3.27.0.crate"],
     crate = "tempfile",
@@ -17277,7 +17278,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "thiserror-1",
     srcs = [":thiserror-1.0.69.crate"],
     crate = "thiserror",
@@ -17331,7 +17332,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "thiserror-2",
     srcs = [":thiserror-2.0.20.crate"],
     crate = "thiserror",
@@ -17391,7 +17392,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "thiserror-impl-1",
     srcs = [":thiserror-impl-1.0.69.crate"],
     crate = "thiserror_impl",
@@ -17432,7 +17433,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "thiserror-impl-2",
     srcs = [":thiserror-impl-2.0.20.crate"],
     crate = "thiserror_impl",
@@ -17473,7 +17474,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "thread_local-1",
     srcs = [":thread_local-1.1.10.crate"],
     crate = "thread_local",
@@ -17509,7 +17510,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tiff-0.11",
     srcs = [":tiff-0.11.3.crate"],
     crate = "tiff",
@@ -17561,7 +17562,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "time-0.3",
     srcs = [":time-0.3.55.crate"],
     crate = "time",
@@ -17645,7 +17646,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "time-core-0.1",
     srcs = [":time-core-0.1.9.crate"],
     crate = "time_core",
@@ -17680,7 +17681,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tiny_http-0.12",
     srcs = [":tiny_http-0.12.0.crate"],
     crate = "tiny_http",
@@ -17722,7 +17723,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tinystr-0.8",
     srcs = [":tinystr-0.8.4.crate"],
     crate = "tinystr",
@@ -17762,7 +17763,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tinyvec-1",
     srcs = [":tinyvec-1.13.3.crate"],
     crate = "tinyvec",
@@ -17807,7 +17808,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tokio-1",
     srcs = [":tokio-1.54.1.crate"],
     crate = "tokio",
@@ -17920,7 +17921,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tokio-macros-2",
     srcs = [":tokio-macros-2.7.2.crate"],
     crate = "tokio_macros",
@@ -17967,7 +17968,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tokio-rustls-0.26",
     srcs = [":tokio-rustls-0.26.5.crate"],
     crate = "tokio_rustls",
@@ -18050,7 +18051,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tokio-stream-0.1",
     srcs = [":tokio-stream-0.1.19.crate"],
     crate = "tokio_stream",
@@ -18097,7 +18098,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tokio-tungstenite-0.28",
     srcs = [":tokio-tungstenite-0.28.0.crate"],
     crate = "tokio_tungstenite",
@@ -18145,7 +18146,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tokio-util-0.7",
     srcs = [":tokio-util-0.7.19.crate"],
     crate = "tokio_util",
@@ -18222,7 +18223,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "toml-0.9",
     srcs = [":toml-0.9.12+spec-1.1.0.crate"],
     crate = "toml",
@@ -18272,7 +18273,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "toml_datetime-0.7",
     srcs = [":toml_datetime-0.7.5+spec-1.1.0.crate"],
     crate = "toml_datetime",
@@ -18320,7 +18321,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "toml_edit-0.23",
     srcs = [":toml_edit-0.23.10+spec-1.0.0.crate"],
     crate = "toml_edit",
@@ -18367,7 +18368,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "toml_parser-1",
     srcs = [":toml_parser-1.1.3+spec-1.1.0.crate"],
     crate = "toml_parser",
@@ -18408,7 +18409,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "toml_writer-1",
     srcs = [":toml_writer-1.1.2+spec-1.1.0.crate"],
     crate = "toml_writer",
@@ -18454,7 +18455,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tonic-0.14",
     srcs = [":tonic-0.14.6.crate"],
     crate = "tonic",
@@ -18520,7 +18521,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tonic-build-0.14",
     srcs = [":tonic-build-0.14.6.crate"],
     crate = "tonic_build",
@@ -18568,7 +18569,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tonic-prost-0.14",
     srcs = [":tonic-prost-0.14.6.crate"],
     crate = "tonic_prost",
@@ -18614,7 +18615,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tonic-prost-build-0.14",
     srcs = [":tonic-prost-build-0.14.6.crate"],
     crate = "tonic_prost_build",
@@ -18670,7 +18671,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tower-0.5",
     srcs = [":tower-0.5.3.crate"],
     crate = "tower",
@@ -18783,7 +18784,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tower-http-0.6",
     srcs = [":tower-http-0.6.11.crate"],
     crate = "tower_http",
@@ -18835,7 +18836,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tower-layer-0.3",
     srcs = [":tower-layer-0.3.3.crate"],
     crate = "tower_layer",
@@ -18870,7 +18871,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tower-service-0.3",
     srcs = [":tower-service-0.3.3.crate"],
     crate = "tower_service",
@@ -18911,7 +18912,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tracing-0.1",
     srcs = [":tracing-0.1.44.crate"],
     crate = "tracing",
@@ -18957,7 +18958,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tracing-attributes-0.1",
     srcs = [":tracing-attributes-0.1.31.crate"],
     crate = "tracing_attributes",
@@ -18998,7 +18999,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tracing-core-0.1",
     srcs = [":tracing-core-0.1.36.crate"],
     crate = "tracing_core",
@@ -19039,7 +19040,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tracing-log-0.2",
     srcs = [":tracing-log-0.2.0.crate"],
     crate = "tracing_log",
@@ -19089,7 +19090,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tracing-subscriber-0.3",
     srcs = [":tracing-subscriber-0.3.23.crate"],
     crate = "tracing_subscriber",
@@ -19159,7 +19160,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-0.27",
     srcs = [":tree-sitter-0.27.2.crate"],
     crate = "tree_sitter",
@@ -19271,7 +19272,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-bash-0.25",
     srcs = [":tree-sitter-bash-0.25.1.crate"],
     crate = "tree_sitter_bash",
@@ -19363,7 +19364,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-c-0.24",
     srcs = [":tree-sitter-c-0.24.2.crate"],
     crate = "tree_sitter_c",
@@ -19455,7 +19456,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-cpp-0.23",
     srcs = [":tree-sitter-cpp-0.23.4.crate"],
     crate = "tree_sitter_cpp",
@@ -19547,7 +19548,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-css-0.25",
     srcs = [":tree-sitter-css-0.25.0.crate"],
     crate = "tree_sitter_css",
@@ -19639,7 +19640,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-go-0.25",
     srcs = [":tree-sitter-go-0.25.0.crate"],
     crate = "tree_sitter_go",
@@ -19731,7 +19732,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-highlight-0.27",
     srcs = [":tree-sitter-highlight-0.27.2.crate"],
     crate = "tree_sitter_highlight",
@@ -19778,7 +19779,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-html-0.23",
     srcs = [":tree-sitter-html-0.23.2.crate"],
     crate = "tree_sitter_html",
@@ -19870,7 +19871,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-java-0.23",
     srcs = [":tree-sitter-java-0.23.5.crate"],
     crate = "tree_sitter_java",
@@ -19962,7 +19963,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-javascript-0.25",
     srcs = [":tree-sitter-javascript-0.25.0.crate"],
     crate = "tree_sitter_javascript",
@@ -20054,7 +20055,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-json-0.24",
     srcs = [":tree-sitter-json-0.24.8.crate"],
     crate = "tree_sitter_json",
@@ -20146,7 +20147,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-language-0.1",
     srcs = [":tree-sitter-language-0.1.9.crate"],
     crate = "tree_sitter_language",
@@ -20237,7 +20238,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-md-0.5",
     srcs = [":tree-sitter-md-0.5.4.crate"],
     crate = "tree_sitter_md",
@@ -20329,7 +20330,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-python-0.25",
     srcs = [":tree-sitter-python-0.25.0.crate"],
     crate = "tree_sitter_python",
@@ -20421,7 +20422,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-rust-0.24",
     srcs = [":tree-sitter-rust-0.24.2.crate"],
     crate = "tree_sitter_rust",
@@ -20513,7 +20514,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-swift-0.7",
     srcs = [":tree-sitter-swift-0.7.4.crate"],
     crate = "tree_sitter_swift",
@@ -20605,7 +20606,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-toml-ng-0.7",
     srcs = [":tree-sitter-toml-ng-0.7.0.crate"],
     crate = "tree_sitter_toml_ng",
@@ -20697,7 +20698,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-typescript-0.23",
     srcs = [":tree-sitter-typescript-0.23.2.crate"],
     crate = "tree_sitter_typescript",
@@ -20789,7 +20790,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tree-sitter-yaml-0.7",
     srcs = [":tree-sitter-yaml-0.7.2.crate"],
     crate = "tree_sitter_yaml",
@@ -20875,7 +20876,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "try-lock-0.2",
     srcs = [":try-lock-0.2.5.crate"],
     crate = "try_lock",
@@ -20910,7 +20911,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "ttf-parser-0.25",
     srcs = [":ttf-parser-0.25.1.crate"],
     crate = "ttf_parser",
@@ -20951,7 +20952,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "tungstenite-0.28",
     srcs = [":tungstenite-0.28.0.crate"],
     crate = "tungstenite",
@@ -21004,7 +21005,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "typenum-1",
     srcs = [":typenum-1.20.1.crate"],
     crate = "typenum",
@@ -21040,7 +21041,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "unarray-0.1",
     srcs = [":unarray-0.1.4.crate"],
     crate = "unarray",
@@ -21075,7 +21076,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "unicase-2",
     srcs = [":unicase-2.9.0.crate"],
     crate = "unicase",
@@ -21110,7 +21111,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "unicode-ident-1",
     srcs = [":unicode-ident-1.0.24.crate"],
     crate = "unicode_ident",
@@ -21151,7 +21152,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "unicode-segmentation-1",
     srcs = [":unicode-segmentation-1.13.3.crate"],
     crate = "unicode_segmentation",
@@ -21186,7 +21187,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "unicode-truncate-2",
     srcs = [":unicode-truncate-2.0.1.crate"],
     crate = "unicode_truncate",
@@ -21227,7 +21228,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "unicode-width-0.1",
     srcs = [":unicode-width-0.1.14.crate"],
     crate = "unicode_width",
@@ -21272,7 +21273,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "unicode-width-0.2",
     srcs = [":unicode-width-0.2.2.crate"],
     crate = "unicode_width",
@@ -21311,7 +21312,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "universal-hash-0.6",
     srcs = [":universal-hash-0.6.1.crate"],
     crate = "universal_hash",
@@ -21350,7 +21351,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "untrusted-0.9",
     srcs = [":untrusted-0.9.0.crate"],
     crate = "untrusted",
@@ -21391,7 +21392,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "url-2",
     srcs = [":url-2.5.9.crate"],
     crate = "url",
@@ -21435,7 +21436,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "utf-8-0.7",
     srcs = [":utf-8-0.7.6.crate"],
     crate = "utf8",
@@ -21470,7 +21471,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "utf8_iter-1",
     srcs = [":utf8_iter-1.0.4.crate"],
     crate = "utf8_iter",
@@ -21505,7 +21506,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "utf8parse-0.2",
     srcs = [":utf8parse-0.2.2.crate"],
     crate = "utf8parse",
@@ -21547,7 +21548,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "uuid-1",
     srcs = [":uuid-1.25.0.crate"],
     crate = "uuid",
@@ -21644,7 +21645,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "vcpkg-0.2",
     srcs = [":vcpkg-0.2.15.crate"],
     crate = "vcpkg",
@@ -21679,7 +21680,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "vsimd-0.8",
     srcs = [":vsimd-0.8.0.crate"],
     crate = "vsimd",
@@ -21725,7 +21726,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "vt100-0.15",
     srcs = [":vt100-0.15.2.crate"],
     crate = "vt100",
@@ -21766,7 +21767,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "vte-0.11",
     srcs = [":vte-0.11.1.crate"],
     crate = "vte",
@@ -21811,7 +21812,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "vte_generate_state_changes-0.1",
     srcs = [":vte_generate_state_changes-0.1.2.crate"],
     crate = "vte_generate_state_changes",
@@ -21851,7 +21852,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "walkdir-2",
     srcs = [":walkdir-2.5.0.crate"],
     crate = "walkdir",
@@ -21892,7 +21893,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "want-0.3",
     srcs = [":want-0.3.1.crate"],
     crate = "want",
@@ -21928,7 +21929,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "wasm-bindgen-0.2",
     srcs = [":wasm-bindgen-0.2.127.crate"],
     crate = "wasm_bindgen",
@@ -22033,7 +22034,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "wasm-bindgen-futures-0.4",
     srcs = [":wasm-bindgen-futures-0.4.77.crate"],
     crate = "wasm_bindgen_futures",
@@ -22076,7 +22077,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "wasm-bindgen-macro-0.2",
     srcs = [":wasm-bindgen-macro-0.2.127.crate"],
     crate = "wasm_bindgen_macro",
@@ -22116,7 +22117,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "wasm-bindgen-macro-support-0.2",
     srcs = [":wasm-bindgen-macro-support-0.2.127.crate"],
     crate = "wasm_bindgen_macro_support",
@@ -22158,7 +22159,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "wasm-bindgen-shared-0.2",
     srcs = [":wasm-bindgen-shared-0.2.127.crate"],
     crate = "wasm_bindgen_shared",
@@ -22244,7 +22245,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "web-sys-0.3",
     srcs = [":web-sys-0.3.104.crate"],
     crate = "web_sys",
@@ -22305,7 +22306,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "web-time-1",
     srcs = [":web-time-1.1.0.crate"],
     crate = "web_time",
@@ -22350,7 +22351,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "webpki-roots-1",
     srcs = [":webpki-roots-1.0.11.crate"],
     crate = "webpki_roots",
@@ -22388,7 +22389,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "weezl-0.1",
     srcs = [":weezl-0.1.12.crate"],
     crate = "weezl",
@@ -22428,7 +22429,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "wide-1",
     srcs = [":wide-1.7.1.crate"],
     crate = "wide",
@@ -22475,7 +22476,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "winapi-0.3",
     srcs = [":winapi-0.3.9.crate"],
     crate = "winapi",
@@ -22530,7 +22531,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "winapi-util-0.1",
     srcs = [":winapi-util-0.1.11.crate"],
     crate = "winapi_util",
@@ -22566,7 +22567,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows-0.58",
     srcs = [":windows-0.58.0.crate"],
     crate = "windows",
@@ -22615,7 +22616,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows-core-0.58",
     srcs = [":windows-core-0.58.0.crate"],
     crate = "windows_core",
@@ -22661,7 +22662,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows-implement-0.58",
     srcs = [":windows-implement-0.58.0.crate"],
     crate = "windows_implement",
@@ -22702,7 +22703,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows-interface-0.58",
     srcs = [":windows-interface-0.58.0.crate"],
     crate = "windows_interface",
@@ -22743,7 +22744,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows-link-0.2",
     srcs = [":windows-link-0.2.1.crate"],
     crate = "windows_link",
@@ -22778,7 +22779,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows-result-0.2",
     srcs = [":windows-result-0.2.0.crate"],
     crate = "windows_result",
@@ -22818,7 +22819,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows-strings-0.1",
     srcs = [":windows-strings-0.1.0.crate"],
     crate = "windows_strings",
@@ -22861,7 +22862,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows-sys-0.45",
     srcs = [":windows-sys-0.45.0.crate"],
     crate = "windows_sys",
@@ -22902,7 +22903,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows-sys-0.52",
     srcs = [":windows-sys-0.52.0.crate"],
     crate = "windows_sys",
@@ -22951,7 +22952,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows-sys-0.59",
     srcs = [":windows-sys-0.59.0.crate"],
     crate = "windows_sys",
@@ -23010,7 +23011,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows-sys-0.61",
     srcs = [":windows-sys-0.61.2.crate"],
     crate = "windows_sys",
@@ -23082,7 +23083,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows-targets-0.42",
     srcs = [":windows-targets-0.42.2.crate"],
     crate = "windows_targets",
@@ -23118,7 +23119,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows-targets-0.52",
     srcs = [":windows-targets-0.52.6.crate"],
     crate = "windows_targets",
@@ -23154,7 +23155,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows_x86_64_msvc-0.42",
     srcs = [":windows_x86_64_msvc-0.42.2.crate"],
     crate = "windows_x86_64_msvc",
@@ -23189,7 +23190,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "windows_x86_64_msvc-0.52",
     srcs = [":windows_x86_64_msvc-0.52.6.crate"],
     crate = "windows_x86_64_msvc",
@@ -23224,7 +23225,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "winnow-0.7",
     srcs = [":winnow-0.7.15.crate"],
     crate = "winnow",
@@ -23264,7 +23265,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "winnow-1",
     srcs = [":winnow-1.0.4.crate"],
     crate = "winnow",
@@ -23299,7 +23300,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "winreg-0.10",
     srcs = [":winreg-0.10.1.crate"],
     crate = "winreg",
@@ -23335,7 +23336,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "writeable-0.6",
     srcs = [":writeable-0.6.4.crate"],
     crate = "writeable",
@@ -23367,7 +23368,7 @@ alias(
     visibility = ["PUBLIC"],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "wt-0.6",
     srcs = [":wt-dcdccc5f660353bd.git"],
     crate = "wt",
@@ -23411,7 +23412,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "wyz-0.5",
     srcs = [":wyz-0.5.1.crate"],
     crate = "wyz",
@@ -23447,7 +23448,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "x11rb-0.13",
     srcs = [":x11rb-0.13.2.crate"],
     crate = "x11rb",
@@ -23487,7 +23488,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "x11rb-protocol-0.13",
     srcs = [":x11rb-protocol-0.13.2.crate"],
     crate = "x11rb_protocol",
@@ -23523,7 +23524,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "x25519-dalek-3",
     srcs = [":x25519-dalek-3.0.0.crate"],
     crate = "x25519_dalek",
@@ -23567,7 +23568,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "yasna-0.6",
     srcs = [":yasna-0.6.0.crate"],
     crate = "yasna",
@@ -23608,7 +23609,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "yoke-0.8",
     srcs = [":yoke-0.8.3.crate"],
     crate = "yoke",
@@ -23652,7 +23653,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "yoke-derive-0.8",
     srcs = [":yoke-derive-0.8.4.crate"],
     crate = "yoke_derive",
@@ -23694,7 +23695,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zerocopy-0.8",
     srcs = [":zerocopy-0.8.59.crate"],
     crate = "zerocopy",
@@ -23739,7 +23740,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zerocopy-derive-0.8",
     srcs = [":zerocopy-derive-0.8.59.crate"],
     crate = "zerocopy_derive",
@@ -23780,7 +23781,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zerofrom-0.1",
     srcs = [":zerofrom-0.1.8.crate"],
     crate = "zerofrom",
@@ -23817,7 +23818,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zerofrom-derive-0.1",
     srcs = [":zerofrom-derive-0.1.8.crate"],
     crate = "zerofrom_derive",
@@ -23859,7 +23860,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zeroize-1",
     srcs = [":zeroize-1.9.0.crate"],
     crate = "zeroize",
@@ -23900,7 +23901,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zeroize_derive-1",
     srcs = [":zeroize_derive-1.5.0.crate"],
     crate = "zeroize_derive",
@@ -23941,7 +23942,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zerotrie-0.2",
     srcs = [":zerotrie-0.2.5.crate"],
     crate = "zerotrie",
@@ -23985,7 +23986,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zerovec-0.11",
     srcs = [":zerovec-0.11.8.crate"],
     crate = "zerovec",
@@ -24029,7 +24030,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zerovec-derive-0.11",
     srcs = [":zerovec-derive-0.11.6.crate"],
     crate = "zerovec_derive",
@@ -24070,7 +24071,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zmij-1",
     srcs = [":zmij-1.0.23.crate"],
     crate = "zmij",
@@ -24160,7 +24161,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zstd-0.14",
     srcs = [":zstd-0.14.3.crate"],
     crate = "zstd",
@@ -24196,7 +24197,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zstd-safe-8",
     srcs = [":zstd-safe-8.2.0.crate"],
     crate = "zstd_safe",
@@ -24323,7 +24324,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zstd-sys-2",
     srcs = [":zstd-sys-2.1.2+zstd.1.5.7.crate"],
     crate = "zstd_sys",
@@ -24599,7 +24600,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zune-core-0.5",
     srcs = [":zune-core-0.5.3.crate"],
     crate = "zune_core",
@@ -24635,7 +24636,7 @@ http_archive(
     visibility = [],
 )
 
-cargo.rust_library(
+third_party_rust_library(
     name = "zune-jpeg-0.5",
     srcs = [":zune-jpeg-0.5.15.crate"],
     crate = "zune_jpeg",

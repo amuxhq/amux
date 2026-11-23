@@ -57,7 +57,7 @@ target_platform = rule(
     is_configuration_rule = True,
 )
 
-def _execution_platforms_impl(ctx):
+def _execution_platform_impl(ctx):
     configuration = _merged_configuration(ctx.attrs.constraints)
     platform = ExecutionPlatformInfo(
         label = ctx.label.raw_target(),
@@ -77,14 +77,35 @@ def _execution_platforms_impl(ctx):
             remote_output_paths = "output_paths",
         ),
     )
-    return [DefaultInfo(), ExecutionPlatformRegistrationInfo(platforms = [platform])]
+    return [DefaultInfo(), platform]
 
-execution_platforms = rule(
-    impl = _execution_platforms_impl,
+# One place an action can run: the constraints it satisfies and the
+# properties NativeLink's scheduler matches a worker by.
+execution_platform = rule(
+    impl = _execution_platform_impl,
     attrs = {
         "constraints": attrs.list(attrs.dep(providers = [ConfigurationInfo])),
         "properties": attrs.dict(attrs.string(), attrs.string()),
     },
+    is_configuration_rule = True,
+)
+
+def _execution_platforms_impl(ctx):
+    return [
+        DefaultInfo(),
+        ExecutionPlatformRegistrationInfo(
+            platforms = [p[ExecutionPlatformInfo] for p in ctx.attrs.platforms],
+        ),
+    ]
+
+# The places this host's Buck2 may send an action, in order of preference:
+# an action goes to the first whose constraints it is compatible with.
+execution_platforms = rule(
+    impl = _execution_platforms_impl,
+    attrs = {
+        "platforms": attrs.list(attrs.dep(providers = [ExecutionPlatformInfo])),
+    },
+    is_configuration_rule = True,
 )
 
 # The Rust target triple a configuration builds for: the toolchain's, and

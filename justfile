@@ -413,10 +413,11 @@ premerge: no-update-flags fmt-check codegen-check proto-compat store-check depen
     if git diff --quiet "$(git merge-base HEAD origin/main)" -- js; then echo "js: unchanged since main"; else {{just_executable()}} browser check; fi
 
 # `just land "What the branch does"` merges this tree's HEAD onto a fresh
-# origin/main in a worktree of its own, runs `just premerge` (and `just
-# miri` when the phone's C ABI changed) on the merge and pushes it; `--pr N`
-# lands a reviewed pull request. One landing at a time per machine, waiting
-# for its turn, and nothing in this tree is touched (scripts/land.py).
+# origin/main, runs `just premerge` (and `just miri` when the phone's C ABI
+# changed) on the merge and pushes it. With `git config amux.landInbox` set
+# it goes through nova's landing queue, one landing at a time from every
+# machine; `--local`, or no inbox, lands from a worktree of this machine's
+# own. Nothing in this tree is touched (scripts/land.py).
 # Land this branch on main.
 land *ARGS:
     scripts/py -B scripts/land.py "$@"

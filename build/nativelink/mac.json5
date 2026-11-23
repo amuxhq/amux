@@ -10,14 +10,6 @@
 {
   stores: [
     {
-      name: "AC",
-      filesystem: {
-        content_path: "{{cache}}/ac",
-        temp_path: "{{cache}}/ac-tmp",
-        eviction_policy: { max_bytes: {{ac_bytes}} },
-      },
-    },
-    {
       name: "CAS",
       fast_slow: {
         fast: {
@@ -28,6 +20,23 @@
           },
         },
         slow: { noop: {} },
+      },
+    },
+    {
+      name: "AC",
+      // The two stores evict on their own, so an action result can outlive
+      // the outputs it names; Buck2 then fails the build ("not found in
+      // either fast or slow store") rather than running the action again.
+      // A result whose outputs are not all in the CAS is reported missing.
+      completeness_checking: {
+        backend: {
+          filesystem: {
+            content_path: "{{cache}}/ac",
+            temp_path: "{{cache}}/ac-tmp",
+            eviction_policy: { max_bytes: {{ac_bytes}} },
+          },
+        },
+        cas_store: { ref_store: { name: "CAS" } },
       },
     },
   ],
@@ -65,7 +74,12 @@
           PATH: { value: "{{tool_bin}}:/usr/bin:/bin:/usr/sbin:/sbin" },
         },
         capacity: {},
-        directory_cache: {},
+        // No `directory_cache`. It keeps a copy of each action's whole
+        // input root, keyed by that root's digest, to clone into the next
+        // action with the same root; every Buck action's root is its own,
+        // so it never hits, and each action pays for building the cached
+        // copy and then cloning it. Without it, each input is hard-linked
+        // straight from the CAS into the action's directory.
         platform_properties: {
           OSFamily: { values: ["macos"] },
           cpu_count: { values: ["{{cores}}"] },

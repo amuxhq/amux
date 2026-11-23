@@ -232,6 +232,27 @@ class AndroidDeployTests(unittest.TestCase):
             android_deploy.deploy(publisher, "1.0.0", 99, track="production")
         self.assertEqual(len(transport.responses), 0)
 
+    def test_verify_signature_accepts_verified_and_refuses_unsigned(self) -> None:
+        from unittest import mock
+        import subprocess
+
+        fake_aab = Path("/tmp/fake.aab")
+        with mock.patch.object(
+            subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess(["jarsigner"], 0, stdout="\njar verified.\n", stderr=""),
+        ) as patched:
+            android_release.verify_signature(fake_aab, "/usr/bin/jarsigner")
+            self.assertEqual(patched.call_args[0][0], ["/usr/bin/jarsigner", "-verify", str(fake_aab)])
+
+        with mock.patch.object(
+            subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess(["jarsigner"], 0, stdout="jar is unsigned.\n", stderr=""),
+        ):
+            with self.assertRaises(googleplay.Refusal):
+                android_release.verify_signature(fake_aab, "/usr/bin/jarsigner")
+
 
 if __name__ == "__main__":
     unittest.main()

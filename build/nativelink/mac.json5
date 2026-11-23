@@ -10,14 +10,6 @@
 {
   stores: [
     {
-      name: "AC",
-      filesystem: {
-        content_path: "{{cache}}/ac",
-        temp_path: "{{cache}}/ac-tmp",
-        eviction_policy: { max_bytes: {{ac_bytes}} },
-      },
-    },
-    {
       name: "CAS",
       fast_slow: {
         fast: {
@@ -28,6 +20,23 @@
           },
         },
         slow: { noop: {} },
+      },
+    },
+    {
+      name: "AC",
+      // The two stores evict on their own, so an action result can outlive
+      // the outputs it names; Buck2 then fails the build ("not found in
+      // either fast or slow store") rather than running the action again.
+      // A result whose outputs are not all in the CAS is reported missing.
+      completeness_checking: {
+        backend: {
+          filesystem: {
+            content_path: "{{cache}}/ac",
+            temp_path: "{{cache}}/ac-tmp",
+            eviction_policy: { max_bytes: {{ac_bytes}} },
+          },
+        },
+        cas_store: { ref_store: { name: "CAS" } },
       },
     },
   ],

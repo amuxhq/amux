@@ -466,6 +466,10 @@ fn with_form_content(answer: &Answer, content_json: Vec<u8>) -> Answer {
         | Answer::Codex(CodexAnswer {
             of: Some(wire::codex_answer::Of::Form(form)),
             ..
+        })
+        | Answer::Acp(wire::AcpAnswer {
+            of: Some(wire::acp_answer::Of::Form(form)),
+            ..
         }) => form.content_json = content_json,
         _ => {}
     }

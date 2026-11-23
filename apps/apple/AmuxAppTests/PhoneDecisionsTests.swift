@@ -181,7 +181,7 @@ final class PhoneDecisionsTests: XCTestCase {
             ScriptedChat(
                 rows: CatalogFixtures.conversation, frame: ScriptedChat.frame(name: "desk-1", phase: .working),
                 strip: ScriptedChat.strip(background: 2)),
-            family: oneChild)
+            subject: CatalogFixtures.workingSubject, family: oneChild)
         let found = try await chatMenuItem("Settle")
         let (button, close) = try XCTUnwrap(found)
         MenuSource.run(close, from: button)
@@ -432,6 +432,25 @@ final class PhoneDecisionsTests: XCTestCase {
         [view] + view.subviews.flatMap { views(in: $0) }
     }
 
+    /// A plan whose only approval also changes the permission mode has no
+    /// switch to offer, so the card says what Approve will do instead of
+    /// changing the mode unannounced.
+    func testAPlanApprovedOnlyWithASwitchSaysSoWhereTheSwitchWouldBe() async throws {
+        let plan = CatalogFixtures.card(.claudePty, .plan(body: CatalogFixtures.planBody, title: CatalogFixtures.planTitle), [
+            Choice(outcome: .approvePlan(mode: "acceptEdits", modeName: "Accept edits"), primary: true, takesNote: false),
+            Choice(outcome: .sendBack, primary: false, takesNote: true),
+        ])
+        var sent: [AskAction] = []
+        try host(AskCardView(card: plan) { sent.append($0) })
+        await spin()
+        let caption = try XCTUnwrap(element("ask.plan.switches"), "the card does not say Approve switches the mode")
+        XCTAssertEqual(caption.label, "Switches to Accept edits")
+        XCTAssertNil(element("ask.plan.auto"), "a switch is offered with no plain approval beside it")
+        try activate("ask.approve")
+        await spin()
+        XCTAssertEqual(sent, [.choose(0, note: nil)])
+    }
+
     // MARK: - Hosts
 
     /// A host that dropped this phone is offered again from its page, and
@@ -442,8 +461,8 @@ final class PhoneDecisionsTests: XCTestCase {
         let hosts = HostsStore()
         hosts.show([HostView(
             hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false,
-            reach: .offline(.revoked), link: 0, addrs: ["127.0.0.1:55186"], relayOnly: false, pairingOpen: false, current: false, providers: [],
-            claudeKind: nil, lastDialError: "127.0.0.1:55186: code: 'The service is currently unavailable', message: \"connection lost\"",
+            reach: .offline(.revoked), sameNetwork: false, link: 0, addrs: ["127.0.0.1:55186"], relayOnly: false, pairingOpen: false, current: false, providers: [],
+            lastDialError: "127.0.0.1:55186: code: 'The service is currently unavailable', message: \"connection lost\"",
             platform: .macos, signedIn: nil, through: nil, version: nil)])
         var asked: [HostPageAction] = []
         try host(HostPage(model: hosts, host: desk) { asked.append($0) })
@@ -549,7 +568,7 @@ final class PhoneDecisionsTests: XCTestCase {
     func testAHomeRowCountsItsBackgroundJobs() async throws {
         let card = FleetCard(
             agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 9, count: 16)),
-            name: "cx", handle: "cx", kind: .codex, attention: .idle, cwd: "~/src", phaseSinceMs: 0,
+            name: "cx", handle: "cx", kind: .codex, provider: "codex", providerName: "Codex", attachable: true, attention: .idle, cwd: "~/src", phaseSinceMs: 0,
             host: "desk", hostReach: .online(.direct), children: 0, familyAttention: .idle,
             members: 1, descendants: 0, backgroundJobs: 2, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil, repository: nil)
         let fleet = FleetStore()
@@ -588,8 +607,8 @@ final class PhoneDecisionsTests: XCTestCase {
         let desk = HostId(UUID(uuidString: "00000000-0000-0000-0000-00000000de5c")!)
         func view(_ reach: Reach) -> HostView {
             HostView(
-                hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false, reach: reach, link: 0,
-                addrs: [], relayOnly: false, pairingOpen: false, current: true, providers: [], claudeKind: nil, lastDialError: nil, platform: .macos,
+                hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false, reach: reach, sameNetwork: false, link: 0,
+                addrs: [], relayOnly: false, pairingOpen: false, current: true, providers: [], lastDialError: nil, platform: .macos,
                 signedIn: nil, through: nil, version: nil)
         }
         let hosts = HostsStore()

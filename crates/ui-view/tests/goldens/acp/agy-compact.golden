@@ -1,0 +1,55 @@
+## 0 initial
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 15 recorded 14: input p1-3
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 29 recorded 28: fact Rpc "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"result\":{\"stopReason\"…
+  composer Send activity=None queue=[] underway=[] refused=[]
+## 31 recorded 30: input p1-4
+  composer Send activity=Some(Working) queue=[] underway=[] refused=[]
+## 35 recorded 34: fact Rpc "{\"id\":\"amux-prompt-70312d34\",\"jsonrpc\":\"2.0\",\"result\":{\"stopReason\"…
+  composer Send activity=None queue=[] underway=[] refused=[]
+== chat
+     1 boundary:1 Hidden collapsed
+     2 prompt:70312d33 Prompt { text: [Text("Reply with exactly the word: one")], steered: false }
+     3 message:1 Prose { text: [Text("one")], streaming: false, working_note: false }
+     4 turn:1 TurnEnd { duration_ms: Some(1797), failed: false }
+     5 prompt:70312d34 Prompt { text: [Text("/compact")], steered: false }
+     6 turn:2 TurnEnd { duration_ms: Some(4255), failed: false }
+     7 boundary:2 Hidden collapsed
+== overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
+== context Some(ContextView { used_tokens: 10100, window_tokens: Some(1048576), percent: Some(0), near_full: false }) sign-in None
+== settings
+  model  gemini-4-neon "Gemini 4 Neon" efforts=[low,medium,high]
+  model  gemini-4-argon "Gemini 4 Argon" efforts=[low,medium,high]
+  model  gemini-4-hydrogen "Gemini 4 Hydrogen" efforts=[low,medium,high]
+  model  gemini-pro-orchestrator-neon "Orchestrator (Neon)" efforts=[low,medium,high]
+  model  gemini-pro-orchestrator-g1-pro "Orchestrator (Argon)" efforts=[low,medium,high]
+  model* gemini-3.8-flash "Gemini 3.8 Flash" efforts=[low,medium,high]
+  model  claude-opus-5-5 "Claude Opus 5.5" efforts=[low,medium,high]
+  model  claude-sonnet-5-5 "Claude Sonnet 5.5" efforts=[low,medium,high]
+  model  gpt-oss-120b-medium "GPT-OSS 120B (Medium)" efforts=[low,medium,high]
+  effort* low
+  effort  medium
+  effort  high
+  mode* "default" "Default" normal
+  mode  "accept-edits" "Accept edits"
+  mode  "auto" "Auto"
+  mode  "plan" "Plan"
+  changes: model Pick · effort Pick · permission NotOffered · mode Pick
+  command /model source="" hint="[model]" "Choose the model the agent runs"
+  command /effort source="" hint="[effort]" "Choose how hard the model thinks"
+  command /rename source="" hint="<name>" "Rename the agent"
+  command /goal source="" hint="" "Run until the specified goal is completely finished."
+  command /compact source="" hint="" "Compact the conversation now (summarize history to free up the context window)."
+  command /schedule source="" hint="" "Run an instruction on a recurring schedule or as a one-time timer."
+  command /browser source="" hint="" "Invoke a browser agent for web tasks."
+  command /plan source="" hint="" "Plan carefully before executing a task."
+  command /grill-me source="" hint="" "Interview me to align on a plan."
+  command /teamwork source="" hint="" "Invoke a team of agents to autonomously tackle large projects."
+  command /learn source="" hint="" "Reflect on recent successes or corrections to capture reusable skills or rules."
+  command /boost source="" hint="" "Invoke the Boost multi-agent orchestrator for complex tasks."
+  command /agy-customizations source="" hint="" "Comprehensive guide and reference for the Antigravity Customization System. Use to explain how customizations work, their loading priority, discovery mechanisms, and to guide the creation of skills, rules, plugins, hooks, and MCP servers."
+  command /antigravity-guide source="" hint="" "Provides a comprehensive guide, quick reference, and sitemap for Google Antigravity (AGY), including the Antigravity CLI (agy), Antigravity 2.0, Antigravity IDE, Python SDK, slash commands, keybindings, and customizations (skills, rules, MCP, sidecars). Activate this skill when the user asks questions about how to use, configure, or customize Antigravity, AGY, the agy CLI, the Antigravity IDE, or…
+  command /run-workflow source="" hint="" "How to write and run a dynamic workflow script with the `run_workflow` tool: a Python script that orchestrates many agents with `agent`, `parallel`, `pipeline`, and `phase`. Use when a task splits into many independent or staged pieces of agent work (fan out over files, modules, bugs, or review angles, then aggregate), or when the user asks for a workflow. Don't use for a single delegated task (u…
+  command /swarm source="" hint="" "(Preview & Quota Heavy) Run a swarm: several agents working in parallel on one task, each in its own conversation, collaborating through a shared message board. Use when the work splits into pieces that can be done at the same time, or when a second pair of eyes should check the first pair's work."
+  controls: model=Some("Gemini 3.8 Flash") effort=Some("low") permission=None mode=None

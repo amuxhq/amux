@@ -126,6 +126,7 @@ fn up(daemon: &mut Daemon, link: u64, peer: HostId, kind: CarrierKind) -> Vec<Ou
             link: LinkId(link),
             peer,
             kind,
+            lan: false,
             resumed: None,
         },
     )

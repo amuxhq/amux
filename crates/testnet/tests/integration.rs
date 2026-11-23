@@ -11,6 +11,7 @@ mod harness_stories;
 mod replication_stories;
 mod sim_harness;
 mod sim_seeds;
+mod spec_acp;
 mod spec_analytics;
 mod spec_carried;
 mod spec_edge;

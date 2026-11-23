@@ -250,7 +250,7 @@ public struct SetupScreen: View {
         switch step {
         case .pair_phone: "Connect your iPhone"
         case .keep_reachable: "Keep your Mac ready"
-        case .sign_in: "Reach your Mac from anywhere"
+        case .sign_in: "Reach your Mac through the relay"
         case .repositories: "Where should agents work?"
         case .improve: "Help improve amux"
         case .first_agent: "Start an agent from your phone"
@@ -618,7 +618,7 @@ private struct SignIn: View {
                     .font(.ui(.title, weight: .semibold))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                Explain("You’re signed in on \(offer.hostName). Use the same account here to reach this Mac from anywhere.")
+                Explain("You’re signed in on \(offer.hostName). Use the same account here so your phone can reach this Mac through the relay.")
                 if content.accepting {
                     Waiting("Signing in…")
                 }

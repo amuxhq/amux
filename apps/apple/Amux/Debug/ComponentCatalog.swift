@@ -106,27 +106,27 @@ enum ComponentCatalog {
             ScriptedChat.row(id, order, kind, attention: attention, decision: decision, run: run, parent: parent)
         }
         return [
-            row("prompt", r("p1", 1, .prompt(text: [.text("Collapse the pairing errors onto one string.")], steered: false))),
+            row("prompt", r("p1", 1, .prompt(text: [.fixture("Collapse the pairing errors onto one string.")], steered: false))),
             row("prompt-attachments", height: 390, r("p2", 2, .prompt(
-                text: [.text("Here is the screen and the log."), .attachment(.image(F.photo)),
+                text: [.fixture("Here is the screen and the log."), .attachment(.image(F.photo)),
                        .attachment(.file(F.log)), .attachment(.text(name: "Pasted text", lines: 240, text: ""))],
                 steered: false))),
             row("prompt-sent-review", height: 140, r("p5", 5, .prompt(
-                text: [.text("These two, then run the suite."),
+                text: [.fixture("These two, then run the suite."),
                        .attachment(.sentReview(comments: 2, review: ReviewStory.sent, text: ""))],
                 steered: false))),
-            row("prompt-steered", r("p3", 3, .prompt(text: [.text("Use the new error table instead.")], steered: true))),
+            row("prompt-steered", r("p3", 3, .prompt(text: [.fixture("Use the new error table instead.")], steered: true))),
             row("prompt-quote", height: 150, r("p4", 4, .prompt(
-                text: [.text("> The retry only fires when the socket closes cleanly.\n\nOh **really**?")],
+                text: [.fixture("> The retry only fires when the socket closes cleanly.\n\nOh **really**?")],
                 steered: false))),
             row("prose", height: 330, readiness: true, r("s1", 4, .prose(
-                text: [.text(F.markdown)], streaming: false, workingNote: false))),
+                text: [.fixture(F.markdown)], streaming: false, workingNote: false))),
             row("prose-code", height: 520, readiness: true, r("s3", 4, .prose(
-                text: [.text(F.codeMarkdown)], streaming: false, workingNote: false))),
+                text: [.fixture(F.codeMarkdown)], streaming: false, workingNote: false))),
             row("prose-code-streaming", height: 220, readiness: true, r("s4", 4, .prose(
-                text: [.text(F.streamingCode)], streaming: true, workingNote: false))),
+                text: [.fixture(F.streamingCode, streaming: true)], streaming: true, workingNote: false))),
             row("prose-working-note", height: 120, readiness: true, r("s2", 5, .prose(
-                text: [.text("Checking which crates read the table first.")], streaming: true,
+                text: [.fixture("Checking which crates read the table first.", streaming: true)], streaming: true,
                 workingNote: true))),
             row("thinking", r("t1", 6, .thinking(text: "", open: false, durationMs: 8_000))),
             row("thinking-open", height: 150, expanded: true, r("t2", 7, .thinking(
@@ -182,9 +182,9 @@ enum ComponentCatalog {
                 durationMs: nil, exitCode: nil), attention: true)),
             row("explore", r("e1", 17, .explore(verb: .read, subject: "crates/wire/src/codes.rs", state: .succeeded, result: ""))),
             row("run", r("e2", 18, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: ""),
-                run: Run(first: "e0", last: "e2", steps: 6, live: false, openBelow: false, liveShown: false, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil, recent: nil))),
+                run: Run(first: "e0", last: "e2", steps: 6, live: false, openBelow: false, liveShown: false, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 4, searches: 2, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0), hidden: nil, recent: nil))),
             row("run-open-below", r("e3", 19, .explore(verb: .read, subject: "src/lib.rs", state: .succeeded, result: ""),
-                run: Run(first: "e0", last: "e3", steps: 40, live: false, openBelow: true, liveShown: false, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil, recent: nil))),
+                run: Run(first: "e0", last: "e3", steps: 40, live: false, openBelow: true, liveShown: false, unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 40, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0), hidden: nil, recent: nil))),
             // A call from history, which names no agent: what the call came
             // to is all there is to say.
             row("subagent-running", r("a1", 20, .subagent(
@@ -218,10 +218,10 @@ enum ComponentCatalog {
             row("model-switch", r("z5", 29, .modelSwitch(to: "sonnet 4.6", reason: "Opus declined this request"))),
             row("boundary", r("z6", 30, .boundary(kind: .cleared, cause: ""))),
             row("agent-message", height: 130, r("m1", 31, .agentMessage(
-                from: "worker-2", kind: .finished, text: [.text("3 specs updated, all green.")], to: "",
+                from: "worker-2", kind: .finished, text: [.fixture("3 specs updated, all green.")], to: "",
                 sent: .unspecified, rejection: ""))),
             row("agent-message-rejected", height: 130, r("m2", 32, .agentMessage(
-                from: "", kind: .message, text: [.text("Please rebase onto main first.")], to: "worker-3",
+                from: "", kind: .message, text: [.fixture("Please rebase onto main first.")], to: "worker-3",
                 sent: .rejected, rejection: "no agent by that name"))),
             row("auto-review", r("v1", 33, .autoReview(
                 status: .approved, statusWord: "approved", risk: "low", rationale: "Local only.",
@@ -474,7 +474,7 @@ enum ComponentCatalog {
                 phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 41_000, turnElapsedMs: 41_000),
                 queue: F.queue)),
             composer("not-confirmed", height: 280, frame: ScriptedChat.frame(underway: [
-                SentPrompt(inputId: [4], text: [.text("Run the focused tests.")], lands: .queue, underway: .mayNotHaveArrived),
+                SentPrompt(inputId: [4], text: [.text(Markdown(words: "Run the focused tests."))], lands: .queue, underway: .mayNotHaveArrived),
             ])),
             composer("rejected", height: 240, frame: ScriptedChat.frame(refused: [
                 RefusedPrompt(inputId: [5], reason: Refusal(reason: .hostUnreachable, detail: nil)),
@@ -482,8 +482,8 @@ enum ComponentCatalog {
             composer("sending", height: 280, frame: ScriptedChat.frame(
                 phase: .working, activity: Activity(kind: .working, sinceMs: 0, elapsedMs: 4_000, turnElapsedMs: 4_000),
                 underway: [
-                    SentPrompt(inputId: [6], text: [.text("Run the focused tests.")], lands: .queue, underway: .sending(waiting: false)),
-                    SentPrompt(inputId: [7], text: [.text("Then the Windows check.")], lands: .queue, underway: .sending(waiting: true)),
+                    SentPrompt(inputId: [6], text: [.text(Markdown(words: "Run the focused tests."))], lands: .queue, underway: .sending(waiting: false)),
+                    SentPrompt(inputId: [7], text: [.text(Markdown(words: "Then the Windows check."))], lands: .queue, underway: .sending(waiting: true)),
                 ])),
             // A provider subagent's chat: no field, what runs it, and its
             // own Stop while the provider offers one.
@@ -666,7 +666,7 @@ enum ComponentCatalog {
             // model is told, as the debug door's scroll does.
             model.reading(atNewest: false)
             list.setContentOffset(CGPoint(x: list.contentOffset.x, y: -list.adjustedContentInset.top), animated: false)
-            source.append([ScriptedChat.row("n1", 100, .prose(text: [.text("Done. The three arms are one now.")], streaming: false, workingNote: false))])
+            source.append([ScriptedChat.row("n1", 100, .prose(text: [.fixture("Done. The three arms are one now.")], streaming: false, workingNote: false))])
             source.deliver(to: model)
         }
     }
@@ -765,13 +765,13 @@ enum ComponentCatalog {
             chat("landing", chat: {
                 ScriptedChat(
                     rows: F.conversation, frame: ScriptedChat.frame(phase: .idle, underway: [
-                        SentPrompt(inputId: [8], text: [.text("Now run the Windows check.")], lands: .feed, underway: .sending(waiting: false)),
+                        SentPrompt(inputId: [8], text: [.text(Markdown(words: "Now run the Windows check."))], lands: .feed, underway: .sending(waiting: false)),
                     ]))
             }),
             chat("landing-waiting", chat: {
                 ScriptedChat(
                     rows: F.conversation, frame: ScriptedChat.frame(phase: .idle, underway: [
-                        SentPrompt(inputId: [8], text: [.text("Now run the Windows check.")], lands: .feed, underway: .sending(waiting: true)),
+                        SentPrompt(inputId: [8], text: [.text(Markdown(words: "Now run the Windows check."))], lands: .feed, underway: .sending(waiting: true)),
                     ]))
             }),
             chat("rename", chat: { ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame()) },
@@ -780,7 +780,7 @@ enum ComponentCatalog {
                 ScriptedChat(
                     rows: F.conversation, frame: ScriptedChat.frame(phase: .working),
                     strip: ScriptedChat.strip(background: 2))
-            }, family: F.family, showing: .close),
+            }, subject: F.workingSubject, family: F.family, showing: .close),
             chat("delete", chat: {
                 ScriptedChat(rows: F.conversation, frame: ScriptedChat.frame(phase: .exited(cause: .ended)))
             }, subject: F.closedSubject, showing: .delete),
@@ -1247,7 +1247,9 @@ enum CatalogFixtures {
         QueuedRow(inputId: [3], text: [.text("worker-2 finished the specs.")], steered: false, canWithdraw: false, canSendNow: true, fromAgent: "worker-2"),
     ]
 
-    static let failedSignIn = SignInView(state: .failed, account: "ada@example.com", message: "OAuth token has expired.")
+    static let failedSignIn = SignInView(
+        state: .failed, account: "ada@example.com", message: "OAuth token has expired.", providerName: "Claude",
+        hint: "Run claude and sign in with /login.")
 
     // MARK: - Settings
 
@@ -1396,6 +1398,11 @@ enum CatalogFixtures {
     static let subject = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
         reach: .online(.direct))
+    /// Working, with 2 background jobs and a subagent, which settling cuts.
+    static let workingSubject = ChatSubject(
+        name: subject.name, host: subject.host, directory: subject.directory, branch: subject.branch,
+        reach: subject.reach,
+        settle: SettleWarning(backgroundJobs: 2, subagents: 1, resumable: true, providerSubagent: false, turn: .working))
     static let closedSubject = ChatSubject(
         name: "refactor-auth", host: "Studio", directory: "/Users/ada/src/amux", branch: "ada/refactor-auth",
         reach: .online(.direct), filing: .closed)
@@ -1466,13 +1473,13 @@ enum CatalogFixtures {
     /// A plan as the shared view hands it: the title lifted from its
     /// opening heading, and the rest.
     static let planTitle = "Collapse the pairing failures onto one message"
-    static let planBody = """
+    static let planBody = MarkdownFixtures.parsed("""
         The client maps gRPC statuses onto distinct strings in three places. The protocol refuses \
         to distinguish them, so the client must not either.
 
         1. One arm, one string
         2. Update the three specs
-        """
+        """)
 
     /// An edit's patch as the shared view hands it: one file, its one hunk
     /// with where it starts.
@@ -1583,7 +1590,7 @@ enum CatalogFixtures {
 
     /// A prompt, the agent's look around, and the plan it proposed.
     static let planned: [Row] = [
-        ScriptedChat.row("p1", 1, .prompt(text: [.text("Plan how to collapse the pairing errors.")], steered: false)),
+        ScriptedChat.row("p1", 1, .prompt(text: [.fixture("Plan how to collapse the pairing errors.")], steered: false)),
         ScriptedChat.row("e1", 2, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: "")),
         ScriptedChat.row("e2", 3, .explore(verb: .read, subject: "wire/src/codes.rs", state: .succeeded, result: "")),
         ScriptedChat.row("l1", 4, .ask(.plan(body: planBody, verdict: .open, mode: "", modeName: "", writing: false, note: nil, title: planTitle))),
@@ -1595,7 +1602,7 @@ enum CatalogFixtures {
         AskCard(
             kind: kind, key: "ask-1", itemKey: "x6", position: 1, count: count, body: body,
             choices: choices, questionNote: kind != .claudePty, questionSkip: kind != .claudePty,
-            questionReply: true, stopsTurn: true, defaultToNo: false, state: state)
+            questionReply: true, replyInstead: false, stopsTurn: true, defaultToNo: false, state: state)
     }
 
     static let runningCommand = ScriptedChat.row("rc", 50, .command(
@@ -1623,7 +1630,7 @@ enum CatalogFixtures {
             .fileChange(files: [FileRow(path: path, change: .edited, added: added, removed: removed, line: nil)], state: .succeeded)
         }
         return [
-            r("c02", 2, .prompt(text: [.text("Collapse the pairing errors onto one string.")], steered: false)),
+            r("c02", 2, .prompt(text: [.fixture("Collapse the pairing errors onto one string.")], steered: false)),
         ] + ScriptedChat.run([
             r("c03", 3, .thinking(text: "", open: false, durationMs: 8_000)),
             r("c04", 4, .explore(verb: .search, subject: "INVALID_PIN", state: .succeeded, result: "")),
@@ -1640,7 +1647,7 @@ enum CatalogFixtures {
             r("c14", 14, command("rm -rf target", .denied, exit: nil),
               decision: Decision(outcome: .denied, elsewhere: false, granted: nil, note: "Use cargo clean instead")),
         ], failed: ["c13"]) + [
-            r("c15", 15, .prose(text: [.text("Done. The three arms are one now, and the new test asserts on the single string. Clippy still flags an unused import I left for you to decide on.")], streaming: false, workingNote: false)),
+            r("c15", 15, .prose(text: [.fixture("Done. The three arms are one now, and the new test asserts on the single string. Clippy still flags an unused import I left for you to decide on.")], streaming: false, workingNote: false)),
             r("c16", 16, .turnEnd(failed: false, durationMs: 102_000)),
         ]
     }()
@@ -1652,7 +1659,7 @@ enum CatalogFixtures {
             ScriptedChat.row(id, order, kind)
         }
         return conversation + [
-            r("w01", 20, .prompt(text: [.text("Drop the unused import and run the whole suite.")], steered: false)),
+            r("w01", 20, .prompt(text: [.fixture("Drop the unused import and run the whole suite.")], steered: false)),
         ] + ScriptedChat.run([
             r("w02", 21, .explore(verb: .read, subject: "crates/amux-ui/src/pairing.rs", state: .succeeded, result: "")),
             r("w03", 22, .fileChange(files: [FileRow(path: "crates/amux-ui/src/pairing.rs", change: .edited, added: 0, removed: 1, line: nil)], state: .succeeded)),
@@ -1676,18 +1683,18 @@ enum CatalogFixtures {
 
     static let docsSweep = FleetCard(
         agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 5, count: 16)),
-        name: "docs-sweep", handle: "docs-sweep", kind: .claudeSdk, attention: .exited, cwd: "", phaseSinceMs: 0,
+        name: "docs-sweep", handle: "docs-sweep", kind: .claudeSdk, provider: "claude", providerName: "Claude", attachable: false, attention: .exited, cwd: "", phaseSinceMs: 0,
         host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .exited,
         members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: .finished, repository: nil)
 
     static let family = FamilyHeader(
         children: [
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 3, count: 16)),
-                      name: "worker-2", handle: "worker-2", kind: .claudeSdk, attention: .needsYou, cwd: "", phaseSinceMs: 0,
+                      name: "worker-2", handle: "worker-2", kind: .claudeSdk, provider: "claude", providerName: "Claude", attachable: false, attention: .needsYou, cwd: "", phaseSinceMs: 0,
                       host: "Laptop", hostReach: .online(.direct), children: 0, familyAttention: .needsYou,
                       members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil, repository: nil),
             FleetCard(agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 4, count: 16)),
-                      name: "worker-3", handle: "worker-3", kind: .codex, attention: .working, cwd: "", phaseSinceMs: 0,
+                      name: "worker-3", handle: "worker-3", kind: .codex, provider: "codex", providerName: "Codex", attachable: true, attention: .working, cwd: "", phaseSinceMs: 0,
                       host: "Studio", hostReach: .online(.direct), children: 0, familyAttention: .working,
                       members: 1, descendants: 0, backgroundJobs: 0, closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil, repository: nil),
         ],
@@ -1786,28 +1793,33 @@ extension ComponentCatalog {
     // MARK: - New agent
 
     /// Starting an agent on a host whose catalogue arrived: the chosen
-    /// provider's model, effort, permission and mode, and the worktree
-    /// switch; once more with the provider signed out there.
+    /// agent's model, effort, permission and mode, and the worktree switch;
+    /// an agent that speaks ACP, by the name its host gives it, with the
+    /// models its last conversation there listed, and one with none listed
+    /// yet; once more with the agent signed out there, in its own words.
     fileprivate static let newAgent: [ComponentExample] = [
-        newAgent("claude", provider: .claude, signedIn: true),
-        newAgent("codex", provider: .codex, signedIn: true),
-        newAgent("browsing", provider: .claude, signedIn: true, browsing: true),
-        newAgent("signed-out", provider: .claude, signedIn: false),
-        newAgent("large-text", provider: .claude, signedIn: true, size: .accessibility3, height: 2400),
-        newAgent("refused", provider: .claude, signedIn: true) { store in
+        newAgent("claude", provider: "claude", signedIn: true),
+        newAgent("codex", provider: "codex", signedIn: true),
+        newAgent("acp", provider: "opencode", signedIn: true),
+        newAgent("acp-no-models", provider: "local-llama", signedIn: true),
+        newAgent("acp-signed-out", provider: "grok", signedIn: true),
+        newAgent("browsing", provider: "claude", signedIn: true, browsing: true),
+        newAgent("signed-out", provider: "claude", signedIn: false),
+        newAgent("large-text", provider: "claude", signedIn: true, size: .accessibility3, height: 2400),
+        newAgent("refused", provider: "claude", signedIn: true) { store in
             store.starts()
             store.started(.failure(RuntimeFailure("desk refused: ~/src/amux is not a git repository")))
         },
-        newAgent("no-repositories", provider: .claude, signedIn: true, browsing: true) { store in
+        newAgent("no-repositories", provider: "claude", signedIn: true, browsing: true) { store in
             store.listed(.success(Directories(recent: [], repositories: [], history: [])), asked: store.asking())
         },
-        newAgent("unlisted", provider: .claude, signedIn: true, browsing: true) { store in
+        newAgent("unlisted", provider: "claude", signedIn: true, browsing: true) { store in
             store.listed(.failure(RuntimeFailure("desk did not answer")), asked: store.asking())
         },
     ]
 
     private static func newAgent(
-        _ id: String, provider: NewAgentStore.Provider, signedIn: Bool, browsing: Bool = false,
+        _ id: String, provider: String, signedIn: Bool, browsing: Bool = false,
         size: DynamicTypeSize = .large, height: CGFloat = 1100,
         setUp: @escaping @MainActor (NewAgentStore) -> Void = { _ in }
     ) -> ComponentExample {
@@ -1835,25 +1847,52 @@ extension ComponentCatalog {
 extension CatalogFixtures {
     static let desk = HostId(bytes: Array(repeating: 7, count: 16))!
 
+    static func capabilities(acp: Bool, images: Bool = true) -> Capabilities {
+        Capabilities(
+            stopsJob: !acp, switchesBack: false, attachable: false, resumable: true, sendsNow: !acp,
+            images: images, files: true, passesUnknownCommands: true)
+    }
+
+    /// What desk offers: Claude, Codex, two of the agents that speak ACP,
+    /// Grok signed out there, and one its person added to its config.
+    static func agents(claudeSignedIn: Bool) -> [HostProvider] {
+        [
+            HostProvider(
+                provider: "claude", name: "Claude", signInHint: "Run claude and sign in with /login.", version: "",
+                capabilities: capabilities(acp: false), signedIn: claudeSignedIn),
+            HostProvider(
+                provider: "codex", name: "Codex", signInHint: "Run codex login.", version: "",
+                capabilities: capabilities(acp: false), signedIn: true),
+            HostProvider(
+                provider: "opencode", name: "OpenCode", signInHint: "Run opencode auth login in the terminal",
+                version: "1.18.33", capabilities: capabilities(acp: true), signedIn: true),
+            HostProvider(
+                provider: "grok", name: "Grok", signInHint: "Sign in with Grok", version: "1.0.50",
+                capabilities: capabilities(acp: true, images: false), signedIn: false),
+            HostProvider(
+                provider: "local-llama", name: "Local Llama", signInHint: "", version: "",
+                capabilities: capabilities(acp: true), signedIn: true),
+        ]
+    }
+
     static func newAgent(
-        provider: NewAgentStore.Provider, signedIn: Bool
+        provider: String, signedIn: Bool
     ) -> (NewAgentStore, HostsStore) {
         let hosts = HostsStore()
         hosts.stopWaiting()
+        let offered = agents(claudeSignedIn: signedIn)
         hosts.show([HostView(
             hostId: desk.bytes, name: "desk", local: false, trusted: true, candidate: false,
-            reach: .online(.direct), link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: true,
-            providers: [
-                ProviderSignIn(provider: .claude, signedIn: signedIn),
-                ProviderSignIn(provider: .codex, signedIn: true),
-            ],
-            claudeKind: nil, lastDialError: nil, platform: .macos, signedIn: nil, through: nil, version: nil),
+            reach: .online(.direct), sameNetwork: false, link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: true,
+            providers: offered,
+            lastDialError: nil, platform: .macos, signedIn: nil, through: nil, version: nil),
         HostView(
             hostId: Array(repeating: 8, count: 16), name: "laptop", local: false, trusted: true,
-            candidate: false, reach: .away, link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: false, providers: [],
-            claudeKind: nil, lastDialError: nil, platform: .macos, signedIn: nil, through: nil, version: nil)])
+            candidate: false, reach: .away, sameNetwork: false, link: 0, addrs: [], relayOnly: false, pairingOpen: false, current: false, providers: [],
+            lastDialError: nil, platform: .macos, signedIn: nil, through: nil, version: nil)])
         let store = NewAgentStore()
         store.open(on: desk)
+        store.machineOffers(offered)
         store.listed(.success(Directories(
             recent: [
                 Directory(path: "~/src/amux", name: "amux", repository: nil),
@@ -1865,12 +1904,17 @@ extension CatalogFixtures {
                 Directory(path: "~/src/dotfiles", name: "dotfiles", repository: nil),
                 Directory(path: "~/src/skills", name: "skills", repository: nil),
             ], history: [])), asked: store.asking())
-        for offered in NewAgentStore.Provider.allCases {
-            let catalogue = offered == .codex ? codexCatalogue : claudeCatalogue
-            store.offered(.success(catalogue), for: offered, asked: store.askingOffer(for: offered))
+        let catalogues = [
+            "claude": claudeCatalogue, "codex": codexCatalogue, "opencode": acpCatalogue,
+            "grok": nothing, "local-llama": nothing,
+        ]
+        for agent in offered {
+            store.offered(
+                .success(catalogues[agent.provider] ?? nothing), for: agent.provider,
+                asked: store.askingOffer(for: agent.provider))
         }
         store.choose(provider: provider)
-        if provider == .codex {
+        if provider == "codex" {
             store.choose(.model("gpt-6-astra"))
             store.choose(.effort("high"))
             store.choose(.permission("read-only"))
@@ -1879,6 +1923,23 @@ extension CatalogFixtures {
         store.newWorktree = true
         return (store, hosts)
     }
+
+    /// What OpenCode's last conversation on desk listed: its models and its
+    /// modes, none of which it names its normal one.
+    /// What an agent offers before any conversation has listed anything.
+    static let nothing = Catalogue(models: [], commands: [], permissions: [], modes: [], skills: [], newAgent: nil)
+
+    static let acpCatalogue = Catalogue(
+        models: [
+            OfferedModel(value: "anthropic/claude-sonnet-5", displayName: "Anthropic/Claude Sonnet 5", description: "", efforts: [], resolvedModel: "", defaultEffort: nil),
+            OfferedModel(value: "openai/gpt-6", displayName: "OpenAI/GPT-6", description: "", efforts: [], resolvedModel: "", defaultEffort: nil),
+        ],
+        commands: [], permissions: [],
+        modes: [
+            OfferedMode(value: "build", displayName: "Build", normal: false, settable: true),
+            OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
+        ],
+        skills: [], newAgent: nil)
 
     static let codexCatalogue = Catalogue(
         models: [
@@ -2236,7 +2297,7 @@ private struct FrozenFleetPicture: View {
             Text("Agents")
                 .designFont(.screenTitle, design)
                 .padding(.top, 70)
-            Text("No agents yet · 3 hosts")
+            Text("No agents yet · 3 devices")
                 .designFont(.detail, design)
                 .foregroundStyle(design.inkMuted.color)
                 .padding(.top, 4)
@@ -2289,14 +2350,16 @@ extension CatalogFixtures {
         _ index: UInt8, _ name: String, platform: Platform?, reach: Reach, trusted: Bool = true,
         candidate: Bool = false, addrs: [String] = [], relayOnly: Bool = false, pairingOpen: Bool = false,
         version: String? = "0.8.0",
-        providers: [ProviderSignIn] = [
-            ProviderSignIn(provider: .claude, signedIn: true), ProviderSignIn(provider: .codex, signedIn: false),
-        ]
+        providers: [HostProvider] = agents(claudeSignedIn: true).map { agent in
+            var agent = agent
+            if agent.provider == "codex" { agent.signedIn = false }
+            return agent
+        }
     ) -> HostView {
         HostView(
             hostId: Array(repeating: index, count: 16), name: name, local: false, trusted: trusted,
-            candidate: candidate, reach: reach, link: 0, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: false, providers: providers,
-            claudeKind: nil, lastDialError: nil, platform: platform, signedIn: nil, through: nil, version: version)
+            candidate: candidate, reach: reach, sameNetwork: false, link: 0, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: false, providers: providers,
+            lastDialError: nil, platform: platform, signedIn: nil, through: nil, version: version)
     }
 
     static let deskHost = machine(1, "desk", platform: .macos, reach: .online(.direct), addrs: ["192.168.1.20:4433", "[fe80::1c2b:9aff:fe31:7d10]:4433"])
@@ -2373,9 +2436,9 @@ extension CatalogFixtures {
     static let delegating: [Row] = {
         func r(_ id: String, _ order: UInt64, _ kind: RowKind) -> Row { ScriptedChat.row(id, order, kind) }
         return conversation + [
-            r("d01", 30, .prompt(text: [.text("Split the pairing audit four ways and report back.")], steered: false)),
+            r("d01", 30, .prompt(text: [.fixture("Split the pairing audit four ways and report back.")], steered: false)),
             r("d02", 31, .thinking(text: "", open: false, durationMs: 3_000)),
-            r("d03", 32, .prose(text: [.text("Starting four subagents, one per area.")], streaming: false, workingNote: false)),
+            r("d03", 32, .prose(text: [.fixture("Starting four subagents, one per area.")], streaming: false, workingNote: false)),
         ] + ScriptedChat.group(delegated.enumerated().map { index, agent in
             call("d0\(index + 4)", 33 + UInt64(index), agent.1, agent: agent.0, state: .running)
         })
@@ -2402,14 +2465,14 @@ extension CatalogFixtures {
     static let subagentWork: [Row] = {
         func r(_ id: String, _ order: UInt64, _ kind: RowKind) -> Row { ScriptedChat.row(id, order, kind) }
         return [
-            r("s01", 1, .prompt(text: [.text("Survey the relay’s retry path: where a dropped link is retried, and what bounds it.")], steered: false)),
+            r("s01", 1, .prompt(text: [.fixture("Survey the relay’s retry path: where a dropped link is retried, and what bounds it.")], steered: false)),
             r("s02", 2, .thinking(text: "The retry lives in the link layer, so start at the dialler.", open: false, durationMs: 2_000)),
         ] + ScriptedChat.run([
             r("s03", 3, .explore(verb: .search, subject: "retry_after", state: .succeeded, result: "")),
             r("s04", 4, .explore(verb: .read, subject: "crates/relay-core/src/dial.rs", state: .succeeded, result: "")),
             r("s05", 5, .command(command: "cargo test -p relay-core retry", description: "", state: .succeeded, outputHead: [], moreLines: 0, outputTrimmed: false, outputTail: [], durationMs: 6_100, exitCode: 0)),
         ]) + [
-            r("s06", 6, .prose(text: [.text("The dialler retries a dropped link with backoff capped at 30 s, and gives up after the link’s deadline. The cap is `MAX_BACKOFF` in dial.rs.")], streaming: false, workingNote: false)),
+            r("s06", 6, .prose(text: [.fixture("The dialler retries a dropped link with backoff capped at 30 s, and gives up after the link’s deadline. The cap is `MAX_BACKOFF` in dial.rs.")], streaming: false, workingNote: false)),
             r("s07", 7, .explore(verb: .read, subject: "crates/relay-core/src/link.rs", state: .running, result: "")),
         ]
     }()
@@ -2431,7 +2494,7 @@ extension CatalogFixtures {
         children: [], attention: .working, needYou: 0,
         parent: FleetCard(
             agent: AgentKey(host: Array(repeating: 1, count: 16), agent: Array(repeating: 2, count: 16)),
-            name: "pairing-audit", handle: "pairing-audit", kind: .claudeSdk, attention: .working,
+            name: "pairing-audit", handle: "pairing-audit", kind: .claudeSdk, provider: "claude", providerName: "Claude", attachable: false, attention: .working,
             cwd: "/Users/ada/src/amux", phaseSinceMs: 0, host: "Studio", hostReach: .online(.direct),
             children: 4, familyAttention: .needsYou, members: 5, descendants: 4, backgroundJobs: 0,
             closeHeld: false, filing: .open, topLevel: true, native: false, branch: nil, exitCause: nil,

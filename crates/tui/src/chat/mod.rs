@@ -36,11 +36,14 @@ use ui_state::{Composer, InputState, InputWhat, Key, SessionState};
 pub use ui_view::Comparison;
 use ui_view::{AskCard, CardState, Reach, ask_card, overview, queue_rows};
 use wire::{Attachment, GetChangesResponse, get_changes_request};
-pub(crate) use words::{FREE_PLAN_AWAY, Keys, activity_words, keys, next_control, refusal_words};
+pub(crate) use words::{
+    FREE_PLAN_AWAY, Keys, activity_words, keys, modes_stand_for_permissions, next_control,
+    refusal_words,
+};
 use words::{
-    Hint, edge_title, ends_with_exit, exit_words, has_draft, key_event, native_box, native_hint,
-    problem_words, quiet_activity, refused_command_words, settled, sign_in_notice, turn_hint,
-    unchangeable_words, withdraw_effect,
+    Hint, edge_title, ended_box, ends_with_exit, exit_words, has_draft, key_event, native_box,
+    native_hint, problem_words, quiet_activity, refused_command_words, settled, sign_in_notice,
+    turn_hint, unchangeable_words, withdraw_effect,
 };
 #[cfg(feature = "fixtures")]
 pub(crate) use words::{composer_lines, native_composer_lines, sign_in_composer_lines};
@@ -602,12 +605,12 @@ impl ChatView {
             entries.push(match prompt.underway {
                 ui_view::Underway::Sending { waiting } => QueueEntry::Sending {
                     input_id: prompt.input_id,
-                    text: prompt.text,
+                    text: rows::segments_of(&prompt.text),
                     waiting: waiting.then(|| host.to_owned()),
                 },
                 ui_view::Underway::MayNotHaveArrived => QueueEntry::Unconfirmed {
                     input_id: prompt.input_id,
-                    text: prompt.text,
+                    text: rows::segments_of(&prompt.text),
                 },
             });
         }
@@ -1023,9 +1026,21 @@ impl ChatView {
     }
 
     /// What Ctrl+V found: text follows the paste rules, an image or a file
-    /// is stored and attached.
-    pub fn paste(&mut self, content: ClipboardContent) -> Result<Option<ChatEffect>, String> {
+    /// is stored and attached, unless the agent cannot take it, which is
+    /// said at once rather than when the prompt is refused.
+    pub fn paste(
+        &mut self,
+        state: &SessionState,
+        content: ClipboardContent,
+    ) -> Result<Option<ChatEffect>, String> {
         match crate::clipboard::clip(content)? {
+            Clip::File { mime, .. } if let Some(untaken) = ui_view::untaken_file(state, &mime) => {
+                let what = match untaken {
+                    ui_view::Untaken::Images => "images",
+                    ui_view::Untaken::Files => "files",
+                };
+                Err(format!("{} can't take {what}", state.provider_name()))
+            }
             Clip::File { name, mime, bytes } => {
                 self.attaching.push(name.clone());
                 Ok(Some(ChatEffect::Attach { name, mime, bytes }))

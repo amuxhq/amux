@@ -1,3 +1,4 @@
+import AmuxFixtures
 import AmuxValues
 import Foundation
 import Observation
@@ -170,13 +171,14 @@ final class CodeHighlightingTests: XCTestCase {
     }
 
     /// A block from an agent writing Windows line endings is coloured line
-    /// for line: the lines drawn are split by the same rule as the lines
-    /// the shared view answered, so every one reads as its answer.
+    /// for line: the shared parser hands its code over with `\n` line ends,
+    /// and the lines drawn are split by the same rule as the lines the
+    /// shared view answered, so every one reads as its answer.
     func testABlockWithWindowsLineEndingsIsColouredThroughTheBridge() async throws {
-        let source = "```rust\r\nfn a() {}\r\nfn b() {}\r\n```\r\n"
-        guard case .code(let language, let text, _) = try XCTUnwrap(MarkdownDocument.parse(source).blocks.first)
+        let parsed = MarkdownFixtures.parsed("```rust\r\nfn a() {}\r\nfn b() {}\r\n```\r\n")
+        guard case .code(let language, let text, _) = try XCTUnwrap(parsed.blocks.first)
         else { return XCTFail("expected code") }
-        let request = CodeHighlighting.Request.block(code: text, info: language ?? "", streaming: false)
+        let request = CodeHighlighting.Request.block(code: text, info: language, streaming: false)
         var drawn: HighlightedCode?
         await CodeHighlighting.bridge.follow(request) { drawn = $0 }
         let runs = try XCTUnwrap(drawn).runs(CodeText.lines(text))

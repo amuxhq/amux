@@ -15,5 +15,8 @@ serde_json = { workspace = true, features = ["raw_value"] }
 name = "integration"
 path = "tests/integration.rs"
 
+[dev-dependencies]
+source-tree = { workspace = true }
+
 [lints]
 workspace = true

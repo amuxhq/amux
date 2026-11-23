@@ -1,0 +1,9 @@
+shell | Agents, Devices |  | 0,0,411,923
+home | Agents, Switch Account |  | 0,0,411,818
+home.list | Pair your first device, amux runs agents on your devices. Pair one and its agents appear here., Have an amux account?, Sign In |  | 0,0,411,818
+home.empty.first-run | Pair your first device |  | 16,142,240,32
+home.found.<desk> | desk is nearby, Open amux on desk to pair |  | 16,244,379,60
+home.empty.sign-in | Sign In |  | 183,314,64,48
+home.accounts | Switch Account |  | 367,70,32,32
+tab.agents | Agents | selected | 0,819,202,80
+tab.hosts | Devices |  | 210,819,202,80

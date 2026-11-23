@@ -22,7 +22,7 @@ public enum FleetWords {
     /// working line leads with how many there are, ahead of anything a
     /// long line could cut off.
     public static func secondLine(
-        _ line: SecondLine, kind: Kind, now: Date, backgroundJobs: UInt32 = 0
+        _ line: SecondLine, provider: String, now: Date, backgroundJobs: UInt32 = 0
     ) -> (text: String, ink: Ink)? {
         if backgroundJobs > 0 {
             let count = backgroundJobs == 1
@@ -38,12 +38,12 @@ public enum FleetWords {
         switch line {
         case .said(let said):
             let ink: Ink = if case .ask = said { .ask } else { .warning }
-            return (PushWords.body(said, provider: provider(kind), now: now), ink)
+            return (PushWords.body(said, provider: provider, now: now), ink)
         case .step(let step): return (self.step(step), .quiet)
         case .lastSaid(let said): return said.isEmpty ? nil : (said, .quiet)
         case .exited(.failed(let cause)): return (String(localized: "Stopped · \(cause)"), .error)
         case .hostRevoked:
-            return (String(localized: "Unpaired by its computer · pair again to reach it"), .warning)
+            return (String(localized: "Unpaired by its device · pair again to reach it"), .warning)
         case .exited(.finished), .exited(.ended), .blank: return nil
         }
     }
@@ -60,12 +60,4 @@ public enum FleetWords {
             line.activity.kind, elapsedMs: 0, subject: nil, subagents: line.subagents).words
     }
 
-    /// The provider a sign-in belongs to.
-    public static func provider(_ kind: Kind) -> String {
-        switch kind {
-        case .claudeSdk, .claudePty: "Claude"
-        case .codex: "Codex"
-        case .unspecified: String(localized: "the provider")
-        }
-    }
 }

@@ -1,0 +1,10 @@
+{
+  "about": "grok 1.0.89, recorded live: a second session/prompt sent while the first turn streams",
+  "spec": {
+    "provider": "grok"
+  },
+  "recording": {
+    "path": "live/grok-mid_turn/io.jsonl",
+    "format": "acp_io"
+  }
+}

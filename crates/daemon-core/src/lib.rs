@@ -52,7 +52,8 @@ pub use blobs::Blobs;
 pub use checkpoints::Checkpoints;
 pub use deliveries::{Deliveries, DrainReport, delivery_envelope_id};
 pub use families::{
-    CAUSELESS_GRACE_MS, CONTINUE_AFTER_RESTART, Create, Ended, FamilyState, Filing, Refusal, Resume,
+    CAUSELESS_GRACE_MS, CONTINUE_AFTER_RESTART, Create, Ended, FamilyState, Filing, Refusal,
+    Resume, reopens,
 };
 pub use fingerprint::Fingerprint;
 pub use ids::{
@@ -294,10 +295,11 @@ impl Daemon {
                 link,
                 peer,
                 kind,
+                lan,
                 resumed,
-            } => self.link_up(link, peer, kind, resumed.as_ref(), out),
+            } => self.link_up(link, peer, kind, lan, resumed.as_ref(), out),
             Input::LinkDown { link, reason } => self.link_down(link, reason, out),
-            Input::LinkCarried { link, kind } => self.link_carried(link, kind),
+            Input::LinkCarried { link, kind, lan } => self.link_carried(link, kind, lan),
             Input::LinkControl { link, frame } => self.link_control(link, frame, out),
             Input::Credential {
                 link,

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Chat screen header & menu -->
+    <string name="chat_place_out_of_reach">%1$s · out of reach</string>
+    <string name="chat_place_unpaired">%1$s · unpaired this phone</string>
+    <string name="chat_place_signed_out">%1$s · this phone is signed out</string>
+    <string name="chat_place_away_free">%1$s · away on the free plan</string>
+    <string name="chat_place_away">%1$s · away</string>
+    <string name="chat_header_open_overview">Open Overview</string>
+    <string name="chat_title_spoken">%1$s, %2$s, %3$s</string>
+    <string name="chat_header_open_review">Open Review</string>
+    <string name="chat_menu_overview">Overview</string>
+    <string name="chat_menu_settings">Settings</string>
+    <string name="chat_menu_review">Review Changes</string>
+    <string name="chat_menu_pin">Pin</string>
+    <string name="chat_menu_unpin">Unpin</string>
+    <string name="chat_menu_rename">Rename</string>
+    <string name="chat_menu_copy_address">Copy Address</string>
+    <string name="chat_menu_settle">Settle</string>
+    <string name="chat_menu_unsettle">Un-settle</string>
+    <string name="chat_menu_cancel_stop">Cancel Stop</string>
+    <string name="chat_menu_delete">Delete Agent</string>
+
+    <!-- Family header -->
+    <string name="chat_family_from">From %1$s</string>
+    <string name="chat_family_subagent_one">1 subagent</string>
+    <string name="chat_family_subagent_many">%1$d subagents</string>
+    <string name="chat_family_needs_you">%1$d need you</string>
+    <string name="chat_family_needs_you_one">1 needs you</string>
+
+    <!-- Banners -->
+    <string name="chat_settle_held">Settle held · sends when %1$s is back</string>
+    <string name="chat_settle_held_cancel">Cancel</string>
+
+    <!-- The dock above the composer -->
+    <string name="chat_dock_started">Started</string>
+    <string name="chat_dock_progress">%1$d/%2$d</string>
+    <string name="chat_overview_file_spoken">%1$s, %2$s</string>
+    <string name="chat_dock_background_hint">Open Overview</string>
+    <string name="state_expanded">Expanded</string>
+    <string name="state_collapsed">Collapsed</string>
+    <string name="task_done">Done</string>
+    <string name="task_current">In progress</string>
+    <string name="task_todo">To do</string>
+
+    <!-- Transcript paging & empty states -->
+    <string name="chat_paging_loading">Loading earlier…</string>
+    <string name="chat_paging_unreachable">Can’t reach %1$s for older messages</string>
+    <string name="chat_loading_from_host">Loading this chat from %1$s…</string>
+    <string name="chat_away_revoked">%1$s unpaired this phone. Pair again to see this chat.</string>
+    <string name="chat_away_signed_out">This phone is signed out, so %1$s is out of reach. This chat fills in when you sign in again.</string>
+    <string name="chat_away_free">%1$s is away because reaching it from another network needs Pro. This chat fills in once it can be reached.</string>
+    <string name="chat_away_plain">%1$s is away. This chat fills in when it is back.</string>
+    <string name="chat_new_activity">New activity</string>
+    <string name="chat_go_to_newest">Go to Newest</string>
+
+    <!-- Agent dialogs: rename, settle and delete, from a chat or the agents list -->
+    <string name="agent_rename_title">Rename %1$s</string>
+    <string name="agent_rename_label">Name</string>
+    <string name="agent_rename_confirm">Rename</string>
+    <string name="agent_settle_title">Settle %1$s?</string>
+    <string name="agent_settle_stops_now">Settling stops it now.</string>
+    <string name="agent_settle_keeps">Its chat and edits stay, and a message resumes it.</string>
+    <string name="agent_settle_confirm">Settle</string>
+    <string name="agent_delete_title">Delete %1$s?</string>
+    <string name="agent_delete_edits_stay">Its edits stay. Nothing is reverted.</string>
+    <string name="agent_delete_chat_goes">The chat is deleted on every device.</string>
+    <string name="agent_delete_subagent_goes">Its subagent is deleted too.</string>
+    <string name="agent_delete_subagents_go">Its %1$d subagents are deleted too.</string>
+    <string name="agent_delete_confirm">Delete</string>
+
+    <!-- Chat dialogs & preview -->
+    <string name="chat_preview_unavailable">Preview unavailable for this attachment.</string>
+    <string name="chat_preview_open">Open</string>
+    <string name="chat_preview_share">Share</string>
+    <string name="chat_command_replace_title">Replace draft?</string>
+    <string name="chat_command_replace_detail">Selecting %1$s replaces your current draft.</string>
+    <string name="chat_command_replace_confirm">Replace</string>
+    <string name="chat_command_replace_keep">Keep Draft</string>
+    <string name="chat_not_opened_title">Couldn’t open this chat</string>
+    <string name="chat_opening">Opening this chat</string>
+</resources>

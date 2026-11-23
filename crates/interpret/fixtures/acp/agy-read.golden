@@ -1,0 +1,54 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 1 recorded 0: tick 68
+snapshot STARTING queue=[] working_on=- at=68 agent=antigravity session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"agentCapabilitie…
+snapshot STARTING queue=[] working_on=- at=68 agent=antigravity session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=RESUME
+## 4 recorded 3: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"antigrav…
+effect session "6652ff21-c5ee-4e17-a9ab-f4c33350173a"
+effect catalogue 67fa6bde models=[gemini-4-neon{low/medium/high/xhigh},gemini-4-argon{low/medium/high/xhigh},gemini-4-hydrogen{low/medium/high/xhigh},gemini-pro-orchestrator-neon{low/medium/high/xhigh},gemini-pro-orchestrator-g1-pro{low/medium/high/xhigh},gemini-3.8-flash{low/medium/high/xhigh},claude-opus-5-5{low/medium/high/xhigh},claude-sonnet-5-5{low/medium/high/xhigh},gpt-oss-120b-medium{low/medium/high/xhigh}] commands=0 permissions=[] modes=[default,accept-edits,auto,plan]
+item boundary:1 boundary final at=1255 text="" BOUNDARY_KIND_STARTED
+snapshot catalogue 67fa6bde
+snapshot IDLE queue=[] working_on=- at=1255 agent=antigravity session=6652ff21-c5ee-4e17-a9ab-f4c33350173a asks=[] model=gemini-4-neon model_name=Gemini 4 Neon effort=high mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 6 recorded 5: input p1-1
+effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"6652ff21-c5ee-4e17-a9ab-f4c33350173a\",\"value\":\"gemini-3.8-flash\"}}"
+effect reply p1-1 accepted
+## 8 recorded 7: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+effect catalogue 92cd6296 models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=0 permissions=[] modes=[default,accept-edits,auto,plan]
+snapshot catalogue 92cd6296
+snapshot IDLE queue=[] working_on=- at=1257 agent=antigravity session=6652ff21-c5ee-4e17-a9ab-f4c33350173a asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=high mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 11 recorded 10: input p1-2
+effect write "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"thought_level\",\"sessionId\":\"6652ff21-c5ee-4e17-a9ab-f4c33350173a\",\"value\":\"low\"}}"
+effect reply p1-2 accepted
+## 13 recorded 12: fact Rpc "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+snapshot IDLE queue=[] working_on=- at=1259 agent=antigravity session=6652ff21-c5ee-4e17-a9ab-f4c33350173a asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 14 recorded 13: input p1-3
+effect reply p1-3 accepted
+effect write "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Read the file notes.txt in the current folder and reply with only the secret word it contains.\",\"type\":\"text\"}],\"sessionId\":\"6652ff21-c5ee-4e17-a9ab-f4c33350173a\"}}"
+item prompt:70312d33 prompt final input=p1-3 at=1259 text="Read the file notes.txt in the current folder and reply with only the secret word it contains."
+snapshot WORKING queue=[] working_on="Read the file notes.txt in the current folder and reply with only the secret word it contains." at=1259 agent=antigravity session=6652ff21-c5ee-4e17-a9ab-f4c33350173a asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 17 recorded 16: fact Rpc method=session/update
+effect catalogue 51ec4a90 models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=13 permissions=[] modes=[default,accept-edits,auto,plan]
+snapshot catalogue 51ec4a90
+snapshot WORKING queue=[] working_on="Read the file notes.txt in the current folder and reply with only the secret word it contains." at=1266 agent=antigravity session=6652ff21-c5ee-4e17-a9ab-f4c33350173a asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 18 recorded 17: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Read the file notes.txt in the current folder and reply with only the secret word it contains." at=1266 agent=antigravity session=6652ff21-c5ee-4e17-a9ab-f4c33350173a asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=0/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 25 recorded 24: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Read the file notes.txt in the current folder and reply with only the secret word it contains." at=3054 agent=antigravity session=6652ff21-c5ee-4e17-a9ab-f4c33350173a asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9015/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 27 recorded 26: fact Rpc method=session/update
+item tool:call_11099544057410268664 tool open at=3056 text="" READ RUNNING "File notes.txt" at=<MACHINE_PATH> input="{\"Path\":\"<MACHINE_PATH>\"}"
+## 29 recorded 28: fact Rpc method=session/update
+item tool:call_11099544057410268664 tool final at=3056 text="" READ SUCCEEDED "File notes.txt" at=<MACHINE_PATH> input="{\"Path\":\"<MACHINE_PATH>\"}"
+## 31 recorded 30: fact Rpc method=session/update
+item message:1 message open at=4542 text="lighthouse"
+## 32 recorded 31: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Read the file notes.txt in the current folder and reply with only the secret word it contains." at=4542 agent=antigravity session=6652ff21-c5ee-4e17-a9ab-f4c33350173a asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9107/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 34 recorded 33: fact Rpc "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"result\":{\"stopReason\"…
+item message:1 message final at=4542 text="lighthouse"
+item turn:1 turn final at=4547 text="" #1 TURN_OUTCOME_COMPLETED started=1259
+snapshot said "lighthouse"
+snapshot IDLE queue=[] working_on="Read the file notes.txt in the current folder and reply with only the secret word it contains." at=4547 agent=antigravity session=6652ff21-c5ee-4e17-a9ab-f4c33350173a asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9107/1048576 plan=? usage=in:11147/out:68/thought:0/total:18122 cost=? sign_in=SIGNED_IN reopen=RESUME
+turn_end 1 last=message:1
+## 37 recorded 36: provider_exit Some(0)
+item boundary:2 boundary final at=6552 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT

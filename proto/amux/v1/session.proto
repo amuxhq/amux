@@ -71,7 +71,7 @@ message Draft {
 message Input {
   bytes input_id = 1;
   Kind kind = 2;
-  // ClaudePtyInput, ClaudeSdkInput or CodexInput, as `kind` names.
+  // ClaudePtyInput, ClaudeSdkInput, CodexInput or AcpInput, as `kind` names.
   bytes body = 3;
 }
 

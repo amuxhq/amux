@@ -130,6 +130,19 @@ message Step {
   // the frame is what survives a crash whole. Empty in every step of an
   // agent whose provider started no subagent.
   repeated AgentStep agents = 6;
+  // Set on the step where the agent's program took a model or effort a
+  // person picked in its chat, once it said it took it: what the agent's
+  // host keeps for the next new agent of the same program. A kind that
+  // takes a pick without asking its program (Codex) leaves it unset; its
+  // host keeps the pick as it accepts the input. On the step rather than in
+  // a body because the host reads it for every kind without decoding one.
+  optional PickTaken picked = 7;
+}
+
+// A person's pick an agent's program took: its model, its effort, or both.
+message PickTaken {
+  optional string model = 1;
+  optional string effort = 2;
 }
 
 // One provider subagent's part of a step, filed under the subagent's own
@@ -254,6 +267,48 @@ message Snapshot {
   // working, so a turn's own replies cost no snapshot beyond its end. The
   // daemon copies it onto the inventory row.
   optional string last_said = 14;
+  // What this agent can do that differs between agents, filled by its
+  // interpreter from what its program said. Absent in a snapshot an earlier
+  // build wrote: a client then takes what the agent's host says its
+  // provider can do (ProviderOnHost.capabilities). Not copied onto the row.
+  // In the envelope rather than a body because every client reads it for
+  // every kind, the same way, to decide which controls to offer.
+  AgentCapabilities capabilities = 15;
+}
+
+// What an agent can do that differs between agents and kinds, as data: a
+// client offers a control when the capability says the agent takes it, and
+// never decides by the agent's kind or provider. The model, effort,
+// permission and mode an agent can change are said elsewhere, by its
+// catalogue. Filled for a running agent by its interpreter (on its
+// snapshot) and for a provider a host offers by that host (on
+// ProviderOnHost). False is the safe reading of every field: a client
+// that leaves out a control the agent has loses only that control, and
+// never sends an input the agent would refuse.
+message AgentCapabilities {
+  // One background job can be stopped on its own (a StopJob input).
+  bool stops_job = 1;
+  // The agent's own view can go to another of its conversations, and be
+  // brought back (a SwitchBack input): terminal Claude's.
+  bool switches_back = 2;
+  // The agent runs with a terminal interface of its own, which a client on
+  // its host can attach to.
+  bool attachable = 3;
+  // A later process of its program reopens its conversation, so the agent
+  // can be suspended and resumed once it has exited. An agent with no
+  // conversation yet is true, since a later process starts its first. One
+  // with a conversation whose program cannot reopen it, or has not said it
+  // can, is false: it never suspends, and its exit is final.
+  bool resumable = 4;
+  // A queued prompt can be sent into the running turn (SendQueuedNow).
+  bool sends_now = 5;
+  // A prompt may carry images that the provider sees as images.
+  bool images = 6;
+  // A prompt may carry files.
+  bool files = 7;
+  // A slash command the agent does not list goes to it as typed; false: a
+  // client refuses it before sending.
+  bool passes_unknown_commands = 8;
 }
 
 // What a notification says, in data rather than sentences: each client words
@@ -348,6 +403,9 @@ enum Kind {
   KIND_CLAUDE_PTY = 1;
   KIND_CLAUDE_SDK = 2;
   KIND_CODEX = 3;
+  // An agent program that speaks the Agent Client Protocol; which one is
+  // the agent's provider id.
+  KIND_ACP = 4;
 }
 
 // Why an agent's incarnation ended. UNSPECIFIED while it runs, and for a

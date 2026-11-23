@@ -26,6 +26,13 @@ pub struct FleetCard {
     /// The name it is addressed and renamed by.
     pub handle: String,
     pub kind: Kind,
+    /// Its provider's id: "claude", "codex", or an ACP agent's.
+    pub provider: String,
+    /// What people call its provider: the name its host gives it, else its
+    /// id ("Claude", "OpenCode", the name a person gave their own agent).
+    pub provider_name: String,
+    /// Its provider has a terminal of its own the agent can be opened in.
+    pub attachable: bool,
     pub attention: Attention,
     /// How it ended, once it has.
     pub exit_cause: Option<ExitCause>,
@@ -276,6 +283,7 @@ fn step_subject(state: &SessionState, activity: &Activity) -> Option<String> {
 /// The first line of the newest message the agent wrote to the person, as
 /// the words the chat draws it with: its markdown read, not shown.
 fn last_said(state: &SessionState) -> Option<String> {
+    use wire::acp_item::Kind as Acp;
     use wire::claude_item::Kind as Claude;
     use wire::codex_item::Kind as Codex;
     state
@@ -285,7 +293,9 @@ fn last_said(state: &SessionState) -> Option<String> {
         .filter(|held| {
             matches!(
                 held.body,
-                ItemBody::Claude(Claude::Message(_)) | ItemBody::Codex(Codex::Message(_))
+                ItemBody::Claude(Claude::Message(_))
+                    | ItemBody::Codex(Codex::Message(_))
+                    | ItemBody::Acp(Acp::Message(_))
             )
         })
         .find_map(|held| preview::said_line(&held.item.text, &held.item.attachments))
@@ -379,6 +389,9 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         name: without_direction_controls(ui_state::shown_name(agent)),
         handle: without_direction_controls(&agent.name),
         kind: agent.kind(),
+        provider: agent.provider_id().to_owned(),
+        provider_name: ui_state::provider_name(fleet.host(&agent.host_id), agent),
+        attachable: ui_state::offered_capabilities(fleet.host(&agent.host_id), agent).attachable,
         attention,
         exit_cause: (attention == Attention::Exited).then(|| ui_state::exit_cause(agent)),
         branch: agent.git.as_ref().and_then(|git| git.branch.clone()),
@@ -466,22 +479,11 @@ pub fn matches(fleet: &FleetState, agent: &Agent, needle: &str) -> bool {
         Some(agent.cwd.as_str()),
         host,
         cause.as_deref(),
-        Some(kind_name(agent.kind())),
+        Some(ui_state::provider_name(fleet.host(&agent.host_id), agent).as_str()),
     ]
     .into_iter()
     .flatten()
     .any(|field| field.to_lowercase().contains(needle))
-}
-
-/// The agent as a row names it: Claude chatted with here, Claude in its
-/// own terminal, or Codex.
-pub fn kind_name(kind: Kind) -> &'static str {
-    match kind {
-        Kind::ClaudeSdk => "Claude",
-        Kind::ClaudePty => "Claude (terminal)",
-        Kind::Codex => "Codex",
-        Kind::Unspecified => "",
-    }
 }
 
 /// Home: every family whose head the person pinned or closed in that
@@ -703,6 +705,89 @@ pub fn reach(fleet: &FleetState, local_host: &[u8], host: &[u8]) -> Reach {
         _ if signed_out(fleet, local_host) => Reach::Offline(Offline::SignedOut),
         _ => Reach::Offline(Offline::Plain),
     }
+}
+
+/// What settling an agent costs, for the confirm a client shows first:
+/// the work it cuts short, and whether a message resumes the agent after.
+/// Every client words it; [`SettleWarning::asks`] is when to ask at all.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SettleWarning {
+    /// The turn under way, which settling ends: working, or holding an
+    /// ask open, which settling leaves unanswered.
+    pub turn: Option<SettleTurn>,
+    pub background_jobs: u32,
+    /// Its live descendants: those its host counts, or those this fleet
+    /// sees when it sees more.
+    pub subagents: u32,
+    /// A message resumes it once settled: its program reopens the
+    /// conversation in a later process. When not, settling ends the
+    /// conversation for good. A provider subagent takes no messages and
+    /// goes with its parent, so it is never said to lose anything.
+    pub resumable: bool,
+    /// A subagent its parent's provider runs.
+    pub provider_subagent: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum SettleTurn {
+    Working,
+    NeedsYou,
+}
+
+impl SettleWarning {
+    /// Whether settling cuts work short.
+    pub fn cuts(&self) -> bool {
+        self.turn.is_some() || self.background_jobs > 0 || self.subagents > 0
+    }
+
+    /// Whether to ask before settling: when it cuts work short, or ends a
+    /// conversation nothing can resume. Otherwise settling is undone by a
+    /// message, so it goes at once.
+    pub fn asks(&self) -> bool {
+        self.cuts() || self.ends_for_good()
+    }
+
+    /// Settling ends the conversation for good: nothing resumes it.
+    pub fn ends_for_good(&self) -> bool {
+        !self.resumable && !self.provider_subagent
+    }
+}
+
+/// What settling `agent` would cost, or None for an agent this fleet does
+/// not hold. Whether it resumes is what its host says its program can do.
+pub fn settle_warning(fleet: &FleetState, agent: &AgentKey) -> Option<SettleWarning> {
+    let entry = fleet.agent(agent)?;
+    let turn = match entry.phase() {
+        wire::Phase::Working => Some(SettleTurn::Working),
+        wire::Phase::NeedsYou => Some(SettleTurn::NeedsYou),
+        _ => None,
+    };
+    let seen = live_descendants(fleet, agent);
+    Some(SettleWarning {
+        turn,
+        background_jobs: entry.background_jobs,
+        subagents: entry.descendants.max(seen),
+        resumable: ui_state::offered_capabilities(fleet.host(&entry.host_id), entry).resumable,
+        provider_subagent: entry.native.is_some(),
+    })
+}
+
+/// The live agents under `agent` in this fleet, at any depth.
+fn live_descendants(fleet: &FleetState, agent: &AgentKey) -> u32 {
+    let mut count = 0;
+    let mut under: Vec<&AgentKey> = fleet.families().children(agent).collect();
+    while let Some(child) = under.pop() {
+        if fleet
+            .agent(child)
+            .is_some_and(|child| child.lifecycle() == Lifecycle::Live)
+        {
+            count += 1;
+        }
+        under.extend(fleet.families().children(child));
+    }
+    count
 }
 
 pub fn fleet_card(fleet: &FleetState, local_host: &[u8], agent_id: &[u8]) -> Option<FleetCard> {

@@ -6,11 +6,13 @@
 //! model and effort. And the short form that starts an agent to be used in
 //! its own terminal.
 //!
-//! A person sees two agents, Claude and Codex, everywhere. Where they chat
-//! with it decides what runs behind it: in amux's chat, headless Claude or
-//! Codex's app server; in the agents' own terminals, Claude in its terminal,
-//! or Codex's app server with a terminal attached that runs its own
-//! interface on the same thread.
+//! A person picks from the agents the chosen host offers, each by the name
+//! the host gives it: Claude, Codex, and every other agent the host runs,
+//! a person's own included. What runs behind it is the host's to say (the
+//! kind its entry names for that agent): for Claude, headless or in its
+//! own terminal, as that host's settings choose. Where the person chats
+//! decides only whether an agent with a terminal of its own sets its own
+//! model, effort and mode there.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Frame as Paint;
@@ -19,77 +21,45 @@ use ratatui::text::{Line, Span};
 use settings::ChatInSetting;
 use ui_state::FleetState;
 use ui_view::{Changeable, NewAgentChoices, NewAgentPick, Reach, SettingChange, SettingsView};
-use wire::{
-    ClaudeCreateConfig, CodexCreateConfig, CreateAgentRequest, HostEntry, Kind, PromptSubmission,
-    create_agent_request,
-};
+use wire::{CreateAgentRequest, Kind, PromptSubmission};
 
 use crate::editor::Editor;
 use crate::text::{self, push};
 use crate::theme::Theme;
 
-/// The two agents a person chooses between.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Agent {
-    Claude,
-    Codex,
+/// The agents `host` offers, in the order its entry lists them. The form
+/// for an agent used in its own terminal lists them all too: one with no
+/// terminal here opens in its chat instead, and says why, as an agent on
+/// another computer does.
+pub fn offered<'a>(fleet: &'a FleetState, host: &[u8]) -> Vec<&'a wire::ProviderOnHost> {
+    fleet
+        .host(host)
+        .map(|entry| {
+            entry
+                .providers
+                .iter()
+                .filter(|offered| !offered.provider_id.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
-const AGENTS: [Agent; 2] = [Agent::Claude, Agent::Codex];
-
-impl Agent {
-    fn name(self) -> &'static str {
-        match self {
-            Agent::Claude => "Claude",
-            Agent::Codex => "Codex",
-        }
-    }
-
-    /// What runs it where the person chats.
-    fn kind(self, chat_in: ChatInSetting) -> Kind {
-        match (self, chat_in) {
-            (Agent::Claude, ChatInSetting::Amux) => Kind::ClaudeSdk,
-            (Agent::Claude, ChatInSetting::Native) => Kind::ClaudePty,
-            (Agent::Codex, _) => Kind::Codex,
-        }
-    }
-
-    fn of(kind: Kind) -> Agent {
-        match kind {
-            Kind::Codex => Agent::Codex,
-            _ => Agent::Claude,
-        }
-    }
-
-    /// The provider a host's catalogue is asked for.
-    pub fn provider(self) -> wire::Provider {
-        match self {
-            Agent::Claude => wire::Provider::Claude,
-            Agent::Codex => wire::Provider::Codex,
-        }
-    }
+/// What people call `provider` on `host`: the host's name for it, else
+/// the name amux knows it by, else its id.
+fn agent_name(fleet: &FleetState, host: &[u8], provider: &str) -> String {
+    fleet
+        .host(host)
+        .and_then(|entry| entry.provider(provider))
+        .map_or_else(
+            || wire::agents::name_or_id(provider),
+            wire::ProviderOnHost::name,
+        )
+        .to_owned()
 }
-
-/// A provider as a person names it.
-pub fn provider_name(provider: wire::Provider) -> &'static str {
-    match provider {
-        wire::Provider::Claude => "Claude",
-        wire::Provider::Codex => "Codex",
-        wire::Provider::Unspecified => "the provider",
-    }
-}
-
-/// Every provider a host can be asked about.
-pub const PROVIDERS: [wire::Provider; 2] = [wire::Provider::Claude, wire::Provider::Codex];
 
 /// Whether `provider` is signed in on `host`, once the host has said.
-pub fn signed_in(fleet: &FleetState, host: &[u8], provider: wire::Provider) -> Option<bool> {
-    fleet
-        .host(host)?
-        .providers
-        .iter()
-        .find(|offer| offer.provider == provider as i32)
-        .map(|offer| offer.signed_in)
+pub fn signed_in(fleet: &FleetState, host: &[u8], provider: &str) -> Option<bool> {
+    fleet.host(host)?.provider(provider)?.signed_in()
 }
 
 /// One of the settings, as the composer's edge shows it and a flyover
@@ -112,7 +82,9 @@ pub enum Item {
 pub struct Setup {
     /// None: named for the person automatically.
     pub name: Option<String>,
-    pub agent: Agent,
+    /// The provider's id; empty until the host has said what it offers,
+    /// when it is the first the host lists.
+    pub agent: String,
     pub chat_in: ChatInSetting,
     /// None runs the provider's default.
     pub model: Option<String>,
@@ -134,9 +106,10 @@ pub struct Setup {
     /// The model and effort copied from a running chat, which are not the
     /// person's picks until changed.
     pub copied: (Option<String>, Option<String>),
-    /// Which Claude the chosen host says a new agent runs there, taken as
-    /// the agent starts; unspecified follows where the person chats.
-    pub host_claude_kind: Kind,
+    /// The kind the chosen host starts the chosen agent as, and whether it
+    /// has a terminal of its own, taken as the agent starts.
+    pub host_kind: Kind,
+    pub attachable: bool,
     /// The folders the chosen host offers, once it has said: its repositories,
     /// then the folders its agents ran in lately.
     pub folders: Option<(Vec<u8>, Vec<String>)>,
@@ -147,7 +120,7 @@ impl Setup {
     pub fn defaults(chat_in: ChatInSetting, working_dir: &str, local_host: &[u8]) -> Setup {
         Setup {
             name: None,
-            agent: Agent::Claude,
+            agent: String::new(),
             chat_in,
             model: None,
             effort: None,
@@ -159,9 +132,53 @@ impl Setup {
             local_host: local_host.to_vec(),
             worktree: false,
             copied: (None, None),
-            host_claude_kind: Kind::Unspecified,
+            host_kind: Kind::Unspecified,
+            attachable: false,
             folders: None,
         }
+    }
+
+    /// With no agent chosen, or one the chosen host does not offer, the
+    /// first the host offers, once it has said; the picks made for another
+    /// agent do not carry over.
+    /// Takes, too, the kind the host starts the agent as and whether it
+    /// has a terminal of its own, as the host says them now.
+    pub fn settle(&mut self, fleet: &FleetState) {
+        let listed = offered(fleet, &self.host);
+        if !listed.iter().any(|offer| offer.provider_id == self.agent)
+            && let Some(first) = listed.first()
+        {
+            let had = !self.agent.is_empty();
+            self.agent = first.provider_id.clone();
+            self.offered = None;
+            if had {
+                self.start_from_defaults();
+            }
+        }
+        let offer = listed.iter().find(|offer| offer.provider_id == self.agent);
+        self.host_kind = offer.map_or(Kind::Unspecified, |offer| offer.kind());
+        self.attachable = offer
+            .and_then(|offer| offer.capabilities)
+            .is_some_and(|can| can.attachable);
+    }
+
+    /// Why the first message's attachments cannot go to the picked agent,
+    /// by what its host says that agent can do: an image to one that takes
+    /// none, a file to one that takes no files. None when they can, or when
+    /// the host has not said what the agent can do.
+    pub fn untaken(&self, fleet: &FleetState, attachments: &[wire::Attachment]) -> Option<String> {
+        let can = fleet
+            .host(&self.host)
+            .and_then(|entry| entry.provider(&self.agent))
+            .and_then(|offer| offer.capabilities)?;
+        let what = match ui_view::untaken_by(&can, attachments)? {
+            ui_view::Untaken::Images => "images",
+            ui_view::Untaken::Files => "files",
+        };
+        Some(format!(
+            "{} can't take {what}",
+            agent_name(fleet, &self.host, &self.agent)
+        ))
     }
 
     /// Nothing picked: the agent will start on its host's defaults.
@@ -175,8 +192,8 @@ impl Setup {
 
     /// A running agent's settings, to start a sibling where the person
     /// chats now: whatever the chat did not report is left to its host.
-    pub fn sibling(mut self, kind: Kind, chat_in: ChatInSetting) -> Setup {
-        self.agent = Agent::of(kind);
+    pub fn sibling(mut self, provider: &str, chat_in: ChatInSetting) -> Setup {
+        self.agent = provider.to_owned();
         self.chat_in = chat_in;
         self.offered = None;
         self.copied = (self.model.clone(), self.effort.clone());
@@ -185,14 +202,8 @@ impl Setup {
 
     /// Takes what `host` offers for `provider`, when that is what this
     /// setup is for; the choices already made stay, offered or not.
-    pub fn offer(
-        &mut self,
-        host: &[u8],
-        provider: wire::Provider,
-        hash: &[u8],
-        catalogue: &wire::Catalogue,
-    ) {
-        if host == self.host && provider == self.agent.provider() {
+    pub fn offer(&mut self, host: &[u8], provider: &str, hash: &[u8], catalogue: &wire::Catalogue) {
+        if host == self.host && provider == self.agent {
             self.offered = Some((hash.to_vec(), catalogue.clone()));
         }
     }
@@ -237,21 +248,11 @@ impl Setup {
         self.mode = next.mode;
     }
 
-    /// What runs it, as the request names it: for Claude, the kind its
-    /// host publishes, so every client starts the same Claude there.
-    pub fn kind(&self) -> Kind {
-        match (self.agent, self.host_claude_kind) {
-            (Agent::Claude, kind @ (Kind::ClaudeSdk | Kind::ClaudePty)) => kind,
-            _ => self.agent.kind(self.chat_in),
-        }
-    }
-
-    /// The setup as it starts: with the Claude kind its host publishes now.
+    /// The setup as it starts: with the kind its host starts the agent as
+    /// now, and whether the agent has a terminal of its own.
     pub fn started(&self, fleet: &FleetState) -> Box<Setup> {
         let mut setup = self.clone();
-        setup.host_claude_kind = fleet
-            .host(&self.host)
-            .map_or(Kind::Unspecified, HostEntry::claude_kind);
+        setup.settle(fleet);
         Box::new(setup)
     }
 
@@ -282,8 +283,8 @@ impl Setup {
             .find(|permission| permission.current)
             .map(crate::words::permission_words)
             .unwrap_or_else(|| waiting.to_owned());
-        let mut agent = self.agent.name().to_owned();
-        if signed_in(fleet, &self.host, self.agent.provider()) == Some(false) {
+        let mut agent = agent_name(fleet, &self.host, &self.agent);
+        if signed_in(fleet, &self.host, &self.agent) == Some(false) {
             agent.push_str(" (not signed in)");
         }
         let mut runs = vec![
@@ -324,15 +325,15 @@ impl Setup {
             caution: false,
         };
         match item {
-            Item::Kind => AGENTS
-                .iter()
-                .enumerate()
-                .map(|(at, agent)| Choice {
-                    detail: not_signed_in(fleet, &self.host, *agent),
+            Item::Kind => offered(fleet, &self.host)
+                .into_iter()
+                .map(|offer| Choice {
+                    detail: not_signed_in(offer),
+                    caution: offer.signed_in() == Some(false),
                     ..choice(
-                        agent.name().to_owned(),
-                        at.to_string(),
-                        *agent == self.agent,
+                        offer.name().to_owned(),
+                        offer.provider_id.clone(),
+                        offer.provider_id == self.agent,
                     )
                 })
                 .collect(),
@@ -372,17 +373,43 @@ impl Setup {
     pub fn takes_typed(&self, item: Item) -> bool {
         match item {
             Item::Folder => true,
-            Item::Model => self.view().changeable.model != Changeable::Pick,
+            Item::Model => self.offered.is_none(),
             _ => false,
         }
     }
 
-    /// What Shift+Tab steps, as its hint names it: the mode when the agent
-    /// offers modes, else the permission.
-    pub fn cycles(&self) -> &'static str {
-        match crate::chat::next_control(&self.view()) {
-            Some(SettingChange::Mode(_)) => "mode",
-            _ => "permission",
+    /// Whether `item` has anything to pick, so Ctrl+S offers it. A model is
+    /// typed by name while the host has not said; once it has, a model,
+    /// effort, permission or mode it offers none of is not offered at all
+    /// (an ACP agent before its first conversation, Grok's modes), rather
+    /// than an empty list.
+    pub fn offers(&self, item: Item) -> bool {
+        let view = self.view();
+        match item {
+            Item::Model => self.offered.is_none() || view.changeable.model == Changeable::Pick,
+            Item::Effort => view.changeable.effort == Changeable::Pick,
+            Item::Permission => {
+                view.changeable.permission == Changeable::Pick
+                    || view.changeable.mode == Changeable::Pick
+            }
+            Item::Mode => view.changeable.mode == Changeable::Pick,
+            Item::Name | Item::Kind | Item::Folder | Item::Host | Item::Worktree => true,
+        }
+    }
+
+    /// The agent says how much it may do only through its modes (an ACP
+    /// agent's `default`, `plan` and the like) and offers no permissions:
+    /// what asks for its permission picks its mode instead.
+    pub fn modes_stand_for_permissions(&self) -> bool {
+        crate::chat::modes_stand_for_permissions(&self.view())
+    }
+
+    /// What Shift+Tab steps, as its hint names it; None where the agent
+    /// has nothing to step, as Grok, with no modes and no permissions.
+    pub fn cycles(&self) -> Option<&'static str> {
+        match crate::chat::next_control(&self.view())? {
+            SettingChange::Mode(_) => Some("mode"),
+            _ => Some("permission"),
         }
     }
 
@@ -405,10 +432,8 @@ impl Setup {
         match item {
             Item::Name => self.name = some(value.trim()),
             Item::Kind => {
-                if let Some(agent) = value.parse::<usize>().ok().and_then(|at| AGENTS.get(at))
-                    && *agent != self.agent
-                {
-                    self.agent = *agent;
+                if !value.is_empty() && value != self.agent {
+                    self.agent = value.to_owned();
                     self.offered = None;
                     self.start_from_defaults();
                 }
@@ -491,42 +516,29 @@ impl Setup {
             .is_some_and(|(held, offered)| held == host && offered == folders)
     }
 
-    /// The create request, with the first prompt when there is one. It is
-    /// made on the chosen host, [`Setup::host`], which the call is
-    /// addressed to; the request itself names no host.
+    /// The create request, with the first prompt when there is one: the
+    /// agent in the kind its host starts it as, with what was picked. An
+    /// agent used in its own terminal sets its model, effort, permission and
+    /// mode there, so none goes. It is made on the chosen host,
+    /// [`Setup::host`], which the call is addressed to; the request itself
+    /// names no host.
     pub fn request(
         &self,
         agent_id: Vec<u8>,
         prompt: Option<PromptSubmission>,
     ) -> CreateAgentRequest {
-        // Used in its own terminal, the agent's terminal sets these.
-        let own = self.chat_in == ChatInSetting::Native;
-        let permission = if own { None } else { self.permission.clone() };
-        let model = if own { None } else { self.model.clone() };
-        let effort = if own { None } else { self.effort.clone() };
-        let mode = if own { None } else { self.mode.clone() };
-        let claude = ClaudeCreateConfig {
-            args: Vec::new(),
-            model: model.clone(),
-            permission: permission.clone(),
-            effort: effort.clone(),
-        };
-        let config = match self.kind() {
-            Kind::ClaudePty => create_agent_request::Agent::ClaudePty(claude),
-            Kind::ClaudeSdk => create_agent_request::Agent::ClaudeSdk(claude),
-            _ => create_agent_request::Agent::Codex(CodexCreateConfig {
-                model,
-                permission,
-                mode,
-                effort,
-            }),
+        let own = self.chat_in == ChatInSetting::Native && self.attachable;
+        let chosen = if own {
+            NewAgentChoices::default()
+        } else {
+            self.chosen()
         };
         CreateAgentRequest {
             agent_id,
             name: self.name.clone(),
             cwd: self.folder.clone(),
             initial_prompt: prompt,
-            agent: Some(config),
+            agent: ui_view::create_config(self.host_kind, &self.agent, &chosen),
             new_workspace: self.worktree,
             // What a chat's sibling merely copied is not the person's pick.
             remember_model: !own && self.model.is_some() && self.model != self.copied.0,
@@ -535,11 +547,20 @@ impl Setup {
     }
 }
 
-/// "not signed in" when the host has said `agent` is signed out there.
-fn not_signed_in(fleet: &FleetState, host: &[u8], agent: Agent) -> String {
-    match signed_in(fleet, host, agent.provider()) {
-        Some(false) => "not signed in".to_owned(),
-        _ => String::new(),
+/// "not signed in" when the host has said the agent is signed out there,
+/// with what its provider says to do about it.
+fn not_signed_in(offer: &wire::ProviderOnHost) -> String {
+    if offer.signed_in() != Some(false) {
+        return String::new();
+    }
+    match offer
+        .descriptor
+        .as_ref()
+        .map(|descriptor| descriptor.sign_in_hint.trim())
+        .filter(|hint| !hint.is_empty())
+    {
+        Some(hint) => format!("not signed in · {hint}"),
+        None => "not signed in".to_owned(),
     }
 }
 
@@ -548,7 +569,7 @@ fn host_name(fleet: &FleetState, host: &[u8]) -> String {
         .host(host)
         .map(|host| host.name().to_owned())
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "this computer".into())
+        .unwrap_or_else(|| "this device".into())
 }
 
 /// The hosts an agent can start on, the chosen one first in a list (a
@@ -764,6 +785,25 @@ impl Picker {
             shape: Shape::Text,
             refused: None,
         }
+    }
+
+    /// The choices as they stand now, for a list left open while what it
+    /// lists moves: a host's entry gains the ACP agents it has started one
+    /// by one, a host comes and goes, its folders or catalogue arrive. The
+    /// pointer stays on the choice it was on, and what is typed stays.
+    pub fn refresh(&mut self, choices: Vec<Choice>) {
+        if self.shape == Shape::Text || choices == self.choices {
+            return;
+        }
+        let shown = self.shown();
+        let on = shown
+            .get(self.selected.min(shown.len().saturating_sub(1)))
+            .map(|choice| choice.value.clone());
+        self.choices = choices;
+        let shown = self.shown();
+        self.selected = on
+            .and_then(|value| shown.iter().position(|choice| choice.value == value))
+            .unwrap_or_else(|| self.selected.min(shown.len().saturating_sub(1)));
     }
 
     fn filtering(&self) -> bool {
@@ -1132,7 +1172,8 @@ const FIELDS: [Field; 5] = [
 #[derive(Clone, Debug, PartialEq)]
 pub enum FormHit {
     Field(Field),
-    Agent(usize),
+    /// An agent, by its provider's id.
+    Agent(String),
     Host(String),
     Folder(String),
     Worktree,
@@ -1247,9 +1288,16 @@ impl Form {
     fn change(&mut self, setup: &mut Setup, fleet: &FleetState, step: isize) {
         match self.field {
             Field::Kind => {
-                let at = AGENTS.iter().position(|a| *a == setup.agent).unwrap_or(0) as isize;
-                let next = (at + step).rem_euclid(AGENTS.len() as isize);
-                setup.pick(Item::Kind, &next.to_string());
+                let listed = offered(fleet, &setup.host);
+                if !listed.is_empty() {
+                    let at = listed
+                        .iter()
+                        .position(|offer| offer.provider_id == setup.agent)
+                        .unwrap_or(0) as isize;
+                    let next = (at + step).rem_euclid(listed.len() as isize) as usize;
+                    let id = listed[next].provider_id.clone();
+                    setup.pick(Item::Kind, &id);
+                }
             }
             Field::Host => {
                 let choices = hosts(fleet, setup, false);
@@ -1330,10 +1378,10 @@ impl Form {
                 self.field = field;
                 self.typing = Self::text_row(field);
             }
-            FormHit::Agent(at) => {
+            FormHit::Agent(id) => {
                 self.field = Field::Kind;
                 self.typing = false;
-                setup.pick(Item::Kind, &at.to_string());
+                setup.pick(Item::Kind, &id);
             }
             FormHit::Host(value) => {
                 self.field = Field::Host;
@@ -1406,7 +1454,7 @@ impl Form {
                 Field::Name => "Name",
                 Field::Kind => "Agent",
                 Field::Folder => "Folder",
-                Field::Host => "Computer",
+                Field::Host => "Device",
                 Field::Worktree => "Worktree",
             };
             let label_ink = if current {
@@ -1448,7 +1496,7 @@ impl Form {
                         let hint = if field == Field::Name {
                             "named automatically"
                         } else {
-                            "a folder on that computer"
+                            "a folder on that device"
                         };
                         push(&mut line, hint, theme.faint(), wide);
                     } else {
@@ -1462,18 +1510,20 @@ impl Form {
                     }
                 }
                 Field::Kind => {
-                    for (at, agent) in AGENTS.iter().enumerate() {
-                        let mut words = agent.name().to_owned();
-                        let why = not_signed_in(fleet, &setup.host, *agent);
-                        if !why.is_empty() {
-                            words.push_str(&format!(" · {why}"));
+                    for offer in offered(fleet, &setup.host) {
+                        // A chip shares its line with the others, so it
+                        // says only that the agent is signed out; the
+                        // picker gives the host's words for signing in.
+                        let mut words = offer.name().to_owned();
+                        if offer.signed_in() == Some(false) {
+                            words.push_str(" · not signed in");
                         }
                         chip(
                             &mut line,
                             words,
-                            *agent == setup.agent,
+                            offer.provider_id == setup.agent,
                             false,
-                            FormHit::Agent(at),
+                            FormHit::Agent(offer.provider_id.clone()),
                         );
                     }
                 }

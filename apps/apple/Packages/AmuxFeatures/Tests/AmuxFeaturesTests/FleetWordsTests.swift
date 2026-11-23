@@ -13,8 +13,8 @@ final class FleetWordsTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_790_000_000)
     private var nowMs: Int64 { Int64(now.timeIntervalSince1970 * 1_000) }
 
-    private func said(_ line: SecondLine, kind: Kind = .claudeSdk) -> String? {
-        FleetWords.secondLine(line, kind: kind, now: now)?.text
+    private func said(_ line: SecondLine, provider: String = "Claude") -> String? {
+        FleetWords.secondLine(line, provider: provider, now: now)?.text
     }
 
     private func asks(_ wants: Wants, more: UInt32 = 0) -> SecondLine {
@@ -33,14 +33,14 @@ final class FleetWordsTests: XCTestCase {
         XCTAssertEqual(
             said(asks(.other(server: "linear", text: "Sign in\nnow"))), "linear: Sign in")
         XCTAssertEqual(
-            FleetWords.secondLine(asks(.plan(title: "")), kind: .codex, now: now)?.ink, .ask)
+            FleetWords.secondLine(asks(.plan(title: "")), provider: "Codex", now: now)?.ink, .ask)
     }
 
     /// Background jobs lead an idle or working line, as the terminal's row
     /// counts them, and never displace an ask.
     func testBackgroundJobsLeadTheLine() {
         func with(_ line: SecondLine, _ jobs: UInt32) -> String? {
-            FleetWords.secondLine(line, kind: .codex, now: now, backgroundJobs: jobs)?.text
+            FleetWords.secondLine(line, provider: "Codex", now: now, backgroundJobs: jobs)?.text
         }
         XCTAssertEqual(with(.lastSaid("Started the server."), 1), "1 background job · Started the server.")
         XCTAssertEqual(with(.blank, 3), "3 background jobs running")
@@ -81,11 +81,14 @@ final class FleetWordsTests: XCTestCase {
 
     func testAStuckAgentWarnsAndSaysWhenItCanGoOn() {
         let signedOut = FleetWords.secondLine(
-            .said(.signedOut), kind: .codex, now: now)
+            .said(.signedOut), provider: "Codex", now: now)
         XCTAssertEqual(signedOut?.text, "Signed out of Codex")
         XCTAssertEqual(signedOut?.ink, .warning)
         XCTAssertEqual(
             said(.said(.signedOut)), "Signed out of Claude")
+        XCTAssertEqual(
+            said(.said(.signedOut), provider: "OpenCode"), "Signed out of OpenCode",
+            "any agent is named as its host names it")
         XCTAssertEqual(said(.said(.usageLimit(resetsAtMs: nil))), "Usage limit reached")
         XCTAssertEqual(
             said(.said(.usageLimit(resetsAtMs: nowMs - 1))), "Usage limit reached",
@@ -94,7 +97,7 @@ final class FleetWordsTests: XCTestCase {
             said(.said(.usageLimit(resetsAtMs: nowMs + 3_600_000)))?
                 .hasPrefix("Usage limit reached · resets ") == true)
         let failed = FleetWords.secondLine(
-            .said(.failed(message: "Connection refused\nretry")), kind: .codex, now: now)
+            .said(.failed(message: "Connection refused\nretry")), provider: "Codex", now: now)
         XCTAssertEqual(failed?.text, "Connection refused")
         XCTAssertEqual(failed?.ink, .warning)
     }
@@ -104,7 +107,7 @@ final class FleetWordsTests: XCTestCase {
         XCTAssertNil(said(.exited(.ended)))
         XCTAssertNil(said(.blank))
         XCTAssertNil(said(.lastSaid("")))
-        let failed = FleetWords.secondLine(.exited(.failed("code 1")), kind: .codex, now: now)
+        let failed = FleetWords.secondLine(.exited(.failed("code 1")), provider: "Codex", now: now)
         XCTAssertEqual(failed?.text, "Stopped · code 1")
         XCTAssertEqual(failed?.ink, .error)
         XCTAssertEqual(said(.lastSaid("Done: the tests pass.")), "Done: the tests pass.")

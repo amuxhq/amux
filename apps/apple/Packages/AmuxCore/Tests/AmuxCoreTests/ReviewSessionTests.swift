@@ -88,6 +88,7 @@ private final class ReviewChat: ChatSource, @unchecked Sendable {
     func change(_ setting: SettingChange) async -> ActOutcome? { .done }
     func resume(with draft: Draft) async -> ActOutcome? { .done }
     func pageOlder(_ rows: UInt32) async -> PageOutcome? { .arrived(0) }
+    func attachmentRefusal(name: String, mime: String, size: Int) -> String? { nil }
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure> {
         .failure(RuntimeFailure("no blobs"))
     }
@@ -352,7 +353,7 @@ final class ReviewSessionTests: XCTestCase {
         chat.answering = .unreachable
         _ = await session.comment("Say why.")?.value
         XCTAssertEqual(session.selected, 1...1)
-        XCTAssertEqual(session.notice, "This agent’s computer can’t be reached, so nothing changed.")
+        XCTAssertEqual(session.notice, "This agent’s device can’t be reached, so nothing changed.")
 
         chat.answering = .failed("the review holds 500 comments already")
         _ = await session.comment("Say why.")?.value
@@ -378,7 +379,7 @@ final class ReviewSessionTests: XCTestCase {
         _ = await session.open()?.value
         XCTAssertEqual(
             session.notice,
-            "The connection dropped before the agent’s computer answered. The page shows what it says next.")
+            "The connection dropped before the agent’s device answered. The page shows what it says next.")
     }
 
     func testRewordingDeletingDiscardingAndStartingOverChangeTheReview() async {
@@ -485,6 +486,7 @@ private final class ReviewChatClosing: ChatSource, @unchecked Sendable {
     func change(_ setting: SettingChange) async -> ActOutcome? { nil }
     func resume(with draft: Draft) async -> ActOutcome? { nil }
     func pageOlder(_ rows: UInt32) async -> PageOutcome? { nil }
+    func attachmentRefusal(name: String, mime: String, size: Int) -> String? { nil }
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure> {
         .failure(RuntimeFailure("closed"))
     }

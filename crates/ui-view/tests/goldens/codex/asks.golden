@@ -29,7 +29,7 @@
 ## 13 fact {"channel":"rpc","json":{"id":9,"method":"item/tool/requestUserInput","params":{"itemId":"call-1","questions":[{"header":"Token","id":"token","isOther":true,"isSecret":true,"options":null,"question":"Paste the deploy token."},{"header":"Env","id":"env","isOther":false,"isSecret":false,"options":[{"description":"Safe first.","label":"staging (Recommended)"},{"description":"Live.","label":"prod…
   ask 9 -> "ask:9" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Token", question: "Paste the deploy token.", multi_select: false, options: [], allow_other: true, secret: true }, QuestionView { header: "Env", question: "Which environment?", multi_select: false, options: [OptionView { label: "staging", description: "Safe first.", preview: "", recommended: true }, OptionView { label: "production", description: "Live.", preview: "…
+    body Question([QuestionView { header: "Token", question: "Paste the deploy token.", header_runs: ["Token"], question_runs: ["Paste the deploy token."], multi_select: false, options: [], allow_other: true, secret: true }, QuestionView { header: "Env", question: "Which environment?", header_runs: ["Env"], question_runs: ["Which environment?"], multi_select: false, options: [OptionView { label: "staging",…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 14 input {"answer":{"answer":{"note":"rotate it after the deploy","selected":["tok-SECRET-1234",0]},"ask":"9"},"id":"a5"}
   ask none
@@ -77,7 +77,7 @@
 ## 26 fact {"channel":"rpc","json":{"id":33,"method":"item/tool/requestUserInput","params":{"itemId":"call-2","questions":[{"header":"Region","id":"region","isOther":true,"isSecret":false,"options":null,"question":"Which region?"}],"threadId":"t1","turnId":"turn-1"}}}
   ask 33 -> "ask:33" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Region", question: "Which region?", multi_select: false, options: [], allow_other: true, secret: false }])
+    body Question([QuestionView { header: "Region", question: "Which region?", header_runs: ["Region"], question_runs: ["Which region?"], multi_select: false, options: [], allow_other: true, secret: false }])
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 27 fact {"channel":"rpc","json":{"method":"serverRequest/resolved","params":{"requestId":33,"threadId":"t1"}}}
   ask none
@@ -105,17 +105,17 @@
      1 boundary:1 Hidden collapsed
      2 prompt:7031 Prompt { text: [Text("Deploy it.")], steered: false }
      3 cmd-1 Command { command: "curl -s https://api.example.com/status", description: "", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-1..fc-1 x2 recent=1] decision=Decision { outcome: Allowed, granted: Some(NetworkHosts { hosts: ["api.example.com"] }), note: None, elsewhere: false } collapsed
-     4 fc-1 FileChange { files: [FileRow { path: "/work/a.txt", change: Edited, added: 1, removed: 1, line: None }], state: Denied } run[cmd-1..fc-1 x2 recent=0 RunCounts { commands: 1, edits: 1, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false }
-     5 ask:9 [Answered: Token = (hidden); Env = staging note="rotate it after the deploy" skipped=0] Ask(Questions { questions: [QuestionView { header: "Token", question: "Paste the deploy token.", multi_select: false, options: [], allow_other: true, secret: true }, QuestionView { header: "Env", question: "Which environment?", multi_select: false, options: [OptionView { label: "staging", description…
+     4 fc-1 FileChange { files: [FileRow { path: "/work/a.txt", change: Edited, added: 1, removed: 1, line: None }], state: Denied } run[cmd-1..fc-1 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 1 }] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false }
+     5 ask:9 [Answered: Token = (hidden); Env = staging note="rotate it after the deploy" skipped=0] Ask(Questions { questions: [QuestionView { header: "Token", question: "Paste the deploy token.", header_runs: ["Token"], question_runs: ["Paste the deploy token."], multi_select: false, options: [], allow_other: true, secret: true }, QuestionView { header: "Env", question: "Which environment?", heade…
      6 ask:20 Ask(Grant { reason: "Read the shared config and reach the registry.", read: ["/etc/shared"], write: ["/var/cache"], network: true, hosts: [], granted: Some(Granted { read: ["/etc/shared"], write: [], network: true, for_session: true }), resolution: Answered })
-     7 mcp-1 ToolCall { server: "docs", tool: "sign_in", fact: "", state: Succeeded, result: "{\"content\":[{\"text\":\"ok\",\"type\":\"text\"}]}" } run[mcp-1..mcp-1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1 }]
+     7 mcp-1 ToolCall { server: "docs", tool: "sign_in", fact: "", state: Succeeded, result: "{\"content\":[{\"text\":\"ok\",\"type\":\"text\"}]}" } run[mcp-1..mcp-1 x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 1, denied: 0 }]
      8 ask:"elicit-1" Ask(Link { server: "docs", message: "Sign in to the docs server.", url: "https://docs.example.com/login", resolution: Answered })
      9 ask:"elicit-2" Ask(Form { server: "docs", message: "Which space?", fields: ["space"], resolution: Answered })
-    10 cmd-2 Command { command: "curl -s https://api.example.com/status", description: "", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-2..cmd-2 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Dismissed, granted: …
-    11 ask:33 [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Region", question: "Which region?", multi_select: false, options: [], allow_other: true, secret: false }], answers: [], skipped: 0, reply: None, resolution: Dismissed })
+    10 cmd-2 Command { command: "curl -s https://api.example.com/status", description: "", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-2..cmd-2 x1 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0 }] decision=Decision { outcome: Dismissed…
+    11 ask:33 [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Region", question: "Which region?", header_runs: ["Region"], question_runs: ["Which region?"], multi_select: false, options: [], allow_other: true, secret: false }], answers: [], skipped: 0, reply: None, resolution: Dismissed })
     12 unrecognized:2 Unrecognized { what: "account/chatgptAuthTokens/refresh", summary: "a request amux cannot answer" }
     13 cmd-4 Command { command: "touch notes.txt", description: "", state: Denied, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: Some(0) } run[cmd-4..cmd-3 x2 recent=1] decision=Decision { outcome: Denied, granted: None, note: None, elsewhere: false } collapsed
-    14 cmd-3 Command { command: "curl -s https://api.example.com/status", description: "", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-4..cmd-3 x2 recent=0 RunCounts { commands: 2, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0 }] decision=Decision { outcome: Dismissed, granted: …
+    14 cmd-3 Command { command: "curl -s https://api.example.com/status", description: "", state: Cancelled, exit_code: None, output_head: [], more_lines: 0, output_trimmed: false, output_tail: [], duration_ms: None } run[cmd-4..cmd-3 x2 recent=0 RunCounts { commands: 1, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 1 }] decision=Decision { outcome: Dismissed…
     15 turn:1 Stopped
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None

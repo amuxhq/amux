@@ -178,8 +178,10 @@ pub mod google {
 
 pub use google::rpc;
 
+pub mod agents;
 mod authority;
 mod caller_header;
+mod capabilities;
 pub mod codex;
 mod continued;
 mod entry;
@@ -257,7 +259,7 @@ pub fn provider_signalled(detail: Option<&str>) -> bool {
 /// What a caller says of a method its host does not have. gRPC's own answer
 /// to an unknown method has no words, and a caller's "could not start the
 /// agent: " would end at the colon.
-pub const HOST_NEEDS_UPDATE: &str = "that host needs updating to do this";
+pub const HOST_NEEDS_UPDATE: &str = "that device needs updating to do this";
 
 /// A person's input as its kind's own message: what a client builds and
 /// what the agent of that kind decodes from [`Input::body`].
@@ -266,6 +268,7 @@ pub enum KindInput {
     ClaudePty(ClaudePtyInput),
     ClaudeSdk(ClaudeSdkInput),
     Codex(CodexInput),
+    Acp(AcpInput),
 }
 
 impl KindInput {
@@ -274,6 +277,7 @@ impl KindInput {
             Self::ClaudePty(_) => Kind::ClaudePty,
             Self::ClaudeSdk(_) => Kind::ClaudeSdk,
             Self::Codex(_) => Kind::Codex,
+            Self::Acp(_) => Kind::Acp,
         }
     }
 
@@ -283,6 +287,7 @@ impl KindInput {
             Self::ClaudePty(input) => input.encode_to_vec(),
             Self::ClaudeSdk(input) => input.encode_to_vec(),
             Self::Codex(input) => input.encode_to_vec(),
+            Self::Acp(input) => input.encode_to_vec(),
         }
     }
 }
@@ -302,6 +307,12 @@ impl From<ClaudeSdkInput> for KindInput {
 impl From<CodexInput> for KindInput {
     fn from(input: CodexInput) -> Self {
         Self::Codex(input)
+    }
+}
+
+impl From<AcpInput> for KindInput {
+    fn from(input: AcpInput) -> Self {
+        Self::Acp(input)
     }
 }
 
@@ -326,19 +337,21 @@ impl Input {
             Kind::ClaudePty => ClaudePtyInput::decode(body).ok().map(KindInput::ClaudePty),
             Kind::ClaudeSdk => ClaudeSdkInput::decode(body).ok().map(KindInput::ClaudeSdk),
             Kind::Codex => CodexInput::decode(body).ok().map(KindInput::Codex),
+            Kind::Acp => AcpInput::decode(body).ok().map(KindInput::Acp),
             Kind::Unspecified => None,
         }
     }
 }
 
 impl create_agent_request::Agent {
-    /// The kind with its default settings; None for no kind.
+    /// The kind with its default settings; None for no kind, and for an
+    /// ACP agent, which has no default: which agent it is must be named.
     pub fn defaults(kind: Kind) -> Option<Self> {
         match kind {
             Kind::ClaudePty => Some(Self::ClaudePty(ClaudeCreateConfig::default())),
             Kind::ClaudeSdk => Some(Self::ClaudeSdk(ClaudeCreateConfig::default())),
             Kind::Codex => Some(Self::Codex(CodexCreateConfig::default())),
-            Kind::Unspecified => None,
+            Kind::Acp | Kind::Unspecified => None,
         }
     }
 
@@ -348,6 +361,16 @@ impl create_agent_request::Agent {
             Self::ClaudePty(_) => Kind::ClaudePty,
             Self::ClaudeSdk(_) => Kind::ClaudeSdk,
             Self::Codex(_) => Kind::Codex,
+            Self::Acp(_) => Kind::Acp,
+        }
+    }
+
+    /// The provider id of the program this arm starts: Claude's or Codex's,
+    /// or the ACP agent's it names.
+    pub fn provider_id(&self) -> &str {
+        match self {
+            Self::Acp(acp) => &acp.agent,
+            other => agents::implied_by(other.kind()),
         }
     }
 }
@@ -395,6 +418,7 @@ impl HostEntry {
             standing: Some(host_entry::Standing::Trusted(Trusted {
                 reach: Some(reach),
                 current: false,
+                same_network: false,
             })),
             ..Self::default()
         }
@@ -458,6 +482,13 @@ impl HostEntry {
         }
     }
 
+    /// A trusted host online over a direct path on a network both machines
+    /// are on, which a client calls Local.
+    pub fn same_network(&self) -> bool {
+        self.online() == Some(RouteKind::Direct)
+            && self.trusted().is_some_and(|trusted| trusted.same_network)
+    }
+
     pub fn away(&self) -> bool {
         matches!(self.reach(), Some(trusted::Reach::Away(_)))
     }
@@ -497,6 +528,38 @@ impl HostEntry {
     }
 }
 
+impl HostEntry {
+    /// What the host says of the provider with this id, when it runs it.
+    pub fn provider(&self, id: &str) -> Option<&ProviderOnHost> {
+        self.providers
+            .iter()
+            .find(|provider| provider.provider_id == id)
+    }
+}
+
+impl ProviderOnHost {
+    /// The kind a new agent of this provider starts as on its host.
+    pub fn kind(&self) -> Kind {
+        self.descriptor
+            .as_ref()
+            .map_or(Kind::Unspecified, ProviderDescriptor::kind)
+    }
+
+    /// What people call it, else its id.
+    pub fn name(&self) -> &str {
+        self.descriptor
+            .as_ref()
+            .map(|descriptor| descriptor.name.as_str())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| agents::name_or_id(&self.provider_id))
+    }
+
+    /// Whether it is signed in, once the host has asked it.
+    pub fn signed_in(&self) -> Option<bool> {
+        self.catalogue.is_some().then_some(self.signed_in)
+    }
+}
+
 impl Candidate {
     /// Discovery found it on this network, where pairing dials it on any
     /// plan.
@@ -518,6 +581,13 @@ impl Candidate {
         !self.nearby()
             && !self.announced_by.is_empty()
             && self.announced_by.iter().all(Host::is_cloud_relay)
+    }
+}
+
+impl Platform {
+    /// A phone: iOS or Android.
+    pub fn is_phone(self) -> bool {
+        matches!(self, Platform::Ios | Platform::Android)
     }
 }
 
@@ -678,6 +748,9 @@ mod tests {
         "CodexItem",
         "CodexInput",
         "CodexSnapshot",
+        "AcpItem",
+        "AcpInput",
+        "AcpSnapshot",
     ];
 
     /// Every message, nested ones included, and every enum, by full name.

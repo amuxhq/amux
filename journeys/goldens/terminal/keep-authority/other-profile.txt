@@ -9,9 +9,9 @@
 
                                  ╭─ Devices ────────────────────────────────╮
                                  │                                          │
-                                 │ laptop   this computer                   │
+                                 │ laptop   this device                     │
                                  │                                          │
-                                 │ Pair another computer with amux pair     │
+                                 │ Pair another device with amux pair       │
                                  │ esc close                                │
                                  ╰──────────────────────────────────────────╯
 

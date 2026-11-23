@@ -1,0 +1,64 @@
+## 0 initial
+snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 1 recorded 0: tick 591
+snapshot STARTING queue=[] working_on=- at=591 agent=opencode session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"agentCapabilitie…
+snapshot STARTING queue=[] working_on=- at=591 agent=opencode session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=RESUME
+## 4 recorded 3: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\…
+effect session "ses_e059d1273ffeAeNOGDlVTpTx5K"
+effect catalogue f7141b67 models=[opencode/beam-free,opencode/big-pickle,opencode/deepseek-v4.1-flash-free,opencode/flint-40b-free,opencode/hy4-flash-free,opencode/iceman-free,opencode/longcat-2.5-free,opencode/mimo-v2.6-flash-free,opencode/nemotron-3.5-lightning-free,opencode/nemotron-3.5-super-vl-free,opencode/tidepool-alpha-free] commands=0 permissions=[] modes=[build,plan]
+item boundary:1 boundary final at=991 text="" BOUNDARY_KIND_STARTED
+snapshot catalogue f7141b67
+snapshot IDLE queue=[] working_on=- at=991 agent=opencode session=ses_e059d1273ffeAeNOGDlVTpTx5K asks=[] model=opencode/big-pickle model_name=OpenCode/Big Pickle effort=? mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 5 recorded 4: input p1-1
+effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"ses_e059d1273ffeAeNOGDlVTpTx5K\",\"value\":\"opencode/deepseek-v4.1-flash-free\"}}"
+effect reply p1-1 accepted
+## 8 recorded 7: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+effect catalogue 544fed3c models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=0 permissions=[] modes=[build,plan]
+snapshot catalogue 544fed3c
+snapshot IDLE queue=[] working_on=- at=993 agent=opencode session=ses_e059d1273ffeAeNOGDlVTpTx5K asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 9 recorded 8: input p1-2
+effect reply p1-2 accepted
+effect write "{\"id\":\"amux-prompt-70312d32\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Remember the word kiwi. Reply with exactly the word: ok\",\"type\":\"text\"}],\"sessionId\":\"ses_e059d1273ffeAeNOGDlVTpTx5K\"}}"
+item prompt:70312d32 prompt final input=p1-2 at=993 text="Remember the word kiwi. Reply with exactly the word: ok"
+snapshot WORKING queue=[] working_on="Remember the word kiwi. Reply with exactly the word: ok" at=993 agent=opencode session=ses_e059d1273ffeAeNOGDlVTpTx5K asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 10 recorded 9: fact Rpc method=session/update
+effect catalogue eb9b5e76 models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=23 permissions=[] modes=[build,plan]
+snapshot catalogue eb9b5e76
+snapshot WORKING queue=[] working_on="Remember the word kiwi. Reply with exactly the word: ok" at=993 agent=opencode session=ses_e059d1273ffeAeNOGDlVTpTx5K asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+## 12 recorded 11: fact Rpc method=session/update
+item message:1 message open at=2968 text="ok"
+## 14 recorded 13: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Remember the word kiwi. Reply with exactly the word: ok" at=2973 agent=opencode session=ses_e059d1273ffeAeNOGDlVTpTx5K asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12903/200000 plan=? usage=in:?/out:?/thought:?/total:? cost=0USD sign_in=SIGNED_IN reopen=RESUME
+## 15 recorded 14: fact Rpc "{\"id\":\"amux-prompt-70312d32\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{},\…
+item message:1 message final at=2968 text="ok"
+item turn:1 turn final at=2973 text="" #1 TURN_OUTCOME_COMPLETED started=993
+snapshot said "ok"
+snapshot IDLE queue=[] working_on="Remember the word kiwi. Reply with exactly the word: ok" at=2973 agent=opencode session=ses_e059d1273ffeAeNOGDlVTpTx5K asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12903/200000 plan=? usage=in:11111/out:3/thought:?/total:12906 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+turn_end 1 last=message:1
+## 16 recorded 15: provider_exit Some(0)
+item boundary:2 boundary final at=2973 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT
+## 17 reincarnate
+snapshot STARTING queue=[] working_on="Remember the word kiwi. Reply with exactly the word: ok" at=2973 agent=opencode session=ses_e059d1273ffeAeNOGDlVTpTx5K asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12903/200000 plan=? usage=in:11111/out:3/thought:?/total:12906 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+## 24 recorded 6: fact Rpc "{\"id\":\"agent-load\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
+item boundary:3 boundary final at=2973 text="" BOUNDARY_KIND_RESUMED
+snapshot IDLE queue=[] working_on="Remember the word kiwi. Reply with exactly the word: ok" at=2973 agent=opencode session=ses_e059d1273ffeAeNOGDlVTpTx5K asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12903/200000 plan=? usage=in:11111/out:3/thought:?/total:12906 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+## 27 recorded 9: input p2-1
+effect reply p2-1 accepted
+effect write "{\"id\":\"amux-prompt-70322d31\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Which word did I ask you to remember? Reply with that word only.\",\"type\":\"text\"}],\"sessionId\":\"ses_e059d1273ffeAeNOGDlVTpTx5K\"}}"
+item prompt:70322d31 prompt final input=p2-1 at=3006 text="Which word did I ask you to remember? Reply with that word only."
+snapshot WORKING queue=[] working_on="Which word did I ask you to remember? Reply with that word only." at=3006 agent=opencode session=ses_e059d1273ffeAeNOGDlVTpTx5K asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12903/200000 plan=? usage=in:11111/out:3/thought:?/total:12906 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+## 29 recorded 11: fact Rpc method=session/update
+item message:2 message open at=4632 text="kiwi"
+## 31 recorded 13: fact Rpc method=session/update
+snapshot WORKING queue=[] working_on="Which word did I ask you to remember? Reply with that word only." at=4636 agent=opencode session=ses_e059d1273ffeAeNOGDlVTpTx5K asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12923/200000 plan=? usage=in:11111/out:3/thought:?/total:12906 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+## 32 recorded 14: fact Rpc "{\"id\":\"amux-prompt-70322d31\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{},\…
+item message:2 message final at=4632 text="kiwi"
+item turn:2 turn final at=4636 text="" #2 TURN_OUTCOME_COMPLETED started=3006
+snapshot said "kiwi"
+snapshot IDLE queue=[] working_on="Which word did I ask you to remember? Reply with that word only." at=4636 agent=opencode session=ses_e059d1273ffeAeNOGDlVTpTx5K asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12923/200000 plan=? usage=in:7675/out:4/thought:?/total:12927 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+turn_end 2 last=message:2
+## 35 recorded 17: provider_exit Some(0)
+item boundary:4 boundary final at=6646 text="" BOUNDARY_KIND_EXITED cause=QUIT
+incarnation_end QUIT

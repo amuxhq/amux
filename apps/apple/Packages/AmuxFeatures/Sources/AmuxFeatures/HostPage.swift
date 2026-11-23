@@ -48,7 +48,7 @@ public struct HostPage: View {
                 } else {
                     // Revoked here or elsewhere: the machine has left the list
                     // this page was opened from.
-                    Explain(String(localized: "This computer is no longer paired with this phone."))
+                    Explain(String(localized: "This device is no longer paired with this phone."))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, design.metrics.gutter)
                         .padding(.top, 8)
@@ -113,7 +113,7 @@ public struct HostPage: View {
             Surface {
                 Button { confirming = true } label: {
                     FieldRow(
-                        label: String(localized: "Unpair This Computer"), chevron: false,
+                        label: String(localized: "Unpair This Device"), chevron: false,
                         tint: design.removed.color)
                 }
                 .buttonStyle(.amuxRow)
@@ -153,7 +153,7 @@ public struct HostPage: View {
         // The relay can see it and this account cannot open a tunnel to it;
         // the page offers the subscription that would, under this.
         case .away:
-            return String(localized: "It’s online, but the free plan doesn’t connect computers to each other over the internet, so reaching it needs Pro.")
+            return String(localized: "It’s online, but only a relayed connection reaches it, and relayed connections need Pro.")
         case .offline:
             if view.reach == .offline(.revoked) { return nil }
             if let id = view.id, model.foundButUnreachable.contains(id) {
@@ -206,11 +206,14 @@ public struct HostPage: View {
         if let version = view.version {
             facts.append(Fact(id: "version", label: String(localized: "Version"), value: version, mono: true))
         }
-        for signIn in view.providers where signIn.provider != .unspecified {
-            let name = signIn.provider == .codex ? "Codex" : "Claude"
+        // Keyed by the provider's id, which no two rows share; the name is
+        // only the label, and a person's own agents may share one. Only an
+        // agent the host has asked says whether it is signed in.
+        for offered in view.providers where !offered.provider.isEmpty {
+            guard let signedIn = offered.signedIn else { continue }
             facts.append(Fact(
-                id: "provider.\(name.lowercased())", label: name,
-                value: signIn.signedIn ? String(localized: "Signed in") : String(localized: "Not signed in")))
+                id: "provider.\(offered.provider)", label: offered.name,
+                value: signedIn ? String(localized: "Signed in") : String(localized: "Not signed in")))
         }
         // The dial's own error names an address and a status code, which say
         // nothing a person can act on. A machine that dropped this phone has
@@ -236,8 +239,9 @@ public struct HostPage: View {
     /// How this phone stands with the machine, in the words the rows use.
     static func reach(_ view: HostView) -> String {
         switch view.group {
-        case .onThisNetwork: return String(localized: "Reachable on this network, direct")
-        case .throughTheRelay: return String(localized: "Reachable over the internet")
+        case .onThisNetwork:
+            return view.sameNetwork ? String(localized: "Connected · Local") : String(localized: "Connected · Direct")
+        case .throughTheRelay: return String(localized: "Connected · Relayed")
         // The daemon lists a host away only when the relay refused to
         // connect to it because the free plan relays nothing between hosts.
         case .away: return String(localized: "Away on the free plan")

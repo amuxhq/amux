@@ -180,7 +180,7 @@ pub fn title(step: SetupStep) -> &'static str {
     match step {
         SetupStep::PairPhone => "Connect your iPhone",
         SetupStep::KeepReachable => "Keep it connected",
-        SetupStep::SignIn => "Reach it from anywhere",
+        SetupStep::SignIn => "Reach it through the relay",
         SetupStep::Repositories => "Repositories",
         SetupStep::Improve => "Help improve amux",
         SetupStep::FirstAgent => "Try starting an agent from your phone",
@@ -948,13 +948,13 @@ impl Onboarding {
         let mut cursor = None;
         match &self.rename {
             Some(editor) => {
-                let (line, at) = Self::field(editor, "This computer is called ", width, theme);
+                let (line, at) = Self::field(editor, "This device is called ", width, theme);
                 cursor = Some((at, screen.lines.len()));
                 screen.line(line);
             }
             None => {
                 let mut line = Line::from(Span::raw(" ".repeat(MARGIN)));
-                push(&mut line, "This computer is called ", theme.text(), width);
+                push(&mut line, "This device is called ", theme.text(), width);
                 push(&mut line, &self.settings.host_name, theme.bright(), width);
                 push(&mut line, ".", theme.text(), width);
                 screen.line(line);
@@ -1000,7 +1000,7 @@ impl Onboarding {
                     "1. Scan to get amux on your iPhone",
                     "2. Enter ",
                     " in the app",
-                    "Whoever enters this code can run agents on this computer as you.",
+                    "Whoever enters this code can run agents on this device as you.",
                 )
             };
             let mut steps: Vec<Line<'static>> = vec![words(scan, theme.text()), Line::default()];
@@ -1167,7 +1167,7 @@ impl Onboarding {
             screen.blank();
             screen.words(
                 &format!(
-                    "{} is signed in to this account. Signing in here too lets your phone reach {} from anywhere.",
+                    "{} is signed in to this account. Signing in here too lets your phone reach {} through the relay.",
                     offer.host_name, self.settings.host_name
                 ),
                 theme.muted(),

@@ -1,0 +1,19 @@
+[package]
+name = "acp-protocol"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The Agent Client Protocol's messages as types, with a tolerant decoder"
+publish = false
+autotests = false
+
+[dependencies]
+serde.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+[dev-dependencies]
+source-tree = { workspace = true }

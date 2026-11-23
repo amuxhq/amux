@@ -1,0 +1,140 @@
+# Toolchains (docs/BUILD.md). Each language's toolchain is added here when
+# the build first needs it.
+load(":cxx.bzl", "amux_cxx_toolchain")
+load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
+load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain", "remote_python_toolchain")
+load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
+load("@prelude//tests:test_toolchain.bzl", "noop_test_toolchain")
+load("@prelude//toolchains:zip_file.bzl", "zip_file_toolchain")
+load(":rust.bzl", "amux_rust_toolchain")
+load("@root//build/platforms:defs.bzl", "RUST_TARGET_TRIPLE")
+
+# Xcode's clang through /usr/bin, which finds the selected Xcode and its SDK.
+# The Xcode version is in every Mac action's platform properties
+# (build/platforms/BUCK), so an Xcode upgrade changes their keys.
+amux_cxx_toolchain(
+    name = "cxx",
+    archiver = "/usr/bin/ar",
+    compiler = "/usr/bin/clang",
+    compiler_type = "clang",
+    cxx_compiler = "/usr/bin/clang++",
+    # WebAssembly links with the lld the pinned Rust ships, as Cargo's wasm32
+    # builds do; rustc tells it which flavour.
+    linker = select({
+        "DEFAULT": "/usr/bin/clang++",
+        "prelude//os:none": "{}/lib/rustlib/{}/bin/rust-lld".format(
+            read_root_config("rust", "toolchain_dir", ""),
+            "aarch64-apple-darwin" if host_info().os.is_macos else "x86_64-unknown-linux-gnu",
+        ),
+    }),
+    linker_type = select({"DEFAULT": None, "prelude//os:none": "wasm"}),
+    visibility = ["PUBLIC"],
+)
+
+# Cargo.toml's profiles, one per value of the `mode` constraint. Cargo sets
+# debug assertions and overflow checks explicitly per profile, so they are
+# explicit here too rather than left to rustc's opt-level-based defaults.
+_DEV = ["-Copt-level=0", "-Cdebuginfo=0", "-Cdebug-assertions=on", "-Coverflow-checks=on"]
+
+_MODE_RUSTC_FLAGS = select({
+    "DEFAULT": _DEV,
+    "root//build/constraints:models": ["-Copt-level=3", "-Cdebuginfo=0", "-Cdebug-assertions=on", "-Coverflow-checks=on"],
+    "root//build/constraints:full-debug": ["-Copt-level=0", "-Cdebuginfo=2", "-Cdebug-assertions=on", "-Coverflow-checks=on"],
+    "root//build/constraints:release": ["-Copt-level=3", "-Ccodegen-units=1", "-Cdebuginfo=line-tables-only", "-Cpanic=abort", "-Cdebug-assertions=off", "-Coverflow-checks=off", "-Cembed-bitcode=yes"],
+    "root//build/constraints:phone-dev": ["-Copt-level=3", "-Ccodegen-units=16", "-Cdebuginfo=0", "-Cpanic=abort", "-Cdebug-assertions=off", "-Coverflow-checks=off"],
+    "root//build/constraints:wasm": ["-Copt-level=s", "-Ccodegen-units=1", "-Cdebuginfo=0", "-Cpanic=abort", "-Cdebug-assertions=off", "-Coverflow-checks=off", "-Cembed-bitcode=yes"],
+})
+
+# Fat LTO applies where Cargo applies it: when the final artifact is linked.
+_MODE_BINARY_FLAGS = select({
+    "DEFAULT": [],
+    "root//build/constraints:release": ["-Clto=fat"],
+    "root//build/constraints:wasm": ["-Clto=fat", "-Cstrip=symbols"],
+})
+
+_PANIC_RUNTIME = select({
+    "DEFAULT": "unwind",
+    "root//build/constraints:release": "abort",
+    "root//build/constraints:phone-dev": "abort",
+    "root//build/constraints:wasm": "abort",
+})
+
+# .cargo/config.toml: Apple targets keep debug info in a packed .dSYM.
+_TARGET_RUSTC_FLAGS = select({
+    "DEFAULT": [],
+    "prelude//os:macos": ["-Csplit-debuginfo=packed"],
+    "prelude//os:iphoneos": ["-Csplit-debuginfo=packed"],
+})
+
+amux_rust_toolchain(
+    name = "rust",
+    default_edition = "2024",
+    panic_runtime = _PANIC_RUNTIME,
+    rustc_binary_flags = _MODE_BINARY_FLAGS,
+    rustc_flags = _MODE_RUSTC_FLAGS + _TARGET_RUSTC_FLAGS,
+    rustc_target_triple = RUST_TARGET_TRIPLE,
+    # Cargo.toml's [workspace.lints.clippy] and clippy.toml, wherever clippy
+    # runs (build/checks/clippy.py runs it over the workspace's crates).
+    clippy_toml = "root//:clippy.toml",
+    deny_lints = ["clippy::await_holding_lock", "clippy::dbg_macro", "clippy::todo"],
+    toolchain_dir = read_root_config("rust", "toolchain_dir"),
+    visibility = ["PUBLIC"],
+)
+
+system_genrule_toolchain(
+    name = "genrule",
+    visibility = ["PUBLIC"],
+)
+
+system_python_bootstrap_toolchain(
+    name = "python_bootstrap",
+    visibility = ["PUBLIC"],
+)
+
+remote_python_toolchain(
+    name = "python",
+    bootstrap = False,
+    visibility = ["PUBLIC"],
+)
+
+# Tests run through NativeLink like every other action, so a passing result
+# is in the action cache for every other worktree. Without this profile the
+# prelude runs tests in Buck2's local executor, whose results are never
+# uploaded.
+remote_test_execution_toolchain(
+    name = "remote_test_execution",
+    default_profile = "default",
+    # One action per test target; the target's own runner isolates cases.
+    default_run_as_bundle = True,
+    profiles = {
+        "default": {
+            "capabilities": {
+                "OSFamily": "macos",
+                "cpu_count": "1",
+                "xcode": read_root_config("apple", "xcode", ""),
+            },
+            "use_case": "buck2-default",
+        },
+        # A test that uses every core, as nextest's `threads-required =
+        # "num-cpus"`: it reserves the whole worker, so nothing runs beside it.
+        "whole-worker": {
+            "capabilities": {
+                "OSFamily": "macos",
+                "cpu_count": read_root_config("amux", "worker_cores", "1"),
+                "xcode": read_root_config("apple", "xcode", ""),
+            },
+            "use_case": "buck2-default",
+        },
+    },
+    visibility = ["PUBLIC"],
+)
+
+noop_test_toolchain(
+    name = "test",
+    visibility = ["PUBLIC"],
+)
+
+zip_file_toolchain(
+    name = "zip_file",
+    visibility = ["PUBLIC"],
+)

@@ -7,8 +7,8 @@
 
 use wire::{
     AccessWant, AskNotice, BlockedNotice, ChangeWant, Empty, Notice, OtherWant, PlanWant,
-    QuestionWant, RunWant, UsageBlock, UseWant, ask, ask_notice, blocked_notice, codex_ask, notice,
-    tool_input,
+    QuestionWant, RunWant, UsageBlock, UseWant, acp_ask, ask, ask_notice, blocked_notice,
+    codex_ask, notice, tool_input,
 };
 
 /// The most bytes any one string keeps. A push has a few kilobytes for the
@@ -163,6 +163,20 @@ pub(crate) fn codex_ask(asked: &wire::CodexAsk, more: u32, plan_title: &str) -> 
         None => (other(""), ""),
     };
     wants_ask(&asked.key, wants, why, more)
+}
+
+/// An ACP agent's head ask. A permission names its call only in the agent's
+/// own words (its title), never a command or a path amux could read apart,
+/// so the notice quotes the title.
+pub(crate) fn acp_ask(asked: &wire::AcpAsk, more: u32, _plan_title: &str) -> Notice {
+    let wants = match &asked.body {
+        Some(acp_ask::Body::Permission(permission)) => other(&permission.title),
+        Some(acp_ask::Body::Form(form)) => from_server(&form.server, &form.message),
+        Some(acp_ask::Body::Link(link)) => from_server(&link.server, &link.message),
+        Some(acp_ask::Body::Question(asked)) => question(asked),
+        None => other(""),
+    };
+    wants_ask(&asked.key, wants, "", more)
 }
 
 fn first_said<'a>(texts: &[&'a str]) -> &'a str {

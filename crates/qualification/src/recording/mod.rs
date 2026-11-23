@@ -3,6 +3,7 @@
 //! through, and what the two probes share to join a live capture to its
 //! corpus.
 
+pub mod acp;
 pub mod live;
 mod manifest;
 mod sanitize;

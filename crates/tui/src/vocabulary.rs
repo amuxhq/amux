@@ -18,8 +18,8 @@ use ui_view::{
     AnswerView, AskBody, AskCard, AskRow, AttachmentView, CallPhase, CardState, Choice,
     ChoiceOutcome, Decision, DecisionView, ExploreVerb, FileChangeView, FilePatch, FileRow,
     Granted, HunkStart, LineKind, Offline, OptionView, PatchHead, PatchHunk, PatchLine,
-    PermissionGrant, PlanVerdict, QuestionView, QueuedRow, Reach, Refusal, Resolution, Row,
-    RowKind, Scope, Segment,
+    PermissionGrant, PlanVerdict, ProsePart, QuestionView, QueuedRow, Reach, Refusal, Resolution,
+    Row, RowKind, Scope, Segment,
 };
 use wire::{BlobRef, BoundaryKind, EnvelopeKind, SendState};
 
@@ -150,12 +150,13 @@ pub fn components(theme: Theme) -> Vec<Component> {
         "composer_signed_out_codex",
         "Codex refused its sign-in: above a composer that still sends, a notice says Codex needs you to sign in, that sign-in failed and the provider's words why, to run codex login on the agent's host, and that someone who signed in elsewhere tries again by sending.",
         sign_in_composer_lines(
-            wire::Kind::Codex,
             "studio",
             &ui_view::SignInView {
                 state: wire::SignInState::Failed,
                 account: String::new(),
                 message: "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header".into(),
+                provider_name: "Codex".into(),
+                hint: "Run codex login.".into(),
             },
             "fixer",
             w,
@@ -167,7 +168,11 @@ pub fn components(theme: Theme) -> Vec<Component> {
             name,
             shows,
             native_composer_lines(
-                kind,
+                if kind == wire::Kind::Codex {
+                    "Codex"
+                } else {
+                    "Claude"
+                },
                 &stop,
                 if kind == wire::Kind::Codex {
                     "GPT-5.5"
@@ -247,7 +252,7 @@ fn review_pages() -> Vec<(&'static str, &'static str, crate::chat::review::Page)
         ),
         (
             "review_not_offered",
-            "The review page for an agent whose computer does not run reviews.",
+            "The review page for an agent whose device does not run reviews.",
             review_not_offered(),
         ),
     ]
@@ -751,7 +756,7 @@ pub fn review_empty() -> crate::chat::review::Page {
     review_scene(summary, Vec::new(), Vec::new())
 }
 
-/// The page for an agent whose computer does not run reviews.
+/// The page for an agent whose device does not run reviews.
 pub fn review_not_offered() -> crate::chat::review::Page {
     let mut page = crate::chat::review::Page::new();
     page.set_owner("fixer", "/srv/amux");
@@ -839,7 +844,7 @@ fn queue(width: usize, theme: Theme) -> Vec<Line<'static>> {
     let entries = [
         QueueEntry::Queued(QueuedRow {
             input_id: vec![1],
-            text: text("Then run the relay tests."),
+            text: vec![Segment::Text("Then run the relay tests.".into())],
             from_agent: None,
             steered: false,
             can_withdraw: true,
@@ -847,12 +852,12 @@ fn queue(width: usize, theme: Theme) -> Vec<Line<'static>> {
         }),
         QueueEntry::Sending {
             input_id: vec![2],
-            text: text("Check the deployment once."),
+            text: vec![Segment::Text("Check the deployment once.".into())],
             waiting: Some("laptop".into()),
         },
         QueueEntry::Unconfirmed {
             input_id: vec![3],
-            text: text("Stop the server."),
+            text: vec![Segment::Text("Stop the server.".into())],
         },
     ];
     let mut lines: Vec<Line<'static>> = entries
@@ -919,7 +924,7 @@ impl HomeScene {
     }
 
     /// The open new-agent composer told what the desk offers its agent.
-    pub fn offer(&mut self, provider: wire::Provider, catalogue: &wire::Catalogue) {
+    pub fn offer(&mut self, provider: &str, catalogue: &wire::Catalogue) {
         if let Some(setup) = self.home.open_setup() {
             setup.offer(b"desk", provider, &[1; 32], catalogue);
         }
@@ -932,8 +937,8 @@ impl HomeScene {
 }
 
 /// Home over the authored fleet: two hosts, one of them away, and a dozen
-/// agents in every standing, with families, branches and what each
-/// session says for its second line. The exited fold is open and the
+/// agents in every standing, one of them an ACP agent, with families,
+/// branches and what each session says for its second line. The exited fold is open and the
 /// highlight on the first agent.
 pub fn authored_home() -> HomeScene {
     use std::collections::HashMap;
@@ -952,6 +957,11 @@ pub fn authored_home() -> HomeScene {
             of: Some(of),
         })))
     };
+    // The ACP agent the fleet's ACP row runs.
+    let opencode = crate::sessions::hinted(
+        crate::sessions::offered("opencode", "OpenCode", Kind::Acp),
+        "Run `opencode auth login` in the terminal",
+    );
     for (id, name, reach) in [
         (
             b"desk".as_slice(),
@@ -964,7 +974,23 @@ pub fn authored_home() -> HomeScene {
             Reach::Offline(wire::Offline::default()),
         ),
     ] {
-        event(Of::Host(wire::HostEntry::trusted_host(id, name, reach)));
+        // Each offers Claude, Codex and two ACP agents, one of them not
+        // signed in there, each with the words its own agent gives for
+        // signing in.
+        use crate::sessions::{hinted, offered, offered_providers};
+        let mut providers = offered_providers();
+        providers.push(opencode.clone());
+        providers.push(wire::ProviderOnHost {
+            signed_in: false,
+            ..hinted(
+                offered("antigravity", "Antigravity", Kind::Acp),
+                "Log in with your Google account",
+            )
+        });
+        event(Of::Host(wire::HostEntry {
+            providers,
+            ..wire::HostEntry::trusted_host(id, name, reach)
+        }));
     }
     let mut lines = HashMap::new();
     let asks = |wants: Wants, more: u32| Said::Ask {
@@ -998,7 +1024,7 @@ pub fn authored_home() -> HomeScene {
         i64,
         Option<&str>,
         Option<SessionLine>,
-    ); 12] = [
+    ); 13] = [
         (
             "planner",
             "desk",
@@ -1055,6 +1081,16 @@ pub fn authored_home() -> HomeScene {
             1,
             None,
             Some(line(None, Some("cargo test -p relay"), None)),
+        ),
+        (
+            "drafter",
+            "desk",
+            Kind::Acp,
+            Phase::Working,
+            Some("site-copy"),
+            2,
+            None,
+            Some(line(None, Some("Edit docs/guide/README.md"), None)),
         ),
         (
             "fixer",
@@ -1158,6 +1194,11 @@ pub fn authored_home() -> HomeScene {
             agent_id: name.as_bytes().to_vec(),
             host_id: host.as_bytes().to_vec(),
             kind: kind as i32,
+            provider: if kind == Kind::Acp {
+                opencode.provider_id.clone()
+            } else {
+                String::new()
+            },
             name: name.into(),
             cwd: "/home/sam/src/amux".into(),
             lifecycle: if exit_cause.is_some() {
@@ -1307,8 +1348,8 @@ fn written_at() -> i64 {
         .as_millisecond()
 }
 
-fn text(words: &str) -> Vec<Segment> {
-    vec![Segment::Text(words.into())]
+fn text(words: &str) -> Vec<ProsePart> {
+    ui_view::prose_parts(vec![Segment::Text(words.into())], false)
 }
 
 const CLOSED: RowState = RowState {
@@ -1373,6 +1414,7 @@ fn facts(row: &Row) -> RowFacts {
                 ],
             }],
             more: 10,
+            cut: false,
         });
     }
     facts
@@ -1416,7 +1458,7 @@ fn row_sets() -> Vec<RowSet> {
             duration_ms: Some(12_400),
         })
     };
-    let question = |multi| QuestionView {
+    let question = |multi: bool| QuestionView {
         header: if multi { "Logging" } else { "Rollout" }.into(),
         question: if multi {
             "What should be logged?"
@@ -1424,26 +1466,23 @@ fn row_sets() -> Vec<RowSet> {
             "How should the migration roll out?"
         }
         .into(),
+        header_runs: ui_view::inline_runs(if multi { "Logging" } else { "Rollout" }),
+        question_runs: ui_view::inline_runs(if multi {
+            "What should be logged?"
+        } else {
+            "How should the migration roll out?"
+        }),
         multi_select: multi,
         options: vec![
-            OptionView {
-                label: "Behind a flag".into(),
-                description: "Off by default for one release".into(),
-                preview: String::new(),
-                recommended: true,
-            },
-            OptionView {
-                label: "All at once".into(),
-                description: String::new(),
-                preview: String::new(),
-                recommended: false,
-            },
+            OptionView::new("Behind a flag", "Off by default for one release", "", true),
+            OptionView::new("All at once", "", "", false),
         ],
         allow_other: true,
         secret: false,
     };
     let answer = |picked: &[&str], other: Option<&str>| AnswerView {
         picked: picked.iter().map(|s| (*s).into()).collect(),
+        picked_runs: picked.iter().map(|s| ui_view::inline_runs(s)).collect(),
         other: other.map(Into::into),
         hidden: false,
         note: None,
@@ -1462,7 +1501,8 @@ fn row_sets() -> Vec<RowSet> {
             vec![
                 (
                     row(RowKind::Prompt {
-                        text: vec![
+                        text: ui_view::prose_parts(
+                            vec![
                             Segment::Text("Why does the fleet flicker? See ".into()),
                             Segment::Attachment(AttachmentView::Image(image.clone())),
                             Segment::Text(" and my notes ".into()),
@@ -1475,7 +1515,7 @@ fn row_sets() -> Vec<RowSet> {
                                 },
                                 text: "Two comments on src/sum.rs.".into(),
                             }),
-                        ],
+                        ], false),
                         steered: false,
                     }),
                     CLOSED,
@@ -1944,6 +1984,7 @@ fn row_sets() -> Vec<RowSet> {
                     row(RowKind::Ask(AskRow::Questions {
                         questions: vec![question(false)],
                         answers: vec![AnswerView {
+                            picked_runs: Vec::new(),
                             note: Some("flip it on for the desk first".into()),
                             ..answer(&["Behind a flag"], None)
                         }],
@@ -1959,6 +2000,7 @@ fn row_sets() -> Vec<RowSet> {
                         answers: vec![
                             answer(&["All at once"], None),
                             AnswerView {
+                                picked_runs: Vec::new(),
                                 note: Some("keep the old strings for one release".into()),
                                 ..answer(&[], Some("Only failures, with the host id"))
                             },
@@ -1975,6 +2017,7 @@ fn row_sets() -> Vec<RowSet> {
                         answers: vec![
                             answer(&["Behind a flag"], None),
                             AnswerView {
+                                picked_runs: Vec::new(),
                                 note: Some("ask me again once the flag ships".into()),
                                 ..answer(&[], None)
                             },
@@ -1998,7 +2041,7 @@ fn row_sets() -> Vec<RowSet> {
                 (
                     row(RowKind::Ask(AskRow::Plan {
                         title: None,
-                        body: "Collapse the pairing failures into one error.".into(),
+                        body: ui_view::Markdown::parse("Collapse the pairing failures into one error.", false),
                         verdict: PlanVerdict::ApprovedSwitching,
                         mode: "auto".into(),
                         mode_name: "Auto".into(),
@@ -2010,7 +2053,7 @@ fn row_sets() -> Vec<RowSet> {
                 (
                     row(RowKind::Ask(AskRow::Plan {
                         title: None,
-                        body: "Rename every wire code.".into(),
+                        body: ui_view::Markdown::parse("Rename every wire code.", false),
                         verdict: PlanVerdict::SentBack,
                         mode: String::new(),
                         mode_name: String::new(),
@@ -2186,6 +2229,49 @@ fn row_sets() -> Vec<RowSet> {
             .collect(),
         ),
         (
+            "row_notice",
+            "What an ACP agent says about its own session: a note, a warning, the turn ending at its token limit, and an error it reports.",
+            [
+                (
+                    ui_view::NoticeReason::Agent,
+                    ui_view::NoticeSeverity::Info,
+                    "Indexed 1,204 files",
+                    "",
+                ),
+                (
+                    ui_view::NoticeReason::Agent,
+                    ui_view::NoticeSeverity::Warning,
+                    "Rate limited",
+                    "Retrying in 20 seconds.",
+                ),
+                (
+                    ui_view::NoticeReason::MaxTokens,
+                    ui_view::NoticeSeverity::Warning,
+                    "",
+                    "",
+                ),
+                (
+                    ui_view::NoticeReason::Agent,
+                    ui_view::NoticeSeverity::Error,
+                    "",
+                    "The model provider refused the request.\nCheck the API key in settings.",
+                ),
+            ]
+            .into_iter()
+            .map(|(reason, severity, title, text)| {
+                (
+                    row(RowKind::Notice {
+                        reason,
+                        severity,
+                        title: title.into(),
+                        text: text.into(),
+                    }),
+                    CLOSED,
+                )
+            })
+            .collect(),
+        ),
+        (
             "row_agent_message",
             "Messages between agents: one received with a file attached, a child's finished report, one sent and delivered, and one the recipient refused.",
             vec![
@@ -2193,7 +2279,8 @@ fn row_sets() -> Vec<RowSet> {
                     row(RowKind::AgentMessage {
                         from: "planner".into(),
                         kind: EnvelopeKind::Message,
-                        text: vec![
+                        text: ui_view::prose_parts(
+                            vec![
                             Segment::Text("Take the relay half. ".into()),
                             Segment::Attachment(AttachmentView::File(wire::BlobRef {
                                 name: "relay-notes.md".into(),
@@ -2201,7 +2288,7 @@ fn row_sets() -> Vec<RowSet> {
                                 size: 2_048,
                                 ..Default::default()
                             })),
-                        ],
+                        ], false),
                         to: String::new(),
                         sent: SendState::Unspecified,
                         rejection: String::new(),
@@ -2212,7 +2299,7 @@ fn row_sets() -> Vec<RowSet> {
                     row(RowKind::AgentMessage {
                         from: "worker-2".into(),
                         kind: EnvelopeKind::Finished,
-                        text: vec![Segment::Text("3 specs updated".into())],
+                        text: text("3 specs updated"),
                         to: String::new(),
                         sent: SendState::Unspecified,
                         rejection: String::new(),
@@ -2223,7 +2310,7 @@ fn row_sets() -> Vec<RowSet> {
                     row(RowKind::AgentMessage {
                         from: String::new(),
                         kind: EnvelopeKind::Message,
-                        text: vec![Segment::Text("Start on the store.".into())],
+                        text: text("Start on the store."),
                         to: "worker-1".into(),
                         sent: SendState::Sent,
                         rejection: String::new(),
@@ -2234,7 +2321,7 @@ fn row_sets() -> Vec<RowSet> {
                     row(RowKind::AgentMessage {
                         from: String::new(),
                         kind: EnvelopeKind::Message,
-                        text: vec![Segment::Text("Stop now.".into())],
+                        text: text("Stop now."),
                         to: "worker-3".into(),
                         sent: SendState::Rejected,
                         rejection: "exited".into(),
@@ -2306,6 +2393,7 @@ fn card(body: AskBody, mut choices: Vec<Choice>) -> AskCard {
         question_note: true,
         question_skip: true,
         question_reply: true,
+        reply_instead: false,
         stops_turn: true,
         default_to_no: false,
         state: CardState::Open,
@@ -2368,12 +2456,16 @@ fn cards() -> Vec<CardSet> {
         ]
     };
     let option = |label: &str, description: &str, preview: &str, recommended| OptionView {
+        label_runs: Vec::new(),
+        description_runs: Vec::new(),
         label: label.into(),
         description: description.into(),
         preview: preview.into(),
         recommended,
     };
     let rollout = QuestionView {
+        header_runs: Vec::new(),
+        question_runs: Vec::new(),
         header: "Rollout".into(),
         question: "How should the migration roll out?".into(),
         multi_select: false,
@@ -2385,6 +2477,8 @@ fn cards() -> Vec<CardSet> {
         secret: false,
     };
     let platforms = QuestionView {
+        header_runs: Vec::new(),
+        question_runs: Vec::new(),
         header: "Platforms".into(),
         question: "Which platforms ship first?".into(),
         multi_select: true,
@@ -2397,6 +2491,8 @@ fn cards() -> Vec<CardSet> {
         secret: false,
     };
     let layout = QuestionView {
+        header_runs: Vec::new(),
+        question_runs: Vec::new(),
         header: "Layout".into(),
         question: "Which layout for the host list?".into(),
         multi_select: false,
@@ -2418,6 +2514,8 @@ fn cards() -> Vec<CardSet> {
         secret: false,
     };
     let token = QuestionView {
+        header_runs: Vec::new(),
+        question_runs: Vec::new(),
         header: "Token".into(),
         question: "Paste the deploy token".into(),
         multi_select: false,
@@ -2562,7 +2660,7 @@ fn cards() -> Vec<CardSet> {
             card(
                 AskBody::Plan {
                     title: None,
-                    body: "\n1. Collapse the pairing failures into one error.\n2. Update the three specs.\n3. Keep the wire codes.".into(),
+                    body: ui_view::Markdown::parse("\n1. Collapse the pairing failures into one error.\n2. Update the three specs.\n3. Keep the wire codes.", false),
                 },
                 vec![
                     choice(ChoiceOutcome::ApprovePlan {
@@ -2635,7 +2733,7 @@ fn cards() -> Vec<CardSet> {
                 ..card(
                     AskBody::Plan {
                         title: None,
-                        body: "\n1. Collapse the pairing failures into one error.".into(),
+                        body: ui_view::Markdown::parse("\n1. Collapse the pairing failures into one error.", false),
                     },
                     vec![
                         choice(ChoiceOutcome::ApprovePlan {

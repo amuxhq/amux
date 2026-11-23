@@ -272,7 +272,7 @@ mod tests {
     /// real throughout, so a QA run may start from it too.
     #[test]
     fn every_environment_is_a_real_world_whose_clients_its_hosts_serve() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../environments");
+        let dir = source_tree::crate_dir!().join("../../environments");
         let mut seen = 0;
         for entry in std::fs::read_dir(&dir).unwrap() {
             let path = entry.unwrap().path();

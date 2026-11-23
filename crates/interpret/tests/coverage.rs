@@ -3,13 +3,12 @@
 //! encoded in vocabulary.toml beside this file.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use prost::Message as _;
 use prost_types::{DescriptorProto, FileDescriptorSet};
 use serde::Deserialize;
 
-const KINDS: [&str; 3] = ["claude_pty", "claude_sdk", "codex"];
+const KINDS: [&str; 4] = ["claude_pty", "claude_sdk", "codex", "acp"];
 const ROWS: usize = 31;
 
 #[derive(Deserialize)]
@@ -26,6 +25,7 @@ struct Row {
     claude_pty: Availability,
     claude_sdk: Availability,
     codex: Availability,
+    acp: Availability,
 }
 
 impl Row {
@@ -33,7 +33,9 @@ impl Row {
         match kind {
             "claude_pty" => &self.claude_pty,
             "claude_sdk" => &self.claude_sdk,
-            _ => &self.codex,
+            "codex" => &self.codex,
+            "acp" => &self.acp,
+            other => panic!("{other} is not one of KINDS"),
         }
     }
 }
@@ -90,11 +92,11 @@ fn carrier_exists(
     carrier: &str,
 ) -> Result<(), String> {
     // Both Claude kinds carry the same item and snapshot messages.
-    let camel = if kind == "codex" { "Codex" } else { "Claude" };
-    let ask = if kind == "codex" {
-        ".amux.v1.CodexAsk"
-    } else {
-        ".amux.v1.Ask"
+    let (camel, ask) = match kind {
+        "claude_pty" | "claude_sdk" => ("Claude", ".amux.v1.Ask"),
+        "codex" => ("Codex", ".amux.v1.CodexAsk"),
+        "acp" => ("Acp", ".amux.v1.AcpAsk"),
+        other => return Err(format!("{other} is not one of KINDS")),
     };
     let (place, path) = carrier
         .split_once(':')
@@ -116,9 +118,7 @@ fn carrier_exists(
 
 /// Every line of every golden a kind has.
 fn golden_lines(kind: &str) -> Vec<(String, String)> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("fixtures")
-        .join(kind);
+    let dir = source_tree::crate_dir!().join("fixtures").join(kind);
     let mut lines = Vec::new();
     let mut entries = std::fs::read_dir(&dir)
         .unwrap_or_else(|error| panic!("{}: {error}", dir.display()))
@@ -145,7 +145,7 @@ fn shows(line: &str, golden: &[String]) -> bool {
 
 #[test]
 fn vocabulary_coverage() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vocabulary.toml");
+    let path = source_tree::crate_dir!().join("tests/vocabulary.toml");
     let vocabulary: Vocabulary = toml::from_str(&std::fs::read_to_string(&path).unwrap())
         .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
     let ids = vocabulary

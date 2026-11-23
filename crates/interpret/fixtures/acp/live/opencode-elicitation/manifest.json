@@ -1,0 +1,25 @@
+{
+  "spec": "opencode-elicitation",
+  "recorded": {
+    "provider": "opencode",
+    "version": "1.18.33",
+    "model": "opencode/deepseek-v4.1-flash-free",
+    "at": "2026-11-20T19:27:47.527234Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:ac67bdf3b6b07d6a383f8df7b7e420257c1ea5f072b19209cccd9a63cbf79b1a",
+    "spawn.jsonl": "sha256:e2c00f078d9f3175fa6976b8105e3438ead832b8438b48007974577d4e274113"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 3,
+    "personal_identifiers": 0
+  },
+  "session_ids": [
+    "ses_e059cda40ffePIaPpU8NBZWPXB"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a tool server's form elicitation, during a tool call the prompt asks for"
+  }
+}

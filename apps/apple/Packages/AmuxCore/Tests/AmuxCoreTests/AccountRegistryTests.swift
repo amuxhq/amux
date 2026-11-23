@@ -165,7 +165,7 @@ final class AccountRegistryTests: XCTestCase {
         XCTAssertEqual(again.selected, AccountId("bob"))
         XCTAssertEqual(again.profile, "p1")
         let ada = again.accounts.first { $0.id == AccountId("ada") }
-        XCTAssertEqual(ada?.line, "2 hosts")
+        XCTAssertEqual(ada?.line, "2 devices")
         XCTAssertEqual(ada?.attention, 1)
         XCTAssertEqual(ada?.entitlement, .active(grant: .granted, renews: nil))
         XCTAssertEqual(ada?.profile, "p0")
@@ -205,7 +205,7 @@ final class AccountRegistryTests: XCTestCase {
         let again = AccountRegistry(file: file)
         again.show(both)
         let ada = again.accounts.first { $0.id == AccountId("ada") }
-        XCTAssertEqual(ada?.line, "2 hosts")
+        XCTAssertEqual(ada?.line, "2 devices")
         XCTAssertEqual(ada?.attention, 1)
         let bob = again.accounts.first { $0.id == AccountId("bob") }
         XCTAssertEqual(bob?.line, "bob@example.com", "nothing paired yet reads as the address")

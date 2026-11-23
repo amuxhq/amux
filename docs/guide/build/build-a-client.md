@@ -498,7 +498,7 @@ amux's own clients say which they are in the `amux-surface` request
 header (`terminal`, `mac`, `ios`, `android`, `browser`), so the fleet
 subscription counts each opening as that client's, and the prompts, answers
 and new agents a person sends from it are counted as that client's too,
-on whichever computer runs the agent. The header is optional and only
+on whichever machine runs the agent. The header is optional and only
 counts: a client of your own can leave it off, and is counted as `other`,
 as is any word amux doesn't know.
 

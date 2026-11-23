@@ -443,8 +443,8 @@ fn home_lists_subagents_under_their_host_without_a_terminal_or_delete() {
         system_clipboard: false,
     };
     assert_eq!(
-        crate::app::terminal_refusal(&row, &config),
-        Some("a subagent has no terminal of its own")
+        crate::app::terminal_refusal(&ui_state::FleetState::new(), &row, &config),
+        Some("a subagent has no terminal of its own".to_owned())
     );
 }
 

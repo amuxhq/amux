@@ -339,6 +339,14 @@ public struct ChatRowView: View {
                 meta: RowMeta(risk.isEmpty ? "" : String(localized: "\(risk) risk")),
                 detail: expanded && !rationale.isEmpty ? rationale : nil, detailFace: .text,
                 opens: !rationale.isEmpty, open: expanded, toggle: toggle)
+        case .notice(let reason, let severity, let title, let text):
+            // The agent's own words, in plain ink: a notice names no
+            // command or path for the code face a step's subject takes.
+            let said = ChatWords.notice(reason, title: title, text: text)
+            GridRow(
+                kind: "notice", glyph: Self.noticeGlyph(severity), failed: severity == .error, rail: rail,
+                verb: said.subject, detail: said.rest.isEmpty ? nil : said.rest, detailFace: .text,
+                detailLines: expanded ? nil : 3, opens: !said.rest.isEmpty, open: expanded, toggle: toggle)
         case .unrecognized(let what, let summary):
             GridRow(
                 kind: "unrecognized", glyph: "questionmark.square.dashed", rail: rail,
@@ -346,6 +354,14 @@ public struct ChatRowView: View {
                 note: summary.isEmpty ? nil : ChatWords.firstLine(summary))
         case .hidden:
             EmptyView()
+        }
+    }
+
+    private static func noticeGlyph(_ severity: NoticeSeverity) -> String {
+        switch severity {
+        case .error: "exclamationmark.triangle"
+        case .warning: "exclamationmark.circle"
+        case .info: "info.circle"
         }
     }
 
@@ -883,7 +899,7 @@ extension View {
 /// What the person said, in a bubble set in from the leading edge.
 struct PromptBubble: View {
     @Environment(\.design) private var design
-    let text: [Segment]
+    let text: [ProsePart]
     var steered = false
 
     var body: some View {
@@ -921,15 +937,15 @@ struct PromptBubble: View {
 /// Text with attachment chips at their places.
 struct SegmentsView: View {
     @Environment(\.design) private var design
-    let segments: [Segment]
+    let segments: [ProsePart]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                 switch segment {
-                case .text(let text):
-                    if !text.allSatisfy(\.isWhitespace) {
-                        Prose(markdown: text, inBubble: true)
+                case .text(let markdown):
+                    if !markdown.source.allSatisfy(\.isWhitespace) {
+                        Prose(markdown: markdown, inBubble: true)
                     }
                 case .attachment(let view):
                     MessageAttachment(view: view)
@@ -1044,17 +1060,18 @@ extension AttachmentChip {
     }
 }
 
-/// What the agent said, as markdown, parsed away from the main thread.
+/// What the agent said, as markdown: the blocks its row carries, parsed
+/// by the shared view layer when the row was built.
 struct ProseRow: View {
     @Environment(\.design) private var design
-    let text: [Segment]
+    let text: [ProsePart]
     let streaming: Bool
     let workingNote: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(text.enumerated()), id: \.offset) { index, segment in
-                switch segment {
+            ForEach(Array(text.enumerated()), id: \.offset) { index, part in
+                switch part {
                 case .text(let markdown):
                     // Only the last of a streaming message's words are
                     // still arriving.
@@ -1076,8 +1093,7 @@ struct ProseRow: View {
 /// and tables that scroll sideways.
 struct Prose: View {
     @Environment(\.design) private var design
-    @Environment(\.photographed) private var photographed
-    let markdown: String
+    let markdown: Markdown
     var muted = false
     /// Whether the text is still arriving, so a code block it ends inside
     /// is the one still being written.
@@ -1085,87 +1101,50 @@ struct Prose: View {
     /// A heading drawn above the document, for text whose title arrives
     /// apart from it, such as a plan's.
     var title: String?
-    /// In your message's bubble: only as wide as its words, and parsed on
-    /// the spot, so a message on its way never draws empty. A person's
-    /// words are short; a long paste is a chip, not markdown.
+    /// In your message's bubble: only as wide as its words.
     var inBubble = false
-    @State private var document: MarkdownDocument?
-    @State private var parsed: String?
-
-    /// What is drawn: the parsed document, or in front of a camera, which
-    /// cannot wait for the parse, the same document parsed on the spot.
-    /// The feed measures a row as photographed before placing its cell, so
-    /// a row arriving finds its text already parsed and draws it in its
-    /// first frame, rather than standing as an empty slot until its own
-    /// parse returns.
-    private var blocks: [MarkdownBlock] {
-        if parsed == markdown, let document { return document.blocks }
-        if photographed || inBubble { return ParsedMarkdown.parse(markdown).blocks }
-        if let recent = ParsedMarkdown.recent(markdown) { return recent.blocks }
-        return document?.blocks ?? []
-    }
-
-    private var drawnNow: Bool { parsed == markdown || photographed || inBubble }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let title {
-                MarkdownBlockView(block: .heading(level: 1, text: AttributedString(title)), muted: muted)
+                ProseBlockView(block: .heading(level: 1, text: [InlineRun(title)]), muted: muted)
             }
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                MarkdownBlockView(block: block, muted: muted, streaming: streaming)
-            }
+            ProseBlocks(blocks: markdown.blocks, muted: muted, streaming: streaming)
         }
         .frame(maxWidth: inBubble ? nil : .infinity, alignment: .leading)
         .tint(design.accent.color)
-        .task(id: markdown) {
-            let source = markdown
-            let document = if let recent = ParsedMarkdown.recent(source) {
-                recent
-            } else {
-                await Task.detached(priority: .userInitiated) { ParsedMarkdown.parse(source) }.value
+        // The blocks arrive parsed, so prose is drawn in its first frame;
+        // the catalogue still waits on this before it photographs a row.
+        .reported("chat.prose.render", value: "rendered")
+    }
+}
+
+extension InlineRun {
+    /// Words of the app's own, in no style.
+    init(_ words: String) {
+        self.init(text: words, strong: false, emphasis: false, strikethrough: false, code: false, link: nil)
+    }
+}
+
+/// Blocks one under another: a document's, a quote's or a list item's.
+private struct ProseBlocks: View {
+    let blocks: [ProseBlock]
+    let muted: Bool
+    var streaming = false
+    var spacing: CGFloat = 12
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: spacing) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                ProseBlockView(block: block, muted: muted, streaming: streaming)
             }
-            guard !Task.isCancelled else { return }
-            self.document = document
-            parsed = source
         }
-        .reported(
-            "chat.prose.render", value: drawnNow ? "rendered" : "pending")
     }
 }
 
-/// Documents parsed lately, by their markdown, so text parsed once (to
-/// measure its row, or by an earlier cell for the same row) is not parsed
-/// again to draw it.
-enum ParsedMarkdown {
-    private final class Parsed {
-        let document: MarkdownDocument
-        init(_ document: MarkdownDocument) { self.document = document }
-    }
-
-    /// Enough for every row a screen or two of the feed holds. NSCache
-    /// locks for itself, so it is read and filled from any thread.
-    private nonisolated(unsafe) static let parsed: NSCache<NSString, Parsed> = {
-        let cache = NSCache<NSString, Parsed>()
-        cache.countLimit = 64
-        return cache
-    }()
-
-    nonisolated static func recent(_ markdown: String) -> MarkdownDocument? {
-        parsed.object(forKey: markdown as NSString)?.document
-    }
-
-    nonisolated static func parse(_ markdown: String) -> MarkdownDocument {
-        if let recent = recent(markdown) { return recent }
-        let document = MarkdownDocument.parse(markdown)
-        parsed.setObject(Parsed(document), forKey: markdown as NSString)
-        return document
-    }
-}
-
-private struct MarkdownBlockView: View {
+private struct ProseBlockView: View {
     @Environment(\.design) private var design
-    let block: MarkdownBlock
+    let block: ProseBlock
     let muted: Bool
     var streaming = false
 
@@ -1175,7 +1154,7 @@ private struct MarkdownBlockView: View {
         switch block {
         case .heading(let level, let text):
             Text(inline(text))
-                .font(heading(level))
+                .font(heading(Int(level)))
                 .foregroundStyle(ink)
                 .fixedSize(horizontal: false, vertical: true)
         case .paragraph(let text):
@@ -1185,46 +1164,42 @@ private struct MarkdownBlockView: View {
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
-        case .list(_, let items):
-            // Each item is its own row so a wrapped line hangs under the item's text, not
-            // under its marker.
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(items) { item in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(item.marker)
+        case .list(let ordered, let start, _, let items):
+            // One grid, so the marker column is as wide as the list's widest
+            // marker and every item's words start at one edge, wrapped
+            // lines hanging under them: `9.` stands over `10.`, numbers
+            // right-aligned. A nested list sits in its item's words, so the
+            // marker column indents it.
+            let markers = ProseText.markers(ordered: ordered, start: start, items: items)
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 6) {
+                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                    // SwiftUI's, not this package's chat-grid row.
+                    SwiftUI.GridRow {
+                        Text(markers[index])
                             .foregroundStyle(design.inkFaint.color)
-                        Text(inline(item.text))
-                            .foregroundStyle(ink)
-                            .lineSpacing(4)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .gridColumnAlignment(.trailing)
+                            .accessibilityLabel(Self.taskLabel(item.task) ?? markers[index])
+                        ProseBlocks(blocks: item.blocks, muted: muted || item.task == true, streaming: streaming, spacing: 6)
                     }
-                    .padding(.leading, CGFloat(item.depth) * 16)
                 }
             }
             .designFont(.body, design)
-        case .code(let language, let text, let closed):
-            CodeBlock(language: language, text: text, streaming: streaming && !closed)
-        case .quote(let lines):
+        case .code(let language, let code, let closed):
+            CodeBlock(language: language.isEmpty ? nil : language, text: code, streaming: streaming && !closed)
+        case .quote(let blocks):
             HStack(alignment: .top, spacing: 10) {
                 Capsule().fill(design.inkFaint.color.opacity(0.45)).frame(width: 2.5)
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                        Text(inline(line))
-                            .designFont(.body, design)
-                            .foregroundStyle(design.inkMuted.color)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                ProseBlocks(blocks: blocks, muted: true, streaming: streaming, spacing: 4)
             }
             .fixedSize(horizontal: false, vertical: true)
-        case .table(let header, let rows):
+        case .table(let alignments, let header, let rows):
             ScrollView(.horizontal) {
                 VStack(alignment: .leading, spacing: 0) {
-                    tableLine(header, emphasis: true)
+                    tableLine(header, alignments, emphasis: true)
                     ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                         Rectangle().fill(design.hairline.color)
                             .frame(height: design.metrics.hairline)
-                        tableLine(row, emphasis: false)
+                        tableLine(row, alignments, emphasis: false)
                     }
                 }
                 .background {
@@ -1240,21 +1215,38 @@ private struct MarkdownBlockView: View {
         }
     }
 
-    private func tableLine(_ cells: [AttributedString], emphasis: Bool) -> some View {
+    /// A task's glyph read as words; nil for any other item's marker.
+    private static func taskLabel(_ task: Bool?) -> String? {
+        switch task {
+        case .some(true): String(localized: "Done")
+        case .some(false): String(localized: "Not done")
+        case .none: nil
+        }
+    }
+
+    private func tableLine(_ cells: [[InlineRun]], _ alignments: [TableAlign], emphasis: Bool) -> some View {
         HStack(alignment: .top, spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
                 Text(inline(cell))
                     .designFont(emphasis ? .caption : .monoSmall, design)
                     .foregroundStyle(emphasis ? design.inkMuted.color : design.ink.color)
-                    .frame(width: index == 0 ? 146 : 128, alignment: .leading)
+                    .frame(width: index == 0 ? 146 : 128, alignment: Self.alignment(alignments, index))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
             }
         }
     }
 
-    private func inline(_ source: AttributedString) -> AttributedString {
-        design.inline(source)
+    private static func alignment(_ alignments: [TableAlign], _ column: Int) -> Alignment {
+        switch column < alignments.count ? alignments[column] : .none {
+        case .center: .center
+        case .right: .trailing
+        case .left, .none: .leading
+        }
+    }
+
+    private func inline(_ runs: [InlineRun]) -> AttributedString {
+        design.inline(runs)
     }
 
     private func heading(_ level: Int) -> Font {
@@ -1475,7 +1467,7 @@ private struct AskRowView: View {
                     Rectangle().fill(design.hairline.color).frame(height: design.metrics.hairline)
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(design.inline(pairs.count == 1 || pair.0.header.isEmpty ? pair.0.question : pair.0.header))
+                    Text(design.inline(pairs.count == 1 || pair.0.header.isEmpty ? pair.0.questionRuns : pair.0.headerRuns))
                         .designFont(.detail, design)
                         .foregroundStyle(design.inkMuted.color)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1509,14 +1501,14 @@ private struct AskRowView: View {
     @ViewBuilder
     private func answer(_ answer: AnswerView) -> some View {
         if answer.hidden || answer.picked.count + (answer.other == nil ? 0 : 1) < 2 {
-            Text(answer.picked.isEmpty ? AttributedString(ChatWords.answer(answer)) : design.inline(answer.picked[0]))
+            Text(answer.picked.isEmpty ? AttributedString(ChatWords.answer(answer)) : design.inline(answer.pickedRuns[0]))
                 .designFont(.bodyEmphasis, design)
                 .italic(answer.picked.isEmpty && !answer.hidden)
                 .foregroundStyle(design.ink.color)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
             HStack(spacing: 6) {
-                ForEach(answer.picked, id: \.self) { pick in
+                ForEach(Array(answer.pickedRuns.enumerated()), id: \.offset) { _, pick in
                     Text(design.inline(pick))
                         .designFont(.detail, design)
                         .foregroundStyle(design.ink.color)
@@ -1536,7 +1528,7 @@ private struct AskRowView: View {
         }
     }
 
-    private func planBody(_ title: String?, _ body: String, writing: Bool) -> some View {
+    private func planBody(_ title: String?, _ body: Markdown, writing: Bool) -> some View {
         Prose(markdown: body, streaming: writing, title: title)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)

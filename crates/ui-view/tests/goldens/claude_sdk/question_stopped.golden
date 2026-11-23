@@ -5,7 +5,7 @@
 ## 4 fact {"channel":"stream","json":{"request":{"display_name":"AskUserQuestion","input":{"questions":[{"header":"Ship","multiSelect":false,"options":[{"description":"Ship it today","label":"Yes"},{"description":"Do not ship it today","label":"No"}],"question":"Ship it today?"}]},"subtype":"can_use_tool","tool_name":"AskUserQuestion","tool_use_id":"t1"},"request_id":"req-1","type":"control_request"}}
   ask req-1 -> "t1" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Ship", question: "Ship it today?", multi_select: false, options: [OptionView { label: "Yes", description: "Ship it today", preview: "", recommended: false }, OptionView { label: "No", description: "Do not ship it today", preview: "", recommended: false }], allow_other: true, secret: false }])
+    body Question([QuestionView { header: "Ship", question: "Ship it today?", header_runs: ["Ship"], question_runs: ["Ship it today?"], multi_select: false, options: [OptionView { label: "Yes", description: "Ship it today", preview: "", recommended: false, label_runs: ["Yes"], description_runs: ["Ship it today"] }, OptionView { label: "No", description: "Do not ship it today", preview: "", recommended: fal…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 6 fact {"channel":"stream","json":{"request_id":"req-1","type":"control_cancel_request"}}
   ask none
@@ -17,17 +17,17 @@
 ## 12 fact {"channel":"stream","json":{"request":{"display_name":"AskUserQuestion","input":{"questions":[{"header":"Ship","multiSelect":false,"options":[{"description":"Ship it today","label":"Yes"},{"description":"Do not ship it today","label":"No"}],"question":"Ship it today?"}]},"subtype":"can_use_tool","tool_name":"AskUserQuestion","tool_use_id":"t2"},"request_id":"req-2","type":"control_request"}}
   ask req-2 -> "t2" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Ship", question: "Ship it today?", multi_select: false, options: [OptionView { label: "Yes", description: "Ship it today", preview: "", recommended: false }, OptionView { label: "No", description: "Do not ship it today", preview: "", recommended: false }], allow_other: true, secret: false }])
+    body Question([QuestionView { header: "Ship", question: "Ship it today?", header_runs: ["Ship"], question_runs: ["Ship it today?"], multi_select: false, options: [OptionView { label: "Yes", description: "Ship it today", preview: "", recommended: false, label_runs: ["Yes"], description_runs: ["Ship it today"] }, OptionView { label: "No", description: "Do not ship it today", preview: "", recommended: fal…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 13 fact {"channel":"stream","json":{"duration_ms":10,"errors":[],"is_error":true,"session_id":"s1","subtype":"error_during_execution","terminal_reason":"aborted_tools","type":"result","uuid":"r2"}}
   ask none
 == chat
      1 boundary:1 Hidden collapsed
      2 70310000-0000-4000-8000-000000000000 Prompt { text: [Text("ask whether to ship")], steered: false }
-     3 t1 [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Ship", question: "Ship it today?", multi_select: false, options: [OptionView { label: "Yes", description: "Ship it today", preview: "", recommended: false }, OptionView { label: "No", description: "Do not ship it today", preview: "", recommended: false }], allow_other: true, secret: false }], answers: [], skipped: …
+     3 t1 [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Ship", question: "Ship it today?", header_runs: ["Ship"], question_runs: ["Ship it today?"], multi_select: false, options: [OptionView { label: "Yes", description: "Ship it today", preview: "", recommended: false, label_runs: ["Yes"], description_runs: ["Ship it today"] }, OptionView { label: "No", description: "Do…
      4 turn:1 Stopped
      5 70320000-0000-4000-8000-000000000000 Prompt { text: [Text("ask again")], steered: false }
-     6 t2 [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Ship", question: "Ship it today?", multi_select: false, options: [OptionView { label: "Yes", description: "Ship it today", preview: "", recommended: false }, OptionView { label: "No", description: "Do not ship it today", preview: "", recommended: false }], allow_other: true, secret: false }], answers: [], skipped: …
+     6 t2 [Dismissed:  skipped=0] Ask(Questions { questions: [QuestionView { header: "Ship", question: "Ship it today?", header_runs: ["Ship"], question_runs: ["Ship it today?"], multi_select: false, options: [OptionView { label: "Yes", description: "Ship it today", preview: "", recommended: false, label_runs: ["Yes"], description_runs: ["Ship it today"] }, OptionView { label: "No", description: "Do…
      7 turn:2 Stopped
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }
 == context None sign-in None

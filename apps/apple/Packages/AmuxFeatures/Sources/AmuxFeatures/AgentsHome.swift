@@ -104,6 +104,9 @@ public struct AgentsHome: View {
     /// Asks what deleting an agent does to its workspace, for the delete's
     /// dialog to say.
     private let deleteWarning: @MainActor (AgentKey) async -> Result<DeleteWarning?, RuntimeFailure>
+    /// What settling an agent costs, by the fleet's shared rule: whether
+    /// to ask first, and what the question says.
+    private let settleWarning: @MainActor (AgentKey) -> SettleWarning?
     private let scope: HomeScope
     /// The fold is view state, not fleet state: opening it is a thing this
     /// screen is doing, and coming back to the screen starts it closed again.
@@ -133,10 +136,12 @@ public struct AgentsHome: View {
         signingIn: Bool = false,
         scope: HomeScope = .fleet,
         deleteWarning: (@MainActor (AgentKey) async -> Result<DeleteWarning?, RuntimeFailure>)? = nil,
+        settleWarning: @escaping @MainActor (AgentKey) -> SettleWarning? = { _ in nil },
         actions: @escaping @MainActor (HomeAction) -> Void
     ) {
         self.scope = scope
         self.deleteWarning = deleteWarning ?? { _ in await DeleteWords.unasked() }
+        self.settleWarning = settleWarning
         self.store = model
         self.accounts = accounts
         self.hosts = hosts
@@ -587,13 +592,13 @@ public struct AgentsHome: View {
         }
     }
 
-    /// Closes at once, or asks first when that would cut work short.
+    /// Closes at once, or asks first when that would cut work short or end
+    /// a conversation its program cannot reopen.
     private func close(_ row: FleetRow) {
-        let cuts = ChatWords.closeCuts(
-            name: row.name, attention: row.attention, jobs: Int(row.card.backgroundJobs),
-            subAgents: Int(row.card.descendants))
-        if let cuts {
-            confirming = .close(row, cuts: cuts)
+        if let warning = settleWarning(row.id), warning.asks {
+            confirming = .close(
+                row, cuts: ChatWords.closeCuts(name: row.name, warning),
+                endsForGood: ChatWords.settleEndsForGood(provider: row.card.providerName, warning))
         } else {
             actions(.close(row.id))
         }
@@ -710,7 +715,7 @@ public struct AgentsHome: View {
         let second = row.card.closeHeld
             ? (text: String(localized: "Settle held · sends when \(row.hostName) is back"), ink: FleetWords.Ink.warning)
             : FleetWords.secondLine(
-                row.secondLine, kind: row.card.kind, now: model.orderedAt,
+                row.secondLine, provider: row.card.providerName, now: model.orderedAt,
                 backgroundJobs: row.card.backgroundJobs)
         let content = AgentRowView(
             row: row, state: state, host: namesHosts ? PlaceNames.host(row.hostName) : nil,
@@ -777,7 +782,7 @@ public struct AgentsHome: View {
         if row.pinned { parts.append(String(localized: "pinned")) }
         if let said = state.spoken { parts.append(said) }
         if let second = FleetWords.secondLine(
-            row.secondLine, kind: row.card.kind, now: model.orderedAt,
+            row.secondLine, provider: row.card.providerName, now: model.orderedAt,
             backgroundJobs: row.card.backgroundJobs
         ) {
             parts.append(second.text)
@@ -885,14 +890,14 @@ public struct AgentsHome: View {
             return Callout(
                 id: "subscribe", glyph: glyph(for: .subscribe),
                 title: String(localized: "\(host) is away"),
-                detail: String(localized: "Pro reaches it from anywhere"),
+                detail: String(localized: "Relayed connections need Pro"),
                 button: String(localized: "Subscribe"), act: .subscribe,
                 identifier: "home.subscribe")
         case .signIn(let host)?:
             return Callout(
                 id: "signIn", glyph: glyph(for: .signIn),
                 title: String(localized: "\(host) is out of reach"),
-                detail: String(localized: "Sign in to reach it from anywhere"),
+                detail: String(localized: "Sign in to reach it through the relay"),
                 button: String(localized: "Sign In"), act: .signIn,
                 identifier: "home.signIn", working: signingIn)
         case nil:
@@ -961,11 +966,11 @@ public struct AgentsHome: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.xl) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Pair your first computer")
+                    Text("Pair your first device")
                         .designFont(.screenTitle, design)
                         .foregroundStyle(design.ink.color)
-                        .identified("home.empty.firstRun", value: "Pair your first computer")
-                    Explain("amux runs agents on your computers. Pair one and its agents appear here.")
+                        .identified("home.empty.firstRun", value: "Pair your first device")
+                    Explain("amux runs agents on your devices. Pair one and its agents appear here.")
                         .identified("home.empty.explain")
                 }
                 .padding(.horizontal, design.metrics.gutter)
@@ -1041,7 +1046,7 @@ public struct AgentsHome: View {
         VStack(alignment: .leading, spacing: Space.l) {
             step(1) {
                 VStack(alignment: .leading, spacing: Space.m) {
-                    Text("Get amux on your computer.")
+                    Text("Get amux on the device your agents will run on.")
                     ShareLink(item: Self.install) {
                         ActionLabel("Send Link", kind: .outline)
                     }
@@ -1124,7 +1129,7 @@ public struct AgentsHome: View {
                     Text("No agents yet")
                         .designFont(.screenTitle, design)
                         .foregroundStyle(design.ink.color)
-                    Explain("Start an agent on a computer and it appears here.")
+                    Explain("Start an agent on a device and it appears here.")
                         .identified("home.empty.noAgents")
                 }
                 if offersNewAgent {
@@ -1731,8 +1736,9 @@ struct DeleteAsking {
 }
 
 enum Confirming: Identifiable {
-    /// A close that would cut work short, with what it cuts.
-    case close(FleetRow, cuts: String)
+    /// A close that would cut work short, with what it cuts, or end for
+    /// good a conversation its program cannot reopen.
+    case close(FleetRow, cuts: String?, endsForGood: String?)
     /// A delete, with what it says goes with the workspace. A dialog is put
     /// up on one value and keeps it, so what confirming agrees to is what
     /// the dialog drew, never what the fleet says since.
@@ -1746,7 +1752,7 @@ enum Confirming: Identifiable {
 
     var id: String {
         switch self {
-        case .close(let row, _): "settle.\(row.id)"
+        case .close(let row, _, _): "settle.\(row.id)"
         case .delete(let row, _): "delete.\(row.id)"
         }
     }
@@ -1765,15 +1771,18 @@ enum Confirming: Identifiable {
 
     var title: String {
         switch self {
-        case .close(let row, _): String(localized: "Settle \(row.name)?")
+        case .close(let row, _, _): String(localized: "Settle \(row.name)?")
         case .delete(let row, _): String(localized: "Delete \(row.name)?")
         }
     }
 
     var message: String {
         switch self {
-        case .close(_, let cuts):
-            String(localized: "\(cuts) Settling stops it now. Its chat and edits stay, and a message resumes it.")
+        case .close(_, let cuts, let endsForGood?):
+            ([cuts].compactMap { $0 } + [String(localized: "Settling stops it now."), endsForGood,
+                String(localized: "Its chat and edits stay.")]).joined(separator: " ")
+        case .close(_, let cuts, nil):
+            String(localized: "\(cuts ?? "") Settling stops it now. Its chat and edits stay, and a message resumes it.")
         case .delete(let row, let warning):
             DeleteWords.message(descendants: row.card.descendants, warning: warning)
         }
@@ -1783,7 +1792,7 @@ enum Confirming: Identifiable {
     /// when this message named them.
     var confirmed: HomeAction {
         switch self {
-        case .close(let row, _): .close(row.id)
+        case .close(let row, _, _): .close(row.id)
         case .delete(let row, let warning):
             DeleteWords.discards(warning) ? .deleteDiscardingChanges(row.id) : .delete(row.id)
         }

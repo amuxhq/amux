@@ -128,6 +128,7 @@ mod tests {
                 ],
             }],
             more: 0,
+            cut: false,
         };
         let lines = crate::chat::rows::patch_lines(&patch, "src/ready.rs", true, 'b', 80, theme);
         let keyword = |base: Style| theme.syntax_on_diff(base, TokenKind::Keyword);
@@ -181,6 +182,7 @@ mod tests {
         let patch = PatchHead {
             hunks: hunks.clone(),
             more: 0,
+            cut: false,
         };
         let card = ui_view::AskCard {
             kind: wire::Kind::ClaudeSdk,
@@ -204,6 +206,7 @@ mod tests {
             question_reply: false,
             stops_turn: true,
             default_to_no: false,
+            reply_instead: false,
             state: ui_view::CardState::Open,
         };
         let ask = crate::chat::ask::AskUi::default();

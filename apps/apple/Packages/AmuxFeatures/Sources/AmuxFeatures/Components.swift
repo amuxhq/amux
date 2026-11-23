@@ -1,5 +1,6 @@
 import AmuxCore
 import AmuxDesign
+import AmuxWords
 import SwiftUI
 
 /// One line of what a destructive act does: a check for what stays, a cross
@@ -287,7 +288,8 @@ public struct Explain: View {
     }
 
     public var body: some View {
-        Text(text)
+        // An agent's own words name its commands between backticks.
+        Text(ChatWords.withCode(text))
             .designFont(.detail, design)
             .foregroundStyle(design.inkMuted.color)
             .fixedSize(horizontal: false, vertical: true)

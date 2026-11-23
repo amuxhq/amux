@@ -32,7 +32,8 @@ impl Binaries {
     /// rather than an agent that fails to launch.
     pub fn for_driver() -> Result<Binaries, String> {
         let binaries = Binaries::built();
-        let missing: Vec<String> = std::iter::once(binaries.amux())
+        let missing: Vec<String> = [binaries.amux(), binaries.fake_acp()]
+            .into_iter()
             .chain(
                 [FakeKind::ClaudePty, FakeKind::ClaudeSdk, FakeKind::Codex]
                     .map(|kind| binaries.fake(kind)),
@@ -60,6 +61,12 @@ impl Binaries {
 
     pub fn fake(&self, kind: FakeKind) -> PathBuf {
         self.binary(kind.binary())
+    }
+
+    /// The fake ACP agent, which stands in for any agent speaking the
+    /// Agent Client Protocol.
+    pub fn fake_acp(&self) -> PathBuf {
+        self.binary(provider_fakes::Kind::Acp.binary_name())
     }
 
     fn binary(&self, name: &str) -> PathBuf {

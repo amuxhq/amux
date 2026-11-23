@@ -1,0 +1,24 @@
+load("//build:rust.bzl", "APP", "amux_rust_library")
+
+DEPS = [
+    "//crates/wire:wire",
+    "//third-party/rust:gethostname",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_ignored",
+    "//third-party/rust:thiserror",
+    "//third-party/rust:toml",
+    "//third-party/rust:toml_edit",
+] + select({"DEFAULT": ["//third-party/rust:clap"], APP: []})
+
+TEST_DEPS = [
+    "//third-party/rust:tempfile",
+]
+
+FEATURES = select({"DEFAULT": ["clap"], APP: []})
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    features = FEATURES,
+    test_deps = TEST_DEPS,
+)

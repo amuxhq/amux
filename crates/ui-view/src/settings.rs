@@ -371,7 +371,9 @@ pub fn slash(state: &SessionState, text: &str) -> Slash {
                 None => typed_setting(&change).map_or(Slash::Prompt, Slash::Typed),
             }
         }
-        None if kind == Kind::Codex => {
+        // An agent that refuses a command it does not list (Codex) is
+        // told nothing it would refuse.
+        None if !state.capabilities().passes_unknown_commands => {
             let commands: Vec<String> = view
                 .commands
                 .iter()
@@ -476,11 +478,12 @@ pub fn settings(state: &SessionState) -> SettingsView {
     });
     let current_model = models.iter().find(|model| model.current);
     let efforts = effort_choices(current_model, effort_in_force(agent).as_deref());
-    let reported = match kind {
-        // Codex settings that match no named permission are reported with
-        // no value.
-        Kind::Codex if agent.permission.is_none() && agent.approval_policy.is_some() => Some(""),
-        _ => agent.permission.as_deref(),
+    // Settings that match no named permission (Codex's own approval
+    // policy, said with no permission) are reported with no value.
+    let reported = if agent.permission.is_none() && agent.approval_policy.is_some() {
+        Some("")
+    } else {
+        agent.permission.as_deref()
     };
     let permissions = permission_choices(
         agent.permissions.iter(),
@@ -532,13 +535,9 @@ pub fn settings(state: &SessionState) -> SettingsView {
             permission: Changeable::Cycle,
             mode: Changeable::NotOffered,
         },
-        Kind::ClaudeSdk | Kind::Codex => {
-            let mut changeable = picks(&models, &efforts, &permissions, &modes);
-            if kind == Kind::ClaudeSdk {
-                changeable.mode = Changeable::NotOffered;
-            }
-            changeable
-        }
+        // Every other kind takes a pick of whatever its catalogue lists:
+        // headless Claude lists no modes, an ACP agent no permissions.
+        Kind::ClaudeSdk | Kind::Codex | Kind::Acp => picks(&models, &efforts, &permissions, &modes),
         Kind::Unspecified => Changeability::default(),
     };
     SettingsView {
@@ -765,8 +764,9 @@ fn picks(
 /// no such pick. The id is the sender's to fill.
 pub fn setting_input(kind: Kind, change: &SettingChange) -> Option<wire::Input> {
     use wire::{
-        ClaudePtyInput, ClaudeSdkInput, CodexInput, CyclePermissionMode, KindInput, SetEffort,
-        SetMode, SetModel, SetPermission, claude_pty_input, claude_sdk_input, codex_input,
+        AcpInput, ClaudePtyInput, ClaudeSdkInput, CodexInput, CyclePermissionMode, KindInput,
+        SetEffort, SetMode, SetModel, SetPermission, acp_input, claude_pty_input, claude_sdk_input,
+        codex_input,
     };
     let model = |model: &String| SetModel {
         model: Some(model.clone()),
@@ -815,6 +815,19 @@ pub fn setting_input(kind: Kind, change: &SettingChange) -> Option<wire::Input> 
                 })),
             })
         }
+        (Kind::Acp, SettingChange::Model(name)) => KindInput::Acp(AcpInput {
+            of: Some(acp_input::Of::Model(model(name))),
+        }),
+        (Kind::Acp, SettingChange::Effort(effort)) => KindInput::Acp(AcpInput {
+            of: Some(acp_input::Of::Effort(SetEffort {
+                effort: Some(effort.clone()),
+            })),
+        }),
+        (Kind::Acp, SettingChange::Mode(value)) if !value.is_empty() => KindInput::Acp(AcpInput {
+            of: Some(acp_input::Of::Mode(SetMode {
+                value: value.clone(),
+            })),
+        }),
         _ => return None,
     };
     Some(wire::Input::new(Vec::new(), of))

@@ -17,11 +17,12 @@ hunk sits (`impl Store › fn open`) and which definitions a change touches.
 
 Two callers use it in different ways:
 
-- **Clients** colour the code they parse out of a chat themselves: fenced
-  blocks in an agent's markdown, and the hunks an edit card shows. Each
-  client parses markdown on its own, so the view layer exposes the
-  colouring as functions (below), which the terminal calls directly and the
-  Apple apps call through the bridge.
+- **Clients** colour the code a chat shows: fenced blocks in an agent's
+  markdown, and the hunks an edit card shows. The view layer parses the
+  markdown into blocks when it builds a row and leaves colouring to the
+  client, which asks for it block by block as it draws through functions
+  (below) that the terminal calls directly and the other apps call through
+  the bridge.
 - **The agent's host** colours a review's diffs from whole files, because a
   hunk coloured alone is wrong whenever it starts inside a block comment or
   a string ([reviews](REVIEWS.md#file-bodies)).
@@ -191,7 +192,7 @@ to be drawn again. Its palettes hold every token kind readable on every
 surface it is drawn on, diff tints included
 ([terminal](TERMINAL.md)).
 
-**The Mac and iPhone apps** parse markdown in Swift (`AmuxWords`), so each
+**The Mac and iPhone apps** draw the parsed blocks in Swift, and each code
 block asks the bridge, `amux_highlight_block` and `amux_highlight_patch`,
 through `CodeHighlighting`, which the app puts in the environment, off the
 main thread, and keeps settled answers by content. Each app draws the kinds
@@ -263,5 +264,5 @@ the grammar list.
 | The JSON shape of `HighlightedCode` | `crates/ui-view/src/code.rs` | `just test-crate ui-view` |
 | Which fenced block is still open, a streaming message keeping only settled renders, tokens over diff tints; every token kind readable on every surface (`code_reads_on_every_surface_it_is_drawn_on`) | `crates/tui/src/` | `just test-tui` |
 | The bridge's answers (`code_is_coloured_by_the_shared_view`) | [`crates/app-ffi/src/tests.rs`](../crates/app-ffi/src/tests.rs) | `just test-crate app-ffi` |
-| The Swift side: `CodeHighlightingTests`, `MarkdownTests` and the phone palette's `SyntaxContrastTests`; the Mac palette's `SyntaxContrast` | `apps/apple/` | `just ios unit`, `just mac test` |
+| The Swift side: `CodeHighlightingTests`, `ProseTextTests` and the phone palette's `SyntaxContrastTests`; the Mac palette's `SyntaxContrast` | `apps/apple/` | `just ios unit`, `just mac test` |
 | The host's colouring of a review's files from whole files, cached by object id | [`crates/node/tests/review_files.rs`](../crates/node/tests/review_files.rs) | `just test-crate node` |

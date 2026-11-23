@@ -1,0 +1,10 @@
+{
+  "about": "antigravity 1.5.13, recorded live: thought level and mode changed by session/set_config_option and session/set_mode, then one prompt",
+  "spec": {
+    "provider": "antigravity"
+  },
+  "recording": {
+    "path": "live/agy-config/io.jsonl",
+    "format": "acp_io"
+  }
+}

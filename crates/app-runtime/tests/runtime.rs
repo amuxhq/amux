@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use app_runtime::values::{
-    ActOutcome, AgentAct, ChatDelta, Draft, KeysMoved, NewAgent, PageOutcome, ReviewChange,
-    ReviewOutcome,
+    ActOutcome, AgentAct, ChatDelta, Draft, DraftAttachment, DraftPart, KeysMoved, NewAgent,
+    PageOutcome, ReviewChange, ReviewOutcome,
 };
 use app_runtime::{AppRuntime, Chat, Wake};
 use client::SystemClock;
@@ -906,10 +906,7 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
     let net = Net::start(topology).await.unwrap();
     let (runtime, mut host) = open(&net).await;
     let desk = net.host("desk").unwrap().host_id.as_bytes().to_vec();
-    let catalogue = runtime
-        .host_catalogue(&desk, wire::Provider::Claude)
-        .await
-        .unwrap();
+    let catalogue = runtime.host_catalogue(&desk, "claude").await.unwrap();
     assert!(!catalogue.models.is_empty(), "{catalogue:?}");
     let plan = catalogue
         .permissions
@@ -923,7 +920,7 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
                     && host
                         .providers
                         .iter()
-                        .any(|offer| offer.provider == wire::Provider::Claude && offer.signed_in)
+                        .any(|offer| offer.provider == "claude" && offer.signed_in == Some(true))
             });
             if signed_in {
                 return;
@@ -946,7 +943,7 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
     let created = runtime
         .create_agent(&NewAgent {
             host_id: desk,
-            kind: wire::Kind::ClaudeSdk,
+            provider: "claude".into(),
             cwd: folder.display().to_string(),
             name: "fresh".into(),
             model: None,
@@ -974,6 +971,163 @@ async fn a_new_agent_starts_from_the_hosts_catalogue_in_a_worktree_of_its_own() 
         folder,
         "it works in a worktree of its own"
     );
+    net.shutdown().await.unwrap();
+}
+
+/// An agent program the host offers beyond Claude and Codex, here the fake
+/// ACP agent every test host is configured with: the host's entry lists it
+/// by the name its config gives, with what its agents can do; a new agent
+/// of it starts as an ACP agent by its id alone, on its own defaults; and
+/// its chat names it as the host does.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_the_host_offers_by_id_starts_and_is_named_as_the_host_names_it() {
+    let script = provider_fakes::script::Script {
+        steps: vec![text("hello from the fake agent"), Step::TurnEnd],
+        acp: provider_fakes::script::AcpAgent {
+            name: testnet::FAKE_ACP_AGENT.into(),
+            resume: true,
+            image: false,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let net = Net::start(Topology::new().host_decl(testnet::HostDecl {
+        name: "desk".into(),
+        script: Some(script),
+        ..testnet::HostDecl::default()
+    }))
+    .await
+    .unwrap();
+    let (runtime, mut host) = open(&net).await;
+    let desk = net.host("desk").unwrap().host_id.as_bytes().to_vec();
+    let offered = tokio::time::timeout(PATIENCE, async {
+        loop {
+            let listed = runtime
+                .hosts()
+                .into_iter()
+                .filter(|host| host.host_id == desk)
+                .flat_map(|host| host.providers)
+                .find(|offer| offer.provider == testnet::FAKE_ACP_AGENT);
+            if let Some(listed) = listed {
+                return listed;
+            }
+            host.next(Wake::Fleet).await;
+            runtime.fleet_delta();
+        }
+    })
+    .await
+    .expect("the desk lists the fake agent");
+    assert_eq!(offered.name, "Fake ACP Agent");
+    assert!(offered.capabilities.resumable, "{offered:?}");
+    assert!(!offered.capabilities.attachable, "{offered:?}");
+    let ids: Vec<_> = runtime
+        .hosts()
+        .into_iter()
+        .filter(|host| host.host_id == desk)
+        .flat_map(|host| host.providers)
+        .map(|offer| offer.provider)
+        .collect();
+    assert_eq!(ids, ["claude", "codex", testnet::FAKE_ACP_AGENT]);
+
+    let created = runtime
+        .create_agent(&NewAgent {
+            host_id: desk.clone(),
+            provider: testnet::FAKE_ACP_AGENT.into(),
+            cwd: net.host("desk").unwrap().work.display().to_string(),
+            name: "helper".into(),
+            model: None,
+            effort: None,
+            permission: None,
+            mode: None,
+            new_worktree: false,
+        })
+        .await
+        .expect("the desk starts the fake agent");
+    let card = tokio::time::timeout(PATIENCE, async {
+        loop {
+            if let Some(card) = runtime.fleet_card(&created) {
+                return card;
+            }
+            host.next(Wake::Fleet).await;
+            runtime.fleet_delta();
+        }
+    })
+    .await
+    .expect("the new agent reaches the fleet");
+    assert_eq!(card.kind, wire::Kind::Acp);
+    let chat = opened(&runtime, &created, 50).await;
+    until(&mut host, &chat, "the agent named and ready", |chat| {
+        let frame = chat.frame();
+        frame.caught_up && matches!(frame.phase, PhaseView::Idle)
+    })
+    .await;
+    let frame = chat.frame();
+    assert_eq!(frame.provider.provider, testnet::FAKE_ACP_AGENT);
+    assert_eq!(frame.provider.name, "Fake ACP Agent");
+    assert!(frame.capabilities.resumable, "{:?}", frame.capabilities);
+    assert!(!frame.capabilities.attachable, "{:?}", frame.capabilities);
+
+    // What it does not take is refused before anything is stored, in words
+    // naming the file and the agent, as is anything over the hosts' limit.
+    assert!(!frame.capabilities.images, "{:?}", frame.capabilities);
+    assert_eq!(
+        chat.attachment_refusal("shot.png", "image/png", 16)
+            .as_deref(),
+        Some("shot.png is not attached: Fake ACP Agent can’t take images.")
+    );
+    let over = wire::ATTACHMENT_SIZE_LIMIT as u64 + 1;
+    assert_eq!(
+        chat.attachment_refusal("huge.log", "text/plain", over)
+            .as_deref(),
+        Some("huge.log is not attached because it is over the 64 MB limit for attachments.")
+    );
+    assert!(frame.capabilities.files, "{:?}", frame.capabilities);
+    assert_eq!(chat.attachment_refusal("notes.txt", "text/plain", 16), None);
+
+    // A prompt carrying a picture all the same is refused at once, and says
+    // why in the same words, so the draft that comes back says so.
+    let picture = Draft {
+        parts: vec![
+            DraftPart::Text("What is this?".into()),
+            DraftPart::Attachment(DraftAttachment::Image(wire::BlobRef {
+                hash: vec![7; 32],
+                name: "shot.png".into(),
+                mime: "image/png".into(),
+                size: 16,
+            })),
+        ],
+    };
+    let sent = chat.send(&picture).await;
+    let cannot = Refusal {
+        reason: wire::Refusal::Unsupported,
+        detail: Some("Fake ACP Agent can’t take images".into()),
+    };
+    assert_eq!(sent.state, InputState::Rejected(cannot.clone()));
+    let refused = chat.frame().refused;
+    assert!(
+        refused
+            .iter()
+            .any(|refused| refused.input_id == sent.input_id && refused.reason == cannot),
+        "{refused:?}"
+    );
+    chat.discard(&sent.input_id);
+
+    // A program the host does not offer is refused before anything is
+    // asked of the host.
+    let refused = runtime
+        .create_agent(&NewAgent {
+            host_id: desk,
+            provider: "nobody".into(),
+            cwd: "/".into(),
+            name: String::new(),
+            model: None,
+            effort: None,
+            permission: None,
+            mode: None,
+            new_worktree: false,
+        })
+        .await;
+    assert!(refused.is_err(), "{refused:?}");
     net.shutdown().await.unwrap();
 }
 

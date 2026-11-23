@@ -1,0 +1,32 @@
+load("//build:rust.bzl", "OPTIMISED", "TESTING", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//crates/wire:wire",
+    "//third-party/rust:prost",
+    "//third-party/rust:rusqlite",
+    "//third-party/rust:thiserror",
+]
+
+TEST_DEPS = [
+    "//crates/source-tree:source-tree",
+    "//crates/store:store",
+    "//third-party/rust:tempfile",
+]
+
+FEATURES = select({"DEFAULT": [], TESTING: ["explore"]})
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    features = FEATURES,
+    test_deps = TEST_DEPS,
+    rustc_flags = OPTIMISED,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    features = FEATURES,
+    rustc_flags = OPTIMISED,
+)

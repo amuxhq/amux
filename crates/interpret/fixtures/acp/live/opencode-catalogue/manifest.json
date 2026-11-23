@@ -1,0 +1,23 @@
+{
+  "spec": "opencode-catalogue",
+  "recorded": {
+    "provider": "opencode",
+    "version": "1.18.33",
+    "model": "none",
+    "at": "2026-11-20T19:27:47.211324Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:b8487cb3a01347dd68b0a8d8decc8e98ef88a95ab79a2c2bd74145d9a5ae8756",
+    "spawn.jsonl": "sha256:e2c00f078d9f3175fa6976b8105e3438ead832b8438b48007974577d4e274113"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 1,
+    "personal_identifiers": 0
+  },
+  "session_ids": [],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "initialize alone, with no session opened"
+  }
+}

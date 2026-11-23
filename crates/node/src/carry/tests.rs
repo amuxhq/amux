@@ -581,7 +581,7 @@ async fn a_link_failing_under_a_carried_stream_aborts_it() {
 
 /// What the owner does not have it answers for itself, and the answer
 /// passes through as it gave it: "unimplemented" with no words, which the
-/// client library reads as "that host needs updating to do this".
+/// client library reads as "that device needs updating to do this".
 #[tokio::test]
 async fn a_method_the_owner_does_not_have_passes_through_as_unimplemented() {
     let far = Far::new();

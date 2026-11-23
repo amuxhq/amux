@@ -1,0 +1,1803 @@
+{
+  "finished": [
+    {
+      "source": "The relay test fails about one run in twenty on CI. Can you find out why?",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "The relay test fails about one run in twenty on CI. Can you find out why?",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "I'll start with the test and the last few CI logs.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "I'll start with the test and the last few CI logs.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Found it. The test cuts the link **before the relay has acknowledged the hello**, so on a slow runner the reconnect races the first handshake.\n\n- `reconnect_after_cut` sleeps 50 ms instead of waiting for the link to settle\n- on CI the hello takes up to 80 ms\n\nThe fix is to wait on the settled event:\n\n```rust\nlink.settled().await;\nrelay.cut(&link);\n```",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Found it. The test cuts the link ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "before the relay has acknowledged the hello",
+                "strong": true,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": ", so on a slow runner the reconnect races the first handshake.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "List": {
+            "ordered": false,
+            "start": 1,
+            "depth": 0,
+            "items": [
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "reconnect_after_cut",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": true,
+                          "link": null
+                        },
+                        {
+                          "text": " sleeps 50 ms instead of waiting for the link to settle",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "on CI the hello takes up to 80 ms",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "The fix is to wait on the settled event:",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "Code": {
+            "language": "rust",
+            "code": "link.settled().await;\nrelay.cut(&link);",
+            "closed": true
+          }
+        }
+      ]
+    },
+    {
+      "source": "Draft the release notes for 0.9.0 from the changelog.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Draft the release notes for 0.9.0 from the changelog.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Audit the pairing code four ways at once and report back.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Audit the pairing code four ways at once and report back.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Starting four subagents, one per area.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Starting four subagents, one per area.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Survey the relay's retry path: where a dropped link is retried, and what bounds it.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Survey the relay's retry path: where a dropped link is retried, and what bounds it.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "The dialler retries a dropped link with backoff capped at 30 s and gives up at the link's deadline. The cap is `MAX_BACKOFF` in dial.rs.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "The dialler retries a dropped link with backoff capped at 30 s and gives up at the link's deadline. The cap is ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "MAX_BACKOFF",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": true,
+                "link": null
+              },
+              {
+                "text": " in dial.rs.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Two things on the test.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Two things on the test.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Both done: the dial names its host in the error, and the wait for the link to settle is bounded by `SETTLE`, so a link that never settles fails the test instead of hanging it.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Both done: the dial names its host in the error, and the wait for the link to settle is bounded by ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "SETTLE",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": true,
+                "link": null
+              },
+              {
+                "text": ", so a link that never settles fails the test instead of hanging it.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Collapse the pairing errors onto one string.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Collapse the pairing errors onto one string.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Here is the screen and the log.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Here is the screen and the log.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "These two, then run the suite.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "These two, then run the suite.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Use the new error table instead.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Use the new error table instead.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "> The retry only fires when the socket closes cleanly.\n\nOh **really**?",
+      "blocks": [
+        {
+          "Quote": {
+            "blocks": [
+              {
+                "Paragraph": {
+                  "text": [
+                    {
+                      "text": "The retry only fires when the socket closes cleanly.",
+                      "strong": false,
+                      "emphasis": false,
+                      "strikethrough": false,
+                      "code": false,
+                      "link": null
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Oh ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "really",
+                "strong": true,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "?",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "3 specs updated, all green.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "3 specs updated, all green.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Please rebase onto main first.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Please rebase onto main first.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Done. The three arms are one now.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Done. The three arms are one now.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Plan how to collapse the pairing errors.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Plan how to collapse the pairing errors.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Done. The three arms are one now, and the new test asserts on the single string. Clippy still flags an unused import I left for you to decide on.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Done. The three arms are one now, and the new test asserts on the single string. Clippy still flags an unused import I left for you to decide on.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Drop the unused import and run the whole suite.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Drop the unused import and run the whole suite.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Split the pairing audit four ways and report back.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Split the pairing audit four ways and report back.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Survey the relay’s retry path: where a dropped link is retried, and what bounds it.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Survey the relay’s retry path: where a dropped link is retried, and what bounds it.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "The dialler retries a dropped link with backoff capped at 30 s, and gives up after the link’s deadline. The cap is `MAX_BACKOFF` in dial.rs.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "The dialler retries a dropped link with backoff capped at 30 s, and gives up after the link’s deadline. The cap is ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "MAX_BACKOFF",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": true,
+                "link": null
+              },
+              {
+                "text": " in dial.rs.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Done. The three arms are **one** now:\n\n- `Code::NotFound` and `Code::InvalidPin` share one string\n- the new test asserts on it\n\n```rust\n_ => \"could not pair, check the code\",\n```",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Done. The three arms are ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "one",
+                "strong": true,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": " now:",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "List": {
+            "ordered": false,
+            "start": 1,
+            "depth": 0,
+            "items": [
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Code::NotFound",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": true,
+                          "link": null
+                        },
+                        {
+                          "text": " and ",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        },
+                        {
+                          "text": "Code::InvalidPin",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": true,
+                          "link": null
+                        },
+                        {
+                          "text": " share one string",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "the new test asserts on it",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "Code": {
+            "language": "rust",
+            "code": "_ => \"could not pair, check the code\",",
+            "closed": true
+          }
+        }
+      ]
+    },
+    {
+      "source": "The guard now names the host:\n\n```swift\n// Refuse a pairing the host did not offer.\nfunc refuse(_ code: Int) throws -> String {\n    guard code > 0 else { throw PairingError.unknown }\n    return \"no such host: \\(code)\"\n}\n```\n\n```ts\nexport const retry = (tries: number): Promise<void> => wait(250 * tries)\n```\n\n```diff\n-      Code::NotFound => \"no such host\",\n+      _ => \"could not pair, check the code\",\n```",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "The guard now names the host:",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "Code": {
+            "language": "swift",
+            "code": "// Refuse a pairing the host did not offer.\nfunc refuse(_ code: Int) throws -> String {\n    guard code > 0 else { throw PairingError.unknown }\n    return \"no such host: \\(code)\"\n}",
+            "closed": true
+          }
+        },
+        {
+          "Code": {
+            "language": "ts",
+            "code": "export const retry = (tries: number): Promise<void> => wait(250 * tries)",
+            "closed": true
+          }
+        },
+        {
+          "Code": {
+            "language": "diff",
+            "code": "-      Code::NotFound => \"no such host\",\n+      _ => \"could not pair, check the code\",",
+            "closed": true
+          }
+        }
+      ]
+    },
+    {
+      "source": "The client maps gRPC statuses onto distinct strings in three places. The protocol refuses to distinguish them, so the client must not either.\n\n1. One arm, one string\n2. Update the three specs",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "The client maps gRPC statuses onto distinct strings in three places. The protocol refuses to distinguish them, so the client must not either.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "List": {
+            "ordered": true,
+            "start": 1,
+            "depth": 0,
+            "items": [
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "One arm, one string",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Update the three specs",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "1. Split the read path.\n2. Run the spec suite.",
+      "blocks": [
+        {
+          "List": {
+            "ordered": true,
+            "start": 1,
+            "depth": 0,
+            "items": [
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Split the read path.",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Run the spec suite.",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "1. Split read and write paths.\n2. Add unit tests.",
+      "blocks": [
+        {
+          "List": {
+            "ordered": true,
+            "start": 1,
+            "depth": 0,
+            "items": [
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Split read and write paths.",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Add unit tests.",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "1. Split read and write paths.",
+      "blocks": [
+        {
+          "List": {
+            "ordered": true,
+            "start": 1,
+            "depth": 0,
+            "items": [
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Split read and write paths.",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Updated backoff logic in `retry.rs`.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Updated backoff logic in ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "retry.rs",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": true,
+                "link": null
+              },
+              {
+                "text": ".",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "```rust\r\nfn a() {}\r\nfn b() {}\r\n```\r\n",
+      "blocks": [
+        {
+          "Code": {
+            "language": "rust",
+            "code": "fn a() {}\nfn b() {}",
+            "closed": true
+          }
+        }
+      ]
+    },
+    {
+      "source": "# Release Plan\n## Verification Steps\nCheck **bold**, *italic*, ~~old~~, and `cargo test` inline.\n\n- First bullet\n  - Nested bullet\n1. Step one\n2. Step two\n\n---",
+      "blocks": [
+        {
+          "Heading": {
+            "level": 1,
+            "text": [
+              {
+                "text": "Release Plan",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "Heading": {
+            "level": 2,
+            "text": [
+              {
+                "text": "Verification Steps",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Check ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "bold",
+                "strong": true,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": ", ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "italic",
+                "strong": false,
+                "emphasis": true,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": ", ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "old",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": true,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": ", and ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "cargo test",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": true,
+                "link": null
+              },
+              {
+                "text": " inline.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "List": {
+            "ordered": false,
+            "start": 1,
+            "depth": 0,
+            "items": [
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "First bullet",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "List": {
+                      "ordered": false,
+                      "start": 1,
+                      "depth": 1,
+                      "items": [
+                        {
+                          "task": null,
+                          "blocks": [
+                            {
+                              "Paragraph": {
+                                "text": [
+                                  {
+                                    "text": "Nested bullet",
+                                    "strong": false,
+                                    "emphasis": false,
+                                    "strikethrough": false,
+                                    "code": false,
+                                    "link": null
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "List": {
+            "ordered": true,
+            "start": 1,
+            "depth": 0,
+            "items": [
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Step one",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Step two",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "Rule"
+      ]
+    },
+    {
+      "source": "```rust\nfn main() {\n    println!(\"hello\");\n}\n```",
+      "blocks": [
+        {
+          "Code": {
+            "language": "rust",
+            "code": "fn main() {\n    println!(\"hello\");\n}",
+            "closed": true
+          }
+        }
+      ]
+    },
+    {
+      "source": "```diff\n@@ -1,2 +1,2 @@\n-old line\n+new line\n context line\n```",
+      "blocks": [
+        {
+          "Code": {
+            "language": "diff",
+            "code": "@@ -1,2 +1,2 @@\n-old line\n+new line\n context line",
+            "closed": true
+          }
+        }
+      ]
+    },
+    {
+      "source": "> Keep surfaces neutral.\n> Spend colour only on attention.\n\n| Crate | Role |\n| --- | --- |\n| app-bridge | Shared runtime |\n| app-jni | Android JNI |",
+      "blocks": [
+        {
+          "Quote": {
+            "blocks": [
+              {
+                "Paragraph": {
+                  "text": [
+                    {
+                      "text": "Keep surfaces neutral.\nSpend colour only on attention.",
+                      "strong": false,
+                      "emphasis": false,
+                      "strikethrough": false,
+                      "code": false,
+                      "link": null
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "Table": {
+            "alignments": [
+              "None",
+              "None"
+            ],
+            "header": [
+              [
+                {
+                  "text": "Crate",
+                  "strong": false,
+                  "emphasis": false,
+                  "strikethrough": false,
+                  "code": false,
+                  "link": null
+                }
+              ],
+              [
+                {
+                  "text": "Role",
+                  "strong": false,
+                  "emphasis": false,
+                  "strikethrough": false,
+                  "code": false,
+                  "link": null
+                }
+              ]
+            ],
+            "rows": [
+              [
+                [
+                  {
+                    "text": "app-bridge",
+                    "strong": false,
+                    "emphasis": false,
+                    "strikethrough": false,
+                    "code": false,
+                    "link": null
+                  }
+                ],
+                [
+                  {
+                    "text": "Shared runtime",
+                    "strong": false,
+                    "emphasis": false,
+                    "strikethrough": false,
+                    "code": false,
+                    "link": null
+                  }
+                ]
+              ],
+              [
+                [
+                  {
+                    "text": "app-jni",
+                    "strong": false,
+                    "emphasis": false,
+                    "strikethrough": false,
+                    "code": false,
+                    "link": null
+                  }
+                ],
+                [
+                  {
+                    "text": "Android JNI",
+                    "strong": false,
+                    "emphasis": false,
+                    "strikethrough": false,
+                    "code": false,
+                    "link": null
+                  }
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "See [amux docs](https://amux.sh/docs) and [ignored](amux://callback).",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "See ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "amux docs",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": "https://amux.sh/docs"
+              },
+              {
+                "text": " and ",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              },
+              {
+                "text": "ignored",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": "amux://callback"
+              },
+              {
+                "text": ".",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "First part.\n\nSecond part.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "First part.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Second part.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "9. Nine\n10. Ten",
+      "blocks": [
+        {
+          "List": {
+            "ordered": true,
+            "start": 9,
+            "depth": 0,
+            "items": [
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Nine",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "task": null,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Ten",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "- [x] Write the parser\n- [ ] Port the clients",
+      "blocks": [
+        {
+          "List": {
+            "ordered": false,
+            "start": 1,
+            "depth": 0,
+            "items": [
+              {
+                "task": true,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Write the parser",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "task": false,
+                "blocks": [
+                  {
+                    "Paragraph": {
+                      "text": [
+                        {
+                          "text": "Port the clients",
+                          "strong": false,
+                          "emphasis": false,
+                          "strikethrough": false,
+                          "code": false,
+                          "link": null
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "streaming": [
+    {
+      "source": "Checking which crates read the table first.",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Checking which crates read the table first.",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "source": "Here is the loop:\n\n```python\nfor host in hosts:\n    if host.reachable:\n        pair(host, retries=3",
+      "blocks": [
+        {
+          "Paragraph": {
+            "text": [
+              {
+                "text": "Here is the loop:",
+                "strong": false,
+                "emphasis": false,
+                "strikethrough": false,
+                "code": false,
+                "link": null
+              }
+            ]
+          }
+        },
+        {
+          "Code": {
+            "language": "python",
+            "code": "for host in hosts:\n    if host.reachable:\n        pair(host, retries=3",
+            "closed": false
+          }
+        }
+      ]
+    }
+  ],
+  "labels": [
+    {
+      "source": "`q1/README.md` is absent; `../plan1/README.md` has two lines (`UPDATED`, `done`). Which should be used?",
+      "runs": [
+        {
+          "text": "q1/README.md",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": true,
+          "link": null
+        },
+        {
+          "text": " is absent; ",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": false,
+          "link": null
+        },
+        {
+          "text": "../plan1/README.md",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": true,
+          "link": null
+        },
+        {
+          "text": " has two lines (",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": false,
+          "link": null
+        },
+        {
+          "text": "UPDATED",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": true,
+          "link": null
+        },
+        {
+          "text": ", ",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": false,
+          "link": null
+        },
+        {
+          "text": "done",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": true,
+          "link": null
+        },
+        {
+          "text": "). Which should be used?",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "source": "`q1/README.md` is absent; `../plan1/README.md` has two lines. Which should be used?",
+      "runs": [
+        {
+          "text": "q1/README.md",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": true,
+          "link": null
+        },
+        {
+          "text": " is absent; ",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": false,
+          "link": null
+        },
+        {
+          "text": "../plan1/README.md",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": true,
+          "link": null
+        },
+        {
+          "text": " has two lines. Which should be used?",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "source": "Create `README.md`",
+      "runs": [
+        {
+          "text": "Create ",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": false,
+          "link": null
+        },
+        {
+          "text": "README.md",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": true,
+          "link": null
+        }
+      ]
+    },
+    {
+      "source": "Create the missing file with exactly one line: `UPDATED`.",
+      "runs": [
+        {
+          "text": "Create the missing file with exactly one line: ",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": false,
+          "link": null
+        },
+        {
+          "text": "UPDATED",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": true,
+          "link": null
+        },
+        {
+          "text": ".",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "source": "Change `../plan1/README.md` instead.",
+      "runs": [
+        {
+          "text": "Change ",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": false,
+          "link": null
+        },
+        {
+          "text": "../plan1/README.md",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": true,
+          "link": null
+        },
+        {
+          "text": " instead.",
+          "strong": false,
+          "emphasis": false,
+          "strikethrough": false,
+          "code": false,
+          "link": null
+        }
+      ]
+    }
+  ]
+}

@@ -65,10 +65,10 @@ libc = { workspace = true }
 
 # wt is Unix-only, and the phone's runtime hosts no agents, so it makes no
 # workspaces.
-[target.'cfg(all(unix, not(target_os = "ios")))'.dependencies]
+[target.'cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))'.dependencies]
 wt = { workspace = true }
 
-[target.'cfg(not(target_os = "ios"))'.dependencies]
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 if-addrs = { workspace = true }
 mdns-sd = "0.21"
 
@@ -82,6 +82,7 @@ windows-sys = { version = "0.61.2", features = [
 ] }
 
 [dev-dependencies]
+source-tree = { workspace = true }
 interpret = { workspace = true }
 release = { workspace = true, features = ["test-key"] }
 journal = { workspace = true, features = ["synthetic"] }

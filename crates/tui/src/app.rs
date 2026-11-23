@@ -402,14 +402,14 @@ pub enum AppEvent {
     /// What a host offers for a provider, for a new agent there.
     HostOffer {
         host: Vec<u8>,
-        provider: wire::Provider,
+        provider: String,
         hash: Vec<u8>,
         catalogue: wire::Catalogue,
     },
 }
 
 /// A host, a provider, and the catalogue hash the host named when asked.
-type OfferAsked = (Vec<u8>, wire::Provider, Option<Vec<u8>>);
+type OfferAsked = (Vec<u8>, String, Option<Vec<u8>>);
 
 /// What the loop does after a key.
 #[derive(Debug, PartialEq)]
@@ -501,9 +501,14 @@ fn now_ms() -> i64 {
 /// reads the agent's directory on this machine, headless Claude has no
 /// terminal at all, and a stopped agent's terminal is gone until it is
 /// resumed. Its chat is the way in either way.
-pub(crate) fn terminal_refusal(agent: &Agent, config: &TuiConfig) -> Option<&'static str> {
-    terminal_elsewhere(agent, config)
-        .or_else(|| (agent.lifecycle() == wire::Lifecycle::Exited).then_some("it is stopped"))
+pub(crate) fn terminal_refusal(
+    fleet: &ui_state::FleetState,
+    agent: &Agent,
+    config: &TuiConfig,
+) -> Option<String> {
+    terminal_elsewhere(fleet, agent, config).or_else(|| {
+        (agent.lifecycle() == wire::Lifecycle::Exited).then(|| "it is stopped".to_owned())
+    })
 }
 
 /// The agent a fleet key names, as a call to its host is addressed.
@@ -515,14 +520,22 @@ fn agent_ref(key: &AgentKey) -> AgentRef {
 }
 
 /// Why `agent` has no terminal on this machine at all, running or not.
-fn terminal_elsewhere(agent: &Agent, config: &TuiConfig) -> Option<&'static str> {
+fn terminal_elsewhere(
+    fleet: &ui_state::FleetState,
+    agent: &Agent,
+    config: &TuiConfig,
+) -> Option<String> {
+    let host = fleet.host(&agent.host_id);
     if agent.native.is_some() {
         // Its parent's provider runs it inside the parent's own process.
-        Some("a subagent has no terminal of its own")
+        Some("a subagent has no terminal of its own".to_owned())
     } else if agent.host_id != config.local_host {
-        Some("its terminal is on another computer")
-    } else if agent.kind() == wire::Kind::ClaudeSdk {
-        Some("headless Claude has no terminal")
+        Some("its terminal is on another device".to_owned())
+    } else if !ui_state::offered_capabilities(host, agent).attachable {
+        Some(format!(
+            "{} has no terminal here",
+            ui_state::provider_name(host, agent)
+        ))
     } else {
         None
     }
@@ -580,7 +593,7 @@ async fn start_with_files(
         text: text.to_owned(),
         attachments: attachments.clone(),
     };
-    let Some(input) = inputs::prompt(setup.kind(), text, attachments) else {
+    let Some(input) = inputs::prompt(setup.host_kind, text, attachments) else {
         let why = "your first message could not be sent; it is in the composer".to_owned();
         return Ok((agent, Some((why, kept))));
     };
@@ -867,10 +880,11 @@ impl App {
                             self.fleet.close(&open.agent);
                             self.keep_draft(open);
                         }
-                        let terminal =
-                            self.fleet.state().agent(&agent).is_some_and(|entry| {
-                                terminal_elsewhere(entry, &self.config).is_none()
-                            });
+                        let fleet = self.fleet.state();
+                        let terminal = fleet.agent(&agent).is_some_and(|entry| {
+                            terminal_elsewhere(&fleet, entry, &self.config).is_none()
+                        });
+                        drop(fleet);
                         let mut view = ChatView::new(agent.agent.clone(), now_ms(), terminal);
                         if let Some(kept) = kept {
                             view.editor.set(&kept.text, kept.attachments);
@@ -1024,8 +1038,7 @@ impl App {
                             }
                             ui_view::ReviewView::All if gone => page.notice(
                                 ui_view::ReviewNotice::SnapshotFailed {
-                                    message: "this snapshot is gone from the agent's computer"
-                                        .into(),
+                                    message: "this snapshot is gone from the agent's device".into(),
                                 },
                                 true,
                             ),
@@ -1086,7 +1099,7 @@ impl App {
                 catalogue,
             } => {
                 if let Some(setup) = self.home.open_setup() {
-                    setup.offer(&host, provider, &hash, &catalogue);
+                    setup.offer(&host, &provider, &hash, &catalogue);
                 }
                 self.host_offers.insert(hash, catalogue);
             }
@@ -1101,7 +1114,8 @@ impl App {
                 if attach {
                     // Straight into its own terminal; where it has none
                     // here, its chat opens and says why.
-                    let Some(why) = terminal_refusal(&agent, &self.config) else {
+                    let why = terminal_refusal(&self.fleet.state(), &agent, &self.config);
+                    let Some(why) = why else {
                         return Flow::Attach(agent);
                     };
                     self.notice(format!("{why}; its chat opens instead"), Tone::Warn);
@@ -1413,7 +1427,7 @@ impl App {
                     self.fleet.state().agent(&chat.agent),
                     &self.config.local_host,
                 )
-                .sibling(state.kind(), self.config.chat_in);
+                .sibling(state.agent().provider_id(), self.config.chat_in);
                 drop(state);
                 self.close_chat();
                 self.home.new_agent(setup);
@@ -2006,7 +2020,7 @@ impl App {
                         .map(|error| AppEvent::Notice(error.to_string(), Tone::Warn))
                 });
             }
-            ChatEffect::Paste => match chat.view.paste(read_clipboard()) {
+            ChatEffect::Paste => match chat.view.paste(&session.state(), read_clipboard()) {
                 Ok(Some(effect)) => return self.chat_effect(effect),
                 Ok(None) => {}
                 Err(error) => self.notice(error, Tone::Warn),
@@ -2166,7 +2180,8 @@ impl App {
     /// Enter opens its chat (in the chat, Enter sends the draft).
     fn raw_attach(&mut self, agent: &AgentKey) -> Option<Flow> {
         let entry = self.fleet.state().agent(agent).cloned()?;
-        match terminal_refusal(&entry, &self.config) {
+        let refusal = terminal_refusal(&self.fleet.state(), &entry, &self.config);
+        match refusal {
             None => Some(Flow::Attach(Box::new(entry))),
             Some(why) if self.chat.is_some() => {
                 self.notice(why, Tone::Warn);
@@ -2201,15 +2216,14 @@ impl App {
             .host()
             .map(|host| host.name().to_owned())
             .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| "its computer".to_owned());
+            .unwrap_or_else(|| "its device".to_owned());
         let not_found = ended
             .as_ref()
             .is_some_and(|error| error.code() == Some(wire::ErrorCode::NotFound));
         let (why, deleted) = match ended {
-            _ if !linked && (dropped || not_found) => (
-                format!("{host} is no longer linked to this computer"),
-                false,
-            ),
+            _ if !linked && (dropped || not_found) => {
+                (format!("{host} is no longer linked to this device"), false)
+            }
             _ if dropped || not_found => (format!("{} was deleted", state.agent().name), true),
             Some(error) => (error.to_string(), false),
             None => return None,
@@ -2303,47 +2317,46 @@ impl App {
             return;
         };
         let host = setup.host.clone();
-        let chosen = setup.agent.provider();
+        setup.settle(&fleet);
+        let chosen = setup.agent.clone();
         let mut asks = Vec::new();
-        for provider in crate::setup::PROVIDERS {
-            let named = fleet
-                .host(&host)
-                .and_then(|entry| {
-                    entry
-                        .providers
-                        .iter()
-                        .find(|offer| offer.provider == provider as i32)
-                })
-                .and_then(|offer| offer.catalogue.clone());
+        let listed = fleet
+            .host(&host)
+            .map(|entry| entry.providers.clone())
+            .unwrap_or_default();
+        for offer in listed {
+            let provider = offer.provider_id.clone();
+            let named = offer.catalogue.clone();
             if let Some((hash, held)) = named
                 .as_ref()
                 .and_then(|hash| Some((hash, self.host_offers.get(hash)?)))
             {
                 if setup.offered_hash() != Some(hash.as_slice()) {
-                    setup.offer(&host, provider, hash, held);
+                    setup.offer(&host, &provider, hash, held);
                 }
                 continue;
             }
             if self
                 .offers_asked
-                .insert((host.clone(), provider, named.clone()))
+                .insert((host.clone(), provider.clone(), named.clone()))
             {
-                asks.push((provider, provider == chosen));
+                let chosen = provider == chosen;
+                asks.push((provider, offer.name().to_owned(), chosen));
             }
         }
         let host_name = fleet
             .host(&host)
             .map(|entry| entry.name().to_owned())
             .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| "this computer".to_owned());
+            .unwrap_or_else(|| "this device".to_owned());
         drop(fleet);
-        for (provider, chosen) in asks {
+        for (provider, name, chosen) in asks {
             let desk = self.client.host(&host);
             let host = host.clone();
             let host_name = host_name.clone();
             self.spawn(async move {
                 let answer = desk
-                    .catalogue(provider)
+                    .catalogue(&provider)
                     .await
                     .map_err(|error| error.to_string());
                 let decoded = answer.and_then(|blob| {
@@ -2360,10 +2373,7 @@ impl App {
                     }),
                     // Only the agent being set up is worth a word.
                     Err(error) if chosen => Some(AppEvent::Notice(
-                        format!(
-                            "could not ask {host_name} what {} offers: {error}",
-                            crate::setup::provider_name(provider)
-                        ),
+                        format!("could not ask {host_name} what {name} offers: {error}"),
                         Tone::Warn,
                     )),
                     Err(_) => None,
@@ -2440,7 +2450,13 @@ impl App {
                     && self
                         .leader_since
                         .is_none_or(|since| since.elapsed() >= PANEL_AFTER);
-                chat.view.panel = panel_due.then(panel_entries);
+                let attach = {
+                    let fleet = self.fleet.state();
+                    fleet.agent(&chat.agent).is_some_and(|agent| {
+                        terminal_elsewhere(&fleet, agent, &self.config).is_none()
+                    })
+                };
+                chat.view.panel = panel_due.then(|| panel_entries(attach));
                 chat.view.covered = self.report.is_some();
                 let page = {
                     let state = chat.session.state();
@@ -2506,7 +2522,7 @@ impl App {
                 .await
                 .map_err(|error| format!("amux could not dump: {error}"))?;
             if response.report_path.is_empty() {
-                return Err("amux wrote its dump on another computer".to_owned());
+                return Err("amux wrote its dump on another device".to_owned());
             }
             let bundle = std::path::PathBuf::from(response.report_path);
             for part in &parts {
@@ -2562,7 +2578,7 @@ fn sibling_setup(
     let view = ui_view::settings(state);
     crate::setup::Setup {
         name: None,
-        agent: crate::setup::Agent::Claude,
+        agent: String::new(),
         chat_in: settings::ChatInSetting::Amux,
         model: view
             .models
@@ -2590,7 +2606,8 @@ fn sibling_setup(
         local_host: local_host.to_vec(),
         worktree: false,
         copied: (None, None),
-        host_claude_kind: wire::Kind::Unspecified,
+        host_kind: wire::Kind::Unspecified,
+        attachable: false,
         folders: None,
     }
 }
@@ -2623,8 +2640,11 @@ impl App {
     }
 }
 
-/// The leader's panel in a chat: every chord and what it does.
-fn panel_entries() -> Vec<crate::chat::PanelEntry> {
+/// The leader's panel in a chat: every chord and what it does. Attach is
+/// listed only where the agent has a terminal of its own here (`attach`):
+/// an ACP agent, headless Claude, a subagent or an agent on another
+/// computer has none, and the chord would only say so.
+pub(crate) fn panel_entries(attach: bool) -> Vec<crate::chat::PanelEntry> {
     let entry =
         |group: &'static str, key: &str, label: &str, chord: char| crate::chat::PanelEntry {
             group,
@@ -2633,7 +2653,7 @@ fn panel_entries() -> Vec<crate::chat::PanelEntry> {
             chord,
         };
     // What is about amux first, then what is about this chat.
-    vec![
+    let mut entries = vec![
         entry("amux", "s", "home", 's'),
         entry("amux", "n", "new agent", 'n'),
         entry("amux", "h", "devices", 'h'),
@@ -2666,7 +2686,11 @@ fn panel_entries() -> Vec<crate::chat::PanelEntry> {
             OPEN_AGENT_CHORD,
         ),
         entry("this chat", "y", "copy the focused row", 'y'),
-    ]
+    ];
+    if !attach {
+        entries.retain(|entry| entry.chord != 'a');
+    }
+    entries
 }
 
 pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'static>> {
@@ -2747,10 +2771,10 @@ pub(crate) fn help_lines(leader: char, width: usize, theme: Theme) -> Vec<Line<'
         ("r", "review changes; comments go in the draft"),
         ("c", "count changes: uncommitted or on this branch"),
         ("t", "tool steps: collapse, show all or hide"),
-        ("a", "attach to the agent's own terminal (this computer)"),
+        ("a", "attach to the agent's own terminal (this device)"),
         (
             "x",
-            "settle the agent (a message resumes it); asks before cutting work short",
+            "settle the agent; asks before cutting work short or ending it for good",
         ),
         ("k / j", "focus an older or newer row"),
         ("o", "open the focused row, run or group of subagents"),

@@ -57,6 +57,18 @@ const STORIES: &[(&str, Tell)] = &[
     ("report-a-problem", report_a_problem),
     ("first-run", first_run),
     ("provider-subagents", provider_subagents),
+    (
+        "acp-create-from-config",
+        super::terminal_acp::create_from_config,
+    ),
+    ("acp-permission", super::terminal_acp::permission),
+    ("acp-interrupt", super::terminal_acp::interrupt),
+    (
+        "acp-queue-and-withdraw",
+        super::terminal_acp::queue_and_withdraw,
+    ),
+    ("acp-ends-for-good", super::terminal_acp::ends_for_good),
+    ("acp-sign-in", super::terminal_acp::sign_in),
 ];
 
 /// The bound one story runs under.
@@ -232,7 +244,7 @@ fn run_bounded(name: &str, output: &Path) -> (bool, String) {
 // --- reading frames ------------------------------------------------------
 
 /// `first`, then at least one space, then `then`, somewhere in `text`.
-fn spaced(text: &str, first: &str, then: &str) -> bool {
+pub(crate) fn spaced(text: &str, first: &str, then: &str) -> bool {
     text.match_indices(first).any(|(at, _)| {
         let rest = &text[at + first.len()..];
         let after = rest.trim_start();
@@ -350,7 +362,7 @@ fn leave_and_recover(journey: &mut TerminalJourney) -> Proved {
     journey.open_chat(&pane, "keeper")?;
     journey.wait_terms(&pane, &[first, "desk away · not current"])?;
     journey.type_text(&pane, DRAFT)?;
-    journey.wait_terms(&pane, &[DRAFT, "can't send until its computer is back"])?;
+    journey.wait_terms(&pane, &[DRAFT, "can't send until its device is back"])?;
     journey.frame(&pane, "cached-offline")?;
 
     // Work goes on at the desk while the laptop is cut off; when the link
@@ -648,7 +660,7 @@ fn manage_agent(journey: &mut TerminalJourney) -> Proved {
 
 /// The laptop names the desk by the desk's own host id.
 fn identified(frame: &str, host_id: &str) -> Result<(), String> {
-    if frame.contains(&format!("Paired with desk ({host_id}) on this network.")) {
+    if frame.contains(&format!("Paired with desk ({host_id}) directly.")) {
         Ok(())
     } else {
         Err(format!("the pairing did not name desk {host_id}:\n{frame}"))
@@ -683,7 +695,7 @@ fn reach_host(journey: &mut TerminalJourney) -> Proved {
     let printed = journey.wait_terms(&opened, &["Pairing PIN:", "Ctrl+C closes it."])?;
     let pin = pin_in(&printed).ok_or_else(|| format!("no PIN on the desk:\n{printed}"))?;
     let asking = journey.launch("pair", "laptop", &["pair", "desk"])?;
-    journey.wait_terms(&asking, &["Pairing PIN shown on the other host:"])?;
+    journey.wait_terms(&asking, &["Pairing PIN shown on the other device:"])?;
     journey.type_text(&asking, &pin)?;
     journey.keys(&asking, &["Enter"])?;
     let paired = journey.wait_terms(&asking, &["Paired with desk", "AMUX_EXIT_0"])?;
@@ -707,9 +719,10 @@ fn reach_host(journey: &mut TerminalJourney) -> Proved {
     }
 
     // The running client's overlay says so, and the desk's work is there.
+    // The net's machines share one network, so the desk reads local.
     journey.wait(
         &pane,
-        |frame| !frame.contains("found nearby") && spaced(frame, "desk", "on this network"),
+        |frame| !frame.contains("found nearby") && spaced(frame, "desk", "local"),
         "the desk paired in the overlay",
     )?;
     journey.frame(&pane, "paired")?;
@@ -737,7 +750,7 @@ fn reach_host(journey: &mut TerminalJourney) -> Proved {
         format!("the PIN the desk printed paired the laptop, which named desk {desk_id}"),
         control,
         "the desk lists the laptop as paired".to_owned(),
-        "the running client's overlay showed the desk online and direct without a restart".to_owned(),
+        "the running client's overlay showed the desk online and local without a restart".to_owned(),
         format!(
             "the desk's agent opened from the laptop; the desk holds {} once and its reply",
             quoted(prompt)
@@ -926,7 +939,7 @@ fn keep_authority(journey: &mut TerminalJourney) -> Proved {
     journey.keys(&other, &["h"])?;
     journey.wait(
         &other,
-        |frame| spaced(frame, "laptop", "this computer") && !frame.contains("desk"),
+        |frame| spaced(frame, "laptop", "this device") && !frame.contains("desk"),
         "hosts without the desk",
     )?;
     journey.frame(&other, "other-profile")?;
@@ -955,8 +968,8 @@ fn keep_authority(journey: &mut TerminalJourney) -> Proved {
     journey.wait_terms(
         &pane,
         &[
-            "desk away · this computer is signed out",
-            "can't send until this computer signs in",
+            "desk away · this device is signed out",
+            "can't send until this device signs in",
         ],
     )?;
     journey.home(&pane)?;
@@ -965,16 +978,16 @@ fn keep_authority(journey: &mut TerminalJourney) -> Proved {
         &pane,
         &[
             "signed out · amux login",
-            "offline · this computer is signed out",
+            "offline · this device is signed out",
         ],
     )?;
     journey.frame(&pane, "blocked-hosts")?;
     journey.keys(&pane, &["Escape"])?;
     journey.open_chat(&pane, "guarded")?;
-    journey.wait_terms(&pane, &["desk away · this computer is signed out"])?;
+    journey.wait_terms(&pane, &["desk away · this device is signed out"])?;
     journey.type_text(&pane, unsent)?;
     journey.keys(&pane, &["Enter"])?;
-    journey.wait_terms(&pane, &[unsent, "can't send until this computer signs in"])?;
+    journey.wait_terms(&pane, &[unsent, "can't send until this device signs in"])?;
     journey.frame(&pane, "blocked")?;
     std::thread::sleep(Duration::from_secs(2));
     let blocked = journey.chat("desk", "guarded", Some("while-signed-out"))?;
@@ -1477,7 +1490,7 @@ fn send_while_away(journey: &mut TerminalJourney) -> Proved {
         &[
             BACKUP,
             "cabin is away",
-            "can't send until its computer is back",
+            "can't send until its device is back",
         ],
     )?;
     journey.frame(&pane, "away")?;
@@ -1742,7 +1755,7 @@ fn new_agent_terminal(journey: &mut TerminalJourney) -> Proved {
         |frame| {
             // The chat is there before its model is.
             chat_of(frame).as_deref() == Some("desk-notes")
-                && frame.contains("its terminal is on another computer")
+                && frame.contains("its terminal is on another device")
                 && frame.contains("Fake 1")
         },
         "desk-notes' chat",
@@ -1843,11 +1856,11 @@ fn new_agent_worktree(journey: &mut TerminalJourney) -> Proved {
     journey.wait_terms(&pane, &["What should the new agent work on?"])?;
     // On the desk, which offers a model the laptop does not.
     journey.keys(&pane, &["C-s", "h"])?;
-    journey.wait_terms(&pane, &["╭─ Computer", ". desk"])?;
+    journey.wait_terms(&pane, &["╭─ Device", ". desk"])?;
     pick(journey, &pane, "desk")?;
     journey.wait(
         &pane,
-        |frame| frame.contains("│ desk ─╯") && !frame.contains("╭─ Computer"),
+        |frame| frame.contains("│ desk ─╯") && !frame.contains("╭─ Device"),
         "the desk chosen",
     )?;
     journey.keys(&pane, &["C-s", "m"])?;
@@ -2234,7 +2247,7 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
         |frame| {
             [
                 "Connect your iPhone",
-                "This computer is called desk.",
+                "This device is called desk.",
                 "Scan with your iPhone's camera to pair.",
                 "esc later",
             ]
@@ -2263,7 +2276,7 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
 
     // The laptop stands in for the phone and pairs with the PIN shown.
     let asking = journey.launch("pair", "laptop", &["pair", "desk"])?;
-    journey.wait_terms(&asking, &["Pairing PIN shown on the other host:"])?;
+    journey.wait_terms(&asking, &["Pairing PIN shown on the other device:"])?;
     journey.type_text(&asking, &pin)?;
     journey.keys(&asking, &["Enter"])?;
     journey.wait_terms(&asking, &["Paired with desk", "AMUX_EXIT_0"])?;
@@ -2280,7 +2293,7 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
     journey.wait_terms(
         &pane,
         &[
-            "Reach it from anywhere",
+            "Reach it through the relay",
             "[x] Also sign in laptop",
             "enter sign in",
         ],

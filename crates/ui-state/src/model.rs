@@ -70,6 +70,10 @@ pub enum Composer {
     /// The agent has exited: the draft goes through ResumeAgent as the new
     /// incarnation's first prompt, one tap.
     Resume,
+    /// The agent has exited and its program cannot reopen its
+    /// conversation, so nothing resumes it: there is no text box. A fresh
+    /// conversation would be another agent, never this one resumed.
+    Ended,
     /// The chat is not current. Drafting continues; a send is refused at
     /// once and the draft stays in the composer, which says why.
     Waiting(Waiting),

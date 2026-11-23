@@ -1,0 +1,44 @@
+load("//build:rust.bzl", "DEBUG_TOOLS", "amux_rust_library")
+
+DEPS = [
+    "//crates/app-bridge:app-bridge",
+]
+
+TEST_DEPS = [
+    "//crates/analytics:analytics",
+    "//crates/app-runtime:app-runtime",
+    "//crates/client:client",
+    "//crates/node:node",
+    "//crates/provider-fakes:provider-fakes",
+    "//crates/testnet:testnet",
+    "//crates/ui-code:ui-code",
+    "//crates/wire:wire",
+    "//third-party/rust:libc",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:tempfile",
+    "//third-party/rust:tokio",
+]
+
+FEATURES = ["default"] + DEBUG_TOOLS
+
+amux_rust_library(
+    version = "0.2.0",
+    deps = DEPS,
+    features = FEATURES,
+    test_deps = TEST_DEPS,
+    product = "app",
+    # Cargo builds only a staticlib; Buck has it as the library's
+    # [static_pic] subtarget, which the phone's build takes.
+    # The unit tests read the C header, which Cargo's build.rs writes into
+    # OUT_DIR; here :header does (crates/ios-tools/src/app_header.rs).
+    test_env = {"OUT_DIR": "$(location :header)"},
+    binaries = True,
+)
+
+genrule(
+    name = "header",
+    srcs = native.glob(["src/**", "cbindgen.toml"]),
+    out = "out",
+    cmd = "mkdir -p $OUT && $(exe //crates/ios-tools:ios-tools-bin) app-header $SRCDIR $OUT/amux_app.h",
+)

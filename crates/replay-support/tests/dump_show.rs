@@ -140,7 +140,7 @@ fn the_binary_prints_one_agent_and_refuses_what_is_not_a_bundle() {
     let agent = dumped.agent();
     let prefix = &agent[..4];
     let run = |args: &[&std::ffi::OsStr]| {
-        Command::new(env!("CARGO_BIN_EXE_dump-show"))
+        Command::new(source_tree::bin!("dump-show"))
             .args(args)
             .output()
             .unwrap()

@@ -1,3 +1,4 @@
+import AmuxFixtures
 import AmuxCore
 import AmuxDesign
 import SwiftUI
@@ -271,14 +272,14 @@ private func environment(
 private func row(_ id: String, _ order: UInt64, collapsed: Bool = false) -> Row {
     Row(
         id: id, order: order, atMs: 0,
-        kind: .prose(text: [.text(id)], streaming: false, workingNote: false),
+        kind: .prose(text: [.text(Markdown(words: id))], streaming: false, workingNote: false),
         collapsed: collapsed, attention: false, decision: nil, group: nil, opens: nil, parent: nil, run: nil, turn: nil)
 }
 
 private func prose(_ id: String, _ order: UInt64, _ text: String) -> Row {
     Row(
         id: id, order: order, atMs: 0,
-        kind: .prose(text: [.text(text)], streaming: false, workingNote: false),
+        kind: .prose(text: [.text(Markdown(words: text))], streaming: false, workingNote: false),
         collapsed: false, attention: false, decision: nil, group: nil, opens: nil, parent: nil, run: nil, turn: nil)
 }
 
@@ -320,7 +321,11 @@ private final class StubChat: ChatSource, @unchecked Sendable {
     }
     private func frame() -> ChatFrame {
         ChatFrame(
-            agent: AgentKey(host: [1], agent: [2]), name: "a", kind: .claudeSdk, phase: .idle,
+            agent: AgentKey(host: [1], agent: [2]), name: "a",
+            provider: ProviderLabel(provider: "claude", name: "Claude"),
+            capabilities: Capabilities(
+                stopsJob: true, switchesBack: false, attachable: false, resumable: true, sendsNow: true, images: true,
+                files: true, passesUnknownCommands: true), phase: .idle,
             composer: ComposerView(mode: .send, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: true,
             hasOlder: hasOlder, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil,
             context: nil, ended: nil, git: nil, reviewChip: nil, signIn: nil)
@@ -344,6 +349,7 @@ private final class StubChat: ChatSource, @unchecked Sendable {
     func change(_ setting: SettingChange) async -> ActOutcome? { nil }
     func resume(with draft: Draft) async -> ActOutcome? { nil }
     func pageOlder(_ rows: UInt32) async -> PageOutcome? { nil }
+    func attachmentRefusal(name: String, mime: String, size: Int) -> String? { nil }
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure> {
         .failure(RuntimeFailure("stub"))
     }

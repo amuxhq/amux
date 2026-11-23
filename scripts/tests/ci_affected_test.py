@@ -18,7 +18,9 @@ CRATES = {
     "wire": {"folder": "wire", "built": set(), "tests": set()},
     "provider-fakes": {"folder": "provider-fakes", "built": set(), "tests": set()},
     "testkit": {"folder": "testkit", "built": set(), "tests": set()},
-    "app-ffi": {"folder": "app-ffi", "built": {"app-runtime"}, "tests": set()},
+    "app-ffi": {"folder": "app-ffi", "built": {"app-bridge"}, "tests": set()},
+    "app-jni": {"folder": "app-jni", "built": {"app-bridge"}, "tests": set()},
+    "app-bridge": {"folder": "app-bridge", "built": {"app-runtime"}, "tests": set()},
     "app-runtime": {"folder": "app-runtime", "built": {"wire"}, "tests": set()},
     "tui": {"folder": "tui", "built": {"wire"}, "tests": set()},
     "amux": {"folder": "amux", "built": {"tui", "daemon-core"}, "tests": set()},
@@ -43,6 +45,7 @@ class AffectedTest(unittest.TestCase):
         self.assertEqual(
             groups(
                 ".github/workflows/ios.yml",
+                ".github/workflows/android.yml",
                 ".github/workflows/nightly.yml",
                 ".github/workflows/release.yml",
                 "scripts/qa.py",
@@ -61,9 +64,27 @@ class AffectedTest(unittest.TestCase):
         self.assertTrue(result["tests"])
         self.assertFalse(result["models"])
 
-    def test_the_phone_app_alone_runs_only_ios_tools_and_leaves_the_rest_to_its_gate(self):
+    def test_the_phone_app_alone_runs_only_mirrors_and_leaves_the_rest_to_its_gate(self):
         self.assertEqual(
-            groups("apps/apple/Amux/Sources/AmuxApp.swift", "docs/IOS.md"), {"ios_tools"}
+            groups("apps/apple/Amux/Sources/AmuxApp.swift", "docs/IOS.md"), {"mirrors"}
+        )
+
+    def test_the_android_app_alone_runs_only_mirrors_and_leaves_the_rest_to_its_gate(self):
+        self.assertEqual(
+            groups(
+                "apps/android/features/src/main/kotlin/sh/amux/features/AgentsHome.kt",
+                "apps/android/core/values/src/main/kotlin/sh/amux/values/Values.kt",
+            ),
+            {"mirrors"},
+        )
+
+    def test_android_plus_rust_crate_runs_workspace_tests_not_standalone_mirrors(self):
+        self.assertEqual(
+            groups(
+                "apps/android/features/src/main/kotlin/sh/amux/features/AgentsHome.kt",
+                "crates/app-jni/src/lib.rs",
+            ),
+            {"tests", "bridge"},
         )
 
     def test_a_phone_fixture_read_by_a_rust_test_runs_that_crates_jobs(self):
@@ -78,11 +99,13 @@ class AffectedTest(unittest.TestCase):
             SANITIZED,
         )
         self.assertTrue(result["tests"] and result["product"])
-        self.assertFalse(result["ios_tools"])
+        self.assertFalse(result["mirrors"])
 
     def test_a_crate_runs_the_jobs_built_from_it(self):
         self.assertEqual(groups("crates/tui/src/lib.rs"), {"tests", "product", "sanitizers"})
         self.assertEqual(groups("crates/app-runtime/src/lib.rs"), {"tests", "product", "bridge"})
+        self.assertEqual(groups("crates/app-bridge/src/lib.rs"), {"tests", "bridge"})
+        self.assertEqual(groups("crates/app-jni/src/lib.rs"), {"tests", "bridge"})
         self.assertEqual(
             groups("crates/app-ffi/src/lib.rs"), {"tests", "sanitizers", "bridge"}
         )
@@ -105,7 +128,7 @@ class AffectedTest(unittest.TestCase):
                      "journeys/manifest.json", "proto/amux/v1/chat.proto", "qa/FINDING.md",
                      "crates/gone/src/lib.rs", "crates/README.md"]:
             # Anything else runs the full workspace tests, which already cover ios-tools.
-            self.assertEqual(groups(file), set(ci.GROUPS) - {"ios_tools"}, file)
+            self.assertEqual(groups(file), set(ci.GROUPS) - {"mirrors"}, file)
 
     def test_the_browser_extension_alone_runs_its_own_job(self):
         self.assertEqual(groups("js/extension/src/background/index.ts"), {"browser"})
@@ -118,13 +141,13 @@ class AffectedTest(unittest.TestCase):
 class WorkspaceTest(unittest.TestCase):
     def test_the_groups_crates_exist(self):
         crates = ci.workspace()
-        for name in ci.MODELS + ci.BRIDGE + ci.sanitized() + list(ci.READS.values()):
+        for name in ci.MODELS + ci.BRIDGE + ci.sanitized() + list(ci.READS.values()) + ["app-jni"]:
             self.assertIn(name, crates)
 
     def test_the_models_are_not_built_from_the_clients(self):
         built = ci.built_from(ci.MODELS, ci.workspace())
         self.assertIn("daemon-core", built)
-        self.assertFalse({"tui", "app-ffi", "amux"} & built, built)
+        self.assertFalse({"tui", "app-ffi", "app-bridge", "app-jni", "amux"} & built, built)
 
     def test_every_documentation_file_a_test_reads_is_listed(self):
         """A test reading a file under docs/ that READS does not name would be

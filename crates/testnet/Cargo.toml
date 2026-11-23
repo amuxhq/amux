@@ -12,6 +12,7 @@ name = "testnet"
 path = "src/bin/testnet.rs"
 
 [dependencies]
+source-tree = { workspace = true }
 agent-dir = { workspace = true }
 anyhow = { workspace = true }
 base64 = { workspace = true }

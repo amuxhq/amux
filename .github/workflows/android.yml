@@ -1,0 +1,104 @@
+# The Android app's gate, apart from ci.yml so that it runs only when a change
+# reaches Android. It watches every file its steps read: the app, the bridge
+# crates, the files the app's tests share with the iPhone's (the parsed
+# markdown fixtures, the sealed pushes and tests/stories.json), and the
+# scripts and actions it runs. Whatever else the bridge reads crosses to
+# Kotlin as the generated mirrors in apps/android, which a workspace test in
+# ios-tools holds to the Rust definitions, so a shape change upstream cannot
+# land without touching the app. Behaviour upstream is the workspace tests' to
+# judge, and ci.yml's Android target check compiles that graph for Android.
+name: Android gate
+
+on:
+  push:
+    branches: [main]
+    paths: &android
+      - 'apps/android/**'
+      - 'crates/app-jni/**'
+      - 'crates/app-bridge/**'
+      - 'crates/app-embedded/**'
+      - 'crates/app-runtime/**'
+      - 'crates/ios-tools/**'
+      - 'apps/apple/Packages/AmuxCore/Sources/AmuxFixtures/Fixtures/**'
+      - 'apps/apple/Packages/AmuxPush/Tests/AmuxPushTests/Fixtures/**'
+      - 'tests/stories.json'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/**'
+      - 'rust-toolchain.toml'
+      - 'scripts/bounded'
+      - 'scripts/no-update-flags.sh'
+      - 'scripts/py'
+      - '.github/actions/setup-just/**'
+      - '.github/actions/setup-rust/**'
+      - '.github/workflows/android.yml'
+  pull_request:
+    branches: [main]
+    paths: *android
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to a branch stops the run of the one before it. The gate judges
+# the Android app, so the newer run covers what the stopped one would have.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  gate:
+    name: Android gate
+    runs-on: ubuntu-latest
+    # Run locally on a 12-core Mac with Gradle's caches warm and no Rust built,
+    # the steps took 3 min: lint, script tests and the graph check 5 s, the
+    # host bridge's Rust 1 min 44 s, Gradle's compile and unit suites 43 s. A
+    # four-core runner that also fetches the toolchains, Gradle and its
+    # dependencies is put at about 15 min with every cache cold; the bound is
+    # twice that, until a real run's time replaces the estimate.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Refuse fixture update flags
+        shell: bash
+        run: scripts/no-update-flags.sh
+      - uses: ./.github/actions/setup-rust
+        with:
+          targets: aarch64-linux-android
+          shared-key: android-gate
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+          cache-dependency-path: |
+            apps/android/gradle/libs.versions.toml
+            apps/android/gradle/wrapper/gradle-wrapper.properties
+            apps/android/**/build.gradle.kts
+            apps/android/settings.gradle.kts
+      # Most pushes that reach the Android gate change no Rust in app-jni's
+      # transitive build graph. Its own recipe skips cargo when the fingerprint
+      # of its inputs matches what it last built, so a host JNI bridge restored
+      # under that fingerprint is used as it is.
+      - name: Fingerprint the host JNI bridge inputs
+        id: bridge
+        run: echo "fingerprint=$(scripts/py -B apps/android/tools/android-rust.py --host --fingerprint)" >> "$GITHUB_OUTPUT"
+      - name: Restore the host JNI bridge built from these sources
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            target/android/host-jni
+            target/android/host-jni-stamp.txt
+          key: android-host-jni-${{ runner.os }}-${{ hashFiles('.github/workflows/android.yml') }}-${{ steps.bridge.outputs.fingerprint }}
+      - name: Check Android writing rules
+        run: just android lint
+      - name: Run Android script tests
+        run: just android script-tests
+      - name: Check Android bridge dependency graph
+        run: just android graph-check
+      - name: Build host JNI bridge and run JVM and Robolectric unit tests
+        run: just android unit --no-daemon

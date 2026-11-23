@@ -45,7 +45,7 @@ def walk(seed: int | None, seeds: int | None, filters: list[str]) -> int:
         env["TESTNET_SEED"] = str(seed)
     if seeds is not None:
         env["TESTNET_SEEDS"] = str(seeds)
-    # The workspace scope `just test` builds with, so the stories
+    # The workspace scope `just cargo-test` builds with, so the stories
     # reuse its build: naming the package instead unifies the dependencies'
     # features differently and rebuilds every workspace crate beneath it.
     command = ["cargo", "nextest", "run", "--locked", "--no-fail-fast", "--workspace"]

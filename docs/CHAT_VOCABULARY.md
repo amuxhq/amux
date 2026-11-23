@@ -11,6 +11,12 @@ The three agent kinds are named by their `wire::Kind`: `claude_pty` (Claude in i
 transcript and hooks), `claude_sdk` (headless Claude over stream-JSON) and `codex` (Codex over its app-server
 protocol). [INTERPRETERS.md](INTERPRETERS.md) covers how each one's native events become items.
 
+A fourth kind, `acp`, runs any agent that speaks the Agent Client Protocol (Antigravity, OpenCode, Grok, or one a
+person adds). Its interpreter's availability for every row is the `acp` column of
+[`vocabulary.toml`](../crates/interpret/tests/vocabulary.toml), held by the same coverage test. Its items are drawn
+with the same rows and asks as the other kinds; [ACP agents](#acp-agents) says how each maps, and the tables
+below keep to the three kinds they compare.
+
 The pictures on this page are the terminal client's own renderings of each component, drawn from authored view
 values at 100 columns. The phone draws the same facts in its own idiom; neither is a pixel spec for the other.
 
@@ -67,7 +73,7 @@ kind is the [`ui_view::RowKind`](../crates/ui-view/src/rows.rs) variant the view
 | Subagent started or stopped | `Child { action, name, host, kind, state, result }` | amux's own `spawn` and `stop` calls in their own words: "Started payment-tests on build · Codex", "Stopped copy-pass". The machine shows only when it is another one; a failure reads "Could not start …" and opens to why. amux's `agents` and `hosts` listings are the agent looking around, and hidden. | full | full | full |
 | Subagent | `Subagent { description, continued, state, answer, duration_ms }` | The call that started a subagent its provider runs, or continued it: Claude's Agent call and a SendMessage to it, Codex's spawn and follow-up of a child thread. It opens the subagent's own chat (`Row.opens`); how the subagent stands (running, waiting on you, done, stopped) is its fleet row's, never the call's; its answer once the call returned it. The calls of one turn that opened more than one agent fold into one "N subagents" row with their combined state, opening to each. A call from history names no agent and reads its own `state`, its steps collapsed under it (`parent`). | full | full | full: a Codex child's description is its fleet title |
 | Background process | `Background { command, description, running }` | "Started in background npm run dev"; the running job is listed in the overview. | partial | partial | partial |
-| Image | `Image { image, path, generated }` | A thumbnail opening full size on the phone and on a terminal that can draw images; elsewhere a line that opens it. Codex can report generated images. | partial | partial | full |
+| Image | `Image { image, path, generated }` | A thumbnail opening full size on the phone and on a terminal that can draw images; elsewhere a line that opens it. Codex can report generated images. An image a Claude tool read is what the tool saw, not something presented, so it is no row. | none | none | full |
 | Slash command output | `SlashOutput { command, args, output }` | The command, then its output block. | partial | partial | partial: a review's notices |
 
 A call's `state` is a `CallPhase`, decided once in the view for both clients: `Asking` while an open ask points
@@ -147,14 +153,16 @@ of ask has one anatomy, the [`AskCard`](../crates/ui-view/src/ask.rs):
 - **Choices say outcomes.** Each `Choice` is a `ChoiceOutcome` ("Always allow cargo test in this project", never
   rule syntax), with the answer it sends. The likely choice comes first and is marked `primary`. A choice appears
   only when this agent offers it. `takes_note` marks the choices whose note goes back to the agent (a Claude
-  denial, a plan sent back).
+  denial, a plan sent back, an ACP agent's refusal or decline).
+- **Words instead.** Where the card says `reply_instead` (every ACP ask), the person may send their own words
+  instead of an answer; a refusal's or a decline's note goes as those words.
 - **There is always a way out.** Stop is always in the menu. It is the interrupt: it cancels the turn, which
   dismisses the open ask, and the agent stays live and idle. It never ends the process; stopping or deleting the
   agent does that.
 - **Sending, then a row.** After an answer, `CardState` goes `Sending` and the card shrinks to one line until the
   agent confirms; the decision then lands in the chat. A rejection brings the card back as `Rejected(refusal)`:
   the wire's typed `Refusal` reason, which each client words, and the provider's own sentence when it gave one, shown instead. If the connection dropped before any reply,
-  `NotConfirmed` offers resend and discard; nothing is resent on its own. An exited agent's open asks are drawn `Dismissed`, and the composer offers Resume.
+  `NotConfirmed` offers resend and discard; nothing is resent on its own. An exited agent's open asks are drawn `Dismissed`, and the composer offers Resume where the agent can be resumed.
 
 An answer names its ask by key, so any open ask can be answered from any client, not only the head one. Before
 CaughtUp a card is drawn only if the inventory entry says the agent needs you, so an ask already answered on
@@ -188,6 +196,7 @@ replacing it, so its lines carry no numbers and no line; each of its replacement
 | `AllowNetwork { hosts }` | Codex: a network rule naming the hosts |
 | `Deny { stops }` | every kind |
 | `DenyAndStop` | every kind, beside a denial that lets the agent carry on |
+| `Offered { name, refuses }` | ACP: an option amux has no outcome of its own for (always allow, always reject, or one the agent names otherwise), worded with the agent's `name`; `refuses` when the agent marks it a rejection |
 
 ![A command permission from Claude in the composer's box: the command and why, yes, always allow the command in this project, don't ask again this session, and no, which takes a note; the first of three open asks.](figures/vocabulary/ask_command.light.png)
 
@@ -229,11 +238,56 @@ says "plan"; the body is the rest. While the first line is still arriving there 
 never shows half-written as prose. The view splits the plan once, for the card and for the row it becomes, and
 both clients draw the title and body they are handed.
 
-![A plan's decision in the composer's box, the plan itself in the feed above: start building, start and switch to the permission the agent offers, or keep planning with a note.](figures/vocabulary/ask_plan.light.png)
+![A plan's decision in the composer's box, the plan itself in the feed above: implement the plan, implement it and switch to the permission the agent offers, or keep planning with a note.](figures/vocabulary/ask_plan.light.png)
 
 ![A form from a tool server, a step per field in the server's order, the first a required text field, with decline as the way out.](figures/vocabulary/ask_form.light.png)
 
 ![The escape from an ask this client cannot answer: the reason, which sends the person to Claude's own terminal, and opening that terminal; ctrl+x interrupts the turn.](figures/vocabulary/ask_unanswerable.light.png)
+
+## ACP agents
+
+An ACP agent reports far less shape than Claude or Codex, so its items map onto the shared rows by what the
+agent says each one is:
+
+- **Messages and thinking** are `Prose` and `Thinking`; your prompt is `Prompt`, with withdraw on a queued one
+  and send-now only where the agent's capabilities say `sends_now`. An image, audio or file the agent presents in
+  a message is an attachment at its place in the `Prose`; one inside a tool call is not drawn.
+- **A tool call** goes by its kind: a read, search or fetch is `Explore` (a search names its title, a read or
+  fetch the first place the call names, else its title; a title that only repeats the tool's name, as agents
+  title a call just begun, is left off); an execute is `Command`, its command read from the call's input, else its
+  title; an edit, delete or move is `FileChange` from the call's diffs, else the places it names; anything else is
+  `ToolCall` under its title. An ACP diff's texts carry no place in the file (OpenCode sends the whole file,
+  Antigravity and Grok the fragment they replace), so a new file's lines are numbered, and another edit's only where
+  the agent says beside ACP where its texts start (Grok's diff `_meta`, OpenCode's patch in its raw output); any
+  other edit names no line (a call's location says what it touches, not where the texts start). A `Command`'s exit
+  code comes from the call's raw output where the agent puts one there, and a call Grok's own reviewer is deciding on
+  waits, with no output, until it runs or is denied. amux's own tools, which agents name in several ways, are amux's rows (`Child` and
+  the rest), as for the other kinds.
+- **A notice** is `Notice { reason, severity, title, text }`: what the agent says about its session (`Agent`), or
+  why a turn stopped short (`Refusal`, `MaxTokens`, `MaxTurnRequests`), as a note, a warning or an error. An error
+  notice marks the row failed. A turn stopped short carries only its typed reason, which each client words,
+  and a turn that stopped at a limit reads as finished rather than failed, since its notice says which limit. Errors are `Error`, compaction is `Compaction`, and an item this build cannot read
+  is `Unrecognized`.
+- **A permission ask** offers exactly the options the agent sent, in its order: allow once is `AllowOnce`, reject
+  once is `Deny` with a note, and the rest are `Offered`. Its body is a `Command`, an `Edit` from the call's diffs,
+  or a `Tool` with the call's title and input.
+- **A form or a link the agent asks itself** is `Form` or `Link` named for the agent, with `Submit` or `OpenLink`
+  and a `Decline` that takes words instead. The tool call it names as its own (Antigravity's and Grok's question
+  tools) is `Hidden`: the ask's row is its only trace, as Claude's question is, and it is no step of a run. A field whose answers are titled constants (`oneOf` of `const` and
+  `title`, or for several an array whose `items` are `anyOf` of them) arrives as a choice of the titles, one or
+  several, and the agent is sent the constant of each one picked.
+- **Grok's question tool** is an `AskBody::Question` card, as Claude's and Codex's are, and settles as a
+  `Questions` row: each question with its options, one answer or several as Grok says, and your own words allowed
+  for each. Skipping every question declines them, and Grok goes on with its own judgment. Its call is `Hidden`,
+  as a form's is.
+- **Session facts.** Usage has no windows or credits; settings are picks of the agent's models, efforts and modes.
+  A new agent starts on the agent's own mode unless the person picks one: the agent marks none of its modes
+  normal, so none is chosen for it.
+- **An exited ACP agent** that offered no way to reopen a session has no Resume: its composer is `Ended`.
+- **Attachments** go only where the agent takes them: an image to an agent that takes images, a file to one that
+  takes files. A client refuses one it would not take before storing it.
+
+![What an ACP agent says about its own session: a note, a warning, a turn that reached the model's token limit, and an error with what to do.](figures/vocabulary/row_notice.light.png)
 
 ## In the chat afterwards
 
@@ -246,8 +300,8 @@ Once settled, an ask leaves one of two things behind, because rows are one per i
   rather than guessed.
 - **An ask that is the work is its own row**, `RowKind::Ask(AskRow)`, which resolves in place: `Question`
   (Claude's question tool: its questions, then each `AnswerView` with the picks, what was typed and whether it was
-  hidden, whether it was skipped, and the note), `Questions` (Codex), `Plan` with its title, body, `PlanVerdict`, the permission an approval switched to (`mode`, `mode_name`) and send-back note, `Form` with the
-  fields sent, `Link`, `Grant` with what was `Granted` and for how long, and `Unanswerable`. Each carries a
+  hidden, whether it was skipped, and the note), `Questions` (Codex and Grok), `Plan` with its title, body, `PlanVerdict`, the permission an approval switched to (`mode`, `mode_name`) and send-back note, `Form` with the
+  fields sent by their titles (the name where the form gives none), `Link`, `Grant` with what was `Granted` and for how long, and `Unanswerable`. Each carries a
   `Resolution`: `Open`, `Answered`, `Declined`, `Cancelled` or `Dismissed`.
 
 The attention ink is reserved for what needs you and for failures: `Row.attention` is set when an open ask points at the

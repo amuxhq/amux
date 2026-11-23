@@ -1,0 +1,13 @@
+shell | Agents, Devices |  | 0,0,411,923
+hosts | Devices, 1 reachable |  | 0,0,411,818
+hosts.list | desk, macOS, connected, local |  | 0,0,411,818
+hosts.row.<desk> | desk, macOS, connected, local |  | 16,126,379,65
+hosts.subtitle | 1 reachable |  | 16,94,66,16
+tab.agents | Agents |  | 0,819,202,80
+tab.hosts | Devices | selected | 210,819,202,80
+sign-in-offer | Sign In, Close, Sign in as ada@example.com?, desk offers its account, so this phone can reach it through the relay., Accept, Decline | offered | 0,594,411,282
+sign-in-offer.close | Close |  | 363,598,48,48
+sign-in-offer.title | Sign in as ada@example.com? |  | 16,666,355,32
+sign-in-offer.detail | desk offers its account, so this phone can reach it through the relay. |  | 16,701,379,42
+sign-in-offer.accept | Accept |  | 16,757,379,44
+sign-in-offer.decline | Decline |  | 16,813,379,44

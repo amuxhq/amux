@@ -416,9 +416,7 @@ impl Conversation {
         } else {
             output
         };
-        for write in tool.take_result(content, result) {
-            sub.effect(write);
-        }
+        tool.take_result(result);
         if tool.question && tool.asked.is_none() {
             tool.asked = Some(match result.map(AnsweredResult::deserialize) {
                 Some(Ok(answered)) if !is_error && !answered.answers.is_empty() => {

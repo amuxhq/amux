@@ -1,0 +1,45 @@
+load("//build:rust.bzl", "amux_rust_binary", "amux_rust_library")
+
+DEPS = [
+    "//crates/source-tree:source-tree",
+    "//crates/interpret:interpret",
+    "//crates/settings:settings",
+    "//crates/tui:tui",
+    "//crates/ui-code:ui-code",
+    "//crates/ui-state:ui-state",
+    "//crates/ui-view:ui-view",
+    "//crates/wire:wire",
+    "//third-party/rust:clap",
+    "//third-party/rust:crossterm",
+    "//third-party/rust:fontdue",
+    "//third-party/rust:png",
+    "//third-party/rust:ratatui",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:thiserror",
+]
+
+amux_rust_library(
+    version = "0.4.0",
+    tool = True,
+    deps = DEPS,
+    srcs = native.glob(["src/**", "assets/**"]),
+    include = {"//:tests/stories.json": "tests/stories.json"},
+    test_resources = ["//crates/interpret:fixtures"],
+)
+
+amux_rust_binary(
+    name = "amux-shot",
+    version = "0.4.0",
+    crate_root = "src/main.rs",
+    deps = DEPS,
+    tool = True,
+)
+
+amux_rust_binary(
+    name = "amux-storybook",
+    version = "0.4.0",
+    crate_root = "src/storybook.rs",
+    deps = DEPS,
+    tool = True,
+)

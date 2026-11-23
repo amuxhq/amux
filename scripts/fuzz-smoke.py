@@ -34,7 +34,9 @@ CLAUDE_CAPTURES = [
     "crates/interpret/fixtures/claude_pty/transcripts",
 ]
 CODEX_CAPTURES = ["crates/interpret/fixtures/codex/live"]
+ACP_CAPTURES = ["crates/interpret/fixtures/acp/live"]
 PROVIDER_LINES = {
+    "acp_decode": ACP_CAPTURES,
     "claude_decode": CLAUDE_CAPTURES,
     "codex_decode": CODEX_CAPTURES,
     "redact_value": [*CLAUDE_CAPTURES, *CODEX_CAPTURES],

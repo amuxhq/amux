@@ -1,0 +1,20 @@
+shell |  |  | 0,0,411,923
+you | Back, Settings | none | 0,0,411,923
+settings.scroll | ACCOUNTS, Sign In, With an account, this phone can reach your devices through the relay, and a subscription bought on amux.sh carries over., THIS PHONE, Share Usage, Counts and choices, never what you type, Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names., Name, <device>, Fingerprint, Tap to copy, <key>, Version, 0.1.0, HELP, Contact Support, Report a Problem, Export Diagnostics, A report includes a screenshot and this phone’s diagnostic dump. |  | 0,118,411,781
+you.signIn | Sign In |  | 16,168,379,58
+you.signIn.caption | With an account, this phone can reach your devices through the relay, and a subscription bought on amux.sh carries over. |  | 0,226,411,61
+you.appearance | Appearance, Light, Dark, System | system | 32,339,347,48
+you.appearance.light | Light |  | 141,339,78,48
+you.appearance.dark | Dark |  | 220,339,79,48
+you.appearance.system | System | selected | 299,339,79,48
+settings.privacy.share-usage | Share Usage, Counts and choices, never what you type |  | 16,392,379,64
+settings.privacy.auto-reports | Send Automatic Reports, When amux catches its own bug. Never your chats, code, or file names. |  | 16,458,379,85
+settings.notifications | Notifications, Off |  | 16,544,379,48
+settings.notifications.action | Notifications, Off |  | 16,544,379,48
+you.name | <volatile>
+you.fingerprint | <volatile>
+you.version | <volatile>
+settings.diagnostics.support | Contact Support |  | 16,817,379,48
+settings.diagnostics.report | Report a Problem |  | 16,866,379,33
+settings.diagnostics.export | Export Diagnostics |  | 0,0,0,0
+nav.back | Back |  | 8,66,40,40

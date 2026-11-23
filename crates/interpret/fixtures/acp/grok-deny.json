@@ -1,0 +1,10 @@
+{
+  "about": "grok 1.0.89, recorded live: a shell command needing permission, rejected once",
+  "spec": {
+    "provider": "grok"
+  },
+  "recording": {
+    "path": "live/grok-deny/io.jsonl",
+    "format": "acp_io"
+  }
+}

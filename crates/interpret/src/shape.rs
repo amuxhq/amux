@@ -493,6 +493,172 @@ pub fn codex_input(body: &[u8]) -> InputShape {
     }
 }
 
+/// The fields of an ACP message the shape reads.
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct AcpTop<'a> {
+    #[serde(borrow)]
+    method: Option<Cow<'a, str>>,
+    id: Option<IgnoredAny>,
+    error: Option<IgnoredAny>,
+    #[serde(borrow)]
+    result: Option<&'a RawValue>,
+    #[serde(borrow)]
+    params: Option<&'a RawValue>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct AcpParams<'a> {
+    #[serde(borrow)]
+    update: Option<&'a RawValue>,
+    #[serde(borrow, rename = "toolCall")]
+    tool_call: Option<&'a RawValue>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct AcpUpdate<'a> {
+    #[serde(borrow, rename = "sessionUpdate")]
+    session_update: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    kind: Option<Cow<'a, str>>,
+    #[serde(borrow, rename = "rawInput")]
+    raw_input: Option<&'a RawValue>,
+    #[serde(borrow, rename = "rawOutput")]
+    raw_output: Option<&'a RawValue>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct AcpInitialized<'a> {
+    #[serde(borrow, rename = "agentInfo")]
+    agent_info: Option<&'a RawValue>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct AcpImplementation<'a> {
+    #[serde(borrow)]
+    version: Option<Cow<'a, str>>,
+}
+
+/// Whether ACP names this method, or a vendor's method is one agents are
+/// known to send.
+fn acp_method(method: &str) -> bool {
+    acp_protocol::AgentRequest::METHODS.contains(&method)
+        || acp_protocol::AgentNotification::METHODS.contains(&method)
+        || acp_protocol::ClientRequest::METHODS.contains(&method)
+        || acp_protocol::ClientNotification::METHODS.contains(&method)
+        || acp_protocol::EXTENSIONS.contains(&method)
+}
+
+/// The shape of an ACP agent's JSON-RPC message: its method and, for a
+/// session update, the update's tag. A tool call is named by ACP's own kind
+/// for it (`read`, `execute`), never by its title, which is the agent's free
+/// text; the keys of what it was given and gave back are the agent's or a
+/// tool server's, so the record aliases them all.
+pub fn acp_fact(fact: &Fact) -> FactShape {
+    let Ok(top) = serde_json::from_slice::<AcpTop>(&fact.payload) else {
+        return FactShape {
+            variant: "unreadable".into(),
+            ..FactShape::default()
+        };
+    };
+    let mut shape = FactShape::default();
+    if let Some(method) = top.method.as_deref() {
+        let params: AcpParams = top
+            .params
+            .and_then(|raw| serde_json::from_str(raw.get()).ok())
+            .unwrap_or_default();
+        // A vendor's params are its own data, which the record aliases, so
+        // only ACP's own methods are read for an update.
+        let update: AcpUpdate = params
+            .update
+            .or(params.tool_call)
+            .filter(|_| !acp_protocol::EXTENSIONS.contains(&method) && acp_method(method))
+            .and_then(|raw| serde_json::from_str(raw.get()).ok())
+            .unwrap_or_default();
+        let request = top.id.is_some().then_some("request");
+        // Only names ACP or a known vendor gives are kept; anything else is
+        // an agent's own choice, which a record does not carry.
+        let method = if acp_method(method) {
+            method
+        } else {
+            "unknown"
+        };
+        let tag = update.session_update.as_deref().map(|tag| {
+            if acp_protocol::SessionUpdate::TAGS.contains(&tag) {
+                tag
+            } else {
+                "unknown"
+            }
+        });
+        shape.variant = join(&[request, Some(method), tag]);
+        if update.raw_input.is_some() || update.kind.is_some() {
+            shape.tools.push(ToolShape {
+                result: false,
+                name: update
+                    .kind
+                    .as_deref()
+                    .filter(|kind| acp_protocol::update::ToolKind::SPELLINGS.contains(kind))
+                    .map(|kind| Name::Own(kind.to_owned())),
+                keys: names(keys(update.raw_input), true, None),
+            });
+        }
+        if update.raw_output.is_some() {
+            shape.tools.push(ToolShape {
+                result: true,
+                name: None,
+                keys: names(keys(update.raw_output), true, None),
+            });
+        }
+    } else if top.id.is_some() && (top.result.is_some() || top.error.is_some()) {
+        shape.variant = if top.error.is_some() {
+            "response/error".into()
+        } else {
+            "response".into()
+        };
+        let initialized: AcpInitialized = top
+            .result
+            .and_then(|raw| serde_json::from_str(raw.get()).ok())
+            .unwrap_or_default();
+        shape.version = initialized
+            .agent_info
+            .and_then(|raw| serde_json::from_str::<AcpImplementation>(raw.get()).ok())
+            .and_then(|info| info.version.as_deref().and_then(version));
+    } else {
+        shape.variant = "untyped".into();
+    }
+    shape
+}
+
+pub fn acp_input(body: &[u8]) -> InputShape {
+    use wire::acp_input::Of;
+    match wire::AcpInput::decode(body).ok().and_then(|input| input.of) {
+        None => plain("unreadable"),
+        Some(Of::Prompt(_)) => plain("prompt"),
+        Some(Of::Answer(answer)) => {
+            use wire::acp_answer::Of;
+            let arm = match answer.of {
+                None => "none",
+                Some(Of::Option(_)) => "option",
+                Some(Of::Form(_)) => "form",
+                Some(Of::Link(_)) => "link",
+                Some(Of::Reply(_)) => "reply",
+                Some(Of::Question(_)) => "question",
+            };
+            answer_of(answer.ask_key, arm)
+        }
+        Some(Of::Interrupt(_)) => plain("interrupt"),
+        Some(Of::Model(_)) => plain("model"),
+        Some(Of::Effort(_)) => plain("effort"),
+        Some(Of::Mode(_)) => plain("mode"),
+        Some(Of::Withdraw(withdraw)) => targeting("withdraw", &withdraw.queued_input_id),
+        Some(Of::SendNow(send)) => targeting("send_now", &send.queued_input_id),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -7,10 +7,12 @@ GitHub reads as a job's outputs:
 
   tests       Clippy, formatting and the workspace tests. Runs for any Rust
               change or a file a Rust test reads, not for documentation,
-              Swift-only phone edits, or unrelated workflows/manual scripts.
-  ios_tools   The ios-tools crate's tests alone, when only the phone app
-              changed (Swift mirrors and verification CLI), leaving the full
-              workspace tests unrun and the phone's rest to the iOS gate.
+              phone-app-only edits, or unrelated workflows/manual scripts.
+  mirrors     The ios-tools crate's tests alone, when only the iOS or Android
+              app changed: the generated Swift and Kotlin mirrors, the
+              markdown fixtures and the iOS verification CLI. The full
+              workspace tests stay unrun and the apps' rest is left to their
+              own gates.
   product     The terminal journeys, the simulated stories and doctests:
               a crate amux or testnet is built from (not leaf tools like
               ios-tools, browser-core, qualification or xtask).
@@ -19,8 +21,8 @@ GitHub reads as a job's outputs:
               those are built from, which is nearly every crate: the
               sanitizers are there for the unsafe code in the crates
               themselves, and a nightly run covers the rest.
-  bridge      The pointer checks and the iOS target check: a crate the
-              phone's bridge is built from.
+  bridge      The pointer checks and the iOS and Android target checks: a
+              crate either phone's bridge is built from.
   browser     The browser extension's checks and its end-to-end test: its
               TypeScript under js/, a crate its WebAssembly is built from,
               or the amux binary, whose bridge it starts.
@@ -54,7 +56,7 @@ except ModuleNotFoundError:  # Apple's command-line tools still ship Python 3.9.
     from pip._vendor import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-GROUPS = ["tests", "ios_tools", "product", "models", "sanitizers", "bridge", "browser"]
+GROUPS = ["tests", "mirrors", "product", "models", "sanitizers", "bridge", "browser"]
 
 # Documentation: nothing built or tested reads it, but for READS.
 DOCS = ("docs/", "images/", "marketing/")
@@ -83,18 +85,19 @@ IGNORED_FILES = {
     "scripts/release-policy-check.sh",
     "scripts/release-symbols.sh",
 }
-# A file outside crates/ (under DOCS or PHONE) that a crate's test reads, and
-# that crate.
+# A file outside crates/ (under DOCS, PHONE or ANDROID) that a crate's test
+# reads, and that crate.
 READS = {
     "docs/guide/understand/what-amux-sends.md": "analytics",
     "apps/apple/Packages/AmuxPush/Tests/AmuxPushTests/Fixtures/sealed-pushes.json": "node",
 }
 PHONE = "apps/apple/"
+ANDROID = "apps/android/"
 JS = "js/"
 
 PRODUCT = ["amux", "testnet"]
 MODELS = ["models"]
-BRIDGE = ["app-ffi"]
+BRIDGE = ["app-ffi", "app-bridge", "app-jni"]
 BROWSER = ["browser-core"]
 
 
@@ -155,7 +158,7 @@ def is_other_workflow(file: str) -> bool:
 def affected(files: list[str], crates: dict[str, dict], sanitizers: list[str]) -> dict[str, bool]:
     by_folder = {crate["folder"]: name for name, crate in crates.items()}
     changed: set[str] = set()
-    everything = phone = js = False
+    everything = phone = android = js = False
     for file in files:
         parts = file.split("/")
         if file in READS:
@@ -170,6 +173,8 @@ def affected(files: list[str], crates: dict[str, dict], sanitizers: list[str]) -
             continue
         elif file.startswith(PHONE):
             phone = True
+        elif file.startswith(ANDROID):
+            android = True
         elif file.startswith(JS):
             js = True
         elif parts[0] == "crates" and len(parts) > 2 and parts[1] in by_folder:
@@ -183,7 +188,7 @@ def affected(files: list[str], crates: dict[str, dict], sanitizers: list[str]) -
 
     return {
         "tests": tests,
-        "ios_tools": phone and not tests,
+        "mirrors": (phone or android) and not tests,
         "product": reaches(PRODUCT),
         "models": reaches(MODELS),
         "sanitizers": everything or bool(changed & set(sanitizers)),

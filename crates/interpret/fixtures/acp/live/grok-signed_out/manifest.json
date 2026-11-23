@@ -1,0 +1,23 @@
+{
+  "spec": "grok-signed_out",
+  "recorded": {
+    "provider": "grok",
+    "version": "1.0.89",
+    "model": "none",
+    "at": "2026-11-20T19:27:46.886996Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:071332e3b74fcf3d0d8a0620d820569c0bdee9b7b07315d51fcabebfff46db69",
+    "spawn.jsonl": "sha256:8aab213a2fb26391131f0a91634b225aee476835849fe455902b65583a019be5"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 3,
+    "personal_identifiers": 3
+  },
+  "session_ids": [],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "initialize and session/new under an empty home, signed out"
+  }
+}

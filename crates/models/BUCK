@@ -1,0 +1,47 @@
+load("//build:rust.bzl", "OPTIMISED", "amux_rust_library", "amux_rust_test")
+
+# .config/nextest.toml: a model explores on every core, so they run one at a
+# time with the whole worker to themselves, and one may take eight minutes
+# at its CI bounds.
+TIMEOUTS = {"slow": 120, "terminate_after": 8, "threads": 1}
+
+DEPS = [
+    "//crates/agent-core:agent-core",
+    "//crates/daemon-core:daemon-core",
+    "//crates/interpret:interpret",
+    "//crates/journal:journal",
+    "//crates/path-core:path-core",
+    "//crates/provider-fakes:provider-fakes",
+    "//crates/relay-core:relay-core",
+    "//crates/release:release",
+    "//crates/socket-core:socket-core",
+    "//crates/store:store",
+    "//crates/supervisor-core:supervisor-core",
+    "//crates/ui-state:ui-state",
+    "//crates/wire:wire",
+    "//crates/workspace-core:workspace-core",
+    "//third-party/rust:prost",
+    "//third-party/rust:rusqlite",
+    "//third-party/rust:serde_json",
+    "//third-party/rust:stateright",
+    "//third-party/rust:tempfile",
+    "//third-party/rust:uuid",
+]
+
+amux_rust_library(
+    version = "0.1.0",
+    tool = True,
+    deps = DEPS,
+    rustc_flags = OPTIMISED,
+    test_timeouts = TIMEOUTS,
+    test_whole_worker = True,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.1.0",
+    deps = DEPS,
+    rustc_flags = OPTIMISED,
+    timeouts = TIMEOUTS,
+    whole_worker = True,
+)

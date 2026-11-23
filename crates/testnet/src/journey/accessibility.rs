@@ -16,6 +16,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
 
+use super::driver::{Driver, Tab};
 use super::phone::{
     Drawn, Launch, PhoneJourney, Setup, Target, debug_app, golden_udid, labelled, printed_pin,
     simctl,
@@ -139,7 +140,7 @@ impl Walk {
     /// own name and key before anything is trusted.
     fn pairing(&mut self) -> Result<(), String> {
         let desk = self.journey.host_id("desk");
-        self.journey.tab("Computers")?;
+        self.journey.tab(Tab::Devices)?;
         self.journey.wait_for(&[&format!("hosts.found.{desk}")])?;
         let mut process = self.journey.amux("desk", &["pair"])?;
         let pin = printed_pin(&mut process)?;
@@ -162,7 +163,7 @@ impl Walk {
 
     fn hosts(&mut self) -> Result<(), String> {
         let row = format!("hosts.row.{}", self.journey.host_id("desk"));
-        self.journey.tab("Computers")?;
+        self.journey.tab(Tab::Devices)?;
         self.journey.wait(
             |drawn| labelled(drawn, "desk") && drawn.has(&row),
             "the hosts",
@@ -175,7 +176,7 @@ impl Walk {
             .iter()
             .map(|name| format!("home.row.{}", self.agent(name)))
             .collect();
-        self.journey.tab("Agents")?;
+        self.journey.tab(Tab::Agents)?;
         self.journey.wait(
             |drawn| rows.iter().all(|row| drawn.has(row)),
             "every agent in the fleet",
@@ -190,7 +191,7 @@ impl Walk {
         description: &str,
     ) -> Result<Drawn, String> {
         let row = format!("home.row.{}", self.agent(agent));
-        self.journey.tab("Agents")?;
+        self.journey.tab(Tab::Agents)?;
         self.journey.wait_for(&[&row])?;
         // A row redrawn by an update landing as it is tapped (a fleet row
         // takes every change to its agent) drops the tap or refuses it; a
@@ -325,7 +326,7 @@ impl Walk {
     }
 
     fn new_agent(&mut self) -> Result<(), String> {
-        self.journey.tab("Agents")?;
+        self.journey.tab(Tab::Agents)?;
         self.journey.wait_for(&["home.newAgent"])?;
         self.journey.tap("home.newAgent")?;
         self.journey.wait_for(&["new-agent"])?;

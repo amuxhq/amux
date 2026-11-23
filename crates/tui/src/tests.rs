@@ -21,6 +21,7 @@ use crate::theme::Theme;
 const W: u16 = 100;
 const H: u16 = 30;
 
+mod acp;
 mod commands;
 mod narrow;
 mod onboarding;
@@ -495,7 +496,7 @@ fn every_ask_body_draws_in_the_box_with_the_way_to_stop() {
         (Kind::ClaudeSdk, "claude_sdk"),
         (Kind::Codex, "codex"),
     ] {
-        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        let fixtures = source_tree::crate_dir!()
             .join("../interpret/fixtures")
             .join(dir);
         let mut names: Vec<String> = std::fs::read_dir(&fixtures)
@@ -803,7 +804,7 @@ fn an_answer_refused_because_its_host_is_away_opens_the_card_again() {
     let (buffer, _) = draw(&mut view, &state, at, 80, 24, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("Not sent: its computer is away"),
+        screen.contains("Not sent: its device is away"),
         "the card does not say why its answer did not go:\n{screen}"
     );
 }
@@ -1087,7 +1088,7 @@ fn a_pasted_file_is_an_image_by_its_bytes() {
     let mut pasted = |name: &str, bytes: &[u8]| {
         let path = dir.path().join(name);
         std::fs::write(&path, bytes).unwrap();
-        match view.paste(ClipboardContent::Path(path)).unwrap() {
+        match view.paste(&state, ClipboardContent::Path(path)).unwrap() {
             Some(ChatEffect::Attach { mime, .. }) => mime,
             other => panic!("{other:?}"),
         }
@@ -1108,7 +1109,7 @@ fn ctrl_v_attaches_a_file_through_put_blob() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("shot.png");
     std::fs::write(&path, b"\x89PNG\r\n\x1a\n").unwrap();
-    let effect = view.paste(ClipboardContent::Path(path)).unwrap();
+    let effect = view.paste(&state, ClipboardContent::Path(path)).unwrap();
     assert_eq!(
         effect,
         Some(ChatEffect::Attach {
@@ -1197,18 +1198,18 @@ fn a_host_out_of_reach_while_this_machine_is_signed_out_names_this_machines_sign
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("desk away · this computer is signed out"),
+        screen.contains("desk away · this device is signed out"),
         "{screen}"
     );
     assert!(
-        screen.contains("desk is away · this computer is signed out"),
+        screen.contains("desk is away · this device is signed out"),
         "{screen}"
     );
     typed(&mut view, &state, "still there?");
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("can't send until this computer signs in"),
+        screen.contains("can't send until this device signs in"),
         "{screen}"
     );
 
@@ -1223,7 +1224,7 @@ fn a_host_out_of_reach_while_this_machine_is_signed_out_names_this_machines_sign
         .collect();
     let screen = screen.join("\n");
     assert!(
-        screen.contains("offline · this computer is signed out"),
+        screen.contains("offline · this device is signed out"),
         "{screen}"
     );
     assert!(!screen.contains("not signed in"), "{screen}");
@@ -1270,11 +1271,11 @@ fn a_host_away_on_the_free_plan_names_the_plan() {
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("desk away · reaching it from another network needs Pro"),
+        screen.contains("desk away · relayed connections need Pro"),
         "{screen}"
     );
     assert!(
-        screen.contains("desk is away · reaching it from another network needs Pro"),
+        screen.contains("desk is away · relayed connections need Pro"),
         "{screen}"
     );
 
@@ -1289,7 +1290,7 @@ fn a_host_away_on_the_free_plan_names_the_plan() {
         .collect();
     let rows = rows.join("\n");
     assert!(
-        rows.contains("away · reaching it from another network needs Pro"),
+        rows.contains("away · relayed connections need Pro"),
         "{rows}"
     );
 }
@@ -1304,12 +1305,12 @@ fn an_empty_caught_up_chat_is_not_away_by_a_lagging_fleet() {
     view.reach = ui_view::Reach::Offline(ui_view::Offline::Plain);
     let screen = text(&draw(&mut view, &state, 0, W, H, theme()).0);
     assert!(screen.contains("Nothing here yet."), "{screen}");
-    assert!(!screen.contains("computer is away"), "{screen}");
+    assert!(!screen.contains("device is away"), "{screen}");
 
     state.update(event(session_event::Of::Detached(wire::Detached {})));
     let screen = text(&draw(&mut view, &state, 0, W, H, theme()).0);
     assert!(
-        screen.contains("Its computer is away, and nothing of this chat is held here yet."),
+        screen.contains("Its device is away, and nothing of this chat is held here yet."),
         "{screen}"
     );
 }
@@ -1329,6 +1330,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
                 ..Default::default()
             })),
             current: false,
+            same_network: false,
         }));
     }
     inventory(&mut fleet, desk);
@@ -1344,7 +1346,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
         .collect();
     let screen = screen.join("\n");
     assert!(
-        screen.contains("offline · unpaired this computer"),
+        screen.contains("offline · unpaired this device"),
         "{screen}"
     );
     assert!(!screen.contains("not signed in"), "{screen}");
@@ -1356,7 +1358,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
     view.reach = ui_view::reach(&fleet, b"laptop", b"host");
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
-    assert!(screen.contains("desk unpaired this computer"), "{screen}");
+    assert!(screen.contains("desk unpaired this device"), "{screen}");
     assert!(
         screen.contains("can't send until you pair again"),
         "{screen}"
@@ -1369,7 +1371,7 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
     });
     let screen = fleet_screen(&mut fleet_view, &fleet);
     assert!(
-        screen.contains("desk unpaired this computer · amux pair desk"),
+        screen.contains("desk unpaired this device · amux pair desk"),
         "{screen}"
     );
     assert!(!screen.contains("away"), "{screen}");
@@ -1426,19 +1428,21 @@ enum Reads {
     Candidate,
 }
 
+pub(crate) use crate::sessions::{offered, offered_providers};
+
 fn host(id: &[u8], name: &str, reads: Reads) -> wire::inventory_event::Of {
     use wire::trusted::Reach;
+    let trusted = |reach| wire::HostEntry {
+        providers: offered_providers(),
+        ..wire::HostEntry::trusted_host(id, name, reach)
+    };
     wire::inventory_event::Of::Host(match reads {
         Reads::Candidate => {
             wire::HostEntry::candidate_host(id, name, vec!["192.168.1.9:4000".into()])
         }
-        Reads::Online => {
-            wire::HostEntry::trusted_host(id, name, Reach::Online(wire::RouteKind::Direct as i32))
-        }
-        Reads::Away => wire::HostEntry::trusted_host(id, name, Reach::Away(wire::Empty {})),
-        Reads::Offline => {
-            wire::HostEntry::trusted_host(id, name, Reach::Offline(wire::Offline::default()))
-        }
+        Reads::Online => trusted(Reach::Online(wire::RouteKind::Direct as i32)),
+        Reads::Away => trusted(Reach::Away(wire::Empty {})),
+        Reads::Offline => trusted(Reach::Offline(wire::Offline::default())),
     })
 }
 
@@ -1496,13 +1500,13 @@ fn the_hosts_overlay_draws_trusted_hosts_and_candidates() {
             .to_owned()
     };
     assert!(row("laptop").ends_with("offline"), "{screen}");
-    assert!(row("studio").ends_with("this computer"), "{screen}");
+    assert!(row("studio").ends_with("this device"), "{screen}");
     assert!(
         row("den mac").ends_with("found nearby · amux pair 'den mac'"),
         "{screen}"
     );
     assert!(
-        row("nova").ends_with("on your account · Pro pairs it over the internet · amux pair nova"),
+        row("nova").ends_with("on your account · relayed connections need Pro · amux pair nova"),
         "{screen}"
     );
     assert!(
@@ -1591,9 +1595,14 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
         kind: kind as i32,
         ..Default::default()
     };
-    let refusal = |agent: &wire::Agent| crate::app::terminal_refusal(agent, &config);
+    let fleet = home_fleet();
+    let refusal = |agent: &wire::Agent| crate::app::terminal_refusal(&fleet, agent, &config);
     assert_eq!(refusal(&agent(b"a", Kind::ClaudePty)), None);
-    assert_eq!(refusal(&agent(b"a", Kind::Codex)), None);
+    // Codex runs over a pipe on Windows, with no terminal to attach to.
+    assert_eq!(
+        refusal(&agent(b"a", Kind::Codex)),
+        cfg!(windows).then(|| "Codex has no terminal here".to_owned())
+    );
     assert!(refusal(&agent(b"a", Kind::ClaudeSdk)).is_some_and(|why| why.contains("no terminal")));
     // Every agent on another host is refused with the same reason: raw
     // attach reads the agent's directory on this machine. Home adds that
@@ -1601,7 +1610,7 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
     for kind in [Kind::ClaudePty, Kind::Codex, Kind::ClaudeSdk] {
         assert_eq!(
             refusal(&agent(b"b", kind)),
-            Some("its terminal is on another computer"),
+            Some("its terminal is on another device".to_owned()),
         );
     }
 }
@@ -1733,10 +1742,10 @@ mod review_page {
         press(&mut page, KeyCode::Char('c'));
         type_words(&mut page, "why log here");
         press(&mut page, KeyCode::Enter);
-        page.edited(Err("the agent's computer can't be reached".into()));
+        page.edited(Err("the agent's device can't be reached".into()));
         let shown = screen(&mut page);
         assert!(shown.contains("why log here"), "{shown}");
-        assert!(shown.contains("not saved: the agent's computer"), "{shown}");
+        assert!(shown.contains("not saved: the agent's device"), "{shown}");
         // Enter tries again.
         assert!(matches!(
             press(&mut page, KeyCode::Enter),
@@ -2315,7 +2324,7 @@ fn an_exited_agent_on_an_away_host_names_why_it_is_away() {
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
     assert!(
-        screen.contains("stopped · desk away · this computer is signed out"),
+        screen.contains("stopped · desk away · this device is signed out"),
         "{screen}"
     );
     assert!(screen.contains("Enter resumes"), "{screen}");
@@ -2619,6 +2628,8 @@ fn a_paste_goes_to_the_field_with_the_keys() {
 #[test]
 fn a_paste_into_a_secret_answer_shows_as_bullets() {
     let token = ui_view::QuestionView {
+        header_runs: Vec::new(),
+        question_runs: Vec::new(),
         header: "Token".into(),
         question: "Paste the deploy token".into(),
         multi_select: false,
@@ -2637,6 +2648,7 @@ fn a_paste_into_a_secret_answer_shows_as_bullets() {
         question_note: true,
         question_skip: true,
         question_reply: true,
+        reply_instead: false,
         stops_turn: true,
         default_to_no: false,
         state: CardState::Open,
@@ -2968,6 +2980,72 @@ fn hovering_highlights_a_row_and_its_close_mark_asks_first() {
     assert!(matches!(effects.as_slice(), [FleetEffect::Close(agent)] if agent.agent == b"w2"));
 }
 
+/// Settling an agent whose program cannot reopen its conversation ends it
+/// for good, so it is asked first even with nothing under way, and says
+/// so; one whose program reopens it settles at once, as a message resumes
+/// it.
+#[test]
+fn settling_an_agent_nothing_can_resume_asks_and_says_it_ends_for_good() {
+    let now = now();
+    let mut fleet = FleetState::new();
+    let mut providers = crate::sessions::offered_providers();
+    for (id, name, resumable) in [("oneshot", "One Shot", false), ("again", "Again", true)] {
+        let mut offer = crate::sessions::offered(id, name, Kind::Acp);
+        offer.capabilities = Some(wire::AgentCapabilities::acp(resumable, false, false));
+        providers.push(offer);
+    }
+    inventory(
+        &mut fleet,
+        wire::inventory_event::Of::Host(wire::HostEntry {
+            providers,
+            ..wire::HostEntry::trusted_host(
+                b"a",
+                "studio",
+                wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+            )
+        }),
+    );
+    for (id, name, provider) in [(&b"o1"[..], "once", "oneshot"), (b"r1", "twice", "again")] {
+        let mut row = home_agent(id, name, Phase::Idle, None, now - 1_000);
+        if let wire::inventory_event::Of::Agent(agent) = &mut row {
+            agent.kind = Kind::Acp as i32;
+            agent.provider = provider.into();
+        }
+        inventory(&mut fleet, row);
+    }
+    inventory(
+        &mut fleet,
+        wire::inventory_event::Of::CaughtUp(wire::CaughtUp { revision: 0 }),
+    );
+    let key_of = |id: &[u8]| AgentKey {
+        host: b"a".to_vec(),
+        agent: id.to_vec(),
+    };
+    let mut home = new_home();
+    home_screen(&mut home, &fleet, theme());
+    let effects = home.settle_from_chat(&fleet, key_of(b"r1"));
+    assert!(
+        matches!(effects.as_slice(), [FleetEffect::Close(agent)] if agent.agent == b"r1"),
+        "{effects:?}"
+    );
+    let effects = home.settle_from_chat(&fleet, key_of(b"o1"));
+    assert!(effects.is_empty(), "{effects:?}");
+    let screen = home_screen(&mut home, &fleet, theme());
+    assert!(
+        screen.contains("Settle once? It can't be resumed, so settling"),
+        "{screen}"
+    );
+    assert!(
+        screen.contains("ends its conversation for good."),
+        "{screen}"
+    );
+    let effects = home.key(&fleet, key(KeyCode::Enter));
+    assert!(
+        matches!(effects.as_slice(), [FleetEffect::Close(agent)] if agent.agent == b"o1"),
+        "{effects:?}"
+    );
+}
+
 /// `<leader> x` settles the chat's agent from home, and the highlight
 /// lands on the top of the list, not on the row that took the settled
 /// one's place as `x` on home leaves it.
@@ -3114,7 +3192,15 @@ fn a_new_claude_runs_the_kind_its_host_publishes() {
         "studio",
         wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
     );
-    studio.claude_kind = Kind::ClaudePty as i32;
+    studio.providers = vec![wire::ProviderOnHost {
+        provider_id: "claude".into(),
+        descriptor: Some(wire::ProviderDescriptor {
+            name: "Claude".into(),
+            kind: Kind::ClaudePty as i32,
+            ..Default::default()
+        }),
+        ..Default::default()
+    }];
     inventory(&mut fleet, wire::inventory_event::Of::Host(studio));
     let mut home = new_home();
     home.key(&fleet, key(KeyCode::Char('n')));
@@ -3126,7 +3212,7 @@ fn a_new_claude_runs_the_kind_its_host_publishes() {
     let [FleetEffect::Start { setup, .. }] = effects.as_slice() else {
         panic!("{effects:?}");
     };
-    assert_eq!(setup.kind(), Kind::ClaudePty);
+    assert_eq!(setup.host_kind, Kind::ClaudePty);
     assert!(matches!(
         setup.request(b"id".to_vec(), None).agent,
         Some(wire::create_agent_request::Agent::ClaudePty(_))
@@ -3147,7 +3233,7 @@ fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
     assert!(screen.contains("Claude · … · … │ ~/work/amux"), "{screen}");
     home.open_setup()
         .unwrap()
-        .offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
+        .offer(b"a", "claude", &[1; 32], &claude_offer());
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Claude · Opus (high) · ask │ ~/work/amux"),
@@ -3160,7 +3246,7 @@ fn a_new_agent_starts_from_a_draft_with_its_first_prompt() {
     }
     let effects = home.key(&fleet, KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
     assert!(
-        matches!(effects.as_slice(), [FleetEffect::Start { setup, text, open: false, .. }] if text == "fix it" && setup.kind() == Kind::ClaudeSdk),
+        matches!(effects.as_slice(), [FleetEffect::Start { setup, text, open: false, .. }] if text == "fix it" && setup.host_kind == Kind::ClaudeSdk),
         "{effects:?}"
     );
     // While it starts, keys do not edit the draft.
@@ -3185,7 +3271,7 @@ fn a_new_agents_edge_keeps_its_model_and_permission_in_a_deep_folder_at_80_colum
     });
     home.key(&fleet, key(KeyCode::Char('n')));
     let setup = home.open_setup().unwrap();
-    setup.offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
+    setup.offer(b"a", "claude", &[1; 32], &claude_offer());
     setup.pick(crate::setup::Item::Permission, "bypassPermissions");
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, H)).unwrap();
     terminal
@@ -3217,8 +3303,8 @@ fn a_new_codex_edge_shows_the_plan_mode_shift_tab_turned_on_at_80_columns() {
     });
     home.key(&fleet, key(KeyCode::Char('n')));
     let setup = home.open_setup().unwrap();
-    setup.pick(crate::setup::Item::Kind, "1");
-    setup.offer(b"a", wire::Provider::Codex, &[2; 32], &codex_offer());
+    setup.pick(crate::setup::Item::Kind, "codex");
+    setup.offer(b"a", "codex", &[2; 32], &codex_offer());
     setup.pick(crate::setup::Item::Permission, "read-only");
     let edge_of = |home: &mut crate::home::Home| {
         let mut terminal =
@@ -3376,18 +3462,18 @@ fn a_new_agent_offers_what_its_host_offers() {
     let mut home = new_home();
     home.key(&fleet, key(KeyCode::Char('n')));
     home_screen(&mut home, &fleet, theme());
-    home.open_setup().unwrap().pick(Item::Kind, "1");
+    home.open_setup().unwrap().pick(Item::Kind, "codex");
     // Before the host says, a model can only be named.
     assert!(home.open_setup().unwrap().takes_typed(Item::Model));
     assert!(choice_words(&mut home, &fleet, Item::Effort).is_empty());
     // What another host offers is not this one's.
     home.open_setup()
         .unwrap()
-        .offer(b"b", wire::Provider::Codex, &[2; 32], &codex_offer());
+        .offer(b"b", "codex", &[2; 32], &codex_offer());
     assert!(home.open_setup().unwrap().offered.is_none());
     home.open_setup()
         .unwrap()
-        .offer(b"a", wire::Provider::Codex, &[2; 32], &codex_offer());
+        .offer(b"a", "codex", &[2; 32], &codex_offer());
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(
         screen.contains("Codex · GPT-6.1 Sol (medium) · ask │ ~/work/amux"),
@@ -3446,7 +3532,7 @@ fn a_new_agent_offers_what_its_host_offers() {
     );
     assert!(request.remember_model && !request.remember_effort);
     // Another agent is another provider's catalogue, asked afresh.
-    home.open_setup().unwrap().pick(Item::Kind, "0");
+    home.open_setup().unwrap().pick(Item::Kind, "claude");
     assert!(home.open_setup().unwrap().offered.is_none());
 }
 
@@ -3458,7 +3544,7 @@ fn a_siblings_copied_settings_are_not_remembered() {
     let mut setup = Setup::defaults(settings::ChatInSetting::Amux, "~/work", b"a");
     setup.model = Some("opus".into());
     setup.effort = Some("high".into());
-    let mut setup = setup.sibling(Kind::ClaudeSdk, settings::ChatInSetting::Amux);
+    let mut setup = setup.sibling("claude", settings::ChatInSetting::Amux);
     let request = setup.request(b"id".to_vec(), None);
     assert!(!request.remember_model && !request.remember_effort);
     setup.pick(Item::Effort, "low");
@@ -3475,7 +3561,7 @@ fn a_new_claude_steps_the_permissions_that_still_ask() {
     home_screen(&mut home, &fleet, theme());
     home.open_setup()
         .unwrap()
-        .offer(b"a", wire::Provider::Claude, &[1; 32], &claude_offer());
+        .offer(b"a", "claude", &[1; 32], &claude_offer());
     let mut seen = Vec::new();
     for _ in 0..4 {
         home.key(&fleet, key(KeyCode::BackTab));
@@ -3490,7 +3576,8 @@ fn a_new_claude_steps_the_permissions_that_still_ask() {
     assert!(screen.contains("shift+tab permission"), "{screen}");
 }
 
-/// A provider its host says is signed out is named so where it is chosen.
+/// A provider its host says is signed out is named so where it is chosen,
+/// with its host's words for signing in.
 #[test]
 fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     use crate::setup::Item;
@@ -3498,15 +3585,13 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     let mut studio = host(b"a", "studio", Reads::Online);
     if let wire::inventory_event::Of::Host(entry) = &mut studio {
         entry.providers = vec![
+            offered("claude", "Claude", Kind::ClaudeSdk),
             wire::ProviderOnHost {
-                provider: wire::Provider::Claude as i32,
-                catalogue: Some(vec![1; 32]),
-                signed_in: true,
-            },
-            wire::ProviderOnHost {
-                provider: wire::Provider::Codex as i32,
-                catalogue: Some(vec![2; 32]),
                 signed_in: false,
+                ..crate::sessions::hinted(
+                    offered("codex", "Codex", Kind::Codex),
+                    "Run codex login.",
+                )
             },
         ];
     }
@@ -3516,9 +3601,9 @@ fn a_new_agent_says_when_its_provider_is_not_signed_in() {
     home_screen(&mut home, &fleet, theme());
     assert_eq!(
         choice_words(&mut home, &fleet, Item::Kind),
-        ["Claude ✓", "Codex · not signed in"]
+        ["Claude ✓", "Codex · not signed in · Run codex login."]
     );
-    home.open_setup().unwrap().pick(Item::Kind, "1");
+    home.open_setup().unwrap().pick(Item::Kind, "codex");
     let screen = home_screen(&mut home, &fleet, theme());
     assert!(screen.contains("Codex (not signed in) · …"), "{screen}");
 
@@ -4516,12 +4601,16 @@ fn scrolled_back_offers_the_way_to_the_newest() {
 /// Two questions as headless Claude asks them: pick one, then pick several.
 fn two_questions() -> ui_view::AskCard {
     let option = |label: &str| ui_view::OptionView {
+        label_runs: Vec::new(),
+        description_runs: Vec::new(),
         label: label.into(),
         description: String::new(),
         preview: String::new(),
         recommended: false,
     };
     let question = |header: &str, multi_select| ui_view::QuestionView {
+        header_runs: Vec::new(),
+        question_runs: Vec::new(),
         header: header.into(),
         question: format!("{header}?"),
         multi_select,
@@ -4543,6 +4632,7 @@ fn two_questions() -> ui_view::AskCard {
         question_note: true,
         question_skip: true,
         question_reply: true,
+        reply_instead: false,
         stops_turn: true,
         default_to_no: false,
         state: CardState::Open,
@@ -4707,7 +4797,7 @@ fn a_plan_reads_under_its_heading_and_folds_once_decided() {
         let frames = fixtures::frames(kind, "plans");
         let plan_card = |state: &SessionState| {
             ask_card(state).filter(|card| {
-                matches!(card.body, AskBody::Plan { ref title, ref body } if title.is_some() || !body.is_empty())
+                matches!(card.body, AskBody::Plan { ref title, ref body } if title.is_some() || !body.source.is_empty())
                     && card.state == CardState::Open
             })
         };

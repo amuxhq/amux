@@ -151,14 +151,6 @@ impl Daemon {
         }
     }
 
-    /// What a trusted host's own entry said a new Claude agent runs there.
-    pub(crate) fn claude_kind_said(&mut self, host: HostId, kind: i32) {
-        if self.host_set.claude_kinds.get(&host) != Some(&kind) {
-            self.host_set.claude_kinds.insert(host, kind);
-            self.touched.host_set = true;
-        }
-    }
-
     /// Recomputes the set, when the step moved anything it is made of, and
     /// tells every inventory stream what changed.
     pub(crate) fn publish_host_set(&mut self, out: &mut Vec<Output>) {
@@ -234,14 +226,9 @@ impl Daemon {
                     standing: Some(Standing::Trusted(wire::Trusted {
                         reach: Some(self.reads(host)),
                         current: self.sources.ready(host),
+                        same_network: self.same_network(host),
                     })),
                     push_key: None,
-                    claude_kind: self
-                        .host_set
-                        .claude_kinds
-                        .get(&host)
-                        .copied()
-                        .unwrap_or_default(),
                     folders: self
                         .host_set
                         .folders
@@ -261,6 +248,7 @@ impl Daemon {
         own.standing = Some(Standing::Trusted(wire::Trusted {
             reach: Some(trusted::Reach::Online(RouteKind::Unspecified as i32)),
             current: true,
+            same_network: false,
         }));
         fresh.insert(own_host, own);
         fresh
@@ -295,7 +283,7 @@ impl Daemon {
             });
         }
         for (host, said, relays) in self.routing.catalogue.claimed() {
-            if !untrusted(host) || said.cloud_relay || said.platform == wire::Platform::Ios {
+            if !untrusted(host) || said.cloud_relay || said.platform.is_phone() {
                 continue;
             }
             let mut announced_by: Vec<wire::Host> =
@@ -369,6 +357,16 @@ impl Daemon {
             },
             None => RouteKind::Unspecified,
         }
+    }
+
+    /// Whether `host` reads online over a direct link on a network both
+    /// hosts are on: the link its calls take is carried on such a path.
+    pub fn same_network(&self, host: HostId) -> bool {
+        matches!(self.reads(host), trusted::Reach::Online(_))
+            && match self.presence.view(host).route() {
+                Some(Route::Direct(link)) => self.routing.links.link(link).is_some_and(|up| up.lan),
+                _ => false,
+            }
     }
 
     /// How `host` reads, as every client is told: online over the kind of

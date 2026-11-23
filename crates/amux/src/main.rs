@@ -38,8 +38,8 @@ use crate::verbs::CliAgent;
 #[command(
     name = "amux",
     version = node::version(),
-    about = "Every Claude Code and Codex agent on your machines, in one place",
-    long_about = "Every Claude Code and Codex agent on your machines, in one place.\n\n\
+    about = "Every coding agent on your machines, in one place",
+    long_about = "Every coding agent on your machines, in one place.\n\n\
                   With no command, the terminal app opens."
 )]
 struct Cli {
@@ -65,8 +65,8 @@ enum Command {
     ///
     /// It opens in the interface `ui.chat_in` names: amux's chat, or the
     /// agent's own (Claude Code's or Codex's) where it has one here. An agent
-    /// with no interface of its own on this computer, such as one on another
-    /// computer or one started from the phone, opens in amux's chat.
+    /// with no interface of its own on this device, such as one on another
+    /// device or one started from the phone, opens in amux's chat.
     ///
     /// In an agent's own interface, <leader> d leaves it for the shell and
     /// <leader> s opens the fleet over it.
@@ -81,6 +81,8 @@ enum Command {
     Ls,
     /// Start a new agent in this directory.
     New {
+        /// The agent: claude, codex, or another the computer offers, by its
+        /// id: antigravity, opencode, grok, or one added to its config.
         agent: CliAgent,
         /// Its name, and with --worktree its branch's; amux picks one
         /// otherwise.
@@ -99,10 +101,10 @@ enum Command {
         /// Chat with it in this interface instead of the configured one.
         #[arg(long = "in", value_name = "INTERFACE")]
         interface: Option<settings::ChatInSetting>,
-        /// Its model; the computer's default otherwise.
+        /// Its model; the device's default otherwise.
         #[arg(long)]
         model: Option<String>,
-        /// Its reasoning effort; the computer's default otherwise.
+        /// Its reasoning effort; the device's default otherwise.
         #[arg(long)]
         effort: Option<String>,
         /// Its permission; the provider's own default otherwise.
@@ -141,7 +143,7 @@ enum Command {
         #[arg(long)]
         discard_changes: bool,
     },
-    /// Save a report of this computer into one directory: the records of
+    /// Save a report of this device into one directory: the records of
     /// amux's core, its agents and the chats on screen, and our own logs,
     /// with nothing anybody wrote.
     Dump {
@@ -152,10 +154,10 @@ enum Command {
         #[arg(long)]
         send: bool,
     },
-    /// Pair with another computer, or open this one for pairing.
+    /// Pair with another device, or open this one for pairing.
     ///
-    /// With a target — a computer found nearby by name, an address, or
-    /// user@host over SSH — this computer pairs with it. With none, this computer
+    /// With a target — a device found nearby by name, an address, or
+    /// user@host over SSH — this device pairs with it. With none, this device
     /// opens pairing mode and shows a PIN, or a QR code for the phone.
     Pair {
         target: Option<String>,
@@ -165,7 +167,7 @@ enum Command {
         /// With --qr, print the QR code's link too, to paste into a simulator.
         #[arg(long = "print-link", requires = "qr", hide = true)]
         print_link: bool,
-        /// Close this computer's pairing mode.
+        /// Close this device's pairing mode.
         #[arg(long, conflicts_with = "target", hide = true)]
         cancel: bool,
         /// Hold a PIN you choose open for an unattended demo, such as an app
@@ -193,7 +195,7 @@ enum Command {
         )]
         r#for: Option<std::time::Duration>,
     },
-    /// List the paired devices and the computers found nearby.
+    /// List the paired devices and the devices found nearby.
     #[command(name = "devices", alias = "hosts")]
     Hosts,
     /// Unpair a paired device, by name or id.
@@ -203,8 +205,8 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
-    /// Sign the profile in to an amux account, so its computers reach each
-    /// other from anywhere.
+    /// Sign the profile in to an amux account, so its devices can reach each
+    /// other through amux's relay.
     Login {
         /// The account service.
         #[arg(long, default_value = settings::DEFAULT_CLOUD_URL, hide = true)]
@@ -226,7 +228,7 @@ enum Command {
         #[arg(long)]
         retry: bool,
     },
-    /// Stop amux and remove it from this computer.
+    /// Stop amux and remove it from this device.
     Uninstall {
         /// Stop running agents without asking.
         #[arg(long)]
@@ -240,7 +242,7 @@ enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
-    /// Start or stop amux on this computer.
+    /// Start or stop amux on this device.
     Server {
         #[command(subcommand)]
         command: ServerCommand,
@@ -257,7 +259,7 @@ enum Command {
     /// host with `supervisor = false`.
     #[command(hide = true)]
     Daemon,
-    /// Run the cloud relay in the foreground, from the relay configuration
+    /// Run amux's relay in the foreground, from the relay configuration
     /// `--config` names.
     #[command(hide = true)]
     Relay,
@@ -305,14 +307,17 @@ enum ConfigCommand {
 enum Internal {
     /// Host one agent: the directory holds its lock, specs and sockets.
     Agent { dir: PathBuf },
-    /// Ask a provider what it offers on this computer and whether it is signed
+    /// Ask a provider what it offers on this device and whether it is signed
     /// in, and write the answer to a file.
     Catalogue {
-        /// The provider: claude or codex.
+        /// The provider: claude, codex, or an ACP agent's id.
         provider: String,
         /// How the provider is started.
         #[arg(long)]
         command: String,
+        /// One of an ACP agent's arguments, in order; repeated.
+        #[arg(long = "arg", value_name = "ARG", allow_hyphen_values = true)]
+        args: Vec<String>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -377,9 +382,12 @@ fn main() -> ExitCode {
                 Internal::Catalogue {
                     provider,
                     command,
+                    args,
                     out,
                 },
-        } => ExitCode::from(agent::catalogue::main(&provider, &command, &out).clamp(0, 255) as u8),
+        } => ExitCode::from(
+            agent::catalogue::main(&provider, &command, &args, &out).clamp(0, 255) as u8,
+        ),
         Command::Internal {
             command: Internal::Hook {
                 provider: Hook::Claude,
@@ -716,6 +724,45 @@ mod tests {
         }
     }
 
+    /// The catalogue helper takes an ACP agent's arguments in order, a
+    /// flag among them, and none for Claude or Codex.
+    #[test]
+    fn the_catalogue_helper_takes_an_acp_agents_arguments_in_order() {
+        let parsed = |args: &[&str]| match Cli::try_parse_from(args).unwrap().command {
+            Some(Command::Internal {
+                command: Internal::Catalogue { provider, args, .. },
+            }) => (provider, args),
+            other => panic!("not the catalogue helper: {other:?}"),
+        };
+        let (provider, args) = parsed(&[
+            "amux",
+            "internal",
+            "catalogue",
+            "mine",
+            "--command",
+            "/opt/mine",
+            "--arg",
+            "serve",
+            "--arg",
+            "--stdio",
+            "--out",
+            "o",
+        ]);
+        assert_eq!(provider, "mine");
+        assert_eq!(args, ["serve", "--stdio"]);
+        let (_, args) = parsed(&[
+            "amux",
+            "internal",
+            "catalogue",
+            "claude",
+            "--command",
+            "claude",
+            "--out",
+            "o",
+        ]);
+        assert!(args.is_empty());
+    }
+
     /// These names are a contract between builds: a peer over SSH runs
     /// whichever `amux` it finds, an agent's hooks and its tool server name
     /// the build that launched them, and an agent outlives a daemon update.
@@ -730,6 +777,20 @@ mod tests {
                 "claude",
                 "--command",
                 "c",
+                "--out",
+                "o",
+            ],
+            &[
+                "amux",
+                "internal",
+                "catalogue",
+                "grok",
+                "--command",
+                "grok",
+                "--arg",
+                "agent",
+                "--arg",
+                "stdio",
                 "--out",
                 "o",
             ],

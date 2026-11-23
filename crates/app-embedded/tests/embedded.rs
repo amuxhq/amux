@@ -14,7 +14,7 @@ use app_runtime::values::{
     AccountBinding, BillingInterval, Draft, PaywallFrom, ProfileView, RelayLink, UsageEvent,
 };
 use app_runtime::{AppRuntime, Wake};
-use client::SystemClock;
+use client::{Surface, SystemClock};
 use futures_util::StreamExt as _;
 use node::SourcePolicy;
 use patience::{PATIENCE, until};
@@ -208,6 +208,7 @@ async fn a_phone_locked_out_of_pairing_says_so_in_words() {
         loopback(),
         Arc::new(SystemClock),
         queue(),
+        Surface::Ios,
     )
     .await
     .unwrap();
@@ -255,6 +256,7 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
         loopback(),
         Arc::new(SystemClock),
         queue(),
+        Surface::Ios,
     )
     .await
     .unwrap();
@@ -326,14 +328,14 @@ async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
         "{hosts:?}"
     );
     assert!(hosts.iter().any(|host| host.local && host.name == "phone"));
-    // The desk says which Claude a new agent there runs, so the phone starts
-    // the same kind its person would; the phone runs none.
+    // The desk lists the agents it runs, each named as it names them, so
+    // the phone offers what the desk would start.
     let listed = hosts.iter().find(|host| host.name == "desk").unwrap();
     assert!(
-        matches!(
-            listed.claude_kind,
-            Some(wire::Kind::ClaudeSdk | wire::Kind::ClaudePty)
-        ),
+        listed
+            .providers
+            .iter()
+            .any(|offer| offer.provider == "claude" && offer.name == "Claude"),
         "{listed:?}"
     );
 
@@ -427,6 +429,7 @@ async fn a_phone_links_to_its_desk_again_once_its_browser_finds_the_desk_back() 
         loopback(),
         Arc::new(SystemClock),
         queue(),
+        Surface::Ios,
     )
     .await
     .unwrap();
@@ -520,6 +523,7 @@ async fn a_phone_keeps_the_workspace_a_desks_row_says() {
         loopback(),
         Arc::new(SystemClock),
         queue(),
+        Surface::Ios,
     )
     .await
     .unwrap();
@@ -688,6 +692,7 @@ async fn each_account_is_a_profile_and_only_the_resumed_one_holds_a_relay_link()
         },
         Arc::new(SystemClock),
         queue(),
+        Surface::Ios,
     )
     .await
     .unwrap();
@@ -794,6 +799,7 @@ async fn a_phone_signed_in_to_the_account_reaches_its_hosts_over_the_relay() {
         },
         Arc::new(SystemClock),
         queue(),
+        Surface::Ios,
     )
     .await
     .unwrap();
@@ -872,6 +878,7 @@ async fn the_apps_own_events_are_recorded_on_its_profiles() {
         },
         Arc::new(SystemClock),
         queue(),
+        Surface::Ios,
     )
     .await
     .unwrap();
@@ -973,6 +980,7 @@ async fn a_phone_relaunched_after_a_suspend_shows_the_fleet_and_chat_it_left() {
         loopback(),
         Arc::new(SystemClock),
         queue(),
+        Surface::Ios,
     )
     .await
     .unwrap();
@@ -1035,6 +1043,7 @@ async fn a_phone_relaunched_after_a_suspend_shows_the_fleet_and_chat_it_left() {
         loopback(),
         Arc::new(SystemClock),
         queue(),
+        Surface::Ios,
     )
     .await
     .unwrap();
@@ -1083,6 +1092,7 @@ async fn a_phone_paired_with_a_signed_in_desk_takes_its_offered_account() {
         },
         Arc::new(SystemClock),
         queue(),
+        Surface::Ios,
     )
     .await
     .unwrap();

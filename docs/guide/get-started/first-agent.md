@@ -6,13 +6,13 @@ sidebar:
 ---
 
 An agent is a Claude Code or Codex session that amux runs for you on one of
-your computers. It keeps working when you close the terminal or put your
-phone away, and you can pick it up again from any device you've paired.
+your devices. It keeps working when you close the terminal or put your
+phone away, and you can pick it up again from anything you've paired.
 
 ## Start one
 
 **From your phone.** Tap **+**, pick a repository, and say what the agent
-should work on. The agent runs on your computer, not on the phone; the phone
+should work on. The agent runs on your Mac or Linux machine, not on the phone; the phone
 is just where you're steering it from.
 
 **From the terminal.** Run `amux` and press **n** (or choose
@@ -27,14 +27,14 @@ The bottom edge of the box shows what the agent will start with:
 ```
 
 That's its name, which agent with its model, effort and permission, the
-folder, and the computer it runs on. Press **Ctrl+S** and then a letter to
+folder, and the device it runs on. Press **Ctrl+S** and then a letter to
 change one:
 
 | Key | Changes |
 | --- | --- |
 | **a** | the agent: Claude or Codex |
 | **d** | the folder |
-| **h** | the computer it runs on |
+| **h** | the device it runs on |
 | **w** | a new worktree, so it works without touching your checkout |
 | **m**, **e**, **p** | the model, the effort, the permission |
 | **n** | the name, which is optional: leave it and the agent goes by the title Claude or Codex gives the conversation |
@@ -57,7 +57,7 @@ The home screen lists your agents in sections:
 - **Settled:** agents you're done with. It's folded until you open it.
 
 Each row shows what the agent is called (the title of its conversation, or the name if you gave one) and its branch, which agent it is, its folder,
-the computer it's on when that isn't this one, and how long it's been that
+the device it's on when that isn't this one, and how long it's been that
 way. A filled **●** means it's working, and in blue it means it needs you.
 The line underneath says what it's doing now or what it's asking.
 
@@ -82,16 +82,17 @@ To send an agent more work, type in its chat and press **Enter**.
 
 On the home screen, **x** settles the highlighted agent: you're done with it,
 so it stops if it's running and moves to **Settled**. It asks first if that
-would cut work short. **x** on a settled agent deletes it, after asking. A
+would cut work short, or if the agent can't be resumed, since settling then
+ends its conversation for good. **x** on a settled agent deletes it, after asking. A
 settled agent can be resumed later with `amux resume <name>`. `amux ls` lists your agents from the command line.
 
 ## Prefer Claude Code's own interface?
 
 amux shows every agent in its own chat by default. If you'd rather work in
 Claude Code's or Codex's own terminal interface, change **where you chat with
-agents** in Settings (**,** on the home screen). New agents on this computer
+agents** in Settings (**,** on the home screen). New agents on this device
 then open in their own interface, and **a** on the home screen attaches to
-one. The phone, and other computers, still show those agents in amux's chat.
+one. The phone, and other devices, still show those agents in amux's chat.
 
 ## Next
 
@@ -99,4 +100,4 @@ one. The phone, and other computers, still show those agents in amux's chat.
   setting up.
 - [The terminal app](../use/terminal.md) for every screen and key.
 - [Agents working together](../use/agents-working-together.md): agents that
-  start subagents of their own, on this computer or another.
+  start subagents of their own, on this device or another.

@@ -175,19 +175,24 @@ pub(crate) fn local_platform() -> wire::Platform {
         "linux" => wire::Platform::Linux,
         "windows" => wire::Platform::Windows,
         "ios" => wire::Platform::Ios,
+        "android" => wire::Platform::Android,
         _ => wire::Platform::Unspecified,
     }
 }
 
 /// The agent kinds this build hosts on this platform: terminal Claude is
-/// hosted on Unix only.
+/// hosted on Unix only, which gives it a terminal of its own; the others
+/// run on every platform.
 pub fn local_kinds() -> Vec<wire::Kind> {
-    let mut kinds = Vec::new();
-    if cfg!(unix) {
-        kinds.push(wire::Kind::ClaudePty);
-    }
-    kinds.extend([wire::Kind::ClaudeSdk, wire::Kind::Codex]);
-    kinds
+    use wire::Kind;
+    [Kind::ClaudePty, Kind::ClaudeSdk, Kind::Codex, Kind::Acp]
+        .into_iter()
+        .filter(|kind| match kind {
+            Kind::ClaudePty => cfg!(unix),
+            Kind::ClaudeSdk | Kind::Codex | Kind::Acp => true,
+            Kind::Unspecified => false,
+        })
+        .collect()
 }
 
 #[cfg(test)]

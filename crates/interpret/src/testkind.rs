@@ -694,6 +694,10 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
         state.shared.holds()
     }
 
+    fn fact_shape(fact: &crate::Fact) -> crate::shape::FactShape {
+        crate::shape::fact(fact)
+    }
+
     fn input_shape(input: &wire::Input) -> crate::shape::InputShape {
         crate::shape::claude_sdk_input(&input.body)
     }
@@ -763,7 +767,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     use wire::Phase;
 
@@ -771,7 +775,7 @@ mod tests {
     use crate::{EndRules, check_invariants, run_golden};
 
     fn fixtures() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/core")
+        source_tree::crate_dir!().join("fixtures/core")
     }
 
     fn run(name: &str) {

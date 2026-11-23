@@ -1,0 +1,25 @@
+{
+  "spec": "agy-image",
+  "recorded": {
+    "provider": "antigravity",
+    "version": "1.5.13",
+    "model": "gemini-3.8-flash",
+    "at": "2026-11-20T19:27:43.597920Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:95d6c290c05e1a3bbecf70eb0669c043753ebb3933a8116382e954e54d8e8a4d",
+    "spawn.jsonl": "sha256:ce7f820044a03e8b9618e1bdebb6e743a271fe1e6ad80ae0ee9f31efd54657ba"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 2,
+    "personal_identifiers": 3
+  },
+  "session_ids": [
+    "b8fc3572-edf0-482e-bf7f-694380d0bafb"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a prompt with a PNG image attached"
+  }
+}

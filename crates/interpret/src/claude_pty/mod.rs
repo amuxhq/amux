@@ -1819,6 +1819,10 @@ impl Interpreter for ClaudePty {
         state.shared.holds()
     }
 
+    fn fact_shape(fact: &crate::Fact) -> crate::shape::FactShape {
+        crate::shape::fact(fact)
+    }
+
     fn input_shape(input: &Input) -> crate::shape::InputShape {
         crate::shape::claude_pty_input(&input.body)
     }

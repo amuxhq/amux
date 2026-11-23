@@ -1,0 +1,27 @@
+load("//build:rust.bzl", "TESTING", "amux_rust_library")
+load("//build/platforms:defs.bzl", "RUST_TARGET_TRIPLE")
+
+DEPS = [
+    "//third-party/rust:base64",
+    "//third-party/rust:ring",
+    "//third-party/rust:semver",
+    "//third-party/rust:serde",
+    "//third-party/rust:sha2",
+    "//third-party/rust:thiserror",
+    "//third-party/rust:uuid",
+]
+
+FEATURES = select({"DEFAULT": [], TESTING: ["test-key"]})
+
+# What build.rs tells Cargo builds: the target triple, which manifests are
+# keyed by. A release build names the keys it trusts with
+# `-c amux.release_public_keys=<hex>,<hex>` (CI's AMUX_RELEASE_PUBLIC_KEYS);
+# a build that names none trusts only the test key.
+_KEYS = read_root_config("amux", "release_public_keys", "")
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    features = FEATURES,
+    env = {"AMUX_TARGET": RUST_TARGET_TRIPLE} | ({"AMUX_RELEASE_PUBLIC_KEYS": _KEYS} if _KEYS else {}),
+)

@@ -1,0 +1,29 @@
+# Maps a target's configuration to the reindeer platform whose features and
+# dependencies apply (reindeer.toml lists them).
+load("@prelude//rust:cargo_package.bzl", "set_reindeer_platforms")
+
+set_reindeer_platforms(select({
+    "DEFAULT": None,
+    "prelude//os:linux": select({
+        "DEFAULT": None,
+        "prelude//cpu:x86_64": "linux-x86_64",
+    }),
+    "prelude//os:macos": select({
+        "DEFAULT": None,
+        "prelude//cpu:arm64": "macos-arm64",
+    }),
+    "prelude//os:windows": "windows-msvc",
+    "prelude//os:iphoneos": select({
+        "DEFAULT": "ios-arm64",
+        "root//build/constraints:simulator": "ios-sim-arm64",
+    }),
+    "prelude//os:android": select({
+        "DEFAULT": None,
+        "prelude//cpu:arm64": "android-arm64",
+        "prelude//cpu:x86_64": "android-x86_64",
+    }),
+    "prelude//os:none": select({
+        "DEFAULT": None,
+        "prelude//cpu:wasm32": "wasm32",
+    }),
+}))

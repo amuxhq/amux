@@ -1726,6 +1726,7 @@ impl Transition<'_> {
                         link,
                         peer,
                         kind,
+                        lan: false,
                         resumed: None,
                     },
                 ),

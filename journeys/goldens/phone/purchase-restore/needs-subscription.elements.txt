@@ -1,27 +1,27 @@
 shell |  | agents | 0,62,402,778
 pair-confirm |  | needs subscription | 0,132,402,708
-pair-confirm.subscribe | Reach your agents from anywhere | The relay can see this host and cannot carry agents to it on this account. A subscription opens the tunnel. Hosts on this network never need one. | 16,148,370,126
+pair-confirm.subscribe | Relayed connections need Pro | Pro relays connections when this phone and this device aren’t on the same network. Devices on this network connect without it. | 16,148,370,126
 pair-confirm.subscribe.buy | Subscribe |  | 16,230,370,44
 pair-confirm.notNow | Not Now |  | 16,288,370,44
 pair.close | Close |  | 20,82,40,36
- | Pair your first computer |  | 16,204,279,32
- | amux runs agents on your computers. Pair one and its agents appear here. |  | 16,244,368,37
- | desk is online, Pro pairs it from anywhere, Subscribe |  | 16,305,370,60
+ | Pair your first device |  | 16,204,239,32
+ | amux runs agents on your devices. Pair one and its agents appear here. |  | 16,244,346,37
+ | desk is online, Relayed connections need Pro, Subscribe |  | 16,305,370,60
  | Switch account | ada | 20,66,36,36
  | Agents |  | 16,127,116,42
- | Agents |  | 110,795,95,54
+ | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 216,830,56,12
- | Agents |  | 110,795,95,54
- | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 217,830,55,12
- | Reach your agents from anywhere |  | 16,148,255,20
- | The relay can see this host and cannot carry agents to it on this account. A subscription opens the tunnel. Hosts on this network never need one. |  | 16,171,354,48
+ | Devices |  | 197,795,94,54
+ | Devices |  | 224,830,40,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Devices |  | 197,795,94,54
+ | Devices |  | 225,830,39,12
+ | Relayed connections need Pro |  | 16,148,227,20
+ | Pro relays connections when this phone and this device aren’t on the same network. Devices on this network connect without it. |  | 16,171,366,48
  | Subscribe |  | 16,230,370,44
  | Not Now |  | 16,288,370,44
  | Close |  | 20,82,40,36
- | Pair a Computer |  | 136,89,130,21
- | Agents | selected | 110,795,95,54
- | Computers |  | 197,795,95,54
+ | Pair a Device |  | 150,89,102,21
+ | Agents | selected | 111,795,94,54
+ | Devices |  | 197,795,94,54

@@ -242,7 +242,7 @@ fn remove_package_metadata(command: &mut Command, keys: impl Iterator<Item = OsS
 /// relative to running the same recipe directly, rebuilding valid dependencies.
 /// Keep target, profile, toolchain and user configuration; only the outer
 /// package's metadata is unrelated to the child build.
-fn recipe_command(program: &str) -> Command {
+fn recipe_command(program: &std::path::Path) -> Command {
     let mut command = Command::new(program);
     remove_package_metadata(&mut command, std::env::vars_os().map(|(key, _)| key));
     command
@@ -299,7 +299,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 /// deadlines; the outer deadline also bounds dependencies without cutting off
 /// a longer recipe early.
 fn stage_command(recipe: &str) -> Command {
-    let mut command = recipe_command(crate::BOUNDED);
+    let mut command = recipe_command(&crate::bounded());
     command.arg("12600").arg("just").args(recipe.split(' '));
     command
 }
@@ -419,7 +419,7 @@ mod tests {
         }
         // The normal constructor sanitizes the inherited environment too,
         // not just explicit Command::env overrides used above.
-        let inherited = recipe_command("unused");
+        let inherited = recipe_command(std::path::Path::new("unused"));
         for (key, _) in std::env::vars_os().filter(|(key, _)| is_package_metadata(key)) {
             assert!(
                 inherited

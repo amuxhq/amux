@@ -4,60 +4,14 @@ import Observation
 
 /// Starting an agent: which host, where on it, what it is called, which
 /// agent it is and what that agent runs with. One screen; every choice is
-/// held here and reset each time the screen opens. The models, efforts,
-/// permissions and modes offered are what the chosen host says its
-/// provider offers; nothing chosen means the host's own default.
+/// held here and reset each time the screen opens. The agents offered are
+/// the ones the chosen host lists, named as it names them, a person's own
+/// among them; the models, efforts, permissions and modes offered are what
+/// the host says the chosen one offers. Nothing chosen means the host's own
+/// default, else the agent's.
 @MainActor
 @Observable
 public final class NewAgentStore {
-    public enum Provider: String, Sendable, Equatable, CaseIterable, Identifiable {
-        case claude
-        case codex
-
-        public var id: String { rawValue }
-
-        /// The provider as the runtime names it.
-        public var wire: AmuxValues.Provider {
-            switch self {
-            case .claude: .claude
-            case .codex: .codex
-            }
-        }
-
-        public var title: String {
-            switch self {
-            case .claude: "Claude"
-            case .codex: "Codex"
-            }
-        }
-
-        /// The provider an agent of this kind runs, if this phone can start
-        /// one.
-        public init?(_ kind: Kind) {
-            switch kind {
-            case .claudePty, .claudeSdk: self = .claude
-            case .codex: self = .codex
-            case .unspecified: return nil
-            }
-        }
-
-        /// The kind an agent of this provider starts as on a host whose
-        /// settings resolve Claude to `claude`: the terminal or the SDK, as
-        /// that host's person chose, so an agent started from the phone is
-        /// the same kind as one started at the host. A host that has not
-        /// said gets the SDK, which carries every row the phone draws.
-        public func kind(claude: Kind?) -> Kind {
-            switch self {
-            case .claude:
-                switch claude {
-                case .claudePty: .claudePty
-                case .claudeSdk, .codex, .unspecified, nil: .claudeSdk
-                }
-            case .codex: .codex
-            }
-        }
-    }
-
     /// What the chosen host said a provider offers.
     public enum Offer: Equatable, Sendable {
         case asking
@@ -88,16 +42,17 @@ public final class NewAgentStore {
     /// Where Claude Code and Codex ran on the host lately, outside amux.
     public private(set) var history: [Directory] = []
     public private(set) var capped = false
-    /// Which Claude the chosen host starts, as its settings resolve it; nil
-    /// until it has said.
-    public private(set) var claudeKind: Kind?
+    /// The agents the chosen host offers, in its order; empty until it has
+    /// said.
+    public private(set) var agents: [HostProvider] = []
     public private(set) var directory = ""
     public var query = ""
     public var typed = ""
     public var browsing = false
-    public private(set) var provider = Provider.claude
-    /// What the chosen host offers, per provider, once asked.
-    public private(set) var offers: [Provider: Offer] = [:]
+    /// The chosen agent's id; nil while the host lists none.
+    public private(set) var provider: String?
+    /// What the chosen host offers, per agent id, once asked.
+    public private(set) var offers: [String: Offer] = [:]
     /// The chosen model, effort, permission and mode, by their values in
     /// the host's catalogue; nil leaves each to the host.
     public private(set) var chosen = NewAgentChoices(effort: nil, mode: nil, model: nil, permission: nil)
@@ -120,12 +75,15 @@ public final class NewAgentStore {
     /// Catalogue asks are numbered apart from directory listings, so asking
     /// both providers after a listing leaves the listing's answer current.
     @ObservationIgnored private var offerAsks = 0
-    @ObservationIgnored private var offerAsked: [Provider: Int] = [:]
+    @ObservationIgnored private var offerAsked: [String: Int] = [:]
     /// Whether the chosen machine could be reached when last told.
     @ObservationIgnored private var machineOnline: Bool?
     /// Whether the person has picked the agent since the screen opened, so
     /// the fleet arriving does not change it under them.
     @ObservationIgnored private var providerPicked = false
+    /// The agent most recently at work in the fleet: the one to start with
+    /// wherever the host offers it.
+    @ObservationIgnored private var usual: String?
 
     public init() {}
 
@@ -145,14 +103,15 @@ public final class NewAgentStore {
         repositories = []
         history = []
         capped = false
-        claudeKind = nil
+        agents = []
         directory = ""
         query = ""
         typed = ""
         typedName = nil
         browsing = false
-        provider = .claude
+        provider = nil
         providerPicked = false
+        usual = nil
         offers = [:]
         offerAsked = [:]
         startAfresh()
@@ -173,7 +132,8 @@ public final class NewAgentStore {
         repositories = []
         history = []
         capped = false
-        claudeKind = nil
+        agents = []
+        if !providerPicked { provider = nil }
         directory = ""
         query = ""
         failure = nil
@@ -183,19 +143,35 @@ public final class NewAgentStore {
         startAfresh()
     }
 
-    /// Which Claude the chosen host says a new agent runs. Told whenever the
-    /// host list moves, since a host says it once its link is up.
-    public func machineStarts(claude kind: Kind?) {
-        claudeKind = kind
+    /// The agents the chosen host offers. Told whenever the host list moves,
+    /// since a host lists each agent once it has asked it. Until the person
+    /// picks one, the agent is the one most recently at work, where the
+    /// host offers it, else the host's first; a pick the host stops
+    /// offering gives way the same way.
+    public func machineOffers(_ offered: [HostProvider]) {
+        agents = offered
+        let ids = offered.map(\.provider)
+        let offering = { (id: String?) in id.flatMap { ids.contains($0) ? $0 : nil } }
+        let wanted = providerPicked
+            ? offering(provider) ?? offering(usual) ?? ids.first
+            : offering(usual) ?? offering(provider) ?? ids.first
+        guard wanted != provider else { return }
+        provider = wanted
+        startAfresh()
     }
 
     /// What the fleet lists, for names and directories per host, and the
-    /// agent to start with: the kind most recently at work, since with
+    /// agent to start with: the one most recently at work, since with
     /// several to choose from that is the one most often wanted again.
     public func remember(_ rows: [FleetRow]) {
-        if !providerPicked, let latest = rows.filter({ Provider($0.card.kind) != nil })
-            .max(by: { $0.lastActivity < $1.lastActivity }), let usual = Provider(latest.card.kind) {
-            provider = usual
+        if let latest = rows.filter(\.readable).max(by: { $0.lastActivity < $1.lastActivity }) {
+            usual = latest.card.provider
+            if !providerPicked, agents.contains(where: { $0.provider == latest.card.provider }),
+                provider != latest.card.provider
+            {
+                provider = latest.card.provider
+                startAfresh()
+            }
         }
         var places: [HostId: [Directory]] = [:]
         for row in rows.sorted(by: { $0.lastActivity > $1.lastActivity }) {
@@ -283,13 +259,18 @@ public final class NewAgentStore {
     }
 
     /// Another agent starts its model, effort, permission and mode afresh:
-    /// they do not carry across providers.
-    public func choose(provider chosen: Provider) {
+    /// they do not carry across agents.
+    public func choose(provider chosen: String) {
         providerPicked = true
         guard provider != chosen else { return }
         provider = chosen
         startAfresh()
         failure = nil
+    }
+
+    /// The chosen agent as the host lists it.
+    public var chosenAgent: HostProvider? {
+        agents.first { $0.provider == provider }
     }
 
     private func startAfresh() {
@@ -300,7 +281,7 @@ public final class NewAgentStore {
 
     /// Marks a provider's catalogue as asked for on the chosen host and
     /// answers the ask's number.
-    public func askingOffer(for provider: Provider) -> Int {
+    public func askingOffer(for provider: String) -> Int {
         offerAsks += 1
         offerAsked[provider] = offerAsks
         offers[provider] = .asking
@@ -308,7 +289,7 @@ public final class NewAgentStore {
     }
 
     public func offered(
-        _ result: Result<Catalogue, RuntimeFailure>, for provider: Provider, asked number: Int
+        _ result: Result<Catalogue, RuntimeFailure>, for provider: String, asked number: Int
     ) {
         guard offerAsked[provider] == number else { return }
         switch result {
@@ -319,8 +300,19 @@ public final class NewAgentStore {
 
     /// The chosen provider's catalogue on the chosen host, once it said.
     public var catalogue: Catalogue? {
-        if case .offered(let catalogue)? = offers[provider] { return catalogue }
+        if let provider, case .offered(let catalogue)? = offers[provider] { return catalogue }
         return nil
+    }
+
+    /// What the host said the chosen agent offers; nil before it was asked.
+    public var offer: Offer? {
+        provider.flatMap { offers[$0] }
+    }
+
+    /// The agents the host lists that have not been asked what they offer
+    /// since the host was chosen.
+    public var unasked: [String] {
+        agents.map(\.provider).filter { offerAsked[$0] == nil }
     }
 
     /// What the chosen provider offers on the chosen host, with each choice
@@ -382,16 +374,18 @@ public final class NewAgentStore {
     public var chosenName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     public var ready: Bool {
-        machine != nil && !directory.isEmpty && !starting
+        machine != nil && provider != nil && !directory.isEmpty && !starting
     }
 
     /// What starting asks the host for.
     public var request: NewAgent? {
-        guard ready, let machine else { return nil }
+        guard ready, let machine, let provider else { return nil }
+        // Only what the person picked from what the agent offers: anything
+        // else is the host's remembered pick or the agent's own default.
         return NewAgent(
-            hostId: machine.bytes, kind: provider.kind(claude: claudeKind), cwd: directory,
+            hostId: machine.bytes, provider: provider, cwd: directory,
             name: chosenName,
-            effort: effort, mode: provider == .codex ? mode : nil, model: model,
+            effort: effort, mode: mode, model: model,
             newWorktree: newWorktree ? true : nil, permission: permission)
     }
 

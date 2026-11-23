@@ -16,7 +16,7 @@ chat.row.turn-end | Worked for <t> |  | 16,421,81,16
 chat.row.prompt | Keep a month of logs, compressed. |  | 16,451,370,40
 chat.prose.render |  | rendered | 116,461,256,20
 chat.row.plan | Plan proposed, Rotate the logs |  | 16,502,370,160
-chat.prose.render |  | rendered | 58,541,316,109
+chat.prose.render |  | rendered | 58,541,316,180
 chat.row.turn-end | Worked for <t> |  | 16,672,81,16
 ask | Plan ready | open | 12,702,378,128
 ask.more | More |  | 338,710,44,44

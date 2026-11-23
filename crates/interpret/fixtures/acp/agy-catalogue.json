@@ -1,0 +1,10 @@
+{
+  "about": "antigravity 1.5.13, recorded live: initialize alone, with no session opened",
+  "spec": {
+    "provider": "antigravity"
+  },
+  "recording": {
+    "path": "live/agy-catalogue/io.jsonl",
+    "format": "acp_io"
+  }
+}

@@ -165,7 +165,8 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
             };
             wire::CodexItem { kind: Some(kind) }.encode_to_vec()
         }
-        Kind::Unspecified => Vec::new(),
+        // The client layer draws no ACP body yet, so no spec drives one.
+        Kind::Acp | Kind::Unspecified => Vec::new(),
     }
 }
 
@@ -301,7 +302,8 @@ pub fn snapshot_body(kind: Kind, asks: &[&str]) -> Vec<u8> {
             ..Default::default()
         }
         .encode_to_vec(),
-        Kind::Unspecified => Vec::new(),
+        // The client layer draws no ACP body yet, so no spec drives one.
+        Kind::Acp | Kind::Unspecified => Vec::new(),
     }
 }
 

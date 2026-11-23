@@ -16,10 +16,10 @@
 //! interpreter fixture up to the moment it shows. The first segment of a
 //! name is its group.
 
-use std::path::Path;
 use std::sync::LazyLock;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use interpret::acp::Acp;
 use interpret::claude_pty::ClaudePty;
 use interpret::claude_sdk::ClaudeSdk;
 use interpret::codex::Codex;
@@ -32,7 +32,7 @@ use tui::Theme;
 use tui::chat::ChatView;
 use tui::chat::review::Page as ReviewPage;
 use tui::report::Report;
-use tui::sessions::{agent, caught_up};
+use tui::sessions::{agent, caught_up, host_entry, offered, offered_providers};
 use tui::setup_scenes::{SettingsScene, SetupScene};
 use tui::vocabulary::{ChatScene, HomeScene};
 use ui_state::{Connection, FleetMsg, FleetState, InputOutcome, Msg, PhaseView, SessionState};
@@ -204,15 +204,23 @@ pub fn all() -> Vec<Story> {
         story("new-agent.claude", || {
             let mut home = tui::vocabulary::authored_home();
             home.key(KeyCode::Char('n'));
-            home.offer(wire::Provider::Claude, &claude_offer());
+            home.offer("claude", &claude_offer());
             Scene::Home(Box::new(home))
         }),
         story("new-agent.browsing", || {
             let mut home = tui::vocabulary::authored_home();
             home.key(KeyCode::Char('n'));
-            home.offer(wire::Provider::Claude, &claude_offer());
+            home.offer("claude", &claude_offer());
             home.key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
             home.key(KeyCode::Char('d'));
+            Scene::Home(Box::new(home))
+        }),
+        story("new-agent.agents", || {
+            let mut home = tui::vocabulary::authored_home();
+            home.key(KeyCode::Char('n'));
+            home.offer("claude", &claude_offer());
+            home.key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+            home.key(KeyCode::Char('a'));
             Scene::Home(Box::new(home))
         }),
         story("new-agent.terminal", || {
@@ -243,6 +251,15 @@ pub fn all() -> Vec<Story> {
         story("chat.queued", || {
             chat(Kind::ClaudeSdk, "recorded_steer_folded", Pick::Queued)
         }),
+        story("chat.acp", || chat(Kind::Acp, "opencode-edit", Pick::Last)),
+        story("chat.acp-permission", || {
+            chat(Kind::Acp, "opencode-allow_always", Pick::Asking)
+        }),
+        story("chat.acp-form", || {
+            chat(Kind::Acp, "agy-question", Pick::Asking)
+        }),
+        story("chat.acp-queued", acp_queued),
+        story("chat.acp-ended", acp_ended),
         story("chat.away", draft_while_away),
         story("chat.exited", exited_with_a_draft),
         story("chat.signed-out", || {
@@ -417,6 +434,48 @@ fn recorded(kind: Kind, fixture: &str, pick: Pick) -> ChatScene {
     }
 }
 
+/// A prompt queued behind an ACP agent's turn, highlighted so its controls
+/// show: the agent takes no prompt into a running turn, so there is no
+/// send-now among them.
+fn acp_queued() -> Scene {
+    let mut scene = recorded(Kind::Acp, "opencode-mid_turn", Pick::Queued);
+    let theme = Theme::dark(tui::ColorMode::TrueColor);
+    scene
+        .view
+        .key(&scene.state, KeyEvent::from(KeyCode::Up), theme);
+    Scene::Chat(Box::new(scene))
+}
+
+/// An ACP agent that exited and cannot reopen its conversation: no field
+/// to type in, only why.
+fn acp_ended() -> Scene {
+    // OpenCode as an agent that offered no way to reopen a session.
+    let frames = replayed_as(Kind::Acp, "opencode-prompt", |snapshot| {
+        if let Some(can) = &mut snapshot.capabilities {
+            can.resumable = false;
+        }
+    });
+    let (mut state, now) = frames.last().cloned().expect("the recording has frames");
+    let mut exited = state.agent().clone();
+    exited.lifecycle = wire::Lifecycle::Exited as i32;
+    exited.exit_cause = wire::ExitCause::ProviderExited as i32;
+    state.update(Msg::Entry(exited));
+    assert_eq!(state.composer(), ui_state::Composer::Ended);
+    let mut scene = ChatScene {
+        view: ChatView::new(b"agent".to_vec(), now, false),
+        state,
+        now,
+    };
+    // What is typed has nowhere to go.
+    let theme = Theme::dark(tui::ColorMode::TrueColor);
+    for c in "one more thing".chars() {
+        scene
+            .view
+            .key(&scene.state, KeyEvent::from(KeyCode::Char(c)), theme);
+    }
+    Scene::Chat(Box::new(scene))
+}
+
 fn draft_while_away() -> Scene {
     let mut scene = recorded(Kind::ClaudeSdk, "recorded_multi_turn", Pick::Last);
     scene.state.update(Msg::Host(wire::HostEntry {
@@ -458,22 +517,47 @@ fn exited_with_a_draft() -> Scene {
 /// The session after each frame of a recorded fixture, with the newest
 /// item's time: caught up after the first frame, as a live chat is.
 fn replayed(kind: Kind, fixture: &str) -> Vec<(SessionState, i64)> {
+    replayed_as(kind, fixture, |_| {})
+}
+
+/// The same, each snapshot changed by `edit` on its way in: a recording
+/// drawn as an agent that answered otherwise would be.
+fn replayed_as(
+    kind: Kind,
+    fixture: &str,
+    edit: impl Fn(&mut wire::Snapshot),
+) -> Vec<(SessionState, i64)> {
     let dir = match kind {
         Kind::ClaudePty => "claude_pty",
         Kind::ClaudeSdk => "claude_sdk",
+        Kind::Acp => "acp",
         _ => "codex",
     };
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = source_tree::crate_dir!()
         .join("../interpret/fixtures")
         .join(dir)
         .join(format!("{fixture}.json"));
     let frames: Vec<Replayed> = match kind {
         Kind::ClaudePty => replay::<ClaudePty>(&path),
         Kind::ClaudeSdk => replay::<ClaudeSdk>(&path),
+        Kind::Acp => replay::<Acp>(&path),
         _ => replay::<Codex>(&path),
     }
     .unwrap_or_else(|error| panic!("{dir}/{fixture}: {error}"));
-    let mut state = SessionState::new(agent(kind), tui::chat::layout::CAP as usize);
+    // An ACP agent is the program its fixture's spec names, offered by the
+    // host under the name amux knows it by.
+    let mut row = agent(kind);
+    let mut providers = offered_providers();
+    if kind == Kind::Acp {
+        let text = std::fs::read_to_string(&path).expect("read above");
+        let spec: serde_json::Value = serde_json::from_str(&text).expect("parsed above");
+        let provider = spec["spec"]["provider"].as_str().unwrap_or_default();
+        let name = wire::agents::name_or_id(provider);
+        providers.push(offered(provider, name, Kind::Acp));
+        row.provider = provider.to_owned();
+    }
+    let mut state = SessionState::new(row, tui::chat::layout::CAP as usize);
+    state.update(Msg::Host(host_entry(providers)));
     state.update(Msg::Connection(Connection::Live));
     let mut committer = Committer::default();
     let mut out = Vec::new();
@@ -485,7 +569,10 @@ fn replayed(kind: Kind, fixture: &str) -> Vec<(SessionState, i64)> {
         for (id, verdict) in &frame.replies {
             state.update(Msg::Sent(id.clone(), InputOutcome::Reply(verdict.clone())));
         }
-        for event in committer.commit(&frame.step) {
+        for mut event in committer.commit(&frame.step) {
+            if let Some(wire::session_event::Of::Snapshot(snapshot)) = &mut event.of {
+                edit(snapshot);
+            }
             state.update(Msg::Event(event));
         }
         if index == 0 {
@@ -545,7 +632,7 @@ fn family(kind: Kind, fixture: &str) -> Vec<(SessionState, Vec<SessionState>, Fl
         Kind::ClaudeSdk => "claude_sdk",
         _ => "codex",
     };
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = source_tree::crate_dir!()
         .join("../interpret/fixtures")
         .join(dir)
         .join(format!("{fixture}.json"));

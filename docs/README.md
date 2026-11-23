@@ -11,14 +11,16 @@ people will notice updates the page that describes it.
 - **Get started:** [Install](guide/get-started/install.md),
   [Your first agent](guide/get-started/first-agent.md),
   [Connect your phone](guide/get-started/connect-your-phone.md),
-  [Add another computer](guide/get-started/add-another-computer.md).
+  [Add another device](guide/get-started/add-another-computer.md).
 - **Understand:** [How amux works](guide/understand/how-amux-works.md),
   [Security and privacy](guide/understand/security-and-privacy.md),
   [What amux sends](guide/understand/what-amux-sends.md).
 - **Use:** [Terminal app](guide/use/terminal.md),
   [iPhone app](guide/use/iphone.md),
+  [Android app](guide/use/android.md),
   [Reviewing changes](guide/use/reviews.md),
   [Agents working together](guide/use/agents-working-together.md),
+  [Other agents](guide/use/other-agents.md),
   [Running amux on a server](guide/use/server.md),
   [Updates and channels](guide/use/updates.md),
   [Troubleshooting](guide/use/troubleshooting.md).
@@ -39,8 +41,10 @@ paths to the `.md` files, so they work both here and on the site.
   socket and raw attach, the tool server, exit and self-destruct.
 - [Provider crates](PROVIDER_CRATES.md) — each provider's protocol, host and client layers, who uses each, and
   the checks that hold them to the recordings.
-- [Interpreters](INTERPRETERS.md) — how terminal Claude, headless Claude and Codex output becomes chat items:
-  the step rule, checkpoints, redaction, provider crates, recordings and the coverage test.
+- [Interpreters](INTERPRETERS.md) — how terminal Claude, headless Claude, Codex and ACP agents' output becomes
+  chat items: the step rule, checkpoints, redaction, provider crates, recordings and the coverage test.
+- [ACP agents](ACP.md) — agents that speak the Agent Client Protocol: the layers, quirks by agent, resumability,
+  sign-in, the host's catalogue, capabilities and descriptors, and how to add a built-in.
 - [Journal and store](JOURNAL_AND_STORE.md) — journal segments, commit and revisions, durability, ingest, the
   store schema, own and replica rows, retention and disk-full.
 - [The wire](WIRE.md) — the amux.v1 services and who answers each, how a call is addressed to a host and who it
@@ -70,10 +74,11 @@ paths to the `.md` files, so they work both here and on the site.
   how one is picked, grammars built in the background, streaming blocks, definitions, sizes and what was left out.
 - [Terminal client](TERMINAL.md) — screens, keys, the leader, raw attach and the CLI verbs.
 - [iPhone app](IOS.md) — packages, the chat and fleet, driving the app, snapshots and journeys.
+- [Android app](ANDROID.md) — modules, the JNI bridge, platform integrations, storybook, audits and journeys.
 - [Mac app](MAC.md) — a client of the daemon: installing and attaching, sign-in, building and running.
 - [Browser extension](BROWSER.md) — commenting on web pages for an agent: the overlay and its hosts, the native
   messaging bridge and its registration, the page review attachment, and WebAssembly as a convenience.
-- [Embedding](EMBEDDED.md) — app-runtime, app-embedded, app-ffi, the generated Swift types and the seams.
+- [Embedding](EMBEDDED.md) — app-runtime, app-embedded, app-bridge, app-ffi, app-jni, the generated Swift and Kotlin types and the seams.
 - [iPhone copy](IOS_COPY.md) — the rules the app's words follow and the lint that holds them.
 - [Cloud](CLOUD.md) — what the app and daemon ask of amux.sh.
 
@@ -92,7 +97,7 @@ paths to the `.md` files, so they work both here and on the site.
 ## Operations
 
 - [Build](BUILD.md) — toolchain, recipes, committed generated code and warm worktrees.
-- [CI](CI.md) — workflows, lanes, `just premerge`, `just ci` and the Windows cross-check.
+- [CI](CI.md) — workflows, lanes, `just premerge` and the Windows cross-check.
 - [Release](RELEASE.md) — shipping the iPhone app and the daemon's release feed and channels.
 - [Licensing](LICENSING.md) — how the repository is licensed.
 - [Logo](BRAND.md) — the editable vector master, `just logo` exports and the visual review.

@@ -1,0 +1,23 @@
+{
+  "spec": "agy-catalogue",
+  "recorded": {
+    "provider": "antigravity",
+    "version": "1.5.13",
+    "model": "none",
+    "at": "2026-11-20T19:27:43.224994Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:8d8deb174f4a68f2d74e0d45d9fac745a3b3d2476c8c8b33502938e37c3e0b0e",
+    "spawn.jsonl": "sha256:ce7f820044a03e8b9618e1bdebb6e743a271fe1e6ad80ae0ee9f31efd54657ba"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 1,
+    "personal_identifiers": 0
+  },
+  "session_ids": [],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "initialize alone, with no session opened"
+  }
+}

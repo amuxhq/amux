@@ -232,7 +232,7 @@ final class AppModel {
         guard let agent, let stores else { return }
         do {
             let model = try stores.chat(agent)
-            let host = self.row(agent).map { PlaceNames.host($0.hostName) } ?? "its computer"
+            let host = self.row(agent).map { PlaceNames.host($0.hostName) } ?? "its device"
             chat = MacChat(model: model, host: host)
         } catch {
             problem = error.description
@@ -320,11 +320,24 @@ final class AppModel {
 
     // MARK: - Opening an agent elsewhere
 
+    /// Whether the agent has a terminal interface of its own to attach to
+    /// here: a provider subagent has no interface of its own, an agent whose
+    /// program runs only behind amux's chat has none, and one on another
+    /// computer has its interface only there, where `amux attach` refuses
+    /// to open it from this Mac.
+    func attachable(_ agent: AgentKey) -> Bool {
+        runsHere(agent) && (row(agent).map { !$0.native && $0.card.attachable } ?? false)
+    }
+
+    /// The agent runs on this Mac.
+    func runsHere(_ agent: AgentKey) -> Bool {
+        stores?.hosts.local.map { $0.hostId == agent.host } ?? false
+    }
+
     /// The agent's own interface in Terminal: a script that runs
     /// `amux attach` there, opened as Terminal opens any `.command` file.
     func openTerminal(_ agent: AgentKey) {
-        // A provider subagent has no interface of its own to attach to.
-        guard let row = self.row(agent), !row.native else { return }
+        guard attachable(agent), let row = self.row(agent) else { return }
         var script = "#!/bin/zsh -l\n"
         if let config = Self.config { script += "export AMUX_CONFIG=\(Self.quoted(config))\n" }
         script += "exec amux attach \(Self.quoted(row.card.handle)) --in native\n"
@@ -386,6 +399,32 @@ final class AppModel {
     func revoke(_ host: [UInt8]) {
         if let id = HostId(bytes: host) { stores?.revoke(id) }
         if place.host == host { place.host = nil }
+    }
+
+    /// An agent the person asked to settle when settling it cuts work short
+    /// or ends a conversation nothing can reopen, so settling it waits for
+    /// them to say yes.
+    var settling: AgentKey?
+
+    /// What settling `agent` costs, as its question says it, by the
+    /// fleet's shared rule; nil when settling it goes at once.
+    func settleQuestion(_ agent: AgentKey) -> String? {
+        guard let warning = stores?.settleWarning(agent), warning.asks else { return nil }
+        let row = row(agent)
+        let cuts = ChatWords.closeCuts(name: row?.name ?? agent.description, warning)
+        let after = ChatWords.settleEndsForGood(provider: row?.card.providerName ?? "", warning)
+            ?? "Its chat and edits stay, and a message resumes it."
+        return [cuts, "Settling stops it now.", after].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// Acts as the person asked, except that settling is asked about first
+    /// when it cuts work short or ends the conversation for good.
+    func request(_ act: AgentAct, on agent: AgentKey) async {
+        if act == .close, settleQuestion(agent) != nil {
+            settling = agent
+            return
+        }
+        await self.act(act, on: agent)
     }
 
     /// Pins, settles, renames or deletes an agent; a refusal is said on the

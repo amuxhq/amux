@@ -1,0 +1,25 @@
+{
+  "spec": "agy-load",
+  "recorded": {
+    "provider": "antigravity",
+    "version": "1.5.13",
+    "model": "gemini-3.8-flash",
+    "at": "2026-11-20T19:27:43.655267Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:481e27f38c05166c56e8682cb47df35217eea55023d86d5cd304380253948046",
+    "spawn.jsonl": "sha256:fab8ade3cf718913606b5a9b83c087d5ca6a5cd494afeee5f812975af81308b2"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 4,
+    "personal_identifiers": 6
+  },
+  "session_ids": [
+    "08639ea8-1af4-437c-941b-48c69e16aee2"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a prompt, the process ended, then session/load in a new process and a prompt"
+  }
+}

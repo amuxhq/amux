@@ -72,9 +72,9 @@ right; Esc on every step is `later`, which skips it, and the last one goes home.
   a phone is confirming; leaving the step, or quitting, closes it. While a phone proves the PIN it reads `Your
   iPhone is pairing…`; five wrong PINs close the window and `n` opens a new one.
 - **Keep it connected.** `Paired with Jordan's iPhone ✓`, then `Start amux when you log in` (only where a supervisor
-  can) and `Keep this Mac awake while it's plugged in` (`computer` off a Mac), both ticked; Space changes one,
+  can) and `Keep this Mac awake while it's plugged in` (`device` off a Mac), both ticked; Space changes one,
   Enter applies them. It follows a pairing made on this screen.
-- **Reach it from anywhere.** Signing in, so the phone reaches this machine off the local network. When the phone
+- **Reach it through the relay.** Signing in, so the phone reaches this machine off the local network. When the phone
   just paired is signed out, `Also sign in Jordan's iPhone` is ticked and, once signed in, the phone is offered
   the account. Enter opens the browser at the approval page (`$BROWSER` when set, else the system's handler) and
   shows the code to check; when no browser opens it shows the link. When a paired host already signed in offers
@@ -110,8 +110,8 @@ stopped, or the person settled) is not listed or counted under its family: it is
 parent can start it again.
 
 Each row is the agent's mark (`○` idle, starting, exited or on a host that is away; `●` working; `●` in the
-attention ink when it needs you), its name, its branch when it works in a repository, then faint which agent it is
-(`Claude`, `Claude (terminal)` or `Codex`), its folder from `~` and its host when that is not this machine, and at
+attention ink when it needs you), its name, its branch when it works in a repository, then faint which agent it is,
+by the name its host gives it (`Claude`, `Codex`, `OpenCode`), its folder from `~` and its host when that is not this machine, and at
 the right how long it has been in its state. Short of room, the folder is cut from the left down to its last name,
 then the host goes, then the agent. The second line says what the agent's state calls for: what it asks (`wants to
 run cargo test -p auth`), the step it is running, what it last said, or why it cannot go on (`signed out of
@@ -144,33 +144,40 @@ chats with their agents, the installation's `ui.chat_in`:
   `+ Name │ Claude · Opus (high) · ask │ ~/source/amux │ laptop`, that is the name (named automatically
   unless given one), the agent with its model, effort and permission (and Codex's mode when it is not the default),
   the folder and the host. `ctrl+s` then a letter opens one in a small panel rising from its place on the edge: `n`
-  name, `m` model, `e` effort, `p` permission, `d` folder, `h` host, `a` agent (Claude or Codex); clicking an item
+  name, `m` model, `e` effort, `p` permission, `d` folder, `h` host, `a` agent (every agent the host offers, by name: Claude, Codex and the ACP agents set up there); clicking an item
   does the same. The models, efforts, permissions and modes are what the chosen host says that agent offers there,
   asked of the host before any agent runs on it; until it answers a model can be typed by name. Another model starts
-  at its own default effort, and a permission it does not take gives way to the normal one. A provider the host
-  says is signed out reads `Codex (not signed in)`. Long lists filter as you type; the folder's panel lists the
-  host's folders as its entry says them (repositories, then where its agents and Claude Code and Codex ran lately), and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's mode,
-  or Claude's permissions that still ask, as in a chat. Claude runs headless here, Codex on its app server.
-- **In each agent's own interface** (`native`): a small window over home with the name, the agent (Claude or
-  Codex, each marked `not signed in` where the chosen host says so), the folder and the host, and no prompt or model,
+  at its own default effort, and a permission it does not take gives way to the normal one. An agent the host
+  says is signed out reads `Codex (not signed in)` on the edge, and in the agent panel with its host's words for
+  signing in (`not signed in · Run codex login.`). Long lists filter as you type; the folder's panel lists the
+  host's folders as its entry says them (repositories, then where its agents and Claude Code and Codex ran lately), and takes a typed path; hosts that are away cannot be picked. Shift+Tab steps Codex's or an ACP agent's mode,
+  or Claude's permissions that still ask, as in a chat; an ACP agent starts on its own mode until one is picked.
+  An ACP agent's modes stand for its permissions, so for one that offers modes `p` opens its modes. Once the host
+  has said, a setting it offers nothing for is left out of the letters and opens nothing: no model list for an ACP
+  agent before its first conversation on that host, which starts on its own model, and no Shift+Tab in the key line
+  for an agent with nothing to step, such as Grok.
+  Each agent is created as the kind its host runs it as: Claude headless or in its terminal as the host says, Codex
+  on its app server, an ACP agent over ACP.
+- **In each agent's own interface** (`native`): a small window over home with the name, the agent (every agent
+  the host offers, marked `not signed in` where the host says so; one with no terminal of its own opens in its chat), the folder and the host, and no prompt or model,
   which the agent's own terminal sets. Enter moves from row to row and starts the agent from the last; ←/→ change
   a choice. Started on this machine, the terminal is
   handed straight to the new agent (see [raw attach](#raw-attach)); started on another machine its chat opens
   instead, and says why.
 
-A new agent always shows the values it will start with, as the host's catalogue names them: `new_agent.claude` and
-`new_agent.codex` hold a person's remembered model and effort, and whatever they do not set is what the provider's own
+A new agent always shows the values it will start with, as the host's catalogue names them: `new_agent.claude`,
+`new_agent.codex` and `new_agent.<id>` for an ACP agent hold a person's remembered model and effort (never a mode), and whatever they do not set is what the provider's own
 settings resolve to. amux ships no values of its own and never writes the provider's settings. The leader then `n` from
 a chat starts from that chat's agent, folder and host instead.
 
 ### Hosts
 
 `h`, or the leader then `h` from a chat, opens the devices window over home: every trusted host whatever its
-presence, with `this computer`, how it is reached (`direct`, `over the internet`) or why not (`offline · not signed in`, `offline ·
-this computer is signed out`, `offline · unpaired this computer`, `away` and the free plan's words when the relay
+presence, with `this device`, how it is reached (`local` on a network both are on, `direct`, `relayed`, `ssh`) or why not (`offline · not signed in`, `offline ·
+this device is signed out`, `offline · unpaired this device`, `away` and the free plan's words when the relay
 refused the host for the plan). Hosts not yet trusted are listed faint, with where they were found and the command
 that pairs them: `found nearby · amux pair desk` for one local-network discovery sees, `through studio · amux pair
-desk` for one a paired host announces, and `on your account · Pro pairs it through the relay · amux pair desk` for
+desk` for one a paired host announces, and `on your account · relayed connections need Pro · amux pair desk` for
 one only the relay announces; a faint line
 says to pair another with `amux pair`. Esc, `q` or `h` closes it. Pairing, unpairing and signing in happen from the
 command line ([`amux pair`](#command-line-verbs) and friends); [How amux works](guide/understand/how-amux-works.md) explains hosts,
@@ -189,7 +196,7 @@ Enter on a row opens its chat. From top to bottom:
   with its layout, and the branch comparison needs a base branch to count against. The
   header says where the chat stands only when that is a problem: `exited` with its cause, `catching up` before the
   first CaughtUp, `reconnecting`, `refreshing` while a rebuilt history is on its way, or why the host is away (not
-  current, this computer signed out, or the host unpaired this computer).
+  current, this device signed out, or the host unpaired this device).
 - **The family line**, for an agent with a parent or children: the parent, the number of subagents and how many
   others in the whole family need you, grandchildren and the parent's side included.
 - **The feed**, read one turn at a time, laid out upward from the newest or from wherever the reader scrolled:
@@ -260,7 +267,8 @@ parent's.
 
 The composer takes a draft at any time. Enter sends while the chat is current and the agent is live; while the
 agent works it queues the prompt behind the running turn; when the agent has exited it resumes it with the draft as
-its first prompt (an empty Enter just resumes). A prompt to an idle agent shows at once in the feed, and one to a
+its first prompt (an empty Enter just resumes). An exited ACP agent that cannot reopen its session has no text box:
+in its place `Ended · OpenCode can't reopen this conversation`, and typing goes nowhere. A prompt to an idle agent shows at once in the feed, and one to a
 busy agent at once in the queue. While the chat is not current (the host away, the chat catching up, this
 machine's daemon reconnecting) Enter sends nothing: the words stay in the composer, whose top edge says why, and
 nothing sends them later; once the chat is current, Enter sends them. A refused Enter, and a refusal that puts
@@ -333,7 +341,7 @@ about stays in the feed above. A typed answer or note shows its own line breaks,
   (`No`). Where the agent takes a reason with a refusal, Claude's, Tab on `No` adds a note that goes back with it;
   Codex's refusal carries no reason, so its `No` offers no note. A long diff or command is cut,
   with `[Full Diff]` or `[Show All]` (or `f`) opening the whole of it inside the box.
-- **A plan** (`● Plan ready`): `Yes, start building`, `Yes, and switch to <permission>` where the agent
+- **A plan** (`● Plan ready`): `Yes, implement this plan`, `Yes, and switch to <permission>` where the agent
   offers it (Claude's moves to auto mode where Claude offers it, to accept edits otherwise; Codex offers no switch), and `No, keep planning`, which takes a note.
 - **Questions**: one at a time; several get a row of tabs (`‹ Layout   Entry   Review ›`), answered ones ticked,
   and end on a review that lists each answer and sends them all. Options read `label · recommended ·
@@ -344,19 +352,23 @@ about stays in the feed above. A typed answer or note shows its own line breaks,
   neither.
 - **A tool server's form** (`● linear needs details`): its message, then each field as a step in the server's
   order (a choice, Yes / No, boxes, or a typed value), starting from the server's defaults with Yes / No on No,
-  required ones marked, and a review with Submit; `Decline` is the way out. A value the form cannot take says
+  required ones marked, and a review with Submit; `Decline` is the way out. An ACP agent's own form reads
+  `● OpenCode needs details`, and Tab on its `Decline` opens words to send instead. A value the form cannot take says
   why beside it (`needs a whole number`, `needs at least 1`), and the review names the first field that keeps the
   form back.
 - **A tool server's link** (`● grafana sent a link`): the server's own message and the address, `1. Open the
-  link` (the box stays), `2. Done`, and `Decline`. The provider says nothing of what a link is for, so the
+  link` (the box stays), `2. Done`, and `Decline` (Tab there, for an ACP agent, opens words to send instead). The provider says nothing of what a link is for, so the
   record after it (`Opened grafana's link`) carries the message's first line. A link to `localhost` adds that
   the page is on the agent's machine, to open in a browser there.
 - **Wider access** (Codex): what it wants and why, `Allow for this turn`, `Allow for this session`, `No`.
+- **An ACP agent's permission**: the command, edit or tool, then exactly the choices the agent sent, in its
+  order: `Yes`, any it names itself (`Always allow`), and `No`, where Tab adds what to do instead.
 - **What this client cannot answer** (an ask from an agent this build cannot read): the reason, and `Open Claude's
   terminal` where that terminal can be attached here.
 
 When the agent's account needs signing in again, a notice above the composer says so with the provider's message,
-where to do it (`Run claude and sign in with /login on desk`) and `Signed in elsewhere? Send a message to try
+where to do it in its host's words (`Run claude and sign in with /login on desk`; an agent's backticked
+commands drawn as code) and `Signed in elsewhere? Send a message to try
 again.` It is not an ask and takes nothing over: nothing here can sign in, so the composer keeps sending, a send
 is the retry, and the provider's next good answer clears the notice ([INTERPRETERS.md](INTERPRETERS.md) says
 when a running provider sees a credential signed in elsewhere).
@@ -439,7 +451,7 @@ moves the agent to its next mode where it offers modes (Codex: default and plan)
 permission that still asks before acting (terminal Claude: Claude's own cycle key). `ctrl+s` then `m`, `e` or `p`
 changes a running agent's model, effort or permission where it lets a client change them, and otherwise says how
 (terminal Claude's model and effort change by typing its own `/model` or `/effort`, its permission only by
-cycling); each model in the list carries the agent's own line on it, which says what an alias such as Claude's
+cycling). An ACP agent offers modes rather than permissions, so for one with modes `p` opens its modes; each model in the list carries the agent's own line on it, which says what an alias such as Claude's
 Default stands for. The composer's edge names the permission and the mode when they are not the agent's normal
 ones, and Codex settings that match no named permission read custom; the phone's model chip says the same. The
 phone's settings sheet offers every model, effort, permission and mode the agent offers.
@@ -465,6 +477,9 @@ effort = "high"
 [new_agent.codex]
 model = "gpt-6.1-sol"
 effort = "medium"
+
+[new_agent.opencode]  # an ACP agent's, by its id
+model = "anthropic/claude-sonnet"
 ```
 
 `theme = "terminal"` asks the terminal for its own colours at startup and derives the palette from them, falling back
@@ -497,7 +512,7 @@ stops the agent or answers an ask; clearing a field and stopping the agent are n
 | ↑ ↓ or `k` `j` | Move the highlight |
 | Home End or `g` `G` | First or last |
 | Enter | Open the chat; on a section heading, fold or unfold it |
-| `a` or Ctrl+Enter | Attach to the agent's own terminal (agents on this machine only) |
+| `a` or Ctrl+Enter | Attach to the agent's own terminal (agents on this machine only); the key line offers it only for an agent that has one |
 | `/` | Filter by name, folder or host |
 | → ← or Space | Show or hide a family's agents |
 | `n` | A new agent |
@@ -603,7 +618,7 @@ clicked.
 | `<leader> d` | Leave for the shell; agents keep running |
 | `<leader> ?` | Every key |
 | `<leader> r` | Review the agent's changes |
-| `<leader> a` | Attach to the agent's own terminal, when it is on this machine |
+| `<leader> a` | Attach to the agent's own terminal, when it has one on this machine (the panel lists it only then: an ACP agent, headless Claude, a subagent or an agent on another device has none) |
 | `<leader> k`, `<leader> j` | Focus an older or newer row |
 | `<leader> o` | Open or close the focused row, run or group of subagents |
 | `<leader> enter` | Open the chat of the agent the focused row started; on a folded group, open the group |
@@ -660,14 +675,14 @@ these; the entries amux and service managers run are hidden from it and listed a
 | `amux` | Opens the terminal client. |
 | `amux attach <agent>` | Opens the agent's chat in this terminal, in the interface `ui.chat_in` names, or the one `--in amux\|native` asks for; see [raw attach](#raw-attach). |
 | `amux ls` | Lists the agents with children beneath their parent: name, short id, agent and state. |
-| `amux new claude\|codex` | Starts an agent in the current directory (`--cwd` for another), for the interface `ui.chat_in` names or `--in amux\|native`: Claude runs headless for amux's chat and in a terminal for its own. `--name`, `--model`, `--effort`, `--permission` and `--prompt` for its first prompt; the model, effort and permission come from `new_agent` otherwise, except in the agent's own interface, which sets its own. Extra arguments for Claude go after `--`. |
+| `amux new <agent>` | Starts an agent (`claude`, `codex` or an ACP agent's id) in the current directory (`--cwd` for another), for the interface `ui.chat_in` names or `--in amux\|native`: Claude runs headless for amux's chat and in a terminal for its own. `--name`, `--model`, `--effort`, `--permission` and `--prompt` for its first prompt; the model and effort come from `new_agent` otherwise and the permission from the provider, except in the agent's own interface, which sets its own. Extra arguments for Claude go after `--`. |
 | `amux send <agent> <text…>` | Sends a prompt and prints whether the agent took it, and if not, why in a sentence. |
 | `amux settle <agent>` | Files the agent as done with, stopping it now when live, and every descendant is settled with it on its own host: its turn is cancelled the provider's own way (a question waiting on you is dismissed) and it exits, to be resumed later. |
 | `amux resume <agent> [text…]` | Starts a stopped agent again, with an optional first prompt. |
 | `amux rename <agent> <name>` | Renames an agent. |
 | `amux rm <agent>` | Deletes an agent and its history; its children follow on their own hosts, a host that is away once it is back. |
 | `amux dump` | Writes this host's debug report, with an optional `--reason`, and prints its path; `--send` also sends it to the profile's amux account. See [DEBUGGING.md](DEBUGGING.md). |
-| `amux pair [target]` | Pairs with another host by name (one found nearby or announced by the relay or a paired host), an address, or `user@host` over SSH; on the free plan it refuses a host only the relay reaches before asking for the PIN, and says Pro pairs it. With no target this host opens pairing mode and shows a PIN with what the phone and another computer do with it, or with `--qr` a QR code for the phone's camera: a link to amux.sh's pairing page, which opens the app, or the App Store when the app is not installed yet. It says when a device has proved the code and is confirming, and which one paired, as it happens. |
+| `amux pair [target]` | Pairs with another host by name (one found nearby or announced by the relay or a paired host), an address, or `user@host` over SSH; on the free plan it refuses a host only the relay reaches before asking for the PIN, and says Pro pairs it. With no target this host opens pairing mode and shows a PIN with what the phone and another device do with it, or with `--qr` a QR code for the phone's camera: a link to amux.sh's pairing page, which opens the app, or the App Store when the app is not installed yet. It says when a device has proved the code and is confirming, and which one paired, as it happens. |
 | `amux devices` (or `amux hosts`) | Lists the paired hosts and the hosts that could be paired: found nearby, through a paired host, or on the account through the relay, which on the free plan says Pro pairs it. |
 | `amux unpair <host>` | Stops trusting a paired host, asking first unless `--force`. |
 | `amux login` | Signs the profile in to an amux account so its hosts reach each other through the relay. |

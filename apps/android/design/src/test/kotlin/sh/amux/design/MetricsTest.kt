@@ -1,0 +1,137 @@
+package sh.amux.design
+
+import androidx.compose.animation.core.SnapSpec
+import androidx.compose.animation.core.TweenSpec
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
+import androidx.compose.ui.unit.width
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class MetricsTest {
+    @get:Rule
+    val composeRule = createComposeRule()
+
+    @Test
+    fun thumbTargetMinSizeMeetsAndroidAccessibilityFloor() {
+        assertTrue(
+            "Android minimum touch target must be at least 48.dp, was ${ThumbTarget.MinSize}",
+            ThumbTarget.MinSize >= 48.dp,
+        )
+        assertEquals(48.dp, ThumbTarget.MinSize)
+    }
+
+    @Test
+    fun thumbTargetReservesFortyEightDpButDrawsTheControlAtItsOwnSize() {
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light) {
+                Box(
+                    modifier = Modifier
+                        .testTag("reserved")
+                        .thumbTarget(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(modifier = Modifier.testTag("drawn").size(width = 60.dp, height = 32.dp))
+                }
+            }
+        }
+
+        val reserved = composeRule.onNodeWithTag("reserved").getUnclippedBoundsInRoot()
+        assertEquals(60.dp, reserved.width)
+        assertEquals(48.dp, reserved.height)
+        val drawn = composeRule.onNodeWithTag("drawn").getUnclippedBoundsInRoot()
+        assertEquals(32.dp, drawn.height)
+        assertEquals(8.dp, drawn.top - reserved.top)
+    }
+
+    @Test
+    fun edgeTargetTakesTheGlyphsRoomAndCentresAFortyEightDpTargetOnIt() {
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light) {
+                Row(modifier = Modifier.padding(24.dp)) {
+                    Box(modifier = Modifier.testTag("before").size(40.dp))
+                    Box(modifier = Modifier.edgeTarget(width = 20.dp).testTag("target"))
+                    Box(modifier = Modifier.testTag("after").size(40.dp))
+                }
+            }
+        }
+
+        val before = composeRule.onNodeWithTag("before").getUnclippedBoundsInRoot()
+        val target = composeRule.onNodeWithTag("target").getUnclippedBoundsInRoot()
+        val after = composeRule.onNodeWithTag("after").getUnclippedBoundsInRoot()
+        assertEquals(48.dp, target.width)
+        assertEquals(48.dp, target.height)
+        // The row gives the target only the glyph's 20 dp; the rest spills
+        // 14 dp to each side, over its neighbours' edges.
+        assertEquals(20.dp, after.left - before.right)
+        assertEquals(before.right - 14.dp, target.left)
+    }
+
+    @Test
+    fun spacingAndMetricScalesAreStrictlyOrdered() {
+        assertTrue(Space.xxs < Space.xs)
+        assertTrue(Space.xs < Space.s)
+        assertTrue(Space.s < Space.m)
+        assertTrue(Space.m < Space.l)
+        assertTrue(Space.l < Space.xl)
+        assertTrue(Space.xl < Space.xxl)
+        assertEquals(Space.l, Space.margin)
+
+        val metrics = AmuxDesign.App.metrics
+        assertEquals(1.dp, metrics.hairline)
+        assertTrue(metrics.controlRadius < metrics.cardRadius)
+        assertTrue(metrics.cardRadius < metrics.floatRadius)
+    }
+
+    @Test
+    fun motionRespectsReducedMotionAndPhotographedFlags() {
+        val standard = Motion.standardSpec<Float>(reducedMotion = false)
+        assertTrue(standard is TweenSpec)
+        assertEquals(280, (standard as TweenSpec).durationMillis)
+
+        val quick = Motion.quickSpec<Float>(reducedMotion = false)
+        assertTrue(quick is TweenSpec)
+        assertEquals(180, (quick as TweenSpec).durationMillis)
+
+        assertTrue(Motion.standardSpec<Float>(reducedMotion = true) is SnapSpec)
+        assertTrue(Motion.quickSpec<Float>(reducedMotion = true) is SnapSpec)
+
+        var reducedByDefault = true
+        var reducedWhenPhotographed = false
+        var reducedWhenFlagged = false
+
+        composeRule.setContent {
+            AmuxTheme(appearance = Appearance.Light, reducedMotion = false, photographed = false) {
+                reducedByDefault = Motion.isReducedMotion()
+            }
+            AmuxTheme(appearance = Appearance.Light, reducedMotion = false, photographed = true) {
+                reducedWhenPhotographed = Motion.isReducedMotion()
+            }
+            AmuxTheme(appearance = Appearance.Light, reducedMotion = true, photographed = false) {
+                reducedWhenFlagged = Motion.isReducedMotion()
+            }
+        }
+
+        assertFalse(reducedByDefault)
+        assertTrue(reducedWhenPhotographed)
+        assertTrue(reducedWhenFlagged)
+    }
+}

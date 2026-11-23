@@ -54,7 +54,7 @@
      7 msg_011Ch5eDr8CUf53fjKZ8tSgL:1 Prose { text: [Text("I've started the subagent (it's running in the background) and asked it to run `echo ALPHA`. I'll send it the `echo BETA` request once it reports back, then reply `DONE`.")], streaming: false, working_note: false }
      8 turn:1 TurnEnd { duration_ms: Some(5039), failed: false }
      9 edfacd6c-e36a-4171-a285-e13d623e22d3 Hidden collapsed
-    10 toolu_01YWgPxfcyw1fNKdg5mCbdgD Explore { verb: Search, subject: "select:SendMessage", state: Succeeded, result: "" } run[toolu_01YWgPxfcyw1fNKdg5mCbdgD..toolu_01YWgPxfcyw1fNKdg5mCbdgD x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0 }]
+    10 toolu_01YWgPxfcyw1fNKdg5mCbdgD Explore { verb: Search, subject: "select:SendMessage", state: Succeeded, result: "" } run[toolu_01YWgPxfcyw1fNKdg5mCbdgD..toolu_01YWgPxfcyw1fNKdg5mCbdgD x1 recent=0 RunCounts { commands: 0, edits: 0, reads: 0, searches: 1, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0 }]
     11 f6416025-3732-457b-aff3-472dba841c17 Hidden collapsed
     12 toolu_0115dPdfaNpQp5uZ4Cdj5n7t [opens=sub-8b600219] Subagent { description: "Use Bash to run exactly this command: echo BETA\nTh…", continued: true, state: Succeeded, answer: "The command `echo BETA` printed exactly:\n\n```\nBETA\n```", duration_ms: Some(3214) }
     13 93a66e57-0bc3-4465-95c9-e8b3b65f1346 Hidden collapsed

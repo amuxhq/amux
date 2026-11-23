@@ -9,7 +9,7 @@
 ## 6 fact {"channel":"hook","json":{"amux_reply":1,"hook_event_name":"PermissionRequest","tool_input":{"questions":[{"header":"Color","multiSelect":false,"options":[{"description":"warm","label":"Red"},{"description":"cool","label":"Blue"}],"question":"Pick a color"},{"header":"Tools","multiSelect":true,"options":[{"description":"","label":"Hammer"},{"description":"","label":"Saw"}],"question":"Pick to…
   ask ask:1 -> "" 1/1 Open
     choices 
-    body Question([QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "", recommended: false }], allow_other: true, secret: false }, QuestionView { header: "Tools", question: "Pick tools", multi_select: true, options: [OptionView …
+    body Question([QuestionView { header: "Color", question: "Pick a color", header_runs: ["Color"], question_runs: ["Pick a color"], multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false, label_runs: ["Red"], description_runs: ["warm"] }, OptionView { label: "Blue", description: "cool", preview: "", recommended: false, label_runs: ["Blue"], descript…
   composer Send activity=None queue=[] underway=[] refused=[]
 ## 7 input {"answer":{"answer":{"reply":{"selected":[],"text":"Use the old palette."}},"ask":"ask:1"},"id":"a3"}
   ask none
@@ -23,7 +23,7 @@
 == chat
      1 boundary:1 Hidden collapsed
      2 u1 Prompt { text: [Text("test it")], steered: false }
-     3 t1 [Replied: Color = (skipped); Tools = (skipped) skipped=2 reply="Use the old palette."] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false }, OptionView { label: "Blue", description: "cool", preview: "", recommended: false }], allow_other: true, s…
+     3 t1 [Replied: Color = (skipped); Tools = (skipped) skipped=2 reply="Use the old palette."] Ask(Questions { questions: [QuestionView { header: "Color", question: "Pick a color", header_runs: ["Color"], question_runs: ["Pick a color"], multi_select: false, options: [OptionView { label: "Red", description: "warm", preview: "", recommended: false, label_runs: ["Red"], description_runs: ["warm"] },…
      4 turn:1 TurnEnd { duration_ms: None, failed: false }
      5 u2 Prompt { text: [Text("Use the old palette.")], steered: false }
 == overview Overview { tasks: None, jobs: [], failed_servers: [], usage_near_limit: None, changes: None }

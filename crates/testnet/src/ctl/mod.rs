@@ -63,9 +63,9 @@ pub enum Command {
     Down,
     /// The hosts, agents and links as they stand.
     ///
-    /// A net's agents outlive a stopped daemon by 20 seconds (a real
-    /// installation waits five minutes): a host down for longer ends every
-    /// agent on it.
+    /// A net's agents outlive a stopped daemon by 20 seconds unless the
+    /// topology gives a host longer (a real installation waits five
+    /// minutes): a host down for longer ends every agent on it.
     Status,
     /// Add or remove a host.
     #[command(subcommand)]
@@ -837,11 +837,10 @@ fn describe_status(status: &Value) -> String {
     if let Some(scope) = status["topology"]["scope"].as_str() {
         out.push_str(&format!("discovery scope {scope:?}\n"));
     }
-    out.push_str(&format!(
-        "agents outlive a stopped daemon by {}s (a real installation: 5 min); a host down \
-         longer ends every agent on it\n",
-        crate::net::AGENT_GRACE_SECS
-    ));
+    out.push_str(
+        "a host's agents outlive its stopped daemon by the grace it lists (a real \
+         installation: 5 min); a host down longer ends every agent on it\n",
+    );
     out.push_str("hosts:\n");
     for host in status["hosts"].as_array().into_iter().flatten() {
         let mut traits = Vec::new();
@@ -862,6 +861,15 @@ fn describe_status(status: &Value) -> String {
         } else {
             "fake providers"
         });
+        // A topology may give a host's agents longer than the net's grace;
+        // the status says each host's own.
+        let grace = status["topology"]["hosts"]
+            .as_array()
+            .and_then(|declared| declared.iter().find(|decl| decl["name"] == host["name"]))
+            .and_then(|decl| decl["agent_grace_secs"].as_u64())
+            .unwrap_or(crate::net::AGENT_GRACE_SECS);
+        let grace = format!("agents outlive a stopped daemon by {grace}s");
+        traits.push(&grace);
         let lan = host["lan_port"]
             .as_u64()
             .map(|port| format!(", LAN 127.0.0.1:{port}"))

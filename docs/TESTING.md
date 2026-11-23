@@ -4,8 +4,8 @@
 
 This page is an index. The suites themselves are listed in `tests/catalog.toml`; `just --list` is the command
 surface. The multi-host harness has its own page,
-[TestNet](TESTNET.md), measured performance has [Performance](PERFORMANCE.md), the phone's
-journeys are described in [the iPhone app](IOS.md), the Mac's storybook in [the Mac app](MAC.md), and adversarial testing by agents has
+[TestNet](TESTNET.md), measured performance has [Performance](PERFORMANCE.md), the phones'
+journeys and audits are described in [the iPhone app](IOS.md) and [the Android app](ANDROID.md), the Mac's storybook in [the Mac app](MAC.md), and adversarial testing by agents has
 [QA](QA.md).
 
 ## The rule
@@ -36,9 +36,9 @@ Each catalogued suite names one boundary.
 | Single daemon | Ingest commits a step's items, snapshot and cursor together, assigns revisions, pages and subscribes without loss, and reclaims only what was ingested. | `crates/journal`, `crates/store`, `crates/node/tests` |
 | Many daemons | Discovery, trust, routing, relay, replication, inventory, families and blobs hold across production runtimes under faults. | `crates/testnet/tests` |
 | Client model | `update(state, msg)` gives the same state under any arrival order; inputs reach a settled, rejected or uncertain state. | `crates/ui-state/tests/spec` |
-| Store, effects, bridge | Runtimes and the embedded owner reach the right service; Swift decodes and applies the Rust view and command contract. | `crates/ui-runtime`, `crates/app-runtime`, `crates/app-embedded`, `crates/client`, Swift unit suites |
+| Store, effects, bridge | Runtimes and the embedded owner reach the right service; Swift and Kotlin decode and apply the Rust view and command contract. | `crates/ui-runtime`, `crates/app-runtime`, `crates/app-embedded`, `crates/app-bridge`, `crates/app-jni`, `crates/client`, Swift and Kotlin unit suites |
 | Views | Each view is a pure function of session state; row ids are item keys and never move. | `crates/ui-view/tests` |
-| Native presentation | The terminal and the phone draw a view correctly and interaction sends the right command. No picture of the phone is compared ([the iPhone app](IOS.md#no-picture-is-compared)). | `crates/tui/tests`, `apps/apple` unit suites |
+| Native presentation | The terminal and the phones draw a view correctly and interaction sends the right command. No picture of either phone is compared in CI ([the iPhone app](IOS.md#no-picture-is-compared), [the Android app](ANDROID.md#headless-storybook)). | `crates/tui/tests`, `apps/apple` unit suites, `apps/android` unit and Robolectric suites |
 | System composition | Built binaries launch, survive, stop and clean up as promised: agents outlive a killed daemon, the supervisor updates and rolls back. | `crates/amux/tests`, `crates/agent/tests/lifecycle.rs`, `crates/node/tests/supervisor.rs` |
 | Journeys | A person completes a declared task through a real client and the production path. | `journeys/`, `crates/testnet/src/journey`, `crates/amux/tests/system_journeys.rs` |
 | Model | A protocol promise, written as a sentence, holds in every state a checker reaches by exploring the real code on small instances. | `crates/models` |
@@ -101,15 +101,15 @@ A lane says when and where a suite runs.
 
 | Lane | What it holds | Where it runs |
 | --- | --- | --- |
-| fast | Offline, credential-free, deterministic suites: most of the table above. | `just test` on every push, on Linux, macOS and Windows; `just ios gate` for the phone when a push touches it |
+| fast | Offline, credential-free, deterministic suites: most of the table above. | `just test` on every push, on Linux, macOS and Windows; `just ios gate` and the Android gate (`android.yml`) when a push touches those paths |
 | system | Real processes, PTYs, sockets and the supervisor, with bounded deadlines. | Also `just test`, since they are ordinary Cargo targets; the store on the simulator in `just ios captures` |
-| journey | Both clients driving complete stories against a served network. | Terminal journeys on every push (Linux and macOS); phone journeys and the accessibility audit in `just ios captures`, by hand |
-| tool | The repository's own machinery: scripts, source policy, CI command surface, the shipping-scope audit. | Beside the fast lane |
+| journey | Clients driving complete stories against a served network. | Terminal journeys on every push (Linux and macOS); iPhone journeys and accessibility audit in `just ios captures`, and Android emulator journeys and Robolectric Compose semantics, bounds, touch-target, heading and contrast accessibility audit via `just android journey` and `just android accessibility` |
+| tool | The repository's own machinery: scripts, source policy, CI command surface, the iOS and Android release scope audits. | Beside the fast lane (`just ios scope-audit`, `just android scope-audit`) |
 | qualification | Live providers, measured performance, production cloud and purchases. | Only on request, on enrolled machines; results are `pass`, `fail`, `unavailable` or `not_run` |
 
 Nothing in an ordinary push inherits credentials, spending or hardware. The live lane is the `live` feature of the
-qualification crate; `just test` and `just ci` never select it. `just ci` refuses to start when an `UPDATE_*`
-variable is set, so no asserted run can rewrite a golden.
+qualification crate, and its targets carry the `live` label; `just test` never selects them. `just premerge` refuses to
+start when an `UPDATE_*` variable is set, so no asserted run can rewrite a golden.
 
 ## Two modes of the many-daemons harness
 
@@ -144,8 +144,8 @@ what is real and what is substituted, its time requirement (`none`, `driven` or 
 lane, evidence location, update command, and the Cargo targets, features and journeys it owns. A crate's
 integration suites are modules of its one integration test binary (`tests/integration.rs` declares one per suite, so
 the crate links its tests once rather than once a suite), and a suite names them as `modules`; `just suite <name>`
-runs exactly what a suite lists. A suite that must be the only one in its process under every runner, not only
-nextest (the sanitizers and the iOS store run use one process per binary), keeps a test target of its own:
+runs exactly what a suite lists, as the Buck2 test targets and test-name filters that hold it. A suite that must be the
+only one in its process under every runner, not only Buck2's and nextest (the sanitizers and the iOS store run use one process per binary), keeps a test target of its own:
 app-embedded's `runtime_log`, whose log is the process's one trace subscriber, and the live lane's harnessless
 targets.
 
@@ -157,23 +157,27 @@ just tests-check   # fail on a missing recipe, target, module, feature, journey 
 
 ## Running tests
 
-Every Rust test runs under [cargo-nextest](https://nexte.st), each in a process of its own, configured in
-[`.config/nextest.toml`](../.config/nextest.toml); the `just` test recipes refuse to start without it (`brew install
-cargo-nextest`, or `cargo install --locked cargo-nextest`). A process per test means no test shares a global, an
-environment variable or a once-built fixture with another, whatever runs beside it. No test builds a binary: a
-setup script ([`scripts/test-binaries.sh`](../scripts/test-binaries.sh)) builds `amux`, the fake providers,
-`fake-amux` and the agent's install-path stand-in once before any test starts and names their directory in
-`TESTNET_BINARIES`, and a test started without it fails saying so rather than running binaries older than the
-source. A test is reported slow after a minute and ended after three; a test that ends while a process it started
-still holds its output fails, since that process would outlive it. The documentation tests, the live lane (whose
-tests have their own harness), the C ABI's pointer checks (`just miri`) and the sanitizers still run under
-`cargo test`.
+Every Rust test runs through Buck2, each in a process of its own under
+[`build/test-runner.py`](../build/test-runner.py), and a passing result is kept in the build cache, so a test runs
+again only when something it reads changes ([Building](BUILD.md#the-build-cache)). A process per test means no test
+shares a global, an environment variable or a once-built fixture with another, whatever runs beside it; each gets a
+`HOME` and `TMPDIR` of its own, made empty for it, so none reads the machine's. No test builds a binary: a test that
+starts `amux`, a fake provider, `fake-amux` or the agent's install-path stand-in is given the directory Buck2 built
+them into as `TESTNET_BINARIES`. A test is reported slow after a minute and ended after three; a test that ends while
+a process it started still holds its output fails, since that process would outlive it. The documentation tests,
+the C ABI's pointer checks (`just miri`) and the sanitizers run under `cargo test`.
+
+CI's runners have no Buck2 yet, so CI runs the same tests under [cargo-nextest](https://nexte.st), configured in
+[`.config/nextest.toml`](../.config/nextest.toml) to the same bounds, through `just cargo-test` and `just
+cargo-test-crate` (`brew install cargo-nextest`). There a setup script
+([`scripts/test-binaries.sh`](../scripts/test-binaries.sh)) builds the binaries the tests start before any test runs.
 
 ```sh
-just test                                  # every ordinary workspace target
-just suite many-daemon-protocol-spec       # one suite of tests/catalog.toml, on `just test`'s build
-just suite link-stories relaunch           # the same, then a test-name filter
-just test-crate interpret -- codex::       # one crate, then nextest arguments
+just test                                  # every workspace test whose inputs changed
+just test //crates/node:integration        # one test target
+just suite many-daemon-protocol-spec       # one suite of tests/catalog.toml
+scripts/buck2 run //crates/node:integration -- ^link_stories::relaunch   # some of a target's tests, by name
+just test-crate interpret                  # one crate
 just suite sqlite-store-contract           # the store's reader and writer suite, retention and SQLite file
 just suite client-model-spec               # the client model spec
 just test-tui                              # terminal presentation and goldens
@@ -183,23 +187,29 @@ just journey terminal all                  # every terminal story, one line each
 just journey system survive-daemon         # the built binaries' system journey
 just ios unit                              # phone package and app-hosted unit suites
 just ios journey                           # the shared stories on the phone; `-- <story>` for one
+just android unit                          # Android host-JNI, JVM and Robolectric unit suites
+just android storybook                     # Android headless PNG gallery for visual review
+just android accessibility                 # Android Robolectric Compose semantics, bounds, touch-target, heading and WCAG contrast audit
+just android scope-audit                   # Android Release APK debug-surface and SQLite linkage audit
+just android journey                       # Android stories on amux-android-1; `<story>` for one
 just live claude_sdk all                   # live compatibility for one kind (qualification)
 just live codex attach                     # Codex's own app co-driving a fresh agent; capture in target/live/codex-attach
 just perf                                  # performance qualification (see Performance)
 just coverage                              # every workspace test with line coverage per crate
-just flaky <test> 200                      # one test 200 times in a row, stopping at its first failure
-just flaky --load <test>                   # the same with every core kept busy beside it
+just flaky <target> <test> 200             # one test 200 times in a row, stopping at its first failure
+just flaky --load <target> <test>          # the same with every core kept busy beside it
 just fuzz-smoke                            # each fuzz target for 30 s; fails on a crash
 just sanitize address                      # the unsafe code's tests under the address sanitizer
 just sanitize thread                       # the same under the thread sanitizer (Linux only)
 ```
 
-`just flaky` is how a test that fails now and then is made to fail on demand: it runs every test whose name contains
-its argument, one run after another (50 by default), and stops at the first failure with that run's output.
+`just flaky` is how a test that fails now and then is made to fail on demand: it runs the tests of one test target
+(`//crates/node:integration`) whose names contain its argument, one round after another (50 by default), and stops
+at the round one fails in, with its output.
 `--load` keeps every core busy meanwhile, as a full parallel run or a slow CI runner does, which is where most
 timing failures show; a failure that `--load` cannot bring back but a full run can is contention with other tests
 rather than with the CPU. To see what the net's in-process hosts did in a failing test, set `RUST_LOG`
-(`RUST_LOG=warn,daemon_core=debug,node=info`): their tracing goes to the test's standard error, which nextest shows
+(`RUST_LOG=warn,daemon_core=debug,node=info`): their tracing goes to the test's standard error, which the runner shows
 for a test that failed. Hosts the net runs as processes do not inherit it; their daemon logs are theirs.
 
 `just coverage` writes `target/coverage/coverage.md`: line coverage per crate and the commit it measured. Each crate's lines
@@ -207,8 +217,8 @@ count whichever tests ran them, so a core's figure includes what the models and 
 aid for judging which tests earn their keep, not a gate. The recipe's comment names the coverage tool and the
 toolchain component it needs.
 
-`just fuzz-smoke` fuzzes the code that reads bytes amux did not write: the tolerant Claude and Codex decoders, the
-journal's frame decoder and its reader over segments cut anywhere, and redaction of JSON values and free text. The
+`just fuzz-smoke` fuzzes the code that reads bytes amux did not write: the tolerant Claude, Codex and ACP decoders,
+the journal's frame decoder and its reader over segments cut anywhere, and redaction of JSON values and free text. The
 targets live in `fuzz/`, a workspace of their own built on the pinned nightly with debug assertions on. Each starts
 from seeds cut from the recorded provider captures and a real agent's journal and runs for 30 seconds (`--seconds N`;
 target names narrow the run); its corpus and any crashing input stay under `target/fuzz/`, and a crash prints the
@@ -256,18 +266,19 @@ its inputs alone.
 ## Fixtures and goldens
 
 Three kinds of fixture, kept distinguishable: recordings of a real provider, reviewed derivations produced by the
-production code, and small authored scenarios. Ordinary runs compare and never regenerate.
+production code, and small authored scenarios. Ordinary runs compare and never regenerate; `just goldens` with no
+targets re-records every Rust golden in the table.
 
 | Fixture | Where | Updated by |
 | --- | --- | --- |
 | Live-run captures: sessions amux's own agent drove on the installed provider; each kind's folder is its whole corpus, terminal Claude's played back on Unix only | `crates/interpret/fixtures/{claude_sdk,claude_pty,codex}/live` | `just live <kind>`, then `claude-probe join` or `codex-probe join` from `target/live/recordings/<kind>/<scenario>`; see each README |
 | Terminal Claude transcripts no recording covers | `crates/interpret/fixtures/claude_pty/transcripts` | a new capture; see its README |
 | Agent-process replays cut from those recordings | `crates/agent/tests/replay` | by hand; see its README |
-| Interpreter emission goldens (`*.json` input, `*.golden` output) per kind | `crates/interpret/fixtures` | `INTERPRET_UPDATE_GOLDENS=1` |
-| View data goldens | `crates/ui-view/tests/goldens` | `UI_VIEW_UPDATE_GOLDENS=1` |
-| Terminal component goldens (text plus style map) | `crates/tui/tests/golden` | `UPDATE_GOLDENS=1 just test-tui` |
+| Interpreter emission goldens (`*.json` input, `*.golden` output) per kind | `crates/interpret/fixtures` | `just goldens //crates/interpret:unit //crates/interpret:integration` |
+| View data goldens | `crates/ui-view/tests/goldens` | `just goldens //crates/ui-view:integration` |
+| Terminal component goldens (text plus style map) | `crates/tui/tests/golden` | `just goldens //crates/tui:unit //crates/tui:integration` |
 | Fake-provider scripts and served topologies | `journeys/scripts`, `journeys/topologies` | by hand |
-| Journey screen goldens: terminal frames and styles, phone element geometry | `journeys/goldens/terminal/<story>`, `journeys/goldens/phone/<story>` | `UPDATE_JOURNEY_GOLDENS=1` |
+| Journey screen goldens: terminal frames and styles, phone element geometry | `journeys/goldens/terminal/<story>`, `journeys/goldens/phone/<story>`, `journeys/goldens/android/<story>` | `UPDATE_JOURNEY_GOLDENS=1` |
 | Performance baselines | `perf/baselines` | `just perf --baseline` and `just ios perf --baseline`; see [Performance](PERFORMANCE.md) |
 
 The recordings and live captures are read by the protocol crates' strict decode tests (every message decodes to a
@@ -297,7 +308,8 @@ relaunch, and a launch after a machine restarted) and keeps each launch's link l
 ```sh
 just journey terminal <story>   # builds amux, the fakes and testnet, then runs the story in tmux
 just journey terminal all       # every terminal story in the manifest; summary in target/journeys/summary.txt
-just ios journey -- <story>     # the app on the leased simulator, driven through its door
+just ios journey -- <story>     # the iPhone app on the leased simulator, driven through its door
+just android journey <story>    # the Android debug APK on amux-android-1 (`testnet journey android`)
 ```
 
 Both drivers serve the topology with `testnet serve` and drive the real client. A pass needs three judgements
@@ -321,6 +333,9 @@ above. [QA](QA.md) describes running it and turning findings into tests.
 | Terminal journey | `target/journeys/<story>`: frames, `observations.json`, `result.txt`, `testnet.log` |
 | Phone journey | `target/journeys/phone/<story>`: each compared screen's picture and element geometry under `actual/`, `observations.json`, `result.txt`, `testnet.log` |
 | Phone accessibility audit | `target/ios/accessibility` |
+| Android journey | `target/journeys/android/<story>`: each compared screen's picture and element geometry under `actual/`, `observations.json`, `result.txt`, `testnet.log` |
+| Android storybook | `target/android/storybook/index.html` and `target/android/storybook/png/` |
+| Android accessibility audit | `target/android/accessibility` |
 | Desktop performance | printed report; `--baseline` writes `perf/baselines/desktop/<model>.json` |
 | Phone performance | `target/ios/perf/report.md`; `--baseline` writes `perf/baselines/phone/<machine>.json` |
 | QA run | `~/.local/state/amux-qa/<run>/`: the ledger, the summary, and each tester's transcript, session log, shots and findings |

@@ -519,6 +519,16 @@ public final class Profile: @unchecked Sendable {
         }
     }
 
+    /// What settling an agent costs, by the shared rule: whether to ask
+    /// first, and what to say.
+    public func settleWarning(_ agent: AgentKey) -> SettleWarning? {
+        call(nil) { live in
+            Bridge.json(agent).withCString {
+                Bridge.read(SettleWarning?.self, amux_fleet_settle_warning(live, $0))
+            } ?? nil
+        }
+    }
+
     // MARK: - The profile
 
     /// Whether every listed agent keeps a source open now.
@@ -663,7 +673,7 @@ public final class Profile: @unchecked Sendable {
     /// What a provider offers on a host with no agent running there: what a
     /// new agent picks its model, effort, permission and mode from.
     public func hostCatalogue(
-        on host: HostId, provider: Provider
+        on host: HostId, provider: String
     ) async -> Result<Catalogue, RuntimeFailure> {
         let (host, provider) = (Bridge.json(host.bytes), Bridge.json(provider))
         return await act(Catalogue.self) { live in

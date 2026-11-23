@@ -29,13 +29,13 @@ report.send | Retry |  | 350,66,27,36
  | Working |  | 262,198,124,32
  | Working |  | 296,205,57,18
  | Search |  | 16,197,370,0
- | Agents |  | 110,795,95,54
+ | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 216,830,56,12
- | Agents |  | 110,795,95,54
- | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 217,830,55,12
- | Agents | selected | 110,795,95,54
- | Computers |  | 197,795,95,54
+ | Devices |  | 197,795,94,54
+ | Devices |  | 224,830,40,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Devices |  | 197,795,94,54
+ | Devices |  | 225,830,39,12
+ | Agents | selected | 111,795,94,54
+ | Devices |  | 197,795,94,54

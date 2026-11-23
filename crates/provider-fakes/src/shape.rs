@@ -34,14 +34,39 @@ fn opaque(kind: Kind) -> [&'static [&'static str]; 2] {
     match kind {
         Kind::ClaudeSdk | Kind::ClaudePty => [claude_protocol::DATA_SUBTREES, &[]],
         Kind::Codex => [codex_protocol::DATA_SUBTREES, codex_protocol::ITEM_LISTS],
+        Kind::Acp => [acp_protocol::DATA_SUBTREES, acp_protocol::ITEM_LISTS],
     }
+}
+
+/// Maps keyed by the data (a form's fields by their names), whose keys are
+/// compared as one key and whose values by their shape.
+fn keyed_by_data(kind: Kind) -> &'static [&'static str] {
+    match kind {
+        Kind::Acp => acp_protocol::DATA_MAPS,
+        // Their shapes were recorded before maps were told apart, and
+        // their maps' keys are few and fixed enough to be recorded.
+        Kind::ClaudeSdk | Kind::ClaudePty | Kind::Codex => &[],
+    }
+}
+
+/// Whether `path` is in `list`: a path, or `*.<name>`, any field called
+/// `name` at any depth.
+fn listed(list: &[&str], path: &str) -> bool {
+    list.iter().any(|entry| match entry.strip_prefix("*.") {
+        Some(name) => path == name || path.ends_with(&format!(".{name}")),
+        None => *entry == path,
+    })
 }
 
 /// Every `path:type` in a value.
 pub fn signature(kind: Kind, value: &Value) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    walk(opaque(kind), value, String::new(), &mut out);
-    if kind == Kind::Codex && value.get("method").is_none() {
+    let lists = Lists {
+        opaque: opaque(kind),
+        maps: keyed_by_data(kind),
+    };
+    walk(&lists, value, String::new(), &mut out);
+    if matches!(kind, Kind::Codex | Kind::Acp) && value.get("method").is_none() {
         // A response echoes the id the host chose, of whatever type.
         out.retain(|entry| !entry.starts_with("id:"));
         out.insert("id:echoed".into());
@@ -49,7 +74,12 @@ pub fn signature(kind: Kind, value: &Value) -> BTreeSet<String> {
     out
 }
 
-fn walk(opaque: [&[&str]; 2], value: &Value, path: String, out: &mut BTreeSet<String>) {
+struct Lists {
+    opaque: [&'static [&'static str]; 2],
+    maps: &'static [&'static str],
+}
+
+fn walk(lists: &Lists, value: &Value, path: String, out: &mut BTreeSet<String>) {
     let kind = match value {
         Value::Null => "null",
         Value::Bool(_) => "bool",
@@ -60,24 +90,26 @@ fn walk(opaque: [&[&str]; 2], value: &Value, path: String, out: &mut BTreeSet<St
     };
     if !path.is_empty() {
         out.insert(format!("{path}:{kind}"));
-        if opaque.iter().any(|list| list.contains(&path.as_str())) {
+        if lists.opaque.iter().any(|list| listed(list, &path)) {
             return;
         }
     }
     match value {
         Value::Object(fields) => {
+            let map = !path.is_empty() && listed(lists.maps, &path);
             for (key, value) in fields {
+                let key = if map { "*" } else { key.as_str() };
                 let child = if path.is_empty() {
-                    key.clone()
+                    key.to_owned()
                 } else {
                     format!("{path}.{key}")
                 };
-                walk(opaque, value, child, out);
+                walk(lists, value, child, out);
             }
         }
         Value::Array(items) => {
             for item in items {
-                walk(opaque, item, format!("{path}[]"), out);
+                walk(lists, item, format!("{path}[]"), out);
             }
         }
         _ => {}
@@ -115,7 +147,7 @@ impl Classifier {
                     );
                 }
             }
-            Kind::Codex => {
+            Kind::Codex | Kind::Acp => {
                 if frame.get("method").is_some() && frame.get("id").is_some() {
                     self.requests
                         .insert(id(&frame["id"]), text(&frame["method"]).to_owned());
@@ -131,8 +163,30 @@ impl Classifier {
             Kind::ClaudeSdk => sdk_group(&self.requests, frame),
             Kind::Codex => codex_group(&self.requests, frame),
             Kind::ClaudePty => pty_group(frame),
+            Kind::Acp => acp_group(&self.requests, frame),
         }
     }
+}
+
+/// An ACP frame's group: a session update by its kind, a form by its
+/// mode, an answer by the method it answers. An error answer's shape is
+/// JSON-RPC's whatever it answers, so errors are one group.
+fn acp_group(requests: &BTreeMap<String, String>, frame: &Value) -> String {
+    if let Some(method) = frame.get("method").and_then(Value::as_str) {
+        return match method {
+            "session/update" => format!(
+                "session/update/{}",
+                text(&frame["params"]["update"]["sessionUpdate"])
+            ),
+            "elicitation/create" => format!("{method}/{}", text(&frame["params"]["mode"])),
+            other => other.to_owned(),
+        };
+    }
+    if frame.get("error").is_some() {
+        return "error".into();
+    }
+    let answered = requests.get(&id(&frame["id"])).map_or("?", String::as_str);
+    format!("result/{answered}")
 }
 
 fn id(value: &Value) -> String {
@@ -257,8 +311,10 @@ pub const SAMPLES: usize = 3;
 #[derive(Default)]
 struct Group {
     allowed: BTreeSet<String>,
-    /// Per provider version, oldest first.
-    versions: BTreeMap<Vec<u64>, Sample>,
+    /// By the provider that recorded it (one corpus may hold several
+    /// agents of one protocol, each with versions of its own), then per
+    /// version, oldest first.
+    versions: BTreeMap<String, BTreeMap<Vec<u64>, Sample>>,
     /// What the newest recordings always send, once the corpus is loaded.
     required: BTreeSet<String>,
 }
@@ -272,22 +328,43 @@ struct Sample {
 }
 
 impl Group {
+    /// The fields every provider's newest recordings always send.
     fn required(&self) -> BTreeSet<String> {
-        let mut recordings = 0;
-        let mut required: Option<BTreeSet<String>> = None;
-        for sample in self.versions.values().rev() {
-            required = Some(match required {
-                None => sample.always.clone(),
-                Some(required) => &required & &sample.always,
-            });
-            recordings += sample.recordings;
-            if recordings >= SAMPLES {
-                break;
-            }
-        }
-        required.unwrap_or_default()
+        let mut providers = self.versions.values().map(required_of);
+        let Some(first) = providers.next() else {
+            return BTreeSet::new();
+        };
+        providers.fold(first, |all, required| &all & &required)
     }
 }
+
+/// What one provider's newest recordings always send: its newest version's,
+/// read with the versions before it until they add up to [`SAMPLES`]
+/// recordings.
+fn required_of(versions: &BTreeMap<Vec<u64>, Sample>) -> BTreeSet<String> {
+    let mut recordings = 0;
+    let mut required: Option<BTreeSet<String>> = None;
+    for sample in versions.values().rev() {
+        required = Some(match required {
+            None => sample.always.clone(),
+            Some(required) => &required & &sample.always,
+        });
+        recordings += sample.recordings;
+        if recordings >= SAMPLES {
+            break;
+        }
+    }
+    required.unwrap_or_default()
+}
+
+/// Capabilities ACP lets an agent leave out, and that an agent lacking
+/// them does leave out. Every recorded agent offers them, so the corpus
+/// alone would require them; the fake leaves them out to stand for an
+/// agent that cannot reopen a session, or list its sessions.
+const ACP_CAPABILITIES: &[&str] = &[
+    "result.agentCapabilities.sessionCapabilities.list",
+    "result.agentCapabilities.sessionCapabilities.resume",
+];
 
 impl Corpus {
     /// Every recording under `roots`: each directory holding an `io.jsonl`.
@@ -316,6 +393,7 @@ impl Corpus {
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default();
+        let provider = text(&manifest["recorded"]["provider"]).to_owned();
         let version: Vec<u64> = text(&manifest["recorded"]["version"])
             .split('.')
             .filter_map(|part| part.parse().ok())
@@ -348,14 +426,17 @@ impl Corpus {
                         let signature = signature(kind, &frame);
                         let entry = self.groups.entry(group.clone()).or_default();
                         entry.allowed.extend(signature.iter().cloned());
-                        // What sits inside an array is only there when the
-                        // array has members.
+                        // What sits inside an array or a map keyed by the
+                        // data is only there when it has members.
                         let keys: BTreeSet<String> = keys(&signature)
                             .into_iter()
-                            .filter(|key| !key.contains("[]"))
+                            .filter(|key| {
+                                !key.contains("[]") && !key.split('.').any(|part| part == "*")
+                            })
                             .collect();
                         let first = shown.insert(group);
-                        match entry.versions.get_mut(&version) {
+                        let versions = entry.versions.entry(provider.clone()).or_default();
+                        match versions.get_mut(&version) {
                             Some(sample) => {
                                 sample.always.retain(|key| keys.contains(key));
                                 sample.recordings += usize::from(first);
@@ -365,7 +446,7 @@ impl Corpus {
                                     recordings: 1,
                                     always: keys,
                                 };
-                                entry.versions.insert(version.clone(), sample);
+                                versions.insert(version.clone(), sample);
                             }
                         }
                     }
@@ -378,13 +459,22 @@ impl Corpus {
     /// Whether a composed frame of `group` has a recorded shape.
     pub fn check(&self, kind: Kind, group: &str, frame: &Value) -> Result<(), String> {
         typed(kind, frame).map_err(|drift| format!("{group}: {drift}: {frame}"))?;
+        if kind == Kind::Acp
+            && let Some(method) = group.strip_prefix("result/")
+        {
+            answer(method, frame).map_err(|drift| format!("{group}: {drift}: {frame}"))?;
+        }
         let Some(recorded) = self.groups.get(group) else {
             return Err(format!("the corpus never shows a {group} frame: {frame}"));
         };
         let signature = signature(kind, frame);
         let invented: Vec<_> = signature.difference(&recorded.allowed).collect();
         let composed = keys(&signature);
-        let dropped: Vec<_> = recorded.required.difference(&composed).collect();
+        let mut required = recorded.required.clone();
+        if kind == Kind::Acp {
+            required.retain(|key| !ACP_CAPABILITIES.contains(&key.as_str()));
+        }
+        let dropped: Vec<_> = required.difference(&composed).collect();
         if invented.is_empty() && dropped.is_empty() {
             Ok(())
         } else {
@@ -414,6 +504,19 @@ pub fn typed(kind: Kind, frame: &Value) -> Result<(), String> {
         Kind::ClaudePty => claude_protocol::transcript::strict(&line)
             .map(drop)
             .map_err(|drift| drift.to_string()),
+        Kind::Acp => acp_protocol::strict(&line)
+            .map(drop)
+            .map_err(|drift| drift.to_string()),
+    }
+}
+
+/// Whether ACP's types read an agent's answer to a `method` request with
+/// nothing left unknown. An answer's line does not say what it answers,
+/// so [`typed`] reads only its envelope.
+fn answer(method: &str, frame: &Value) -> Result<(), String> {
+    match acp_protocol::AgentResponse::strict_read(method, &frame["result"]) {
+        Some(read) => read.map(drop).map_err(|error| error.to_string()),
+        None => Err(format!("no ACP request {method} has an answer")),
     }
 }
 
@@ -445,19 +548,74 @@ mod tests {
         assert!(typed(Kind::Codex, &completed("paused")).is_err());
     }
 
+    fn acp_corpus() -> Corpus {
+        let root = source_tree::crate_dir!().join("../interpret/fixtures/acp/live");
+        Corpus::load(Kind::Acp, &[&root]).unwrap()
+    }
+
+    fn chunk(update: Value) -> Value {
+        json!({"jsonrpc": "2.0", "method": "session/update",
+               "params": {"sessionId": "s", "update": update}})
+    }
+
+    /// An ACP agent's frames are held to the recorded agents': a field
+    /// none sent, a value ACP does not have, and an answer that does not
+    /// read as the answer to its request all fail.
+    #[test]
+    fn an_acp_frame_no_agent_sends_fails() {
+        let corpus = acp_corpus();
+        let said = chunk(json!({"sessionUpdate": "agent_message_chunk",
+                                "content": {"type": "text", "text": "hi"}}));
+        let group = "session/update/agent_message_chunk";
+        assert_eq!(corpus.check(Kind::Acp, group, &said), Ok(()));
+        let mut invented = said.clone();
+        invented["params"]["update"]["mood"] = json!("happy");
+        assert!(corpus.check(Kind::Acp, group, &invented).is_err());
+        let answer =
+            |reason: &str| json!({"id": 3, "jsonrpc": "2.0", "result": {"stopReason": reason}});
+        let group = "result/session/prompt";
+        assert_eq!(corpus.check(Kind::Acp, group, &answer("end_turn")), Ok(()));
+        assert!(corpus.check(Kind::Acp, group, &answer("paused")).is_err());
+        let wrong = json!({"id": 3, "jsonrpc": "2.0", "result": {"sessionId": 7}});
+        assert!(
+            corpus
+                .check(Kind::Acp, "result/session/new", &wrong)
+                .is_err()
+        );
+    }
+
+    /// A form's fields are the data's: any name passes, shaped as a
+    /// recorded field is.
+    #[test]
+    fn an_acp_forms_field_names_are_its_own() {
+        let form = |field: Value| {
+            json!({"id": "1", "jsonrpc": "2.0", "method": "elicitation/create", "params": {
+                "message": "?", "mode": "form", "sessionId": "s", "toolCallId": "c",
+                "requestedSchema": {"type": "object", "properties": {"colour": field}}
+            }})
+        };
+        let corpus = acp_corpus();
+        let group = "elicitation/create/form";
+        let field = json!({"type": "string", "title": "Colour"});
+        assert_eq!(corpus.check(Kind::Acp, group, &form(field)), Ok(()));
+        let field = json!({"type": "string", "colourful": true});
+        assert!(corpus.check(Kind::Acp, group, &form(field)).is_err());
+    }
+
     fn group(versions: &[(u64, usize, &[&str])]) -> Group {
+        let versions = versions
+            .iter()
+            .map(|(minor, recordings, always)| {
+                let always = always.iter().map(|key| (*key).to_owned()).collect();
+                let sample = Sample {
+                    recordings: *recordings,
+                    always,
+                };
+                (vec![0, *minor, 0], sample)
+            })
+            .collect();
         Group {
-            versions: versions
-                .iter()
-                .map(|(minor, recordings, always)| {
-                    let always = always.iter().map(|key| (*key).to_owned()).collect();
-                    let sample = Sample {
-                        recordings: *recordings,
-                        always,
-                    };
-                    (vec![0, *minor, 0], sample)
-                })
-                .collect(),
+            versions: BTreeMap::from([("provider".to_owned(), versions)]),
             ..Group::default()
         }
     }

@@ -3,14 +3,14 @@ home |  | signed-out | 0,174,402,617
 hosts |  |  | 0,174,402,617
 hosts.found.<desk> | desk is nearby | Open amux on desk to pair | 16,180,370,60
  | desk is nearby, Open amux on desk to pair |  | 16,180,370,60
- | Computers |  | 16,127,183,42
- | Agents |  | 110,795,95,54
+ | Devices |  | 16,127,127,42
+ | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 216,830,56,12
- | Agents |  | 110,795,95,54
- | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 217,830,55,12
- | Agents |  | 110,795,95,54
- | Computers | selected | 197,795,95,54
+ | Devices |  | 197,795,94,54
+ | Devices |  | 224,830,40,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Devices |  | 197,795,94,54
+ | Devices |  | 225,830,39,12
+ | Agents |  | 111,795,94,54
+ | Devices | selected | 197,795,94,54

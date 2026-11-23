@@ -88,6 +88,20 @@
       "sha256": "27d435a744c6cd160bcdd616dc3c18ad909367f8ab382459f254d8eb909fab12"
     },
     {
+      "fixture": "row_notice",
+      "file": "row_notice.light.png",
+      "theme": "light",
+      "viewport": [
+        100,
+        10
+      ],
+      "pixels": [
+        1000,
+        220
+      ],
+      "sha256": "2cd3a14c37a98a5865b670db25c96a4c1b5dc6d498a6426ec06750fef764b52d"
+    },
+    {
       "fixture": "row_agent_message",
       "file": "row_agent_message.light.png",
       "theme": "light",
@@ -155,7 +169,7 @@
         1000,
         110
       ],
-      "sha256": "35e17610d1efaae7b9cab44374cbd642609aab502f8b77f8458357c7b7a0517b"
+      "sha256": "667d71b6090a4f7958669abfd0128929b6e303a665a1427ca82b811fed022fff"
     },
     {
       "fixture": "ask_form",

@@ -19,7 +19,7 @@ default:
 # host rather than an installed amux.
 # Build the browser extension.
 build *ARGS:
-    {{bounded}} 900 cargo build --locked -p browser-core --target wasm32-unknown-unknown --profile wasm
+    wasm=$({{bounded}} 900 scripts/built '//crates/browser-core:browser-core[shared]' --target-platforms root//build/platforms:wasm-app-shipping-wasm) && AMUX_BROWSER_CORE=$wasm \
     {{bounded}} 300 sh -c 'cd js && { [ "${AMUX_NPM_READY-}" = 1 ] || npm ci --no-audit --no-fund --loglevel=error; } && cd extension && node build.ts "$@"' sh "$@"
 
 # Types, unit tests, and the end-to-end test in Chromium against this tree's
@@ -27,6 +27,14 @@ build *ARGS:
 # in js/test-results.
 # Check and test the overlay and the extension.
 test: (build "--dev")
+    binaries=$({{bounded}} 900 scripts/built //crates/provider-fakes:binaries) && TESTNET_BINARIES=$binaries \
+    {{bounded}} 600 sh -c 'cd js && npm run check && npx vitest run && { [ "${AMUX_PLAYWRIGHT_READY-}" = 1 ] || npx playwright install chromium >/dev/null; } && npx playwright test'
+
+# CI's twin of `test`, building the WebAssembly and the binaries with Cargo.
+# Check and test the extension on Cargo's build, as CI does.
+cargo-test:
+    {{bounded}} 900 cargo build --locked -p browser-core --target wasm32-unknown-unknown --profile wasm
+    {{bounded}} 300 sh -c 'cd js && { [ "${AMUX_NPM_READY-}" = 1 ] || npm ci --no-audit --no-fund --loglevel=error; } && cd extension && node build.ts --dev'
     {{bounded}} 900 cargo build --locked -p amux -p provider-fakes --bins
     {{bounded}} 600 sh -c 'cd js && npm run check && npx vitest run && { [ "${AMUX_PLAYWRIGHT_READY-}" = 1 ] || npx playwright install chromium >/dev/null; } && npx playwright test'
 
@@ -44,7 +52,7 @@ fmt:
 # js/tour, with the Chrome Web Store's screenshots and promo tile.
 # Screenshot every surface the extension draws.
 tour: (build "--dev")
-    {{bounded}} 900 cargo build --locked -p amux -p provider-fakes --bins
+    binaries=$({{bounded}} 900 scripts/built //crates/provider-fakes:binaries) && TESTNET_BINARIES=$binaries \
     {{bounded}} 600 sh -c 'cd js && rm -rf tour && npx playwright install chromium >/dev/null && AMUX_TOUR=1 npx playwright test tour'
 
 # Registers the `sh.amux.browser.dev` host with every installed Chromium

@@ -91,14 +91,14 @@ panel, repository tiles, rows, tabs, chips, cards).
   back. Search
   narrows the list through the runtime's filter, and the arrow keys move
   the selection.
-- **The hosts sidebar** lists this Mac, then the machines the profile
+- **The devices sidebar** lists this Mac, then the machines the profile
   trusts, each as a card with its kind's tile, its name and how this Mac
   reaches it. Picking one opens its page in the centre: one line of its
   reach, platform and amux version, which providers are signed in, its
   addresses (labelled, each copied from a button on hover), what being away
   or offline means for its agents, and the threads of work on it, each
-  opening its chat. A paired machine's page ends with Stop Trusting, which
-  revokes it after a confirmation.
+  opening its chat. A paired machine's page ends with Unpair <name>…, which
+  unpairs it after a confirmation.
 - **New Agent** is the empty centre, not a sheet: "What should we build
   in **amux**?", naming the chosen folder in a heavier weight so it reads
   as the folder rather than the product, and a composer for the first
@@ -148,7 +148,10 @@ panel, repository tiles, rows, tabs, chips, cards).
   solid blue and on Return, each with its key shown, and the provider's
   other answers in a menu split off the expected one. A question's options
   are picked from the card, with Reply Instead where the agent takes a
-  reply, and a note for an answer that takes one.
+  reply, and a note for an answer that takes one. An agent that takes the
+  person's own words in place of any answer (`AskCard.reply_instead`, an
+  ACP agent's) offers Reply Instead on every ask, a form's and a link's
+  included.
 - **Subagents** a turn started through Claude's or Codex's own tool fold to
   one line, "4 subagents", saying what they come to ("2 running · 1 waiting
   on you · 1 done", the waiting count in amber); a click on it unfolds the
@@ -261,7 +264,13 @@ a button is centred. The providers' marks are the only drawings, in
 `AmuxMacScreens/Icons` with their licences in `NOTICE`: Claude's, in its
 terracotta where the provider is being chosen or named (the picker and
 the model chip) and in the text's colour elsewhere, and OpenAI's for
-Codex.
+Codex. A mark is found by the provider's id (`provider-<id>.svg`), and an
+agent with none is named in its mark's place. The built-in agents that
+speak ACP have no mark here: none of Antigravity's, OpenCode's or Grok's
+owners grants one to a client like this (`NOTICE` says why), and an agent a
+person added gets its name, never a mark made up for it. "Open in Terminal"
+is offered only for an agent with a terminal interface of its own, as its
+card or its chat's capabilities say.
 
 The window is one `Place`: the surface, the agent or host open, whether the
 sidebar shows the settled agents, whether the tool window is open, and the
@@ -290,7 +299,7 @@ at the foot.
 | --- | --- |
 | Connect your iPhone | The Mac's name, with Rename to change it in place; a QR code the app draws for the window's link, with "Scan with your iPhone’s camera to pair." and "Or enter 418 207 in the amux app." (the PIN large, monospaced and selectable); then "Your iPhone is pairing…" as a phone joins, the code dimmed under a spinner, and a lockout with a new code after wrong PINs. The window is renewed before it ends unless a phone is joining, and closed when the screen leaves or the app quits. |
 | Keep it connected | "Paired with <phone> ✓" once a phone paired, then start at login and keep awake, both ticked, applied on Continue. |
-| Reach it from anywhere | Sign In runs `WebSignIn`. "Sign in on <phone> too" is ticked when the phone just paired is signed out; after the sign-in the Mac offers it the account and opens the account service's offer page. When a paired machine offers its account instead, the screen asks "Use <email>?" ("<machine> is signed in with this account…"), with Use Another Account to turn it down for the browser sign-in. |
+| Reach your Mac through the relay | Sign In runs `WebSignIn`. "Sign in on <phone> too" is ticked when the phone just paired is signed out; after the sign-in the Mac offers it the account and opens the account service's offer page. When a paired machine offers its account instead, the screen asks "Use <email>?" ("<machine> is signed in with this account…"), with Use Another Account to turn it down for the browser sign-in. |
 | Where should agents work? | The repositories Claude Code and Codex ran in lately, ticked, and Add a Folder. |
 | Help improve amux | "Send a report automatically when something goes wrong", unticked, with "Never your chats, code, or file names." under it, then one line: "Usage counts are sent to help improve amux, never your code or chats. You can turn them off in Settings." |
 | Try starting an agent from your phone | Waits for an agent a phone starts here, then lands on the agent list with it selected. |

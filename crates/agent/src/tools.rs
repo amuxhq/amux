@@ -41,7 +41,7 @@ use uuid::Uuid;
 use wire::agent_service_client::AgentServiceClient;
 use wire::inventory_service_client::InventoryServiceClient;
 use wire::{
-    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, ExitCause, Filing, HostEntry, Kind,
+    Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, ExitCause, Filing, HostEntry,
     Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, ResolveHostRequest,
     SendMessageRequest, SetFilingRequest, SubscribeInventoryRequest, attachment,
     create_agent_request, inventory_event,
@@ -97,15 +97,16 @@ pub(crate) fn unasked() -> impl Iterator<Item = &'static str> {
 }
 
 const AGENTS: &str = "List the amux fleet: every agent the person has not settled, with its \
-name, kind, host, whether it is live, what it is doing and working on, its parent, and which \
-one is you.";
+name, kind (the agent program it runs: claude, codex or another agent's id), host, whether it \
+is live, what it is doing and working on, its parent, and which one is you.";
 const HOSTS: &str = "List the hosts this fleet trusts: each one's name, whether it is online, \
-and which one is this host. Spawn on another host by its name.";
+which one is this host, and the agents each offers to spawn. Spawn on another host by its \
+name.";
 const SEND: &str = "Send a message to another amux agent by name. It answers once the \
 recipient's provider has the message, or says why it could not. When a message reaches you \
 from an amux agent, reply with this tool to that agent's name.";
-const SPAWN: &str = "Start a child agent with a first prompt: claude or codex. It runs on \
-this host unless you name \
+const SPAWN: &str = "Start a child agent with a first prompt: claude, codex, or another \
+agent the host offers, by the id hosts lists. It runs on this host unless you name \
 another trusted host, in your working directory unless you give one. On another host, give \
 a folder there: ask the person which one if you do not know one. The child does \
 its work and stops. When it finishes, its last message arrives as a new message in the main \
@@ -126,7 +127,8 @@ file.";
 /// for it would use, and stay short, since Claude caps them.
 const INSTRUCTIONS: &str = "amux runs a fleet of coding agents, and you are one. Use these \
 tools to work with other agents: send a message to another agent, or reply to one that \
-messaged you (send); start a child agent, claude or codex, on this or another host (spawn); \
+messaged you (send); start a child agent, claude, codex or another a host offers, on this or \
+another host (spawn); \
 stop a child agent (stop); list the agents in the fleet (agents) and the hosts they run on \
 (hosts); say what you are working on (status); and attach a file to your reply (attach).";
 
@@ -303,7 +305,7 @@ impl Server {
                 let mut row = json!({
                     "name": agent.name,
                     "id": interpret::to_hex(&agent.agent_id),
-                    "kind": kind_word(agent.kind()),
+                    "kind": kind_word(agent),
                     "host": host_name(&agent.host_id),
                     "live": agent.lifecycle() == Lifecycle::Live,
                     "phase": word(agent.phase().as_str_name(), "PHASE_"),
@@ -341,9 +343,18 @@ impl Server {
                     Some(wire::trusted::Reach::Away(_)) => "away",
                     _ => "offline",
                 };
+                // What the host lists itself is what a spawn there can
+                // name: Claude and Codex, and the ACP agents installed
+                // there.
+                let offers: Vec<&str> = host
+                    .providers
+                    .iter()
+                    .map(|provider| provider.provider_id.as_str())
+                    .collect();
                 let mut row = json!({
                     "name": host.name(),
                     "presence": presence,
+                    "agents": offers,
                 });
                 if here.as_deref() == Some(host.host_id()) {
                     row["this_host"] = json!(true);
@@ -405,11 +416,7 @@ impl Server {
     /// is not in the request: the host sets it from the caller, this agent,
     /// as it sets a message's sender.
     async fn spawn(&self, arguments: &Value) -> Answer {
-        let kind = required(arguments, "kind")?;
-        let Some(kind) = kind_named(&kind) else {
-            let [first, last] = SPAWNABLE.map(kind_word);
-            return Err(format!("no agent kind {kind:?}; use {first} or {last}").into());
-        };
+        let agent = agent_named(&required(arguments, "kind")?)?;
         let prompt = required(arguments, "prompt")?;
         let name = optional(arguments, "name");
         // A name is never an address: the daemon resolves it against this
@@ -433,7 +440,7 @@ impl Server {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             name,
             cwd,
-            agent: create_agent_request::Agent::defaults(kind),
+            agent: Some(agent),
             initial_prompt: Some(PromptSubmission {
                 input_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 prompt: Some(prompt),
@@ -583,8 +590,6 @@ impl Server {
     /// Stores the file in this agent's directory under its hash and answers
     /// the element that refers to it.
     fn attach(&self, arguments: &Value) -> Answer {
-        use sha2::Digest as _;
-
         let path = PathBuf::from(required(arguments, "path")?);
         let path = if path.is_absolute() {
             path
@@ -596,32 +601,11 @@ impl Server {
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_default()
         });
-        let size = std::fs::metadata(&path)
-            .map_err(|error| format!("reading {}: {error}", path.display()))?
-            .len();
-        if size > wire::ATTACHMENT_SIZE_LIMIT as u64 {
-            return Err(too_large_words(&name).into());
-        }
-        let bytes =
-            std::fs::read(&path).map_err(|error| format!("reading {}: {error}", path.display()))?;
-        let hash = sha2::Sha256::digest(&bytes).to_vec();
-        dir::write_blob(&self.dir, &hash, &bytes)
-            .map_err(|error| format!("storing {}: {error}", path.display()))?;
-        let image = attachments::native_image(&bytes);
-        let blob = BlobRef {
-            hash: hash.clone(),
-            name,
-            mime: image.unwrap_or_else(|| mime_type(&path)).to_owned(),
-            size: bytes.len() as u64,
-        };
-        let attachment = Attachment {
-            of: Some(if image.is_some() {
-                attachment::Of::Image(blob)
-            } else {
-                attachment::Of::File(blob)
-            }),
-            ..Default::default()
-        };
+        let attachment = store_file(&self.dir, &path, name)?;
+        let hash = attachments::blobs(&attachment)
+            .first()
+            .map(|blob| blob.hash.clone())
+            .unwrap_or_default();
         let stored = self.dir.join(dir::BLOBS).join(interpret::to_hex(&hash));
         Ok(attachments::element(&attachment, Some(&stored)))
     }
@@ -647,6 +631,57 @@ impl Server {
         }
         Ok(())
     }
+}
+
+/// Stores the file at `path` in the blob directory of the agent in `dir`
+/// under its hash, as the attachment named `name` that refers to it: an
+/// image where the bytes are one a provider reads natively, else a file.
+/// Only a regular file is read, its links followed first: a device or a
+/// pipe may never end, or may block the call until something writes it. A file over
+/// [`wire::ATTACHMENT_SIZE_LIMIT`] is refused unread, and one that grows
+/// past it while read is refused at the limit, so memory stays bounded.
+fn store_file(dir: &Path, path: &Path, name: String) -> Result<Attachment, String> {
+    use std::io::Read as _;
+
+    use sha2::Digest as _;
+
+    let reading = |error: std::io::Error| format!("reading {}: {error}", path.display());
+    let limit = wire::ATTACHMENT_SIZE_LIMIT as u64;
+    let resolved = std::fs::canonicalize(path).map_err(reading)?;
+    let metadata = std::fs::metadata(&resolved).map_err(reading)?;
+    if !metadata.is_file() {
+        return Err(format!("{} is not a regular file", path.display()));
+    }
+    if metadata.len() > limit {
+        return Err(too_large_words(&name));
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(&resolved)
+        .map_err(reading)?
+        .take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(reading)?;
+    if bytes.len() as u64 > limit {
+        return Err(too_large_words(&name));
+    }
+    let hash = sha2::Sha256::digest(&bytes).to_vec();
+    dir::write_blob(dir, &hash, &bytes)
+        .map_err(|error| format!("storing {}: {error}", path.display()))?;
+    let image = attachments::native_image(&bytes);
+    let blob = BlobRef {
+        hash,
+        name,
+        mime: image.unwrap_or_else(|| mime_type(path)).to_owned(),
+        size: bytes.len() as u64,
+    };
+    Ok(Attachment {
+        of: Some(if image.is_some() {
+            attachment::Of::Image(blob)
+        } else {
+            attachment::Of::File(blob)
+        }),
+        ..Default::default()
+    })
 }
 
 /// Why a file is not attached: it is over the limit, in the unit a person
@@ -857,24 +892,19 @@ fn plain(status: &Status) -> String {
     }
 }
 
-/// The kinds an agent may spawn. A Claude child runs headless: people read
-/// a child in amux's chat, so how its Claude is driven is no business of
-/// the parent's.
-const SPAWNABLE: [Kind; 2] = [Kind::ClaudeSdk, Kind::Codex];
-
 /// An enum value as the tools say it: its protobuf name without the enum's
 /// prefix, in lowercase, so the tools' words are the wire's own.
 fn word(name: &str, prefix: &str) -> String {
     name.trim_start_matches(prefix).to_ascii_lowercase()
 }
 
-/// A kind as the tools say it: `claude` or `codex`. Both ways of driving
-/// Claude are `claude`, for the same reason a parent cannot pick one.
-fn kind_word(kind: Kind) -> String {
-    match kind {
-        Kind::Unspecified => "unknown".to_owned(),
-        Kind::ClaudePty | Kind::ClaudeSdk => "claude".to_owned(),
-        Kind::Codex => "codex".to_owned(),
+/// The agent program a row runs, as the tools say it: its provider id, the
+/// one a spawn names. Both ways of driving Claude are `claude`, for the same
+/// reason a parent cannot pick one.
+fn kind_word(agent: &Agent) -> String {
+    match agent.provider_id() {
+        "" => "unknown".to_owned(),
+        id => id.to_owned(),
     }
 }
 
@@ -901,9 +931,25 @@ fn exit_words(agent: &Agent) -> Option<String> {
     }
 }
 
-/// The kind an agent named in a spawn call.
-fn kind_named(word: &str) -> Option<Kind> {
-    SPAWNABLE.into_iter().find(|kind| kind_word(*kind) == word)
+/// The agent a spawn call names by its provider id. A Claude child runs
+/// headless: people read a child in amux's chat, so how its Claude is
+/// driven is no business of the parent's. Any other id is an ACP agent's,
+/// which only the host it runs on knows whether it offers, so that host
+/// refuses one it does not; an id no agent can have is refused here.
+fn agent_named(id: &str) -> Result<create_agent_request::Agent, Refusal> {
+    use create_agent_request::Agent;
+    match id {
+        wire::agents::CLAUDE => Ok(Agent::ClaudeSdk(wire::ClaudeCreateConfig::default())),
+        wire::agents::CODEX => Ok(Agent::Codex(wire::CodexCreateConfig::default())),
+        _ if wire::agents::shape_problem(id).is_none() => Ok(Agent::Acp(wire::AcpCreateConfig {
+            agent: id.to_owned(),
+            ..Default::default()
+        })),
+        _ => Err(format!(
+            "no agent {id:?}; use claude, codex or another agent a host offers, by the id hosts lists"
+        )
+        .into()),
+    }
 }
 
 fn required(arguments: &Value, name: &str) -> Result<String, Refusal> {
@@ -979,7 +1025,7 @@ fn definitions() -> Value {
             "context": { "type": "string", "description": "An optional thread label the recipient sees with the message." },
           }), &["to", "text"]) },
         { "name": wire::SPAWN_TOOL, "description": SPAWN, "inputSchema": object(json!({
-            "kind": { "type": "string", "enum": SPAWNABLE.map(kind_word) },
+            "kind": { "type": "string", "description": "The agent to start: claude, codex, or the id of another agent the host offers (hosts lists them)." },
             "prompt": { "type": "string" },
             "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": wire::AGENT_NAME_MOST, "description": "Lowercase letters, digits and hyphens; one is chosen when omitted." },
             "cwd": { "type": "string", "description": "A path on the host the child runs on; required when that is another host." },

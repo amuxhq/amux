@@ -182,9 +182,9 @@ mod tests {
             (
                 "checked_in",
                 json!({
-                    "agents_running": {"codex": 1},
+                    "agents_running": {"codex": 1, "custom": 1},
                     "agents_created_24h": {"claude_pty": 2},
-                    "turns_24h": {"claude_pty": 7},
+                    "turns_24h": {"claude_pty": 7, "opencode": 3},
                     "paired_hosts": 2,
                     "hosts_by_route": {"direct": 1, "relay": 1},
                     "relay_carrier": "quic",
@@ -324,8 +324,7 @@ mod tests {
     #[test]
     fn the_public_page_names_every_event_and_property() {
         let page = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../docs/guide/understand/what-amux-sends.md"),
+            source_tree::crate_dir!().join("../../docs/guide/understand/what-amux-sends.md"),
         )
         .expect("docs/guide/understand/what-amux-sends.md exists");
         let mut missing = Vec::new();

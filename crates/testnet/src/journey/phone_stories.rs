@@ -1,8 +1,9 @@
-//! The phone app's stories: the shared ones as a person tells them on the
-//! phone, and the phone's own (signing in, buying, reporting, a large text
-//! size, the local-network permission, a push, resuming links), each
-//! compared with its reviewed screens and proved by what the hosts
-//! recorded.
+//! The phone stories. The shared ones run on either phone through the
+//! [`Driver`] it is driven by: the iPhone app on its simulator and the
+//! Android app on its emulator read the same identifiers, words and values,
+//! so each story is told once. The iPhone's own (buying, the local-network
+//! permission, a push, resuming links) drive what only it has. Each is
+//! compared with its reviewed screens and proved by what the hosts recorded.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -12,6 +13,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use super::common::*;
+use super::driver::{Client, Driver, Tab};
 use super::phone::{
     AppError, BUNDLE_ID, Drawn, Launch, PhoneJourney, golden_udid, labelled, printed_pin, simctl,
 };
@@ -21,44 +23,72 @@ use super::{
 use crate::TierDecl;
 use crate::door::Control;
 
-type Tell = fn(&mut PhoneJourney) -> Proved;
+pub(crate) type Tell<D> = fn(&mut D) -> Proved;
 
-const STORIES: &[(&str, Tell)] = &[
-    ("reach-host", reach_host),
-    ("conversation-decision-claude-pty", |j| {
-        conversation_decision(j, "decision-pty", false)
-    }),
-    ("conversation-decision-claude-sdk", |j| {
-        conversation_decision(j, "decision-sdk", true)
-    }),
-    ("conversation-decision-codex", |j| {
-        conversation_decision(j, "decision-codex", true)
-    }),
-    ("decide-plan-claude-sdk", |j| {
-        decide_plan(j, "planner", true)
-    }),
-    ("decide-plan-claude-pty", |j| {
-        decide_plan(j, "planner-pty", false)
-    }),
-    ("decide-plan-codex", decide_plan_codex),
-    ("answer-questions", answer_questions),
-    ("tool-server-asks", tool_server_asks),
-    ("queue-and-steer", queue_and_steer),
-    ("send-while-away", send_while_away),
-    ("composer-limits", composer_limits),
-    ("keep-authority", keep_authority),
-    ("manage-agent", manage_agent),
-    ("attachment-or-review", attachment_or_review),
-    ("leave-and-recover", leave_and_recover),
-    ("account-sign-in", account_sign_in),
-    ("one-tap-sign-in", one_tap_sign_in),
-    ("purchase-restore", purchase_restore),
-    ("report", report),
-    ("accessibility", accessibility),
-    ("local-network", local_network),
-    ("push-wake", push_wake),
-    ("resume", resume),
-];
+/// The stories either phone tells, in the order a whole run tells them.
+///
+/// Every shared story runs on Android too. The iPhone's own stay off it:
+/// buying and restoring (`purchase-restore`) needs Google Play Billing,
+/// which the Android app does not have yet; the local-network permission
+/// (`local-network`) is iOS's own, as Android browses with `NsdManager`
+/// behind no permission; a push that wakes the app (`push-wake`) needs a
+/// push delivered to it, which the Android app does not take yet; the
+/// link log `resume` reads is the simulator's, read from its app container;
+/// and the ACP agents' stories (`acp-*`) are written against the iPhone's
+/// driver, as the Android app does not offer ACP agents yet.
+pub(crate) fn shared<D: Driver>() -> Vec<(&'static str, Tell<D>)> {
+    vec![
+        ("reach-host", reach_host),
+        ("conversation-decision-claude-pty", |j| {
+            conversation_decision(j, "decision-pty", false)
+        }),
+        ("conversation-decision-claude-sdk", |j| {
+            conversation_decision(j, "decision-sdk", true)
+        }),
+        ("conversation-decision-codex", |j| {
+            conversation_decision(j, "decision-codex", true)
+        }),
+        ("decide-plan-claude-sdk", |j| {
+            decide_plan(j, "planner", true)
+        }),
+        ("decide-plan-claude-pty", |j| {
+            decide_plan(j, "planner-pty", false)
+        }),
+        ("decide-plan-codex", decide_plan_codex),
+        ("answer-questions", answer_questions),
+        ("tool-server-asks", tool_server_asks),
+        ("queue-and-steer", queue_and_steer),
+        ("send-while-away", send_while_away),
+        ("composer-limits", composer_limits),
+        ("keep-authority", keep_authority),
+        ("manage-agent", manage_agent),
+        ("attachment-or-review", attachment_or_review),
+        ("leave-and-recover", leave_and_recover),
+        ("account-sign-in", account_sign_in),
+        ("one-tap-sign-in", one_tap_sign_in),
+        ("report", report),
+        ("accessibility", accessibility),
+    ]
+}
+
+/// Every story the iPhone tells: the shared ones, then its own.
+fn stories() -> Vec<(&'static str, Tell<PhoneJourney>)> {
+    let mut stories = shared::<PhoneJourney>();
+    stories.extend([
+        ("purchase-restore", purchase_restore as Tell<PhoneJourney>),
+        ("local-network", local_network),
+        ("push-wake", push_wake),
+        ("resume", resume),
+        ("acp-conversation", super::phone_acp::conversation),
+        (
+            "acp-interrupt-and-queue",
+            super::phone_acp::interrupt_and_queue,
+        ),
+        ("acp-unresumable", super::phone_acp::unresumable),
+        ("acp-signed-out", super::phone_acp::signed_out),
+    ]);
+    stories
+}
 
 /// Runs the named stories, the phone's own with `native`, or every story
 /// written here, one after another on the leased golden simulator.
@@ -79,7 +109,10 @@ pub(crate) fn run(native: bool, named: Vec<String>) -> ExitCode {
     };
     let mut failed = 0;
     for name in &wanted {
-        let (_, tell) = STORIES.iter().find(|(id, _)| id == name).expect("known");
+        let (_, tell) = stories()
+            .into_iter()
+            .find(|(id, _)| id == name)
+            .expect("known");
         let began = Instant::now();
         let mut journey = match super::story(name, "phone")
             .and_then(|story| PhoneJourney::start(&story, &udid))
@@ -130,19 +163,19 @@ fn selected(native: bool, named: Vec<String>) -> Result<Vec<String>, String> {
             .map(|story| story.id)
             .collect()
     } else if named.is_empty() {
-        STORIES.iter().map(|(id, _)| (*id).to_owned()).collect()
+        stories().iter().map(|(id, _)| (*id).to_owned()).collect()
     } else {
         named
     };
     let unknown: Vec<&str> = wanted
         .iter()
-        .filter(|name| !STORIES.iter().any(|(id, _)| id == name))
+        .filter(|name| !stories().iter().any(|(id, _)| id == name))
         .map(String::as_str)
         .collect();
     if unknown.is_empty() {
         Ok(wanted)
     } else {
-        let known: Vec<&str> = STORIES.iter().map(|(id, _)| *id).collect();
+        let known: Vec<&str> = stories().iter().map(|(id, _)| *id).collect();
         Err(format!(
             "no phone story written for {}; one of {}",
             unknown.join(", "),
@@ -154,7 +187,7 @@ fn selected(native: bool, named: Vec<String>) -> Result<Vec<String>, String> {
 // --- reading the phone ---------------------------------------------------
 
 /// The ask choice a person reads as `label`.
-fn choice(drawn: &Drawn, label: &str) -> Result<String, String> {
+pub(super) fn choice(drawn: &Drawn, label: &str) -> Result<String, String> {
     let choices = || {
         drawn
             .iter()
@@ -209,7 +242,7 @@ fn current(drawn: &Drawn) -> bool {
 
 /// The prompts waiting under the feed, oldest first: each one's words and
 /// how it waits.
-fn queued(drawn: &Drawn) -> Vec<(String, String)> {
+pub(super) fn queued(drawn: &Drawn) -> Vec<(String, String)> {
     let mut rows: Vec<(u32, &Value)> = drawn
         .iter()
         .filter_map(|(name, element)| {
@@ -233,16 +266,18 @@ fn queued(drawn: &Drawn) -> Vec<(String, String)> {
         .collect()
 }
 
-fn asking(drawn: &Drawn, question: &str) -> bool {
+pub(super) fn asking(drawn: &Drawn, question: &str) -> bool {
     drawn.label("ask.question") == question
 }
 
-/// How many of the chat's rows hold `text`.
-fn replies(drawn: &Drawn, text: &str) -> usize {
+/// How many of the chat's rows hold `text`. Android draws a row's prose in
+/// a `markdown.root` of its own inside the row, so the row's own label is
+/// empty there and the prose is counted where it is drawn.
+pub(super) fn replies(drawn: &Drawn, text: &str) -> usize {
     drawn
         .iter()
         .filter(|(name, element)| {
-            name.starts_with("chat.row")
+            (name.starts_with("chat.row") || name.starts_with("markdown.root"))
                 && element["label"]
                     .as_str()
                     .is_some_and(|label| label.contains(text))
@@ -343,12 +378,14 @@ fn reviewed(chat: &Value, comment: &str) -> Result<(Value, String), String> {
 /// The phone's browser finds `host`; once `amux pair` opens its pairing
 /// window the phone offers the keypad by itself, the PIN it printed is typed
 /// there and the machine it names is trusted.
-fn pair_by_code(journey: &mut PhoneJourney, host: &str) -> Result<(), String> {
+pub(super) fn pair_by_code<D: Driver>(journey: &mut D, host: &str) -> Result<(), String> {
     let host_id = journey.host_id(host);
-    journey.tab("Computers")?;
+    journey.tab(Tab::Devices)?;
+    journey.found(host, false)?;
     journey.wait_for(&[&format!("hosts.found.{host_id}")])?;
     let mut pairing = journey.amux(host, &["pair"])?;
     let pin = printed_pin(&mut pairing)?;
+    journey.found(host, true)?;
     journey.wait_for(&["pin.code"])?;
     journey.type_text("pin.code", &pin)?;
     journey.wait_for(&["pair-confirm.trust"])?;
@@ -361,16 +398,16 @@ fn pair_by_code(journey: &mut PhoneJourney, host: &str) -> Result<(), String> {
     pairing.wait(Duration::from_secs(30))
 }
 
-fn open_agent(journey: &mut PhoneJourney, name: &str) -> Result<String, String> {
+fn open_agent<D: Driver>(journey: &mut D, name: &str) -> Result<String, String> {
     let agent = journey.agent_id(name);
-    journey.tab("Agents")?;
+    journey.tab(Tab::Agents)?;
     journey.wait_for(&[&format!("home.row.{agent}")])?;
     journey.tap(&format!("home.row.{agent}"))?;
     journey.wait_for(&["chat.field"])?;
     Ok(agent)
 }
 
-fn send(journey: &mut PhoneJourney, text: &str) -> Result<(), String> {
+pub(super) fn send<D: Driver>(journey: &mut D, text: &str) -> Result<(), String> {
     journey.type_text("chat.field", text)?;
     journey.wait(
         |drawn| drawn.enabled("chat.send"),
@@ -381,8 +418,8 @@ fn send(journey: &mut PhoneJourney, text: &str) -> Result<(), String> {
 
 /// Waits for the fleet with the agent's row on it, opening the folded
 /// section holding the row when the fleet keeps it folded away.
-fn back_to_row(
-    journey: &mut PhoneJourney,
+pub(super) fn back_to_row<D: Driver>(
+    journey: &mut D,
     agent: &str,
     left: impl Fn(&Drawn) -> bool,
 ) -> Result<(), String> {
@@ -409,8 +446,8 @@ fn back_to_row(
 
 /// Leaves the chat for the fleet and opens it again, so it is read with the
 /// keyboard down.
-fn reopen(
-    journey: &mut PhoneJourney,
+pub(super) fn reopen<D: Driver>(
+    journey: &mut D,
     agent: &str,
     ready: impl Fn(&Drawn) -> bool,
 ) -> Result<Drawn, String> {
@@ -425,8 +462,8 @@ fn reopen(
 
 /// Leaves the chat for the fleet and opens it again with an ask standing
 /// where the composer was, so it is read with the keyboard down.
-fn reopen_card(
-    journey: &mut PhoneJourney,
+fn reopen_card<D: Driver>(
+    journey: &mut D,
     agent: &str,
     ready: impl Fn(&Drawn) -> bool,
 ) -> Result<Drawn, String> {
@@ -437,7 +474,7 @@ fn reopen_card(
 }
 
 /// Back from a chat to the fleet, once the page has finished leaving.
-fn back_to_fleet(journey: &mut PhoneJourney) -> Result<(), String> {
+fn back_to_fleet<D: Driver>(journey: &mut D) -> Result<(), String> {
     journey.back()?;
     journey.wait(|drawn| !drawn.has("chat.field"), "the fleet")?;
     journey.app(json!({"kind": "settle"}))?;
@@ -445,7 +482,7 @@ fn back_to_fleet(journey: &mut PhoneJourney) -> Result<(), String> {
 }
 
 /// Back from a chat to the fleet.
-fn leave_chat(journey: &mut PhoneJourney) -> Result<(), String> {
+fn leave_chat<D: Driver>(journey: &mut D) -> Result<(), String> {
     journey.back()?;
     journey.wait(|drawn| !drawn.has("chat.field"), "the fleet")?;
     Ok(())
@@ -453,7 +490,7 @@ fn leave_chat(journey: &mut PhoneJourney) -> Result<(), String> {
 
 /// Send back… opens the note the plan goes back with; the send-back under
 /// it is offered only once something is written.
-fn send_back(journey: &mut PhoneJourney, card: &Drawn, note: &str) -> Result<(), String> {
+fn send_back<D: Driver>(journey: &mut D, card: &Drawn, note: &str) -> Result<(), String> {
     journey.tap(&choice(card, "Send back…")?)?;
     journey.wait_for(&["ask.note"])?;
     journey.type_text("ask.note", note)?;
@@ -479,7 +516,7 @@ fn enabled_or_unsaid(element: &Value) -> bool {
 
 /// Plan picked as Codex's mode on the settings card the model chip opens;
 /// the card closed once the agent reports it.
-fn plan_mode(journey: &mut PhoneJourney) -> Result<(), String> {
+fn plan_mode<D: Driver>(journey: &mut D) -> Result<(), String> {
     journey.tap("chat.model")?;
     journey.wait_for(&["chat.settings.workmode.plan"])?;
     // Codex's card holds more than fits above the chat, and the mode is the
@@ -503,31 +540,38 @@ fn plan_mode(journey: &mut PhoneJourney) -> Result<(), String> {
 /// The activity bar slides while the turn runs; under reduced motion it
 /// stands still, so the screen can be photographed. Its elapsed time is
 /// masked.
-fn photograph_running(journey: &mut PhoneJourney, label: &str) -> Result<(), String> {
-    journey.app(json!({"kind": "assist", "motion": true, "transparency": true}))?;
+pub(super) fn photograph_running<D: Driver>(journey: &mut D, label: &str) -> Result<(), String> {
+    journey.reduce_motion(true)?;
     journey.screen(label, &["chat.activity"])?;
-    journey.app(json!({"kind": "assist", "motion": false, "transparency": true}))?;
+    journey.reduce_motion(false)?;
     Ok(())
 }
 
 // --- the shared stories --------------------------------------------------
 
-fn reach_host(journey: &mut PhoneJourney) -> Proved {
+fn reach_host<D: Driver>(journey: &mut D) -> Proved {
     let desk = journey.host_id("desk");
     let prompt = "Hello from the phone.";
     let reply = "The desk is reachable.";
-    // A first run: the fleet says why iOS is about to ask for the local
-    // network before anything browses.
+    let mut proved = Vec::new();
     journey.launch(Launch {
         first_run: true,
         ..Launch::plain()
     })?;
-    journey.wait_for(&["home.localNetwork.look"])?;
-    journey.screen("first-run", &[])?;
-    journey.tap("home.localNetwork.look")?;
+    // A first run on an iPhone: the fleet says why iOS is about to ask for
+    // the local network before anything browses. Android browses with no
+    // permission to ask for, so it has nothing to explain.
+    if D::CLIENT == Client::Iphone {
+        journey.wait_for(&["home.localNetwork.look"])?;
+        journey.screen("first-run", &[])?;
+        journey.tap("home.localNetwork.look")?;
+        proved.push("a first run explained the local network before browsing".to_owned());
+    }
+    proved.extend(journey.self_checks()?);
 
     // Unpaired: the phone's own browser finds the desk, and with no pairing
     // window open there the fleet says where pairing starts.
+    journey.found("desk", false)?;
     let found = format!("home.found.{desk}");
     journey.wait_for(&[&found])?;
     journey.screen("found-not-paired", &[])?;
@@ -537,6 +581,7 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
     // desk's own name and key before anything is trusted.
     let mut pairing = journey.amux("desk", &["pair"])?;
     let pin = printed_pin(&mut pairing)?;
+    journey.found("desk", true)?;
     journey.wait(
         |drawn| drawn.has("pin.code") && drawn.value("pin.title") == "Pair with desk?",
         "the keypad raised for the desk",
@@ -560,7 +605,7 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
         |drawn| !drawn.has("pair-confirm"),
         "the pairing sheet closed",
     )?;
-    journey.tab("Computers")?;
+    journey.tab(Tab::Devices)?;
     let row = format!("hosts.row.{desk}");
     let drawn = journey.wait(
         |drawn| drawn.has(&row) && !drawn.has("pair-confirm"),
@@ -573,7 +618,7 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
 
     // The desk's agent is in the fleet; the phone opens it, writes, and the
     // desk holds the prompt once and answers.
-    journey.tab("Agents")?;
+    journey.tab(Tab::Agents)?;
     let agent = journey.agent_id("desk-work");
     let agent_row = format!("home.row.{agent}");
     journey.wait_for(&[&agent_row])?;
@@ -610,8 +655,7 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
         |drawn| drawn.has(&agent_row) && !drawn.has("chat.field"),
         "the fleet",
     )?;
-    Ok(vec![
-        "a first run explained the local network before browsing".to_owned(),
+    proved.extend([
         "the phone's own browser found the desk in the net's scope and said to open amux there".to_owned(),
         "the desk's open pairing window raised the keypad on the phone by itself".to_owned(),
         "the PIN the desk printed, typed on the keypad, reached the desk's name and key before trust".to_owned(),
@@ -622,10 +666,11 @@ fn reach_host(journey: &mut PhoneJourney) -> Proved {
             quoted(prompt)
         ),
         "leaving the chat came back to the fleet, and the chat opened again held the prompt and the reply".to_owned(),
-    ])
+    ]);
+    Ok(proved)
 }
 
-fn conversation_decision(journey: &mut PhoneJourney, agent: &str, provider_logs: bool) -> Proved {
+fn conversation_decision<D: Driver>(journey: &mut D, agent: &str, provider_logs: bool) -> Proved {
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "desk")?;
     let agent_id = open_agent(journey, agent)?;
@@ -685,7 +730,7 @@ fn conversation_decision(journey: &mut PhoneJourney, agent: &str, provider_logs:
     Ok(proved)
 }
 
-fn decide_plan(journey: &mut PhoneJourney, agent: &str, headless: bool) -> Proved {
+fn decide_plan<D: Driver>(journey: &mut D, agent: &str, headless: bool) -> Proved {
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "desk")?;
     let agent_id = open_agent(journey, agent)?;
@@ -745,7 +790,7 @@ fn decide_plan(journey: &mut PhoneJourney, agent: &str, headless: bool) -> Prove
     Ok(proved)
 }
 
-fn decide_plan_codex(journey: &mut PhoneJourney) -> Proved {
+fn decide_plan_codex<D: Driver>(journey: &mut D) -> Proved {
     let agent = "planner-codex";
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "desk")?;
@@ -836,7 +881,7 @@ fn decide_plan_codex(journey: &mut PhoneJourney) -> Proved {
     ])
 }
 
-fn answer_questions(journey: &mut PhoneJourney) -> Proved {
+fn answer_questions<D: Driver>(journey: &mut D) -> Proved {
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "desk")?;
     let asker = open_agent(journey, "asker")?;
@@ -942,7 +987,7 @@ fn answer_questions(journey: &mut PhoneJourney) -> Proved {
     ])
 }
 
-fn tool_server_asks(journey: &mut PhoneJourney) -> Proved {
+fn tool_server_asks<D: Driver>(journey: &mut D) -> Proved {
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "desk")?;
     // A tool server's form, its fields in the order the server wrote.
@@ -1032,7 +1077,7 @@ fn tool_server_asks(journey: &mut PhoneJourney) -> Proved {
     ])
 }
 
-fn queue_and_steer(journey: &mut PhoneJourney) -> Proved {
+fn queue_and_steer<D: Driver>(journey: &mut D) -> Proved {
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "desk")?;
     let worker = open_agent(journey, "worker")?;
@@ -1063,7 +1108,7 @@ fn queue_and_steer(journey: &mut PhoneJourney) -> Proved {
         },
         "the withdrawn prompt back in the composer",
     )?;
-    journey.app(json!({"kind": "clear", "identifier": "chat.field"}))?;
+    journey.clear("chat.field")?;
     journey.wait(
         |drawn| drawn.value("chat.field").is_empty(),
         "the draft cleared",
@@ -1103,7 +1148,7 @@ fn queue_and_steer(journey: &mut PhoneJourney) -> Proved {
     ])
 }
 
-fn send_while_away(journey: &mut PhoneJourney) -> Proved {
+fn send_while_away<D: Driver>(journey: &mut D) -> Proved {
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "cabin")?;
     let backups = open_agent(journey, "backups")?;
@@ -1163,7 +1208,7 @@ const LIMIT: &str = "5-hour limit reached · resets ";
 const SIGN_IN: &str = "Run claude and sign in with /login on desk.";
 const RETRY: &str = "Signed in elsewhere? Send a message to try again.";
 
-fn composer_limits(journey: &mut PhoneJourney) -> Proved {
+fn composer_limits<D: Driver>(journey: &mut D) -> Proved {
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "desk")?;
     // At a usage limit the composer names the window and when it resets
@@ -1234,13 +1279,13 @@ fn composer_limits(journey: &mut PhoneJourney) -> Proved {
     ])
 }
 
-fn manage_agent(journey: &mut PhoneJourney) -> Proved {
+fn manage_agent<D: Driver>(journey: &mut D) -> Proved {
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "desk")?;
     let before = ids(&journey.wait_inventory("desk", |_| true, "inventory-before")?);
 
     // Created from the fleet: Claude on the desk, whose chat opens.
-    journey.tab("Agents")?;
+    journey.tab(Tab::Agents)?;
     journey.tap("home.newAgent")?;
     let drawn = journey.wait_for(&["new-agent"])?;
     if drawn.value("new-agent.host") != "desk" {
@@ -1288,7 +1333,7 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
     journey.tap("chat.more")?;
     journey.choose("Rename")?;
     journey.wait_for(&["chat.rename.field"])?;
-    journey.app(json!({"kind": "clear", "identifier": "chat.rename.field"}))?;
+    journey.clear("chat.rename.field")?;
     journey.type_text("chat.rename.field", "helper")?;
     journey.tap("chat.rename.confirm")?;
     let renamed = journey.wait_inventory(
@@ -1414,7 +1459,7 @@ fn manage_agent(journey: &mut PhoneJourney) -> Proved {
 
 /// Settles the open chat's agent from its menu. An idle agent is settled at
 /// once, with nothing to confirm, and the chat closes.
-fn settle_from_menu(journey: &mut PhoneJourney) -> Result<(), String> {
+fn settle_from_menu<D: Driver>(journey: &mut D) -> Result<(), String> {
     journey.tap("chat.more")?;
     journey.choose("Settle")?;
     journey.wait(|drawn| !drawn.has("chat"), "the chat closed")?;
@@ -1422,7 +1467,7 @@ fn settle_from_menu(journey: &mut PhoneJourney) -> Result<(), String> {
 }
 
 /// The Settled page from the foot of the fleet, once it lists `agent`.
-fn open_settled(journey: &mut PhoneJourney, agent: &str) -> Result<(), String> {
+pub(super) fn open_settled<D: Driver>(journey: &mut D, agent: &str) -> Result<(), String> {
     journey.wait_for(&["home.settled"])?;
     journey.tap("home.settled")?;
     let row = format!("home.row.{agent}");
@@ -1433,8 +1478,8 @@ fn open_settled(journey: &mut PhoneJourney, agent: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn attachment_or_review(journey: &mut PhoneJourney) -> Proved {
-    let work = journey.ready.root.join("desk/work");
+fn attachment_or_review<D: Driver>(journey: &mut D) -> Proved {
+    let work = journey.ready().root.join("desk/work");
     review_repository(&work)?;
     // An agent reads its folder's git facts when it starts and when a turn
     // ends, and the reviewer started before its folder was a repository:
@@ -1594,6 +1639,18 @@ const FIRST: &str = "The recovery state is safely stored.";
 const SECOND: &str = "A second turn arrived while you were away.";
 const THIRD: &str = "Back after the restart.";
 const DRAFT: &str = "Pick up where we left off.";
+/// How long a desk keeps its agents with its daemon stopped, in the
+/// topologies whose stories stop it and wait for it to come back:
+/// `agent_grace_secs` in phone-stories.json and phone-push.json. It is longer
+/// than a phone's dial to a gone desk takes to fail and the acts a story
+/// makes meanwhile, and the stories say so plainly when an outage outgrows it.
+const DESK_GRACE: Duration = Duration::from_secs(120);
+
+/// The open chat's header says the desk is away, its link not up: what a
+/// chat whose composer an ask has taken shows of the desk being gone.
+fn desk_away(drawn: &Drawn) -> bool {
+    drawn.label("chat.header") == "desk · away" && drawn.value("chat.header") == "detached"
+}
 
 /// The open chat's own head says its agent stopped while amux was stopped.
 fn stopped_with_amux(drawn: &Drawn) -> bool {
@@ -1603,7 +1660,7 @@ fn stopped_with_amux(drawn: &Drawn) -> bool {
 /// The story reads the chat's own rows (`replies`) and head, never any
 /// label on screen: the fleet under the chat still reports its elements,
 /// and its row for the agent shows the agent's last words.
-fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
+fn leave_and_recover<D: Driver>(journey: &mut D) -> Proved {
     // A real first run makes the phone's replica of the desk's agent.
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "desk")?;
@@ -1635,7 +1692,7 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
     // Opened again, the app paints the chat from its own store: the cached
     // tail, the desk out of reach, and a composer that keeps a draft.
     journey.relaunch(Launch::plain())?;
-    journey.tab("Agents")?;
+    journey.tab(Tab::Agents)?;
     let row = format!("home.row.{keeper}");
     journey.wait_for(&[&row])?;
     journey.tap(&row)?;
@@ -1664,13 +1721,24 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         return Err("the chat opened again is not the cached tail out of reach".to_owned());
     }
     journey.screen("cached-offline", &["chat.row.turn-end"])?;
-    journey.record.observations.insert(
+    journey.record().observations.insert(
         "seconds-out-of-reach".to_owned(),
         json!((away.elapsed().as_secs_f64() * 10.0).round() / 10.0),
     );
 
     // The desk comes back: the missed turn appends once, and the chat says
-    // it is current only once it has.
+    // it is current only once it has. Its agents outlive its daemon by the
+    // grace its topology gives them, which is longer than the phone's dial
+    // timeout and the acts above take; an outage past it ends the agent,
+    // and the chat would rightly never offer Send, so it is said plainly.
+    let outage = away.elapsed();
+    if outage >= DESK_GRACE {
+        return Err(format!(
+            "the desk was away {}s, past the {}s its agents outlive its daemon",
+            outage.as_secs(),
+            DESK_GRACE.as_secs()
+        ));
+    }
     journey.request(restart_daemon("desk"), None)?;
     let deadline = Instant::now() + Duration::from_secs(60);
     let drawn = loop {
@@ -1682,12 +1750,21 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
             break drawn;
         }
         if Instant::now() > deadline {
-            return Err("the chat did not come back after the desk did".to_owned());
+            let desk = journey.request(
+                Control::Inventory {
+                    host: "desk".to_owned(),
+                },
+                Some("desk-after-return"),
+            )?;
+            return Err(format!(
+                "the chat did not come back after the desk did; the desk lists {}",
+                desk["agents"]
+            ));
         }
         std::thread::sleep(Duration::from_millis(100));
     };
     journey
-        .record
+        .record()
         .actions
         .push("reached the missed turn, then a current chat".to_owned());
     if replies(&drawn, SECOND) != 1 || drawn.value("chat.field") != DRAFT {
@@ -1746,7 +1823,7 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
         std::thread::sleep(Duration::from_millis(50));
     }
     journey
-        .record
+        .record()
         .actions
         .push("the rows stayed on screen until the rebuilt chat swapped in".to_owned());
     reopen(journey, &keeper, |drawn| {
@@ -1764,8 +1841,8 @@ fn leave_and_recover(journey: &mut PhoneJourney) -> Proved {
 }
 
 /// The account a person picks from the account disc's menu.
-fn switch_to(journey: &mut PhoneJourney, account: &str) -> Result<(), String> {
-    journey.tab("Agents")?;
+fn switch_to<D: Driver>(journey: &mut D, account: &str) -> Result<(), String> {
+    journey.tab(Tab::Agents)?;
     journey.tap("home.accounts")?;
     journey.choose(account)?;
     journey.wait(
@@ -1777,7 +1854,7 @@ fn switch_to(journey: &mut PhoneJourney, account: &str) -> Result<(), String> {
 
 /// The link put to the machine again, until the relay link that has just
 /// come up (or re-read the account) carries it.
-fn pair_by_link(journey: &mut PhoneJourney, link: &str) -> Result<(), String> {
+fn pair_by_link<D: Driver>(journey: &mut D, link: &str) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         match journey.pair(link) {
@@ -1796,7 +1873,7 @@ fn pair_by_link(journey: &mut PhoneJourney, link: &str) -> Result<(), String> {
 /// Pairs by the link `host` printed. The phone's relay link comes up a
 /// moment after signing in, and until it has, the link reaches nobody; the
 /// person scans the same code again.
-fn pair_through_the_relay(journey: &mut PhoneJourney, host: &str) -> Result<(), String> {
+fn pair_through_the_relay<D: Driver>(journey: &mut D, host: &str) -> Result<(), String> {
     let (mut pairing, link) = journey.pairing_link(host)?;
     if let Err(error) = pair_by_link(journey, &link) {
         pairing.kill();
@@ -1806,13 +1883,13 @@ fn pair_through_the_relay(journey: &mut PhoneJourney, host: &str) -> Result<(), 
 }
 
 /// Signed in to `account` on the served relay, through the door.
-fn connect(journey: &mut PhoneJourney, account: &str) -> Result<(), String> {
-    let relay = journey.ready.cloud_url.clone().unwrap_or_default();
+fn connect<D: Driver>(journey: &mut D, account: &str) -> Result<(), String> {
+    let relay = journey.cloud_url();
     journey.app(json!({"kind": "connect", "relay": relay, "token": format!("refresh-{account}"), "user": account}))?;
     Ok(())
 }
 
-fn keep_authority(journey: &mut PhoneJourney) -> Proved {
+fn keep_authority<D: Driver>(journey: &mut D) -> Proved {
     let asked = "Are you there?";
     let unsent = "Still there?";
     let desk = journey.host_id("desk");
@@ -1825,7 +1902,7 @@ fn keep_authority(journey: &mut PhoneJourney) -> Proved {
     // relay.
     connect(journey, "ada")?;
     pair_through_the_relay(journey, "desk")?;
-    journey.tab("Agents")?;
+    journey.tab(Tab::Agents)?;
     journey.wait_for(&[&row])?;
 
     // A second account is a profile of its own, on its own empty fleet.
@@ -1834,7 +1911,7 @@ fn keep_authority(journey: &mut PhoneJourney) -> Proved {
         |drawn| !drawn.has(&row) && drawn.has("home"),
         "bob's empty fleet",
     )?;
-    journey.tab("Computers")?;
+    journey.tab(Tab::Devices)?;
     let drawn = journey.wait(|drawn| drawn.has("hosts"), "bob's hosts")?;
     if drawn.has(&format!("hosts.row.{desk}")) {
         return Err("bob's profile knows the desk".to_owned());
@@ -1868,18 +1945,17 @@ fn keep_authority(journey: &mut PhoneJourney) -> Proved {
         },
         "signed out",
     )?;
-    journey.tap("you.close")?;
-    journey.wait(|drawn| !drawn.has("you"), "Settings put away")?;
-    journey.tab("Computers")?;
+    journey.close_settings()?;
+    journey.tab(Tab::Devices)?;
     journey.wait(
         |drawn| labelled(drawn, "signed out"),
         "the hosts tab naming the sign-out",
     )?;
     journey.screen("blocked-hosts", &[])?;
-    journey.tab("Agents")?;
+    journey.tab(Tab::Agents)?;
     journey.tap(&row)?;
     journey.wait(
-        |drawn| drawn.has("chat.field") && labelled(drawn, "this phone is signed out"),
+        |drawn| drawn.has("chat.field") && labelled(drawn, "phone is signed out"),
         "the chat naming the sign-out",
     )?;
     // Send is off: the message stays in the composer, unsent.
@@ -1903,7 +1979,7 @@ fn keep_authority(journey: &mut PhoneJourney) -> Proved {
     connect(journey, "ada")?;
     journey.wait(
         |drawn| {
-            !labelled(drawn, "this phone is signed out")
+            !labelled(drawn, "phone is signed out")
                 && drawn.value("chat.field") == unsent
                 && drawn.enabled("chat.send")
         },
@@ -1954,8 +2030,8 @@ const THROUGH_RELAY: &str = "Reached through the relay.";
 /// What the scripted account service answers: this account, whose relay
 /// credential is the served relay's own login for it, at the served relay.
 /// `fields` add to or override the script.
-fn relay_cloud(journey: &mut PhoneJourney, fields: Value) -> Result<Value, String> {
-    let cloud = journey.ready.cloud_url.clone().unwrap_or_default();
+fn relay_cloud<D: Driver>(journey: &mut D, fields: Value) -> Result<Value, String> {
+    let cloud = journey.cloud_url();
     let authority = cloud
         .split_once("://")
         .map_or(cloud.as_str(), |(_, rest)| rest);
@@ -1979,7 +2055,7 @@ fn relay_cloud(journey: &mut PhoneJourney, fields: Value) -> Result<Value, Strin
     }
     journey.app(json!({"kind": "cloud", "cloud": script}))?;
     journey
-        .record
+        .record()
         .actions
         .push(format!("the account service answers {script}"));
     Ok(script)
@@ -1999,15 +2075,15 @@ fn open_link(journey: &mut PhoneJourney, link: &str, cloud: Option<&Value>) -> R
         ..Launch::plain()
     })?;
     journey
-        .record
+        .record()
         .actions
         .push("the app opened by the link".to_owned());
     Ok(())
 }
 
-fn calls(journey: &mut PhoneJourney, label: &str) -> Result<Value, String> {
+fn calls<D: Driver>(journey: &mut D, label: &str) -> Result<Value, String> {
     let reply = journey.app(json!({"kind": "calls"}))?;
-    journey.record.observations.insert(
+    journey.record().observations.insert(
         label.to_owned(),
         json!({"cloud": reply["cloud"], "store": reply["store"]}),
     );
@@ -2031,29 +2107,23 @@ fn strings(value: &Value) -> Vec<String> {
 /// Signs in from Settings the way a person does: Sign In opens the browser
 /// straight away, and the account it comes back as is on the phone in the
 /// sheet it was pressed in, with nothing left to press.
-fn sign_in(journey: &mut PhoneJourney) -> Result<(), String> {
+fn sign_in<D: Driver>(journey: &mut D) -> Result<(), String> {
     journey.settings()?;
     journey.wait_for(&["you.signIn"])?;
     journey.tap("you.signIn")?;
     signed_in_as_ada(journey)?;
-    close_settings(journey)
+    journey.close_settings()
 }
 
-fn signed_in_as_ada(journey: &mut PhoneJourney) -> Result<Drawn, String> {
+fn signed_in_as_ada<D: Driver>(journey: &mut D) -> Result<Drawn, String> {
     journey.wait(
         |drawn| drawn.value("you") == "ada@example.com" && drawn.has("account.ada@example.com"),
         "ada in Settings",
     )
 }
 
-fn close_settings(journey: &mut PhoneJourney) -> Result<(), String> {
-    journey.tap("you.close")?;
-    journey.wait(|drawn| !drawn.has("you"), "Settings put away")?;
-    Ok(())
-}
-
 /// Waits for the account service to have been asked `call` exactly once.
-fn asked_once(journey: &mut PhoneJourney, call: &str) -> Result<(), String> {
+fn asked_once<D: Driver>(journey: &mut D, call: &str) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let reply = journey.app(json!({"kind": "calls"}))?;
@@ -2072,8 +2142,8 @@ fn asked_once(journey: &mut PhoneJourney, call: &str) -> Result<(), String> {
 
 /// Opens `agent`, sends `prompt` and waits for `reply` on the phone and
 /// the host; the chat is opened again for its photograph.
-fn round_trip(
-    journey: &mut PhoneJourney,
+fn round_trip<D: Driver>(
+    journey: &mut D,
     agent: &str,
     prompt: &str,
     reply: &str,
@@ -2099,7 +2169,7 @@ fn round_trip(
 
 const REFUSED_SIGN_IN: &str = "amux.sh could not sign this account in";
 
-fn account_sign_in(journey: &mut PhoneJourney) -> Proved {
+fn account_sign_in<D: Driver>(journey: &mut D) -> Proved {
     journey.launch(Launch::plain())?;
     journey.settings()?;
     journey.wait_for(&["you.signIn"])?;
@@ -2143,7 +2213,7 @@ fn account_sign_in(journey: &mut PhoneJourney) -> Proved {
     relay_cloud(journey, json!({}))?;
     signed_in_as_ada(journey)?;
     journey.screen("signed-in", &[])?;
-    close_settings(journey)?;
+    journey.close_settings()?;
     let asked_for = strings(&calls(journey, "account-service-calls")?["cloud"]);
     let selects = asked_for
         .iter()
@@ -2158,7 +2228,7 @@ fn account_sign_in(journey: &mut PhoneJourney) -> Proved {
     // Signed in, the phone reaches the desk only through the relay the
     // account service named: the desk has no network in common with it.
     pair_through_the_relay(journey, "desk")?;
-    journey.tab("Computers")?;
+    journey.tab(Tab::Devices)?;
     let desk = journey.host_id("desk");
     let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
     trusted_as(&drawn, &desk, "desk")?;
@@ -2198,7 +2268,7 @@ fn account_sign_in(journey: &mut PhoneJourney) -> Proved {
     // runs its cancelling action. That action is what is pressed here.
     journey.app(json!({"kind": "choose", "label": "Cancel"}))?;
     journey
-        .record
+        .record()
         .actions
         .push("put the dialog away with its cancelling action".to_owned());
     journey.wait(
@@ -2227,7 +2297,7 @@ fn account_sign_in(journey: &mut PhoneJourney) -> Proved {
             "grace's session was handed over though nobody kept it: {after:?}"
         ));
     }
-    close_settings(journey)?;
+    journey.close_settings()?;
     Ok(vec![
         "signed out, the You tab offered Sign In, which opened the account service at once; closed without finishing, nothing was shown and Sign In was offered again".to_owned(),
         format!("refused, an alert said so in the account service's words ({}), and Try Again asked again", quoted(REFUSED_SIGN_IN)),
@@ -2241,7 +2311,7 @@ fn account_sign_in(journey: &mut PhoneJourney) -> Proved {
 
 /// A signed-out phone paired with a signed-in desk takes the desk's
 /// account with one tap.
-fn one_tap_sign_in(journey: &mut PhoneJourney) -> Proved {
+fn one_tap_sign_in<D: Driver>(journey: &mut D) -> Proved {
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "desk")?;
     journey.screen("paired", &[])?;
@@ -2270,9 +2340,9 @@ fn one_tap_sign_in(journey: &mut PhoneJourney) -> Proved {
     journey.settings()?;
     signed_in_as_ada(journey)?;
     journey.screen("signed-in", &[])?;
-    close_settings(journey)?;
+    journey.close_settings()?;
 
-    journey.tab("Computers")?;
+    journey.tab(Tab::Devices)?;
     let desk = journey.host_id("desk");
     let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
     trusted_as(&drawn, &desk, "desk")?;
@@ -2355,7 +2425,7 @@ fn purchase_restore(journey: &mut PhoneJourney) -> Proved {
         "the pairing sheet closed",
     )?;
     journey.screen("paired", &[])?;
-    journey.tab("Computers")?;
+    journey.tab(Tab::Devices)?;
     let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
     trusted_as(&drawn, &desk, "desk")?;
     round_trip(journey, "desk-work", RELAYED, THROUGH_RELAY)?;
@@ -2388,12 +2458,12 @@ fn app_data(journey: &PhoneJourney) -> Result<PathBuf, String> {
     ))
 }
 
-fn report(journey: &mut PhoneJourney) -> Proved {
+fn report<D: Driver>(journey: &mut D) -> Proved {
     journey.launch(Launch::plain())?;
     connect(journey, "ada")?;
     pair_through_the_relay(journey, "desk")?;
     let agent = journey.agent_id("desk-work");
-    journey.tab("Agents")?;
+    journey.tab(Tab::Agents)?;
     journey.wait_for(&[&format!("home.row.{agent}")])?;
     journey.request(
         Control::RefuseReports {
@@ -2442,7 +2512,7 @@ fn report(journey: &mut PhoneJourney) -> Proved {
     journey.screen("sent", &[])?;
 
     // What left the phone, read where it crossed into the account service.
-    let received = journey.output.join("received");
+    let received = journey.output().join("received");
     let listing = journey.request(
         Control::Reports {
             dir: Some(received.clone()),
@@ -2479,7 +2549,7 @@ fn report(journey: &mut PhoneJourney) -> Proved {
             "the report carries no picture of the screen: {files:?}"
         ));
     }
-    std::fs::copy(&screen, journey.output.join("uploaded-frame.png"))
+    std::fs::copy(&screen, journey.output().join("uploaded-frame.png"))
         .map_err(|error| error.to_string())?;
     // The dump inside it carries this phone's records: its core's, which
     // holds the desk's agent as its structure, and its fleet's.
@@ -2515,15 +2585,9 @@ fn report(journey: &mut PhoneJourney) -> Proved {
     ])
 }
 
-const ACCESSIBLE_SIZE: &str = "accessibility3";
-
-fn accessibility(journey: &mut PhoneJourney) -> Proved {
+fn accessibility<D: Driver>(journey: &mut D) -> Proved {
     journey.launch(Launch::plain())?;
-    journey.app(json!({"kind": "dynamicType", "size": ACCESSIBLE_SIZE}))?;
-    let size = journey.query()?["typeSize"].clone();
-    if size != ACCESSIBLE_SIZE {
-        return Err(format!("the app says it draws at {size}"));
-    }
+    let size = journey.large_text()?;
     pair_by_code(journey, "desk")?;
     let agent = open_agent(journey, "decision-sdk")?;
     journey.screen("chat", &[])?;
@@ -2565,7 +2629,7 @@ fn accessibility(journey: &mut PhoneJourney) -> Proved {
     // Hosts and Settings at the same size: every control whole across the
     // screen, and the Appearance control's choices clear of one another.
     leave_chat(journey)?;
-    journey.tab("Computers")?;
+    journey.tab(Tab::Devices)?;
     let row = format!("hosts.row.{}", journey.host_id("desk"));
     let hosts = journey.wait_for(&[&row])?;
     across_the_screen(&hosts, "hosts.")?;
@@ -2582,7 +2646,7 @@ fn accessibility(journey: &mut PhoneJourney) -> Proved {
     let control = negative_control(apart(&settings, &["you.appearance", choices[0]]))?;
     journey.screen("you", &[])?;
     Ok(vec![
-        format!("the app says it draws at {ACCESSIBLE_SIZE}"),
+        format!("the app says it draws at {size}"),
         "at that size the desk was paired on the keypad and the agent's chat opened".to_owned(),
         format!(
             "the permission card offered Allow, which was tapped; the desk holds {} once and answered",
@@ -2658,10 +2722,10 @@ fn local_network(journey: &mut PhoneJourney) -> Proved {
     // Refused: the Hosts tab says so and where it is undone.
     journey.app(json!({"kind": "localNetwork", "permission": "denied"}))?;
     journey
-        .record
+        .record()
         .actions
         .push("the system says the local network was refused".to_owned());
-    journey.tab("Computers")?;
+    journey.tab(Tab::Devices)?;
     let drawn = journey.wait_for(&["hosts.localNetwork.refused", "hosts.localNetwork.settings"])?;
     if drawn.has(&offer) {
         return Err("the phone offers the desk with the local network refused".to_owned());
@@ -2672,10 +2736,10 @@ fn local_network(journey: &mut PhoneJourney) -> Proved {
     // is found and offered.
     journey.relaunch(Launch::plain())?;
     journey
-        .record
+        .record()
         .actions
         .push("the local network granted in Settings and the app opened again".to_owned());
-    journey.tab("Computers")?;
+    journey.tab(Tab::Devices)?;
     journey.wait(
         |drawn| drawn.has(&offer) && !drawn.has("hosts.localNetwork.refused"),
         "the desk found",
@@ -2712,7 +2776,7 @@ fn local_network(journey: &mut PhoneJourney) -> Proved {
         "the pairing sheet closed",
     )?;
     pairing.wait(Duration::from_secs(30))?;
-    journey.tab("Computers")?;
+    journey.tab(Tab::Devices)?;
     let drawn = journey.wait_for(&[&format!("hosts.row.{desk}")])?;
     trusted_as(&drawn, &desk, "desk")?;
     round_trip(
@@ -2739,7 +2803,7 @@ fn needs_you_push(journey: &PhoneJourney, agent: &str) -> Result<PathBuf, String
     let mut payload = read_json(&root().join("journeys/fixtures/needs-you.apns"))?;
     payload["amux"]["host"] = json!(journey.host_id("desk"));
     payload["amux"]["agent"] = json!(journey.agent_id(agent));
-    let built = journey.output.join("needs-you.apns");
+    let built = journey.output().join("needs-you.apns");
     std::fs::write(
         &built,
         serde_json::to_string_pretty(&payload).unwrap_or_default() + "\n",
@@ -2767,14 +2831,14 @@ fn push_to_handler(journey: &mut PhoneJourney, payload: &Path) -> Result<(), Str
         Duration::from_secs(120),
     )?;
     journey
-        .record
+        .record()
         .actions
         .push("xcrun simctl push needs-you.apns: the notification shows".to_owned());
     journey.app_within(
         json!({"kind": "push", "path": payload}),
         WARM_LIMIT + Duration::from_secs(15),
     )?;
-    journey.record.actions.push(
+    journey.record().actions.push(
         "the debug door handed the same needs-you.apns payload to AppDelegate's didReceiveRemoteNotification with the app in the background".to_owned(),
     );
     Ok(())
@@ -2798,7 +2862,7 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
     let (asker_row, bystander_row) = (format!("home.row.{asker}"), format!("home.row.{bystander}"));
     journey.launch(Launch::plain())?;
     pair_by_code(journey, "desk")?;
-    journey.tab("Agents")?;
+    journey.tab(Tab::Agents)?;
     journey.wait_for(&[&asker_row, &bystander_row])?;
 
     // Put away. Both agents move on at the desk: one comes to need the
@@ -2812,21 +2876,24 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
         Duration::from_secs(120),
     )?;
     journey.app(json!({"kind": "awaitBackground", "seconds": 10}))?;
+    let away = Instant::now();
     journey
-        .record
+        .record()
         .actions
         .push("the app put away behind Settings, holding background time for the push".to_owned());
+    // The bystander is asked first: its answer has to be at the desk when
+    // the push goes, or the push not bringing it in proves nothing.
     journey.request(
         Control::Send {
-            agent: "asker".to_owned(),
-            text: "Deploy it.".to_owned(),
+            agent: "bystander".to_owned(),
+            text: "Anything new?".to_owned(),
         },
         None,
     )?;
     journey.request(
         Control::Send {
-            agent: "bystander".to_owned(),
-            text: "Anything new?".to_owned(),
+            agent: "asker".to_owned(),
+            text: "Deploy it.".to_owned(),
         },
         None,
     )?;
@@ -2836,6 +2903,35 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
         |chat| phase(chat) == "NEEDS_YOU",
         "asker-needs-you",
     )?;
+
+    // The push names the asker. Handled in the background, it brings that
+    // one chat current and nothing else. It is handed over as soon as the
+    // asker needs the person: the background time the app holds is the
+    // system's to end, about half a minute after the app went away, and an
+    // app it ends cannot answer its door.
+    let payload = needs_you_push(journey, "asker")?;
+    // Whether the bystander's answer was already at the desk when the push
+    // went: only then does its chat lacking that answer afterwards show the
+    // push brought in the named chat alone. Read, not waited for, so the
+    // push still goes while the app has time to take it.
+    let bystander_answered = super::holds(
+        &journey.chat("desk", "bystander", "bystander-at-push")?,
+        "The logs are quiet.",
+    );
+    let handed = Instant::now();
+    push_to_handler(journey, &payload)?;
+    journey.record().observations.insert(
+        "push-seconds".to_owned(),
+        json!({
+            "away-before-push": (handed.duration_since(away).as_secs_f64() * 10.0).round() / 10.0,
+            "handling": (handed.elapsed().as_secs_f64() * 10.0).round() / 10.0,
+        }),
+    );
+    journey.record().observations.insert(
+        "bystander-answered-before-push".to_owned(),
+        json!(bystander_answered),
+    );
+    // The bystander answers while the app is away all the same.
     journey.wait_chat(
         "desk",
         "bystander",
@@ -2843,19 +2939,15 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
         "bystander-answered",
     )?;
 
-    // The push names the asker. Handled in the background, it brings that
-    // one chat current and nothing else.
-    let payload = needs_you_push(journey, "asker")?;
-    push_to_handler(journey, &payload)?;
-
     // With the desk gone, what the phone holds is what the push fetched.
     journey.request(stop_daemon("desk"), None)?;
+    let gone = Instant::now();
     simctl(
         &["launch", &journey.udid, BUNDLE_ID],
         Duration::from_secs(120),
     )?;
     journey
-        .record
+        .record()
         .actions
         .push("the app brought back to the foreground".to_owned());
     let woke: Vec<String> = signposts(journey)?
@@ -2863,7 +2955,7 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
         .filter(|mark| mark.starts_with("push"))
         .collect();
     journey
-        .record
+        .record()
         .observations
         .insert("push-signposts".to_owned(), json!(woke));
     if woke != ["pushWoke", "pushCurrent"] {
@@ -2876,20 +2968,27 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
         "the desk offline on the phone",
     )?;
     journey.tap(&asker_row)?;
+    // The chat opens dialling the desk and reads it away once the dial
+    // fails; it is photographed at rest, away.
     journey.wait(
-        |drawn| drawn.has("ask") && labelled(drawn, "deploy --prod"),
-        "the asker's ask, fetched by the push",
+        |drawn| drawn.has("ask") && labelled(drawn, "deploy --prod") && desk_away(drawn),
+        "the asker's ask, fetched by the push, with the desk away",
     )?;
     journey.screen("warmed", &["chat.row.turn-end"])?;
     back_to_fleet(journey)?;
     journey.tap(&bystander_row)?;
     let drawn = journey.wait(
-        |drawn| labelled(drawn, "Watching the logs.") && drawn.has("chat.field"),
-        "the bystander's chat",
+        |drawn| labelled(drawn, "Watching the logs.") && out_of_reach(drawn, "desk"),
+        "the bystander's chat, with the desk away",
     )?;
     if labelled(&drawn, "The logs are quiet.") {
         return Err(
             "the bystander's chat was brought current by a push that named the asker".to_owned(),
+        );
+    }
+    if !bystander_answered {
+        return Err(
+            "the bystander had not answered at the desk when the push went, so its chat lacking the answer proves nothing".to_owned(),
         );
     }
     journey.screen("not-warmed", &["chat.row.turn-end"])?;
@@ -2897,6 +2996,18 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
 
     // In the foreground every agent is listed again: the desk back, the
     // bystander's answer arrives, and the ask is answered from the phone.
+    let outage = gone.elapsed();
+    journey.record().observations.insert(
+        "seconds-desk-stopped".to_owned(),
+        json!((outage.as_secs_f64() * 10.0).round() / 10.0),
+    );
+    if outage >= DESK_GRACE {
+        return Err(format!(
+            "the desk was stopped {}s, past the {}s its agents outlive its daemon",
+            outage.as_secs(),
+            DESK_GRACE.as_secs()
+        ));
+    }
     journey.request(restart_daemon("desk"), None)?;
     journey.tap(&bystander_row)?;
     journey.wait_within(
@@ -2921,8 +3032,12 @@ fn push_wake(journey: &mut PhoneJourney) -> Proved {
         |chat| phase(chat) == "IDLE" && super::holds(chat, "Deployed to production."),
         "asker-answered",
     )?;
+    // Opened again, the chat dials the desk afresh and reads it away until
+    // the link is up; it is photographed once the desk reads live.
     reopen(journey, &asker, |drawn| {
-        labelled(drawn, "Deployed to production.") && drawn.has("chat.row.turn-end")
+        labelled(drawn, "Deployed to production.")
+            && drawn.has("chat.row.turn-end")
+            && drawn.value("chat.header") == "live"
     })?;
     // The command row's duration is how long the ask waited on the phone.
     journey.screen("answered", &["chat.row.turn-end", "chat.row.command"])?;
@@ -3062,7 +3177,7 @@ fn reconciled_launch(
         std::thread::sleep(Duration::from_millis(200));
     }
     journey
-        .record
+        .record()
         .actions
         .push(format!("the {launch} launch read every machine current"));
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -3086,7 +3201,7 @@ fn reconciled_launch(
     )
     .map_err(|error| error.to_string())?;
     journey
-        .record
+        .record()
         .observations
         .insert(format!("{launch}-links"), json!(ups));
     Ok(ups)
@@ -3133,7 +3248,7 @@ fn resume(journey: &mut PhoneJourney) -> Proved {
     // handshake.
     journey.launch(Launch::plain())?;
     connect(journey, "ada")?;
-    journey.record.actions.push("signed in as ada".to_owned());
+    journey.record().actions.push("signed in as ada".to_owned());
     for host in RESUME_HOSTS {
         pair_by_code(journey, host)?;
     }
@@ -3208,7 +3323,7 @@ mod tests {
     use super::super::phone::tests::{DESK, element};
     use super::*;
 
-    const NATIVE: [&str; 8] = [
+    const NATIVE: [&str; 12] = [
         "account-sign-in",
         "one-tap-sign-in",
         "purchase-restore",
@@ -3217,6 +3332,10 @@ mod tests {
         "local-network",
         "push-wake",
         "resume",
+        "acp-conversation",
+        "acp-interrupt-and-queue",
+        "acp-unresumable",
+        "acp-signed-out",
     ];
 
     #[test]
@@ -3224,7 +3343,7 @@ mod tests {
         let drawn = Drawn::of(&[element(
             &format!("hosts.row.{DESK}"),
             [0.0; 4],
-            Some("desk, reachable on this network"),
+            Some("desk, connected, direct"),
         )]);
         assert!(trusted_as(&drawn, DESK, "desk").is_ok());
         assert!(trusted_as(&drawn, DESK, "laptop").is_err());
@@ -3310,7 +3429,7 @@ mod tests {
 
     #[test]
     fn every_phone_story_written_is_declared_for_the_phone() {
-        for (name, _) in STORIES {
+        for (name, _) in stories() {
             let declared = super::super::story(name, "phone").expect("declared for the phone");
             let topology = declared
                 .phone_topology
@@ -3336,9 +3455,22 @@ mod tests {
         );
         assert_eq!(
             selected(false, Vec::new()),
-            Ok(STORIES.iter().map(|(id, _)| (*id).to_owned()).collect())
+            Ok(stories().iter().map(|(id, _)| (*id).to_owned()).collect())
         );
         assert!(selected(false, vec!["no-such-story".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn the_desk_outlives_its_daemon_by_the_grace_its_topology_gives() {
+        for topology in ["phone-stories.json", "phone-push.json"] {
+            let topology = read_json(&root().join("journeys/topologies").join(topology))
+                .expect("the topology");
+            let desk = topology["hosts"]
+                .as_array()
+                .and_then(|hosts| hosts.iter().find(|host| host["name"] == "desk"))
+                .expect("a desk");
+            assert_eq!(desk["agent_grace_secs"], DESK_GRACE.as_secs());
+        }
     }
 
     #[test]

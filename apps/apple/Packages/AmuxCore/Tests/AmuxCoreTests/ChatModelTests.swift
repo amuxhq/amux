@@ -1,3 +1,4 @@
+import AmuxFixtures
 import AmuxWords
 import Foundation
 import XCTest
@@ -213,9 +214,12 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
         return ordered.filter { keys.contains($0.id) }
     }
 
+    /// What the next send comes back as.
+    var sendState: InputState = .sent
+
     func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {
         sent.append(draft)
-        return .success(SendOutcome(inputId: [UInt8(sent.count)], state: .sent))
+        return .success(SendOutcome(inputId: [UInt8(sent.count)], state: sendState))
     }
 
     func answer(_ ask: String, choice: Int, note: String?) async -> ActOutcome? { .done }
@@ -302,6 +306,10 @@ private final class FakeChat: ChatSource, @unchecked Sendable {
 
     /// The name of every attachment handed over to be stored, in order.
     var stored: [String] = []
+    /// What the shared layer would say of an attachment, by its name.
+    var refusals: [String: String] = [:]
+
+    func attachmentRefusal(name: String, mime: String, size: Int) -> String? { refusals[name] }
 
     func putBlob(_ data: Data, name: String, mime: String) async -> Result<BlobRef, RuntimeFailure> {
         stored.append(name)
@@ -374,16 +382,20 @@ private func agents(_ standing: [(UInt8, PhaseView)]) -> ChatAgents {
 private func row(_ id: String, _ order: UInt64, _ text: String = "", run: Run? = nil) -> Row {
     Row(
         id: id, order: order, atMs: 0,
-        kind: .prose(text: [.text(text.isEmpty ? id : text)], streaming: false, workingNote: false),
+        kind: .prose(text: [.text(Markdown(words: text.isEmpty ? id : text))], streaming: false, workingNote: false),
         collapsed: false, attention: false, decision: nil, group: nil, opens: nil, parent: nil, run: run, turn: nil)
 }
 
 private func frame(
     mode: Composer = .send, caughtUp: Bool = true, hasOlder: Bool = false,
-    phase: PhaseView = .idle, kind: Kind = .claudeSdk, reviewChip: ReviewChip? = nil
+    phase: PhaseView = .idle, reviewChip: ReviewChip? = nil
 ) -> ChatFrame {
     ChatFrame(
-        agent: AgentKey(host: [1], agent: [2]), name: "a", kind: kind, phase: phase,
+        agent: AgentKey(host: [1], agent: [2]), name: "a",
+        provider: ProviderLabel(provider: "claude", name: "Claude"),
+        capabilities: Capabilities(
+            stopsJob: true, switchesBack: false, attachable: false, resumable: true, sendsNow: true, images: true,
+            files: true, passesUnknownCommands: true), phase: phase,
         composer: ComposerView(mode: mode, switchedAway: false, activity: nil), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live, caughtUp: caughtUp,
         hasOlder: hasOlder, arrivalsHeld: false, queue: [], underway: [], refused: [], askInput: nil, context: nil, ended: nil, git: nil,
         reviewChip: reviewChip, signIn: nil)
@@ -471,7 +483,7 @@ final class ChatModelTests: XCTestCase {
     }
 
 
-    func testAResetSwapsTheWholeSequenceInAtOnceAndFollowsTheNewestRow() {
+    func testAResetSwapsTheWholeSequenceInAtOnceAndFollowsTheNewestRow() async {
         let source = FakeChat(rows: [row("a", 1), row("b", 2)], frame: frame())
         let model = ChatModel(source: source)
         let b = model.cell(for: "b")
@@ -482,9 +494,24 @@ final class ChatModelTests: XCTestCase {
         source.deliver(to: model)
         XCTAssertEqual(model.ids, ["b", "x", "y"])
         XCTAssertTrue(model.cell(for: "b") === b, "a kept key keeps its cell")
+        // The kept cells are read again away from the main actor.
+        await model.reading?.value
         XCTAssertEqual(model.cell(for: "b").row?.order, 20, "and the cell holds the new row")
         XCTAssertEqual(model.toNewest, before + 1)
         XCTAssertFalse(model.newActivity)
+    }
+
+    /// The app's chats read their opening off the main actor, since the
+    /// rows it hands over are built and parsed there; the chat fills when
+    /// it comes, and what arrived since lands after it.
+    func testAChatOpenedInTheBackgroundFillsWhenItsOpeningComes() async {
+        let source = FakeChat(rows: [row("a", 1), row("b", 2)], frame: frame())
+        let model = ChatModel(source: source, loadingHintAfter: .zero, openingInBackground: true)
+        await model.reading?.value
+        XCTAssertEqual(model.ids, ["a", "b"])
+        source.arrive([row("c", 3)])
+        source.deliver(to: model)
+        XCTAssertEqual(model.ids, ["a", "b", "c"])
     }
 
     func testAResetInHistoryFollowsTheNewestRowAgain() {
@@ -664,7 +691,7 @@ final class ChatModelTests: XCTestCase {
     func testAPageIsTheUsualSizeExceptAtACollapsedRunThatContinuesBelow() async {
         let run = Run(
             first: "q", last: "r", steps: 300, live: false, openBelow: true, liveShown: false,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 300, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 300, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0), hidden: nil,
             recent: nil)
         let source = FakeChat(rows: [row("r", 5, run: run), row("s", 6)], frame: frame(hasOlder: true))
         let model = ChatModel(source: source)
@@ -674,7 +701,7 @@ final class ChatModelTests: XCTestCase {
 
         let huge = Run(
             first: "q", last: "r", steps: 5_000, live: false, openBelow: true, liveShown: false,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 5_000, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 5_000, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0), hidden: nil,
             recent: nil)
         source.ordered[0] = row("r", 5, run: huge)
         source.pending = ChatChanges(keys: ["r"], reloaded: false, session: false)
@@ -780,9 +807,31 @@ final class ChatModelTests: XCTestCase {
         let model = ChatModel(source: source)
         XCTAssertEqual(model.draft, "What is this?")
         XCTAssertEqual(model.attachments, [.image(photo)])
-        XCTAssertEqual(model.notice, "Not sent: its host is away")
+        XCTAssertEqual(model.notice, "Not sent: its device is away")
         XCTAssertEqual(source.discarded, [[8]])
         XCTAssertEqual(model.frame?.refused, [], "taken back once")
+    }
+
+    /// A send refused at once, as one carrying an attachment the agent does
+    /// not take is, puts the draft back with why, and once only though a
+    /// later frame reports the same refusal.
+    func testASendRefusedAtOnceKeepsTheDraftWithTheReason() async {
+        let source = FakeChat(rows: [], frame: frame())
+        source.sendState = .rejected(Refusal(reason: .unsupported, detail: "OpenCode can’t take images"))
+        let model = ChatModel(source: source)
+        model.draft = "What is this?"
+        await model.send()?.value
+        XCTAssertEqual(model.draft, "What is this?")
+        XCTAssertEqual(source.discarded, [[1]])
+        let notice = model.notice ?? ""
+        XCTAssertTrue(notice.hasPrefix("Not sent"), notice)
+        var later = frame()
+        later.refused = [RefusedPrompt(inputId: [1], reason: Refusal(reason: .unsupported, detail: nil))]
+        source.drafts[[1]] = Draft(words: "What is this?", attachments: [])
+        model.apply(ChatDelta(
+            chat: 0, rows: [], agents: nil, ask: nil, frame: later, keys: nil, overview: nil, review: nil,
+            settings: nil))
+        XCTAssertEqual(model.draft, "What is this?", "the draft came back twice")
     }
 
     private static let shot = BlobRef(hash: [5], name: "../shots/screen.png", mime: "image/png", size: 4)
@@ -844,8 +893,8 @@ final class ChatModelTests: XCTestCase {
     func testPromptsOnTheirWayAreDrawnWhereTheyLand() async {
         var sending = frame()
         sending.underway = [
-            SentPrompt(inputId: [1], text: [.text("now")], lands: .feed, underway: .sending(waiting: false)),
-            SentPrompt(inputId: [2], text: [.text("later")], lands: .queue, underway: .mayNotHaveArrived),
+            SentPrompt(inputId: [1], text: [.text(Markdown(words: "now"))], lands: .feed, underway: .sending(waiting: false)),
+            SentPrompt(inputId: [2], text: [.text(Markdown(words: "later"))], lands: .queue, underway: .mayNotHaveArrived),
         ]
         let model = ChatModel(source: FakeChat(rows: [], frame: sending))
         XCTAssertEqual(model.landingInFeed.map(\.inputId), [[1]])
@@ -917,7 +966,7 @@ final class ChatModelTests: XCTestCase {
     }
 
     func testACodexSkillIsOfferedAfterADollarAnywhereAndPickedAsItsMention() {
-        let source = FakeChat(rows: [], frame: frame(kind: .codex))
+        let source = FakeChat(rows: [], frame: frame())
         source.offered = offering(["compact"], skills: ["autopilot", "documents:documents"])
         let model = ChatModel(source: source)
         model.draft = "/auto"
@@ -938,7 +987,7 @@ final class ChatModelTests: XCTestCase {
     }
 
     func testAnAgentOfferingNoCommandsListsNothing() {
-        let source = FakeChat(rows: [], frame: frame(kind: .claudePty))
+        let source = FakeChat(rows: [], frame: frame())
         source.offered = offering([])
         let model = ChatModel(source: source)
         model.draft = "/model"
@@ -980,9 +1029,108 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(model.attachments.count, 2, "one very long line is a paste too")
         await model.send()?.value
         XCTAssertEqual(
-            source.sent.first?.text, "Look at this: two\nlines\u{FFFC}\u{FFFC}",
-            "each paste's place follows the words, where the sent message draws it")
+            source.sent.first?.text, "Look at this: \u{FFFC}two\nlines\u{FFFC}",
+            "each paste is sent where it was pasted among the words")
         XCTAssertEqual(source.sent.first?.attachments?.first, .text(name: "Pasted text", text: text))
+    }
+
+    /// A paste goes where the cursor was, with the draft's words on both
+    /// sides of it, and stays there as the words around it change: the
+    /// terminal and Android place it the same way.
+    func testAPasteIsPlacedAtTheCursorAndMovesWithTheWordsAroundIt() async {
+        let source = FakeChat(rows: [], frame: frame())
+        let model = ChatModel(source: source)
+        model.type("Before after")
+        let log = (1...12).map { "line \($0)" }.joined(separator: "\n")
+        model.type("Before " + log + "after")
+        XCTAssertEqual(model.draft, "Before after", "the words on both sides stay in the draft")
+        XCTAssertEqual(model.attachments, [.text(name: "Pasted text", text: log)])
+        model.draft = "Look: before after"
+        model.draft = "Look: before after, then send"
+        await model.send()?.value
+        XCTAssertEqual(source.sent.first?.text, "Look: before \u{FFFC}after, then send")
+        XCTAssertEqual(
+            source.sent.first?.parts,
+            [.text("Look: before "), .attachment(.text(name: "Pasted text", text: log)), .text("after, then send")])
+    }
+
+    /// A draft put back keeps each paste where it was among its words.
+    func testAPromptTakenBackKeepsItsPasteAmongItsWords() {
+        let pasted = DraftAttachment.text(name: "Pasted text", text: "line one\nline two\nline three")
+        let draft = Draft(parts: [.text("Read "), .attachment(pasted), .text(" closely.")])
+        XCTAssertEqual(draft.places, [5])
+        let model = ChatModel(source: FakeChat(rows: [], frame: frame()))
+        var kept: Draft?
+        model.keeping = { kept = $0 }
+        model.reopen(draft)
+        XCTAssertEqual(model.draft, "Read  closely.")
+        XCTAssertEqual(kept, draft)
+        model.draft = "Please: Read  closely."
+        XCTAssertEqual(kept?.text, "Please: Read \u{FFFC} closely.")
+    }
+
+    /// A prompt put back into a composer that already holds a paste goes
+    /// ahead of it, and the held paste moves past the words put back.
+    func testADraftPutBackAheadOfAHeldPasteMovesThatPastePastItsWords() async {
+        let source = FakeChat(rows: [], frame: frame())
+        let model = ChatModel(source: source)
+        let held = (1...12).map { "held \($0)" }.joined(separator: "\n")
+        model.type(held)
+        XCTAssertEqual(model.draft, "")
+        XCTAssertEqual(model.attachments.count, 1)
+        let returned = DraftAttachment.text(name: "Pasted text", text: "line one\nline two\nline three")
+        model.reopen(Draft(parts: [.text("Read "), .attachment(returned), .text(" closely.")]))
+        XCTAssertEqual(model.draft, "Read  closely.")
+        await model.send()?.value
+        XCTAssertEqual(source.sent.first?.text, "Read \u{FFFC} closely.\u{FFFC}")
+    }
+
+    /// Typing or deleting one of a run of repeated characters beside a
+    /// paste moves it by the edit the field made, which the caret says:
+    /// the texts alone read "abbc" the same whichever b was typed.
+    func testAPasteMovesByTheCaretAmongRepeatedCharacters() {
+        let model = ChatModel(source: FakeChat(rows: [], frame: frame()))
+        var kept: Draft?
+        model.keeping = { kept = $0 }
+        let log = (1...12).map { "line \($0)" }.joined(separator: "\n")
+        model.type("abc")
+        model.type("ab" + log + "c")
+        XCTAssertEqual(kept?.text, "ab\u{FFFC}c")
+        model.type("ab" + log + "c")
+        model.type("abbc", caret: 2)
+        XCTAssertEqual(kept?.text, "abb\u{FFFC}c", "the b typed between a and b")
+        model.type("abc", caret: 1)
+        XCTAssertEqual(kept?.text, "ab\u{FFFC}c", "the b before the paste deleted")
+        model.type("abbc", caret: 1)
+        XCTAssertEqual(kept?.text, "ab\u{FFFC}bc", "a caret that has yet to move: the texts decide")
+        for gap in [" ", "\n"] {
+            let model = ChatModel(source: FakeChat(rows: [], frame: frame()))
+            model.keeping = { kept = $0 }
+            model.type("a\(gap)\(gap)b")
+            model.type("a\(gap)" + log + "\(gap)b")
+            model.type("a\(gap)" + log + "\(gap)b")
+            XCTAssertEqual(kept?.text, "a\(gap)\u{FFFC}\(gap)b")
+            model.type("a\(gap)b", caret: 1)
+            XCTAssertEqual(kept?.text, "a\u{FFFC}\(gap)b", "the first of two \(String(reflecting: gap)) deleted")
+            model.type("a\(gap)\(gap)b", caret: 3)
+            XCTAssertEqual(kept?.text, "a\u{FFFC}\(gap)\(gap)b", "one typed after the paste")
+        }
+    }
+
+    /// A paste after every word keeps its place when the draft is put back,
+    /// so words typed after it go after it, as they did before.
+    func testAPasteAfterEveryWordKeepsItsPlaceWhenPutBack() {
+        let pasted = DraftAttachment.text(name: "Pasted text", text: "line one\nline two\nline three")
+        let draft = Draft(parts: [.text("Look: "), .attachment(pasted)])
+        XCTAssertEqual(draft.places, [6])
+        let photo = DraftAttachment.image(BlobRef(hash: [1], name: "red.png", mime: "image/png", size: 3))
+        XCTAssertEqual(Draft(parts: [.text("Look"), .attachment(photo)]).places, [nil], "a photo still follows every word")
+        let model = ChatModel(source: FakeChat(rows: [], frame: frame()))
+        var kept: Draft?
+        model.keeping = { kept = $0 }
+        model.reopen(draft)
+        model.draft = "Look:  now"
+        XCTAssertEqual(kept?.text, "Look: \u{FFFC} now")
     }
 
     /// A prompt's text marks each attachment's place with U+FFFC, one per
@@ -1024,17 +1172,19 @@ final class ChatModelTests: XCTestCase {
             "the failed attachment left no trace naming it: notice \(String(reflecting: model.notice)), chips \(model.attachments)")
     }
 
-    func testAnAttachmentOverTheSizeLimitIsRefusedBeforeUploadNamingTheLimit() async {
-        // An attachment has a stated limit of 64 MB, checked by the phone
-        // before it uploads anything and refused in plain words naming it.
+    func testAnAttachmentTheSharedLayerRefusesIsNamedAndNeverStored() async {
+        // The shared layer says what is refused before upload (over the
+        // hosts' limit, or a kind the agent takes none of); the chat shows
+        // its words and stores nothing.
         let source = FakeChat(rows: [], frame: frame())
+        source.refusals["shot.png"] = "shot.png is not attached: OpenCode can’t take images."
         let model = ChatModel(source: source)
-        await model.attach(Data(count: 64 * 1024 * 1024 + 1), name: "huge.bin", mime: "application/octet-stream", image: false)?.value
-        XCTAssertEqual(source.stored, [], "a file over the limit was handed over for upload")
-        XCTAssertTrue(model.attachments.isEmpty, "a file over the limit became a chip")
-        XCTAssertTrue(
-            (model.notice ?? "").contains("64 MB") && (model.notice ?? "").contains("huge.bin"),
-            "the refusal names the file and the 64 MB limit: \(String(reflecting: model.notice))")
+        await model.attach(Data(count: 16), name: "shot.png", mime: "image/png", image: true)?.value
+        XCTAssertEqual(model.notice, "shot.png is not attached: OpenCode can’t take images.")
+        XCTAssertEqual(source.stored, [], "a refused attachment was handed over for upload")
+        XCTAssertTrue(model.attachments.isEmpty)
+        await model.attach(Data(count: 16), name: "notes.txt", mime: "text/plain", image: false)?.value
+        XCTAssertEqual(source.stored, ["notes.txt"], "one it takes is stored")
     }
 
     func testAnEmptyChatSaysItIsLoadingOnlyAfterAMoment() async throws {
@@ -1131,7 +1281,7 @@ final class ChatModelTests: XCTestCase {
     func testOpeningARunAsksTheRuntimeAndItsRowsComeWithTheNextDelta() {
         let run = Run(
             first: "a", last: "b", steps: 2, live: false, openBelow: false, liveShown: false,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 2, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0), hidden: nil,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 2, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0, denied: 0), hidden: nil,
             recent: nil)
         let source = FakeChat(rows: [row("a", 1, run: run), row("b", 2, run: run), row("c", 3)], frame: frame())
         let model = ChatModel(source: source)
@@ -1151,7 +1301,7 @@ final class ChatModelTests: XCTestCase {
     func testARowInsideARunOpensItsOwnDetailNotTheRun() {
         let run = Run(
             first: "a", last: "b", steps: 2, live: false, openBelow: false, liveShown: false,
-            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 1, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0), hidden: nil,
+            unresolvedFailure: false, open: false, counts: RunCounts(commands: 0, edits: 0, reads: 1, searches: 0, lists: 0, fetches: 0, subagents: 1, other: 0, denied: 0), hidden: nil,
             recent: nil)
         let source = FakeChat(rows: [row("a", 1, run: run), row("b", 2, run: run)], frame: frame())
         let model = ChatModel(source: source)
@@ -1165,7 +1315,7 @@ final class ChatModelTests: XCTestCase {
         let source = FakeChat(rows: [row("a", 1)], frame: frame())
         source.card = AskCard(
             kind: .codex, key: "ask:1", itemKey: "", position: 1, count: 1, body: .question([]),
-            choices: [], questionNote: true, questionSkip: true, questionReply: true,
+            choices: [], questionNote: true, questionSkip: true, questionReply: true, replyInstead: false,
             stopsTurn: true, defaultToNo: false, state: .open)
         let model = ChatModel(source: source)
         let answers = [
@@ -1183,7 +1333,7 @@ final class ChatModelTests: XCTestCase {
         func card(_ key: String) -> AskCard {
             AskCard(
                 kind: .claudeSdk, key: key, itemKey: "", position: 1, count: 1, body: .question([]),
-                choices: [], questionNote: true, questionSkip: true, questionReply: true,
+                choices: [], questionNote: true, questionSkip: true, questionReply: true, replyInstead: false,
                 stopsTurn: true, defaultToNo: false, state: .open)
         }
         let source = FakeChat(rows: [row("a", 1)], frame: frame())
@@ -1216,7 +1366,7 @@ final class ChatModelTests: XCTestCase {
             AskCard(
                 kind: .claudeSdk, key: key, itemKey: "", position: 1, count: 1,
                 body: .form(server: "linear", message: "File an issue", fields: []),
-                choices: [], questionNote: false, questionSkip: false, questionReply: false,
+                choices: [], questionNote: false, questionSkip: false, questionReply: false, replyInstead: false,
                 stopsTurn: true, defaultToNo: false, state: .open)
         }
         let source = FakeChat(rows: [row("a", 1)], frame: frame())
@@ -1477,7 +1627,7 @@ final class ChatModelTests: XCTestCase {
 
         source.editAnswer = .unreachable
         await model.discardReviewDrafts().value
-        XCTAssertEqual(model.notice, "This agent’s computer can’t be reached, so nothing changed.")
+        XCTAssertEqual(model.notice, "This agent’s device can’t be reached, so nothing changed.")
     }
 
     func testDictationStreamsIntoTheDraftAndStopsOnSend() async {

@@ -271,8 +271,7 @@ mod tests {
     /// before the agent that drove it typed its first key.
     #[test]
     fn recorded_sessions_are_live_at_their_first_screen() {
-        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../interpret/fixtures/claude_pty/live");
+        let fixtures = source_tree::crate_dir!().join("../interpret/fixtures/claude_pty/live");
         let mut checked = 0;
         for entry in std::fs::read_dir(&fixtures).expect("pty fixtures") {
             let path = entry.expect("fixture").path().join("io.jsonl");

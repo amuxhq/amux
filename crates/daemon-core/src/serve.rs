@@ -598,6 +598,9 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         // Whole and undecoded: an own row's as this host's experiments
         // wrote it, a replica's as its origin sent it.
         experimental: row.experimental.clone(),
+        // Named for every agent, as the kind implies on a row kept before
+        // rows named it.
+        provider: row.provider_id().to_owned(),
     }
 }
 
@@ -693,6 +696,7 @@ mod tests {
                     wire::RouteKind::Unspecified as i32,
                 )),
                 current: true,
+                same_network: false,
             })),
             ..Default::default()
         };

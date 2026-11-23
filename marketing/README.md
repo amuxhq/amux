@@ -89,6 +89,23 @@ since a simulator cannot be given permission to show a notification; it is
 set in the system's SF Pro, so `just store` runs on a Mac. Headlines share
 one size, and the script refuses one too long for a frame.
 
+## Google Play's screenshots, feature graphic and icon
+
+```sh
+just android build
+just scene android-store
+just play-store
+```
+
+`just scene android-store` boots the pinned Pixel 9 emulator (`amux-android-1`),
+enables SystemUI Demo Mode (`9:41`, full signal and battery), drives the real
+Android debug build against the same Tally launch scene, and saves the six
+dark-mode screens into `~/.local/state/amux-marketing/<tree>/launch/images/`.
+`just play-store` composes the matching seven 9:16 portrait frames (`1260x2240`,
+24-bit RGB PNG), `feature-graphic.png` (`1024x500`), `app-icon-512.png`
+(`512x512`), and review contact sheets into
+`~/.local/state/amux-marketing/<tree>/play-store/`.
+
 ## Claude Code's and Codex's own interfaces
 
 ```sh

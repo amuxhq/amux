@@ -395,7 +395,7 @@ impl SettingsScreen {
 
     fn label(&self, row: Row) -> String {
         match row {
-            Row::Name => "This computer's name".to_owned(),
+            Row::Name => "This device's name".to_owned(),
             Row::StartAtLogin => "Start amux when you log in".to_owned(),
             Row::KeepAwake => format!("Keep this {} awake while it's plugged in", self.machine),
             Row::Repository(at) => text::tilde(&self.settings.repositories[at]),
@@ -448,7 +448,7 @@ impl SettingsScreen {
     /// The section a row opens, when it is the first of one.
     fn heading(row: Row, previous: Option<Row>) -> Option<&'static str> {
         let section = |row: Row| match row {
-            Row::Name | Row::StartAtLogin | Row::KeepAwake => "This computer",
+            Row::Name | Row::StartAtLogin | Row::KeepAwake => "This device",
             Row::Repository(_) | Row::AddRepository => "Repositories",
             Row::ChatIn | Row::CopyOnSelect => "Chats",
             Row::Telemetry | Row::AutoReports => "Help improve amux",

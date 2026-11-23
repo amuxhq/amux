@@ -1,18 +1,18 @@
 ---
 title: Install
-description: Install amux on your computer, then let its first run set it up and pair your phone.
+description: Install amux on your Mac or Linux machine, then let its first run set it up and pair your phone.
 sidebar:
   order: 1
 ---
 
-amux runs your Claude Code and Codex agents on your own computers, keeps them
+amux runs your Claude Code and Codex agents on your own devices, keeps them
 running, and lets you follow and answer them from a terminal or your iPhone.
-Install it on every computer you want agents to work on.
+Install it on every device you want agents to work on.
 
 ## Before you start
 
 - A Mac with Apple silicon, or Linux on x86-64.
-- Claude Code or Codex, installed and signed in on that computer. amux runs
+- Claude Code or Codex, installed and signed in on that machine. amux runs
   the agents you already use, on your own subscription to them.
 
 You don't need an amux account. Everything on this page works without one.
@@ -44,18 +44,19 @@ now, and whatever you skip stays on the home screen as **Finish setting up**
 until you do it or dismiss it.
 
 1. **Connect your iPhone.** A QR code and a six-digit code that pair your
-   phone with this computer. Scan the QR code with your iPhone's camera, or
+   phone with this device. Scan the QR code with your iPhone's camera, or
    enter the code in the amux app. If you don't have the app yet, the QR
    code takes you to the App Store. See
    [Connect your phone](connect-your-phone.md).
 2. **Keep it connected.** **Start amux when you log in**, and keep the
-   computer awake while it's plugged in (on battery it stays awake only
+   device awake while it's plugged in (on battery it stays awake only
    while an agent works). Both are ticked; **Space** changes one and
-   **Enter** applies them. This is what lets your phone reach the computer
+   **Enter** applies them. This is what lets your phone reach the device
    whenever you need it.
-3. **Reach it from anywhere.** Signing in to an amux account, so your phone
-   reaches this computer when you're away from this network. This uses the
-   amux relay, which is part of [Pro](https://amux.sh/docs/account/plans-and-billing/).
+3. **Reach it through the relay.** Signing in to an amux account, so your phone
+   reaches this device when you're away from this network. Your phone then
+   connects through amux's relay, which is part of
+   [Pro](https://amux.sh/docs/account/plans-and-billing/).
    Skip it if you only use amux at home.
 4. **Repositories.** The folders Claude Code and Codex worked in lately, ticked.
    New agents offer these first. **+ Add a repository…** adds another.
@@ -65,7 +66,7 @@ until you do it or dismiss it.
    includes your chats, code or file names. See
    [What amux sends](../understand/what-amux-sends.md).
 6. **Try starting an agent from your phone.** Tap **+** in the app and pick a
-   repository. When the agent starts on this computer, amux opens on it.
+   repository. When the agent starts on this device, amux opens on it.
 
 That's it. Next, [start your first agent](first-agent.md).
 
@@ -88,7 +89,7 @@ amux keeps itself up to date. See [Updates and channels](../use/updates.md).
 amux uninstall
 ```
 
-This stops the agents running on this computer (it asks first), removes the
+This stops the agents running on this device (it asks first), removes the
 login item, stops amux, and deletes `~/.amux/bin/amux` and the `PATH` lines
 the install script added. Your agents' history stays, in case you install
 again; add `--delete-data` to remove that too.

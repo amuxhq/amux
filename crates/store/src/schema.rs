@@ -169,4 +169,12 @@ CREATE INDEX agents_by_name ON agents (origin_host, name);
 -- written before this column did.
 ALTER TABLE agents ADD COLUMN experimental BLOB;
 "#,
+    // 4: which agent program each agent runs, by its provider id, now that
+    // agents of one kind (ACP's) run different programs.
+    r#"
+-- The provider id: claude, codex, or an ACP agent's. NULL on a row written
+-- before this column, whose kind names its program (Claude's kinds are
+-- claude, Codex's codex), and on a replica its origin sent without one.
+ALTER TABLE agents ADD COLUMN provider TEXT;
+"#,
 ];

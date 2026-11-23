@@ -1,0 +1,17 @@
+#!/bin/sh
+
+# Usage: scripts/built TARGET [BUCK2 BUILD OPTION...]
+#
+# Builds one Buck2 target and prints the absolute path of what it built: how
+# a recipe gets a binary, or the directory of binaries the integration tests
+# start (//crates/provider-fakes:binaries), to run by hand. The path is
+# stable from build to build, so a recipe that rebuilds runs the new one.
+# Options go to `buck2 build`: `--target-platforms` picks a configuration.
+
+set -eu
+here=$(cd "$(dirname "$0")" && pwd)
+target=$1
+shift
+# A failed build fails this, rather than printing nothing.
+out=$("$here/buck2" build --show-full-output "$@" "$target")
+printf '%s\n' "$out" | awk 'NR == 1 { print $2 }'

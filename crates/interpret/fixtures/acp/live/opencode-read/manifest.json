@@ -1,0 +1,25 @@
+{
+  "spec": "opencode-read",
+  "recorded": {
+    "provider": "opencode",
+    "version": "1.18.33",
+    "model": "opencode/deepseek-v4.1-flash-free",
+    "at": "2026-11-20T19:27:48.675817Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:e53ad877561a26f1dbf053f251f7afabb428ed0fad7353822bbb64caafad4acd",
+    "spawn.jsonl": "sha256:e2c00f078d9f3175fa6976b8105e3438ead832b8438b48007974577d4e274113"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 7,
+    "personal_identifiers": 0
+  },
+  "session_ids": [
+    "ses_e059e72d9ffeeCOAbC1s6ZHhml"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "a prompt that has the agent read a file in its folder"
+  }
+}

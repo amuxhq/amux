@@ -8,9 +8,9 @@
                    ╭─ New Agent ──────────────────────────────────────────────────────────╮
   › ○ release-notes│                                                                      │            [x]
       Ready to writ│  Name      desk-notes                                                │
-                   │  Agent      Claude · not signed in   Codex · not signed in           │
+                   │  Agent      Claude · not signed in   Codex · not signed in   Fake A… │
     ○ backups  Clau│  Folder    /tmp/journey/aj-xxxxxxxx/net/cabin/work                   │            now
-                   │  Computer   cabin   desk   laptop                                    │
+                   │  Device     cabin   desk   laptop                                    │
     ○ expired  Clau│  Worktree  [ ] new worktree                                          │            now
       Tidied.      │                                                                      │
                    │  [Start]  [Cancel]                                                   │
@@ -27,7 +27,7 @@
 
     ○ planner-codex  Codex · /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                             now
 
-    ○ planner-pty  Claude (terminal) · /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                   now
+    ○ planner-pty  Claude · /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                              now
 
     ○ planner  Claude · /tmp/journey/aj-xxxxxxxx/net/desk/work · desk                                  now
 

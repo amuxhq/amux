@@ -1,0 +1,2 @@
+# The build script only links chafa, behind features amux leaves off.
+buildscript.run = false

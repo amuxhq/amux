@@ -1,0 +1,10 @@
+{
+  "about": "opencode 1.18.33, recorded live: thought level and mode changed by session/set_config_option and session/set_mode, then one prompt",
+  "spec": {
+    "provider": "opencode"
+  },
+  "recording": {
+    "path": "live/opencode-config/io.jsonl",
+    "format": "acp_io"
+  }
+}

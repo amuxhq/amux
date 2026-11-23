@@ -13,6 +13,9 @@ let package = Package(
         // Mac say the same things. Like the values, it never links the
         // bridge, so the Mac's storybook can draw with it.
         .library(name: "AmuxWords", targets: ["AmuxWords"]),
+        // Prose parsed by the Rust parser for screens drawn without the
+        // bridge: the storybooks, the catalogue and the client tests.
+        .library(name: "AmuxFixtures", targets: ["AmuxFixtures"]),
     ],
     dependencies: [
         .package(path: "../AmuxPush"),
@@ -25,6 +28,7 @@ let package = Package(
         // in C because nothing written in Swift can: see LaunchClock.h.
         .target(name: "LaunchClock"),
         .target(name: "AmuxValues", dependencies: [.product(name: "AmuxPush", package: "AmuxPush")]),
+        .target(name: "AmuxFixtures", dependencies: ["AmuxValues"], resources: [.copy("Fixtures")]),
         .target(
             name: "AmuxWords",
             dependencies: ["AmuxValues", .product(name: "AmuxPush", package: "AmuxPush")]),
@@ -34,7 +38,7 @@ let package = Package(
                 "AmuxApp", "AmuxValues", "AmuxWords", "LaunchClock",
                 .product(name: "AmuxPush", package: "AmuxPush"),
             ]),
-        .testTarget(name: "AmuxCoreTests", dependencies: ["AmuxCore", "AmuxWords"]),
+        .testTarget(name: "AmuxCoreTests", dependencies: ["AmuxCore", "AmuxWords", "AmuxFixtures"]),
     ],
     swiftLanguageModes: [.v6]
 )

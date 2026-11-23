@@ -17,12 +17,14 @@ enum Cards {
         _ index: Int, _ name: String, attention: Attention = .idle, minutesAgo: Double = 1,
         depth: UInt32 = 0, children: UInt32 = 0, family: Attention? = nil,
         members: UInt32 = 1, expanded: Bool = false, loud: LoudMember? = nil,
-        kind: Kind = .claudeSdk, reach: Reach = .online(.direct), host: HostId = desk,
+        kind: Kind = .claudeSdk, provider: String? = nil, reach: Reach = .online(.direct), host: HostId = desk,
         filing: Filing = .open
     ) -> FleetRow {
         FleetRow(
             card: FleetCard(
-                agent: key(index, on: host), name: name, handle: name, kind: kind, attention: attention,
+                agent: key(index, on: host), name: name, handle: name, kind: kind, provider: provider ?? (kind == .codex ? "codex" : "claude"),
+                providerName: provider ?? (kind == .codex ? "Codex" : "Claude"),
+                attachable: kind == .codex || kind == .claudePty, attention: attention,
                 cwd: "/Users/pat/source/\(name)",
                 phaseSinceMs: Int64(now.addingTimeInterval(-60 * minutesAgo)
                     .timeIntervalSince1970 * 1000),
@@ -69,12 +71,12 @@ enum Cards {
         _ id: HostId = desk, name: String = "desk", reach: Reach = .online(.direct), link: UInt64 = 0,
         trusted: Bool = true, candidate: Bool = false, local: Bool = false, addrs: [String] = [],
         relayOnly: Bool = false, through: String? = nil, pairingOpen: Bool = false,
-        signedIn: Bool? = nil, claudeKind: Kind? = nil
+        signedIn: Bool? = nil
     ) -> HostView {
         HostView(
             hostId: id.bytes, name: name, local: local, trusted: trusted, candidate: candidate,
-            reach: reach, link: link, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
-            providers: [], claudeKind: claudeKind, lastDialError: nil, platform: nil,
+            reach: reach, sameNetwork: false, link: link, addrs: addrs, relayOnly: relayOnly, pairingOpen: pairingOpen, current: true,
+            providers: [], lastDialError: nil, platform: nil,
             signedIn: signedIn, through: through, version: nil)
     }
 }
@@ -202,9 +204,9 @@ final class FleetStoreTests: XCTestCase {
         XCTAssertEqual(fleet.unreachableHost, "desk")
         XCTAssertNil(fleet.relayTrouble, "an offline machine is its rows' to show")
         fleet.relay(.signInAgain)
-        XCTAssertEqual(fleet.relayTrouble, "Sign in again to reach your computers from anywhere")
+        XCTAssertEqual(fleet.relayTrouble, "Sign in again for relayed connections")
         fleet.relay(.versionMismatch)
-        XCTAssertEqual(fleet.relayTrouble, "Update amux to reach your computers from anywhere")
+        XCTAssertEqual(fleet.relayTrouble, "Update amux for relayed connections")
         fleet.relay(.connecting)
         XCTAssertNil(fleet.relayTrouble, "a link coming up is not trouble")
         fleet.relay(.retrying)

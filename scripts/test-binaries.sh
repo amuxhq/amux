@@ -22,7 +22,7 @@ fi
 # a second time for these binaries.
 cargo build --locked --workspace \
     --bin amux \
-    --bin fake-claude-pty --bin fake-claude-sdk --bin fake-codex \
+    --bin fake-claude-pty --bin fake-claude-sdk --bin fake-codex --bin fake-acp \
     --bin fake-amux \
     --example amux_stand_in
 

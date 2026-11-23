@@ -70,9 +70,6 @@ extension Bridge {
     public static func pastesAsAttachment(_ text: String) -> Bool {
         text.withCString { amux_pastes_as_attachment($0) }
     }
-
-    /// The most an attachment may hold, in bytes; the hosts refuse more.
-    public static var attachmentLimit: Int { Int(amux_attachment_limit()) }
 }
 
 extension CodeHighlighting {

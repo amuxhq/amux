@@ -18,7 +18,6 @@ use wire::{
 use crate::api::Entry;
 use crate::api::caller::{Caller, for_a_caller};
 use crate::grpc::{settings_status, status, upgrade, wire_error};
-use crate::offers::{ASKED, CatalogueError};
 use crate::runtime::ProfileRuntime;
 
 /// Mounts HostService for `entry`: every entry asks the same.
@@ -44,13 +43,9 @@ impl HostService for Offers {
         request: Request<GetCatalogueRequest>,
     ) -> Result<Response<GetCatalogueResponse>, Status> {
         let runtime = upgrade(&self.runtime)?;
-        let asked = request.into_inner().provider;
-        let provider = crate::Provider::try_from(asked)
-            .ok()
-            .filter(|provider| ASKED.contains(provider))
-            .ok_or_else(|| status(CatalogueError::NoProvider(asked).to_wire()))?;
+        let provider = request.into_inner().provider;
         let offered = runtime
-            .host_catalogue(provider)
+            .host_catalogue(&provider)
             .await
             .map_err(|error| status(error.to_wire()))?;
         Ok(Response::new(GetCatalogueResponse {

@@ -1,18 +1,18 @@
 shell |  | hosts | 0,62,402,778
 home |  | signed-out | 0,333,402,458
 hosts |  | 1 reachable | 0,221,402,570
-hosts.row.<desk> | desk, macOS, reachable on this network | on-this-network | 16,227,370,111
+hosts.row.<desk> | desk, macOS, connected, local | on-this-network | 16,227,370,111
 hosts.subtitle |  | 1 reachable | 16,179,370,34
- | desk, macOS, reachable on this network |  | 16,227,370,111
- | Computers |  | 16,124,274,62
+ | desk, macOS, connected, local |  | 16,227,370,111
+ | Devices |  | 16,124,191,62
  | 1 reachable |  | 16,191,92,22
- | Agents |  | 110,795,95,54
+ | Agents |  | 111,795,94,54
  | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 216,830,56,12
- | Agents |  | 110,795,95,54
- | Agents |  | 140,830,35,12
- | Computers |  | 197,795,95,54
- | Computers |  | 217,830,55,12
- | Agents |  | 110,795,95,54
- | Computers | selected | 197,795,95,54
+ | Devices |  | 197,795,94,54
+ | Devices |  | 224,830,40,12
+ | Agents |  | 111,795,94,54
+ | Agents |  | 141,830,35,12
+ | Devices |  | 197,795,94,54
+ | Devices |  | 225,830,39,12
+ | Agents |  | 111,795,94,54
+ | Devices | selected | 197,795,94,54

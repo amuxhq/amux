@@ -53,17 +53,17 @@ fn root(kind: Kind) -> PathBuf {
         Kind::ClaudeSdk => "interpret/fixtures/claude_sdk/live",
         Kind::ClaudePty => "interpret/fixtures/claude_pty/live",
         Kind::Codex => "interpret/fixtures/codex/live",
+        Kind::Acp => "interpret/fixtures/acp/live",
     };
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join(corpus)
+    source_tree::crate_dir!().join("..").join(corpus)
 }
 
 fn binary(kind: Kind) -> &'static str {
     match kind {
-        Kind::ClaudeSdk => env!("CARGO_BIN_EXE_fake-claude-sdk"),
-        Kind::ClaudePty => env!("CARGO_BIN_EXE_fake-claude-pty"),
-        Kind::Codex => env!("CARGO_BIN_EXE_fake-codex"),
+        Kind::ClaudeSdk => source_tree::bin!("fake-claude-sdk"),
+        Kind::ClaudePty => source_tree::bin!("fake-claude-pty"),
+        Kind::Codex => source_tree::bin!("fake-codex"),
+        Kind::Acp => source_tree::bin!("fake-acp"),
     }
 }
 
@@ -74,6 +74,7 @@ fn frame_kind(kind: Kind, frame: &Value) -> Option<String> {
         Kind::ClaudeSdk => sdk_kind(frame),
         Kind::Codex => codex_kind(frame),
         Kind::ClaudePty => unreachable!("terminal sessions report rows and hooks"),
+        Kind::Acp => unreachable!("the ACP fake's scenarios are its own suite's"),
     }
 }
 
@@ -651,7 +652,7 @@ impl Drop for Reaper {
 async fn conforms(scenario: Scenario) {
     let played = match scenario.kind {
         Kind::ClaudePty => terminal(&scenario).await,
-        Kind::ClaudeSdk | Kind::Codex => stdio(&scenario).await,
+        Kind::ClaudeSdk | Kind::Codex | Kind::Acp => stdio(&scenario).await,
     };
     if let Err(drift) = played {
         panic!(

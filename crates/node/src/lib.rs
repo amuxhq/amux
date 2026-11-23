@@ -11,6 +11,7 @@
 //! shutdown that marks the installation clean.
 
 mod activation;
+pub mod agents;
 mod api;
 mod auth;
 mod awake;
@@ -61,7 +62,7 @@ mod serve;
 mod services;
 mod spec;
 mod suggestions;
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod supervisor;
 mod telemetry;
 mod transport;
@@ -86,7 +87,7 @@ pub use dump::{
     AGENT_RECORD, CLIENT_CHECKPOINT, CLIENT_EVENTS, CLIENT_SESSIONS, CORE_JOURNALS, DAEMON_LOG,
     DumpError, MANIFEST, PERSON, REPORT_LIMIT, SUPERVISOR_LOG, pack,
 };
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub use edge::mdns_discovery;
 pub use edge::{
     Cloud, CloudLinkServer, CloudOptions, DUAL_STACK_ANY, DiscoveryFactory, Edge, EdgeOptions,
@@ -102,7 +103,7 @@ pub use install::{
     STORE, write_durably,
 };
 pub use link::{Cursor, PeerClient, TRUST_REVOKED, forwarder, framed, link_log, paths, socket};
-pub use offers::{HostCatalogue, PROVIDERS, Provider};
+pub use offers::{CatalogueError, HostCatalogue, PROVIDERS};
 pub use outbox::{
     DrainReport, HttpSender, NoopSender, Push, PushCloud, PushFuture, PushRecipient, PushSender,
 };

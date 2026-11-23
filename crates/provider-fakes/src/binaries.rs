@@ -27,7 +27,9 @@ pub fn dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
         if let Some(dir) = std::env::var_os(ENV) {
-            return dir.into();
+            // Absolute, so a process the test starts in a directory of its
+            // own finds them too: Buck names them relative to the checkout.
+            return std::path::absolute(&dir).unwrap_or_else(|_| dir.into());
         }
         let exe = std::env::current_exe().expect("this executable's path");
         let dir = exe.parent().expect("an executable's directory");

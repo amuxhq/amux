@@ -74,9 +74,9 @@ public struct SignInOfferPanel: View {
     private var detail: String {
         switch prompt {
         case .offered(let offer):
-            String(localized: "\(offer.hostName) offers its account, so this phone reaches it from anywhere.")
+            String(localized: "\(offer.hostName) offers its account, so this phone can reach it through the relay.")
         case .offering(let host, _):
-            String(localized: "Then this phone reaches \(host.name) from anywhere.")
+            String(localized: "Then this phone can reach \(host.name) through the relay.")
         }
     }
 
@@ -86,7 +86,7 @@ public struct SignInOfferPanel: View {
         case .unreachable(let name) where !name.isEmpty:
             String(localized: "\(name) is offline. Open amux on \(name), then try again.")
         case .unreachable:
-            String(localized: "That computer is offline. Open amux on it, then try again.")
+            String(localized: "That device is offline. Open amux on it, then try again.")
         case .refused:
             String(localized: "Signing in didn’t work. Sign in from Settings instead.")
         }

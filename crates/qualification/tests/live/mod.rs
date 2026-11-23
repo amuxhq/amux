@@ -486,13 +486,14 @@ impl Driver {
             Kind::ClaudePty => "claude_pty",
             Kind::ClaudeSdk => "claude_sdk",
             Kind::Codex => "codex",
+            Kind::Acp => "acp",
             Kind::Unspecified => "unknown",
         }
     }
 
     fn fixture(&self, scenario: Scenario) -> Option<PathBuf> {
         (self.recording)(scenario).map(|recording| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
+            source_tree::crate_dir!()
                 .join("../interpret/fixtures")
                 .join(self.tag())
                 .join(format!("{recording}.json"))
@@ -1283,6 +1284,13 @@ impl Install {
                     })),
                 }))
             }
+            // These lanes drive Claude and Codex; an ACP agent's ask in one
+            // is a harness mistake.
+            OpenAsk::Acp(ask) => Err(format!(
+                "an ACP ask opened in a {:?} lane: {}",
+                self.kind,
+                ask_token(&OpenAsk::Acp(ask.clone()))
+            )),
         }
     }
 
@@ -1966,6 +1974,8 @@ fn item_token(kind: Kind, item: &Item) -> Option<String> {
             Codex::Plan(plan) => Some(plan_token(&plan)),
             _ => None,
         },
+        // The live lanes run Claude and Codex, whose bodies these are.
+        ItemBody::Acp(_) => Some("acp".into()),
         ItemBody::Undecodable => Some("undecodable".into()),
     }
 }
@@ -2016,6 +2026,13 @@ fn ask_token(ask: &OpenAsk) -> String {
             Some(wire::codex_ask::Body::Question(_)) => "question",
             Some(wire::codex_ask::Body::McpTool(_)) => "tool",
             Some(wire::codex_ask::Body::Plan(_)) => "plan",
+            None => "empty",
+        },
+        OpenAsk::Acp(ask) => match &ask.body {
+            Some(wire::acp_ask::Body::Permission(_)) => "permission",
+            Some(wire::acp_ask::Body::Form(_)) => "form",
+            Some(wire::acp_ask::Body::Link(_)) => "link",
+            Some(wire::acp_ask::Body::Question(_)) => "question",
             None => "empty",
         },
     }

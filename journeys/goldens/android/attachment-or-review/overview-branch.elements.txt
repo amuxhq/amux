@@ -1,0 +1,34 @@
+shell |  |  | 0,0,411,923
+chat |  |  | 0,0,411,923
+chat.feed |  |  | 0,118,411,674
+chat.row.<id> |  |  | 16,130,379,144
+chat.row.kind.prompt | Pasted text · 12 lines, Review · 1 comment |  | 16,130,379,132
+markdown.root | Please check |  | 225,140,96,20
+chat.attachment | Pasted text · 12 lines |  | 225,168,157,24
+markdown.root | against |  | 225,200,53,20
+chat.attachment | Review · 1 comment |  | 225,228,154,24
+chat.row.msg_fake<run>0000000000000002:0 |  |  | 16,275,379,32
+chat.row.kind.prose |  |  | 16,275,379,20
+markdown.root | I read the review. |  | 16,275,379,20
+chat.row.turn:1 | Worked for <t> |  | 16,307,379,30
+chat.row.turn-end | Worked for <t> |  | 16,307,81,16
+chat.composer | Reply, Attach, Chat Settings, claude-fake-1 · medium, Dictate, Send |  | 12,796,387,94
+chat.field | Reply |  | 28,796,355,36
+chat.attach | Attach |  | 21,837,48,48
+chat.model | Chat Settings, claude-fake-1 · medium |  | 70,837,177,48
+chat.dictate | Dictate |  | 287,837,48,48
+chat.send | Send |  | 342,837,48,48 (disabled)
+chat.topBar | Back, reviewer, /p/t/a/n/d/work · desk, Open Overview, 1 file, 2 added, 1 removed, More |  | 0,0,411,118
+nav.back | Back |  | 8,66,40,40
+chat.title | reviewer | reviewer | 56,62,241,48
+chat.header | /p/t/a/n/d/work · desk | live | 56,88,130,16
+chat.changes | 1 file, 2 added, 1 removed |  | 302,72,58,29
+chat.more | More |  | 363,66,40,40
+chat.overview | CHANGES, 1 file, Uncommitted, vs main, deploy.sh, +2 −1, Review Changes |  | 0,466,411,433
+chat.place | reviewer, Close, Device, desk, Directory, /private/tmp/amux-android-journey/net/desk/work, Branch, main, Address, reviewer/desk |  | 0,466,411,181
+chat.overview.close | Close |  | 363,470,48,48
+chat.overview.branch | Branch | main | 16,603,379,18
+chat.overview.comparison.uncommitted | Uncommitted | selected | 18,712,188,48
+chat.overview.comparison.onbranch | vs main |  | 206,712,188,48
+chat.overview.file.deploy.sh | deploy.sh, +2 −1 |  | 0,770,411,48
+chat.overview.review | Review Changes |  | 8,827,140,48

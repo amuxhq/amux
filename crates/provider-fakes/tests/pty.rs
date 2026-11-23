@@ -79,7 +79,7 @@ impl Terminal {
         let socket = messaging_socket();
         let script = script_file(&root, script);
         let spawned = pty_host::spawn(pty_host::PtySpawn {
-            command: env!("CARGO_BIN_EXE_fake-claude-pty").into(),
+            command: source_tree::bin!("fake-claude-pty").into(),
             args: vec![
                 "--session-id".into(),
                 SESSION.into(),

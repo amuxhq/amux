@@ -1,0 +1,17 @@
+load("//build:rust.bzl", "amux_rust_library")
+
+DEPS = [
+    "//crates/journal:journal",
+    "//third-party/rust:serde",
+    "//third-party/rust:serde_json",
+]
+
+TEST_DEPS = [
+    "//third-party/rust:tempfile",
+]
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    test_deps = TEST_DEPS,
+)

@@ -45,6 +45,11 @@ pub enum Input {
         link: LinkId,
         peer: HostId,
         kind: CarrierKind,
+        /// A direct carrier on a network both hosts are on, which clients
+        /// call Local; false for any other path, and in records written
+        /// before the core heard it.
+        #[serde(default)]
+        lan: bool,
         resumed: Option<PublicKey>,
     },
     LinkDown {
@@ -259,6 +264,9 @@ pub enum Input {
     LinkCarried {
         link: LinkId,
         kind: CarrierKind,
+        /// The new path is on a network both hosts are on, as `LinkUp` says.
+        #[serde(default)]
+        lan: bool,
     },
     /// The device's network changed: a relay attempt waiting out its
     /// pause goes at once.
@@ -571,6 +579,16 @@ pub struct Ingested {
     pub turn_ends: u32,
     /// The agent's kind, as the wire numbers it.
     pub kind: i32,
+    /// The agent's provider id, beside its kind; empty with it.
+    pub provider: String,
+    /// The model or effort a person picked that the agent's program took
+    /// in these frames, the newest of each, for the host to keep. The kind
+    /// and provider are read with it.
+    pub picked: Option<wire::PickTaken>,
+    /// An ACP agent's provider id and the sign-in its newest snapshot in
+    /// these frames says, where it says one: the host's word on whether the
+    /// provider is signed in follows what its agents meet.
+    pub acp_sign_in: Option<(String, wire::SignInState)>,
     pub end: IngestEnd,
     /// How far the step found the agent's journal, as a global offset:
     /// the journal cut here reads as the step read it.
@@ -763,6 +781,7 @@ mod tests {
                 link: LinkId(1),
                 peer: HostId([1; 16]),
                 kind: CarrierKind::Direct,
+                lan: false,
                 resumed: Some(PublicKey(vec![7; 32])),
             },
             Input::LinkControl {

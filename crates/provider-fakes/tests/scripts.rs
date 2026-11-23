@@ -1,12 +1,10 @@
 //! The journey scripts are scripts every fake can play.
 
-use std::path::Path;
-
 use provider_fakes::{Script, Step, codex, pty, sdk};
 
 #[test]
 fn every_journey_script_loads_and_every_fake_accepts_it() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../journeys/scripts");
+    let root = source_tree::crate_dir!().join("../../journeys/scripts");
     let mut seen = 0;
     for entry in std::fs::read_dir(&root).unwrap() {
         let path = entry.unwrap().path();

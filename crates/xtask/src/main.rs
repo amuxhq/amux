@@ -1,17 +1,15 @@
-use std::path::Path;
-
 mod mac;
 mod release;
 mod signing;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     match std::env::args().nth(1).as_deref() {
-        Some("codegen") => codegen(),
+        Some("codegen") => codegen(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("release") => release::main(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("mac") => mac::main(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {
             eprintln!(
-                "usage: xtask <codegen|release <key generate [--file PATH]|cut VERSION|deploy VERSION [--channel C] [--rollout N] [--key-file PATH]>|mac <release VERSION [--rehearse] [--no-notarize]|deploy VERSION [--channel C] [--key-file PATH]>>"
+                "usage: xtask <codegen [--contract DIR] [--internal DIR] [--out DIR]|release <key generate [--file PATH]|cut VERSION|deploy VERSION [--channel C] [--rollout N] [--key-file PATH]>|mac <release VERSION [--rehearse] [--no-notarize]|deploy VERSION [--channel C] [--key-file PATH]>>"
             );
             std::process::exit(2);
         }
@@ -76,6 +74,7 @@ const PROTO_FILES: &[&str] = &[
     "amux/v1/agent_process.proto",
     "amux/v1/claude.proto",
     "amux/v1/codex.proto",
+    "amux/v1/acp.proto",
     "google/rpc/code.proto",
     "google/rpc/status.proto",
     "google/rpc/error_details.proto",
@@ -99,23 +98,56 @@ const INTERNAL_PROTO_FILES: &[&str] = &[
 /// generated Rust is an ordinary tracked input — visible to git, review,
 /// rust-analyzer, and every build cache — and so building amux needs no
 /// protoc. CI regenerates and fails if the committed output is stale.
-fn codegen() -> Result<(), Box<dyn std::error::Error>> {
-    let crates = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("xtask lives under crates/");
+///
+/// `--contract`, `--internal` and `--out` name the two schema directories
+/// and the output directory elsewhere, and AMUX_PROTOC a protoc beside its
+/// release's `include/`: Buck2 generates into its own output this way
+/// (`//crates/wire:protobuf`), with the protoc it fetched, since the
+/// vendored crate's copy exists only where Cargo unpacked it.
+fn codegen(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let xtask_dir = source_tree::crate_dir!();
+    let crates = xtask_dir.parent().expect("xtask lives under crates/");
     let wire_dir = crates.join("wire");
-    let contract_dir = crates
+    let mut contract_dir = crates
         .parent()
         .expect("crates/ lives in the repository")
         .join("proto");
-    let internal_dir = wire_dir.join("proto");
-    let out_dir = wire_dir.join("src/generated");
+    let mut internal_dir = wire_dir.join("proto");
+    let mut out_dir = wire_dir.join("src/generated");
+    let mut args = args.iter();
+    while let Some(flag) = args.next() {
+        let value = args
+            .next()
+            .map(std::path::PathBuf::from)
+            .ok_or(format!("{flag} needs a directory"))?;
+        match flag.as_str() {
+            "--contract" => contract_dir = value,
+            "--internal" => internal_dir = value,
+            "--out" => out_dir = value,
+            _ => return Err(format!("codegen: unknown option {flag}").into()),
+        }
+    }
     std::fs::create_dir_all(&out_dir)?;
 
-    let protoc = protoc_bin_vendored::protoc_bin_path()?;
+    let (protoc, include) = match std::env::var_os("AMUX_PROTOC") {
+        Some(protoc) => {
+            let protoc = std::path::PathBuf::from(protoc);
+            let include = protoc
+                .parent()
+                .and_then(std::path::Path::parent)
+                .ok_or("AMUX_PROTOC names a protoc under a release's bin/")?
+                .join("include");
+            (protoc, include)
+        }
+        None => (
+            protoc_bin_vendored::protoc_bin_path()?,
+            protoc_bin_vendored::include_path()?,
+        ),
+    };
     // SAFETY: set before any codegen work and never mutated again; xtask is a
-    // short-lived single-threaded process. The vendored protoc keeps the
-    // output independent of whatever protoc the host has installed.
+    // short-lived single-threaded process. A pinned protoc (the vendored one, or
+    // the same release Buck2 fetched) keeps the output independent of
+    // whatever protoc the host has installed.
     unsafe {
         std::env::set_var("PROTOC", protoc);
     }
@@ -182,13 +214,9 @@ fn codegen() -> Result<(), Box<dyn std::error::Error>> {
                         .map(|file| internal_dir.join(file)),
                 )
                 .collect::<Vec<_>>(),
-            // The vendored protoc's own include directory holds the
+            // The protoc release's own include directory holds the
             // well-known types the googleapis files import.
-            &[
-                contract_dir,
-                internal_dir,
-                protoc_bin_vendored::include_path()?,
-            ],
+            &[contract_dir, internal_dir, include],
         )?;
     Ok(())
 }

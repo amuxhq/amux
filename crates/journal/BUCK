@@ -1,0 +1,27 @@
+load("//build:rust.bzl", "TESTING", "amux_rust_library", "amux_rust_test")
+
+DEPS = [
+    "//crates/wire:wire",
+    "//third-party/rust:prost",
+]
+
+TEST_DEPS = [
+    "//crates/journal:journal",
+    "//third-party/rust:tempfile",
+]
+
+FEATURES = select({"DEFAULT": [], TESTING: ["synthetic"]})
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    features = FEATURES,
+    test_deps = TEST_DEPS,
+)
+
+amux_rust_test(
+    name = "integration",
+    version = "0.1.0",
+    deps = DEPS + TEST_DEPS,
+    features = FEATURES,
+)

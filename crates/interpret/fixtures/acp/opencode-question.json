@@ -1,0 +1,10 @@
+{
+  "about": "opencode 1.18.33, recorded live: a prompt asking the agent to put a question to the person with its own question tool rather than in chat",
+  "spec": {
+    "provider": "opencode"
+  },
+  "recording": {
+    "path": "live/opencode-question/io.jsonl",
+    "format": "acp_io"
+  }
+}

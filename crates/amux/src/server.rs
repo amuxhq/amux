@@ -64,7 +64,8 @@ pub(crate) fn log_to_stderr() {
 }
 
 /// What agents start with: this binary as the canonical install path, the
-/// installation's agent settings, its repositories and which Claude it runs;
+/// installation's agent settings, its repositories, which Claude it runs
+/// and the ACP agents it knows, built in or added in `[agents.<id>]`;
 /// and the experiments switched on, with their own settings, which the
 /// daemon runs until it stops.
 fn launch(config: &InstallationConfig) -> Result<Launch> {
@@ -78,12 +79,17 @@ fn launch(config: &InstallationConfig) -> Result<Launch> {
             tracing::warn!("{warning}");
         }
     }
+    let (agents, warnings) = node::agents::configured(config);
+    for warning in warnings {
+        tracing::warn!("{warning}");
+    }
     Ok(Launch {
         install_path,
         agent: config.agent,
         repositories: config.repositories(),
         claude_kind: node::claude_kind(config),
         new_agent: config.new_agent.clone(),
+        agents,
         experiments,
         suspension,
         ..Launch::default()

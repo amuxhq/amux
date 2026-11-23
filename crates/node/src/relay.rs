@@ -100,7 +100,7 @@ fn refused(refusal: Refusal) -> Rejected {
 /// The prompt a person's input carries, as a resume's first input takes
 /// it; none for any other input, or a body this build cannot read.
 fn prompt_of(input: &wire::Input) -> Option<wire::PromptSubmission> {
-    use wire::{KindInput, claude_pty_input, claude_sdk_input, codex_input};
+    use wire::{KindInput, acp_input, claude_pty_input, claude_sdk_input, codex_input};
     let prompt = match input.decode_body()? {
         KindInput::ClaudePty(input) => match input.of? {
             claude_pty_input::Of::Prompt(prompt) => prompt,
@@ -112,6 +112,10 @@ fn prompt_of(input: &wire::Input) -> Option<wire::PromptSubmission> {
         },
         KindInput::Codex(input) => match input.of? {
             codex_input::Of::Prompt(prompt) => prompt,
+            _ => return None,
+        },
+        KindInput::Acp(input) => match input.of? {
+            acp_input::Of::Prompt(prompt) => prompt,
             _ => return None,
         },
     };
@@ -141,7 +145,7 @@ fn readable(envelope: &Envelope) -> Result<(), RelayError> {
     };
     match &envelope.body {
         None => Err(refused(
-            "this host can't read what the message holds; the host needs updating",
+            "this device can't read what the message holds; the device needs updating",
         )),
         Some(envelope::Body::Message(message))
             if !attachments::all_readable(&message.attachments) =>
@@ -203,7 +207,8 @@ fn passes_to_subagent(input: &wire::Input) -> bool {
                 Some(wire::codex_input::Of::Answer(_) | wire::codex_input::Of::StopJob(_))
             )
         }),
-        wire::Kind::Unspecified => false,
+        // An ACP agent's own subagents are not amux agents.
+        wire::Kind::Acp | wire::Kind::Unspecified => false,
     }
 }
 
@@ -247,8 +252,10 @@ impl ProfileRuntime {
             return self.send_subagent_input(&row, input).await;
         }
         // Only a person changes a chat's model or effort, so it is the same
-        // act as picking them for a new agent, and sticks the same way.
-        let picked = crate::spec::Picked::of_input(&input);
+        // act as picking them for a new agent, and sticks the same way: as
+        // Codex accepts it, and for the kinds that ask their program, once
+        // it took it.
+        let picked = crate::spec::Picked::of_input(&input, row.provider_id());
         // A row that says suspended has no process to relay to: asked
         // first, the wake does not write to a connection its process left
         // behind for a moment, which would lose the input.

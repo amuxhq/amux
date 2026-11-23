@@ -34,7 +34,7 @@
 //! client.agent(&row).rename("docs").await.unwrap();
 //! // A new agent has no row yet, so it starts from a host.
 //! let desk = client.host(&row.host_id);
-//! desk.catalogue(wire::Provider::Claude).await.unwrap();
+//! desk.catalogue("claude").await.unwrap();
 //! # }
 //! ```
 //!
@@ -69,12 +69,14 @@ use uuid::Uuid;
 use wire::ErrorCode;
 
 /// Which client makes a call, as every call names it to the node. Each
-/// of amux's apps is named for itself, the iPhone app as `Ios`.
+/// of amux's apps is named for itself, the iPhone app as `Ios` and the
+/// Android app as `Android`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface {
     Terminal,
     Mac,
     Ios,
+    Android,
     Browser,
 }
 
@@ -85,6 +87,7 @@ impl Surface {
             Surface::Terminal => "terminal",
             Surface::Mac => "mac",
             Surface::Ios => "ios",
+            Surface::Android => "android",
             Surface::Browser => "browser",
         }
     }

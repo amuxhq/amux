@@ -1,0 +1,25 @@
+{
+  "spec": "opencode-config",
+  "recorded": {
+    "provider": "opencode",
+    "version": "1.18.33",
+    "model": "opencode/deepseek-v4.1-flash-free",
+    "at": "2026-11-20T19:27:47.305405Z"
+  },
+  "content": {
+    "io.jsonl": "sha256:087efa2ae5a4bcb4b10ce7e22bc6fbf6bd36fe372ab04dc2e814ee3dd3bf2540",
+    "spawn.jsonl": "sha256:e2c00f078d9f3175fa6976b8105e3438ead832b8438b48007974577d4e274113"
+  },
+  "redaction": {
+    "secrets": 0,
+    "machine_paths": 2,
+    "personal_identifiers": 0
+  },
+  "session_ids": [
+    "ses_e059d6076ffe3L6mwI2EULdC1G"
+  ],
+  "provider_extra": {
+    "driven_by": "the scripted ACP client, in the live qualification lane",
+    "scenario": "thought level and mode changed by session/set_config_option and session/set_mode, then one prompt"
+  }
+}

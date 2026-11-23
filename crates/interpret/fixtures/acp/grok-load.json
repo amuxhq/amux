@@ -1,0 +1,16 @@
+{
+  "about": "grok 1.0.89, recorded live: a prompt, the process ended, then session/load in a new process and a prompt",
+  "spec": {
+    "provider": "grok"
+  },
+  "recording": {
+    "path": "live/grok-load/io.jsonl",
+    "format": "acp_io"
+  },
+  "incarnations": [
+    {
+      "path": "live/grok-load/io.jsonl",
+      "format": "acp_io:2"
+    }
+  ]
+}

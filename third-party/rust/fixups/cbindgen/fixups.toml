@@ -1,0 +1,2 @@
+# The build script only generates cbindgen's own tests.
+buildscript.run = false

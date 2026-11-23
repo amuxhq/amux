@@ -167,6 +167,14 @@ fn only_defaults(agent: &create_agent_request::Agent) -> bool {
         create_agent_request::Agent::ClaudePty(config)
         | create_agent_request::Agent::ClaudeSdk(config) => *config == Default::default(),
         create_agent_request::Agent::Codex(config) => *config == Default::default(),
+        // Which agent program is the child's to name; its settings are not.
+        create_agent_request::Agent::Acp(config) => {
+            *config
+                == wire::AcpCreateConfig {
+                    agent: config.agent.clone(),
+                    ..Default::default()
+                }
+        }
     }
 }
 
@@ -190,7 +198,7 @@ impl AgentService for Agents {
         let kind = request
             .agent
             .as_ref()
-            .and_then(|agent| telemetry::kind(agent.kind()));
+            .and_then(|agent| telemetry::kind(agent.kind(), agent.provider_id()));
         let first = first_prompt(kind, request.initial_prompt.as_ref());
         let created = runtime
             .create(request, &caller)
@@ -287,7 +295,7 @@ impl AgentService for Agents {
             .await?;
         let request = request.into_inner();
         let first = first_prompt(
-            telemetry::kind_coded(own.row.kind),
+            telemetry::kind_coded(own.row.kind, own.row.provider_id()),
             request.initial_prompt.as_ref(),
         );
         let bootstrap = request
@@ -342,7 +350,7 @@ impl AgentService for Agents {
         &self,
         request: Request<SendInputRequest>,
     ) -> Result<Response<wire::SendInputResponse>, Status> {
-        let (runtime, caller, _) = self
+        let (runtime, caller, own) = self
             .acting_on(
                 &request,
                 &request.get_ref().agent_id,
@@ -350,7 +358,12 @@ impl AgentService for Agents {
             )
             .await?;
         let request = request.into_inner();
-        let shape = request.input.as_ref().and_then(InputShape::of);
+        // An ACP agent is counted by its program, which its row names; the
+        // other kinds' inputs name theirs.
+        let shape = request
+            .input
+            .as_ref()
+            .and_then(|input| InputShape::of(input, own.row.provider_id()));
         let verdict = runtime
             .send_input(&request)
             .await

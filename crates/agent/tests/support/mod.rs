@@ -54,6 +54,8 @@ pub fn install_path() -> String {
 
 pub struct Setup {
     pub kind: Kind,
+    /// Which agent program the kind runs, by its id: an ACP agent's.
+    pub provider: &'static str,
     /// The provider command; the kind's fake when None.
     pub command: Option<String>,
     pub provider_args: Vec<String>,
@@ -80,12 +82,20 @@ pub struct Setup {
     pub untrusted_folder: bool,
     /// The agent's folder is a git repository on `main` with one commit.
     pub repository: bool,
+    /// The model and effort the agent is created with.
+    pub model: Option<&'static str>,
+    pub effort: Option<&'static str>,
+    /// What fake-acp is and offers.
+    pub acp: provider_fakes::AcpAgent,
+    /// The provider is signed out of its account.
+    pub signed_out: bool,
 }
 
 impl Setup {
     pub fn sdk() -> Self {
         Self {
             kind: Kind::ClaudeSdk,
+            provider: "",
             command: None,
             provider_args: Vec::new(),
             env: Vec::new(),
@@ -100,6 +110,10 @@ impl Setup {
             offers_auto_mode: false,
             untrusted_folder: false,
             repository: false,
+            model: None,
+            effort: None,
+            acp: provider_fakes::AcpAgent::default(),
+            signed_out: false,
         }
     }
 }
@@ -193,6 +207,8 @@ impl Agent {
             steps: setup.steps,
             offers_auto_mode: setup.offers_auto_mode,
             untrusted_folder: setup.untrusted_folder,
+            acp: setup.acp,
+            signed_out: setup.signed_out,
             ..Script::default()
         };
         // The placeholder is a whole string in the script, and the path
@@ -207,6 +223,7 @@ impl Agent {
         let fake = fakes().join(match setup.kind {
             Kind::ClaudePty => "fake-claude-pty",
             Kind::Codex => "fake-codex",
+            Kind::Acp => "fake-acp",
             _ => "fake-claude-sdk",
         });
         let command = setup
@@ -227,6 +244,15 @@ impl Agent {
                 "CLAUDE_CONFIG_DIR".to_owned(),
                 root.path().join("claude").to_str().unwrap().to_owned(),
             ),
+            // Where fake-acp keeps the sessions a later process reopens.
+            (
+                provider_fakes::acp::SESSIONS_ENV.to_owned(),
+                root.path()
+                    .join("acp-sessions")
+                    .to_str()
+                    .unwrap()
+                    .to_owned(),
+            ),
         ]
         .into();
         provider_env.extend(
@@ -238,7 +264,7 @@ impl Agent {
         if let Some(name) = setup.replay {
             let played = root.path().join("replay");
             std::fs::create_dir_all(&played).unwrap();
-            let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            let fixture = source_tree::crate_dir!()
                 .join("tests/replay")
                 .join(name)
                 .join("io.jsonl");
@@ -277,12 +303,15 @@ impl Agent {
             provider_args,
             provider_env,
             provider_command: command,
+            provider: setup.provider.to_owned(),
             config: Some(EffectiveConfig {
                 grace_ms: GRACE as u32,
                 drain_ms: DRAIN as u32,
                 facts_ring_bytes: setup.ring_bytes,
                 // What the harness runs for hooks and the tool server.
                 install_path: install_path(),
+                model: setup.model.map(str::to_owned),
+                effort: setup.effort.map(str::to_owned),
                 ..Default::default()
             }),
             created_at_ms: T0,
@@ -590,6 +619,9 @@ pub fn prompt(kind: Kind, id: &[u8], text: &str) -> Input {
             Kind::ClaudePty => wire::KindInput::ClaudePty(ClaudePtyInput {
                 of: Some(claude_pty_input::Of::Prompt(prompt)),
             }),
+            Kind::Acp => wire::KindInput::Acp(wire::AcpInput {
+                of: Some(wire::acp_input::Of::Prompt(prompt)),
+            }),
             _ => wire::KindInput::ClaudeSdk(ClaudeSdkInput {
                 of: Some(claude_sdk_input::Of::Prompt(prompt)),
             }),
@@ -883,8 +915,21 @@ impl Log {
                 .into_iter()
                 .map(|ask| ask.key)
                 .collect(),
+            Kind::Acp => wire::AcpSnapshot::decode(snapshot.body.as_slice())
+                .unwrap()
+                .asks
+                .into_iter()
+                .map(|ask| ask.key)
+                .collect(),
             other => panic!("no snapshot reader for {other:?}"),
         }
+    }
+
+    /// The newest ACP snapshot.
+    pub fn acp(&self) -> wire::AcpSnapshot {
+        let snapshot = self.snapshot().expect("a snapshot");
+        assert_eq!(snapshot.kind(), Kind::Acp);
+        wire::AcpSnapshot::decode(snapshot.body.as_slice()).unwrap()
     }
 
     /// The provider subagents' parts, in journal order.
@@ -968,6 +1013,10 @@ pub fn boundary(item: &wire::Item) -> Option<String> {
         }
         Kind::Codex => match CodexItem::decode(item.body.as_slice()).ok()?.kind? {
             codex_item::Kind::Boundary(boundary) => boundary,
+            _ => return None,
+        },
+        Kind::Acp => match wire::AcpItem::decode(item.body.as_slice()).ok()?.kind? {
+            wire::acp_item::Kind::Boundary(boundary) => boundary,
             _ => return None,
         },
         _ => return None,

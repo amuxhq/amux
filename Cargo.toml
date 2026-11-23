@@ -1,11 +1,14 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/acp-protocol",
     "crates/agent",
     "crates/agent-core",
     "crates/analytics",
+    "crates/app-bridge",
     "crates/app-embedded",
     "crates/app-ffi",
+    "crates/app-jni",
     "crates/app-runtime",
     "crates/agent-dir",
     "crates/amux",
@@ -38,6 +41,7 @@ members = [
     "crates/settings",
     "crates/shot",
     "crates/socket-core",
+    "crates/source-tree",
     "crates/store",
     "crates/supervisor-core",
     "crates/workspace-core",
@@ -50,6 +54,7 @@ members = [
     "crates/release",
     "crates/wire",
     "crates/xtask",
+    "third-party/rust/dev-only",
 ]
 
 [workspace.package]
@@ -70,11 +75,13 @@ log-file = { path = "crates/log-file" }
 daemon-core = { path = "crates/daemon-core" }
 relay-core = { path = "crates/relay-core" }
 path-core = { path = "crates/path-core" }
+source-tree = { path = "crates/source-tree" }
 socket-core = { path = "crates/socket-core" }
 supervisor-core = { path = "crates/supervisor-core" }
 workspace-core = { path = "crates/workspace-core" }
 agent-dir = { path = "crates/agent-dir" }
 analytics = { path = "crates/analytics" }
+app-bridge = { path = "crates/app-bridge" }
 app-embedded = { path = "crates/app-embedded" }
 app-runtime = { path = "crates/app-runtime" }
 node = { path = "crates/node" }
@@ -100,6 +107,7 @@ ui-view = { path = "crates/ui-view" }
 tui = { path = "crates/tui" }
 pty-host = { path = "crates/pty-host" }
 provider-fakes = { path = "crates/provider-fakes" }
+acp-protocol = { path = "crates/acp-protocol" }
 claude-protocol = { path = "crates/claude-protocol" }
 codex-protocol = { path = "crates/codex-protocol" }
 redaction = { path = "crates/redaction" }
@@ -114,6 +122,7 @@ portable-pty = "0.9"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "sync", "time", "process", "fs", "signal"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 libc = "0.2"
+jni = { version = "0.21", default-features = false }
 signal-hook = "0.3"
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }

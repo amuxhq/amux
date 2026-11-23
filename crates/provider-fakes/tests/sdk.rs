@@ -34,7 +34,7 @@ impl Host {
         let mut host = Host(
             Line::spawn(
                 Kind::ClaudeSdk,
-                env!("CARGO_BIN_EXE_fake-claude-sdk"),
+                source_tree::bin!("fake-claude-sdk"),
                 &[
                     "--print",
                     "--input-format",
@@ -394,7 +394,7 @@ async fn a_script_asking_for_an_ask_headless_claude_cannot_raise_fails_to_start(
             .to_string(),
     )
     .unwrap();
-    let status = tokio::process::Command::new(env!("CARGO_BIN_EXE_fake-claude-sdk"))
+    let status = tokio::process::Command::new(source_tree::bin!("fake-claude-sdk"))
         .env(provider_fakes::SCRIPT_ENV, &path)
         .stdin(Stdio::null())
         .status()

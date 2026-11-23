@@ -71,14 +71,43 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public static let agent = AgentKey(
         host: Array(repeating: 1, count: 16), agent: Array(repeating: 2, count: 16))
 
+    /// A fixture's agent program, as a host would name it, and what an
+    /// agent of that kind can do: Claude for either Claude kind, Codex, and
+    /// for an ACP agent OpenCode.
+    public static func provider(of kind: Kind) -> (ProviderLabel, Capabilities) {
+        switch kind {
+        case .codex:
+            (ProviderLabel(provider: "codex", name: "Codex"),
+             Capabilities(
+                stopsJob: true, switchesBack: false, attachable: true, resumable: true, sendsNow: true,
+                images: true, files: true, passesUnknownCommands: false))
+        case .acp:
+            (ProviderLabel(provider: "opencode", name: "OpenCode"),
+             Capabilities(
+                stopsJob: false, switchesBack: false, attachable: false, resumable: true, sendsNow: false,
+                images: true, files: true, passesUnknownCommands: true))
+        case .claudePty:
+            (ProviderLabel(provider: "claude", name: "Claude"),
+             Capabilities(
+                stopsJob: false, switchesBack: true, attachable: true, resumable: true, sendsNow: true,
+                images: true, files: true, passesUnknownCommands: true))
+        case .claudeSdk, .unspecified:
+            (ProviderLabel(provider: "claude", name: "Claude"),
+             Capabilities(
+                stopsJob: true, switchesBack: false, attachable: false, resumable: true, sendsNow: true,
+                images: true, files: true, passesUnknownCommands: true))
+        }
+    }
+
     public static func frame(
         name: String = "refactor-auth", kind: Kind = .claudeSdk, phase: PhaseView = .idle,
         mode: Composer = .send, activity: Activity? = nil, caughtUp: Bool = true,
         hasOlder: Bool = false, queue: [QueuedRow] = [], underway: [SentPrompt] = [],
         refused: [RefusedPrompt] = [], switchedAway: Bool = false, reviewChip: ReviewChip? = nil
     ) -> ChatFrame {
-        ChatFrame(
-            agent: agent, name: name, kind: kind, phase: phase,
+        let (provider, capabilities) = provider(of: kind)
+        return ChatFrame(
+            agent: agent, name: name, provider: provider, capabilities: capabilities, phase: phase,
             composer: ComposerView(mode: mode, switchedAway: switchedAway, activity: activity), controls: ControlsSummary(effort: nil, mode: nil, model: nil, permission: nil), connection: .live,
             caughtUp: caughtUp, hasOlder: hasOlder, arrivalsHeld: false, queue: queue,
             underway: underway, refused: refused, askInput: nil, context: nil,
@@ -382,10 +411,15 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     /// What steps did, as the shared fold counts them.
     private static func counted(_ steps: ArraySlice<Row>) -> RunCounts {
         var counts = RunCounts(
-            commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0)
+            commands: 0, edits: 0, reads: 0, searches: 0, lists: 0, fetches: 0, subagents: 0, other: 0,
+            denied: 0)
         var edited = Set<String>()
         var read = Set<String>()
         for step in steps {
+            if denied(step.kind) {
+                counts.denied += 1
+                continue
+            }
             switch step.kind {
             case .command, .background: counts.commands += 1
             case .fileChange(let files, _):
@@ -401,6 +435,18 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
             }
         }
         return counts
+    }
+
+    /// A step refused before it ran, which the shared fold counts as denied
+    /// and not as what it would have done.
+    private static func denied(_ kind: RowKind) -> Bool {
+        switch kind {
+        case .toolCall(_, _, _, let state, _), .child(_, _, _, _, let state, _),
+            .subagent(_, _, let state, _, _), .fileChange(_, let state),
+            .command(_, _, let state, _, _, _, _, _, _), .explore(_, _, let state, _):
+            state == .denied
+        default: false
+        }
     }
 
     public func send(_ draft: Draft) async -> Result<SendOutcome, RuntimeFailure> {
@@ -454,13 +500,14 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
     public func draft(of input: [UInt8]) -> Draft? {
         let frame = lock.withLock { current }
         if let words = refusedWords[input] { return Draft(words: words, attachments: []) }
-        let text = frame.queue.first { $0.inputId == input }?.text
-            ?? frame.underway.first { $0.inputId == input }?.text
-        return text.map { segments in
-            let words = segments.compactMap { segment -> String? in
-                if case .text(let text) = segment { text } else { nil }
-            }
-            return Draft(words: words.joined(), attachments: [])
+        let queued = frame.queue.first { $0.inputId == input }?.text.map { segment -> String? in
+            if case .text(let text) = segment { text } else { nil }
+        }
+        let underway = frame.underway.first { $0.inputId == input }?.text.map { part -> String? in
+            if case .text(let markdown) = part { markdown.source } else { nil }
+        }
+        return (queued ?? underway).map { words in
+            Draft(words: words.compactMap { $0 }.joined(), attachments: [])
         }
     }
     public func interrupt() async -> ActOutcome? { .done }
@@ -494,6 +541,10 @@ public final class ScriptedChat: ChatSource, @unchecked Sendable {
         }
         held?.resume()
     }
+
+    /// A scripted chat takes every attachment: what the live chat refuses
+    /// is the shared layer's to say.
+    public func attachmentRefusal(name: String, mime: String, size: Int) -> String? { nil }
 
     public func putBlob(
         _ data: Data, name: String, mime: String

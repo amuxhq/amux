@@ -114,8 +114,9 @@ reached`, or the daemon's own message.
 ### agents
 
 Every agent in the fleet, own and replicated from paired hosts. Each row has
-`name` (the id in hex when the agent has no name), `id`, `kind` (`claude` or
-`codex`, however Claude is driven), `host` (the host's name), `live`, and `phase`
+`name` (the id in hex when the agent has no name), `id`, `kind` (the agent
+program's provider id: `claude` however Claude is driven, `codex`, or an ACP
+agent's id such as `opencode`), `host` (the host's name), `live`, and `phase`
 (`starting`, `idle`, `working` or `needs_you`); and, when they apply,
 `working_on`, `exit_cause` (how an exited agent ended: the cause's name, then
 its own words when it has any, as `finished`, `stopped` or
@@ -128,8 +129,10 @@ messaged. Both read-only tools are marked with MCP's
 
 ### hosts
 
-The hosts this profile trusts, one row each with `name` and `presence`
-(`online` or `offline`), and `this_host: true` on the caller's host. Discovery
+The hosts this profile trusts, one row each with `name`, `presence`
+(`online` or `offline`), `agents` (the provider ids the host lists itself as
+offering: `claude`, `codex` and each ACP agent installed there, what a
+`spawn` there can name), and `this_host: true` on the caller's host. Discovery
 candidates are left out: a model spawns only on hosts a person has paired.
 Agents and hosts are separate tools so each answers one question.
 
@@ -152,12 +155,15 @@ tool's description tells it to reply with `send` to that agent's name.
 
 ### spawn
 
-Starts a child agent of `kind` (`claude` or `codex`) with `prompt` as its
-first input. A Claude child is always headless Claude (`claude_sdk`): people
-read a child in amux's chat, so how its Claude is driven is not the parent's
-choice. The create
-carries it as a prompt submission, which can hold nothing but a prompt, and
-names the kind by its arm with that kind's default settings. `name` names it. `host` is a trusted host's name, as a person would say it; the tool
+Starts a child agent of `kind` (a provider id: `claude`, `codex`, or an ACP
+agent's id from `hosts`) with `prompt` as its first input. A Claude child is
+always headless Claude (`claude_sdk`): people read a child in amux's chat, so
+how its Claude is driven is not the parent's choice. Any other well-formed id
+is created as that ACP agent, and the host it runs on refuses one it does not
+offer, in its own words; an id no agent can have is refused by the tool. The
+create carries the first input as a prompt submission, which can hold nothing
+but a prompt, and names the kind by its arm with that kind's default
+settings. `name` names it. `host` is a trusted host's name, as a person would say it; the tool
 server resolves it with `ResolveHost`, the create is addressed to the id that
 answers, and omitted it means the caller's own host. `cwd` is a path on
 the host the child runs on, where `~` and a path not from the root start at
@@ -205,9 +211,11 @@ reads the file (a relative path is taken from the agent's working directory),
 hashes it, writes it into `<dir>/blobs/<sha256>`, and returns the canonical
 `<amux-attachment>` element naming it, with `name` as the name viewers see
 (the file's own name when omitted) and a mime type from the file's extension.
-PNG, JPEG, GIF, WebP and SVG are images; everything else is a file. A file
-over the 64 MB attachment limit is refused, naming the limit, before it is
-read. No daemon
+PNG, JPEG, GIF, WebP and SVG are images; everything else is a file. Only a
+regular file is read, its links followed first: a pipe or a device such as
+`/dev/zero` is refused. A file over the 64 MB attachment limit is refused,
+naming the limit, before it is read, and one that grows past it while being
+read is refused at the limit, so the read is bounded. No daemon
 call is made, so it works while the daemon is away. The model is told to put
 the element in its reply exactly as returned; when the reply completes, the
 interpreter makes the element an attachment on the reply's item, which both

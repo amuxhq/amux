@@ -86,7 +86,14 @@ def land_once(tree: Path, commit: str, message: str) -> str | None:
     step("fetching origin/main")
     git("fetch", "--quiet", "origin", "main", cwd=tree)
     git("reset", "--quiet", "--hard", cwd=tree)
-    git("clean", "--quiet", "-fdx", "-e", ".buckconfig.local", "-e", "target", "-e", "js/node_modules", cwd=tree)
+    # Build state survives from one landing to the next: buck-out is the
+    # Buck2 daemon's (deleting it under the daemon leaves it believing
+    # outputs exist that don't), target/ is miri's Cargo build.
+    git(
+        "clean", "--quiet", "-fdx",
+        "-e", ".buckconfig.local", "-e", "buck-out", "-e", "target", "-e", "js/node_modules",
+        cwd=tree,
+    )
     git("switch", "--quiet", "--detach", "origin/main", cwd=tree)
     base = git("rev-parse", "HEAD", cwd=tree, capture=True)
     step(f"merging {commit[:12]} onto {base[:12]}")

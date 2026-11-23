@@ -308,6 +308,11 @@ test task. [`.wt.toml`](../.wt.toml) holds the tree's side:
   the tree) stops it, and the tree's Buck2 daemon with it.
 - The pinned iPhone simulators are machine-wide resources that the iOS
   recipes lease through `scripts/with`.
-- `just land` lands a branch from a worktree of its own under
-  `~/.cache/amux/land`, one landing at a time per machine, so it never
-  touches the tree it is run from ([AGENTS.md](../AGENTS.md)).
+- `just land` never touches the tree it is run from
+  ([AGENTS.md](../AGENTS.md)). With `git config --global amux.landInbox
+  nova:/var/lib/build/inbox.git` set, it pushes the branch to nova's landing
+  queue and waits for the verdict: the queue lands one request at a time,
+  from every machine, oldest first, and writes each landing's whole log
+  beside its result. `just land --local`, or no inbox set, lands from a
+  worktree of this machine's own under `~/.cache/amux/land`, one landing at
+  a time per machine; that is the way to land while nova is down.

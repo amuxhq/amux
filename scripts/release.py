@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Take the iPhone app from a clean checkout to a signed, exported .ipa.
+"""Take the iPhone app from a clean checkout to a signed, uploaded .ipa.
 
 Everything a release needs is here and nothing beyond it: this script bumps
-the two version numbers, archives the app against the distribution
-configuration, exports it, has Apple validate it, uploads it, and only then
-commits the numbers, cuts the tag that records them and pushes both. It never
+the two version numbers, builds the shipping app with Buck2, signs it for the
+App Store, audits what the signed bundle ships, has Apple validate it, uploads
+it, and only then commits the numbers, cuts the tag that records them and
+pushes both. It never
 submits anything for review. A rehearsal stops at the validation, which
 spends no build number and shows the build to nobody, and is what makes it
 free to run as often as anybody likes; `--no-upload` stops a real run there
@@ -15,10 +16,10 @@ Three ways to run it:
 
   --preflight   report every input a release needs and stop, reaching Apple
                 for nothing.
-  --rehearse    archive, export and validate with the numbers the next
+  --rehearse    build, sign, audit and validate with the numbers the next
                 release would use, writing nothing to the tree and cutting no
                 tag, so it can be run as often as you like.
-  (neither)     write the numbers, archive, export, validate, upload, and
+  (neither)     write the numbers, build, sign, audit, validate, upload, and
                 only then commit the numbers, cut the tag and push both.
                 --no-upload and --no-push each stop short of their step.
 
@@ -36,31 +37,43 @@ import shutil
 import subprocess
 import sys
 
-sys.path.insert(0, str(Path(__file__).parent))
-sys.path.insert(1, str(Path(__file__).resolve().parents[1] / "apps/apple/Tools"))
-import ios_project
-
-SPEC = Path("apps/apple/project.yml")
+SPEC = Path("apps/apple/version.bzl")
 SIGNING_FILE = Path("apps/apple/Signing.local.xcconfig")
 TEAM_SETTING = "DEVELOPMENT_TEAM"
 KEYCHAIN_SERVICE = "amux-appstoreconnect"
 KEY_DIRECTORY = Path.home() / ".appstoreconnect/private_keys"
-EXPORT_OPTIONS = Path("apps/apple/ExportOptions.plist")
-# Where Xcode looks for provisioning profiles. The export names the profile it
-# wants, so the profile has to be sitting here before a release runs.
+# The profile each bundle is distributed under, by bundle id. Named rather
+# than fetched: Xcode's cloud signing cannot mint or fetch a profile for this
+# account from a script (it answers "Cloud signing permission error" and then
+# claims none exists), so the profiles are made once by hand and installed
+# where Xcode keeps them, and the preflight says when one is missing.
+APP_STORE_PROFILES = {
+    "sh.amux.app": "amux App Store",
+    "sh.amux.app.notifications": "amux Notifications App Store",
+}
+# What each bundle asks to be granted, before the team's prefix is filled in.
+ENTITLEMENTS = {
+    "sh.amux.app": "apps/apple/Amux/Amux.entitlements",
+    "sh.amux.app.notifications": "apps/apple/AmuxNotifications/AmuxNotifications.entitlements",
+}
 PROFILES = Path.home() / "Library/Developer/Xcode/UserData/Provisioning Profiles"
+# The shipping app as Buck2 builds it for a phone: unsigned, because a
+# signature names this Mac's certificate and an installed profile, which are
+# not inputs a build can declare (build/apple/sign.py).
+TARGET = "//apps/apple:Amux"
+PLATFORM = "//build/platforms:ios-app-shipping-release"
+SIGN = Path("build/apple/sign.py")
+SCOPE_AUDIT = Path("apps/apple/Tools/ios-scope-audit.py")
 # The certificate type an App Store build is signed with. A full identity name
 # is "Apple Distribution: <person> (<Team ID>)".
 DISTRIBUTION = "Apple Distribution"
 RELEASE_DIRECTORY = Path("target/ios/release")
-DERIVED_DATA = Path("target/ios/ReleaseDerivedData")
-ARCHIVE = RELEASE_DIRECTORY / "Amux.xcarchive"
 # The app's own tag namespace. Plain vX.Y.Z tags in this repository belong to
 # the command-line release, which versions separately; and the build number
 # rides in the name so `git tag` alone is the ledger of every number issued.
 TAG = re.compile(r"^ios-v(\d+)\.(\d+)\.(\d+)-b(\d+)$")
-MARKETING = re.compile(r"^(\s*MARKETING_VERSION:\s*)\"[^\"]*\"", re.M)
-BUILD = re.compile(r"^(\s*CURRENT_PROJECT_VERSION:\s*)\"[^\"]*\"", re.M)
+MARKETING = re.compile(r"^(MARKETING_VERSION = )\"([^\"]*)\"", re.M)
+BUILD = re.compile(r"^(BUILD_NUMBER = )\"([^\"]*)\"", re.M)
 
 
 class Refusal(Exception):
@@ -69,12 +82,11 @@ class Refusal(Exception):
 
 def project_numbers(spec: str) -> tuple[str, int]:
     """The marketing version and build number the project carries today."""
-    version = re.search(r"^\s*MARKETING_VERSION:\s*\"([^\"]+)\"", spec, re.M)
-    build = re.search(r"^\s*CURRENT_PROJECT_VERSION:\s*\"([^\"]+)\"", spec, re.M)
+    version = MARKETING.search(spec)
+    build = BUILD.search(spec)
     if not version or not build:
-        raise Refusal(f"{SPEC} sets no MARKETING_VERSION or "
-                      "CURRENT_PROJECT_VERSION for the app target")
-    return version.group(1), int(build.group(1))
+        raise Refusal(f"{SPEC} sets no MARKETING_VERSION or BUILD_NUMBER")
+    return version.group(2), int(build.group(2))
 
 
 def released(tags: list[str]) -> list[tuple[tuple[int, int, int], int]]:
@@ -214,16 +226,14 @@ def distribution_identity(names: list[str], identity: str) -> str:
 
 
 def wanted_profiles() -> dict:
-    """The profiles the export options name, keyed by bundle id."""
-    if not EXPORT_OPTIONS.exists():
-        return {}
-    return plistlib.loads(EXPORT_OPTIONS.read_bytes()).get("provisioningProfiles", {})
+    """The profiles a release signs with, keyed by bundle id."""
+    return dict(APP_STORE_PROFILES)
 
 
 def usable(profiles: list[dict], name: str) -> dict:
     """The profile with that name that has not expired.
 
-    An expired profile is not a profile: an export signed with one is rejected
+    An expired profile is not a profile: an app signed with one is rejected
     the same way an absent one is, so it is reported as absent."""
     # plistlib decodes a plist date to a naive datetime that is UTC, so the
     # comparison is against UTC with the zone dropped again. Comparing it with
@@ -295,7 +305,7 @@ def inputs() -> tuple[list[Check], dict]:
         "a clean tree", not dirty,
         "nothing uncommitted" if not dirty else
         f"{len(dirty.splitlines())} uncommitted paths. A release tags the "
-        "commit it archives, so the archive must be that commit"))
+        "commit it builds, so the build must be that commit"))
 
     identity = team()
     facts["team"] = identity
@@ -328,13 +338,9 @@ def inputs() -> tuple[list[Check], dict]:
         f"no key file in {KEY_DIRECTORY} for that key id. The .p8 downloads "
         "from App Store Connect exactly once and can never be fetched again"))
 
-    checks.append(Check("the export options", EXPORT_OPTIONS.exists(),
-                        f"{EXPORT_OPTIONS}" if EXPORT_OPTIONS.exists()
-                        else f"{EXPORT_OPTIONS} is not here"))
-
-    # The export signs by hand, so the certificate and the profile are inputs
+    # The release signs by hand, so the certificate and the profile are inputs
     # a person produces once, exactly like the key. Checking them here is what
-    # turns "the export failed somewhere in Xcode" into one named missing
+    # turns "the signing failed somewhere" into one named missing
     # piece.
     signer = distribution_identity(identities(), identity) if identity else ""
     facts["certificate"] = signer
@@ -351,8 +357,8 @@ def inputs() -> tuple[list[Check], dict]:
         checks.append(Check(
             f"the {name!r} provisioning profile", held,
             f"installed for {bundle} and unexpired" if held else
-            f"no unexpired profile named {name!r} in {PROFILES}. The export "
-            f"names it for {bundle}, so it has to be there first; "
+            f"no unexpired profile named {name!r} in {PROFILES}. The release "
+            f"signs {bundle} with it, so it has to be there first; "
             "docs/RELEASE.md says how it is made"))
     return checks, facts
 
@@ -369,7 +375,7 @@ def notes(version: str, notes_file: str) -> str:
     """What the release says about itself.
 
     The tag's message, drafted from the commits since the last release. The
-    upload does not carry it, so it lives in the tag and beside the exported
+    upload does not carry it, so it lives in the tag and beside the signed
     app; TestFlight's What to Test is filled in by hand."""
     if notes_file:
         return Path(notes_file).read_text().strip()
@@ -396,79 +402,64 @@ def write_numbers(version: str, build: int) -> None:
     if not marketing or not current:
         missing = " and ".join(
             name for name, wrote in (("MARKETING_VERSION", marketing),
-                                     ("CURRENT_PROJECT_VERSION", current))
+                                     ("BUILD_NUMBER", current))
             if not wrote)
         raise Refusal(f"{SPEC} has no {missing} line this script can write; "
                       "the numbers would not have reached the built app")
     SPEC.write_text(spec)
-    # The project is generated and committed, so the numbers reach
-    # apps/apple/Amux.xcodeproj in the same commit that raises them.
-    ios_project.generate()
 
 
-def export_options(identity: str) -> Path:
-    """The committed options with this Mac's Team ID inserted.
+def build_app(version: str, build_number: int) -> Path:
+    """The shipping app, built by Buck2 for a phone with these numbers.
 
-    The committed file holds no team: it is public, and a Team ID is not this
-    repository's to publish."""
-    options = plistlib.loads(EXPORT_OPTIONS.read_bytes())
-    options["teamID"] = identity
-    RELEASE_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    written = RELEASE_DIRECTORY / "ExportOptions.plist"
-    written.write_bytes(plistlib.dumps(options))
-    return written
-
-
-def authentication(facts: dict) -> list[str]:
-    """The API key, which is what takes a person out of profile creation."""
-    return ["-allowProvisioningUpdates",
-            "-authenticationKeyPath", str(facts["key_path"]),
-            "-authenticationKeyID", facts["key"],
-            "-authenticationKeyIssuerID", facts["issuer"]]
+    Passed as configuration rather than read from the tree for a rehearsal's
+    sake: it builds the would-be release with the tree untouched. A real run
+    has written the same numbers into the tree already, so the two agree."""
+    print(f"building {version} ({build_number})", flush=True)
+    built = subprocess.run([
+        "scripts/buck2", "build", TARGET, "--target-platforms", PLATFORM,
+        "-c", f"apple.marketing_version={version}",
+        "-c", f"apple.build_number={build_number}",
+        "--show-full-simple-output",
+    ], check=True, timeout=3600, stdout=subprocess.PIPE, text=True)
+    app = Path(built.stdout.strip().splitlines()[-1])
+    if not (app / "Info.plist").is_file():
+        raise Refusal(f"Buck2 named {app} as the app, and it has no Info.plist")
+    return app
 
 
-def archive(version: str, build: int, facts: dict) -> None:
-    if ARCHIVE.exists():
-        shutil.rmtree(ARCHIVE)
-    RELEASE_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    ios_project.generate()
-    print(f"archiving {version} ({build})", flush=True)
-    subprocess.run([
-        "xcodebuild", "archive",
-        "-project", "apps/apple/Amux.xcodeproj", "-scheme", "Amux",
-        "-configuration", "Release",
-        "-destination", "generic/platform=iOS",
-        "-archivePath", str(ARCHIVE),
-        "-derivedDataPath", str(DERIVED_DATA),
-        *authentication(facts),
-        "-quiet",
-        "CODE_SIGNING_ALLOWED=YES", "CODE_SIGN_STYLE=Automatic",
-        f"DEVELOPMENT_TEAM={facts['team']}",
-        # Passed rather than written for a rehearsal's sake: the committed
-        # Info.plist reads both from the build settings, so an archive can
-        # carry the numbers the next release would use without the tree
-        # changing at all.
-        f"MARKETING_VERSION={version}",
-        f"CURRENT_PROJECT_VERSION={build}",
-    ], check=True, timeout=3600)
+def revision() -> str:
+    return subprocess.run(["git", "rev-parse", "--verify", "HEAD"], check=True,
+                          capture_output=True, text=True, timeout=60).stdout.strip()
 
 
-def export(version: str, build: int, facts: dict) -> Path:
-    destination = RELEASE_DIRECTORY / tag_name(version, build)
-    if destination.exists():
-        shutil.rmtree(destination)
-    print("exporting the archive", flush=True)
-    subprocess.run([
-        "xcodebuild", "-exportArchive",
-        "-archivePath", str(ARCHIVE),
-        "-exportPath", str(destination),
-        "-exportOptionsPlist", str(export_options(facts["team"])),
-        *authentication(facts),
-    ], check=True, timeout=1800)
-    exported = list(destination.glob("*.ipa"))
-    if not exported:
+def sign(app: Path, version: str, build_number: int, facts: dict) -> Path:
+    """The app signed for the App Store, and packaged as the .ipa uploaded.
+
+    Every bundle is signed inside out with the distribution certificate and
+    the profile it ships under, as an export used to sign an archive."""
+    destination = RELEASE_DIRECTORY / tag_name(version, build_number)
+    print("signing for the App Store", flush=True)
+    package = destination / "Amux.ipa"
+    command = [sys.executable, "-B", str(SIGN), str(app), str(destination),
+               "--identity", DISTRIBUTION, "--team", facts["team"],
+               "--revision", revision(), "--ipa", str(package)]
+    for bundle, name in sorted(wanted_profiles().items()):
+        command += ["--profile", f"{bundle}={name}"]
+    for bundle, path in sorted(ENTITLEMENTS.items()):
+        command += ["--entitlements", f"{bundle}={path}"]
+    subprocess.run(command, check=True, timeout=1800)
+    if not package.is_file():
         raise Refusal(f"no .ipa was written to {destination}")
-    return exported[0]
+    return package
+
+
+def audit(package: Path) -> None:
+    """What the signed bundle ships, checked before Apple sees it: no driving
+    code, the reporting path present, the entitlements the profile granted."""
+    print("auditing the signed bundle's scope", flush=True)
+    subprocess.run([sys.executable, "-B", str(SCOPE_AUDIT),
+                    "--app", str(package.parent / "Amux.app")], check=True, timeout=1200)
 
 
 def validate(package: Path, facts: dict) -> None:
@@ -517,16 +508,14 @@ def upload(package: Path, facts: dict) -> None:
 def commit_and_tag(version: str, build: int, message: str) -> None:
     """The permanent half, run only after Apple has accepted the build.
 
-    The numbers reach the tree before the archive, so the binary carries them
-    and the commit records exactly the tree that was archived. Nothing is
-    recorded until validation has answered: a run that dies in the archive,
-    the export or the validation leaves modified tracked files, which one
+    The numbers reach the tree before the build, so the binary carries them
+    and the commit records exactly the tree that was built. Nothing is
+    recorded until validation has answered: a run that dies in the build, the
+    signing, the audit or the validation leaves modified tracked files, which one
     `git checkout` undoes, where a commit and an annotated tag naming a build
     Apple rejected would have to be unpicked by hand. docs/RELEASE.md holds
     the recovery for each place a run can stop."""
-    subprocess.run(["git", "add", str(SPEC), "apps/apple/Amux/Info.plist",
-                    "apps/apple/Amux.xcodeproj/project.pbxproj"],
-                   check=True, timeout=120)
+    subprocess.run(["git", "add", str(SPEC)], check=True, timeout=120)
     subprocess.run(["git", "commit", "-m", f"Version {version} (build {build})"],
                    check=True, timeout=120)
     subprocess.run(["git", "tag", "-a", tag_name(version, build), "-m", message],
@@ -558,7 +547,7 @@ def main() -> int:
     parser.add_argument("--preflight", action="store_true",
                         help="report every input and stop")
     parser.add_argument("--rehearse", action="store_true",
-                        help="archive and export the would-be release, "
+                        help="build, sign and validate the would-be release, "
                              "writing nothing and tagging nothing")
     parser.add_argument("--version", default="",
                         help="the marketing version, instead of the next patch")
@@ -588,7 +577,7 @@ def main() -> int:
         numbering = Check("the next version and build number", False, str(refused))
     if not numbering.held and arguments.rehearse:
         # A rehearsal issues nothing: it never commits, never tags and never
-        # uploads, so a build number it archives under is spent nowhere. It
+        # uploads, so a build number it builds under is spent nowhere. It
         # may therefore stand in the project's own number and go on proving
         # the signing path while the first real number is still unread. A
         # release and a preflight keep the refusal.
@@ -619,24 +608,26 @@ def main() -> int:
         return 1
 
     if not arguments.rehearse and not facts["clean"]:
-        print("the tree is not clean; a release tags the commit it archives",
+        print("the tree is not clean; a release tags the commit it builds",
               file=sys.stderr)
         return 1
 
     message = notes(version, arguments.notes_file)
     # The numbers first, because the commit that records them has to be the
-    # tree that was archived; the commit and the tag themselves come last.
+    # tree that was built; the commit and the tag themselves come last.
     if not arguments.rehearse:
         write_numbers(version, build)
     try:
-        step = "archive"
-        archive(version, build, facts)
-        step = "export"
-        exported = export(version, build, facts)
+        step = "build"
+        app = build_app(version, build)
+        step = "sign"
+        exported = sign(app, version, build, facts)
         written = exported.parent / "ReleaseNotes.txt"
         written.write_text(message + "\n")
-        print(f"exported {exported}")
+        print(f"signed {exported}")
         print(f"release notes beside it in {written}")
+        step = "audit"
+        audit(exported)
         step = "validate"
         validate(exported, facts)
         # A rehearsal never delivers: that is what lets it run as often as
@@ -659,9 +650,8 @@ def main() -> int:
         if not arguments.no_push:
             publish(version, build)
     if arguments.rehearse:
-        # The claim is measured, not asserted: a rehearsal regenerates the
-        # project and drives Xcode, either of which could leave a tracked file
-        # changed, and a promise nobody checked is how that goes unnoticed.
+        # The claim is measured, not asserted: a rehearsal builds, signs and
+        # audits, any of which could leave a tracked file changed, and a promise nobody checked is how that goes unnoticed.
         changed = tree_changes(facts["tree"], tree())
         if changed:
             print("rehearsal changed the tree, which it must not: "

@@ -76,11 +76,11 @@ check-windows:
 # The workspace's tests for Windows, as CI's Windows job runs them after
 # `just check-windows` (docs/CI.md, "The Windows job"): only a Windows
 # worker runs them, which only that job has. Left out, as before Buck2: the
-# protocol models (the nightly's), the simulated stories, the nova-only
+# protocol models (the nightly's), the simulated stories, the linux-only
 # tests and the live lanes.
 # Run the workspace's tests for Windows on a Windows worker.
 test-windows *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --target-platforms root//build/platforms:windows-cli-testing-dev --exclude live --exclude nightly --exclude simulated --exclude nova-only --exclude journey -- --timeout 3600
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --target-platforms root//build/platforms:windows-cli-testing-dev --exclude live --exclude nightly --exclude simulated --exclude linux-only --exclude journey -- --timeout 3600
 
 # Every test runs in a process of its own (build/test-runner.py), and a
 # passing result is cached in NativeLink, so only tests whose inputs changed
@@ -89,9 +89,9 @@ test-windows *ARGS:
 # what build/checks/inputs.py writes first); the live provider lanes are left
 # out (`just live`), and so are the `nightly` tests, the protocol models,
 # which the nightly workflow runs (`just models-nightly`), unless a target
-# names them. With no Linux worker in reach, the `nova-only` tests are
+# names them. With no Linux worker in reach, the `linux-only` tests are
 # skipped, and the run ends by naming them. The Android app's tests are among
-# them (every Android target is nova-only).
+# them (every Android target is linux-only).
 # Run the workspace's and the Android app's tests through Buck2.
 test *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live --exclude nightly -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
@@ -460,7 +460,7 @@ premerge-half HALF:
 
 # `just land "What the branch does"` merges this tree's HEAD onto a fresh
 # origin/main, runs `just premerge` on the merge and pushes it. With `git
-# config amux.landInbox` set it goes through nova's landing queue, one
+# config amux.landInbox` set it goes through the landing host's queue, one
 # landing at a time from every machine; `--local`, or no inbox, lands from
 # a worktree of this machine's own. Nothing in this tree is touched
 # (scripts/land.py).

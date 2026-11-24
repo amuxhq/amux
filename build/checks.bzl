@@ -11,9 +11,10 @@ earlier release's schema, the list of files the checkout tracks), the
 (build/checks/inputs.py), and the target declares it like any other file.
 
 A check is a Linux target while a Linux worker is in reach, so a Mac and
-nova run the same action and share its result; with none in reach it runs
-on the machine's own worker (`nova_only = False`), or is skipped and named
-(`nova_only = True`, for a check whose tools only the Linux toolchain has).
+the build host run the same action and share its result; with none in
+reach it runs on the machine's own worker (`linux_only = False`), or is
+skipped and named (`linux_only = True`, for a check whose tools only the
+Linux toolchain has).
 """
 
 load("@prelude//decls:re_test_common.bzl", "re_test_common")
@@ -79,18 +80,18 @@ _LINUX = read_root_config("amux", "linux", "true") == "true"
 
 LINUX_PLATFORM = "root//build/platforms:linux-cli-testing-dev"
 
-def check_platform(nova_only = False) -> str:
+def check_platform(linux_only = False) -> str:
     """The configuration a check, or the JavaScript's targets, build in:
     Linux while a Linux worker is in reach, and the machine's own
     otherwise, unless only a Linux worker can run it."""
-    if nova_only or _LINUX:
+    if linux_only or _LINUX:
         return LINUX_PLATFORM
     return host_platform(purpose = "testing")
 
-def amux_check(name, command, srcs = [], deps = [], env = {}, labels = [], nova_only = False, host = False, **kwargs):
+def amux_check(name, command, srcs = [], deps = [], env = {}, labels = [], linux_only = False, host = False, **kwargs):
     """A repository check: `command` run from the checkout's root over
     `srcs` (this package's files) and `deps` (other targets' outputs),
-    failing when the command does. `nova_only = True` for a check whose
+    failing when the command does. `linux_only = True` for a check whose
     tools only the Linux toolchain has: it is skipped, and named, when no
     Linux worker is in reach. `host = True` for one that checks how amux
     behaves on the machine it runs on, which builds in that machine's
@@ -101,8 +102,8 @@ def amux_check(name, command, srcs = [], deps = [], env = {}, labels = [], nova_
         srcs = srcs,
         deps = deps,
         env = env,
-        labels = ["check"] + labels + (["nova-only"] if nova_only else []),
-        default_target_platform = host_platform(purpose = "testing") if host else check_platform(nova_only),
-        target_compatible_with = ["root//build/constraints:linux-workers"] if nova_only else [],
+        labels = ["check"] + labels + (["linux-only"] if linux_only else []),
+        default_target_platform = host_platform(purpose = "testing") if host else check_platform(linux_only),
+        target_compatible_with = ["root//build/constraints:linux-workers"] if linux_only else [],
         **kwargs
     )

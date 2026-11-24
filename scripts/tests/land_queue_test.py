@@ -198,9 +198,9 @@ class LandingTest(Repos):
     def test_requests_are_taken_oldest_first(self):
         commit(self.dev, "a", "1\n", "One")
         self.request("20261123T100002.000000Z-mac-b")
-        self.request("20261123T100001.000000Z-nova-a")
+        self.request("20261123T100001.000000Z-host-a")
 
-        self.assertEqual(queue.pending(self.inbox), ["20261123T100001.000000Z-nova-a", "20261123T100002.000000Z-mac-b"])
+        self.assertEqual(queue.pending(self.inbox), ["20261123T100001.000000Z-host-a", "20261123T100002.000000Z-mac-b"])
 
     def test_old_results_are_forgotten_with_their_request_and_log(self):
         commit(self.dev, "a", "1\n", "One")

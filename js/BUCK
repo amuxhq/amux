@@ -108,5 +108,5 @@ js_check(
         "AMUX_EXTENSION": "$(location :dist-dev)",
         "TESTNET_BINARIES": "$(location //crates/provider-fakes:binaries)",
     },
-    nova_only = True,
+    linux_only = True,
 )

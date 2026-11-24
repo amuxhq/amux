@@ -1,8 +1,9 @@
 # The Android app's recipes. `just android <recipe>` from anywhere in the
 # checkout; every recipe runs from the repository root so paths mean the same
 # thing in the scripts, Buck2 and the Rust workspace. Buck2 builds and tests
-# the app on a Linux worker (nova), never on the Mac (docs/ANDROID.md); the
-# device recipes install what it built from the cache.
+# the app on a Linux worker (the build host's), never on the Mac
+# (docs/ANDROID.md); the device recipes install what it built from the
+# cache.
 
 set shell := ["sh", "-cu"]
 set positional-arguments

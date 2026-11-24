@@ -246,6 +246,17 @@ class ClientTest(Repos):
         self.assertIn("land: stopped: the gate failed", err.getvalue())
         self.assertIn("nope", err.getvalue())
 
+    def test_a_request_already_answered_is_not_counted_ahead(self):
+        commit(self.dev, "a", "1\n", "One")
+        served = threading.Thread(target=self.serve_one)
+        served.start()
+        with patched(client, CHECKOUT=self.dev, POLL_SECONDS=0.05), contextlib.redirect_stdout(io.StringIO()):
+            client.land_through(str(self.inbox), git(self.dev, "rev-parse", "HEAD"), "Add a feature", "feature")
+        served.join(timeout=30)
+
+        with patched(client, CHECKOUT=self.dev):
+            self.assertEqual(client.ahead_of(str(self.inbox), client.request_id("later"), client.inbox_env()), 0)
+
     def serve_one(self, premerge: str = "true"):
         for _ in range(600):
             waiting = queue.pending(self.inbox)

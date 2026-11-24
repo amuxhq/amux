@@ -16,9 +16,10 @@ permissions:
   contents: read
 
 # A newer push to a branch stops the run of the one before it, which would
-# otherwise hold the runners the newer one waits for.
+# otherwise hold the runners the newer one waits for. A run started by hand
+# is apart from them: it neither stops a push's run nor is stopped by one.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'push' }}
   cancel-in-progress: true
 
 env:

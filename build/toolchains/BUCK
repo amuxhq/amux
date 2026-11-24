@@ -85,9 +85,10 @@ _WINDOWS_TOOLS = {
 # with; it is a minimum, so a bigger worker still takes it.
 _LINUX_WHOLE_WORKER = read_root_config("amux", "linux_worker_cores", "8")
 
-# The cores the Windows CI job's worker offers: GitHub's Windows runner has
-# four.
-_WINDOWS_WHOLE_WORKER = "4"
+# The slots the Windows CI job's worker offers, six on the runner's four
+# cores: a test spends about two fifths of its time fetching its binary
+# from the build host, using no core (scripts/nativelink.py).
+_WINDOWS_WHOLE_WORKER = "6"
 
 # C for a phone or the simulator (a crate's C, such as ring's) is compiled for
 # that target against its SDK: /usr/bin/clang would otherwise build it for
@@ -269,11 +270,11 @@ remote_test_execution_toolchain(
         },
         # On the Windows CI job's own worker (build/platforms/BUCK), the
         # only place a Windows test can run. A test binary takes one of its
-        # four cores and runs two cases at a time (build/rust.bzl's
-        # `threads`), so eight cases run at once. Each binary taking the
-        # whole worker ran them one binary at a time: 79 took 958 s, of
-        # which they reported 520 s running, the rest the worker fetching
-        # each binary from the build host while nothing ran.
+        # six slots and runs two cases at a time (build/rust.bzl's
+        # `threads`). Each binary taking the whole worker ran them one
+        # binary at a time: 79 took 958 s. One per core, four at once, they
+        # took 662 s, 1,381 s of it running and 883 s fetching binaries from
+        # the build host, which uses no core; so six slots, on four cores.
         "prelude//os:windows": {
             "default": {
                 "capabilities": {"OSFamily": "windows", "cpu_count": "1"},

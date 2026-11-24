@@ -77,6 +77,9 @@ amux_rust_test(
     version = "0.10.0",
     deps = DEPS + TEST_DEPS,
     binaries = True,
+    # Four cases at a time everywhere, Windows too, where the default is
+    # two: at two it ran 307 s on Windows, the longest test there by far.
+    timeouts = {"threads": 4},
 )
 
 # The test signing key, which the amux binary's relay test includes.

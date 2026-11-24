@@ -231,7 +231,12 @@ _amux_test = rule(
         # .config/nextest.toml's bounds: slow after a minute, ended at three.
         "slow": attrs.int(default = 60),
         "terminate_after": attrs.int(default = 3),
-        "threads": attrs.int(default = 4),
+        # Four cases at a time; two on Windows, where the worker runs one
+        # test binary per core (build/toolchains/BUCK).
+        "threads": attrs.int(default = select({
+            "DEFAULT": 4,
+            "prelude//os:windows": 2,
+        })),
         "_runner": attrs.source(default = "root//build:test-runner.py"),
         # The Python the runner runs under, by the name the worker's PATH
         # has it: Windows' installers make no python3.

@@ -268,13 +268,15 @@ remote_test_execution_toolchain(
             },
         },
         # On the Windows CI job's own worker (build/platforms/BUCK), the
-        # only place a Windows test can run. Every Windows test binary takes
-        # the whole worker, its runner four cases at a time: four at once
-        # is what the runner's four cores ran under nextest, and the Windows
-        # tests have failed on timing under more load than that.
+        # only place a Windows test can run. A test binary takes one of its
+        # four cores and runs two cases at a time (build/rust.bzl's
+        # `threads`), so eight cases run at once. Each binary taking the
+        # whole worker ran them one binary at a time: 79 took 958 s, of
+        # which they reported 520 s running, the rest the worker fetching
+        # each binary from the build host while nothing ran.
         "prelude//os:windows": {
             "default": {
-                "capabilities": {"OSFamily": "windows", "cpu_count": _WINDOWS_WHOLE_WORKER},
+                "capabilities": {"OSFamily": "windows", "cpu_count": "1"},
                 "use_case": "buck2-default",
             },
             "whole-worker": {

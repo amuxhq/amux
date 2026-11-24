@@ -83,9 +83,15 @@ def amux_files(name, srcs, visibility = ["PUBLIC"]):
     _files(name = name, srcs = srcs, visibility = visibility)
 
 def _binaries_impl(ctx: AnalysisContext) -> list[Provider]:
+    # Each under its name with the binary's own extension, `.exe` for
+    # Windows, as Cargo leaves them: provider_fakes::binaries adds it, and
+    # Windows finds a program named without one only by adding it too.
     tree = ctx.actions.symlinked_dir(
         "binaries",
-        {path: dep[DefaultInfo].default_outputs[0] for path, dep in ctx.attrs.binaries.items()},
+        {
+            path + dep[DefaultInfo].default_outputs[0].extension: dep[DefaultInfo].default_outputs[0]
+            for path, dep in ctx.attrs.binaries.items()
+        },
     )
     return [DefaultInfo(default_output = tree)]
 

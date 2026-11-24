@@ -10,6 +10,10 @@ action to (docs/BUILD.md, "The build cache").
         Say whether it answers on 127.0.0.1:50051.
     nativelink.py run [--cores N] [--background]
         Run it in the foreground, for debugging.
+    nativelink.py serve DIR [--cores N]
+        Run one in the foreground with its cache in DIR and no remote, on a
+        Linux machine that has no build host in reach (a CI runner without
+        the tailnet): what the build host's NativeLink would do, here.
 
 `--cores` is how many cores the worker offers (default: the machine's
 count less three), so builds never take the whole laptop. `--background`
@@ -181,13 +185,20 @@ def remember(remote: str | None, workers: str | None) -> dict:
     return saved
 
 
+def fill(template: str, values: dict) -> str:
+    for key, value in values.items():
+        template = template.replace("{{" + key + "}}", value)
+    return template
+
+
 def render(cores: int, background: bool, remote: dict) -> None:
     # The cores the worker offers, for scripts/buck-config.py: a test that
     # uses every core reserves them all (build/toolchains/BUCK).
     CACHE.mkdir(parents=True, exist_ok=True)
     (CACHE / "cores").write_text(f"{cores}\n")
     values = {
-        "tool_bin": str(tool_bin()),
+        "os": "macos",
+        "path": f"{tool_bin()}:/usr/bin:/bin:/usr/sbin:/sbin",
         "cache": str(CACHE),
         "cas_bytes": str(40 * GIB),
         "ac_bytes": str(4 * GIB),
@@ -196,9 +207,7 @@ def render(cores: int, background: bool, remote: dict) -> None:
         "memory_kb": str(memory_bytes() * 3 // 4 // 1024),
         "entrypoint": 'entrypoint: "/usr/sbin/taskpolicy -b",' if background else "",
     }
-    template = TEMPLATE.read_text()
-    for key, value in values.items():
-        template = template.replace("{{" + key + "}}", value)
+    template = fill(TEMPLATE.read_text(), values)
     local = {"remote_stores": LOCAL_ONLY_STORES, "worker_slow": "{ noop: {} }", "remote_workers": ""}
     full = local if not remote else {
         "remote_stores": remote_stores(remote["remote"]),
@@ -206,11 +215,38 @@ def render(cores: int, background: bool, remote: dict) -> None:
         "remote_workers": remote_workers(remote["workers"]),
     }
     for path, fills in ((CONFIG, full), (CONFIG_LOCAL, local)):
-        text = template
-        for key, value in fills.items():
-            text = text.replace("{{" + key + "}}", value)
-        path.write_text(text)
+        path.write_text(fill(template, fills))
     START.write_text(start_script(remote))
+
+
+# A Linux test that uses every core asks for this many, whatever the machine
+# (build/toolchains/BUCK, `amux.linux_worker_cores`), so a worker offering
+# fewer would never be given it.
+LINUX_WHOLE_WORKER = 8
+
+
+def serve(cache: Path, cores: int) -> None:
+    """Runs a NativeLink with no remote in the foreground, its cache and
+    work directories under `cache`, on a Linux machine."""
+    if sys.platform != "linux":
+        sys.exit("nativelink: `serve` is for a Linux machine; a Mac runs `install`")
+    cache.mkdir(parents=True, exist_ok=True)
+    memory = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    config = cache / "config.json5"
+    config.write_text(fill(TEMPLATE.read_text(), {
+        "os": "linux",
+        # The Linux toolchain is a Nix realization the worker runs
+        # (build/toolchains/nix-realize.sh), so Nix is on PATH, wherever
+        # its installer put it.
+        "path": "/usr/bin:/bin:/nix/var/nix/profiles/default/bin",
+        "cache": str(cache),
+        "cas_bytes": str(40 * GIB),
+        "ac_bytes": str(4 * GIB),
+        "cores": str(max(cores, LINUX_WHOLE_WORKER)),
+        "memory_kb": str(memory * 3 // 4 // 1024),
+        "entrypoint": "",
+    } | {"remote_stores": LOCAL_ONLY_STORES, "worker_slow": "{ noop: {} }", "remote_workers": ""}))
+    os.execv(binary(), [binary(), str(config)])
 
 
 def start_script(remote: dict) -> str:
@@ -308,12 +344,19 @@ def uninstall() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["install", "uninstall", "status", "run"])
-    parser.add_argument("--cores", type=int, default=max(1, (os.cpu_count() or 4) - 3))
+    parser.add_argument("command", choices=["install", "uninstall", "status", "run", "serve"])
+    parser.add_argument("directory", nargs="?", type=Path, help="serve: where its cache and work directories go")
+    parser.add_argument("--cores", type=int, default=None)
     parser.add_argument("--background", action="store_true")
     parser.add_argument("--remote", help="a Linux build host's NativeLink, grpc://HOST:PORT, or `none`")
     parser.add_argument("--workers", help="HOST:PORT on this Mac where the remote's worker registers")
     args = parser.parse_args()
+    if args.command == "serve":
+        if args.directory is None:
+            parser.error("serve needs the directory its cache goes in")
+        serve(args.directory, args.cores or os.cpu_count() or 4)
+        return
+    args.cores = args.cores or max(1, (os.cpu_count() or 4) - 3)
     if args.command == "install":
         install(args.cores, args.background, remember(args.remote, args.workers))
     elif args.command == "uninstall":

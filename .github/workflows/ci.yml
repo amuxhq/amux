@@ -11,15 +11,21 @@ on:
         description: "Run the Linux gate on the runner alone, as a fork's pull request does"
         type: boolean
         default: false
+      cold:
+        description: "Start the macOS jobs with none of the results earlier runs kept, to time them cold"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-# A newer push to a branch stops the run of the one before it, which would
-# otherwise hold the runners the newer one waits for. A run started by hand
-# is apart from them: it neither stops a push's run nor is stopped by one.
+# A newer push to a pull request's branch stops the run of the one before
+# it, which the newer one supersedes. A push to main is a landed commit, and
+# this run is its verdict, so it runs to the end: stopped, the commit would
+# have none, and with two agents landing the macOS jobs were stopped before
+# they ever finished. A run started by hand is apart from both.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'push' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: true
 
 env:
@@ -308,6 +314,11 @@ jobs:
       - name: Show NativeLink's log
         if: failure() && env.REMOTE == 'true'
         run: tail -n 300 "$RUNNER_TEMP/nativelink.log" || true
+      # NativeLink is still running and may still be writing the results;
+      # the cache's archiver fails on a file that changes under it.
+      - name: Stop NativeLink
+        if: always() && env.REMOTE == 'true'
+        run: taskkill //IM nativelink.exe //F || true
       - name: Keep the Windows tests' results
         if: always() && env.REMOTE == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -416,6 +427,7 @@ jobs:
           scripts/py -c 'import socket, sys; [print(name, socket.gethostbyname(name)) for name in sys.argv[1:]]' \
             github.com "$BUILD_HOST"
       - name: Restore the results of earlier runs
+        if: inputs.cold != true
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/results
@@ -452,6 +464,28 @@ jobs:
       - name: Show NativeLink's log
         if: failure()
         run: tail -n 300 "$RUNNER_TEMP/nativelink.log" || true
+      # Buck2's event logs, for `scripts/buck2 log what-ran`, `log
+      # critical-path` and `log show`: what each action waited for, staged
+      # and ran, which is how a slow run is explained.
+      - name: Keep Buck2's event logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: buck2-logs-${{ matrix.key }}
+          path: |
+            buck-out/v2/log/*_build_*.pb.zst
+            buck-out/v2/log/*_test_*.pb.zst
+            ${{ runner.temp }}/nativelink.log
+          retention-days: 7
+          if-no-files-found: ignore
+      # NativeLink is still running, and stopped mid-action (a cancelled
+      # run) it is still writing the results: the cache's archiver failed
+      # on a file that changed under it, so a cancelled run kept nothing.
+      - name: Stop NativeLink
+        if: always()
+        run: |
+          pkill -f "$RUNNER_TEMP/nativelink/config.json5" || true
+          for _ in $(seq 30); do pgrep -f "$RUNNER_TEMP/nativelink/config.json5" > /dev/null || exit 0; sleep 1; done
       - name: Keep the results
         if: always() && env.REMOTE == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

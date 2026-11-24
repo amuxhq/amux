@@ -50,11 +50,14 @@ changed, and takes the rest from the cache. The Cargo checks after it run
 only when the push changed what they check. The macOS jobs, through Buck2
 too, rerun only what changed; the Windows Cargo job runs whole.
 
-A newer push to a branch stops the run of the push before it, so a burst of
-pushes does not queue for runners. The Cargo
-checks therefore compare a push with the last push whose run finished,
-passing or failing, rather than the one before it, whose changes may never
-have been judged; a run started by hand, or a push with no such commit to
+A push to `main` is a landed commit, and its run is that commit's verdict,
+so a later push doesn't stop it: every commit on `main` is judged whole,
+and the macOS jobs, which keep their results between runs, are never cut
+off before they keep them. A newer push to a pull request's branch does
+stop the run of the push before it, which it supersedes. The Cargo
+checks compare a push with the last push whose run finished,
+passing or failing, rather than the one before it, whose changes may not
+have been judged yet; a run started by hand, or a push with no such commit to
 compare with, runs them all.
 
 An organisation on GitHub's free plan runs 20 jobs at once and the rest
@@ -285,8 +288,12 @@ the whole Rust graph for one more target, the heaviest build in the job on
 the runner's three cores, and it reruns on every Rust change;
 `just ios release` builds and audits it on the Mac. The run step is bounded
 at 75 minutes inside a 100-minute job, so a cold run that runs out of time
-still saves what it finished and the next run picks up from there; a
-cancelled job saves nothing.
+still saves what it finished and the next run picks up from there, as a
+cancelled one does: NativeLink is stopped before the results are archived,
+since it may still be writing them. Buck2's event logs and NativeLink's
+log are kept as the run's `buck2-logs-*` artifacts for a week (`scripts/buck2
+log what-ran`, `log critical-path`). A run started by hand with `cold` set
+starts both jobs with no kept results, to time them from nothing.
 The macOS tests job runs `just test //crates/...`: on macOS that is the
 system lane as well, since the built `amux` binary's suites (`process`,
 `supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor`

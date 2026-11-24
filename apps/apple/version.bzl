@@ -11,7 +11,7 @@ The Mac app's version is its build number too, since no store keeps a ledger
 of its builds; `just mac release` writes it.
 """
 
-MARKETING_VERSION = "1.0.38"
-BUILD_NUMBER = "47"
+MARKETING_VERSION = "1.0.39"
+BUILD_NUMBER = "48"
 
 MAC_VERSION = "0.0.1"

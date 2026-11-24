@@ -64,6 +64,8 @@ takes seconds shares a job.
 | Job | Runner | Runs |
 | --- | --- | --- |
 | Linux gate | `ubuntu-latest`, its actions on the build host | `just premerge` through Buck2 on the build host's cache, `just browser audit`, `just doctest` ([The Linux gate](#the-linux-gate)) |
+| Linux gate, Android app | `ubuntu-latest` | Only without the build host (a fork's pull request): `just premerge-half android`, the Android app's half of the gate, while the Linux gate runs `just premerge-half workspace`; with the build host it does nothing |
+| Windows | `windows-latest`, its builds on the build host | `just check-windows` on the build host, then `just test-windows` on a Windows worker of the runner's own ([The Windows job](#the-windows-job)); without the build host, `just cargo-test` |
 | Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why. After the gate, when the push changed what app-ffi is built from |
 | Address sanitizer, Thread sanitizer | `ubuntu-latest` | `just sanitize address` and `just sanitize thread`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race. After the gate, when the push changed one of the crates whose tests they run |
 | Test | `macos-latest` (2 halves), `windows-latest` (1 job) | `scripts/no-update-flags.sh`, `just cargo-test -- --profile ci --exclude models` (partitioned `count:N/2` on macOS; whole suite on Windows, which compiles out the slow Unix suites) |
@@ -108,8 +110,16 @@ host's keys.
 
 A fork's pull request gets no secrets and so no tailnet. Its gate starts a
 NativeLink on the runner (`scripts/nativelink.py serve`) and builds and
-tests everything there: slower, the same checks. Running the workflow by
-hand with `without-build-host` does the same, to check that path.
+tests everything there: slower, the same checks. All of it on one
+four-core runner takes longer than a test run's bound, so the gate runs in
+two halves on two runners (`just premerge-half workspace` here, `just
+premerge-half android` in the Linux gate, Android app job), which together
+are `just premerge`. The runner's worker offers its real cores, and a test
+that takes the whole worker asks for that many (`AMUX_LINUX_WORKER_CORES`,
+read by `scripts/buck-config.py`): a worker claiming the build host's
+eight would run such a test beside others, and the tests that measure time
+fail. Running the workflow by hand with `without-build-host` does the
+same, to check that path.
 
 The job then audits the dependencies the browser extension ships (`just
 browser audit`) and runs the documentation tests under Cargo (`just

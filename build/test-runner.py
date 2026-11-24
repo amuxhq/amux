@@ -43,6 +43,7 @@ come from the environment, for the recipes a person runs by hand:
 
 import argparse
 import concurrent.futures
+import errno
 import os
 import selectors
 import shutil
@@ -65,14 +66,29 @@ def selected(name: str, filters: list[str]) -> bool:
     return any(name.startswith(f[1:]) if f.startswith("^") else f in name for f in filters)
 
 
+def starting(start):
+    """Start a process, again if the binary is busy. Linux refuses to run a
+    file some process holds open for writing (ETXTBSY), and a test binary
+    the worker has just written can be: a process another action forked
+    while the file was open inherits the descriptor, until it execs. That
+    lasts moments, so a few tries a moment apart get past it."""
+    for attempt in range(20):
+        try:
+            return start()
+        except OSError as error:
+            if error.errno != errno.ETXTBSY or attempt == 19:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
 def tests(binary: list[str], filters: list[str]) -> list[str]:
     def listing(*extra: str) -> list[str]:
-        out = subprocess.run(
+        out = starting(lambda: subprocess.run(
             binary + ["--list", "--format", "terse", *extra],
             check=True,
             capture_output=True,
             text=True,
-        ).stdout
+        )).stdout
         return [line[: -len(": test")] for line in out.splitlines() if line.endswith(": test")]
 
     ignored = set(listing("--ignored"))
@@ -96,14 +112,14 @@ def run_one(
         if WINDOWS:
             # Where Windows programs look for the same two.
             env.update(USERPROFILE=env["HOME"], TEMP=env["TMPDIR"], TMP=env["TMPDIR"])
-    child = subprocess.Popen(
+    child = starting(lambda: subprocess.Popen(
         binary + ["--exact", name, "--nocapture"],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         start_new_session=not WINDOWS,
         env=env,
-    )
+    ))
     output = bytearray()
     chunks = Chunks(child.stdout)
     deadline = start + slow * terminate_after

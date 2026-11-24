@@ -426,12 +426,39 @@ no-update-flags:
 # platforms' builds and the Apple app's tests stay with `just ios verify`
 # and CI (docs/CI.md, "`just premerge`").
 # Run the checks a change passes before it reaches main.
-premerge: no-update-flags fmt-check dependency-policy deny shear cores-graph-check tests-check script-tests parity shipping-check lint
+premerge: premerge-checks
     {{just_executable()}} test //crates/... //: //js: //apps/android/...
     {{just_executable()}} ios lint
     {{just_executable()}} ios script-tests
     {{just_executable()}} android lint
     {{just_executable()}} android script-tests
+
+# The checks `just premerge` runs before its tests.
+premerge-checks: no-update-flags fmt-check dependency-policy deny shear cores-graph-check tests-check script-tests parity shipping-check lint
+
+# `just premerge` in two halves, which together run all of it: `workspace`
+# is everything but the Android app, `android` the Android app's tests,
+# lint and script tests. A fork's pull request gets no build host, so CI
+# builds and tests everything on four-core runners, and all of it on one
+# takes longer than a test run's bound; it runs the halves side by side.
+# Run one half of `just premerge`: workspace or android.
+premerge-half HALF:
+    #!/bin/sh
+    set -eu
+    case "{{HALF}}" in
+        workspace)
+            {{just_executable()}} premerge-checks
+            {{just_executable()}} test //crates/... //: //js:
+            {{just_executable()}} ios lint
+            {{just_executable()}} ios script-tests
+            ;;
+        android)
+            {{just_executable()}} test //apps/android/...
+            {{just_executable()}} android lint
+            {{just_executable()}} android script-tests
+            ;;
+        *) echo "premerge-half: workspace or android, not {{HALF}}" >&2; exit 2 ;;
+    esac
 
 # `just land "What the branch does"` merges this tree's HEAD onto a fresh
 # origin/main, runs `just premerge` (and `just miri` when the phone's C ABI

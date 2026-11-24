@@ -39,6 +39,14 @@ cargo-test:
     {{bounded}} 900 cargo build --locked -p amux -p provider-fakes --bins
     {{bounded}} 600 sh -c 'cd js && npm run check && npx vitest run && { [ "${AMUX_PLAYWRIGHT_READY-}" = 1 ] || npx playwright install chromium >/dev/null; } && npx playwright test'
 
+# Known vulnerabilities in what the extension ships (its runtime
+# dependencies, bundled into it), not in the tools that build it. Asks the
+# npm registry, so it is no Buck2 test: an advisory appears without any file
+# changing. CI's Linux job runs it on every push.
+# Audit the extension's shipped dependencies.
+audit:
+    {{bounded}} 120 sh -c 'cd js && npm audit --omit=dev --audit-level=moderate'
+
 # Biome's format and lint, the types, and the unit tests, without building,
 # as Buck2 tests (js/BUCK); `just premerge` runs them with every other test.
 # The JavaScript's fast checks.

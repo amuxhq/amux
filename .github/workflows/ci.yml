@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      without-build-host:
+        description: "Run the Linux gate on the runner alone, as a fork's pull request does"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -19,8 +24,157 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # The build host whose NativeLink the Linux gate sends its actions to, a
+  # machine on the tailnet the runner joins (docs/CI.md, "The Linux gate").
+  BUILD_HOST: nova.tail656fe8.ts.net
 
 jobs:
+  linux:
+    name: Linux gate
+    runs-on: ubuntu-latest
+    # Measured: with the build host in reach, a landed commit is the time to
+    # set up Nix and premerge's cache hits. Without it (a fork's pull
+    # request), the runner builds and tests everything itself, on four cores.
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      actions: read
+    env:
+      # A fork's pull request gets no secrets, so no tailnet: it runs on the
+      # runner alone, slower but the same checks.
+      REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && inputs.without-build-host != true }}
+    outputs:
+      miri: ${{ steps.cargo.outputs.miri }}
+      sanitizers: ${{ steps.cargo.outputs.sanitizers }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The protocol and store checks read the latest release tag's
+          # schemas, and the Cargo checks compare with an earlier commit.
+          fetch-depth: 0
+      - name: Refuse fixture update flags
+        run: scripts/no-update-flags.sh
+      - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
+      - name: Join the tailnet
+        if: env.REMOTE == 'true'
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ env.BUILD_HOST }}
+      - name: Send Buck2's actions to the build host
+        if: env.REMOTE == 'true'
+        run: echo "AMUX_NATIVELINK=grpc://$BUILD_HOST:50051" >> "$GITHUB_ENV"
+      - name: Fetch the pinned tools
+        run: nix develop --command true
+      # Without the build host, a NativeLink of the runner's own takes its
+      # place, so every action still runs sandboxed through a worker. Its
+      # cache goes on the runner's larger second disk.
+      - name: Start a NativeLink on the runner
+        if: env.REMOTE != 'true'
+        run: |
+          sudo mkdir -p /mnt/nativelink && sudo chown "$(id -u):$(id -g)" /mnt/nativelink
+          nohup nix develop --command scripts/py scripts/nativelink.py serve /mnt/nativelink > /mnt/nativelink.log 2>&1 &
+          for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
+          cat /mnt/nativelink.log; exit 1
+      - name: Say which Cargo checks this change reaches
+        id: cargo
+        env:
+          EVENT: ${{ github.event_name }}
+          PULL_BASE: ${{ github.event.pull_request.base.sha }}
+          GH_TOKEN: ${{ github.token }}
+        # A push is compared with the last push whose run finished, passing
+        # or failing, and not with the push before it: that one's run may
+        # have been stopped by this one, its changes never judged. With no
+        # such run, or for a run started by hand, they all run.
+        run: |
+          case "$EVENT" in
+            push)
+              base=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=$GITHUB_REF_NAME&event=push&status=completed&per_page=50" \
+                --jq '[.workflow_runs[] | select(.conclusion == "success" or .conclusion == "failure")][0].head_sha // ""' || true)
+              ;;
+            pull_request) base=$PULL_BASE ;;
+            *) base= ;;
+          esac
+          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "compared with $base"
+            nix develop --command python3 scripts/landing.py covers --base "$base" | tee -a "$GITHUB_OUTPUT"
+          else
+            echo "nothing to compare with: every Cargo check runs"
+            printf 'miri=true\nsanitizers=true\n' | tee -a "$GITHUB_OUTPUT"
+          fi
+      # The gate every landing passes: through Buck2, every test, the
+      # repository's and the JavaScript's checks and Clippy, so a commit the
+      # landing queue or a premerge already tested is cache hits; and the
+      # checks that stay scripts.
+      - name: Run the gate (just premerge)
+        run: nix develop --command just premerge
+      - name: Say what Buck2 ran and what came from the cache
+        if: always()
+        # Each build's log, then each test run's, each oldest first.
+        run: |
+          cat > "$RUNNER_TEMP/summaries.sh" <<'EOF'
+          for log in buck-out/v2/log/*_build_*.pb.zst buck-out/v2/log/*_test_*.pb.zst; do
+            [ -e "$log" ] || continue
+            scripts/buck2 log summary "$log" | grep -E '^Showing|^- (Local|Remote|Cached|Other) actions' || true
+          done
+          EOF
+          nix develop --command sh "$RUNNER_TEMP/summaries.sh"
+      - name: Audit the browser extension's shipped dependencies
+        if: always()
+        run: nix develop --command just browser audit
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: always()
+        with:
+          key: doctest
+      # The documentation tests are Cargo's: Buck2's need every compile in
+      # its nightly-features mode (docs/BUILD.md).
+      - name: Run the documentation tests
+        if: always()
+        run: nix develop --command just doctest
+
+  # Miri and the sanitizers rebuild the standard library under their checks
+  # (`-Zbuild-std`), which Buck2's Rust rules can't, so they run under Cargo:
+  # in the landing queue before a push, and here after one, when the push
+  # changed what they check (scripts/landing.py covers). A Mac's landing
+  # can't run the thread sanitizer, and a merge made in GitHub's page runs
+  # neither, so this runs them whoever landed the change.
+  cargo:
+    name: ${{ matrix.check }}
+    needs: linux
+    if: always() && (needs.linux.outputs.miri == 'true' || needs.linux.outputs.sanitizers == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      COVERED: ${{ matrix.key == 'miri' && needs.linux.outputs.miri || needs.linux.outputs.sanitizers }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - check: Pointer checks over the C ABI
+            run: just miri
+            key: miri
+          - check: Address sanitizer
+            run: just sanitize address
+            key: sanitize-address
+          - check: Thread sanitizer
+            run: just sanitize thread
+            key: sanitize-thread
+    # A leg the push doesn't reach skips every step.
+    steps:
+      - if: env.COVERED == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: env.COVERED == 'true'
+        uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
+      - if: env.COVERED == 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ matrix.key }}
+      - name: Run ${{ matrix.run }}
+        if: env.COVERED == 'true'
+        run: nix develop --command ${{ matrix.run }}
+
   # Which jobs this change can affect (scripts/ci-affected.py): a change to
   # documentation, another workflow or a manual script runs only the policy
   # job, either phone app alone runs the mirror tests and leaves the rest to

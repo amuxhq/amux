@@ -84,7 +84,7 @@ class Repos(unittest.TestCase):
 
     def land(self, rid: str, premerge: str = "true") -> str:
         def gate_for(log):
-            return queue.logged_gate(log, None, premerge=("sh", "-c", premerge), miri=None)
+            return queue.logged_gate(log, None, premerge=("sh", "-c", premerge), miri=None, sanitize=None)
 
         with contextlib.redirect_stdout(io.StringIO()):
             return queue.land_request(self.inbox, self.tree, rid, gate_for)

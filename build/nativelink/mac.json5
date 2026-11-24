@@ -1,6 +1,8 @@
 // NativeLink on a Mac: the cache and the worker every Buck2 action runs on
 // (docs/BUILD.md, "The build cache"). scripts/nativelink.py fills in the
-// {{...}} values and runs it under launchd.
+// {{...}} values and runs it under launchd. `nativelink.py serve` renders the
+// same, with no remote, for a Linux machine that has no build host to send
+// its actions to (a CI runner without the tailnet).
 //
 // Every action goes through this worker rather than Buck2's own local
 // executor: Buck2 records only remotely executed results in the action
@@ -90,7 +92,7 @@
       // cores it asks for (`cpu_count`, one unless a target asks for more),
       // so a test that wants the whole worker runs alone.
       local: {
-        name: "mac-",
+        name: "{{os}}-",
         worker_api_endpoint: { uri: "grpc://127.0.0.1:50061" },
         cas_fast_slow_store: "WORKER_CAS",
         upload_action_result: { ac_store: "LOCAL_AC" },
@@ -98,9 +100,10 @@
         max_action_timeout_s: 3600,
         {{entrypoint}}
         // Only a modern python3 and the operating system's own tools are
-        // on PATH; every toolchain is called by its pinned path.
+        // on PATH (on Linux, also Nix, which realizes the toolchain); every
+        // toolchain is called by its pinned path.
         additional_environment: {
-          PATH: { value: "{{tool_bin}}:/usr/bin:/bin:/usr/sbin:/sbin" },
+          PATH: { value: "{{path}}" },
         },
         capacity: {},
         // No `directory_cache`. It keeps a copy of each action's whole
@@ -110,7 +113,7 @@
         // copy and then cloning it. Without it, each input is hard-linked
         // straight from the CAS into the action's directory.
         platform_properties: {
-          OSFamily: { values: ["macos"] },
+          OSFamily: { values: ["{{os}}"] },
           cpu_count: { values: ["{{cores}}"] },
           memory_kb: { values: ["{{memory_kb}}"] },
         },

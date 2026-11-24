@@ -22,6 +22,10 @@ NativeLink is restarted without it and the tree turns Linux off
 skipped), and back when it answers again. Buck2's daemon remembers what it
 uploaded to the cache it was talking to, so a switch also restarts this
 tree's daemon.
+
+A Linux machine sends every action to its own NativeLink on loopback, or,
+with AMUX_NATIVELINK naming another (`grpc://host:50051`), to that one: a
+CI runner sends them to the build host's over the tailnet.
 """
 
 import json
@@ -109,6 +113,12 @@ def answers(url: str) -> bool:
     return up
 
 
+def linux_endpoint() -> str | None:
+    """The NativeLink a Linux machine sends its actions to, when it isn't
+    the one on this machine's loopback that .buckconfig names."""
+    return os.environ.get("AMUX_NATIVELINK") or None
+
+
 def mode() -> str:
     """`linux`: a Linux machine, whose actions all run on Linux. On a Mac,
     `remote`: Linux actions go to the remote's worker; `local`: a remote is
@@ -116,7 +126,10 @@ def mode() -> str:
     this machine's (the tailnet is down); `solo`: none is set up. Only
     `remote` and `linux` run Linux actions."""
     if platform.system() != "Darwin":
-        return "linux"
+        # The endpoint is part of the mode, so a change rewrites the file
+        # and restarts the daemon, which reads endpoints only as it starts.
+        endpoint = linux_endpoint()
+        return f"linux {endpoint}" if endpoint else "linux"
     url = remote()
     if url is None:
         return "solo"
@@ -188,8 +201,13 @@ def write(mode: str) -> None:
         # reserves; and whether a Linux worker is in reach.
         "[amux]",
         f"  worker_cores = {worker_cores()}",
-        f"  linux = {'true' if mode in ('linux', 'remote') else 'false'}",
+        f"  linux = {'true' if linux(mode) else 'false'}",
     ]
+    if mode.startswith("linux "):
+        endpoint = mode.removeprefix("linux ")
+        lines += ["[buck2_re_client]"] + [
+            f"  {key} = {endpoint}" for key in ("engine_address", "action_cache_address", "cas_address")
+        ]
     host = {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}[platform.system()]
     lines += [
         # A target that doesn't name its own platform is a development
@@ -209,10 +227,15 @@ def write(mode: str) -> None:
     OUT.write_text("\n".join(lines) + "\n")
 
 
+def linux(mode: str) -> bool:
+    """Whether actions in this mode can run on Linux."""
+    return mode == "remote" or mode.split(" ")[0] == "linux"
+
+
 def skipped(patterns: list[str]) -> None:
     """With no Linux worker in reach, name the `nova-only` targets among
     `patterns` that a run therefore skipped."""
-    if mode() in ("linux", "remote"):
+    if linux(mode()):
         return
     buck2 = run(str(ROOT / "scripts/py"), str(ROOT / "scripts/buck-tools.py"), "path", "buck2")
     query = subprocess.run(
@@ -243,13 +266,13 @@ def main() -> None:
         # The running daemon still holds the old endpoints.
         buck2 = run(str(ROOT / "scripts/py"), str(ROOT / "scripts/buck-tools.py"), "path", "buck2")
         subprocess.run([buck2, "kill"], cwd=ROOT, capture_output=True)
-        print(f"buck-config: actions now go {DESCRIBE[now]}; restarted this tree's Buck2 daemon", file=sys.stderr)
+        print(f"buck-config: actions now go {DESCRIBE[now.split(' ')[0]]}; restarted this tree's Buck2 daemon", file=sys.stderr)
     if now == "local":
         print(f"buck-config: {remote()} is out of reach: Linux actions are off and nova-only tests are skipped", file=sys.stderr)
 
 
 DESCRIBE = {
-    "linux": "to this machine's NativeLink",
+    "linux": "to this machine's NativeLink, or the one AMUX_NATIVELINK names",
     "remote": "to this Mac's worker, and Linux ones to the remote's",
     "local": "to this Mac's worker only (the remote doesn't answer)",
     "solo": "to this Mac's worker only",

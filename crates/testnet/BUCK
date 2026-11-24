@@ -83,6 +83,17 @@ amux_rust_test(
     include = {"//:qa/FINDING.md": "qa/FINDING.md"},
     resources = ["//crates/interpret:fixtures", "//:environments", "//:journeys"],
     binaries = True,
+    runs = {
+        # The stories that also run on the simulated net (`modes` in
+        # tests/catalog.toml), there: every core in one process, walked by
+        # a few seeds each. A failure prints the seed and the `just sim
+        # --seed` that reruns it.
+        "simulated": {
+            "env": {"TESTNET_MODE": "simulated"},
+            "filters": ["^family_stories::", "^harness_stories::", "^replication_stories::", "^sim_harness::", "^sim_seeds::"],
+            "labels": ["simulated"],
+        },
+    },
 )
 
 # Every terminal journey (`just journey terminal all`): the built binaries

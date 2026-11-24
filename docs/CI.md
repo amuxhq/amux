@@ -75,6 +75,8 @@ takes seconds shares a job, and the models run a few to a job.
 
 | Job | Runner | Runs |
 | --- | --- | --- |
+| Linux gate | `ubuntu-latest`, its actions on the build host | `just premerge` through Buck2 on the build host's cache, `just browser audit`, `just doctest` ([The Linux gate](#the-linux-gate)) |
+| Pointer checks over the C ABI, Address sanitizer, Thread sanitizer | `ubuntu-latest` | `just miri`, `just sanitize address`, `just sanitize thread` under the Nix toolchain, when the push changed what they check |
 | Format, Check and Clippy | `ubuntu-latest` | `just fmt-check` with `nightly-2026-08-30`, then `just cargo-lint`: Clippy under Cargo |
 | Codegen and dependency policy | `ubuntu-latest` | `just cargo-codegen-check`, `just dependency-policy`, `just deny`, `just shear`, `just cores-check`, `just typed-provider-check`, `just client-kind-check`, `just tests-check`, `just script-tests`, `just docs-check`, `just proto-compat`, `just store-check` |
 | Test | `ubuntu-latest` (2 halves), `macos-latest` (2 halves), `windows-latest` (1 job) | `scripts/no-update-flags.sh`, `just cargo-test -- --profile ci --exclude models` (partitioned `count:N/2` on Linux and macOS; whole suite on Windows, which compiles out the slow Unix suites) |
@@ -109,6 +111,32 @@ The terminal journeys are `reach-host`,
 `conversation-decision-claude-pty`, `conversation-decision-claude-sdk`,
 `conversation-decision-codex`, `leave-and-recover`, `manage-agent`,
 `attachment-or-review` and `keep-authority`.
+
+### The Linux gate
+
+The Linux gate job runs `just premerge`, the same gate every landing
+passes, with Buck2 sending its actions to the build host's NativeLink over
+the tailnet, so a commit the landing queue or a premerge on the build host
+already tested is cache hits. The runner joins the tailnet as `tag:ci`
+with the repository's Tailscale OAuth client (`TS_OAUTH_CLIENT_ID`,
+`TS_OAUTH_SECRET`), which the tailnet's rules let reach the build cache's
+port and nothing else; the build host's name is `BUILD_HOST` at the top of
+`ci.yml`. The pinned tools come from the repository's Nix flake (`nix
+develop`), as on the build host, so the runner's actions have the build
+host's keys.
+
+A fork's pull request gets no secrets and so no tailnet. Its gate starts a
+NativeLink on the runner (`scripts/nativelink.py serve`) and builds and
+tests everything there: slower, the same checks. Running the workflow by
+hand with `without-build-host` does the same, to check that path.
+
+The job then audits the dependencies the browser extension ships (`just
+browser audit`) and runs the documentation tests under Cargo (`just
+doctest`). The C ABI's pointer checks (`just miri`) and the sanitizers run
+under Cargo too, after the gate, in jobs of their own and only when the
+push changed what they check ([`scripts/landing.py`](../scripts/landing.py)
+`covers`): they rebuild the standard library under their checks, which
+Buck2's Rust rules can't.
 
 ### Bounds
 

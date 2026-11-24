@@ -138,6 +138,7 @@ def _test_impl(ctx: AnalysisContext) -> list[Provider]:
         str(ctx.attrs.terminate_after),
         "--",
         ctx.attrs.binary[RunInfo],
+        ctx.attrs.filters,
     )
     executors = get_re_executors_from_props(ctx)
     # `buck2 run` (how `just goldens` re-records) runs the runner here, in
@@ -173,6 +174,8 @@ _amux_test = rule(
     attrs = {
         "binary": attrs.dep(providers = [RunInfo]),
         "env": attrs.dict(key = attrs.string(), value = attrs.arg(), sorted = False, default = {}),
+        # The test runner's name filters: only the tests they select run.
+        "filters": attrs.list(attrs.string(), default = []),
         "harness": attrs.bool(default = True),
         "labels": attrs.list(attrs.string(), default = []),
         # .config/nextest.toml's bounds: slow after a minute, ended at three.
@@ -187,10 +190,12 @@ _amux_test = rule(
     } | re_test_common.test_args(),
 )
 
-def _test(name, env, run_env, labels, product, timeouts, whole_worker = False, harness = True, nova_only = False, **binary):
+def _test(name, env, run_env, labels, product, timeouts, whole_worker = False, harness = True, nova_only = False, runs = {}, **binary):
     """A test binary `name` built from `binary` (rust_binary's attributes),
     run by the test runner with `run_env` and the compile-time `env`, as
-    the prelude's rust_test runs with both."""
+    the prelude's rust_test runs with both. Each of `runs` is another test
+    target running the same binary: its name to a dict of the `env` it adds
+    and the `filters` that select its tests."""
     rustc_flags = (["--test"] if harness else []) + binary.pop("rustc_flags", [])
     platform = host_platform(product = product, purpose = "testing")
     compatible = []
@@ -220,6 +225,19 @@ def _test(name, env, run_env, labels, product, timeouts, whole_worker = False, h
         target_compatible_with = compatible,
         **timeouts
     )
+    for run, how in runs.items():
+        _amux_test(
+            name = run,
+            binary = ":" + name + "-binary",
+            env = env | run_env | how.get("env", {}),
+            filters = how.get("filters", []),
+            harness = harness,
+            labels = labels + how.get("labels", []),
+            remote_execution = "whole-worker" if whole_worker else None,
+            default_target_platform = platform,
+            target_compatible_with = compatible,
+            **timeouts
+        )
 
 def _crate_name() -> str:
     return native.package_name().split("/")[-1]
@@ -347,6 +365,7 @@ def amux_rust_test(
         whole_worker = False,
         harness = True,
         nova_only = False,
+        runs = {},
         **kwargs):
     """One integration-test binary: Cargo's `[[test]] name = ...`, which
     `autotests = false` crates keep to one per crate, built from
@@ -361,7 +380,9 @@ def amux_rust_test(
     `main`, run as a program rather than by the test runner. `nova_only =
     True` for a test too heavy for a laptop's worker: it is always built and
     run for Linux, on nova's worker, and is skipped when nova is out of
-    reach (label `nova-only`)."""
+    reach (label `nova-only`). `runs` names other test targets that run the
+    same binary differently: a name to the `env` each adds, the `filters`
+    that select its tests (build/test-runner.py's) and its `labels`."""
     crate = _crate_name()
     package = native.package_name()
     _test(
@@ -374,6 +395,7 @@ def amux_rust_test(
         timeouts = timeouts,
         whole_worker = whole_worker,
         nova_only = nova_only,
+        runs = runs,
         crate = name.replace("-", "_"),
         crate_root = package + "/" + (crate_root or "tests/{}.rs".format(name)),
         srcs_filegroup = _tree(name + ".test", srcs if srcs != None else native.glob(["tests/**"]), include),

@@ -327,45 +327,6 @@ class TrimTest(unittest.TestCase):
         self.assertIn("trimming buck-out failed (exited 3)", self.trim())
 
 
-class FreshDaemonTest(unittest.TestCase):
-    """A Mac landing restarts its tree's Buck2 daemon once it is old: a fake
-    scripts/buck2 here says when it started and records a kill."""
-
-    NOW = datetime.datetime(2026, 11, 24, 12, 0, tzinfo=datetime.timezone.utc)
-
-    def setUp(self):
-        self.tree = Path(tempfile.mkdtemp(prefix="land-daemon-"))
-        self.addCleanup(subprocess.run, ["rm", "-rf", str(self.tree)])
-        self.asked = self.tree / "asked"
-        (self.tree / "scripts").mkdir()
-
-    def daemon(self, status: str):
-        fake = self.tree / "scripts" / "buck2"
-        fake.write_text(f"#!/bin/sh\necho \"$*\" >> {self.asked}\n[ \"$1\" = status ] && cat <<'EOF'\n{status}\nEOF\nexit 0\n")
-        fake.chmod(0o755)
-
-    def started(self, hours_ago: float):
-        at = self.NOW - datetime.timedelta(hours=hours_ago)
-        self.daemon(f'{{"start_time": "{at:%Y-%m-%dT%H:%M:%SZ}", "uptime": "?"}}')
-
-    def fresh(self) -> list[str]:
-        with contextlib.redirect_stdout(io.StringIO()):
-            client.fresh_daemon(self.tree, self.NOW)
-        return self.asked.read_text().split("\n")[:-1]
-
-    def test_a_daemon_up_past_the_limit_is_restarted(self):
-        self.started(client.DAEMON_HOURS + 0.5)
-        self.assertEqual(self.fresh(), ["status", "kill"])
-
-    def test_a_younger_daemon_stays_warm(self):
-        self.started(client.DAEMON_HOURS - 0.5)
-        self.assertEqual(self.fresh(), ["status"])
-
-    def test_no_daemon_running_is_left_alone(self):
-        self.daemon("")
-        self.assertEqual(self.fresh(), ["status"])
-
-
 @contextlib.contextmanager
 def patched(module, **values):
     saved = {name: getattr(module, name) for name in values}

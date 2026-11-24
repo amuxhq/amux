@@ -210,15 +210,21 @@ host already has is a hit on the Mac, so a branch tested on the host is
 cache hits for the same configuration on the Mac and the other way round.
 macOS results stay on the Mac.
 
-That split has a cost a long-lived Buck2 daemon meets. Buck2 takes a
-remote output to stay in the cache for three hours after it last heard of
-it, and asks the cache again near the end of that. The Mac's cache answers
-from the host's layer alone, where the outputs the Mac's own worker built
-never go, so Buck2 is told they are gone, and the next action that needs
-one fails ("an artifact that has expired in the RE CAS") until the daemon
-is restarted (`scripts/buck2 kill`); a new daemon asks the action cache
-afresh. `just land --local` restarts its tree's daemon once it has been up
-two hours.
+Asked whether it holds a blob, the Mac's cache asks the host, then its own
+layer for what the host lacks. Buck2 asks before it uploads an action's
+inputs, and again as an output it refers to nears the end of the three
+hours it assumes one lives; answered by the host alone, the outputs the
+Mac's own worker built were called gone, and a daemon up for hours failed
+the next action that needed one ("an artifact that has expired in the RE
+CAS"). The cost of counting the Mac's layer is that Buck2 never uploads a
+blob only the Mac holds, so a Linux target can't take an output built on
+the Mac: its action fails on the host's worker for a missing input. A blob
+the host has evicted while the Mac kept it fails a Linux action the same
+way; removing it from the Mac's layer
+(`~/Library/Caches/amux/nativelink/cas/d2/<hash>-*`) and restarting
+NativeLink (`scripts/nativelink.py install`) has Buck2 upload it again.
+Sending what the Mac builds to the host as well would lift that, at the
+price of uploading every Mac build over the tailnet.
 
 When the host doesn't answer (or the tailnet is down), `scripts/buck2`
 says so, restarts NativeLink without it and turns Linux off for the tree:
@@ -226,7 +232,10 @@ Linux actions fail at once rather than wait, and tests marked `nova_only`
 (the model checks' integration target, which takes every core for ten
 minutes) are skipped, which `just test` names at the end. When the host
 answers again it switches back. Each switch restarts NativeLink, which
-interrupts any build another tree has running at that moment.
+interrupts any build another tree has running at that moment. What the
+Mac's layer gained in between never reached the host, so NativeLink drops
+it as it starts in front of the host again: Buck2 uploads the sources
+afresh, and what the Mac built in the meantime is built again once.
 
 A Linux machine sends its actions to the NativeLink on its own loopback,
 as the build host's trees do, or to the one `AMUX_NATIVELINK` names

@@ -125,11 +125,16 @@
       name: "clients",
       listener: { http: { socket_address: "127.0.0.1:50051" } },
       services: {
+        // FindMissingBlobs belongs to the CAS service, so CAS answers it
+        // (scripts/nativelink.py says why it counts the local layer).
+        // ByteStream asks no such question, and a read through SHARED_CAS
+        // looks in the local layer first, where one through CAS would ask
+        // the remote about the blob before reading it.
         cas: [{ instance_name: "main", cas_store: "CAS" }],
         ac: [{ instance_name: "main", ac_store: "AC" }],
-        execution: [{ instance_name: "main", cas_store: "CAS", scheduler: "SCHEDULER" }],
+        execution: [{ instance_name: "main", cas_store: "SHARED_CAS", scheduler: "SCHEDULER" }],
         capabilities: [{ instance_name: "main", remote_execution: { scheduler: "SCHEDULER" } }],
-        bytestream: [{ instance_name: "main", cas_store: "CAS" }],
+        bytestream: [{ instance_name: "main", cas_store: "SHARED_CAS" }],
       },
     },
     {

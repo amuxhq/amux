@@ -105,6 +105,19 @@ nix_toolchain(
     visibility = ["PUBLIC"],
 )
 
+# The Windows toolchain (nix/windows.nix): the pinned Rust, LLVM's
+# MSVC-compatible compiler and linker, and Microsoft's CRT and SDK, with
+# which a Linux worker compiles and links everything built for Windows.
+# Apart from the Linux toolchain, so an SDK bump rekeys only Windows work.
+nix_toolchain(
+    name = "nix-windows",
+    srcs = ["flake.lock", "flake.nix", "nix/windows.nix", "rust-toolchain.toml"],
+    output = "packages.x86_64-linux.windows",
+    exec_compatible_with = ["prelude//os:linux"],
+    target_compatible_with = ["prelude//os:linux"],
+    visibility = ["PUBLIC"],
+)
+
 # The repository checks, each a test over exactly the files it reads
 # (build/checks.bzl), so a passing one is cached until those change. `just
 # checks` writes what they read from outside the checkout first

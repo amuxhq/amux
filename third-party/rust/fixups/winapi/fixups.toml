@@ -1,3 +1,5 @@
-# winapi's build script only tells Cargo which Windows import libraries to
-# link; the Windows toolchain links them itself.
-buildscript.run = false
+# winapi's build script turns on, as `feature` cfgs, every header module the
+# enabled ones need: with it skipped, `minwindef` finds no `basetsd`. It
+# also names the import libraries to link, which the Windows toolchain's
+# SDK provides.
+buildscript.run = true

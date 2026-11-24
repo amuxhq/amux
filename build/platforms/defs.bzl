@@ -26,6 +26,16 @@ EXEC_LIKE_TARGET = select({
     "prelude//os:linux": ["prelude//os:linux"],
     # Android builds only on a Linux worker (docs/ANDROID.md).
     "prelude//os:android": ["prelude//os:linux"],
+    # So does Windows (nix/windows.nix): only its tests run on Windows.
+    "prelude//os:windows": ["prelude//os:linux"],
+})
+
+# For the binaries a test starts (build/rust.bzl's amux_binaries): built
+# for the machine the test runs on, which for a Windows test is Windows
+# though it is built on Linux.
+EXEC_RUNS_TARGET = select({
+    "DEFAULT": EXEC_LIKE_TARGET,
+    "prelude//os:windows": ["prelude//os:windows"],
 })
 
 def host_target() -> str:

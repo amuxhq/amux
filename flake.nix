@@ -49,6 +49,16 @@
             config = { allowUnfree = true; android_sdk.accept_license = true; };
           };
         };
+        # What Buck2's Windows actions run with (nix/windows.nix), on Linux
+        # workers only. Microsoft's CRT and Windows SDK are unfree, under
+        # the Visual Studio licence this import accepts.
+        x86_64-linux.windows = import ./nix/windows.nix {
+          pkgs = import nixpkgs {
+            system = "x86_64-linux";
+            overlays = [ rust-overlay.overlays.default ];
+            config = { allowUnfree = true; microsoftVisualStudioLicenseAccepted = true; };
+          };
+        };
       };
 
       devShells = forAllSystems (pkgs: {

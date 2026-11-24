@@ -1,0 +1,8 @@
+# windows-targets links the Windows API through an import library named for
+# its version (`windows.0.52.0.lib`), which windows_x86_64_msvc carries and
+# its build script adds to Cargo's search path; a search path from a build
+# script reaches no dependent's link under Buck. With `windows_raw_dylib`
+# rustc writes the imports itself (raw-dylib, stable since Rust 1.71), so no
+# import library is needed.
+['cfg(version = "=0.52.6")']
+rustc_flags = ["--cfg", "windows_raw_dylib"]

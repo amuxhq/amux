@@ -156,9 +156,12 @@ impl Install {
     }
 
     /// Runs the daemon in the foreground as a service manager would, and
-    /// waits for its front door.
+    /// waits until it serves: its front door answers and it has logged its
+    /// serving line. The daemon binds the front door before it logs that
+    /// line, so a test counting serving lines waits for both.
     async fn run_daemon(&mut self) {
         assert!(self.daemon.is_none(), "one daemon at a time");
+        let served = serving_lines(self).len();
         let log = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -173,6 +176,14 @@ impl Install {
         self.daemon = Some(child);
         until("the front door answers", || async {
             self.front_door().await.map(|_| ()).ok_or("no front door")
+        })
+        .await
+        .unwrap();
+        until("the daemon logs that it serves", || async {
+            let lines = serving_lines(self).len();
+            (lines > served)
+                .then_some(())
+                .ok_or_else(|| format!("{lines} serving lines, {served} before this start"))
         })
         .await
         .unwrap();

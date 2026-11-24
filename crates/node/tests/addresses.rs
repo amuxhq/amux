@@ -82,7 +82,10 @@ async fn each_host_keeps_the_addresses_its_peer_lists_with_their_sources_and_whe
     let (desk_id, laptop_id) = (desk_edge.host_id(), laptop_edge.host_id());
     desk_edge.trust(&laptop_edge).await.unwrap();
     laptop_edge.trust(&desk_edge).await.unwrap();
-    let answered_at = format!("127.0.0.1:{desk_port}");
+    // Dialled over IPv6: the desk's dual-stack port is its own there, but
+    // macOS may give a `[::]:0` bind a port whose IPv4 side another socket
+    // already holds, and 127.0.0.1 would then reach that socket instead.
+    let answered_at = format!("[::1]:{desk_port}");
     laptop_edge.dial(desk_id, answered_at.parse().unwrap());
     assert!(wait_for_route(&laptop_edge, desk_id, PATIENCE).await);
 

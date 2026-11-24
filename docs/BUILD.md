@@ -210,6 +210,17 @@ host already has is a hit on the Mac, so a branch tested on the host is
 cache hits for the same configuration on the Mac and the other way round.
 macOS results stay on the Mac.
 
+An output built on the host stays there until the Mac needs it, so a Linux
+test sent from the Mac brings back only its result. `buck2 build` is
+different: it fetches every output it was asked for into `buck-out`. A
+Linux test binary is 150–240 MB, and the tailnet carries about 10 MB/s, so
+building the Linux test binaries above `daemon-core` from the Mac fetched
+2.5–2.7 GiB and took 365–414 s, where the build itself took 124–186 s;
+while the download ran, every other call to the host queued behind it.
+With `--materializations none`, which `just check-windows` passes for the
+same reason, the same build took 128 s and fetched 2 MiB. The host builds it
+in 85 s. Pass it whenever the Mac won't run what it builds.
+
 Asked whether it holds a blob, the Mac's cache asks the host, then its own
 layer for what the host lacks. Buck2 asks before it uploads an action's
 inputs, and again as an output it refers to nears the end of the three

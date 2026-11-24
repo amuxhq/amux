@@ -56,6 +56,12 @@ at its end, rather than queuing an hour of runs: the organisation has five
 macOS runners and a run takes four. A newer push to a pull request's
 branch stops the run of the push before it, which it supersedes.
 
+When GitHub is short of macOS runners, a job can wait about 15 minutes and
+end cancelled with "not acquired by Runner" without running a step. If those
+are the only jobs of a branch's newest run that didn't pass, the workflow in
+`rerun-unacquired.yml` asks for them once more; a job that ran and failed,
+or one a newer push replaced, is left alone.
+
 An organisation on GitHub's free plan runs 20 jobs at once and the rest
 wait, so the run has as few jobs as keep each under ten minutes: work that
 takes seconds shares a job.

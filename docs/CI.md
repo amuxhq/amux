@@ -68,7 +68,7 @@ takes seconds shares a job.
 
 | Job | Runner | Runs |
 | --- | --- | --- |
-| Linux gate | `ubuntu-latest`, its actions on the build host | `just premerge` through Buck2 on the build host's cache, `just browser audit` ([The Linux gate](#the-linux-gate)) |
+| Linux gate | `ubuntu-latest`, its actions on the build host | `just premerge` through Buck2 on the build host's cache ([The Linux gate](#the-linux-gate)) |
 | Documentation tests | `ubuntu-latest` | `just doctest`, under Cargo, beside the gate |
 | Linux gate, Android app | `ubuntu-latest` | Only without the build host (a fork's pull request): `just premerge-half android`, the Android app's half of the gate, while the Linux gate runs `just premerge-half workspace`; with the build host it does nothing |
 | Windows | `windows-latest`, its builds on the build host | `just check-windows` on the build host, then `just test-windows` on a Windows worker of the runner's own ([The Windows job](#the-windows-job)); without the build host, `just cargo-test` |
@@ -121,9 +121,8 @@ eight would run such a test beside others, and the tests that measure time
 fail. Running the workflow by hand with `without-build-host` does the
 same, to check that path.
 
-The job then audits the dependencies the browser extension ships (`just
-browser audit`). The documentation tests run under Cargo (`just doctest`)
-in a job of their own beside it, since Cargo compiles the workspace for
+The documentation tests run under Cargo (`just doctest`)
+in a job of their own beside the gate, since Cargo compiles the workspace for
 them on the runner. The C ABI's pointer checks (`just miri`) and the sanitizers run
 under Cargo too, since they rebuild the standard library under their checks,
 which Buck2's Rust rules can't, but in the nightly rather than on a push
@@ -412,7 +411,7 @@ journey or baseline that does not exist.
 | --- | --- | --- |
 | `fast` | Offline, credential-free tests with no wall-time settling: unit tests, spec suites, adapter replays, store and effect integration, renderer goldens | `just test` in the Linux gate and the macOS tests job, and `just cargo-test` on Windows, on every push; the Apple suites in the iPhone app and Mac app jobs |
 | `system` | Real processes and transports with bounded deadlines: the built `amux` binary and its supervisor, the store on iOS | The desktop suites in the Linux gate and the macOS tests job on every push; `test-store-ios` in `just ios captures` |
-| `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests`, `ios script-tests`, `ios lint`, `android script-tests` and `android lint` in `just premerge`, so in the Linux gate on every push; `ios scope-audit` on every app release's signed bundle |
+| `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side, the scripts' tests and the phone apps' lints, all Buck2 tests, in `just premerge` (`just script-tests`, `ios script-tests`, `ios lint`, `android script-tests` and `android lint` run each set alone), so in the Linux gate on every push; `ios scope-audit` on every app release's signed bundle |
 | `journey` | Complete client stories through the shared manifest, and the phone's accessibility sweep | The terminal journeys in the Linux gate and the macOS tests job, and the system journey inside `just test`, on every push; phone journeys and the accessibility sweep in iOS captures run by hand |
 | `qualification` | Real providers, real cloud accounts and measured performance | Never on an ordinary push: `just live`, `just perf` and the `just ios qa-*` recipes by hand, on machines that have the credentials or hardware; `just ios perf` by hand on the enrolled Mac, last in `just ios verify` |
 | `nightly` | Searches for faults rarer than a change should wait on: the protocol models | The Nightly workflow, every night on `main` ([Nightlies](#nightlies)); never on a push, a landing or `just premerge` |
@@ -427,14 +426,22 @@ pushing it. It runs every check below, the iOS and Android writing lints
 and script tests, every terminal journey, the browser extension's checks and
 tests, and every workspace test.
 
-The tests, the journeys, the browser extension's checks and most of the
-checks below run through Buck2 and its cache ([Building](BUILD.md#the-build-cache),
-[Repository checks](BUILD.md#repository-checks)), so each runs only when
-something it reads changed since it last passed, in this tree or any other
-on the machine. A change to a leaf crate or a
-document reruns a handful of tests, and premerge takes a minute or two; a
-change to a crate most of the workspace depends on, such as `wire`, reruns
-most of the suite, about a quarter of an hour on a laptop.
+Nearly all of it is one `just test` through Buck2 and its cache
+([Building](BUILD.md#the-build-cache), [Repository
+checks](BUILD.md#repository-checks)): the tests, the journeys, the browser
+extension's checks and its npm audit, the repository's checks, deny among
+them, the scripts' unit tests and the phone apps' lints. Each runs only when
+something it reads changed since it last passed, in this tree or any other on
+the machine. The few checks that stay scripts, because they read the whole
+workspace or query the build graph itself (`fmt-check`, `dependency-policy`,
+`shear`, the tokio half of `cores-check`, `tests-check`, `parity` and
+`shipping-check`), and Clippy, a Buck2 build of its own, run at the same time
+as the tests ([`build/checks/premerge.py`](../build/checks/premerge.py)); each
+one's output is kept and printed at the end if it fails. With nothing
+changed, premerge takes a few seconds; a change to a leaf crate or a document
+reruns a handful of tests; a change to a crate most of the workspace depends
+on, such as `wire`, reruns most of the suite, about a quarter of an hour on a
+laptop.
 
 It leaves out the Apple apps: any change to a core crate rebuilds the
 bridge for three platforms and reruns the simulator suites, which is not a
@@ -445,25 +452,26 @@ protocol models, the C ABI's pointer checks, the sanitizers and the
 release build too, which run in the nightly ([Nightlies](#nightlies)), and
 Windows, which runs only in CI.
 
-The checks, in the order it runs them:
+The checks, by the recipe that runs each alone:
 
 | Recipe | Checks |
 | --- | --- |
-| `no-update-flags` | No environment variable starting with `UPDATE_` is set, so no fixture is rewritten during an asserted run |
+| `no-update-flags` | No environment variable starting with `UPDATE_` is set, so no fixture is rewritten during an asserted run; first, before anything else starts |
 | `lint` | Clippy over every library, binary and test of the workspace, warnings denied, with the workspace's `clippy.toml` ([`build/checks/clippy.py`](../build/checks/clippy.py)) |
 | `fmt-check` | Formatting, with the pinned nightly |
 | `codegen-check` | The committed protobuf output matches the schemas (`//:codegen-check`) |
 | `proto-compat` | The schemas pass buf's lint, and `amux.v1` still reads what the latest release from 0.11.0 wrote; with a ref, what that ref wrote ([`buf.yaml`](../buf.yaml)) |
 | `store-check` | Every store migration the latest release from 0.9.0 shipped is unchanged, and the ones added since only add: no table or column is gone or changed type, and any new column is one an existing store can take; with a ref, against that ref ([`scripts/store-check.py`](../scripts/store-check.py)) |
 | `dependency-policy` | Production and test-infrastructure dependency boundaries ([`scripts/check-dependency-policy.py`](../scripts/check-dependency-policy.py)) |
-| `deny` | No dependency has an open security advisory or is a yanked release, every licence is one [`deny.toml`](../deny.toml) allows, and every crate comes from crates.io or the rustls patch; each advisory it sets aside says why it does not reach amux |
+| `deny` | No dependency has an open security advisory or is a yanked release, every licence is one [`deny.toml`](../deny.toml) allows, and every crate comes from crates.io or the rustls patch; each advisory it sets aside says why it does not reach amux. A Buck2 test (`//:deny`) on the day's snapshots of the advisory database and crates.io's index, run on a Linux worker ([Repository checks](BUILD.md#repository-checks)) |
 | `shear` | Every dependency a manifest lists is used by that crate's code; one only the code cannot show, such as a crate named only to pass on a feature, is listed in that crate's manifest as one to skip, with why |
 | `cores-check` | No state-machine core (`daemon-core`, `relay-core`, `agent-core`, `supervisor-core`) nor the `core-ring` they record inputs in has tokio in its dependency graph on any target, and none of their sources holds a lock, spawns a task or awaits ([`scripts/cores-check.py`](../scripts/cores-check.py)) |
 | `typed-provider-check` | The interpreters, the agent's provider handshake and Claude's messaging socket read and write provider messages only through the protocol crates: no `json!`, field looked up by name or untyped `Value` outside the listed tool payloads ([`scripts/typed-provider-check.py`](../scripts/typed-provider-check.py)) |
 | `client-kind-check` | The client crates (ui-state, ui-view, ui-runtime, tui, app-runtime, browser-core) decide nothing by an agent's `Kind` or by a provider id written out (Claude's, Codex's or a built-in ACP agent's, read from `wire::agents::BUILT_INS`), outside the listed places, each with its reason; a listed place that matches nothing fails too ([`scripts/client-kind-check.py`](../scripts/client-kind-check.py)) |
 | `docs-check` | Every link, image and heading anchor under `docs/` resolves, every figure is referenced and standalone, and `docs/README.md` lists every page once ([`scripts/docs-check.py`](../scripts/docs-check.py)) |
 | `tests-check` | The suite catalogue names only things that exist |
-| `script-tests` | The unit tests of the repository's own scripts |
+| `script-tests` | The unit tests of the repository's own scripts, one Buck2 test per test file |
+| `browser audit` | No known vulnerability in the npm packages the browser extension ships, as the npm registry says that day (`//js:audit`) |
 | `shipping-check` | No crate that exists for tests and no test feature is in the desktop binary's or the browser extension's graph as they ship ([`build/checks/shipping.py`](../build/checks/shipping.py)) |
 | `parity` | Every crate's `BUCK` file and `Cargo.toml` agree on its targets and dependencies ([`build/checks/parity.py`](../build/checks/parity.py)) |
 | `test` | Every workspace test, through Buck2: only the tests whose inputs changed since a passing run, in any tree on the machine, run again |

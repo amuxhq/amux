@@ -16,15 +16,11 @@ catalog = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(catalog)
 
 
+# The checked-in catalogue against the whole tree is `just tests-check`,
+# which premerge runs in the checkout: it asks Cargo and just about every
+# crate and recipe. These tests run as a Buck2 check over the catalogue and
+# testnet's suites alone (the root BUCK).
 class TestsCatalogTest(unittest.TestCase):
-    def test_checked_in_catalog_is_complete(self):
-        errors, cargo, swift = catalog.validate(catalog.load_catalog())
-
-        self.assertEqual(errors, [])
-        self.assertIn(("testnet", "test", "integration::spec_network"), cargo)
-        self.assertIn(("node", "lib", "node"), cargo)
-        self.assertIn("AmuxUITests", swift)
-
     def test_a_suite_recipe_runs_its_own_suite(self):
         selectors = [{"package": "testnet", "modules": ["spec_links"]}]
         errors = []

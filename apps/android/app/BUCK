@@ -13,6 +13,7 @@ load(
     "robolectric_capture",
     "script_test",
 )
+load("//build:rust.bzl", "amux_files")
 
 # The app: what every build carries (src/main), and what only a debug build
 # (src/debug: the door, the storybook activity, test-support) or a release
@@ -20,6 +21,13 @@ load(
 # its own sources, as Gradle's variants do.
 
 APP_ID = "sh.amux.android"
+
+# The version numbers, at their path in the checkout, for the release
+# script's tests (apps/android/tools/BUCK).
+amux_files(
+    name = "version",
+    srcs = ["version.bzl"],
+)
 
 APP_VERSION_CODE = read_config("amux", "android_version_code", str(VERSION_CODE))
 

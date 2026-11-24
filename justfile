@@ -96,13 +96,14 @@ test-windows *ARGS:
 test *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live --exclude nightly -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
 
-# The repository's checks (the root BUCK file) and the JavaScript's (js/BUCK)
-# as Buck2 tests, each over exactly the files it reads, so only those whose
-# files changed run; `just premerge` runs them with every other test. The
-# recipes of the same names run each script in the checkout instead.
+# The repository's checks (the root BUCK file, and the apps' script tests and
+# lints beside their scripts) and the JavaScript's (js/BUCK) as Buck2 tests,
+# each over exactly the files it reads, so only those whose files changed
+# run; `just premerge` runs them with every other test. The recipes of the
+# same names (`just docs-check`, `just deny`) run each one's test.
 # Run the repository's and the JavaScript's checks through Buck2.
 checks:
-    {{just_executable()}} test //: //js:
+    {{just_executable()}} test //: //js: //apps/apple/Tools: //apps/android/tools:
 
 # Run tests for one named workspace crate.
 test-crate CRATE:
@@ -339,10 +340,12 @@ dependency-policy:
 
 # Check every dependency against deny.toml with cargo-deny: no open security
 # advisory or yanked release, only the licences it lists, and only crates.io
-# and the rustls patch and wt as sources. Fetches the advisory database. Needs
-# `cargo install --locked cargo-deny@0.20.2`.
+# and the rustls patch and wt as sources. A Buck2 check (`//:deny`) on
+# snapshots of Cargo's graph, the advisory database and crates.io's index
+# that build/checks/inputs.py takes, the last two at most once a day; it runs
+# on a Linux worker, with the Linux toolchain's cargo-deny.
 deny:
-    {{bounded}} 600 cargo deny --locked check
+    {{just_executable()}} test //:deny
 
 # Fail on any dependency no crate's code uses, so unused ones do not pile up
 # again. A crate lists what the code cannot show it needs under
@@ -364,13 +367,16 @@ tests-list:
     scripts/py -B scripts/tests-catalog.py list
 
 # Validate every catalogued recipe, target, feature, manifest and baseline.
+# A script, not a Buck2 check: it asks Cargo about every crate's targets and
+# just about every recipe, and looks for every path the catalogue names.
 tests-check:
     {{bounded}} 120 scripts/py -B scripts/tests-catalog.py check
 
-# The unit tests of the repository's own scripts. Pure Python; nothing is
-# built. The phone's scripts have theirs in `just ios script-tests`.
+# The unit tests of the repository's own scripts, as Buck2 checks, one per
+# test file (the root BUCK). The phone's scripts have theirs in `just ios
+# script-tests` and `just android script-tests`.
 script-tests:
-    {{bounded}} 120 scripts/py -m unittest discover -s scripts/tests -p '*_test.py' -t scripts/tests
+    {{just_executable()}} test //: --include script-tests
 
 # Check the protocol models: each model's tests at its CI bounds and at its
 # nightly bounds (the ignored ones), one after another, every core each.
@@ -415,28 +421,28 @@ client-kind-check:
 no-update-flags:
     scripts/no-update-flags.sh
 
-# The checks a change passes before it reaches main: clippy over every
-# crate, and through Buck2 every crate's tests and the terminal journeys,
-# the repository's checks and the browser extension's (only those whose
-# inputs changed run; the rest come from NativeLink's cache, in this tree or
-# any other); as scripts, the checks that read the whole workspace's graph
-# or the git checkout, and the phone apps' lints and script tests. The other
-# platforms' builds and the Apple app's tests stay with `just ios verify`
-# and CI (docs/CI.md, "`just premerge`").
-# Run the checks a change passes before it reaches main.
-premerge: premerge-checks
-    {{just_executable()}} test //crates/... //: //js: //apps/android/...
-    {{just_executable()}} ios lint
-    {{just_executable()}} ios script-tests
-    {{just_executable()}} android lint
-    {{just_executable()}} android script-tests
+# The Buck2 tests `just premerge` runs: every crate's tests and the terminal
+# journeys, the repository's checks (the scripts' tests and deny among them),
+# the browser extension's, the Apple apps' lints and script tests, and the
+# Android app's tests, lints and script tests.
+premerge_tests := "//crates/... //: //js: //apps/apple/Tools:"
+premerge_android := "//apps/android/..."
 
-# The checks `just premerge` runs before its tests.
-premerge-checks: no-update-flags fmt-check dependency-policy deny shear cores-graph-check tests-check script-tests parity shipping-check lint
+# The checks a change passes before it reaches main: through Buck2 every
+# test and check in `premerge_tests` and `premerge_android` (only those whose
+# inputs changed run; the rest come from NativeLink's cache, in this tree or
+# any other), and beside them the checks that stay scripts, because they read
+# the whole workspace or query the build graph itself (build/checks/premerge.py
+# names them and says why). A failing one fails the run and its output is
+# printed at the end. The other platforms' builds and the Apple app's tests
+# stay with `just ios verify` and CI (docs/CI.md, "`just premerge`").
+# Run the checks a change passes before it reaches main.
+premerge: no-update-flags
+    JUST={{just_executable()}} scripts/py -B build/checks/premerge.py {{premerge_tests}} {{premerge_android}}
 
 # `just premerge` in two halves, which together run all of it: `workspace`
 # is everything but the Android app, `android` the Android app's tests,
-# lint and script tests. A fork's pull request gets no build host, so CI
+# lints and script tests. A fork's pull request gets no build host, so CI
 # builds and tests everything on four-core runners, and all of it on one
 # takes longer than a test run's bound; it runs the halves side by side.
 # Run one half of `just premerge`: workspace or android.
@@ -445,15 +451,12 @@ premerge-half HALF:
     set -eu
     case "{{HALF}}" in
         workspace)
-            {{just_executable()}} premerge-checks
-            {{just_executable()}} test //crates/... //: //js:
-            {{just_executable()}} ios lint
-            {{just_executable()}} ios script-tests
+            {{just_executable()}} no-update-flags
+            JUST={{just_executable()}} scripts/py -B build/checks/premerge.py {{premerge_tests}}
             ;;
         android)
-            {{just_executable()}} test //apps/android/...
-            {{just_executable()}} android lint
-            {{just_executable()}} android script-tests
+            {{just_executable()}} no-update-flags
+            {{just_executable()}} test {{premerge_android}}
             ;;
         *) echo "premerge-half: workspace or android, not {{HALF}}" >&2; exit 2 ;;
     esac

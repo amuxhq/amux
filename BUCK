@@ -26,6 +26,13 @@ amux_files(
     srcs = glob(["journeys/**"]),
 )
 
+# The scripts the apps' recipe scripts run or import from here (their
+# tests are checks in apps/apple/Tools/BUCK and apps/android/tools/BUCK).
+amux_files(
+    name = "app-script-helpers",
+    srcs = ["scripts/credentials.py", "scripts/py"],
+)
+
 amux_files(
     name = "environments",
     srcs = glob(["environments/**"]),
@@ -90,7 +97,7 @@ nix_toolchain(
 # checks` writes what they read from outside the checkout first
 # (build/checks/inputs.py) and runs them all; each recipe of the same name
 # (`just docs-check`) still runs its script in the checkout, as CI does.
-load("//build:checks.bzl", "amux_check")
+load("//build:checks.bzl", "amux_check", "amux_script_tests")
 
 _CORES = ["agent-core", "core-ring", "daemon-core", "path-core", "relay-core", "socket-core", "supervisor-core", "workspace-core"]
 
@@ -121,6 +128,19 @@ amux_check(
     }),
 )
 
+# Every dependency against deny.toml: no open advisory or yanked release,
+# only the licences and sources it lists. On Cargo's graph and the advisory
+# database as build/checks/inputs.py snapshots them (it says how), so it
+# reruns when the lockfile, a manifest, deny.toml or the day's database
+# changes. cargo-deny is the Linux toolchain's.
+amux_check(
+    name = "deny",
+    command = ["sh", "build/checks/deny.sh"],
+    srcs = ["deny.toml"],
+    deps = ["//build:deny"],
+    linux_only = True,
+)
+
 # The cores' sources; the tokio half of `just cores-check` reads Cargo's
 # whole graph, so premerge runs it as a script.
 amux_check(
@@ -137,12 +157,8 @@ amux_check(
     deps = ["//crates/agent:files", "//crates/interpret:files"],
 )
 
-amux_check(
-    name = "client-kind-check",
-    command = ["python3", "scripts/client-kind-check.py"],
-    srcs = ["scripts/client-kind-check.py"],
-    deps = [
-        "//apps/apple:swift",
+_CLIENT_KIND_SOURCES = [
+    "//apps/apple:swift",
         "//apps/apple/Packages/AmuxCore:swift",
         "//apps/apple/Packages/AmuxDesign:swift",
         "//apps/apple/Packages/AmuxFeatures:swift",
@@ -156,8 +172,14 @@ amux_check(
         "//crates/ui-runtime:files",
         "//crates/ui-state:files",
         "//crates/ui-view:files",
-        "//crates/wire:files",
-    ],
+    "//crates/wire:files",
+]
+
+amux_check(
+    name = "client-kind-check",
+    command = ["python3", "scripts/client-kind-check.py"],
+    srcs = ["scripts/client-kind-check.py"],
+    deps = _CLIENT_KIND_SOURCES,
 )
 
 # The committed protobuf bindings against what the schemas generate now.
@@ -194,4 +216,24 @@ nix_toolchain(
     exec_compatible_with = ["prelude//os:linux"],
     target_compatible_with = ["prelude//os:linux"],
     visibility = ["PUBLIC"],
+)
+
+# The unit tests of the repository's scripts, one check per file
+# (`:script-tests-land_queue`), each over every script, so a change to one
+# reruns them all, side by side; `extra` is what a test reads elsewhere.
+amux_script_tests(
+    prefix = "script-tests",
+    tests = glob(["scripts/tests/*_test.py"]),
+    srcs = glob(["scripts/**"], exclude = ["**/__pycache__/**"]),
+    extra = {
+        "client_kind_check": {"deps": _CLIENT_KIND_SOURCES},
+        "env": {"deps": [":environments"]},
+        "icon": {"deps": ["//apps/apple:release-files"]},
+        "nativelink": {"deps": ["//build:nativelink"]},
+        "qa_sandbox_purchase": {"srcs": [".gitignore"], "deps": ["//apps/apple:release-files"]},
+        "release": {"srcs": [".gitignore"], "deps": ["//apps/apple:release-files"]},
+        "store_check": {"deps": ["//crates/store:src/schema.rs"]},
+        "tests_catalog": {"srcs": ["tests/catalog.toml"], "deps": ["//crates/testnet:suites"]},
+        "typed_provider_check": {"deps": ["//crates/agent:files", "//crates/interpret:files"]},
+    },
 )

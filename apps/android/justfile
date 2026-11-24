@@ -85,9 +85,11 @@ scope-audit *ARGS:
 release-smoke *ARGS:
     if [ -z "${ANDROID_SERIAL-}" ]; then {{bounded}} 600 {{python}} -B apps/android/tools/android-emulator.py >&2 && ANDROID_SERIAL=$({{python}} -B apps/android/tools/android-emulator.py --serial) && export ANDROID_SERIAL; fi; {{bounded}} 3600 {{python}} -B apps/android/tools/android-release-smoke.py "$@"
 
+# The unit tests of the Android recipe and lint scripts, as Buck2 checks,
+# one per test file (apps/android/tools/BUCK).
 # Run the unit tests of the Android recipe and lint scripts.
 script-tests:
-    {{bounded}} 120 {{python}} -m unittest discover -s apps/android/tools/tests -p '*_test.py' -t apps/android/tools/tests
+    {{just_executable()}} test //apps/android/tools: --include android-script-tests
 
 # Version, audit, build, sign, verify and upload the Android App Bundle (.aab)
 # to Google Play internal testing, then commit, tag `android-v<version>-b<build>`

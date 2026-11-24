@@ -97,9 +97,10 @@ jobs:
           for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
           cat /mnt/nativelink/log; exit 1
       # The gate every landing passes: through Buck2, every test, the
-      # repository's and the JavaScript's checks and Clippy, so a commit the
-      # landing queue or a premerge already tested is cache hits; and the
-      # checks that stay scripts.
+      # repository's and the JavaScript's checks (the npm audit and deny
+      # among them) and Clippy, so a commit the landing queue or a premerge
+      # already tested is cache hits; and beside them the checks that stay
+      # scripts.
       # Without it, the Android app's half runs beside this one, in the
       # job below: all of it on one four-core runner takes longer than a
       # test run's bound.
@@ -116,9 +117,6 @@ jobs:
           done
           EOF
           nix develop --command sh "$RUNNER_TEMP/summaries.sh"
-      - name: Audit the browser extension's shipped dependencies
-        if: always()
-        run: nix develop --command just browser audit
 
   # The documentation tests are Cargo's: Buck2's need every compile in its
   # nightly-features mode (docs/BUILD.md). Cargo compiles the workspace for

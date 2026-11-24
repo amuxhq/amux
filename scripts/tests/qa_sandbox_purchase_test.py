@@ -10,12 +10,24 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parents[1]
+
+
+def ignored_by_the_checkout(root, path):
+    """Whether the checkout's .gitignore ignores `path`, asked of a repository
+    holding only that file: a test runs where the checkout's files are but
+    its git directory may not be (a Buck2 action)."""
+    with tempfile.TemporaryDirectory() as scratch:
+        shutil.copy(root / ".gitignore", scratch)
+        subprocess.run(["git", "init", "-q", scratch], check=True)
+        return subprocess.run(["git", "-C", scratch, "check-ignore", "-q", str(path)]).returncode == 0
 sys.path.insert(0, str(SCRIPTS))
 
 specification = importlib.util.spec_from_file_location(
@@ -120,10 +132,9 @@ class TheSigningFile(unittest.TestCase):
         self.assertNotIn("PRODUCT_BUNDLE_IDENTIFIER", recipe.REQUIRED_SETTINGS)
 
     def test_the_repository_ignores_the_signing_file(self):
-        # Checked against this checkout's own rules, not a temporary one: the
+        # Checked against this checkout's own rules, not made-up ones: the
         # file names a signing identity and must never become a commit.
-        self.assertEqual(0, os.system(
-            f"git -C {SCRIPTS.parent} check-ignore -q {recipe.SIGNING_FILE}"))
+        self.assertTrue(ignored_by_the_checkout(SCRIPTS.parent, recipe.SIGNING_FILE))
 
 
 class ThePhone(unittest.TestCase):

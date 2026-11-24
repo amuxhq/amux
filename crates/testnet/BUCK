@@ -1,4 +1,4 @@
-load("//build:rust.bzl", "amux_rust_binary", "amux_rust_library", "amux_rust_test")
+load("//build:rust.bzl", "amux_files", "amux_rust_binary", "amux_rust_library", "amux_rust_test")
 load("//build:checks.bzl", "amux_check")
 
 DEPS = [
@@ -121,4 +121,12 @@ amux_check(
     # as they did beside the models on the build host. They had the machine
     # to themselves when premerge ran them after the tests.
     remote_execution = "whole-worker",
+)
+
+# The integration binary's suites and this file's simulated run, which the
+# suite catalogue's tests hold to tests/catalog.toml (the root BUCK's
+# script tests).
+amux_files(
+    name = "suites",
+    srcs = glob(["tests/**/*.rs"]) + ["BUCK"],
 )

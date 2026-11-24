@@ -6,6 +6,13 @@
         tar OUT. npm checks every package against the lockfile's hash, so
         what it installs is a function of the lockfile (and the platform,
         whose binaries esbuild and Biome bring).
+    js.py audit DAY
+        `npm audit` of what the extension ships (its runtime dependencies,
+        bundled into it), not the tools that build it. It asks the npm
+        registry, whose answer changes without any file changing, so the
+        check declares DAY, the date build/checks/inputs.py writes: its
+        result is kept for the rest of that day (UTC), and asked again on
+        the next.
     js.py run MODULES [--collect PATH OUT] -- COMMAND...
         Unpack MODULES into js/node_modules and run COMMAND in js/; with
         --collect, then copy js/PATH (what the command built) to OUT.
@@ -65,12 +72,24 @@ def normalized(info: tarfile.TarInfo) -> tarfile.TarInfo:
     return info
 
 
-def install(out: Path) -> int:
-    work = Path(tempfile.mkdtemp(prefix="npm-ci-"))
+def manifests(prefix: str) -> Path:
+    work = Path(tempfile.mkdtemp(prefix=prefix))
     for name in MANIFESTS:
         if (JS / name).exists():
             (work / name).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(JS / name, work / name)
+    return work
+
+
+def audit(day: Path) -> int:
+    print(f"npm audit as of {day.read_text().strip()} (UTC)")
+    return subprocess.run(
+        ["npm", "audit", "--omit=dev", "--audit-level=moderate"], cwd=manifests("npm-audit-"), env=environment()
+    ).returncode
+
+
+def install(out: Path) -> int:
+    work = manifests("npm-ci-")
     status = subprocess.run(
         ["npm", "ci", "--no-audit", "--no-fund", "--loglevel=error"], cwd=work, env=environment()
     ).returncode
@@ -95,6 +114,8 @@ def run(modules: Path, collect: tuple[str, Path] | None, command: list[str]) -> 
 
 
 def main(args: list[str]) -> int:
+    if args[:1] == ["audit"] and len(args) == 2:
+        return audit(Path(args[1]))
     if args[:1] == ["install"] and len(args) == 2:
         return install(Path(args[1]).resolve())
     if args[:1] == ["run"] and "--" in args:

@@ -1,6 +1,7 @@
-# The build tools build/tools.json pins (buck2, reindeer, nativelink), as Nix
-# packages: the same release assets and SHA-256 digests scripts/buck-tools.py
-# fetches, so one file holds each version for both.
+# The build tools build/tools.json pins (buck2, reindeer, nativelink,
+# cargo-nextest), as Nix packages: the same release assets and SHA-256
+# digests scripts/buck-tools.py fetches, so one file holds each version for
+# both.
 #
 # `cache` lays them out as scripts/buck-tools.py's cache does
 # (NAME/VERSION/NAME). The dev shell points AMUX_TOOLS_CACHE at it, so

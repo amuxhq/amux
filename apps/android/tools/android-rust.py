@@ -24,14 +24,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import os
 from pathlib import Path
 import platform
 import shutil
 import subprocess
 import sys
-from types import ModuleType
+import tomllib
 
 sys.path.insert(0, str(Path(__file__).parent))
 import android_sdk  # noqa: E402
@@ -66,19 +65,21 @@ SOURCE_ENVIRONMENT = (
     "ANDROID_NDK_ROOT",
 )
 
-_CI_AFFECTED: ModuleType | None = None
-
-
-def _ci_affected() -> ModuleType:
-    global _CI_AFFECTED
-    if _CI_AFFECTED is None:
-        script = REPO_ROOT / "scripts" / "ci-affected.py"
-        spec = importlib.util.spec_from_file_location("amux_ci_affected", script)
-        assert spec is not None and spec.loader is not None
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        _CI_AFFECTED = module
-    return _CI_AFFECTED
+def workspace(root: Path) -> dict[str, dict]:
+    """Each workspace crate by name: its folder and the crates its build
+    names, read from the manifests so this needs no toolchain."""
+    crates: dict[str, dict] = {}
+    for manifest in sorted((root / "crates").glob("*/Cargo.toml")):
+        data = tomllib.loads(manifest.read_text())
+        tables = [data] + list(data.get("target", {}).values())
+        built = {
+            (spec.get("package") if isinstance(spec, dict) else None) or key
+            for kind in ("dependencies", "build-dependencies")
+            for table in tables
+            for key, spec in table.get(kind, {}).items()
+        }
+        crates[data["package"]["name"]] = {"folder": manifest.parent.name, "built": built}
+    return crates
 
 
 def crate_closure(crate: str = CRATE, root: Path = Path(".")) -> list[str]:
@@ -87,7 +88,7 @@ def crate_closure(crate: str = CRATE, root: Path = Path(".")) -> list[str]:
     Follows normal `dependencies` and `build-dependencies` (not
     `dev-dependencies`), matching what `cargo build -p <crate> --lib` compiles.
     """
-    crates = _ci_affected().workspace(root)
+    crates = workspace(root)
     if crate not in crates:
         raise RuntimeError(f"workspace crate {crate!r} was not found under {root / 'crates'}")
     seen = {crate}

@@ -21,8 +21,9 @@ export const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "../../../..");
 const binaries = process.env.TESTNET_BINARIES ?? join(repo, "target/debug");
 // Buck2's test (js/BUCK) hands it the extension it built and the Linux
-// toolchain's Chromium; `just browser cargo-test` builds into dist-dev and
-// uses the Chromium Playwright installs.
+// toolchain's Chromium; run by hand from js/, it takes the build in
+// dist-dev (`just browser build --dev`) and the Chromium Playwright
+// installs.
 const built = process.env.AMUX_EXTENSION ?? join(here, "../../dist-dev");
 const chromiumPath = process.env.AMUX_CHROMIUM;
 export const EXTENSION_ID = "omnhphmiepghpgpbfgjebeaajfppkhie";

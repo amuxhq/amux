@@ -131,7 +131,7 @@ whose stories run in both modes say so in the catalogue's `modes`.
 just sim                         # every simulated story, a few seeds each
 just sim --seeds 300 <name>      # 300 seeds of each story whose test name contains <name>
 just sim --seed 17 <name>        # exactly the failing seed, as a failure prints it
-just sim --seeds 2000            # thousands of seeds per story, as the nightly workflow walks them
+just sim --seeds 2000            # thousands of seeds per story, as the models nightly walks them
 ```
 
 Under `cargo nextest run` the same switch is the environment: `TESTNET_MODE=simulated`, with `TESTNET_SEEDS=N` or
@@ -167,9 +167,10 @@ them into as `TESTNET_BINARIES`. A test is reported slow after a minute and ende
 a process it started still holds its output fails, since that process would outlive it. The documentation tests,
 the C ABI's pointer checks (`just miri`) and the sanitizers run under `cargo test`.
 
-CI's runners have no Buck2 yet, so CI runs the same tests under [cargo-nextest](https://nexte.st), configured in
-[`.config/nextest.toml`](../.config/nextest.toml) to the same bounds, through `just cargo-test` and `just
-cargo-test-crate` (`brew install cargo-nextest`). There a setup script
+CI's Linux gate runs them through Buck2 on the build host. Its macOS and Windows runners have no Buck2 yet, so they
+run the same tests under [cargo-nextest](https://nexte.st), configured in
+[`.config/nextest.toml`](../.config/nextest.toml) to the same bounds, through `just cargo-test` (`brew install
+cargo-nextest`; the Nix dev shell has it). There a setup script
 ([`scripts/test-binaries.sh`](../scripts/test-binaries.sh)) builds the binaries the tests start before any test runs.
 
 ```sh
@@ -182,7 +183,7 @@ just test-crate interpret                  # one crate
 just suite sqlite-store-contract           # the store's reader and writer suite, retention and SQLite file
 just suite client-model-spec               # the client model spec
 just test-tui                              # terminal presentation and goldens
-just offline-test                          # workspace tests with isolated config and no network (Linux, sudo)
+just offline-test                          # workspace tests with isolated config and no network (Linux)
 just journey terminal reach-host           # one terminal journey
 just journey terminal all                  # every terminal story, one line each, keeps going after a failure
 just test //crates/testnet:terminal-journeys   # the same as a cached test, as `just premerge` runs them
@@ -235,6 +236,8 @@ sanitizer on a data race. The C itself is not instrumented, so a race inside SQL
 it does not. The app-ffi tests `just miri` leaves out (an installation, a tokio runtime) run here. The thread sanitizer runs
 on Linux only; [`scripts/sanitize.py`](../scripts/sanitize.py) says what it got wrong on macOS, and
 [`scripts/sanitize-thread.supp`](../scripts/sanitize-thread.supp) lists the reports it makes that are not races.
+A landing on Linux runs both when the merge changes one of those crates, and CI runs them after a push that did; the
+build host's nightly runs them over every change beneath those crates too ([CI](CI.md#nightlies)).
 
 `just tests-list` gives the focused recipe for every suite. Recipes carry outer timeouts; a timeout that fires is a
 hang to diagnose, not a limit to raise. On macOS a freshly built test binary can stall before its first

@@ -27,6 +27,7 @@ def load(name: str):
 
 queue = load("land_queue")
 client = load("land")
+landing = load("landing")
 
 IDENTITY = {
     "GIT_AUTHOR_NAME": "Lander",
@@ -296,6 +297,39 @@ def mock_env(values):
                 os.environ.pop(name, None)
             else:
                 os.environ[name] = value
+
+
+class SanitizersCoverTest(unittest.TestCase):
+    """Which merges a landing runs the sanitizers for (scripts/landing.py)."""
+
+    def setUp(self):
+        self.env = mock_env(IDENTITY)
+        self.env.__enter__()
+        self.addCleanup(self.env.__exit__, None, None, None)
+        self.tree = Path(tempfile.mkdtemp(prefix="sanitizers-cover-test-"))
+        self.addCleanup(subprocess.run, ["rm", "-rf", str(self.tree)])
+        git(self.tree, "init", "--quiet", "-b", "main")
+        (self.tree / "scripts").mkdir()
+        (self.tree / "crates/store/src").mkdir(parents=True)
+        (self.tree / "crates/wire/src").mkdir(parents=True)
+        commit(self.tree, "scripts/sanitize.py", 'WHOLE = ["store"]\nLIBRARY = ["node"]\n', "sanitizers")
+        self.base = git(self.tree, "rev-parse", "HEAD")
+
+    def covers(self, path: str) -> bool:
+        commit(self.tree, path, "changed\n", f"change {path}")
+        return landing.sanitizers_cover(self.tree, self.base)
+
+    def test_a_sanitized_crate_s_own_file_runs_them(self):
+        self.assertTrue(self.covers("crates/store/src/lib.rs"))
+
+    def test_a_crate_beneath_them_leaves_them_to_the_nightly(self):
+        self.assertFalse(self.covers("crates/wire/src/lib.rs"))
+
+    def test_cargo_s_lockfile_runs_them(self):
+        self.assertTrue(self.covers("Cargo.lock"))
+
+    def test_their_suppressions_run_them(self):
+        self.assertTrue(self.covers("scripts/sanitize-thread.supp"))
 
 
 if __name__ == "__main__":

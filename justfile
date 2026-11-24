@@ -97,15 +97,12 @@ test-crate CRATE:
 goldens *ARGS:
     {{bounded}} 1800 scripts/py build/goldens.py "$@"
 
-# CI's runners have no Buck2 yet, so CI runs Cargo and nextest through these
-# twins of the recipes above, with nextest's flags (.github/workflows/ci.yml).
-# Run workspace tests under cargo-nextest, as CI does.
+# CI's macOS and Windows runners have no Buck2 yet, so they run Cargo and
+# nextest through this twin of `test`, with nextest's flags
+# (.github/workflows/ci.yml).
+# Run workspace tests under cargo-nextest, as CI's macOS and Windows jobs do.
 cargo-test *ARGS: nextest
     if [ "${1-}" = -- ]; then shift; fi; scripts/workspace-test.sh "$@"
-
-# Run one crate's tests under cargo-nextest, as CI does.
-cargo-test-crate CRATE *ARGS: nextest
-    crate=$1; shift; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 900 cargo nextest run --locked -p "$crate" "$@"
 
 # `just flaky [--load] TARGET TEST [COUNT]` runs the tests of TARGET
 # (`//crates/node:integration`) whose names contain TEST COUNT times
@@ -160,12 +157,6 @@ buckify:
     {{bounded}} 600 sh -c '"$(scripts/py scripts/buck-tools.py path reindeer)" buckify'
     {{just_executable()}} parity
 
-# Lint as CI does, under Cargo. The qualification features only decide which
-# targets build, so they are on here: the live tests and the perf binaries
-# run by hand, never in CI, and this is what keeps them compiling.
-cargo-lint:
-    {{bounded}} 1200 cargo clippy --locked --workspace --all-targets --features qualification/live,qualification/perf -- -D warnings
-
 # Format all Rust sources with the pinned nightly toolchain.
 fmt:
     {{bounded}} 600 {{nightly_cargo}} fmt --all
@@ -180,12 +171,7 @@ protobuf:
 
 # Check that committed protobuf bindings match their sources.
 codegen-check:
-    out=$({{bounded}} 600 scripts/built //crates/wire:protobuf) && if ! diff -r "$out" crates/wire/src/generated >/dev/null; then diff -ru crates/wire/src/generated "$out" | head -200; echo "committed wire output is stale; run 'just protobuf' and commit it" >&2; exit 1; fi
-
-# CI's twin of `codegen-check`, generating with Cargo's xtask.
-# Check the committed protobuf bindings with Cargo, as CI does.
-cargo-codegen-check:
-    {{bounded}} 600 scripts/codegen-check.sh
+    {{just_executable()}} test //:codegen-check
 
 # Lint amux.v1, and check it still reads what the latest release wrote; with
 # a ref, check against that ref instead. Needs buf (docs/BUILD.md).
@@ -320,8 +306,8 @@ sanitize KIND *CRATES:
 
 # Fail when any state-machine core's dependency graph contains tokio, or any
 # core source contains a lock, a spawned task, an async fn or an await.
-cores-check:
-    {{bounded}} 120 scripts/py scripts/cores-check.py
+cores-check: cores-graph-check
+    {{just_executable()}} test //:cores-check
 
 # The tokio half of `cores-check`, which reads Cargo's whole graph and so
 # stays a script; `//:cores-check` checks the sources.
@@ -395,17 +381,17 @@ coverage: nextest
 # Fail when a docs link or image does not resolve, a figure is unreferenced
 # or not standalone, or docs/README.md does not list every page once.
 docs-check:
-    {{bounded}} 120 scripts/py scripts/docs-check.py
+    {{just_executable()}} test //:docs-check
 
 # Fail if an interpreter or the agent's provider handshake builds or reads
 # provider JSON by hand instead of through the protocol crates.
 typed-provider-check:
-    {{bounded}} 60 scripts/py scripts/typed-provider-check.py
+    {{just_executable()}} test //:typed-provider-check
 
 # Fail if a client crate decides something by an agent's kind or a
 # provider's name outside the places its list allows.
 client-kind-check:
-    {{bounded}} 60 scripts/py scripts/client-kind-check.py
+    {{just_executable()}} test //:client-kind-check
 
 # Refuse fixture-regeneration flags before any asserted CI check runs.
 [private]

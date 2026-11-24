@@ -3,7 +3,7 @@
 # machine where the tools should be on every shell's PATH, not only inside
 # `nix develop`. A machine definition can install the same list.
 #
-# `buildTools = false` leaves out buck2, reindeer and nativelink: that is the
+# `buildTools = false` leaves out build/tools.json's tools: that is the
 # list Buck2's Linux actions run with (flake.nix's `packages.actions`), and
 # a new buck2 or NativeLink shouldn't change the key of every Linux action.
 { pkgs, buildTools ? true }:
@@ -50,5 +50,5 @@ in
 # bundled. Linux only. On macOS the iPhone bridge needs Apple's own toolchain
 # from Xcode, and Nix's compiler and SDK variables get in its way.
 ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.stdenv.cc ]
-# build/tools.json's buck2, reindeer and nativelink.
+# build/tools.json's buck2, reindeer, nativelink and cargo-nextest.
 ++ pkgs.lib.optionals buildTools (builtins.attrValues pinned.tools)

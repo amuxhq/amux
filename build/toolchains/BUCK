@@ -119,6 +119,14 @@ amux_cxx_toolchain(
         ),
     }),
     linker_type = select({"DEFAULT": None, "prelude//os:none": "wasm", "prelude//os:windows": "windows"}),
+    # A Windows release keeps its symbols in a PDB beside the binary
+    # (scripts/release-build.py). rustc asks the linker for one whenever
+    # there is debug info; saying /DEBUG here too is what makes Buck2 declare
+    # it, as the binary's `[pdb]` output.
+    link_flags = select({
+        "DEFAULT": [],
+        "prelude//os:windows": select({"DEFAULT": [], "root//build/constraints:release": ["/DEBUG"]}),
+    }),
     # The same for WebAssembly under the Linux toolchain: its Rust's lld.
     nix_linker = select({
         "DEFAULT": "bin/c++",

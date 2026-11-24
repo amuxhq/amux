@@ -88,9 +88,6 @@ START = CACHE / "start"
 # What the scheduled task runs on Windows (install_windows).
 START_CMD = CACHE / "start.cmd"
 SERVING = CACHE / "serving"
-# Made as it first starts without the remote; what the local layer gained
-# after it is removed as it next starts in front of the remote (start_script).
-UNSHARED_SINCE = CACHE / "unshared-since"
 # The remote, read by scripts/buck-config.py too.
 SETTINGS = CACHE / "settings.json"
 PLIST = Path.home() / f"Library/LaunchAgents/{LABEL}.plist"
@@ -127,6 +124,17 @@ def tool_bin() -> Path:
             link.unlink(missing_ok=True)
             link.symlink_to(target)
     return bin
+
+
+def background_entrypoint() -> str:
+    """A script that runs its arguments at macOS background priority, for
+    `--background`: NativeLink runs an entrypoint as one program, its name
+    taken whole, so `taskpolicy -b` has to be a program of its own."""
+    script = CACHE / "bin" / "background"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text('#!/bin/sh\nexec /usr/sbin/taskpolicy -b "$@"\n')
+    script.chmod(0o755)
+    return str(script)
 
 
 def remote_stores(url: str) -> str:
@@ -176,11 +184,10 @@ def remote_stores(url: str) -> str:
       // SHARED_CAS's answer alone called the outputs this machine's worker
       // built, which stay here, missing; a daemon up for hours then failed
       // the next action that needed one ("an artifact that has expired in
-      // the RE CAS"). What this answer costs is that a blob only this
-      // machine holds is never uploaded: a Linux action can't take an
-      // output built here (the remote's worker fails it for a missing
-      // input), and what was written here while the remote was out of
-      // reach is dropped when it is back (start_script).
+      // the RE CAS"). With this answer a blob only this machine holds (an
+      // output built here, one the remote has evicted, one uploaded while
+      // the remote was out of reach) is never uploaded: the remote's worker
+      // reads it from here when an action needs it (remote_workers).
       name: "CAS",
       fast_slow: {{
         fast: {{ ref_store: {{ name: "SHARED_CAS" }} }},
@@ -220,11 +227,18 @@ LOCAL_ONLY_STORES = """    {
 
 def remote_workers(address: str) -> str:
     return f"""    {{
-      // Where the remote's worker registers, over the network.
+      // Where the remote's worker registers, over the network, and where it
+      // reads what only this machine holds: CAS counts this machine's layer
+      // (remote_stores), so Buck2 doesn't upload a blob the remote lacks
+      // when it is here, and an action of this machine's on the remote's
+      // worker that needs one reads it from here, which writes it into the
+      // remote's cache (the build host's worker configuration).
       name: "remote-workers",
       listener: {{ http: {{ socket_address: "{address}" }} }},
       services: {{
         worker_api: {{ scheduler: "SCHEDULER" }},
+        cas: [{{ instance_name: "main", cas_store: "LOCAL_ONLY_CAS" }}],
+        bytestream: [{{ instance_name: "main", cas_store: "LOCAL_ONLY_CAS" }}],
         health: {{}},
       }},
     }},"""
@@ -288,7 +302,7 @@ def render(cores: int, background: bool, remote: dict) -> None:
             "path": f"{tool_bin()}:/usr/bin:/bin:/usr/sbin:/sbin",
             "environment": "",
             "cache": str(CACHE),
-            "entrypoint": 'entrypoint: "/usr/sbin/taskpolicy -b",' if background else "",
+            "entrypoint": f'entrypoint: "{background_entrypoint()}",' if background else "",
         }
     template = fill(TEMPLATE.read_text(), values)
     local = {"remote_stores": LOCAL_ONLY_STORES, "worker_slow": "{ noop: {} }", "remote_workers": ""}
@@ -409,17 +423,7 @@ def free_port() -> int:
 
 
 def start_script(remote: dict) -> str:
-    # In front of the remote, FindMissingBlobs counts a blob in the local
-    # layer as present (remote_stores), so Buck2 never uploads one the
-    # remote lacks. What Buck2 uploaded while NativeLink ran without the
-    # remote reached only the local layer, and a Linux action needing it
-    # would fail on the remote's worker; so it is removed before NativeLink
-    # starts in front of the remote again, and Buck2 uploads it afresh
-    # (scripts/buck-config.py restarts the daemon, which remembers what it
-    # uploaded). Results built meanwhile lose their outputs with it, and
-    # the action cache, which checks a result's outputs, has them rebuilt.
-    local = f"""[ -e "{UNSHARED_SINCE}" ] || touch "{UNSHARED_SINCE}"
-echo local > "{SERVING}"
+    local = f"""echo local > "{SERVING}"
 exec "{binary()}" "{CONFIG_LOCAL}"
 """
     if not remote:
@@ -432,10 +436,6 @@ exec "{binary()}" "{CONFIG_LOCAL}"
 # this when that changes.
 if /sbin/ifconfig | grep -q "inet {workers} " \\
         && /usr/bin/nc -z -G 2 {url.hostname} {url.port or 50051} > /dev/null 2>&1; then
-    if [ -e "{UNSHARED_SINCE}" ]; then
-        /usr/bin/find "{CACHE}/cas" -type f -newer "{UNSHARED_SINCE}" -delete
-        rm -f "{UNSHARED_SINCE}"
-    fi
     echo remote > "{SERVING}"
     exec "{binary()}" "{CONFIG}"
 fi

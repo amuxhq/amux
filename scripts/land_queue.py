@@ -27,6 +27,8 @@ code changes, it checks the new code starts (`check`) before moving to it,
 so a landing that breaks the queue leaves the old queue running to land the
 fix.
 
+Between landings, every TRIM_SECONDS, it trims the tree's buck-out (`trim`).
+
 Standard library only, as scripts/landing.py says.
 """
 
@@ -51,6 +53,10 @@ POLL_SECONDS = 2
 UPDATE_SECONDS = 300
 KEEP_DAYS = 14
 TAIL_LINES = 80
+TRIM_SECONDS = 6 * 3600
+# What `trim` keeps: outputs a build used in the last TRIM_AGE. Anything
+# older comes back from the cache when a landing needs it again.
+TRIM_AGE = "1d"
 # The queue's own code: what --self-update watches on main.
 OWN_CODE = ("scripts/land_queue.py", "scripts/landing.py", "scripts/nova/land-queue")
 
@@ -183,6 +189,32 @@ def land_request(inbox: Path, tree: Path, rid: str, gate_for: Callable[..., Gate
     return first
 
 
+def trim(tree: Path, wrap: Wrap | None) -> None:
+    """Removes what no build has used for TRIM_AGE from the tree's buck-out.
+    Buck2 keeps every output it materializes there and never removes one, so
+    without this a landing tree fills its disk. `clean --stale` goes through
+    the tree's Buck2 daemon, which stays warm for the next landing and knows
+    what it removed; deleting files under a running daemon instead leaves it
+    believing outputs exist that don't. A trim that fails is said and left
+    to the next one: landing matters more than the disk it will need later."""
+    if not (tree / "buck-out").is_dir():
+        return
+    argv: Sequence[str] = ["scripts/buck2", "clean", "--stale", TRIM_AGE]
+    if wrap is not None:
+        argv = wrap(argv, tree)
+    say(f"trimming buck-out: outputs unused for {TRIM_AGE} go")
+    started = time.monotonic()
+    try:
+        status = subprocess.run(list(argv), cwd=tree, stdin=subprocess.DEVNULL).returncode
+        failure = f"exited {status}" if status else ""
+    except OSError as error:
+        failure = str(error)
+    if failure:
+        say(f"trimming buck-out failed ({failure}); the next try is in {TRIM_SECONDS // 3600}h")
+    else:
+        say(f"trimmed buck-out in {time.monotonic() - started:.0f}s")
+
+
 # --- running from main ------------------------------------------------------
 
 
@@ -214,8 +246,15 @@ def new_code_starts(args: argparse.Namespace) -> bool:
 
 
 def update_self(args: argparse.Namespace, refused: set[str]) -> None:
-    """Moves to main's code when it changed and starts; returns otherwise."""
-    if not main_changed_own_code():
+    """Moves to main's code when it changed and starts; returns otherwise,
+    a fetch that fails included: the service restarting the queue over it
+    would stop the tree's warm Buck2 daemon with it."""
+    try:
+        changed = main_changed_own_code()
+    except subprocess.CalledProcessError as error:
+        say(f"couldn't look at main (`{' '.join(map(str, error.cmd))}` exited {error.returncode}); staying on this code")
+        return
+    if not changed:
         return
     head = git("rev-parse", "origin/main", cwd=CHECKOUT, capture=True)
     if head in refused:
@@ -265,6 +304,7 @@ def serve(args: argparse.Namespace) -> int:
     # Main is looked at after every landing, since a landing is what changes
     # it, and every UPDATE_SECONDS for anything pushed some other way.
     next_update = 0.0
+    next_trim = 0.0
     say(f"landing queue up: inbox {args.inbox}, tree {args.tree}")
     while True:
         for rid in pending(args.inbox):
@@ -276,6 +316,9 @@ def serve(args: argparse.Namespace) -> int:
         if args.self_update and time.monotonic() >= next_update:
             update_self(args, refused)
             next_update = time.monotonic() + UPDATE_SECONDS
+        if time.monotonic() >= next_trim:
+            trim(args.tree, wrap)
+            next_trim = time.monotonic() + TRIM_SECONDS
         time.sleep(POLL_SECONDS)
 
 

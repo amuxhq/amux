@@ -122,8 +122,10 @@ def remote_refs(inbox: str, env: dict[str, str], *patterns: str) -> dict[str, st
 
 
 def ahead_of(inbox: str, rid: str, env: dict[str, str]) -> int:
-    """How many requests the queue takes before this one."""
-    refs = remote_refs(inbox, env, "refs/queue/*", "refs/results/*")
+    """How many requests the queue takes before this one. A request is a
+    tag, which ls-remote also lists peeled (`<ref>^{}`); that is the same
+    request, not another."""
+    refs = {ref: sha for ref, sha in remote_refs(inbox, env, "refs/queue/*", "refs/results/*").items() if not ref.endswith("^{}")}
     done = {r.removeprefix("refs/results/") for r in refs if r.startswith("refs/results/")}
     return sum(
         1 for r in refs if r.startswith("refs/queue/") and (q := r.removeprefix("refs/queue/")) < rid and q not in done

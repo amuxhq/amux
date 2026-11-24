@@ -53,8 +53,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The protocol and store checks read the latest release tag's
-          # schemas.
+          # schemas, so the history must reach that tag; without the files
+          # of every commit, which git fetches when a check reads one. A
+          # full clone took 24 s of the gate.
           fetch-depth: 0
+          filter: blob:none
       - name: Refuse fixture update flags
         run: scripts/no-update-flags.sh
       - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
@@ -108,14 +111,24 @@ jobs:
       - name: Audit the browser extension's shipped dependencies
         if: always()
         run: nix develop --command just browser audit
+
+  # The documentation tests are Cargo's: Buck2's need every compile in its
+  # nightly-features mode (docs/BUILD.md). Cargo compiles the workspace for
+  # them on the runner, which took nearly three minutes after the gate, so
+  # they run beside it.
+  doctest:
+    name: Documentation tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        if: always()
         with:
           key: doctest
-      # The documentation tests are Cargo's: Buck2's need every compile in
-      # its nightly-features mode (docs/BUILD.md).
       - name: Run the documentation tests
-        if: always()
         run: nix develop --command just doctest
 
   # The Android app's half of the gate (`just premerge-half android`), on a

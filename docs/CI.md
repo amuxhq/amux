@@ -59,7 +59,8 @@ takes seconds shares a job.
 
 | Job | Runner | Runs |
 | --- | --- | --- |
-| Linux gate | `ubuntu-latest`, its actions on the build host | `just premerge` through Buck2 on the build host's cache, `just browser audit`, `just doctest` ([The Linux gate](#the-linux-gate)) |
+| Linux gate | `ubuntu-latest`, its actions on the build host | `just premerge` through Buck2 on the build host's cache, `just browser audit` ([The Linux gate](#the-linux-gate)) |
+| Documentation tests | `ubuntu-latest` | `just doctest`, under Cargo, beside the gate |
 | Linux gate, Android app | `ubuntu-latest` | Only without the build host (a fork's pull request): `just premerge-half android`, the Android app's half of the gate, while the Linux gate runs `just premerge-half workspace`; with the build host it does nothing |
 | Windows | `windows-latest`, its builds on the build host | `just check-windows` on the build host, then `just test-windows` on a Windows worker of the runner's own ([The Windows job](#the-windows-job)); without the build host, `just cargo-test` |
 | iPhone app | `macos-26`, building in Buck2 and testing on a worker of its own | `just ios simulator golden`, then through Buck2 every target under `apps/apple` but the Mac app's built, and the package suites and the hosted app suite run on the simulator ([The macOS jobs](#the-macos-jobs)) |
@@ -109,8 +110,9 @@ fail. Running the workflow by hand with `without-build-host` does the
 same, to check that path.
 
 The job then audits the dependencies the browser extension ships (`just
-browser audit`) and runs the documentation tests under Cargo (`just
-doctest`). The C ABI's pointer checks (`just miri`) and the sanitizers run
+browser audit`). The documentation tests run under Cargo (`just doctest`)
+in a job of their own beside it, since Cargo compiles the workspace for
+them on the runner. The C ABI's pointer checks (`just miri`) and the sanitizers run
 under Cargo too, since they rebuild the standard library under their checks,
 which Buck2's Rust rules can't, but in the nightly rather than on a push
 ([Nightlies](#nightlies)).

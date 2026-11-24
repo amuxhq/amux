@@ -41,7 +41,7 @@ tools:
 # Check the Swift sources against the screens package's writing rules.
 lint:
     {{bounded}} 300 sh -c 'sh apps/apple/Tools/feature-lint.sh && sh apps/apple/Tools/test-waits-lint.sh && apps/apple/Tools/strings-lint.sh'
-    {{bounded}} 300 cargo run --locked -p ios-tools -- swift-types --check
+    {{bounded}} 300 {{buck2}} run //crates/ios-tools:ios-tools-bin -- swift-types --check
 
 # Prove the bridge graph carries no provider, agent host or test
 # infrastructure onto the phone. The driving tools are the one deliberate

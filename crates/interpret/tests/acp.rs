@@ -1126,20 +1126,56 @@ fn agy_models_output_lists_antigravitys_models() {
     assert_eq!(
         models,
         [
-            ("gemini-4-neon", "Gemini 4 Neon", efforts(&["low", "medium", "high", "xhigh"])),
-            ("gemini-4-carbon", "Gemini 4 Carbon", efforts(&["low", "medium", "high"])),
-            ("gemini-4-argon", "Gemini 4 Argon", efforts(&["low", "medium", "high"])),
+            (
+                "gemini-4-neon",
+                "Gemini 4 Neon",
+                efforts(&["low", "medium", "high", "xhigh"])
+            ),
+            (
+                "gemini-4-carbon",
+                "Gemini 4 Carbon",
+                efforts(&["low", "medium", "high"])
+            ),
+            (
+                "gemini-4-argon",
+                "Gemini 4 Argon",
+                efforts(&["low", "medium", "high"])
+            ),
             (
                 "gemini-4-hydrogen",
                 "Gemini 4 Hydrogen",
                 efforts(&["low", "medium", "high", "xhigh"])
             ),
-            ("gemini-pro-orchestrator-neon", "Orchestrator (Neon)", efforts(&[])),
-            ("gemini-pro-orchestrator", "Orchestrator (Carbon)", efforts(&[])),
-            ("gemini-pro-orchestrator-argon", "Orchestrator (Argon)", efforts(&[])),
-            ("gemini-3.8-flash", "Gemini 3.8 Flash", efforts(&["low", "medium", "high"])),
-            ("claude-opus-5-5", "Claude Opus 5.5", efforts(&["low", "medium", "high"])),
-            ("claude-sonnet-5-5", "Claude Sonnet 5.5", efforts(&["low", "medium", "high"])),
+            (
+                "gemini-pro-orchestrator-neon",
+                "Orchestrator (Neon)",
+                efforts(&[])
+            ),
+            (
+                "gemini-pro-orchestrator",
+                "Orchestrator (Carbon)",
+                efforts(&[])
+            ),
+            (
+                "gemini-pro-orchestrator-argon",
+                "Orchestrator (Argon)",
+                efforts(&[])
+            ),
+            (
+                "gemini-3.8-flash",
+                "Gemini 3.8 Flash",
+                efforts(&["low", "medium", "high"])
+            ),
+            (
+                "claude-opus-5-5",
+                "Claude Opus 5.5",
+                efforts(&["low", "medium", "high"])
+            ),
+            (
+                "claude-sonnet-5-5",
+                "Claude Sonnet 5.5",
+                efforts(&["low", "medium", "high"])
+            ),
             ("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)", efforts(&[])),
         ]
     );

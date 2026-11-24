@@ -313,9 +313,10 @@ fn by_effort(printed: &str) -> Vec<OfferedModel> {
         .collect();
     let mut models: Vec<OfferedModel> = Vec::new();
     for line in &lines {
-        if models.iter().any(|model| {
-            model.value == line.model || model.value == line.id
-        }) {
+        if models
+            .iter()
+            .any(|model| model.value == line.model || model.value == line.id)
+        {
             continue;
         }
         let efforts: Vec<String> = lines

@@ -74,3 +74,6 @@ apps/android/app/google-services.json
 # Buck2 output
 buck-out/
 .buckconfig.local
+
+# What the repository checks read from outside the checkout (build/checks/inputs.py).
+build/checks/inputs/

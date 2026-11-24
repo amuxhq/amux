@@ -20,7 +20,11 @@ import { type BrowserContext, chromium, expect, type Page, type Worker } from "@
 export const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "../../../..");
 const binaries = process.env.TESTNET_BINARIES ?? join(repo, "target/debug");
-const built = join(here, "../../dist-dev");
+// Buck2's test (js/BUCK) hands it the extension it built and the Linux
+// toolchain's Chromium; `just browser cargo-test` builds into dist-dev and
+// uses the Chromium Playwright installs.
+const built = process.env.AMUX_EXTENSION ?? join(here, "../../dist-dev");
+const chromiumPath = process.env.AMUX_CHROMIUM;
 export const EXTENSION_ID = "omnhphmiepghpgpbfgjebeaajfppkhie";
 
 export const PAGE = `<!doctype html>
@@ -107,6 +111,8 @@ export async function browser(desk: Desk, options: Options = {}): Promise<{ cont
   const profile = join(desk.root, name);
   const extension = join(desk.root, `extension-${name}`);
   cpSync(built, extension, { recursive: true });
+  // The build may be read-only (Buck2's outputs are); the copy is this test's.
+  execFileSync("chmod", ["-R", "u+w", extension]);
   if (options.allSites ?? true) {
     const manifest = JSON.parse(readFileSync(join(extension, "manifest.json"), "utf8"));
     manifest.host_permissions = ["<all_urls>"];
@@ -114,7 +120,7 @@ export async function browser(desk: Desk, options: Options = {}): Promise<{ cont
   }
   if (options.host ?? true) writeHost(desk, profile);
   const context = await chromium.launchPersistentContext(profile, {
-    channel: "chromium",
+    ...(chromiumPath ? { executablePath: chromiumPath } : { channel: "chromium" }),
     viewport: { width: 1000, height: 800 },
     args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
   });

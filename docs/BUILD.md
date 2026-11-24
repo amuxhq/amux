@@ -29,10 +29,11 @@ Other tools a full checkout uses:
 - Xcode and XcodeGen build the iPhone app (see [the iPhone app](IOS.md)).
 - JDK 21, the Android SDK/NDK, and `cargo-ndk` build the Android app (see [the Android app](ANDROID.md), `just --list android`).
 - `tmux` drives the terminal journeys.
-- Node 24 or newer, with npm, builds and tests the browser extension under
-  `js/` (`just browser build`, `just browser test`). Biome formats and lints it
-  (`just browser fmt`), and `js/.npmrc` stops packages' install scripts from
-  running.
+- Node 24 or newer, with npm, builds the browser extension under `js/`
+  (`just browser build`). Biome formats and lints it (`just browser fmt`),
+  and `js/.npmrc` stops packages' install scripts from running. Its checks
+  and tests (`just browser test`) bring their own Node, and their Chromium
+  comes with the Linux toolchain.
 - [`gitleaks`](https://github.com/gitleaks/gitleaks) scans what a push
   would publish for credentials. `just hooks` installs that scan as the
   pre-push hook, for every worktree at once; it reads `.gitleaks.toml`, and
@@ -210,6 +211,49 @@ minutes) are skipped, which `just test` names at the end. When the host
 answers again it switches back. Each switch restarts NativeLink, which
 interrupts any build another tree has running at that moment.
 
+### Repository checks
+
+The repository's own checks are Buck2 tests too, so `just premerge` gets a
+check from the cache until a file it reads changes: a docs-only edit reruns
+the docs check and the tests that read that page, and nothing else. Each is a
+script run over exactly the files its target declares
+([`build/checks.bzl`](../build/checks.bzl)), in the root
+[`BUCK`](../BUCK) file: `docs-check`, `store-check`, `proto-compat`,
+`cores-check` (the sources half), `typed-provider-check`,
+`client-kind-check` and `codegen-check`. The browser extension's Biome,
+type checks, unit tests and end-to-end test are in
+[`js/BUCK`](../js/BUCK) ([Browser extension](BROWSER.md#building-and-testing)),
+and the terminal journeys are `//crates/testnet:terminal-journeys`.
+
+```sh
+just checks                    # the repository's and the JavaScript's checks
+just test //:docs-check        # one of them
+just docs-check                # the same script, run in the checkout as CI runs it
+```
+
+A check is sent to the Linux worker when one is in reach, so a Mac and the
+build host run the same action and share its result; with none in reach
+it runs on the Mac's own worker. On a Mac, Node for the JavaScript's
+checks is the release `//build:node` pins, the version the Linux
+toolchain's is.
+
+A check that needs more than the checkout's files gets it from
+[`build/checks/inputs.py`](../build/checks/inputs.py), which `just test`
+runs first and which writes `build/checks/inputs/` (not committed): the
+list of files the checkout tracks, which the docs check resolves links
+against, so it reruns when a file is added or removed rather than whenever
+one changes; and the newest release's store schema and protobuf schemas,
+which the store and protocol checks compare with in place of git's
+history. A clone without the release tags therefore fails those two
+checks. A docs page that shows a source file word for word
+(`<!-- source: ... -->`) needs that file among the docs check's inputs.
+
+Some checks stay scripts that `just premerge` runs in the checkout: those
+that read the whole workspace's graph (`dependency-policy`, `deny`,
+`shear`, the tokio half of `cores-check`, `parity`, `shipping-check`), the
+suite catalogue's `tests-check`, which runs Cargo and `just` over the
+whole tree, and `script-tests`, whose tests ask git about the checkout.
+
 ## Profiles
 
 Five profiles are defined in the workspace [`Cargo.toml`](../Cargo.toml),
@@ -279,6 +323,7 @@ The recipes a build or change usually needs:
 | `just fmt`, `just fmt-check` | Format, or check formatting, with the pinned nightly |
 | `just protobuf` | Regenerates the committed protobuf output |
 | `just codegen-check` | Fails if the committed protobuf output is stale |
+| `just checks` | The repository's and the browser extension's checks, as Buck2 tests ([Repository checks](#repository-checks)) |
 | `just mobile-check` | Check the provider-free client graph for iOS |
 | `just android check` | Check the provider-free client and JNI bridge graph for Android (`cargo-ndk`) |
 | `just android lint` | Check Android writing rules and the string inventory |

@@ -43,3 +43,12 @@ amux_rust_test(
     deps = DEPS + TEST_DEPS,
     binaries = True,
 )
+
+# docs/ shows this example word for word, which the docs check
+# (//:docs-check) holds it to.
+export_file(
+    name = "examples/fleet.rs",
+    src = "examples/fleet.rs",
+    mode = "reference",
+    visibility = ["PUBLIC"],
+)

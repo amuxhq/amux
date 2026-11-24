@@ -11,6 +11,13 @@ this check states both:
   its own crates, so nothing a core links can await or spawn for it;
 - no core's source, comments aside, names `Mutex` or `RwLock`, calls `spawn`,
   or writes `async` or `.await`.
+
+    cores-check.py [--graph | --sources]
+
+With no option it checks both. `--sources` checks only the sources, which
+is how it runs as a Buck2 test over the cores' files (the root BUCK file);
+`--graph` only the dependency graphs, which needs Cargo and the whole
+workspace, so `just premerge` runs that half as a script.
 """
 
 from __future__ import annotations
@@ -61,20 +68,24 @@ def forbidden_in_source(core: str) -> list[str]:
 
 
 def main() -> int:
+    graph = sys.argv[1:] != ["--sources"]
+    sources = sys.argv[1:] != ["--graph"]
     failures = []
     for core in CORES:
-        if not (ROOT / "crates" / core / "Cargo.toml").is_file():
+        if not (ROOT / "crates" / core / ("Cargo.toml" if graph else "src")).exists():
             failures.append(f"{core}: no such crate")
             continue
-        if runtime := runtime_in_graph(core):
+        if graph and (runtime := runtime_in_graph(core)):
             failures.append(f"{core}: its dependency graph contains {', '.join(runtime)}")
-        failures.extend(f"{core}: {finding}" for finding in forbidden_in_source(core))
+        if sources:
+            failures.extend(f"{core}: {finding}" for finding in forbidden_in_source(core))
     if failures:
         print("cores check failed:", file=sys.stderr)
         for failure in failures:
             print(f"  - {failure}", file=sys.stderr)
         return 1
-    print(f"cores check passed: {', '.join(CORES)} carry no tokio, lock, spawn or await")
+    carry = {(True, True): "tokio, lock, spawn or await", (True, False): "tokio", (False, True): "lock, spawn or await"}[(graph, sources)]
+    print(f"cores check passed: {', '.join(CORES)} carry no {carry}")
     return 0
 
 

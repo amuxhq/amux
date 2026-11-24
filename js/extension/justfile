@@ -8,6 +8,7 @@ set working-directory := "../.."
 
 bounded := "scripts/bounded"
 python := "scripts/py"
+just := just_executable()
 
 # List the browser extension's recipes.
 default:
@@ -22,13 +23,13 @@ build *ARGS:
     wasm=$({{bounded}} 900 scripts/built '//crates/browser-core:browser-core[shared]' --target-platforms root//build/platforms:wasm-app-shipping-wasm) && AMUX_BROWSER_CORE=$wasm \
     {{bounded}} 300 sh -c 'cd js && { [ "${AMUX_NPM_READY-}" = 1 ] || npm ci --no-audit --no-fund --loglevel=error; } && cd extension && node build.ts "$@"' sh "$@"
 
-# Types, unit tests, and the end-to-end test in Chromium against this tree's
-# amux and the fake providers. AMUX_E2E_KEEP=1 keeps what the provider read
-# in js/test-results.
+# Biome, the types, the unit tests, and the end-to-end test in Chromium
+# against amux and the fake providers, as Buck2 tests (js/BUCK): only those
+# whose files changed run. The end-to-end test runs on a Linux worker, whose
+# toolchain has the browser, and is skipped, and named, when none is in reach.
 # Check and test the overlay and the extension.
-test: (build "--dev")
-    binaries=$({{bounded}} 900 scripts/built //crates/provider-fakes:binaries) && TESTNET_BINARIES=$binaries \
-    {{bounded}} 600 sh -c 'cd js && npm run check && npx vitest run && { [ "${AMUX_PLAYWRIGHT_READY-}" = 1 ] || npx playwright install chromium >/dev/null; } && npx playwright test'
+test:
+    {{bounded}} 1800 {{just}} test //js:
 
 # CI's twin of `test`, building the WebAssembly and the binaries with Cargo.
 # Check and test the extension on Cargo's build, as CI does.
@@ -38,11 +39,11 @@ cargo-test:
     {{bounded}} 900 cargo build --locked -p amux -p provider-fakes --bins
     {{bounded}} 600 sh -c 'cd js && npm run check && npx vitest run && { [ "${AMUX_PLAYWRIGHT_READY-}" = 1 ] || npx playwright install chromium >/dev/null; } && npx playwright test'
 
-# Biome's format and lint, the types, and the unit tests, without building.
-# `just premerge` runs them when anything under js/ differs from main.
+# Biome's format and lint, the types, and the unit tests, without building,
+# as Buck2 tests (js/BUCK); `just premerge` runs them with every other test.
 # The JavaScript's fast checks.
 check:
-    {{bounded}} 300 sh -c 'cd js && npm ci --no-audit --no-fund --loglevel=error && npm run check && npx vitest run'
+    {{bounded}} 600 {{just}} test //js:biome //js:types //js:unit
 
 # Format and fix the JavaScript under js/ with Biome.
 fmt:

@@ -29,6 +29,16 @@
           name = "amux-actions";
           paths = import ./nix/toolchain.nix { inherit pkgs; buildTools = false; };
         };
+      } // pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+        # The Chromium the browser extension's end-to-end test drives on a
+        # Linux worker (js/BUCK), and a font configuration for it: a worker
+        # has no fonts, and Chromium without one lays no text out. Apart from
+        # `actions`, so that a browser update changes only that test's key.
+        browser = pkgs.runCommand "amux-browser" { } ''
+          mkdir -p $out/bin $out/etc
+          ln -s ${pkgs.chromium}/bin/chromium $out/bin/chromium
+          ln -s ${pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; }} $out/etc/fonts.conf
+        '';
       });
 
       devShells = forAllSystems (pkgs: {

@@ -332,12 +332,14 @@ journey or baseline that does not exist.
 `just premerge` is what a change passes on the machine it was written on
 before it reaches main, and what `just land` runs on the merge before
 pushing it. It runs every check below, the iOS and Android writing lints
-and script tests, every terminal journey, the browser extension's fast
-checks when anything under `js/` changed, and every workspace test.
+and script tests, every terminal journey, the browser extension's checks and
+tests, and every workspace test.
 
-The tests run through Buck2 and its cache ([Building](BUILD.md#the-build-cache)),
-so a test runs only when something it reads changed since it last passed,
-in this tree or any other on the machine. A change to a leaf crate or a
+The tests, the journeys, the browser extension's checks and most of the
+checks below run through Buck2 and its cache ([Building](BUILD.md#the-build-cache),
+[Repository checks](BUILD.md#repository-checks)), so each runs only when
+something it reads changed since it last passed, in this tree or any other
+on the machine. A change to a leaf crate or a
 document reruns a handful of tests, and premerge takes a minute or two; a
 change to a crate most of the workspace depends on, such as `wire`, reruns
 most of the suite, about a quarter of an hour on a laptop.

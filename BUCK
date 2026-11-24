@@ -90,3 +90,96 @@ nix_toolchain(
     target_compatible_with = ["prelude//os:linux"],
     visibility = ["PUBLIC"],
 )
+
+# The repository checks, each a test over exactly the files it reads
+# (build/checks.bzl), so a passing one is cached until those change. `just
+# checks` writes what they read from outside the checkout first
+# (build/checks/inputs.py) and runs them all; each recipe of the same name
+# (`just docs-check`) still runs its script in the checkout, as CI does.
+load("//build:checks.bzl", "amux_check")
+
+_CORES = ["agent-core", "core-ring", "daemon-core", "path-core", "relay-core", "socket-core", "supervisor-core", "workspace-core"]
+
+amux_check(
+    name = "docs-check",
+    command = ["python3", "scripts/docs-check.py", "--tracked", "build/checks/inputs/tracked"],
+    # Links are resolved against the list of tracked files; the pages, and
+    # the files whose content a page shows, are read.
+    srcs = glob(["docs/**"]) + ["scripts/docs-check.py"],
+    deps = ["//build:tracked", "//crates/ui-runtime:examples/fleet.rs"],
+)
+
+amux_check(
+    name = "store-check",
+    command = ["python3", "scripts/store-check.py", "--baseline", "build/checks/inputs/store-baseline"],
+    srcs = ["scripts/store-check.py"],
+    deps = ["//build:store-baseline", "//crates/store:src/schema.rs"],
+)
+
+amux_check(
+    name = "proto-compat",
+    command = ["sh", "scripts/proto-compat.sh", "--baseline", "build/checks/inputs/proto-baseline"],
+    srcs = glob(["proto/**"]) + ["buf.yaml", "scripts/proto-compat.sh"],
+    deps = ["//build:proto-baseline"],
+    env = select({
+        "DEFAULT": {"BUF": "$(exe //build:buf)"},
+        "prelude//os:linux": {},
+    }),
+)
+
+# The cores' sources; the tokio half of `just cores-check` reads Cargo's
+# whole graph, so premerge runs it as a script.
+amux_check(
+    name = "cores-check",
+    command = ["python3", "scripts/cores-check.py", "--sources"],
+    srcs = ["scripts/cores-check.py"],
+    deps = ["//crates/{}:files".format(core) for core in _CORES],
+)
+
+amux_check(
+    name = "typed-provider-check",
+    command = ["python3", "scripts/typed-provider-check.py"],
+    srcs = ["scripts/typed-provider-check.py"],
+    deps = ["//crates/agent:files", "//crates/interpret:files"],
+)
+
+amux_check(
+    name = "client-kind-check",
+    command = ["python3", "scripts/client-kind-check.py"],
+    srcs = glob(
+        ["apps/apple/**/*.swift"],
+        exclude = ["apps/apple/**/.build/**"],
+    ) + ["scripts/client-kind-check.py"],
+    deps = [
+        "//crates/app-runtime:files",
+        "//crates/browser-core:files",
+        "//crates/tui:files",
+        "//crates/ui-runtime:files",
+        "//crates/ui-state:files",
+        "//crates/ui-view:files",
+        "//crates/wire:files",
+    ],
+)
+
+# The committed protobuf bindings against what the schemas generate now.
+amux_check(
+    name = "codegen-check",
+    command = [
+        "sh",
+        "-c",
+        "diff -ru crates/wire/src/generated \"$1\" | head -200; diff -r crates/wire/src/generated \"$1\" >/dev/null || { echo \"committed wire output is stale; run 'just protobuf' and commit it\" >&2; exit 1; }",
+        "sh",
+        "$(location //crates/wire:protobuf)",
+    ],
+    deps = ["//crates/wire:files", "//crates/wire:protobuf"],
+)
+
+# The Chromium the browser extension's end-to-end test drives (js/BUCK).
+nix_toolchain(
+    name = "nix-browser",
+    srcs = ["flake.lock", "flake.nix", "nix/build-tools.nix", "nix/toolchain.nix", "rust-toolchain.toml"],
+    output = "packages.x86_64-linux.browser",
+    exec_compatible_with = ["prelude//os:linux"],
+    target_compatible_with = ["prelude//os:linux"],
+    visibility = ["PUBLIC"],
+)

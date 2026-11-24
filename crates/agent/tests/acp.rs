@@ -522,7 +522,12 @@ async fn a_signed_out_agent_waits_for_a_sign_in() {
     agent
         .wait("both turns end", |log| log.turn_ends() == 2)
         .await;
-    assert_eq!(sent(&agent, "session/new").len(), 3);
+    // The fake reads the sign-in as it answers, so the ask the first prompt
+    // made can already find it, when its answer comes after the file is
+    // written: the session opens on the second ask or on the third, that
+    // the second prompt makes.
+    let asked = sent(&agent, "session/new").len();
+    assert!((2..=3).contains(&asked), "{asked} session/new");
     let prompts = sent(&agent, "session/prompt");
     assert_eq!(prompts[0]["params"]["prompt"][0]["text"], "first");
     assert_eq!(prompts[1]["params"]["prompt"][0]["text"], "second");

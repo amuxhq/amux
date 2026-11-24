@@ -1,0 +1,38 @@
+load("//build:rust.bzl", "amux_files")
+
+# The Android app's scripts that Buck2 runs as checks of what it built.
+
+export_file(
+    name = "android-scope-audit.py",
+    src = "android-scope-audit.py",
+    visibility = ["PUBLIC"],
+)
+
+export_file(
+    name = "google-services.py",
+    src = "google-services.py",
+    visibility = ["PUBLIC"],
+)
+
+export_file(
+    name = "apk-contents.py",
+    src = "apk-contents.py",
+    visibility = ["PUBLIC"],
+)
+
+[
+    export_file(
+        name = script,
+        src = script,
+        # Run from where it is: the scripts find the checkout from their own
+        # path.
+        mode = "reference",
+        visibility = ["PUBLIC"],
+    )
+    for script in ["feature-lint.sh", "strings_lint.py", "test-waits-lint.sh"]
+]
+
+amux_files(
+    name = "noncopy",
+    srcs = ["noncopy.json"],
+)

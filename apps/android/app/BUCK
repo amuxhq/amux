@@ -1,0 +1,337 @@
+load(":version.bzl", "VERSION_CODE", "VERSION_NAME")
+load(
+    "//build:android.bzl",
+    "LINUX_EXEC",
+    "LINUX_WORKERS",
+    "NOVA_ONLY",
+    "PLATFORM",
+    "amux_android_library",
+    "amux_apk",
+    "amux_bundle",
+    "amux_jni_library",
+    "amux_robolectric_test",
+    "robolectric_capture",
+    "script_test",
+)
+
+# The app: what every build carries (src/main), and what only a debug build
+# (src/debug: the door, the storybook activity, test-support) or a release
+# build (src/release: no-op hooks) adds. Each build type compiles main with
+# its own sources, as Gradle's variants do.
+
+APP_ID = "sh.amux.android"
+
+APP_VERSION_CODE = read_config("amux", "android_version_code", str(VERSION_CODE))
+
+APP_VERSION_NAME = read_config("amux", "android_version_name", VERSION_NAME)
+
+DEPS = [
+    "//apps/android/core/values:values",
+    "//apps/android/core/words:words",
+    "//apps/android/push:push",
+    "//apps/android/core/runtime:runtime",
+    "//apps/android/design:design",
+    "//apps/android/features:features",
+    "//apps/android/shell:shell",
+    # A library compiles against the R classes of the resources it depends
+    # on directly, and the app names the shell's strings.
+    "//apps/android/shell:shell-res",
+    "//third-party/android:firebase-messaging",
+    "//third-party/android:play-billing-ktx",
+    # Play services, under Firebase, still ask for Fragment 1.1, whose
+    # activity results lint refuses in a release build; raise it to one
+    # that works with this Activity version.
+    "//third-party/android:androidx-fragment",
+    "//third-party/android:androidx-compose-ui",
+    "//third-party/android:androidx-compose-material3",
+    "//third-party/android:androidx-compose-material-icons-extended",
+    "//third-party/android:androidx-activity-compose",
+    "//third-party/android:androidx-core-ktx",
+    "//third-party/android:androidx-lifecycle-process",
+    "//third-party/android:kotlinx-coroutines-android",
+    "//third-party/android:kotlinx-serialization-json",
+    ":build-config",
+]
+
+# Firebase's settings for push, when the checkout has the console's
+# google-services.json (it is not committed; docs/ANDROID.md): written as the
+# resources Firebase starts from, which Google's Gradle plugin wrote. A build
+# without it has no push (`NoOpPushRegistrar`).
+_GOOGLE_SERVICES = glob(["google-services.json"])
+
+[
+    (
+        genrule(
+            name = "google-services-res",
+            srcs = _GOOGLE_SERVICES,
+            out = "res",
+            cmd = "python3 $(location //apps/android/tools:google-services.py) {} $SRCS $OUT".format(APP_ID),
+            default_target_platform = PLATFORM,
+            target_compatible_with = LINUX_WORKERS,
+            exec_compatible_with = LINUX_EXEC,
+        ),
+        android_resource(
+            name = "google-services",
+            package = APP_ID,
+            res = ":google-services-res",
+            default_target_platform = PLATFORM,
+            target_compatible_with = LINUX_WORKERS,
+        ),
+    )
+    for _ in _GOOGLE_SERVICES
+]
+
+DEPS += [":google-services" for _ in _GOOGLE_SERVICES]
+
+DEBUG_DEPS = [
+    "//apps/android/test-support:test-support",
+    "//third-party/android:androidx-compose-ui-test-manifest",
+]
+
+# The manifests name no package and no API levels (Gradle's `namespace`,
+# `minSdk` and `targetSdk` gave them), which the manifest merger needs: the
+# main one is the APK's own, which every library's minSdk must fit under.
+[
+    genrule(
+        name = "manifest-" + variant,
+        srcs = ["src/{}/AndroidManifest.xml".format(variant)],
+        out = "AndroidManifest.xml",
+        cmd = "sed -e 's|<manifest |<manifest package=\"{}\" |' {} $SRCS > $OUT".format(
+            APP_ID,
+            "-e 's|^\\(<manifest .*>\\)$|\\1<uses-sdk android:minSdkVersion=\"34\" android:targetSdkVersion=\"36\" />|'" if variant == "main" else "",
+        ),
+        default_target_platform = PLATFORM,
+        target_compatible_with = LINUX_WORKERS,
+        exec_compatible_with = LINUX_EXEC,
+    )
+    for variant in ["main", "debug"]
+]
+
+android_build_config(
+    name = "build-config",
+    package = APP_ID,
+    values = ['String VERSION_NAME = "{}"'.format(APP_VERSION_NAME)],
+    default_target_platform = PLATFORM,
+    target_compatible_with = LINUX_WORKERS,
+    exec_compatible_with = LINUX_EXEC,
+)
+
+[
+    amux_android_library(
+        name = variant + "-lib",
+        package = APP_ID,
+        srcs = glob(["src/main/kotlin/**/*.kt", "src/{}/kotlin/**/*.kt".format(variant)]),
+        manifest = ":manifest-debug" if variant == "debug" else None,
+        compose = True,
+        serialization = True,
+        deps = DEPS + (DEBUG_DEPS if variant == "debug" else []),
+        res_name = "res",
+        tests = False,
+    )
+    for variant in ["debug", "release"]
+]
+
+# The Rust bridge in each build: a driving build carries the debug tools,
+# a release build doesn't (docs/ANDROID.md).
+amux_jni_library(
+    name = "jni-debug",
+    configuration = "android-arm64-phone-dev",
+    abi = "arm64-v8a",
+)
+
+amux_jni_library(
+    name = "jni-release",
+    configuration = "android-arm64-release",
+    abi = "arm64-v8a",
+)
+
+_MANIFEST_ENTRIES = {
+    "min_sdk_version": "34",
+    "placeholders": {"applicationId": APP_ID},
+    "target_sdk_version": "36",
+    "version_code": APP_VERSION_CODE,
+    "version_name": APP_VERSION_NAME,
+}
+
+# The debug APK: what `just android build` installs and the journeys drive.
+amux_apk(
+    name = "debug",
+    manifest_skeleton = ":manifest-main",
+    manifest_entries = _MANIFEST_ENTRIES | {"debug_mode": True},
+    package_type = "debug",
+    deps = [":debug-lib", ":jni-debug"],
+)
+
+# A release build's R8 rules beyond the SDK's optimizing defaults: the app's
+# own, and for the launch smoke test's build what its test calls.
+genrule(
+    name = "release-rules",
+    srcs = ["proguard-rules.pro"],
+    out = "proguard-rules.pro",
+    cmd = "cat $SRCS > $OUT",
+    default_target_platform = PLATFORM,
+    target_compatible_with = LINUX_WORKERS,
+    exec_compatible_with = LINUX_EXEC,
+)
+
+genrule(
+    name = "release-smoke-rules",
+    srcs = ["proguard-rules.pro", "release-smoke-rules.pro"],
+    out = "proguard-rules.pro",
+    cmd = "cat $SRCS > $OUT",
+    default_target_platform = PLATFORM,
+    target_compatible_with = LINUX_WORKERS,
+    exec_compatible_with = LINUX_EXEC,
+)
+
+_RELEASE = {
+    "android_sdk_proguard_config": "optimized",
+    "manifest_entries": _MANIFEST_ENTRIES | {"debug_mode": False},
+    "manifest_skeleton": ":manifest-main",
+    "package_type": "release",
+}
+
+# The minified release APK, signed with the debug key so it installs on an
+# emulator: what scope-audit reads and the launch smoke test drives
+# (`release-smoke`, with the test's rules). What ships is the bundle.
+amux_apk(
+    name = "release",
+    deps = [":release-lib", ":jni-release"],
+    proguard_config = ":release-rules",
+    **_RELEASE
+)
+
+amux_apk(
+    name = "release-smoke",
+    deps = [":release-lib", ":jni-release"],
+    proguard_config = ":release-smoke-rules",
+    **_RELEASE
+)
+
+# The launch smoke test (src/androidTest), as an APK that instruments
+# :release-smoke on a device (`just android release-smoke`).
+amux_android_library(
+    name = "release-smoke-test-lib",
+    package = "sh.amux.android.test",
+    srcs = glob(["src/androidTest/kotlin/**/*.kt"]),
+    res = False,
+    tests = False,
+    deps = [
+        ":release-lib",
+        "//apps/android/core/values:values",
+        "//apps/android/core/runtime:runtime",
+        "//third-party/android:androidx-test-runner",
+        "//third-party/android:junit",
+        "//third-party/android:kotlinx-coroutines-android",
+    ],
+)
+
+android_instrumentation_apk(
+    name = "release-smoke-test",
+    apk = ":release-smoke",
+    manifest = "src/androidTest/AndroidManifest.xml",
+    deps = [":release-smoke-test-lib"],
+    default_target_platform = PLATFORM,
+    target_compatible_with = LINUX_WORKERS,
+    labels = NOVA_ONLY,
+)
+
+# The Play bundle. It is unsigned: `just android release` signs it with the
+# upload key, which never enters the build.
+amux_bundle(
+    name = "bundle",
+    deps = [":release-lib", ":jni-release"],
+    proguard_config = ":release-rules",
+    **_RELEASE
+)
+
+# The debug APK holds what installing and starting it needs; this is what
+# builds it in the gate.
+script_test(
+    name = "debug-apk",
+    script = "//apps/android/tools:apk-contents.py",
+    args = ["$(location :debug)"],
+)
+
+# No debug or test code ships, nor a dynamically linked SQLite: R8's
+# mapping and the bridge's symbols in the bundle, checked
+# (apps/android/tools/android-scope-audit.py says how).
+script_test(
+    name = "scope-audit",
+    script = "//apps/android/tools:android-scope-audit.py",
+    args = [
+        "--apk",
+        "$(location :bundle)",
+        "--mapping",
+        "$(location :bundle[proguard_text_output])/mapping.txt",
+        "--readelf",
+        "$(exe toolchains//:llvm-readelf)",
+        "--nm",
+        "$(exe toolchains//:llvm-nm)",
+    ],
+)
+
+# The JVM and Robolectric tests of the app, the accessibility
+# audit among them.
+amux_robolectric_test(
+    name = "test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    deps = [":debug-lib"] + DEPS + DEBUG_DEPS + [
+        "//third-party/android:androidx-compose-ui-test-junit4",
+        "//third-party/android:roborazzi",
+        "//third-party/android:roborazzi-compose",
+        "//third-party/android:roborazzi-junit-rule",
+    ],
+    friend_paths = [":debug-lib"],
+    manifest_skeleton = ":manifest-main",
+    compose = True,
+    serialization = True,
+)
+
+# The automated Compose accessibility audit across every registered story,
+# on its own (`just android accessibility`).
+amux_robolectric_test(
+    name = "accessibility",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    deps = [":debug-lib"] + DEPS + DEBUG_DEPS + [
+        "//third-party/android:androidx-compose-ui-test-junit4",
+        "//third-party/android:roborazzi",
+        "//third-party/android:roborazzi-compose",
+        "//third-party/android:roborazzi-junit-rule",
+    ],
+    friend_paths = [":debug-lib"],
+    manifest_skeleton = ":manifest-main",
+    compose = True,
+    serialization = True,
+    test_class_names = ["sh.amux.android.AccessibilityAuditTest"],
+)
+
+# The headless storybook: every registered story drawn in Light and Dark,
+# with its geometry report, as a directory (`just android storybook` writes
+# the gallery from it). A capture, not a test: nothing compares the
+# pictures.
+amux_robolectric_test(
+    name = "storybook-capture",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    deps = [":debug-lib"] + DEPS + DEBUG_DEPS + [
+        "//third-party/android:androidx-compose-ui-test-junit4",
+        "//third-party/android:roborazzi",
+        "//third-party/android:roborazzi-compose",
+        "//third-party/android:roborazzi-junit-rule",
+    ],
+    friend_paths = [":debug-lib"],
+    manifest_skeleton = ":manifest-main",
+    compose = True,
+    serialization = True,
+    test_class_names = ["sh.amux.android.StorybookCaptureTest"],
+)
+
+robolectric_capture(
+    name = "storybook",
+    test = ":storybook-capture",
+    properties = {
+        "amux.storybook.capture": "true",
+        "amux.storybook.filter": read_config("amux", "android_storybook_filter", ""),
+    },
+    output_property = "amux.storybook.out",
+)

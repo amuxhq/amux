@@ -616,9 +616,9 @@ appear in any committed file, and none of them should be pasted into one.
 ## The Android app
 
 The Android app ships from this repository as a signed Android App Bundle
-(`.aab`, application ID `sh.amux.android`) built by Gradle from
-`apps/android/` with the shipping Rust JNI library (`libamux_app.so`, built
-without `debug-tools`).
+(`.aab`, application ID `sh.amux.android`) that Buck2 builds from
+`apps/android/` on a Linux worker (`//apps/android/app:bundle`) with the
+shipping Rust JNI library (`libamux_app.so`, built without `debug-tools`).
 
 ```sh
 just android release --preflight                       # check keystore, keychain & service account
@@ -633,9 +633,10 @@ just android deploy 1.0.0 --notes-file whats-new.txt   # 100% production release
 ```
 
 `just android release` runs `just android scope-audit` first, then writes
-`versionName` and `versionCode` in `apps/android/app/build.gradle.kts`, builds
-and signs `:app:bundleRelease` (embedding the R8 ProGuard mapping inside the
-`.aab`), verifies the signature with `jarsigner -verify -strict`, copies the
+`VERSION_NAME` and `VERSION_CODE` in `apps/android/app/version.bzl`, has
+Buck2 build the unsigned bundle (fetched from the cache), signs it on this
+Mac with the upload key and `jarsigner` (the key never enters the build),
+verifies the signature with `jarsigner -verify`, copies the
 bundle, `mapping.txt` and `ReleaseNotes.txt` under
 `target/android/release/android-v<version>-b<build>/`, uploads the `.aab` to
 Google Play's `internal` track through the Google Play Android Publisher API v3
@@ -643,9 +644,10 @@ Google Play's `internal` track through the Google Play Android Publisher API v3
 and only then commits, cuts the annotated `android-v<version>-b<build>` tag,
 and pushes `HEAD:main` and the tag.
 
-- `--rehearse` passes `-Pamux.versionName` and `-Pamux.versionCode` to Gradle
-  so it signs and verifies the exact would-be bundle without editing
-  `build.gradle.kts`, cutting a tag, or uploading anything.
+- `--rehearse` passes the would-be numbers to Buck2
+  (`-c amux.android_version_name=… -c amux.android_version_code=…`) so it
+  signs and verifies the exact would-be bundle without editing `version.bzl`,
+  cutting a tag, or uploading anything.
 - `--no-upload` and `--no-push` each stop short of their step.
 - `--draft` creates the track release in `draft` status (required on a
   brand-new Play Console app before its first release has been published), and

@@ -22,28 +22,29 @@ use crate::swift_types::{
     PUSH_VALUES, camel, definitions, description, upper_first, write_or_check,
 };
 
-/// Where the main mirrors live, from the repository root.
-pub const OUTPUT: &str = "apps/android/core/values/src/main/kotlin/sh/amux/values/Values.kt";
-
 /// The mirrors the push module reads without pulling in the rest of the value
-/// vocabulary; `Values.kt` imports them from here.
+/// vocabulary; `Values.kt` imports them from here. They are committed, and
+/// `Values.kt` is not: the Android build writes it (`--values`).
 pub const PUSH_OUTPUT: &str = "apps/android/push/src/main/kotlin/sh/amux/push/Said.kt";
 
 const PACKAGE: &str = "sh.amux.values";
 const PUSH_PACKAGE: &str = "sh.amux.push";
 
-/// `kotlin-types [--check]`, run from anywhere in the repository.
+/// `kotlin-types [--check]`, run from anywhere in the repository, writes or
+/// checks the committed push mirrors; `kotlin-types --values PATH` writes the
+/// main mirrors to PATH, as the Android build does
+/// (//apps/android/core/values).
 pub fn main(args: &[String]) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let check = match args {
         [] => false,
         [flag] if flag == "--check" => true,
-        _ => return Err("usage: ios-tools kotlin-types [--check]".into()),
+        [flag, path] if flag == "--values" => {
+            std::fs::write(path, generate(&definitions())?)?;
+            return Ok(());
+        }
+        _ => return Err("usage: ios-tools kotlin-types [--check | --values PATH]".into()),
     };
-    let definitions = definitions();
-    let files = [
-        (OUTPUT, generate(&definitions)?),
-        (PUSH_OUTPUT, generate_push(&definitions)?),
-    ];
+    let files = [(PUSH_OUTPUT, generate_push(&definitions())?)];
     write_or_check("kotlin-types", &files, check)
 }
 
@@ -1000,18 +1001,23 @@ mod tests {
 
     #[test]
     fn the_committed_mirrors_match_the_rust_definitions() {
-        let defs = definitions();
-        for (output, generated) in [
-            (OUTPUT, generate(&defs).unwrap()),
-            (PUSH_OUTPUT, generate_push(&defs).unwrap()),
-        ] {
-            let committed = std::fs::read_to_string(crate::swift_types::repository().join(output))
-                .unwrap_or_default();
-            assert!(
-                committed == generated,
-                "{output} differs from Rust definitions; run `cargo run -p ios-tools -- kotlin-types` and commit the result"
-            );
-        }
+        let generated = generate_push(&definitions()).unwrap();
+        let committed = std::fs::read_to_string(crate::swift_types::repository().join(PUSH_OUTPUT))
+            .unwrap_or_default();
+        assert!(
+            committed == generated,
+            "{PUSH_OUTPUT} differs from Rust definitions; run `cargo run -p ios-tools -- kotlin-types` and commit the result"
+        );
+    }
+
+    /// The main mirrors are written by the Android build, not committed.
+    #[test]
+    fn the_main_mirrors_generate() {
+        assert!(
+            generate(&definitions())
+                .unwrap()
+                .contains("package sh.amux.values")
+        );
     }
 
     /// Every public value type in the crates the bridge reads from has a

@@ -1,6 +1,8 @@
 # The Android app's recipes. `just android <recipe>` from anywhere in the
 # checkout; every recipe runs from the repository root so paths mean the same
-# thing in the scripts, the Gradle project and the Rust workspace.
+# thing in the scripts, Buck2 and the Rust workspace. Buck2 builds and tests
+# the app on a Linux worker (nova), never on the Mac (docs/ANDROID.md); the
+# device recipes install what it built from the cache.
 
 set shell := ["sh", "-cu"]
 set positional-arguments
@@ -13,22 +15,22 @@ bounded := "scripts/bounded"
 # scripts/py explains why and picks it.
 python := "scripts/py"
 
-# Wrapper that discovers JAVA_HOME and ANDROID_HOME if unset and invokes ./gradlew.
-gradle := "sh apps/android/tools/gradle-run.sh"
+# The pinned Buck2 (docs/BUILD.md).
+buck2 := "scripts/buck2"
 
 # List the Android app's recipes.
 default:
     @just --list android
 
-# Check the provider-free client and JNI bridge graph for Android.
+# Build the JNI bridge for Android as the app ships it and as a driving build carries it.
 check:
-    {{bounded}} 1200 cargo ndk -t arm64-v8a -P 34 check --locked -p node -p client -p ui-state -p ui-runtime -p app-runtime -p app-embedded -p app-bridge -p app-jni
+    {{bounded}} 3000 {{buck2}} build //apps/android/app:jni-release //apps/android/app:jni-debug
 
 # Check the Kotlin sources and string resources against the app's writing
 # rules. The generated Kotlin mirrors and markdown fixtures are held to their
 # Rust sources by ios-tools' own tests, which `just premerge` and CI run.
 lint:
-    {{bounded}} 300 sh -c 'sh apps/android/tools/feature-lint.sh && sh apps/android/tools/test-waits-lint.sh && sh apps/android/tools/strings-lint.sh'
+    {{bounded}} 900 {{buck2}} test //apps/android:feature-lint //apps/android:strings-lint //apps/android:test-waits-lint
 
 # The driving tools are the one deliberate exception, checked below with
 # them enabled.
@@ -41,50 +43,46 @@ graph-check:
     {{bounded}} 300 cargo tree --locked -p app-jni --features debug-tools --target aarch64-linux-android -e normal --prefix none --format "{p}" > target/android/graph-driving.txt
     ! grep -E "^(pty-host|agent|interpret|claude-protocol|codex-protocol|schemars) v" target/android/graph-driving.txt
 
-# Build the Rust JNI bridge libraries for Android and/or the host JVM.
-rust *ARGS:
-    {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py "$@"
-
-# Build the Rust tools the Android journey recipes drive.
-tools:
-    {{bounded}} 900 cargo build --locked -p testnet -p amux -p provider-fakes --bins
-
 # Boot and pin the Android emulator AVD (`amux-android-1`).
 emulator *ARGS:
     {{bounded}} 600 {{python}} -B apps/android/tools/android-emulator.py "$@"
 
-# Build the debug Android APK.
+# Build the debug Android APK and print where it is.
 build *ARGS:
-    {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py
-    {{bounded}} 1800 {{gradle}} :app:assembleDebug "$@"
+    {{bounded}} 3000 scripts/built //apps/android/app:debug "$@"
 
 # Drive the Android app on the pinned emulator against real daemons and a real relay.
-journey *ARGS: build tools
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 target/debug/testnet journey android "$@"
+journey *ARGS:
+    #!/usr/bin/env sh
+    set -eu
+    if [ "${1-}" = -- ]; then shift; fi
+    AMUX_ANDROID_APK=$({{bounded}} 3000 scripts/built //apps/android/app:debug)
+    TESTNET_BINARIES=$({{bounded}} 900 scripts/built //crates/provider-fakes:binaries)
+    testnet=$({{bounded}} 900 scripts/built //crates/testnet:testnet-bin)
+    export AMUX_ANDROID_APK TESTNET_BINARIES
+    exec {{bounded}} 2400 "$testnet" journey android "$@"
 
-# Run all JVM and Android Robolectric unit test suites.
+# Run all JVM and Android Robolectric unit test suites, the accessibility audit and scope-audit among them.
 unit *ARGS:
-    {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py --host
-    {{bounded}} 1800 {{gradle}} testDebugUnitTest :core:values:test :core:words:test :push:test "$@"
+    {{bounded}} 3600 {{buck2}} test //apps/android/... "$@"
 
 # Run the automated Compose accessibility audit across every registered story.
 accessibility *ARGS:
-    {{bounded}} 1800 {{gradle}} :app:testDebugUnitTest --tests sh.amux.android.AccessibilityAuditTest "$@"
+    {{bounded}} 1800 {{buck2}} test //apps/android/app:accessibility "$@"
 
 # Render the headless Robolectric/Roborazzi storybook gallery.
 storybook *ARGS:
     {{bounded}} 1800 {{python}} -B apps/android/tools/android-storybook.py "$@"
 
-# Build the release APK and shipping JNI library and prove no debug/test code or dynamic SQLite ships.
+# Prove the app bundle ships no debug/test code or dynamic SQLite.
 scope-audit *ARGS:
-    {{bounded}} 2400 {{python}} -B apps/android/tools/android-scope-audit.py "$@"
+    {{bounded}} 3000 {{buck2}} test //apps/android/app:scope-audit "$@"
 
 # The runtime starts, steps, acts, and refuses a call through the bridge, on
 # the device ANDROID_SERIAL names or else the pinned emulator.
 # Run the launch smoke test on the minified release APK.
 release-smoke *ARGS:
-    {{bounded}} 1800 {{python}} -B apps/android/tools/android-rust.py --release
-    if [ -z "${ANDROID_SERIAL-}" ]; then {{bounded}} 600 {{python}} -B apps/android/tools/android-emulator.py >&2 && ANDROID_SERIAL=$({{python}} -B apps/android/tools/android-emulator.py --serial) && export ANDROID_SERIAL; fi; {{bounded}} 1800 {{gradle}} :app:connectedReleaseAndroidTest -Pamux.releaseSmoke "$@"
+    if [ -z "${ANDROID_SERIAL-}" ]; then {{bounded}} 600 {{python}} -B apps/android/tools/android-emulator.py >&2 && ANDROID_SERIAL=$({{python}} -B apps/android/tools/android-emulator.py --serial) && export ANDROID_SERIAL; fi; {{bounded}} 3600 {{python}} -B apps/android/tools/android-release-smoke.py "$@"
 
 # Run the unit tests of the Android recipe and lint scripts.
 script-tests:
@@ -109,13 +107,12 @@ status:
     {{bounded}} 120 {{python}} -B apps/android/tools/android-deploy.py status
 
 # Run the full Android verification gate in deterministic order. `unit`
-# runs the accessibility audit with the rest of :app's unit tests.
+# runs the accessibility audit and scope-audit with the rest of the tests.
 verify:
     just android lint
     just android graph-check
     just android script-tests
-    just android unit --no-daemon
-    just android storybook fleet.busy --no-daemon
-    just android scope-audit
-    just android release-smoke --no-daemon
+    just android unit
+    just android storybook fleet.busy
+    just android release-smoke
     just android journey

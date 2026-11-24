@@ -8,19 +8,20 @@
 -keep class kotlin.** { *; }
 -keep class kotlinx.coroutines.BuildersKt { *; }
 
-# The app's own calls the test makes, which R8 would otherwise inline into
-# their one caller. Only the calls are kept: the serializers and the JNI
-# surface they reach stay exactly as proguard-rules.pro leaves them, which is
-# what the test proves.
+# The app's own classes and calls the test names, which R8 would otherwise
+# rename, or inline into their one caller: the test APK is compiled against
+# their source names and isn't rewritten to R8's. Only the names and calls
+# are kept: the serializers and the JNI surface they reach stay exactly as
+# proguard-rules.pro leaves them, which is what the test proves.
 -keep class sh.amux.core.runtime.Runtime {
     public *;
 }
 -keep class sh.amux.core.runtime.Runtime$Companion {
     public *;
 }
--keepclassmembers class sh.amux.values.StartConfig {
+-keep class sh.amux.values.StartConfig {
     public <init>(...);
 }
--keepclassmembers class sh.amux.values.ProfileView {
+-keep class sh.amux.values.ProfileView {
     public java.lang.String getId();
 }

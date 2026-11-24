@@ -1,0 +1,41 @@
+load("//build:android.bzl", "amux_android_library", "resource_jar")
+
+# Debug and test builds only: the release app never links it (scope-audit
+# checks that it doesn't).
+amux_android_library(
+    name = "test-support",
+    package = "sh.amux.testsupport",
+    compose = True,
+    serialization = True,
+    deps = [
+        "//apps/android/core/values:values",
+        "//apps/android/core/words:words",
+        "//apps/android/push:push",
+        "//apps/android/core/runtime:runtime",
+        "//apps/android/design:design",
+        "//apps/android/features:features",
+        "//apps/android/shell:shell",
+        ":markdown-fixtures",
+        "//third-party/android:androidx-compose-ui",
+        "//third-party/android:androidx-compose-material3",
+        "//third-party/android:kotlinx-serialization-json",
+        "//third-party/android:kotlinx-coroutines-core",
+        "//third-party/android:androidx-compose-ui-test-manifest",
+    ],
+    # The registry test checks the stories against the shared list.
+    test_vm_args = ["-Damux.stories=$(location //:tests/stories.json)"],
+    test_deps = [
+        "//third-party/android:androidx-compose-ui-test-junit4",
+        "//third-party/android:roborazzi",
+        "//third-party/android:roborazzi-compose",
+        "//third-party/android:roborazzi-junit-rule",
+    ],
+)
+
+# The parsed prose the storybooks draw: one file, written by
+# `cargo run -p ios-tools -- markdown-fixtures` where the Swift package that
+# bundles it for the iPhone and the Mac keeps it.
+resource_jar(
+    name = "markdown-fixtures",
+    srcs = {"markdown-fixtures.json": "//:markdown-fixtures.json"},
+)

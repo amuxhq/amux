@@ -1,0 +1,28 @@
+load("//build:android.bzl", "amux_android_library", "amux_jni_library")
+
+amux_android_library(
+    name = "runtime",
+    package = "sh.amux.core.runtime",
+    serialization = True,
+    deps = [
+        "//apps/android/core/values:values",
+        "//apps/android/core/words:words",
+        "//apps/android/push:push",
+        "//third-party/android:androidx-core-ktx",
+        "//third-party/android:androidx-lifecycle-process",
+        "//third-party/android:kotlinx-serialization-json",
+        "//third-party/android:kotlinx-coroutines-android",
+        "//third-party/android:okhttp",
+    ],
+    test_deps = [
+        "//third-party/android:kotlinx-coroutines-test",
+    ],
+    # The tests drive the real Rust runtime, built for the JVM they run on.
+    test_vm_args = ["-Damux.jni.lib=$(location :host-jni)"],
+)
+
+# The Rust bridge for the host JVM the tests run on.
+amux_jni_library(
+    name = "host-jni",
+    configuration = "host-phone-dev",
+)

@@ -398,9 +398,13 @@ def android_store(skip_ready: bool = False) -> int:
     record = json.loads((FOLDER / ".testnet/net.json").read_text())
     readiness = record["readiness"]
     scope = record.get("scope", "")
-    apk = ROOT / "apps/android/app/build/outputs/apk/debug/app-debug.apk"
+    built = subprocess.run(
+        ["sh", str(ROOT / "scripts/built"), "//apps/android/app:debug"],
+        cwd=ROOT, check=True, capture_output=True, text=True, timeout=3000,
+    )
+    apk = Path(built.stdout.strip())
     if not apk.is_file():
-        raise SystemExit(f"scene: missing debug APK at {apk}; run `just android build` first")
+        raise SystemExit(f"scene: Buck2 built no debug APK at {apk}")
 
     sys.path.insert(0, str(ROOT / "apps/android/tools"))
     import android_sdk  # noqa: E402

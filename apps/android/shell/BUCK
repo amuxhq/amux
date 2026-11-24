@@ -1,0 +1,29 @@
+load("//build:android.bzl", "amux_android_library")
+
+amux_android_library(
+    name = "shell",
+    package = "sh.amux.shell",
+    compose = True,
+    stability = True,
+    deps = [
+        "//apps/android/core/values:values",
+        "//apps/android/core/words:words",
+        "//apps/android/core/runtime:runtime",
+        "//apps/android/design:design",
+        "//apps/android/features:features",
+        "//third-party/android:androidx-core-ktx",
+        "//third-party/android:androidx-activity-compose",
+        "//third-party/android:androidx-browser",
+        "//third-party/android:androidx-compose-ui",
+        "//third-party/android:androidx-compose-ui-graphics",
+        "//third-party/android:androidx-compose-foundation",
+        "//third-party/android:androidx-compose-material3",
+        "//third-party/android:androidx-compose-material-icons-extended",
+    ],
+    test_deps = [
+        "//apps/android/test-support:test-support",
+        "//third-party/android:androidx-compose-ui-test-junit4",
+        "//third-party/android:androidx-compose-ui-test-manifest",
+        "//third-party/android:kotlinx-coroutines-test",
+    ],
+)

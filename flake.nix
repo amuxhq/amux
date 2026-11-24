@@ -18,7 +18,7 @@
       }));
     in
     {
-      packages = forAllSystems (pkgs: {
+      packages = nixpkgs.lib.recursiveUpdate (forAllSystems (pkgs: {
         toolchain = pkgs.buildEnv {
           name = "amux-toolchain";
           paths = import ./nix/toolchain.nix { inherit pkgs; };
@@ -39,7 +39,17 @@
           ln -s ${pkgs.chromium}/bin/chromium $out/bin/chromium
           ln -s ${pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; }} $out/etc/fonts.conf
         '';
-      });
+      })) {
+        # What Buck2's Android actions run with (nix/android.nix), on Linux
+        # workers only. Google's Android SDK is unfree, under a licence this
+        # import accepts.
+        x86_64-linux.android = import ./nix/android.nix {
+          pkgs = import nixpkgs {
+            system = "x86_64-linux";
+            config = { allowUnfree = true; android_sdk.accept_license = true; };
+          };
+        };
+      };
 
       devShells = forAllSystems (pkgs: {
         # NoCC on macOS for the reason given in nix/toolchain.nix.

@@ -99,8 +99,10 @@ def _cxx_toolchain_from_cxx_tools_info(ctx: AnalysisContext, cxx_tools_info: Cxx
     archiver_supports_argfiles = os != Os("macos")
     nix = getattr(ctx.attrs, "nix", None)
 
+    nix_paths = getattr(ctx.attrs, "nix_paths", None) or {}
+
     def tool(named, nix_path):
-        return nix_tool(nix, nix_path) if nix else _run_info(named)
+        return nix_tool(nix, nix_paths.get(nix_path, nix_path)) if nix else _run_info(named)
 
     # (Only through a compiler driver: a linker named outright, as wasm-ld
     # is, takes no driver flags. The Linux toolchain's driver is GCC's,
@@ -266,6 +268,9 @@ amux_cxx_toolchain = rule(
         "nix": attrs.option(attrs.exec_dep(providers = [NixToolchainInfo]), default = None),
         # The linker within the Linux toolchain, by its path there.
         "nix_linker": attrs.option(attrs.string(), default = None),
+        # Where the toolchain's tools are under `nix`, where they aren't at
+        # bin/cc, bin/c++ and the rest (the Android NDK's).
+        "nix_paths": attrs.dict(attrs.string(), attrs.string(), default = {}),
         "linker_type": attrs.option(attrs.enum(LinkerType.values()), default = None),
         "post_link_flags": attrs.list(attrs.arg(), default = []),
         "rc_compiler": attrs.option(attrs.string(), default = None),

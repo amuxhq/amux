@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ios-tools <app-header <app-ffi dir> <out>|verify [--gate|--captures|--shipping|--measured]|swift-types [--check]|kotlin-types [--check]|markdown-fixtures [--check]>"
+                "usage: ios-tools <app-header <app-ffi dir> <out>|verify [--gate|--captures|--shipping|--measured]|swift-types [--check]|kotlin-types [--check|--values PATH]|markdown-fixtures [--check]>"
             );
             std::process::exit(2);
         }

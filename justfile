@@ -72,10 +72,11 @@ check:
 # //: //js:` for the repository's and the JavaScript's checks, which read
 # what build/checks/inputs.py writes first); the live provider lanes are left
 # out (`just live`). With no Linux worker in reach, the `nova-only` tests are
-# skipped, and the run ends by naming them.
-# Run the workspace's tests through Buck2.
+# skipped, and the run ends by naming them. The Android app's tests are among
+# them (every Android target is nova-only).
+# Run the workspace's and the Android app's tests through Buck2.
 test *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; scripts/py build/checks/inputs.py; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
 
 # The repository's checks (the root BUCK file) and the JavaScript's (js/BUCK)
 # as Buck2 tests, each over exactly the files it reads, so only those whose
@@ -408,7 +409,7 @@ no-update-flags:
 # and CI (docs/CI.md, "`just premerge`").
 # Run the checks a change passes before it reaches main.
 premerge: no-update-flags fmt-check dependency-policy deny shear cores-graph-check tests-check script-tests parity shipping-check lint
-    {{just_executable()}} test //crates/... //: //js:
+    {{just_executable()}} test //crates/... //: //js: //apps/android/...
     {{just_executable()}} ios lint
     {{just_executable()}} ios script-tests
     {{just_executable()}} android lint

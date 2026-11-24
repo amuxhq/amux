@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Build and audit the shipping Release Android APK and JNI library.
+"""Audit the shipping Android app bundle (or a release APK) and its JNI library.
 
-Invoked via `just android scope-audit`. By default this script:
-1. Builds the shipping Rust JNI bridge (`android-rust.py --release`, without
-   `debug-tools`).
-2. Builds the Release Android APK (`:app:assembleRelease --no-daemon`).
-3. Reads R8's `mapping.txt` for the release build, which names every class
+Run by Buck2 as `//apps/android/app:scope-audit` (`just android
+scope-audit`), on a Linux worker, with the release build's outputs and the
+NDK's tools as arguments. It:
+1. Reads R8's `mapping.txt` for the release build, which names every class
    that survived shrinking by its source name, and proves no debug or
    test-support class ships (`DoorServer`, `DoorHost`, `StorybookActivity`,
    `sh.amux.testsupport`, `ScriptedChat`, `ScriptedCloudService`,
    `ScriptedBillingStoreFront`). The DEX itself names classes as R8 renamed
    them, so a renamed debug class would pass a look at the DEX.
-4. Extracts `lib/<abi>/libamux_app.so` from the APK and inspects it with the
+2. Extracts `lib/<abi>/libamux_app.so` from the APK, or `base/lib/<abi>/`
+   from the bundle, and inspects it with the
    NDK's `llvm-readelf` and `llvm-nm` to prove no `debug-tools`,
    `amux_debug` or `testnet` symbol is present and SQLite is statically
    linked (no `libsqlite*.so` in `DT_NEEDED`, and `sqlite3_*` defined).
@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-import os
 from pathlib import Path
 import re
 import subprocess
@@ -29,18 +28,6 @@ import sys
 import tempfile
 import zipfile
 
-sys.path.insert(0, str(Path(__file__).parent))
-import android_sdk  # noqa: E402
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-ANDROID_RUST = REPO_ROOT / "apps" / "android" / "tools" / "android-rust.py"
-GRADLE_WRAPPER = REPO_ROOT / "apps" / "android" / "tools" / "gradle-run.sh"
-PYTHON = REPO_ROOT / "scripts" / "py"
-RELEASE_APK_DIR = REPO_ROOT / "apps" / "android" / "app" / "build" / "outputs" / "apk" / "release"
-APK_CANDIDATES = ("app-release.apk", "app-release-unsigned.apk")
-RELEASE_MAPPING = (
-    REPO_ROOT / "apps" / "android" / "app" / "build" / "outputs" / "mapping" / "release" / "mapping.txt"
-)
 LIB_NAME = "libamux_app.so"
 
 FORBIDDEN_CLASS_PATTERNS: tuple[str, ...] = (
@@ -139,12 +126,6 @@ def audit_classes(mapping_path: Path) -> ClassAuditResult:
     )
 
 
-def ndk_tool(name: str) -> str:
-    found = android_sdk.ndk_tool(android_sdk.ndk(), name)
-    if not found:
-        raise RuntimeError(f"{name} was not found in the Android NDK's prebuilt toolchain")
-    return found
-
 
 def parse_dt_needed(readelf_output: str) -> list[str]:
     return DT_NEEDED_RE.findall(readelf_output)
@@ -170,8 +151,8 @@ def inspect_native_library(
     so_path: Path,
     *,
     abi: str,
-    readelf: str | None = None,
-    nm: str | None = None,
+    readelf: str,
+    nm: str,
 ) -> NativeAuditResult:
     if not so_path.is_file():
         raise RuntimeError(f"missing native library: {so_path}")
@@ -179,8 +160,8 @@ def inspect_native_library(
     if size == 0:
         raise RuntimeError(f"native library is empty: {so_path}")
 
-    readelf_bin = readelf or ndk_tool("llvm-readelf")
-    nm_bin = nm or ndk_tool("llvm-nm")
+    readelf_bin = readelf
+    nm_bin = nm
 
     dynamic_out = subprocess.run(
         [readelf_bin, "-d", str(so_path)],
@@ -310,8 +291,8 @@ def audit_native_libraries(
     apk_path: Path,
     *,
     abis: list[str],
-    readelf: str | None = None,
-    nm: str | None = None,
+    readelf: str,
+    nm: str,
 ) -> list[NativeAuditResult]:
     if not apk_path.is_file():
         raise FileNotFoundError(f"Release APK not found at {apk_path}")
@@ -320,9 +301,14 @@ def audit_native_libraries(
     with zipfile.ZipFile(apk_path, "r") as zf:
         with tempfile.TemporaryDirectory(prefix="amux-so-audit-") as tmp:
             tmp_dir = Path(tmp)
+            names = set(zf.namelist())
             for abi in abis:
-                member = f"lib/{abi}/{LIB_NAME}"
-                if member not in zf.namelist():
+                # An APK keeps it under lib/, an app bundle under base/lib/.
+                member = next(
+                    (m for m in (f"lib/{abi}/{LIB_NAME}", f"base/lib/{abi}/{LIB_NAME}") if m in names),
+                    f"lib/{abi}/{LIB_NAME}",
+                )
+                if member not in names:
                     raise RuntimeError(
                         f"Release APK {apk_path} is missing required native library {member}"
                     )
@@ -341,59 +327,17 @@ def audit_native_libraries(
     return native_results
 
 
-def locate_release_apk(apk_dir: Path = RELEASE_APK_DIR) -> Path:
-    found = [apk_dir / name for name in APK_CANDIDATES if (apk_dir / name).is_file()]
-    if not found:
-        expected = ", ".join(str(apk_dir / name) for name in APK_CANDIDATES)
-        raise FileNotFoundError(f"no release APK found (checked {expected})")
-    return max(found, key=lambda p: p.stat().st_mtime)
-
-
-def build_release_artifacts(abis: list[str], *, no_daemon: bool = True) -> Path:
-    rust_cmd = [str(PYTHON), "-B", str(ANDROID_RUST), "--release"]
-    for abi in abis:
-        rust_cmd.extend(["--abi", abi])
-    print(f"scope-audit: building release JNI bridge ({', '.join(abis)})", flush=True)
-    subprocess.run(rust_cmd, cwd=REPO_ROOT, check=True, timeout=1800)
-
-    gradle_cmd = ["sh", str(GRADLE_WRAPPER), ":app:assembleRelease"]
-    if no_daemon:
-        gradle_cmd.append("--no-daemon")
-    print("scope-audit: assembling Release Android APK", flush=True)
-    subprocess.run(gradle_cmd, cwd=REPO_ROOT, check=True, timeout=1800)
-
-    return locate_release_apk()
-
-
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--apk",
-        type=Path,
-        default=None,
-        help="Path to an existing Release APK to audit (implies --skip-build).",
-    )
-    parser.add_argument(
-        "--mapping",
-        type=Path,
-        default=RELEASE_MAPPING,
-        help="R8's mapping.txt for that APK (defaults to the release build's).",
-    )
-    parser.add_argument(
-        "--skip-build",
-        action="store_true",
-        help="Audit the already-built Release APK without running Cargo or Gradle.",
-    )
+    parser.add_argument("--apk", type=Path, required=True, help="the app bundle or release APK to audit")
+    parser.add_argument("--mapping", type=Path, required=True, help="R8's mapping.txt for that APK")
+    parser.add_argument("--readelf", required=True, help="the NDK's llvm-readelf")
+    parser.add_argument("--nm", required=True, help="the NDK's llvm-nm")
     parser.add_argument(
         "--abi",
         action="append",
         dest="abis",
         help="Android ABI to require and audit inside the APK (defaults to arm64-v8a).",
-    )
-    parser.add_argument(
-        "--allow-daemon",
-        action="store_true",
-        help="Do not pass --no-daemon to Gradle when building :app:assembleRelease.",
     )
     return parser.parse_args(argv)
 
@@ -402,15 +346,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     abis = args.abis if args.abis else ["arm64-v8a"]
 
-    if args.apk is not None:
-        apk_path = args.apk.resolve()
-    elif args.skip_build:
-        apk_path = locate_release_apk()
-    else:
-        apk_path = build_release_artifacts(abis, no_daemon=not args.allow_daemon)
-
+    apk_path = args.apk.resolve()
     class_result = audit_classes(args.mapping.resolve())
-    native_results = audit_native_libraries(apk_path, abis=abis)
+    native_results = audit_native_libraries(apk_path, abis=abis, readelf=args.readelf, nm=args.nm)
 
     print(
         f"scope-audit: APK {apk_path.name} ({apk_path.stat().st_size:,} bytes): "

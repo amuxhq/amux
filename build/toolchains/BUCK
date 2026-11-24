@@ -8,13 +8,23 @@ load("@prelude//toolchains:zip_file.bzl", "zip_file_toolchain")
 load(":genrule.bzl", "amux_genrule_toolchain")
 load(":rust.bzl", "amux_rust_toolchain")
 load("@root//build/platforms:defs.bzl", "RUST_TARGET_TRIPLE")
+load("@prelude//android/tools:jdk_system_image.bzl", "jdk_system_image")
+load("@prelude//toolchains:android.bzl", "system_android_aidl_toolchain", "system_android_toolchain")
+load("@prelude//toolchains:demo.bzl", "android_hack_alias")
+load("@prelude//toolchains:dex.bzl", "system_dex_toolchain", "system_noop_dex_toolchain")
+load("@prelude//toolchains:java.bzl", "java_test_toolchain", "javacd_toolchain", "system_java_bootstrap_toolchain", "system_prebuilt_jar_bootstrap_toolchain")
+load("@prelude//toolchains:kotlin.bzl", "kotlincd_toolchain", "system_kotlin_bootstrap_toolchain")
+load(":android.bzl", "android_file", "android_sdk", "android_tool", "android_toolchain_with", "java_toolchain_with", "junit_java", "linux_toolchain", "ndk_tools", NDK_BIN = "NDK_BIN")
 
 # Linux targets build with the Linux toolchain (nix.bzl), which also sends
 # their actions to a Linux worker; everything else with the tools below.
+# Android's Rust builds on Linux too, with the Linux toolchain's rustc (it
+# carries the Android standard libraries) and the NDK's compilers.
 _NIX = select({
     "DEFAULT": None,
     "prelude//os:linux": "root//:nix-linux",
     "root//build/constraints:on-linux": "root//:nix-linux",
+    "prelude//os:android": "root//:nix-linux",
 })
 
 # The cores a Linux test that uses every core asks for. It has to be the
@@ -42,9 +52,19 @@ amux_cxx_toolchain(
         ),
     }),
     linker_type = select({"DEFAULT": None, "prelude//os:none": "wasm"}),
-    nix = _NIX,
     # The same for WebAssembly under the Linux toolchain: its Rust's lld.
     nix_linker = select({"DEFAULT": "bin/c++", "prelude//os:none": "lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"}),
+    nix = select({
+        "DEFAULT": _NIX,
+        "prelude//os:android": "root//:nix-android",
+    }),
+    nix_paths = select({
+        "DEFAULT": {},
+        "prelude//os:android": select({
+            "prelude//cpu:arm64": ndk_tools("aarch64-linux-android"),
+            "prelude//cpu:x86_64": ndk_tools("x86_64-linux-android"),
+        }),
+    }),
     visibility = ["PUBLIC"],
 )
 
@@ -167,9 +187,9 @@ noop_test_toolchain(
     visibility = ["PUBLIC"],
 )
 
+# Its zip tool is a Java program, run like the Android toolchains below.
 zip_file_toolchain(
-    name = "zip_file",
-    visibility = ["PUBLIC"],
+    name = "zip_file-inner",
 )
 
 # The Linux toolchain's scripts (nix.bzl).
@@ -181,3 +201,208 @@ zip_file_toolchain(
     )
     for name in ["nix-realize.sh", "nix-run.sh"]
 ]
+
+# The Android app's toolchains (docs/ANDROID.md): the prelude's Java, Kotlin
+# and Android toolchains, with the JDK and Android SDK from the Android Nix
+# toolchain (android.bzl). Their actions run only on a Linux worker:
+# `exec_compatible_with` on a toolchain carries to every target that uses
+# it, so a Mac sends Android work to nova whatever it builds for.
+_LINUX_EXEC = ["prelude//os:linux"]
+
+_ANDROID_BUILD_TOOLS = "sdk/build-tools/36.0.0"
+
+_ANDROID_PLATFORM = "sdk/platforms/android-36"
+
+junit_java(name = "junit_java")
+
+[
+    android_tool(
+        name = tool + "_tool",
+        path = "bin/" + tool,
+        visibility = ["PUBLIC"],
+    )
+    for tool in ["java", "javac", "jar", "jlink", "jmod"]
+]
+
+[
+    android_tool(
+        name = tool,
+        path = path,
+        visibility = ["PUBLIC"],
+    )
+    for tool, path in {
+        "aapt2": _ANDROID_BUILD_TOOLS + "/aapt2",
+        "aidl": _ANDROID_BUILD_TOOLS + "/aidl",
+        "apksigner": _ANDROID_BUILD_TOOLS + "/apksigner",
+        "zipalign": _ANDROID_BUILD_TOOLS + "/zipalign",
+        "llvm-nm": NDK_BIN + "llvm-nm",
+        "llvm-readelf": NDK_BIN + "llvm-readelf",
+        "llvm-strip": NDK_BIN + "llvm-strip",
+        "adb": "sdk/platform-tools/adb",
+    }.items()
+]
+
+android_file(
+    name = "jrt_fs_jar",
+    path = "jdk/lib/jrt-fs.jar",
+    visibility = ["PUBLIC"],
+)
+
+[
+    android_file(
+        name = name,
+        path = _ANDROID_PLATFORM + "/" + name,
+        visibility = ["PUBLIC"],
+    )
+    for name in ["android.jar", "core-for-system-modules.jar", "framework.aidl"]
+]
+
+android_sdk(
+    name = "android_sdk_tools",
+    files = {
+        "android.jar": ":android.jar",
+        "core-for-system-modules.jar": ":core-for-system-modules.jar",
+        "framework.aidl": ":framework.aidl",
+        "optimized_proguard_config": "root//build/android:proguard-android-optimize.txt",
+        "proguard_config": "root//build/android:proguard-android-optimize.txt",
+        # Never run: android-inner gives the toolchain R8 in its place.
+        "proguard.jar": "root//build/android:proguard-android-optimize.txt",
+    },
+    tools = {
+        "aapt2": ":aapt2",
+        "adb": ":adb",
+        "aidl": ":aidl",
+        "zipalign": ":zipalign",
+    },
+)
+
+jdk_system_image(
+    name = "jdk_system_image",
+    core_for_system_modules_jar = ":android_sdk_tools[core-for-system-modules.jar]",
+)
+
+# Each toolchain is defined under `<name>-inner` by the prelude's macro and
+# published under its own name as Linux-only (linux_toolchain).
+system_android_toolchain(
+    name = "android-prelude",
+    android_sdk_tools_target = ":android_sdk_tools",
+    jdk_system_image = ":jdk_system_image",
+)
+
+android_toolchain_with(
+    name = "android-inner",
+    actual = ":android-prelude",
+    replace = {
+        "generate_manifest": "root//build/android/manifest:generate_manifest",
+        "replace_application_id_placeholders": "root//build/android/manifest:replace_application_id_placeholders",
+        "jar_splitter_command": "root//build/android/dex:jar_splitter",
+        "multi_dex_command": "root//build/android/dex:multi_dex",
+    },
+    # R8, which the SDK's tools can't carry: it is a jar built with the dex
+    # toolchain, which is built from them.
+    replace_files = {"proguard_jar": "root//build/android:r8-compat-proguard"},
+)
+
+system_android_aidl_toolchain(
+    name = "android_aidl-inner",
+    android_sdk_tools_target = ":android_sdk_tools",
+)
+
+system_dex_toolchain(
+    name = "dex-inner",
+    android_sdk_tools_target = ":android_sdk_tools",
+)
+
+[
+    javacd_toolchain(
+        name = name + ("-prelude" if name == "java_for_android" else "-inner"),
+        java = ":java_tool",
+        javac = ":javac_tool",
+        jar = ":jar_tool",
+        jlink = ":jlink_tool",
+        jmod = ":jmod_tool",
+        jrt_fs_jar = ":jrt_fs_jar",
+        java_for_tests = ":junit_java",
+    )
+    for name in ["java", "java_for_android", "java_for_host_test"]
+]
+
+# R8 shrinks the whole app in one JVM, run with this heap (the prelude's
+# default is none, which the JVM refuses as `-XmxNone`).
+java_toolchain_with(
+    name = "java_for_android-inner",
+    actual = ":java_for_android-prelude",
+    values = {"proguard_max_heap_size": "6g"},
+)
+
+system_java_bootstrap_toolchain(
+    name = "java_bootstrap-inner",
+    java = ":java_tool",
+    javac = ":javac_tool",
+    jlink = ":jlink_tool",
+    jmod = ":jmod_tool",
+    jrt_fs_jar = ":jrt_fs_jar",
+)
+
+java_test_toolchain(
+    name = "java_test-inner",
+)
+
+[
+    kotlincd_toolchain(
+        name = name + "-inner",
+    )
+    for name in ["kotlin", "kotlin_for_android"]
+]
+
+system_kotlin_bootstrap_toolchain(
+    name = "kotlin_bootstrap-inner",
+)
+
+[
+    system_prebuilt_jar_bootstrap_toolchain(
+        name = name + "-inner",
+        java = ":java_tool",
+    )
+    for name in ["prebuilt_jar", "prebuilt_jar_bootstrap", "prebuilt_jar_bootstrap_no_snapshot"]
+]
+
+[
+    linux_toolchain(
+        name = name,
+        actual = ":{}-inner".format(name),
+        exec_compatible_with = _LINUX_EXEC,
+        visibility = ["PUBLIC"],
+    )
+    for name in [
+        "android",
+        "android_aidl",
+        "dex",
+        "java",
+        "java_bootstrap",
+        "java_for_android",
+        "java_for_host_test",
+        "java_test",
+        "kotlin",
+        "kotlin_bootstrap",
+        "kotlin_for_android",
+        "prebuilt_jar",
+        "prebuilt_jar_bootstrap",
+        "prebuilt_jar_bootstrap_no_snapshot",
+        "zip_file",
+    ]
+]
+
+# android_binary splits its C++ toolchain by CPU; the app's only native
+# code is the Rust bridge, built apart (build/android.bzl), so this is the
+# workspace's C toolchain under the name the prelude asks for.
+android_hack_alias(
+    name = "android-hack",
+    actual = ":cxx",
+    visibility = ["PUBLIC"],
+)
+
+system_noop_dex_toolchain(
+    name = "empty_dex",
+    visibility = ["PUBLIC"],
+)

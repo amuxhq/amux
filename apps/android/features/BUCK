@@ -1,0 +1,24 @@
+load("//build:android.bzl", "amux_android_library")
+
+amux_android_library(
+    name = "features",
+    package = "sh.amux.features",
+    compose = True,
+    stability = True,
+    deps = [
+        "//apps/android/core/values:values",
+        "//apps/android/core/words:words",
+        "//apps/android/design:design",
+        "//third-party/android:androidx-activity-compose",
+        "//third-party/android:androidx-compose-ui",
+        "//third-party/android:androidx-compose-ui-graphics",
+        "//third-party/android:androidx-compose-foundation",
+        "//third-party/android:androidx-compose-material3",
+        "//third-party/android:androidx-compose-material-icons-extended",
+    ],
+    test_deps = [
+        "//apps/android/test-support:test-support",
+        "//third-party/android:androidx-compose-ui-test-junit4",
+        "//third-party/android:androidx-compose-ui-test-manifest",
+    ],
+)

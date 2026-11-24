@@ -17,7 +17,6 @@ the suites they run.
 | --- | --- | --- | --- |
 | CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main`; by hand | The Linux gate on the build host's cache, the Cargo checks the push reaches, and the macOS and Windows tests |
 | iOS gate | [`ios.yml`](../.github/workflows/ios.yml) | Pushes to `main` and pull requests into `main` that touch the phone's paths, and by hand | `just ios gate` on Xcode 26.6 |
-| Android gate | [`android.yml`](../.github/workflows/android.yml) | Pushes to `main` and pull requests into `main` that touch Android's paths, and by hand | Android lint, script tests, bridge graph check, host JNI build and Gradle JVM/Robolectric unit tests on `ubuntu-latest` |
 | iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | By hand | The phone's store suite on the simulator, journeys and the accessibility audit |
 | Release | [`release.yml`](../.github/workflows/release.yml) | A pushed `v*` tag | The `amux` release binaries; see [Release](RELEASE.md) |
 
@@ -70,7 +69,6 @@ takes seconds shares a job.
 | Test | `macos-latest` (2 halves), `windows-latest` (1 job) | `scripts/no-update-flags.sh`, `just cargo-test -- --profile ci --exclude models` (partitioned `count:N/2` on macOS; whole suite on Windows, which compiles out the slow Unix suites) |
 | Terminal journeys | `macos-latest` | `tmux` from Homebrew, then `just cargo-journey-terminal all`: every terminal story in the manifest, on Cargo's build |
 | iOS target check | `macos-latest` | `just mobile-check` |
-| Android target check | `ubuntu-latest` | `cargo-ndk` and the runner's Android NDK, then `just android check`: the provider-free graph and `app-jni` compiled for `aarch64-linux-android`, which no other job builds |
 
 The test job runs nextest's `ci` profile, which does not stop at the first
 failure, so a platform reports every failing test; the job's log holds each
@@ -285,30 +283,13 @@ shipping stages (`ios package`, `ios scope-audit`). It refuses to start if
 any stage names a recipe the justfiles no longer declare. `just ios captures`
 and `just ios shipping` run those halves alone.
 
-### The Android gate
+### Android
 
-The Android gate ([`android.yml`](../.github/workflows/android.yml)) is its own
-workflow on `ubuntu-latest` so that it runs only when a push or pull request
-touches a file its steps read: `apps/android`, `crates/app-jni`,
-`crates/app-bridge`, `crates/app-embedded`, `crates/app-runtime`,
-`crates/ios-tools`, the files the app's tests share with the iPhone's (the
-markdown fixtures and sealed pushes under `apps/apple/Packages`, and
-`tests/stories.json`), the Cargo manifests and `.cargo/`, the toolchain pin,
-the shared runner scripts (`scripts/bounded`, `scripts/no-update-flags.sh`,
-`scripts/py`), the `setup-just` and `setup-rust` actions, or `android.yml`
-itself. The rest of the bridge's Rust graph is the workspace tests' to judge,
-and the Android target check in `ci.yml` compiles it for Android.
-
-The job installs the pinned Rust toolchain with `aarch64-linux-android` through
-`.github/actions/setup-rust`, sets up Temurin JDK 21 with Gradle caching, and
-restores the host JNI bridge from the Actions cache keyed by
-`android-rust.py --host --fingerprint` (which hashes only `app-jni`'s
-transitive workspace crate closure, so Kotlin-only or unrelated-crate edits
-skip compiling Rust). It then runs `just android lint`,
-`just android script-tests`, `just android graph-check`, and
-`just android unit --no-daemon`. Its 30-minute bound comes from a local run
-of those steps (three minutes on a 12-core Mac with no Rust built), scaled to a
-four-core runner with cold caches and doubled; the workflow says how.
+The Android app is in the Linux gate: `just premerge` runs `//apps/android/...`
+(the unit suites, the writing lints, the scope audit and the build of the
+debug APK, the bridge built for Android with them), whose actions run on the
+build host. The Android gate workflow and the Android target check, which
+ran Gradle and `cargo-ndk` on a runner, went with Gradle.
 
 ### iOS captures
 
@@ -346,7 +327,7 @@ journey or baseline that does not exist.
 | --- | --- | --- |
 | `fast` | Offline, credential-free tests with no wall-time settling: unit tests, spec suites, adapter replays, store and effect integration, renderer goldens | `just test` in the Linux gate, and `just cargo-test` on macOS and Windows, on every push |
 | `system` | Real processes and transports with bounded deadlines: the built `amux` binary and its supervisor, the store on iOS | The desktop suites in the Linux gate and the macOS test job on every push; `test-store-ios` in `just ios captures` |
-| `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests`, `ios script-tests`, `ios lint`, `android script-tests` and `android lint` in `just premerge`, so in the Linux gate on every push, and the phone's in their own gates; `ios scope-audit` before every app release |
+| `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests`, `ios script-tests`, `ios lint`, `android script-tests` and `android lint` in `just premerge`, so in the Linux gate on every push, and the iPhone's in its own gate; `ios scope-audit` before every app release |
 | `journey` | Complete client stories through the shared manifest, and the phone's accessibility sweep | The terminal journeys in the Linux gate and the macOS journeys job, and the system journey inside `just test`, on every push; phone journeys and the accessibility sweep in iOS captures run by hand |
 | `qualification` | Real providers, real cloud accounts and measured performance | Never on an ordinary push: `just live`, `just perf` and the `just ios qa-*` recipes by hand, on machines that have the credentials or hardware; `just ios perf` by hand on the enrolled Mac, last in `just ios verify` |
 

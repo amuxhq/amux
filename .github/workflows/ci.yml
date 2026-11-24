@@ -286,16 +286,21 @@ jobs:
       - name: Run the tests on a Windows worker
         if: env.REMOTE == 'true'
         run: |
+          rm -f "$RUNNER_TEMP/nativelink/port"
           scripts/py scripts/nativelink.py windows "$RUNNER_TEMP/nativelink" --remote "grpc://$BUILD_HOST:50051" \
             --results "$RUNNER_TEMP/test-results" > "$RUNNER_TEMP/nativelink.log" 2>&1 &
-          scripts/py -c 'import socket, sys, time
+          # It listens on a port the system picks (scripts/nativelink.py).
+          port=$(scripts/py -c 'import pathlib, socket, sys, time
+          port = pathlib.Path(sys.argv[1])
           for _ in range(60):
               try:
-                  socket.create_connection(("127.0.0.1", 50051), 1).close(); sys.exit(0)
-              except OSError:
+                  number = int(port.read_text())
+                  socket.create_connection(("127.0.0.1", number), 1).close()
+                  print(number); sys.exit(0)
+              except (OSError, ValueError):
                   time.sleep(1)
-          sys.exit("nativelink did not start")' || { cat "$RUNNER_TEMP/nativelink.log"; exit 1; }
-          AMUX_NATIVELINK=grpc://127.0.0.1:50051 just test-windows
+          sys.exit("nativelink did not start")' "$RUNNER_TEMP/nativelink/port") || { cat "$RUNNER_TEMP/nativelink.log"; exit 1; }
+          AMUX_NATIVELINK="grpc://127.0.0.1:$port" just test-windows
       - name: Say what Buck2 ran and what came from the cache
         if: always() && env.REMOTE == 'true'
         run: |

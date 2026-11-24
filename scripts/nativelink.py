@@ -20,7 +20,8 @@ action to (docs/BUILD.md, "The build cache").
         Run one in the foreground on CI's Windows runner, with a worker
         that runs Windows tests and its cache in front of the build host's
         at URL (build/nativelink/windows.json5); the tests' results go in
-        --results, which the job keeps between runs.
+        --results, which the job keeps between runs. It listens on a port
+        the system picks, written to DIR/port.
     nativelink.py macos DIR --remote URL [--results DIR] [--cores N]
         The same on CI's macOS runner, with a worker that runs the Mac's
         actions (build/nativelink/macos.json5).
@@ -43,8 +44,8 @@ import argparse
 import json
 import os
 import plistlib
-import socket
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -287,8 +288,16 @@ def windows(cache: Path, remote: str, results: Path | None, cores: int) -> None:
         for key in WINDOWS_ENVIRONMENT
         if key in os.environ
     )
+    # Windows reserves ranges of ports at boot (for Hyper-V, among others),
+    # different on each runner, and refuses to bind one in them even when
+    # nothing holds it: 50051 was refused on one runner and free on the
+    # next. A port the system hands out is never reserved. The one Buck2
+    # sends to goes in DIR/port.
+    port, worker_port = free_port(), free_port()
     config = cache / "config.json5"
     config.write_text(fill((ROOT / "build/nativelink/windows.json5").read_text(), {
+        "port": str(port),
+        "worker_port": str(worker_port),
         "remote": remote,
         "cache": cache.as_posix(),
         "results": results.as_posix(),
@@ -299,8 +308,15 @@ def windows(cache: Path, remote: str, results: Path | None, cores: int) -> None:
         "memory_kb": str(12 * 1024 * 1024),
         "environment": environment,
     }))
+    (cache / "port").write_text(f"{port}\n")
     nativelink = binary()
     sys.exit(subprocess.call([nativelink, str(config)]))
+
+
+def free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
 
 
 def start_script(remote: dict) -> str:

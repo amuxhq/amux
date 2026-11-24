@@ -171,6 +171,16 @@ ended after three. A test that leaves a process running behind it fails.
 Tests labelled `live` (the live provider lanes) are never cached and never
 run by `just test`.
 
+A compile that fails is never kept. The prelude builds a library's
+`[check]` output and its `[diag.*]` and `[clippy.*]` subtargets in a mode
+where rustc's failure still exits 0, its errors recorded for a later step
+that fails the build; a worker stores anything that exits 0, so a compile
+that failed because the machine did (a full disk) was replayed from the
+cache until its crate changed. Every prelude tool written in Python runs
+through [`build/toolchains/bootstrap-guard.py`](../build/toolchains/bootstrap-guard.py),
+which fails such a compile where it ran instead, with rustc's errors in its
+output, so it runs again next time.
+
 A golden test writes its file into the sandbox, where nothing reaches the
 checkout, so `just goldens` re-records them instead: it runs the golden
 tests here, with every update switch on. The next `just test` reruns only

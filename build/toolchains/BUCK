@@ -1,7 +1,8 @@
 # Toolchains (docs/BUILD.md). Each language's toolchain is added here when
 # the build first needs it.
 load(":cxx.bzl", "amux_cxx_toolchain")
-load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain", "remote_python_toolchain")
+load("@prelude//toolchains:python.bzl", "remote_python_toolchain")
+load(":python_bootstrap.bzl", "amux_python_bootstrap_toolchain")
 load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
 load("@prelude//tests:test_toolchain.bzl", "noop_test_toolchain")
 load("@prelude//toolchains:zip_file.bzl", "zip_file_toolchain")
@@ -215,8 +216,20 @@ amux_genrule_toolchain(
     visibility = ["PUBLIC"],
 )
 
-system_python_bootstrap_toolchain(
+# The prelude's Python tools, rustc's wrapper among them, run through
+# bootstrap-guard.py, so a compile whose rustc failed is never stored as a
+# success (the script says why).
+amux_python_bootstrap_toolchain(
     name = "python_bootstrap",
+    guard = ":bootstrap-guard.py",
+    visibility = ["PUBLIC"],
+)
+
+# For its unit test (scripts/tests/bootstrap_guard_test.py).
+export_file(
+    name = "bootstrap-guard.py",
+    # At its path in the checkout, where the test reads it.
+    mode = "reference",
     visibility = ["PUBLIC"],
 )
 

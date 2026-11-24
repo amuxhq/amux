@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Render the Android headless Storybook PNGs and generate its HTML gallery.
 
-Invoked via `just android storybook [filter] [--no-daemon]`. Runs Robolectric
-+ Roborazzi (`StorybookCaptureTest`) to render every matching story in Light
-and Dark appearances into `target/android/storybook/png/`, validates that every
-expected PNG is non-empty, and writes a self-contained static gallery at
-`target/android/storybook/index.html`.
+Invoked via `just android storybook [filter]`. Buck2 builds
+`//apps/android/app:storybook` on a Linux worker, which runs Robolectric +
+Roborazzi (`StorybookCaptureTest`) to render every matching story in Light and
+Dark appearances; this copies what it drew into `target/android/storybook/`,
+validates that every expected PNG is non-empty, and writes a self-contained
+static gallery at `target/android/storybook/index.html`.
 
 Each story also has a geometry report in `geometry/<id>.<appearance>.json`:
 where its pieces sit and the alignment near-misses among them. The gallery
@@ -19,13 +20,14 @@ import argparse
 from html import escape
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUT_DIR = REPO_ROOT / "target" / "android" / "storybook"
-GRADLE_WRAPPER = REPO_ROOT / "apps" / "android" / "tools" / "gradle-run.sh"
-CAPTURE_TEST = "sh.amux.android.StorybookCaptureTest"
+BUILT = REPO_ROOT / "scripts" / "built"
+CAPTURE_TARGET = "//apps/android/app:storybook"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -44,39 +46,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f"Output directory (default: {DEFAULT_OUT_DIR}).",
     )
     parser.add_argument(
-        "--no-daemon",
-        action="store_true",
-        help="Pass --no-daemon to Gradle.",
-    )
-    parser.add_argument(
         "--html-only",
         action="store_true",
-        help="Skip Gradle rendering and regenerate index.html from existing manifest.json.",
+        help="Skip rendering and regenerate index.html from existing manifest.json.",
     )
     return parser.parse_args(argv)
 
 
-def build_gradle_command(
-    out_dir: Path,
-    filters: list[str],
-    no_daemon: bool,
-) -> list[str]:
-    cmd = [
+def build_capture_command(filters: list[str]) -> list[str]:
+    """The Buck2 build of the capture, for `filters` (all stories when none)."""
+    return [
         "sh",
-        str(GRADLE_WRAPPER),
-        ":app:testDebugUnitTest",
-        "--rerun",
-        "--tests",
-        CAPTURE_TEST,
-        "-Damux.storybook.capture=true",
-        f"-Damux.storybook.out={out_dir.resolve()}",
+        str(BUILT),
+        CAPTURE_TARGET,
+        "-c",
+        f"amux.android_storybook_filter={','.join(filters)}",
     ]
-    if filters:
-        joined = ",".join(filters)
-        cmd.append(f"-Damux.storybook.filter={joined}")
-    if no_daemon:
-        cmd.append("--no-daemon")
-    return cmd
+
+
+def copy_capture(captured: Path, out_dir: Path) -> None:
+    """Replace `out_dir`'s pictures and reports with the capture's."""
+    for name in ("png", "geometry", "manifest.json"):
+        target = out_dir / name
+        if target.is_dir():
+            shutil.rmtree(target)
+        elif target.exists():
+            target.unlink()
+    shutil.copytree(captured, out_dir, dirs_exist_ok=True, symlinks=False)
+    for path in out_dir.rglob("*"):
+        if path.is_file():
+            path.chmod(0o644)
 
 
 def load_manifest(out_dir: Path) -> list[dict]:
@@ -465,14 +464,15 @@ def main(argv: list[str] | None = None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if not args.html_only:
-        cmd = build_gradle_command(
-            out_dir=out_dir,
-            filters=args.filters,
-            no_daemon=args.no_daemon,
+        completed = subprocess.run(
+            build_capture_command(args.filters),
+            cwd=REPO_ROOT,
+            stdout=subprocess.PIPE,
+            text=True,
         )
-        completed = subprocess.run(cmd, cwd=REPO_ROOT)
         if completed.returncode != 0:
             return completed.returncode
+        copy_capture(Path(completed.stdout.strip()), out_dir)
 
     index_path, stories = write_gallery(out_dir)
     print(

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The release launch smoke test's APK, which runs in the app's process. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="sh.amux.android.test">
+    <uses-sdk android:minSdkVersion="34" android:targetSdkVersion="36" />
+    <instrumentation
+        android:name="androidx.test.runner.AndroidJUnitRunner"
+        android:targetPackage="sh.amux.android" />
+</manifest>

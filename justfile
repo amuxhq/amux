@@ -66,13 +66,40 @@ build:
 check:
     {{bounded}} 3600 {{buck2}} build //crates/...
 
+# Compile and link every workspace library, binary and test for Windows,
+# on a Linux worker with the Windows toolchain (nix/windows.nix), from any
+# machine; nothing comes back but the result. CI's Windows job runs its
+# tests from these builds.
+check-windows:
+    {{bounded}} 3600 {{buck2}} build //crates/... --target-platforms root//build/platforms:windows-cli-testing-dev --materializations none
+
+# The workspace's tests for Windows, as CI's Windows job runs them after
+# `just check-windows` (docs/CI.md, "The Windows job"): only a Windows
+# worker runs them, which only that job has. Left out, as before Buck2: the
+# protocol models (nova-only), the simulated stories and the live lanes.
+# Run the workspace's tests for Windows on a Windows worker.
+test-windows *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --target-platforms root//build/platforms:windows-cli-testing-dev --exclude live --exclude simulated --exclude nova-only --exclude journey -- --timeout 3600
+
 # Every test runs in a process of its own (build/test-runner.py), and a
 # passing result is cached in NativeLink, so only tests whose inputs changed
-# run. Target patterns narrow the run (`just test //crates/node:`); the live
-# provider lanes are left out (`just live`).
-# Run the workspace's tests through Buck2.
+# run. Target patterns narrow the run (`just test //crates/node:`, `just test
+# //: //js:` for the repository's and the JavaScript's checks, which read
+# what build/checks/inputs.py writes first); the live provider lanes are left
+# out (`just live`). With no Linux worker in reach, the `nova-only` tests are
+# skipped, and the run ends by naming them. The Android app's tests are among
+# them (every Android target is nova-only).
+# Run the workspace's and the Android app's tests through Buck2.
 test *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --exclude live -- --timeout 3600
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
+
+# The repository's checks (the root BUCK file) and the JavaScript's (js/BUCK)
+# as Buck2 tests, each over exactly the files it reads, so only those whose
+# files changed run; `just premerge` runs them with every other test. The
+# recipes of the same names run each script in the checkout instead.
+# Run the repository's and the JavaScript's checks through Buck2.
+checks:
+    {{just_executable()}} test //: //js:
 
 # Run tests for one named workspace crate.
 test-crate CRATE:
@@ -86,15 +113,12 @@ test-crate CRATE:
 goldens *ARGS:
     {{bounded}} 1800 scripts/py build/goldens.py "$@"
 
-# CI's runners have no Buck2 yet, so CI runs Cargo and nextest through these
-# twins of the recipes above, with nextest's flags (.github/workflows/ci.yml).
-# Run workspace tests under cargo-nextest, as CI does.
+# CI's Windows job runs Cargo and nextest through this twin of `test`, with
+# nextest's flags, when it has no build host to build for it (a fork's pull
+# request; .github/workflows/ci.yml).
+# Run workspace tests under cargo-nextest, as CI's Windows job does without the build host.
 cargo-test *ARGS: nextest
     if [ "${1-}" = -- ]; then shift; fi; scripts/workspace-test.sh "$@"
-
-# Run one crate's tests under cargo-nextest, as CI does.
-cargo-test-crate CRATE *ARGS: nextest
-    crate=$1; shift; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 900 cargo nextest run --locked -p "$crate" "$@"
 
 # `just flaky [--load] TARGET TEST [COUNT]` runs the tests of TARGET
 # (`//crates/node:integration`) whose names contain TEST COUNT times
@@ -149,12 +173,6 @@ buckify:
     {{bounded}} 600 sh -c '"$(scripts/py scripts/buck-tools.py path reindeer)" buckify'
     {{just_executable()}} parity
 
-# Lint as CI does, under Cargo. The qualification features only decide which
-# targets build, so they are on here: the live tests and the perf binaries
-# run by hand, never in CI, and this is what keeps them compiling.
-cargo-lint:
-    {{bounded}} 1200 cargo clippy --locked --workspace --all-targets --features qualification/live,qualification/perf -- -D warnings
-
 # Format all Rust sources with the pinned nightly toolchain.
 fmt:
     {{bounded}} 600 {{nightly_cargo}} fmt --all
@@ -169,12 +187,7 @@ protobuf:
 
 # Check that committed protobuf bindings match their sources.
 codegen-check:
-    out=$({{bounded}} 600 scripts/built //crates/wire:protobuf) && if ! diff -r "$out" crates/wire/src/generated >/dev/null; then diff -ru crates/wire/src/generated "$out" | head -200; echo "committed wire output is stale; run 'just protobuf' and commit it" >&2; exit 1; fi
-
-# CI's twin of `codegen-check`, generating with Cargo's xtask.
-# Check the committed protobuf bindings with Cargo, as CI does.
-cargo-codegen-check:
-    {{bounded}} 600 scripts/codegen-check.sh
+    {{just_executable()}} test //:codegen-check
 
 # Lint amux.v1, and check it still reads what the latest release wrote; with
 # a ref, check against that ref instead. Needs buf (docs/BUILD.md).
@@ -192,9 +205,12 @@ store-check *ARGS:
 upgrade-fixture: nextest
     {{bounded}} 600 cargo nextest run --locked -p node --run-ignored only -E 'test(write_this_releases_profile)'
 
-# Build the shipping binary and enforce the release dependency policy.
+# Build the shipping binary as a release builds it, and enforce the release
+# dependency policy. Buck2 builds it from scratch with this machine's own
+# toolchains (scripts/release-build.py) into target/release/, or
+# target/<triple>/release/ with `--target`, which must name this machine.
 release-check *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p amux --bins "$@"
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 scripts/py scripts/release-build.py "$@"
     if [ "${1-}" = -- ]; then shift; fi; scripts/release-policy-check.sh "$@"
 
 # Install the pre-push credential scan (scripts/hooks/pre-push) for every worktree.
@@ -270,12 +286,6 @@ journey CLIENT NAME *ARGS:
         ;;
     esac
 
-# CI's twin of `just journey terminal`, building with Cargo.
-# Run terminal journeys on Cargo's build, as CI does.
-cargo-journey-terminal NAME:
-    {{bounded}} 900 cargo build --locked --workspace --bin amux --bin fake-claude-pty --bin fake-claude-sdk --bin fake-codex --bin fake-acp --bin testnet
-    if [ "{{NAME}}" = all ]; then {{bounded}} 3000 target/debug/testnet journey terminal all; else {{bounded}} 600 target/debug/testnet journey terminal "{{NAME}}"; fi
-
 # The world comes up in ~/.local/state/amux-env/<tree>/NAME with the
 # clients its file declares and is held, with the simulator when it has a
 # phone, until Ctrl-C; drive it from that folder with `testnet ctl`.
@@ -309,8 +319,14 @@ sanitize KIND *CRATES:
 
 # Fail when any state-machine core's dependency graph contains tokio, or any
 # core source contains a lock, a spawned task, an async fn or an await.
-cores-check:
-    {{bounded}} 120 scripts/py scripts/cores-check.py
+cores-check: cores-graph-check
+    {{just_executable()}} test //:cores-check
+
+# The tokio half of `cores-check`, which reads Cargo's whole graph and so
+# stays a script; `//:cores-check` checks the sources.
+[private]
+cores-graph-check:
+    {{bounded}} 120 scripts/py scripts/cores-check.py --graph
 
 # Enforce production and test-infrastructure dependency boundaries.
 dependency-policy:
@@ -378,45 +394,72 @@ coverage: nextest
 # Fail when a docs link or image does not resolve, a figure is unreferenced
 # or not standalone, or docs/README.md does not list every page once.
 docs-check:
-    {{bounded}} 120 scripts/py scripts/docs-check.py
+    {{just_executable()}} test //:docs-check
 
 # Fail if an interpreter or the agent's provider handshake builds or reads
 # provider JSON by hand instead of through the protocol crates.
 typed-provider-check:
-    {{bounded}} 60 scripts/py scripts/typed-provider-check.py
+    {{just_executable()}} test //:typed-provider-check
 
 # Fail if a client crate decides something by an agent's kind or a
 # provider's name outside the places its list allows.
 client-kind-check:
-    {{bounded}} 60 scripts/py scripts/client-kind-check.py
+    {{just_executable()}} test //:client-kind-check
 
 # Refuse fixture-regeneration flags before any asserted CI check runs.
 [private]
 no-update-flags:
     scripts/no-update-flags.sh
 
-# The checks a change passes before it reaches main: the repository's
-# checks, clippy over every crate, every crate's tests through Buck2 (only
-# those whose inputs changed run; the rest come from NativeLink's cache, in
-# this tree or any other), the phone apps' lints and script tests, the
-# terminal journeys, and the browser extension's checks when js/ changed.
-# The other platforms' builds and the Apple app's tests stay with
-# `just ios verify` and CI (docs/CI.md, "`just premerge`").
+# The checks a change passes before it reaches main: clippy over every
+# crate, and through Buck2 every crate's tests and the terminal journeys,
+# the repository's checks and the browser extension's (only those whose
+# inputs changed run; the rest come from NativeLink's cache, in this tree or
+# any other); as scripts, the checks that read the whole workspace's graph
+# or the git checkout, and the phone apps' lints and script tests. The other
+# platforms' builds and the Apple app's tests stay with `just ios verify`
+# and CI (docs/CI.md, "`just premerge`").
 # Run the checks a change passes before it reaches main.
-premerge: no-update-flags fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check client-kind-check docs-check tests-check script-tests parity shipping-check lint
-    {{just_executable()}} test
+premerge: premerge-checks
+    {{just_executable()}} test //crates/... //: //js: //apps/android/...
     {{just_executable()}} ios lint
     {{just_executable()}} ios script-tests
     {{just_executable()}} android lint
     {{just_executable()}} android script-tests
-    {{just_executable()}} journey terminal all
-    if git diff --quiet "$(git merge-base HEAD origin/main)" -- js; then echo "js: unchanged since main"; else {{just_executable()}} browser check; fi
+
+# The checks `just premerge` runs before its tests.
+premerge-checks: no-update-flags fmt-check dependency-policy deny shear cores-graph-check tests-check script-tests parity shipping-check lint
+
+# `just premerge` in two halves, which together run all of it: `workspace`
+# is everything but the Android app, `android` the Android app's tests,
+# lint and script tests. A fork's pull request gets no build host, so CI
+# builds and tests everything on four-core runners, and all of it on one
+# takes longer than a test run's bound; it runs the halves side by side.
+# Run one half of `just premerge`: workspace or android.
+premerge-half HALF:
+    #!/bin/sh
+    set -eu
+    case "{{HALF}}" in
+        workspace)
+            {{just_executable()}} premerge-checks
+            {{just_executable()}} test //crates/... //: //js:
+            {{just_executable()}} ios lint
+            {{just_executable()}} ios script-tests
+            ;;
+        android)
+            {{just_executable()}} test //apps/android/...
+            {{just_executable()}} android lint
+            {{just_executable()}} android script-tests
+            ;;
+        *) echo "premerge-half: workspace or android, not {{HALF}}" >&2; exit 2 ;;
+    esac
 
 # `just land "What the branch does"` merges this tree's HEAD onto a fresh
-# origin/main in a worktree of its own, runs `just premerge` (and `just
-# miri` when the phone's C ABI changed) on the merge and pushes it; `--pr N`
-# lands a reviewed pull request. One landing at a time per machine, waiting
-# for its turn, and nothing in this tree is touched (scripts/land.py).
+# origin/main, runs `just premerge` (and `just miri` when the phone's C ABI
+# changed) on the merge and pushes it. With `git config amux.landInbox` set
+# it goes through nova's landing queue, one landing at a time from every
+# machine; `--local`, or no inbox, lands from a worktree of this machine's
+# own. Nothing in this tree is touched (scripts/land.py).
 # Land this branch on main.
 land *ARGS:
     scripts/py -B scripts/land.py "$@"

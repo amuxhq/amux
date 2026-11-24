@@ -12,7 +12,7 @@ the same two commands, on its own schedule:
 
 | Product | `release` | `deploy` | Tags |
 | --- | --- | --- | --- |
-| The iPhone app | `just ios release`: archive, validate, upload to App Store Connect | `just ios deploy <version>`: submit it for review, or give it to TestFlight's external testers | `ios-v<version>-b<build>` |
+| The iPhone app | `just ios release`: build, sign, audit, validate, upload to App Store Connect | `just ios deploy <version>`: submit it for review, or give it to TestFlight's external testers | `ios-v<version>-b<build>` |
 | The Android app | `just android release`: audit, build and sign `.aab`, upload to Google Play internal testing | `just android deploy <version>`: promote the build to closed testing, open testing, or production | `android-v<version>-b<build>` |
 | The `amux` binary | `just amux release <version>`: the Release workflow builds the pushed tag | `just amux deploy <version>`: sign the channel manifest and publish it to amux.sh | `v<version>` |
 | The Mac app | `just mac release <version>`: build, sign with Developer ID, make the update zip and the disk image ([MAC](MAC.md#releases)) | `just mac deploy <version>`: sign the channel's Mac feed and publish it with the disk image | `mac-v<version>` |
@@ -24,8 +24,9 @@ it beyond `amux.v1` and the bridge
 
 ## The iPhone app
 
-The app ships from this repository, built by Xcode from the generated
-project — there is no Expo, no EAS and no hosted build service in the path.
+The app ships from this repository, built by Buck2 on the release Mac and
+signed there ([the iPhone app](IOS.md#builds)) — there is no Xcode project,
+no Expo, no EAS and no hosted build service in the path.
 One command, `just ios release`, takes a clean checkout to a signed `.ipa` that
 Apple has validated, and delivers it to App Store Connect, where TestFlight
 shows it once Apple has processed it; the commit and its tag are pushed after
@@ -44,8 +45,8 @@ Store Connect answers before the version that starts sending is submitted.
 
 The app is the next version of the listing already on the App Store, not a
 new one. Its bundle identifier, `sh.amux.app`, is what signing and the App
-Store record agree on, and it is committed in `apps/apple/project.yml`, from
-which XcodeGen writes `apps/apple/Amux/Info.plist`. The listing's numeric
+Store record agree on, and it is committed in `apps/apple/BUCK`, which the
+build writes into the bundle's Info.plist. The listing's numeric
 Apple ID is not recorded here: nothing this recipe runs asks for it, the
 upload included — altool finds the listing from the bundle identifier inside
 the package. Read it back from the App Store Connect record when it is wanted:
@@ -59,12 +60,12 @@ the work is done by [`scripts/release.py`](../scripts/release.py).
 A build carries two numbers, and they are not interchangeable.
 
 **The marketing version** (`CFBundleShortVersionString`) is what a person
-sees in the App Store: `1.0.32`. It lives in one place — the app target's
-`MARKETING_VERSION` build setting in `apps/apple/project.yml` — and the
-committed `apps/apple/Amux/Info.plist` reads it from there as
-`$(MARKETING_VERSION)`. Writing it as a build setting rather than a literal is
-what lets a rehearsal archive the version a release *would* cut without
-editing a tracked file: the number can be passed to `xcodebuild` instead.
+sees in the App Store: `1.0.32`. It lives in one place —
+`MARKETING_VERSION` in `apps/apple/version.bzl` — and the committed
+`apps/apple/Amux/Info.plist` reads it as `$(MARKETING_VERSION)`. The build
+reads it as configuration a command can override
+(`-c apple.marketing_version=...`), which is what lets a rehearsal build the
+version a release *would* cut without editing a tracked file.
 
 `just ios release` derives the next version by bumping the patch component of
 the highest version it knows — the one in the project, or a higher one in the
@@ -86,8 +87,8 @@ records them, so the next release is `1.0.33` with build `37` unless flags say
 otherwise.
 
 **The build number** (`CFBundleVersion`) is a single integer that identifies
-one binary forever. It lives beside the marketing version as
-`CURRENT_PROJECT_VERSION`, read by the bundle as
+one binary forever. It lives beside the marketing version as `BUILD_NUMBER`
+(`-c apple.build_number=...`), read by the bundle as
 `$(CURRENT_PROJECT_VERSION)`, and comes from one place only: one above the
 highest number the `ios-v*` tags record. `--build N` raises it deliberately.
 The recipe refuses to reuse a number and refuses to go backwards, and — when
@@ -118,7 +119,7 @@ pass --build N above it; every later release counts from the tags
 Fetch the tags first (`git fetch --tags`). Only if the tags really are gone,
 read the highest build number App Store Connect holds for `sh.amux.app` and
 pass `--build N` above it. A rehearsal is the one exception — it issues no
-number, spends none and records none, so with no tag it archives under the
+number, spends none and records none, so with no tag it builds under the
 build number in the project and says so, rather than stopping a signing check
 that proves nothing about numbering.
 
@@ -135,9 +136,9 @@ network and no state file to lose.
 
 The tag is annotated and cut on the release commit — the commit that writes
 the two numbers, titled `Version <version> (build <build>)` — and both come
-*last*, after Apple has validated and received the exported build. The numbers
-are written into the working tree before the archive, so the binary carries
-them and the commit records exactly the tree that was archived; nothing is
+*last*, after Apple has validated and received the signed build. The numbers
+are written into the working tree before the build, so the binary carries
+them and the commit records exactly the tree that was built; nothing is
 recorded until Apple has answered. See
 [When a release stops partway](#when-a-release-stops-partway).
 
@@ -150,9 +151,9 @@ fails and leaves the commit and tag at home.
 The notes are the annotated tag's message. The recipe drafts them from the
 commit subjects since the previous `ios-v*` tag (the last twenty commits when
 there is none), and `--notes-file <path>` replaces the draft with prose
-written by hand. The same text is written beside the exported `.ipa` as
-`ReleaseNotes.txt`, so the export directory carries what the build claims to
-contain.
+written by hand. The same text is written beside the signed `.ipa` as
+`ReleaseNotes.txt`, so the release directory carries what the build claims
+to contain.
 
 The upload does not send them to Apple, and they are written for the
 repository, not for the App Store: `just ios deploy --notes-file` sets the
@@ -163,11 +164,12 @@ the people who read it.
 
 Two things sign this app, and they belong in different places.
 
-**Committed, in `apps/apple/project.yml`:** device signing is off by default
-(`CODE_SIGNING_ALLOWED: NO`), and the simulator SDK turns it back on with an
-ad-hoc identity (`CODE_SIGN_IDENTITY[sdk=iphonesimulator*]: "-"`). Every
-routine build in this repository is a simulator build, so the default is the
-one that needs no identity at all.
+**Committed, in the build rules:** a build for the simulator or the Mac is
+signed ad hoc, and a build for a phone comes out unsigned
+(`build/apple.bzl`). Every routine build in this repository is a simulator
+build, so the default is the one that needs no identity at all; a signature
+for a phone is made afterwards, outside the build, by
+`build/apple/sign.py`.
 
 **Untracked, `apps/apple/Signing.local.xcconfig`:** the Team ID, and nothing
 else.
@@ -183,9 +185,9 @@ their team, and every fork would inherit it. The bundle identifier is *not*
 in this file — it is committed, because the app's identity is the same
 everywhere and a local override is a way to sign the wrong app.
 
-The recipe *reads* this file rather than sourcing it or handing it to
-`xcodebuild -xcconfig`: an untracked file that a recipe executed, or that
-could set any build setting it liked, is a way to run anything. It takes the
+The recipe *reads* this file rather than sourcing it or handing it to a
+build as settings: an untracked file that a recipe executed, or that could
+set any build setting it liked, is a way to run anything. It takes the
 one assignment it expects and passes it on the command line. When the file is
 absent or the assignment is missing, the recipe says exactly which piece is
 missing and exits non-zero.
@@ -196,9 +198,9 @@ string in the parentheses is *usually* the Team ID but is the individual's
 identifier on a personal Development certificate — a different value, ten
 characters long, that looks exactly as plausible. Writing that one into
 `apps/apple/Signing.local.xcconfig` costs an afternoon: every credential is
-valid, every flag is right, and `xcodebuild` stops with *No Account for Team
-"…". Add a new account in Accounts settings*, which reads like a missing Apple
-Account rather than a wrong ten characters. Take the Team ID from
+valid, every flag is right, and signing finds no identity or profile for
+the team, which reads like a missing certificate rather than a wrong ten
+characters. Take the Team ID from
 developer.apple.com under **Membership details**, or read the `OU` field of
 any certificate in the account:
 
@@ -207,29 +209,33 @@ security find-certificate -c "Apple Distribution" -p | \
   openssl x509 -noout -subject
 ```
 
-**The export signs by hand.** `apps/apple/ExportOptions.plist` sets
-`signingStyle: manual` and names both the certificate type
-(`Apple Distribution`) and a profile for each bundle: `amux App Store` for
-`sh.amux.app`, and `amux Notifications App Store` for its notification
-extension, `sh.amux.app.notifications`. Automatic signing is what Xcode does in the IDE, and it does
-not work here: the export answers *Cloud signing permission error* and then
-*No profiles for `sh.amux.app` were found*, with an active matching profile
-sitting installed. Signing by hand means **the certificate and the profiles
-must already exist on the Mac before an export** — nothing creates them
-mid-run. It also means the names are pinned: rename a profile in Apple's
-portal and the export stops. The certificate type is named rather than one
-certificate's full name, because a full name ends in the Team ID and that
-file is committed.
+**The release signs by hand.** `scripts/release.py` names the certificate
+type (`Apple Distribution`) and a profile for each bundle: `amux App Store`
+for `sh.amux.app`, and `amux Notifications App Store` for its notification
+extension, `sh.amux.app.notifications`. `build/apple/sign.py` finds each
+installed profile by name and team, embeds it, and signs each bundle inside
+out with the entitlements its source file asks for, the team's prefix filled
+in, under the values the profile decides (the push environment, whether a
+debugger may attach). Xcode's automatic signing could not do this from a
+script: it answered *Cloud signing permission error* and then *No profiles
+for `sh.amux.app` were found*, with an active matching profile sitting
+installed. Signing by hand means **the certificate and the profiles must
+already exist on the Mac before a release** — nothing creates them mid-run.
+It also means the names are pinned: rename a profile in Apple's portal and
+the release stops. The certificate type is named rather than one
+certificate's full name, because a full name ends in the Team ID and the
+script is committed. A signature that takes more than two minutes is taken
+to be waiting on a keychain dialog, and the release stops saying so.
 
 **The certificate expires.** The one on the release Mac runs to **10
-September 2027**. When it does, the export fails to find an identity: make a
+September 2027**. When it does, signing fails to find an identity: make a
 new Apple Distribution certificate, install it, and make new `amux App
 Store` and `amux Notifications App Store` profiles tied to it — a profile is
 bound to the certificate and does not survive it. Keeping the same names means
 nothing in this repository changes.
 
 So: **a simulator build needs nothing** — no team, no certificate, no
-profile. **A distribution archive needs** the Team ID above, an Apple
+profile. **A distribution build needs** the Team ID above, an Apple
 Distribution certificate in the login keychain, App Store provisioning
 profiles named `amux App Store` for `sh.amux.app` and `amux Notifications App
 Store` for `sh.amux.app.notifications`, and the App Store Connect
@@ -238,73 +244,46 @@ API key. The last three are produced once and then reused; the
 
 ### The commands
 
-`just ios release` depends on two other recipes, so they run first whether or
-not anybody ran them: `just ios package` builds every shipping slice of the
-Rust bridge under the `release` profile into
-`target/ios/AmuxApp.xcframework`, which the Release configuration links, and
-`just ios scope-audit` inspects the release bundle, so a bundle carrying a
-debug surface or an excluded platform stops the release before an archive
-exists rather than after Apple has one. Then the project is generated from
-`apps/apple/project.yml`, as every other iOS recipe does.
-
-Archive:
+Build, with the two numbers passed as configuration: a full release has
+already written them into `apps/apple/version.bzl`, and a rehearsal has not
+written them anywhere, so passing them is what makes both runs build the
+same app:
 
 ```
-xcodebuild archive \
-  -project apps/apple/Amux.xcodeproj -scheme Amux -configuration Release \
-  -destination 'generic/platform=iOS' \
-  -archivePath target/ios/release/Amux.xcarchive \
-  -derivedDataPath target/ios/ReleaseDerivedData \
-  -allowProvisioningUpdates \
-  -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_<KEY ID>.p8" \
-  -authenticationKeyID <key id> -authenticationKeyIssuerID <issuer id> \
-  -quiet \
-  CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Automatic \
-  DEVELOPMENT_TEAM=<from apps/apple/Signing.local.xcconfig> \
-  MARKETING_VERSION=<version> CURRENT_PROJECT_VERSION=<build>
+scripts/buck2 build //apps/apple:Amux \
+  --target-platforms //build/platforms:ios-app-shipping-release \
+  -c apple.marketing_version=<version> -c apple.build_number=<build> \
+  --show-full-simple-output
 ```
 
-The two numbers are passed rather than assumed: a full release has already
-written them into `apps/apple/project.yml`, and a rehearsal has not written
-them anywhere, so passing them is what makes both runs archive the same way.
-
-Export:
+That is the Release app for a phone with its notification extension, the
+bridge built under the `release` profile, unsigned. Sign it and package the
+`.ipa`:
 
 ```
-xcodebuild -exportArchive \
-  -archivePath target/ios/release/Amux.xcarchive \
-  -exportPath target/ios/release/<tag> \
-  -exportOptionsPlist target/ios/release/ExportOptions.plist \
-  -allowProvisioningUpdates \
-  -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_<KEY ID>.p8" \
-  -authenticationKeyID <key id> -authenticationKeyIssuerID <issuer id>
+scripts/py -B build/apple/sign.py <the app Buck2 named> target/ios/release/<tag> \
+  --identity "Apple Distribution" --team <from apps/apple/Signing.local.xcconfig> \
+  --profile sh.amux.app="amux App Store" \
+  --profile sh.amux.app.notifications="amux Notifications App Store" \
+  --entitlements sh.amux.app=apps/apple/Amux/Amux.entitlements \
+  --entitlements sh.amux.app.notifications=apps/apple/AmuxNotifications/AmuxNotifications.entitlements \
+  --revision <HEAD> --ipa target/ios/release/<tag>/Amux.ipa
 ```
 
-`apps/apple/ExportOptions.plist` is committed and holds no Team ID; the recipe
-copies it to `target/ios/release/ExportOptions.plist` and inserts `teamID`
-from the local signing file, so the committed file stays free of anything
-that identifies a team. Its keys:
+`--revision` stamps the commit into the app's Info.plist (`AmuxGitSHA`),
+which a report sent from the build names. Then the scope audit runs on the
+signed bundle, so what it inspects is exactly what is uploaded, and a bundle
+carrying a debug surface or an excluded platform stops the release before
+Apple sees it:
 
-| key | value | why |
-| --- | --- | --- |
-| `method` | `app-store-connect` | the App Store distribution shape; the export is still local |
-| `destination` | `export` | write the `.ipa` here; the upload is a separate step the recipe runs with altool |
-| `signingStyle` | `manual` | the export names what it signs with. Automatic signing fails here — see [Signing](#signing) |
-| `signingCertificate` | `Apple Distribution` | the certificate *type*; `teamID` picks which identity in the keychain. A full name would carry the Team ID into a committed file |
-| `provisioningProfiles` | `sh.amux.app` → `amux App Store`, `sh.amux.app.notifications` → `amux Notifications App Store` | one profile per bundle, by name. Each has to be installed already |
-| `manageAppVersionAndBuildNumber` | `false` | Xcode may otherwise rewrite the build number at export. The number this repository chose and tagged is the number that ships |
-| `uploadSymbols` | `true` | symbols travel with the archive so crash reports are readable |
+```
+scripts/py -B apps/apple/Tools/ios-scope-audit.py --app target/ios/release/<tag>/Amux.app
+```
 
-The API key, passed by the three `-authenticationKey*` flags, is what takes a
-person out of the loop: `xcodebuild` authenticates to the Apple Developer
-website with it instead of an Apple Account, so no password and no 2FA prompt
-appears in a release. `-allowProvisioningUpdates` lets it register and
-refresh what it can — the app ID, and the development profile the archive
-signs with — rather than stopping to ask. It does *not* extend to the
-distribution profile: Xcode's cloud signing refuses that from a script here,
-which is why the export signs by hand against a profile made once. The
-distribution certificate and the two App Store profiles are therefore
-standing inputs, and `just ios release --preflight` reports them as such.
+The Release build writes a dSYM for the app and for the extension
+(`//apps/apple:Amux[dsyms]`), and `--symbols` packs their symbols into the
+`.ipa` beside the app, as Xcode's export did with `uploadSymbols`, so App
+Store Connect can symbolicate the build's crash reports.
 
 Validate:
 
@@ -332,17 +311,14 @@ xcrun altool --upload-app -f target/ios/release/<tag>/Amux.ipa -t ios \
 ### One command
 
 ```
-just ios release              # bump, archive, export, validate, upload,
+just ios release              # bump, build, sign, audit, validate, upload,
                                # commit, tag, push
 just ios release --no-upload   # all of that except the upload
 just ios release --no-push     # all of that except the push
 just ios release --preflight   # check every input, do nothing
-just ios release --rehearse    # archive, export and validate with the
+just ios release --rehearse    # build, sign, audit and validate with the
                                 # would-be numbers; write nothing, tag nothing
 ```
-
-The recipe's one-line description in `just --list ios` still reads "upload
-nothing"; the script it runs uploads and pushes as described here.
 
 Validation is where a rehearsal ends and where a release goes on to deliver,
 so `just ios release` is the whole release and there is no `altool` command to
@@ -351,9 +327,9 @@ proof rather than a dry run: Apple answers on the actual signed binary, and
 answers the same way it will when the build is delivered.
 
 `--preflight` checks what the run needs — the signing file, the key and both
-identifiers in the keychain, the private key on disk, the export options, the
-Apple Distribution certificate in the login keychain, an unexpired profile
-under each name the export options ask for, and a derivable version and build
+identifiers in the keychain, the private key on disk, the Apple
+Distribution certificate in the login keychain, an unexpired profile under
+each name the release signs with, and a derivable version and build
 number — names anything missing and exits non-zero if anything is. It reports
 the tree's state too, but does not fail on it: an uncommitted file is not
 something a person produces once, and a rehearsal does not care. A real
@@ -374,12 +350,13 @@ A release does the reversible work first and the permanent work last, so
 each place it can stop has one recovery.
 
 **The numbers are written but nothing is committed.** Anything that fails in
-the archive, the export, the validation or the upload leaves this. `just ios
-release` says so and stops; `git status` shows the modified project files and
-no new commit, and `git tag --list 'ios-v*'` is unchanged. Undo the numbers:
+the build, the signing, the audit, the validation or the upload leaves this.
+`just ios release` says so and stops; `git status` shows the modified
+version file and no new commit, and `git tag --list 'ios-v*'` is unchanged.
+Undo the numbers:
 
 ```
-git checkout apps/apple/project.yml apps/apple/Amux/Info.plist apps/apple/Amux.xcodeproj/project.pbxproj
+git checkout apps/apple/version.bzl
 ```
 
 Then fix what failed and run the release again. If the failure came before
@@ -534,7 +511,7 @@ mv ~/Downloads/AuthKey_<key id>.p8 ~/.appstoreconnect/private_keys/
 chmod 600 ~/.appstoreconnect/private_keys/AuthKey_<key id>.p8
 ```
 
-That directory is one of the paths `xcodebuild`, `altool` and `notarytool`
+That directory is one of the paths `altool` and `notarytool`
 search by convention, so nothing has to be configured to find it. Never copy
 it into this repository.
 
@@ -566,7 +543,7 @@ printf 'DEVELOPMENT_TEAM = %s\n' \
 `git check-ignore -q apps/apple/Signing.local.xcconfig`.
 
 **5. Make the distribution certificate and the App Store profiles.** All of
-them, once. The export signs by hand, so neither appears on its own during a run —
+them, once. The release signs by hand, so neither appears on its own during a run —
 a Mac that has only an Apple Development identity is the normal starting
 point and this is the step that fills the gap.
 
@@ -577,8 +554,8 @@ Request a Certificate From a Certificate Authority** (saved to disk).
 Download the resulting `.cer` and double-click it to install it, with its
 private key, into the login keychain. Then **Profiles → +**, choose **App
 Store Connect** distribution, select `sh.amux.app` and that certificate, and
-name the profile exactly **`amux App Store`** — `apps/apple/ExportOptions.plist`
-asks for that name. The App ID needs **Push Notifications** and **Associated
+name the profile exactly **`amux App Store`** — `scripts/release.py` asks for
+that name. The App ID needs **Push Notifications** and **Associated
 Domains** on (the app opens `amux.sh` pairing links), and a profile made
 before either was turned on has to be made again: **Edit** it, **Save**, and
 install the new download. Make a second profile the
@@ -606,8 +583,8 @@ ls ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/
 **6. Check it.** `just ios release --preflight` reports every input —
 including the certificate and the profiles from step 5, by name — and says
 which one is missing. Nothing in this step reaches Apple beyond
-authenticating. Then `just ios release --rehearse` archives and exports for
-real, writing nothing to the tree and cutting no tag, which is the proof that
+authenticating. Then `just ios release --rehearse` builds, signs and
+validates for real, writing nothing to the tree and cutting no tag, which is the proof that
 the arrangement works end to end.
 
 None of the values above — the key, its id, the issuer id or the Team ID —
@@ -616,9 +593,9 @@ appear in any committed file, and none of them should be pasted into one.
 ## The Android app
 
 The Android app ships from this repository as a signed Android App Bundle
-(`.aab`, application ID `sh.amux.android`) built by Gradle from
-`apps/android/` with the shipping Rust JNI library (`libamux_app.so`, built
-without `debug-tools`).
+(`.aab`, application ID `sh.amux.android`) that Buck2 builds from
+`apps/android/` on a Linux worker (`//apps/android/app:bundle`) with the
+shipping Rust JNI library (`libamux_app.so`, built without `debug-tools`).
 
 ```sh
 just android release --preflight                       # check keystore, keychain & service account
@@ -633,9 +610,10 @@ just android deploy 1.0.0 --notes-file whats-new.txt   # 100% production release
 ```
 
 `just android release` runs `just android scope-audit` first, then writes
-`versionName` and `versionCode` in `apps/android/app/build.gradle.kts`, builds
-and signs `:app:bundleRelease` (embedding the R8 ProGuard mapping inside the
-`.aab`), verifies the signature with `jarsigner -verify -strict`, copies the
+`VERSION_NAME` and `VERSION_CODE` in `apps/android/app/version.bzl`, has
+Buck2 build the unsigned bundle (fetched from the cache), signs it on this
+Mac with the upload key and `jarsigner` (the key never enters the build),
+verifies the signature with `jarsigner -verify`, copies the
 bundle, `mapping.txt` and `ReleaseNotes.txt` under
 `target/android/release/android-v<version>-b<build>/`, uploads the `.aab` to
 Google Play's `internal` track through the Google Play Android Publisher API v3
@@ -643,9 +621,10 @@ Google Play's `internal` track through the Google Play Android Publisher API v3
 and only then commits, cuts the annotated `android-v<version>-b<build>` tag,
 and pushes `HEAD:main` and the tag.
 
-- `--rehearse` passes `-Pamux.versionName` and `-Pamux.versionCode` to Gradle
-  so it signs and verifies the exact would-be bundle without editing
-  `build.gradle.kts`, cutting a tag, or uploading anything.
+- `--rehearse` passes the would-be numbers to Buck2
+  (`-c amux.android_version_name=… -c amux.android_version_code=…`) so it
+  signs and verifies the exact would-be bundle without editing `version.bzl`,
+  cutting a tag, or uploading anything.
 - `--no-upload` and `--no-push` each stop short of their step.
 - `--draft` creates the track release in `draft` status (required on a
   brand-new Play Console app before its first release has been published), and
@@ -860,12 +839,27 @@ experiments only into preview builds, behind a Cargo feature, was rejected:
 one version would exist as two binaries, and promoting preview to stable
 would ship a build preview never ran.
 
-`just release-check` builds the shipping binary under the `release` profile —
-`cargo build --release -p amux --bins`,
-whole-program optimised (fat LTO, one codegen unit) with line tables — and
-runs [`scripts/release-policy-check.sh`](../scripts/release-policy-check.sh)
-on it, which fails if its SQLite linkage breaks policy
-(`scripts/sqlite_linkage.py`).
+`just release-check` builds the shipping binary in the release
+configuration — whole-program optimised (fat LTO, one codegen unit) with
+line tables, as Cargo's `release` profile is — and runs
+[`scripts/release-policy-check.sh`](../scripts/release-policy-check.sh) on
+it, which fails if its SQLite linkage breaks policy
+(`scripts/sqlite_linkage.py`). Buck2 builds it
+([`scripts/release-build.py`](../scripts/release-build.py)) from scratch on
+the machine it runs on: every action there (`--local-only`), nothing read
+from or written to a build cache (`--no-remote-cache`), and the machine's
+own toolchains — rustup's pinned Rust, and Xcode's, GCC's or MSVC's C tools
+— not the Nix ones the build host's workers use, whose Linux binaries need
+Nix's C library. So a release binary depends on nothing a cache or a
+build host holds: what is attested is what that runner built from the
+tagged source. The binary goes where Cargo's release build left it,
+`target/<triple>/release/amux` (`.exe` and `.pdb` on Windows), and on macOS
+rustc's own `amux.dSYM` beside it, for the symbol split below.
+
+The workflow can also be run by hand (`gh workflow run release.yml --ref
+<branch>`): that builds, checks and splits the three binaries at the
+branch's head and keeps none of them: it attests nothing, uploads nothing
+and publishes no release. Only a pushed tag releases.
 
 The pushed tag starts the Release workflow
 ([`.github/workflows/release.yml`](../.github/workflows/release.yml)). It

@@ -120,9 +120,7 @@ class ScopeAuditTests(unittest.TestCase):
         bundle = Path(tempfile.mkdtemp())
         png(bundle / "AppIcon60x60@2x.png", 120, 120)
         info = shipping_info()
-        settings = {"TARGETED_DEVICE_FAMILY": "1", "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator",
-                    "SUPPORTS_MACCATALYST": "NO", "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD": "NO",
-                    "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD": "NO"}
+        settings = {"IOS"}
         grants = SHIPPED_GRANTS
         self.assertEqual(audit.bundle_violations(info, grants, settings, bundle), [])
         # Asking for a token without this never gets one, and nothing but the
@@ -137,12 +135,15 @@ class ScopeAuditTests(unittest.TestCase):
             info, grants | {"com.apple.developer.associated-domains": ["applinks:example.com"]},
             settings, bundle))
         self.assertTrue(audit.bundle_violations(info | {"UIDeviceFamily": [1, 2]}, grants, settings, bundle))
-        for flag in ("SUPPORTS_MACCATALYST", "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD",
-                     "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD"):
-            with self.subTest(flag=flag):
-                self.assertTrue(audit.bundle_violations(info, grants, settings | {flag: "YES"}, bundle))
+        # A binary built for another platform says so in its load commands,
+        # whatever the bundle claims.
+        self.assertEqual(audit.bundle_violations(info, grants, {"IOSSIMULATOR"}, bundle), [])
+        for platform in ("MACCATALYST", "MACOS", "XROS"):
+            with self.subTest(platform=platform):
+                self.assertTrue(audit.bundle_violations(info, grants, settings | {platform}, bundle))
+        self.assertTrue(audit.bundle_violations(info, grants, set(), bundle))
         self.assertTrue(audit.bundle_violations(
-            info, grants, settings | {"SUPPORTED_PLATFORMS": "macosx"}, bundle))
+            info | {"CFBundleSupportedPlatforms": ["MacOSX"]}, grants, settings, bundle))
 
     def test_the_notification_extension(self):
         group = {"keychain-access-groups": [audit.PUSH_KEY_GROUP]}
@@ -164,6 +165,10 @@ class ScopeAuditTests(unittest.TestCase):
         self.assertTrue(violations(grants={}))
         self.assertTrue(violations(app_grants={}))
         self.assertTrue(violations(info=extension | {"AmuxPushKeychainGroup": "other"}))
+        # A signed bundle carries the group with the team's prefix filled in.
+        signed = {"keychain-access-groups": ["ABCDE12345.sh.amux.push"]}
+        self.assertEqual(violations(app_grants=signed, grants=signed), [])
+        self.assertTrue(violations(grants={"keychain-access-groups": ["ABCDE12345.sh.amux.other"]}))
 
     def test_debug_only_resources_in_the_bundle_are_rejected(self):
         # Symbols catch the code that reads these files; nothing else catches
@@ -191,15 +196,17 @@ class ScopeAuditTests(unittest.TestCase):
         bundle = Path(tempfile.mkdtemp())
         png(bundle / "AppIcon60x60@2x.png", 120, 120)
         info = shipping_info()
-        settings = {"TARGETED_DEVICE_FAMILY": "1",
-                    "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator",
-                    "SUPPORTS_MACCATALYST": "NO",
-                    "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD": "NO",
-                    "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD": "NO"}
+        settings = {"IOS"}
         self.assertEqual(audit.bundle_violations(info, SHIPPED_GRANTS, settings, bundle), [])
         png(bundle / "frozen-frame.png", 10, 10)
         self.assertIn("excluded resource in the bundle: frozen-frame.png",
                       audit.bundle_violations(info, SHIPPED_GRANTS, settings, bundle))
+
+    def test_sqlite_is_linked_in_not_loaded(self):
+        self.assertEqual(audit.linkage_violations(
+            "Amux:\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)\n"), [])
+        self.assertTrue(audit.linkage_violations(
+            "Amux:\n\t/usr/lib/libsqlite3.dylib (compatibility version 9.0.0)\n"))
 
     def test_transitive_cloud_and_legacy_dependencies_are_rejected(self):
         clean = {"name": "AmuxTestSupport", "dependencies": [{"name": "AmuxCore"}]}
@@ -217,11 +224,7 @@ class TheLocalNetworkDeclaration(unittest.TestCase):
         self.bundle = Path(tempfile.mkdtemp())
         png(self.bundle / "AppIcon60x60@2x.png", 120, 120)
         self.info = shipping_info()
-        self.settings = {"TARGETED_DEVICE_FAMILY": "1",
-                         "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator",
-                         "SUPPORTS_MACCATALYST": "NO",
-                         "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD": "NO",
-                         "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD": "NO"}
+        self.settings = {"IOS"}
 
     def violations(self, info):
         return audit.bundle_violations(info, SHIPPED_GRANTS, self.settings, self.bundle)

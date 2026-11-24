@@ -1,0 +1,9 @@
+# The Apple rules' tools (build/apple.bzl).
+[
+    export_file(
+        name = name,
+        src = name,
+        visibility = ["PUBLIC"],
+    )
+    for name in ["apple.py", "xctest.py"]
+]

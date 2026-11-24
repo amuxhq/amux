@@ -1,0 +1,39 @@
+load("//build:android.bzl", "script_test")
+
+# The Android app (docs/ANDROID.md); each module has its own BUCK file.
+
+export_file(
+    name = "compose-stability.conf",
+    src = "compose-stability.conf",
+    visibility = ["PUBLIC"],
+)
+
+# Every module's sources and resources (each module's `:sources`), which
+# the writing lints read.
+_SOURCES = ["//apps/android/" + module + ":sources" for module in [
+    "app",
+    "core/runtime",
+    "core/values",
+    "core/words",
+    "design",
+    "features",
+    "push",
+    "shell",
+    "test-support",
+]] + ["//apps/android/tools:noncopy"]
+
+# The writing lints (apps/android/tools): what the Compose features module
+# may import, no fixed sleeps in tests, and the strings' house rules.
+[
+    script_test(
+        name = name,
+        script = "//apps/android/tools:" + script,
+        shell = script.endswith(".sh"),
+        resources = _SOURCES,
+    )
+    for name, script in {
+        "feature-lint": "feature-lint.sh",
+        "strings-lint": "strings_lint.py",
+        "test-waits-lint": "test-waits-lint.sh",
+    }.items()
+]

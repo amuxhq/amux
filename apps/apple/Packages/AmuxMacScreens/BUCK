@@ -1,0 +1,39 @@
+load("//build:rust.bzl", "amux_files")
+load("//apps/apple:defs.bzl", "copied", "package_library")
+
+# The Mac app's screens, drawn from values and reporting through actions.
+# Only the values and their words: nothing here may reach `AmuxCore`, whose
+# Rust bridge would make every storybook build link it.
+package_library(
+    name = "AmuxMacScreens",
+    package = "AmuxMacScreens",
+    srcs = glob(["Sources/AmuxMacScreens/**/*.swift"]),
+    # Lucide's line icons (ISC, licence alongside), the set the developer
+    # tools this app sits beside are drawn in.
+    resources = copied("Sources/AmuxMacScreens", "Icons"),
+    deps = [
+        "//apps/apple/Packages/AmuxCore:AmuxValues",
+        "//apps/apple/Packages/AmuxCore:AmuxWords",
+    ],
+    mac = True,
+)
+
+# The named screens the storybook draws. The app does not link this.
+package_library(
+    name = "AmuxMacStories",
+    package = "AmuxMacScreens",
+    srcs = glob(["Sources/AmuxMacStories/**/*.swift"]),
+    deps = [
+        ":AmuxMacScreens",
+        "//apps/apple/Packages/AmuxCore:AmuxFixtures",
+        "//apps/apple/Packages/AmuxCore:AmuxValues",
+    ],
+    mac = True,
+)
+
+# The Swift sources at their paths in the checkout, for the repository
+# checks that read them (the root BUCK's client-kind-check).
+amux_files(
+    name = "swift",
+    srcs = glob(["**/*.swift"]),
+)

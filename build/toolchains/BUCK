@@ -1,33 +1,159 @@
 # Toolchains (docs/BUILD.md). Each language's toolchain is added here when
 # the build first needs it.
 load(":cxx.bzl", "amux_cxx_toolchain")
-load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
 load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain", "remote_python_toolchain")
 load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
 load("@prelude//tests:test_toolchain.bzl", "noop_test_toolchain")
 load("@prelude//toolchains:zip_file.bzl", "zip_file_toolchain")
+load(":genrule.bzl", "amux_genrule_toolchain")
 load(":rust.bzl", "amux_rust_toolchain")
 load("@root//build/platforms:defs.bzl", "RUST_TARGET_TRIPLE")
+load("@prelude//android/tools:jdk_system_image.bzl", "jdk_system_image")
+load("@prelude//toolchains:android.bzl", "system_android_aidl_toolchain", "system_android_toolchain")
+load("@prelude//toolchains:demo.bzl", "android_hack_alias")
+load("@prelude//toolchains:dex.bzl", "system_dex_toolchain", "system_noop_dex_toolchain")
+load("@prelude//toolchains:java.bzl", "java_test_toolchain", "javacd_toolchain", "system_java_bootstrap_toolchain", "system_prebuilt_jar_bootstrap_toolchain")
+load("@prelude//toolchains:kotlin.bzl", "kotlincd_toolchain", "system_kotlin_bootstrap_toolchain")
+load(":android.bzl", "android_file", "android_sdk", "android_tool", "android_toolchain_with", "java_toolchain_with", "junit_java", "linux_toolchain", "ndk_tools", NDK_BIN = "NDK_BIN")
+
+# Linux targets build with the Linux toolchain (nix.bzl), which also sends
+# their actions to a Linux worker; everything else with the tools below.
+# Android's Rust builds on Linux too, with the Linux toolchain's rustc (it
+# carries the Android standard libraries) and the NDK's compilers. So does
+# Windows: its genrules with the Linux toolchain, its compiles and links
+# with the Windows one (_NIX_COMPILE).
+_NIX = select({
+    "DEFAULT": select({
+        "DEFAULT": None,
+        "prelude//os:linux": "root//:nix-linux",
+        "root//build/constraints:on-linux": "root//:nix-linux",
+        "prelude//os:android": "root//:nix-linux",
+        "prelude//os:windows": "root//:nix-linux",
+    }),
+    # A release build uses this machine's own toolchains
+    # (build/constraints:local-build).
+    "root//build/constraints:local-build": None,
+})
+
+_NIX_COMPILE = select({
+    "DEFAULT": _NIX,
+    "prelude//os:windows": select({
+        "DEFAULT": "root//:nix-windows",
+        "root//build/constraints:local-build": None,
+    }),
+})
+
+# A release build's C tools are this machine's own: on Windows MSVC's,
+# which the prelude finds with vswhere (so none is named below); on Linux
+# whichever `cc` and `c++` are on PATH (GCC on CI's runner, as Cargo's
+# release builds linked with); on a Mac Xcode's, as always.
+_LOCAL = read_root_config("amux", "local", "false") == "true"
+
+_LOCAL_WINDOWS = _LOCAL and host_info().os.is_windows
+
+_LOCAL_LINUX = _LOCAL and host_info().os.is_linux
+
+# Where this machine's `cc`, `c++` and `ar` are, by full path, for a release
+# build on Linux (scripts/buck-config.py finds them on PATH): a build
+# script's compiler is started without a PATH search.
+_LOCAL_CC = read_root_config("amux", "local_cc", "/usr/bin/cc")
+
+_LOCAL_CXX = read_root_config("amux", "local_cxx", "/usr/bin/c++")
+
+_LOCAL_AR = read_root_config("amux", "local_ar", "/usr/bin/ar")
+
+# The Windows toolchain's tools (nix/windows.nix) where the C toolchain
+# looks for GCC's names: LLVM's MSVC-compatible ones, which take cl.exe's,
+# link.exe's and lib.exe's arguments. The compiler is declared as cl.exe
+# ("windows"), not clang-cl: for clang-cl the prelude passes
+# `-Xclang -fdebug-compilation-dir -Xclang <dir>` one argument per line of
+# a response file, and clang-cl then finds -Xclang with no value.
+_WINDOWS_TOOLS = {
+    "bin/ar": "bin/llvm-lib",
+    "bin/c++": "bin/clang-cl",
+    "bin/cc": "bin/clang-cl",
+    "bin/nm": "bin/llvm-nm",
+    "bin/objcopy": "bin/llvm-objcopy",
+    "bin/objdump": "bin/llvm-objdump",
+    "bin/ranlib": "bin/llvm-ranlib",
+    "bin/strip": "bin/llvm-strip",
+}
+
+# The cores a Linux test that uses every core asks for. It has to be the
+# same wherever the test is sent from, or the same test would have two
+# keys, and no more than nova's worker offers any scheduler it registers
+# with; it is a minimum, so a bigger worker still takes it.
+_LINUX_WHOLE_WORKER = read_root_config("amux", "linux_worker_cores", "8")
+
+# The cores the Windows CI job's worker offers: GitHub's Windows runner has
+# four.
+_WINDOWS_WHOLE_WORKER = "4"
+
+# C for a phone or the simulator (a crate's C, such as ring's) is compiled for
+# that target against its SDK: /usr/bin/clang would otherwise build it for
+# this Mac. scripts/buck-config.py writes where the selected Xcode keeps each
+# SDK, so an Xcode upgrade changes these actions' keys too.
+_IOS_C_FLAGS = select({
+    "DEFAULT": [],
+    "prelude//os:iphoneos": select({
+        "DEFAULT": ["-target", "arm64-apple-ios26.0", "-isysroot", read_root_config("apple", "iphoneos_sdk", "")],
+        "root//build/constraints:simulator": ["-target", "arm64-apple-ios26.0-simulator", "-isysroot", read_root_config("apple", "iphonesimulator_sdk", "")],
+    }),
+})
 
 # Xcode's clang through /usr/bin, which finds the selected Xcode and its SDK.
 # The Xcode version is in every Mac action's platform properties
 # (build/platforms/BUCK), so an Xcode upgrade changes their keys.
 amux_cxx_toolchain(
     name = "cxx",
-    archiver = "/usr/bin/ar",
-    compiler = "/usr/bin/clang",
-    compiler_type = "clang",
-    cxx_compiler = "/usr/bin/clang++",
+    archiver = _LOCAL_AR if _LOCAL_LINUX else (None if _LOCAL_WINDOWS else "/usr/bin/ar"),
+    compiler = _LOCAL_CC if _LOCAL_LINUX else (None if _LOCAL_WINDOWS else "/usr/bin/clang"),
+    compiler_type = select({"DEFAULT": "clang", "prelude//os:linux": "gcc", "prelude//os:windows": "windows"}),
+    archiver_type = select({"DEFAULT": None, "prelude//os:windows": None if _LOCAL_WINDOWS else "windows_clang"}),
+    tools = "prelude//toolchains/msvc:msvc_tools" if _LOCAL_WINDOWS else None,
+    # The C runtime as a DLL, as Rust's own Windows code and the `cc`
+    # crate's builds link it: clang-cl alone would pick the static one, and
+    # one binary would then carry both. A phone's or the simulator's C is
+    # compiled for it (_IOS_C_FLAGS).
+    c_flags = _IOS_C_FLAGS + select({"DEFAULT": [], "prelude//os:windows": ["/MD"]}),
+    cxx_flags = _IOS_C_FLAGS + select({"DEFAULT": [], "prelude//os:windows": ["/MD"]}),
+    cxx_compiler = _LOCAL_CXX if _LOCAL_LINUX else (None if _LOCAL_WINDOWS else "/usr/bin/clang++"),
     # WebAssembly links with the lld the pinned Rust ships, as Cargo's wasm32
     # builds do; rustc tells it which flavour.
     linker = select({
-        "DEFAULT": "/usr/bin/clang++",
+        "DEFAULT": _LOCAL_CXX if _LOCAL_LINUX else (None if _LOCAL_WINDOWS else "/usr/bin/clang++"),
         "prelude//os:none": "{}/lib/rustlib/{}/bin/rust-lld".format(
             read_root_config("rust", "toolchain_dir", ""),
             "aarch64-apple-darwin" if host_info().os.is_macos else "x86_64-unknown-linux-gnu",
         ),
     }),
-    linker_type = select({"DEFAULT": None, "prelude//os:none": "wasm"}),
+    linker_type = select({"DEFAULT": None, "prelude//os:none": "wasm", "prelude//os:windows": "windows"}),
+    # A Windows release keeps its symbols in a PDB beside the binary
+    # (scripts/release-build.py). rustc asks the linker for one whenever
+    # there is debug info; saying /DEBUG here too is what makes Buck2 declare
+    # it, as the binary's `[pdb]` output.
+    link_flags = select({
+        "DEFAULT": [],
+        "prelude//os:windows": select({"DEFAULT": [], "root//build/constraints:release": ["/DEBUG"]}),
+    }),
+    # The same for WebAssembly under the Linux toolchain: its Rust's lld.
+    nix_linker = select({
+        "DEFAULT": "bin/c++",
+        "prelude//os:none": "lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld",
+        "prelude//os:windows": "bin/lld-link",
+    }),
+    nix = select({
+        "DEFAULT": _NIX_COMPILE,
+        "prelude//os:android": "root//:nix-android",
+    }),
+    nix_paths = select({
+        "DEFAULT": {},
+        "prelude//os:windows": _WINDOWS_TOOLS,
+        "prelude//os:android": select({
+            "prelude//cpu:arm64": ndk_tools("aarch64-linux-android"),
+            "prelude//cpu:x86_64": ndk_tools("x86_64-linux-android"),
+        }),
+    }),
     visibility = ["PUBLIC"],
 )
 
@@ -78,11 +204,13 @@ amux_rust_toolchain(
     clippy_toml = "root//:clippy.toml",
     deny_lints = ["clippy::await_holding_lock", "clippy::dbg_macro", "clippy::todo"],
     toolchain_dir = read_root_config("rust", "toolchain_dir"),
+    nix = _NIX_COMPILE,
     visibility = ["PUBLIC"],
 )
 
-system_genrule_toolchain(
+amux_genrule_toolchain(
     name = "genrule",
+    nix = _NIX,
     visibility = ["PUBLIC"],
 )
 
@@ -106,26 +234,55 @@ remote_test_execution_toolchain(
     default_profile = "default",
     # One action per test target; the target's own runner isolates cases.
     default_run_as_bundle = True,
-    profiles = {
-        "default": {
-            "capabilities": {
-                "OSFamily": "macos",
-                "cpu_count": "1",
-                "xcode": read_root_config("apple", "xcode", ""),
+    # A Linux test runs on a Linux worker, the rest on the Mac's.
+    profiles = select({
+        "DEFAULT": {
+            "default": {
+                "capabilities": {
+                    "OSFamily": "macos",
+                    "cpu_count": "1",
+                    "xcode": read_root_config("apple", "xcode", ""),
+                },
+                "use_case": "buck2-default",
             },
-            "use_case": "buck2-default",
-        },
-        # A test that uses every core, as nextest's `threads-required =
-        # "num-cpus"`: it reserves the whole worker, so nothing runs beside it.
-        "whole-worker": {
-            "capabilities": {
-                "OSFamily": "macos",
-                "cpu_count": read_root_config("amux", "worker_cores", "1"),
-                "xcode": read_root_config("apple", "xcode", ""),
+            # A test that uses every core, as nextest's `threads-required =
+            # "num-cpus"`: it reserves the whole worker, so nothing runs
+            # beside it.
+            "whole-worker": {
+                "capabilities": {
+                    "OSFamily": "macos",
+                    "cpu_count": read_root_config("amux", "worker_cores", "1"),
+                    "xcode": read_root_config("apple", "xcode", ""),
+                },
+                "use_case": "buck2-default",
             },
-            "use_case": "buck2-default",
         },
-    },
+        "prelude//os:linux": {
+            "default": {
+                "capabilities": {"OSFamily": "linux", "cpu_count": "1"},
+                "use_case": "buck2-default",
+            },
+            "whole-worker": {
+                "capabilities": {"OSFamily": "linux", "cpu_count": _LINUX_WHOLE_WORKER},
+                "use_case": "buck2-default",
+            },
+        },
+        # On the Windows CI job's own worker (build/platforms/BUCK), the
+        # only place a Windows test can run. Every Windows test binary takes
+        # the whole worker, its runner four cases at a time: four at once
+        # is what the runner's four cores ran under nextest, and the Windows
+        # tests have failed on timing under more load than that.
+        "prelude//os:windows": {
+            "default": {
+                "capabilities": {"OSFamily": "windows", "cpu_count": _WINDOWS_WHOLE_WORKER},
+                "use_case": "buck2-default",
+            },
+            "whole-worker": {
+                "capabilities": {"OSFamily": "windows", "cpu_count": _WINDOWS_WHOLE_WORKER},
+                "use_case": "buck2-default",
+            },
+        },
+    }),
     visibility = ["PUBLIC"],
 )
 
@@ -134,7 +291,222 @@ noop_test_toolchain(
     visibility = ["PUBLIC"],
 )
 
+# Its zip tool is a Java program, run like the Android toolchains below.
 zip_file_toolchain(
-    name = "zip_file",
+    name = "zip_file-inner",
+)
+
+# The Linux toolchain's scripts (nix.bzl).
+[
+    export_file(
+        name = name,
+        src = name,
+        visibility = ["PUBLIC"],
+    )
+    for name in ["nix-realize.sh", "nix-run.sh"]
+]
+
+# The Android app's toolchains (docs/ANDROID.md): the prelude's Java, Kotlin
+# and Android toolchains, with the JDK and Android SDK from the Android Nix
+# toolchain (android.bzl). Their actions run only on a Linux worker:
+# `exec_compatible_with` on a toolchain carries to every target that uses
+# it, so a Mac sends Android work to nova whatever it builds for.
+_LINUX_EXEC = ["prelude//os:linux"]
+
+_ANDROID_BUILD_TOOLS = "sdk/build-tools/36.0.0"
+
+_ANDROID_PLATFORM = "sdk/platforms/android-36"
+
+junit_java(name = "junit_java")
+
+[
+    android_tool(
+        name = tool + "_tool",
+        path = "bin/" + tool,
+        visibility = ["PUBLIC"],
+    )
+    for tool in ["java", "javac", "jar", "jlink", "jmod"]
+]
+
+[
+    android_tool(
+        name = tool,
+        path = path,
+        visibility = ["PUBLIC"],
+    )
+    for tool, path in {
+        "aapt2": _ANDROID_BUILD_TOOLS + "/aapt2",
+        "aidl": _ANDROID_BUILD_TOOLS + "/aidl",
+        "apksigner": _ANDROID_BUILD_TOOLS + "/apksigner",
+        "zipalign": _ANDROID_BUILD_TOOLS + "/zipalign",
+        "llvm-nm": NDK_BIN + "llvm-nm",
+        "llvm-readelf": NDK_BIN + "llvm-readelf",
+        "llvm-strip": NDK_BIN + "llvm-strip",
+        "adb": "sdk/platform-tools/adb",
+    }.items()
+]
+
+android_file(
+    name = "jrt_fs_jar",
+    path = "jdk/lib/jrt-fs.jar",
+    visibility = ["PUBLIC"],
+)
+
+[
+    android_file(
+        name = name,
+        path = _ANDROID_PLATFORM + "/" + name,
+        visibility = ["PUBLIC"],
+    )
+    for name in ["android.jar", "core-for-system-modules.jar", "framework.aidl"]
+]
+
+android_sdk(
+    name = "android_sdk_tools",
+    files = {
+        "android.jar": ":android.jar",
+        "core-for-system-modules.jar": ":core-for-system-modules.jar",
+        "framework.aidl": ":framework.aidl",
+        "optimized_proguard_config": "root//build/android:proguard-android-optimize.txt",
+        "proguard_config": "root//build/android:proguard-android-optimize.txt",
+        # Never run: android-inner gives the toolchain R8 in its place.
+        "proguard.jar": "root//build/android:proguard-android-optimize.txt",
+    },
+    tools = {
+        "aapt2": ":aapt2",
+        "adb": ":adb",
+        "aidl": ":aidl",
+        "zipalign": ":zipalign",
+    },
+)
+
+jdk_system_image(
+    name = "jdk_system_image",
+    core_for_system_modules_jar = ":android_sdk_tools[core-for-system-modules.jar]",
+)
+
+# Each toolchain is defined under `<name>-inner` by the prelude's macro and
+# published under its own name as Linux-only (linux_toolchain).
+system_android_toolchain(
+    name = "android-prelude",
+    android_sdk_tools_target = ":android_sdk_tools",
+    jdk_system_image = ":jdk_system_image",
+)
+
+android_toolchain_with(
+    name = "android-inner",
+    actual = ":android-prelude",
+    replace = {
+        "generate_manifest": "root//build/android/manifest:generate_manifest",
+        "replace_application_id_placeholders": "root//build/android/manifest:replace_application_id_placeholders",
+        "jar_splitter_command": "root//build/android/dex:jar_splitter",
+        "multi_dex_command": "root//build/android/dex:multi_dex",
+    },
+    # R8, which the SDK's tools can't carry: it is a jar built with the dex
+    # toolchain, which is built from them.
+    replace_files = {"proguard_jar": "root//build/android:r8-compat-proguard"},
+)
+
+system_android_aidl_toolchain(
+    name = "android_aidl-inner",
+    android_sdk_tools_target = ":android_sdk_tools",
+)
+
+system_dex_toolchain(
+    name = "dex-inner",
+    android_sdk_tools_target = ":android_sdk_tools",
+)
+
+[
+    javacd_toolchain(
+        name = name + ("-prelude" if name == "java_for_android" else "-inner"),
+        java = ":java_tool",
+        javac = ":javac_tool",
+        jar = ":jar_tool",
+        jlink = ":jlink_tool",
+        jmod = ":jmod_tool",
+        jrt_fs_jar = ":jrt_fs_jar",
+        java_for_tests = ":junit_java",
+    )
+    for name in ["java", "java_for_android", "java_for_host_test"]
+]
+
+# R8 shrinks the whole app in one JVM, run with this heap (the prelude's
+# default is none, which the JVM refuses as `-XmxNone`).
+java_toolchain_with(
+    name = "java_for_android-inner",
+    actual = ":java_for_android-prelude",
+    values = {"proguard_max_heap_size": "6g"},
+)
+
+system_java_bootstrap_toolchain(
+    name = "java_bootstrap-inner",
+    java = ":java_tool",
+    javac = ":javac_tool",
+    jlink = ":jlink_tool",
+    jmod = ":jmod_tool",
+    jrt_fs_jar = ":jrt_fs_jar",
+)
+
+java_test_toolchain(
+    name = "java_test-inner",
+)
+
+[
+    kotlincd_toolchain(
+        name = name + "-inner",
+    )
+    for name in ["kotlin", "kotlin_for_android"]
+]
+
+system_kotlin_bootstrap_toolchain(
+    name = "kotlin_bootstrap-inner",
+)
+
+[
+    system_prebuilt_jar_bootstrap_toolchain(
+        name = name + "-inner",
+        java = ":java_tool",
+    )
+    for name in ["prebuilt_jar", "prebuilt_jar_bootstrap", "prebuilt_jar_bootstrap_no_snapshot"]
+]
+
+[
+    linux_toolchain(
+        name = name,
+        actual = ":{}-inner".format(name),
+        exec_compatible_with = _LINUX_EXEC,
+        visibility = ["PUBLIC"],
+    )
+    for name in [
+        "android",
+        "android_aidl",
+        "dex",
+        "java",
+        "java_bootstrap",
+        "java_for_android",
+        "java_for_host_test",
+        "java_test",
+        "kotlin",
+        "kotlin_bootstrap",
+        "kotlin_for_android",
+        "prebuilt_jar",
+        "prebuilt_jar_bootstrap",
+        "prebuilt_jar_bootstrap_no_snapshot",
+        "zip_file",
+    ]
+]
+
+# android_binary splits its C++ toolchain by CPU; the app's only native
+# code is the Rust bridge, built apart (build/android.bzl), so this is the
+# workspace's C toolchain under the name the prelude asks for.
+android_hack_alias(
+    name = "android-hack",
+    actual = ":cxx",
+    visibility = ["PUBLIC"],
+)
+
+system_noop_dex_toolchain(
+    name = "empty_dex",
     visibility = ["PUBLIC"],
 )

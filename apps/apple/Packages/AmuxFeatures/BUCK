@@ -1,0 +1,39 @@
+load("//build:rust.bzl", "amux_files")
+load("//apps/apple:defs.bzl", "package_library", "package_tests")
+
+package_library(
+    name = "AmuxFeatures",
+    package = "AmuxFeatures",
+    srcs = glob(["Sources/AmuxFeatures/**/*.swift"]),
+    deps = [
+        "//apps/apple/Packages/AmuxCore:AmuxCore",
+        "//apps/apple/Packages/AmuxCore:AmuxWords",
+        "//apps/apple/Packages/AmuxDesign:AmuxDesign",
+    ],
+)
+
+package_tests(
+    name = "AmuxFeaturesTests",
+    package = "AmuxFeatures",
+    srcs = glob(["Tests/AmuxFeaturesTests/**/*.swift"]),
+    deps = [
+        ":AmuxFeatures",
+        "//apps/apple/Packages/AmuxCore:AmuxFixtures",
+        "//apps/apple/Packages/AmuxPush:AmuxPush",
+    ],
+)
+
+# The rule code's colours are held to, shared with the Mac app's tests so
+# both apps check the same thing.
+export_file(
+    name = "CodeContrast.swift",
+    src = "Tests/AmuxFeaturesTests/CodeContrast.swift",
+    visibility = ["PUBLIC"],
+)
+
+# The Swift sources at their paths in the checkout, for the repository
+# checks that read them (the root BUCK's client-kind-check).
+amux_files(
+    name = "swift",
+    srcs = glob(["**/*.swift"]),
+)

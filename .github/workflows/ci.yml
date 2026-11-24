@@ -6,46 +6,85 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      without-build-host:
+        description: "Run the Linux gate on the runner alone, as a fork's pull request does"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 # A newer push to a branch stops the run of the one before it, which would
-# otherwise hold the runners the newer one waits for.
+# otherwise hold the runners the newer one waits for. A run started by hand
+# is apart from them: it neither stops a push's run nor is stopped by one.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'push' }}
   cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # The build host whose NativeLink the Linux gate sends its actions to, a
+  # machine on the tailnet the runner joins (docs/CI.md, "The Linux gate").
+  BUILD_HOST: nova.tail656fe8.ts.net
 
 jobs:
-  # Which jobs this change can affect (scripts/ci-affected.py): a change to
-  # documentation, another workflow or a manual script runs only the policy
-  # job, either phone app alone runs the mirror tests and leaves the rest to
-  # its own gate, and product, models, sanitizers, bridge and browser run when a crate
-  # they are built from changed.
-  changes:
-    name: What this change affects
+  linux:
+    name: Linux gate
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Measured: with the build host in reach, a landed commit is the time to
+    # set up Nix and premerge's cache hits. Without it (a fork's pull
+    # request), the runner builds and tests everything itself, on four cores.
+    timeout-minutes: 150
     permissions:
       contents: read
       actions: read
+    env:
+      # A fork's pull request gets no secrets, so no tailnet: it runs on the
+      # runner alone, slower but the same checks.
+      REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && inputs.without-build-host != true }}
     outputs:
-      tests: ${{ steps.affected.outputs.tests }}
-      mirrors: ${{ steps.affected.outputs.mirrors }}
-      product: ${{ steps.affected.outputs.product }}
-      models: ${{ steps.affected.outputs.models }}
-      sanitizers: ${{ steps.affected.outputs.sanitizers }}
-      bridge: ${{ steps.affected.outputs.bridge }}
-      browser: ${{ steps.affected.outputs.browser }}
+      miri: ${{ steps.cargo.outputs.miri }}
+      sanitizers: ${{ steps.cargo.outputs.sanitizers }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Read what changed
-        id: affected
-        shell: bash
+        with:
+          # The protocol and store checks read the latest release tag's
+          # schemas, and the Cargo checks compare with an earlier commit.
+          fetch-depth: 0
+      - name: Refuse fixture update flags
+        run: scripts/no-update-flags.sh
+      - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
+      - name: Join the tailnet
+        if: env.REMOTE == 'true'
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ env.BUILD_HOST }}
+      - name: Send Buck2's actions to the build host
+        if: env.REMOTE == 'true'
+        run: echo "AMUX_NATIVELINK=grpc://$BUILD_HOST:50051" >> "$GITHUB_ENV"
+      - name: Fetch the pinned tools
+        run: nix develop --command true
+      # Without the build host, a NativeLink of the runner's own takes its
+      # place, so every action still runs sandboxed through a worker. Its
+      # cache goes on the runner's larger second disk. Its worker offers the
+      # runner's real cores, and a test that takes the whole worker asks
+      # for that many (AMUX_LINUX_WORKER_CORES), so it runs alone as it
+      # would on the build host.
+      - name: Start a NativeLink on the runner
+        if: env.REMOTE != 'true'
+        run: |
+          sudo mkdir -p /mnt/nativelink && sudo chown "$(id -u):$(id -g)" /mnt/nativelink
+          echo "AMUX_LINUX_WORKER_CORES=$(nproc)" >> "$GITHUB_ENV"
+          nohup nix develop --command scripts/py scripts/nativelink.py serve /mnt/nativelink --cores "$(nproc)" > /mnt/nativelink/log 2>&1 &
+          for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
+          cat /mnt/nativelink/log; exit 1
+      - name: Say which Cargo checks this change reaches
+        id: cargo
         env:
           EVENT: ${{ github.event_name }}
           PULL_BASE: ${{ github.event.pull_request.base.sha }}
@@ -53,7 +92,7 @@ jobs:
         # A push is compared with the last push whose run finished, passing
         # or failing, and not with the push before it: that one's run may
         # have been stopped by this one, its changes never judged. With no
-        # such run, or for a run started by hand, every job runs.
+        # such run, or for a run started by hand, they all run.
         run: |
           case "$EVENT" in
             push)
@@ -63,363 +102,359 @@ jobs:
             pull_request) base=$PULL_BASE ;;
             *) base= ;;
           esac
-          echo "compared with ${base:-nothing}"
-          python3 scripts/ci-affected.py --base "$base" --head "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
-
-  check-and-clippy:
-    name: Format, Check and Clippy
-    needs: changes
-    if: needs.changes.outputs.tests == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Formatting is seconds of work on the pinned nightly's rustfmt, so it
-      # shares this job rather than waiting for a runner of its own. The
-      # stable toolchain is installed second, which leaves it the default.
-      - uses: ./.github/actions/setup-rust
-        with:
-          toolchain: nightly
-          components: rustfmt
-          cache: "false"
-          just: "false"
-      - uses: ./.github/actions/setup-rust
-        with:
-          components: clippy
-      - name: Check formatting
-        run: just fmt-check
-      - name: Run Clippy
+          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "compared with $base"
+            nix develop --command python3 scripts/landing.py covers --base "$base" | tee -a "$GITHUB_OUTPUT"
+          else
+            echo "nothing to compare with: every Cargo check runs"
+            printf 'miri=true\nsanitizers=true\n' | tee -a "$GITHUB_OUTPUT"
+          fi
+      # The gate every landing passes: through Buck2, every test, the
+      # repository's and the JavaScript's checks and Clippy, so a commit the
+      # landing queue or a premerge already tested is cache hits; and the
+      # checks that stay scripts.
+      # Without it, the Android app's half runs beside this one, in the
+      # job below: all of it on one four-core runner takes longer than a
+      # test run's bound.
+      - name: Run the gate (just premerge)
+        run: nix develop --command just ${{ env.REMOTE == 'true' && 'premerge' || 'premerge-half workspace' }}
+      - name: Say what Buck2 ran and what came from the cache
         if: always()
-        run: just cargo-lint
-
-  ios-tools:
-    name: Phone mirror and CLI tests
-    needs: changes
-    if: needs.changes.outputs.mirrors == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-rust
+        # Each build's log, then each test run's, each oldest first.
+        run: |
+          cat > "$RUNNER_TEMP/summaries.sh" <<'EOF'
+          for log in buck-out/v2/log/*_build_*.pb.zst buck-out/v2/log/*_test_*.pb.zst; do
+            [ -e "$log" ] || continue
+            scripts/buck2 log summary "$log" | grep -E '^Showing|^- (Local|Remote|Cached|Other) actions' || true
+          done
+          EOF
+          nix develop --command sh "$RUNNER_TEMP/summaries.sh"
+      - name: Audit the browser extension's shipped dependencies
+        if: always()
+        run: nix develop --command just browser audit
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: always()
         with:
-          shared-key: test
-          save-if: "false"
-          nextest: "true"
-          sccache: "true"
-      - name: Run ios-tools tests
-        run: just cargo-test-crate ios-tools
+          key: doctest
+      # The documentation tests are Cargo's: Buck2's need every compile in
+      # its nightly-features mode (docs/BUILD.md).
+      - name: Run the documentation tests
+        if: always()
+        run: nix develop --command just doctest
 
-  miri:
-    name: Pointer checks over the C ABI
-    needs: changes
-    if: needs.changes.outputs.bridge == 'true'
+  # The Android app's half of the gate (`just premerge-half android`), on a
+  # runner of its own, when the Linux gate has no build host to share the
+  # work with: a fork's pull request, or a run by hand without it. With the
+  # build host, the Linux gate runs all of the gate and this does nothing.
+  android:
+    name: Linux gate, Android app
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 150
+    permissions:
+      contents: read
+    env:
+      REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && inputs.without-build-host != true }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-rust
-        with:
-          toolchain: nightly
-          components: miri, rust-src
-      - name: Run the C ABI tests under the checking interpreter
-        run: just miri
+      - if: env.REMOTE != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: env.REMOTE != 'true'
+        uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
+      - name: Fetch the pinned tools
+        if: env.REMOTE != 'true'
+        run: nix develop --command true
+      # Without the build host, a NativeLink of the runner's own takes its
+      # place, so every action still runs sandboxed through a worker. Its
+      # cache goes on the runner's larger second disk. Its worker offers the
+      # runner's real cores, and a test that takes the whole worker asks
+      # for that many (AMUX_LINUX_WORKER_CORES), so it runs alone as it
+      # would on the build host.
+      - name: Start a NativeLink on the runner
+        if: env.REMOTE != 'true'
+        run: |
+          sudo mkdir -p /mnt/nativelink && sudo chown "$(id -u):$(id -g)" /mnt/nativelink
+          echo "AMUX_LINUX_WORKER_CORES=$(nproc)" >> "$GITHUB_ENV"
+          nohup nix develop --command scripts/py scripts/nativelink.py serve /mnt/nativelink --cores "$(nproc)" > /mnt/nativelink/log 2>&1 &
+          for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
+          cat /mnt/nativelink/log; exit 1
+      - name: Run the Android app's half of the gate
+        if: env.REMOTE != 'true'
+        run: nix develop --command just premerge-half android
 
-  sanitizers:
-    name: Sanitizers (${{ matrix.kind }})
-    needs: changes
-    if: needs.changes.outputs.sanitizers == 'true'
+  # Miri and the sanitizers rebuild the standard library under their checks
+  # (`-Zbuild-std`), which Buck2's Rust rules can't, so they run under Cargo:
+  # in the landing queue before a push, and here after one, when the push
+  # changed what they check (scripts/landing.py covers). A Mac's landing
+  # can't run the thread sanitizer, and a merge made in GitHub's page runs
+  # neither, so this runs them whoever landed the change.
+  cargo:
+    name: ${{ matrix.check }}
+    needs: linux
+    if: always() && (needs.linux.outputs.miri == 'true' || needs.linux.outputs.sanitizers == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
+    env:
+      COVERED: ${{ matrix.key == 'miri' && needs.linux.outputs.miri || needs.linux.outputs.sanitizers }}
     strategy:
       fail-fast: false
       matrix:
-        kind: [address, thread]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-rust
-        with:
-          toolchain: nightly
-          components: rust-src
-          key: sanitize-${{ matrix.kind }}
-      - name: Run the unsafe code's tests under the sanitizer
-        run: just sanitize ${{ matrix.kind }}
-
-  codegen-and-policy:
-    name: Codegen and dependency policy
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # The protocol and store checks read the latest release tag's schemas.
-          fetch-depth: 0
-      - uses: ./.github/actions/setup-rust
-      - uses: ./.github/actions/setup-buf
-      - name: Check committed protobuf code
-        run: just cargo-codegen-check
-      - name: Lint the protocol and check it still reads what the latest release wrote
-        run: just proto-compat
-      - name: Check the store only grew since the latest release
-        run: just store-check
-      - name: Enforce dependency boundaries
-        run: just dependency-policy
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: cargo-deny@0.20.2,cargo-shear@1.14.0
-      - name: Check dependency advisories, licences and sources
-        run: just deny
-      - name: Check every dependency is used
-        run: just shear
-      - name: Check the state-machine cores carry no runtime, lock or await
-        run: just cores-check
-      - name: Check provider messages go through the protocol crates
-        run: just typed-provider-check
-      - name: Check client crates decide by capabilities, not by kind
-        run: just client-kind-check
-      - name: Check the test suite catalogue
-        run: just tests-check
-      - name: Run the scripts' own unit tests
-        run: just script-tests
-      - name: Check the documentation's links, figures and map
-        run: just docs-check
-
-  test:
-    name: Test (${{ matrix.label }})
-    needs: changes
-    if: needs.changes.outputs.tests == 'true'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        # Linux and macOS split the suite into two halves side by side.
-        # Windows compiles out the slow Unix/PTY/system suites, so its full
-        # run fits in one job without paying a second workspace compile.
         include:
-          - os: ubuntu-latest
-            label: "ubuntu-latest, 1 of 2"
-            partition: "--partition count:1/2"
-            save-cache: "true"
-          - os: ubuntu-latest
-            label: "ubuntu-latest, 2 of 2"
-            partition: "--partition count:2/2"
-            save-cache: "false"
-          - os: macos-latest
-            label: "macos-latest, 1 of 2"
-            partition: "--partition count:1/2"
-            save-cache: "true"
-          - os: macos-latest
-            label: "macos-latest, 2 of 2"
-            partition: "--partition count:2/2"
-            save-cache: "false"
-          - os: windows-latest
-            label: "windows-latest"
-            partition: ""
-            save-cache: "true"
+          - check: Pointer checks over the C ABI
+            run: just miri
+            key: miri
+          - check: Address sanitizer
+            run: just sanitize address
+            key: sanitize-address
+          - check: Thread sanitizer
+            run: just sanitize thread
+            key: sanitize-thread
+    # A leg the push doesn't reach skips every step.
+    steps:
+      - if: env.COVERED == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: env.COVERED == 'true'
+        uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
+      - if: env.COVERED == 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ matrix.key }}
+      - name: Run ${{ matrix.run }}
+        if: env.COVERED == 'true'
+        run: nix develop --command ${{ matrix.run }}
+
+  # The workspace's tests on Windows (docs/CI.md, "The Windows job"). The
+  # build host's Linux worker compiles and links every Windows binary; then
+  # a NativeLink on this runner, in front of the build host's cache, runs
+  # the tests on a Windows worker of its own, so the runner compiles
+  # nothing and a test whose inputs haven't changed is a cache hit. A
+  # fork's pull request, with no tailnet, tests under Cargo on the runner.
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && inputs.without-build-host != true }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Refuse fixture update flags
-        shell: bash
         run: scripts/no-update-flags.sh
-      # Named, because the weekly offline tests, simulated stories, ios-tools
-      # and terminal journeys restore this cache read-only. Only shard 1 saves
-      # per OS to avoid concurrent cache writes.
-      - uses: ./.github/actions/setup-rust
+      # Python 3.14 unpacks the pinned Buck2 (scripts/buck-tools.py: the
+      # runner has no zstd). Windows' Python installers make only `python`,
+      # and `python3` is a stub that offers the Microsoft Store; Buck2 runs
+      # one helper here by that name (it fetches the git dependencies, which
+      # runs locally).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          shared-key: test
-          save-if: ${{ matrix.save-cache }}
-          nextest: "true"
-          sccache: "true"
-      # testnet's ctl test drives the terminal client in tmux; Linux runners
-      # have it already.
-      - name: Install tmux on macOS
-        if: runner.os == 'macOS'
-        run: brew install tmux
-      - name: Run workspace tests
-        # The ci profile reports every failing test, not only the first: a
-        # platform that stops early hides the failures behind it until the
-        # next run.
-        # This is the fast lane and, on Linux and macOS, the system lane too:
-        # the built amux binary's process, attach, overlap and supervise_cli
-        # suites, node's supervisor suite and the survive-daemon system
-        # journey are ordinary test suites, compiled out on Windows. The
-        # protocol models run in the models job instead, on Linux only.
-        run: just cargo-test -- --profile ci --exclude models ${{ matrix.partition }}
-      - name: Say what sccache fetched and compiled
-        if: always()
-        shell: bash
-        run: sccache --show-stats
-
-  platform-free:
-    name: Simulated stories and doctests
-    needs: changes
-    if: needs.changes.outputs.product == 'true'
-    # What reads the same on every platform runs once, on Linux, rather than
-    # in each test job, as the models do.
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-rust
-        with:
-          shared-key: test
-          save-if: "false"
-          nextest: "true"
-          sccache: "true"
-      - name: Walk the simulated stories by seed
-        # The same stories under TESTNET_MODE=simulated, a few seeds each;
-        # a failure prints the seed and the `just sim --seed` that reruns
-        # it. It builds what the workspace test run builds.
-        run: just sim
-      - name: Run doctests
-        run: just doctest
-
-  models:
-    name: Models (${{ matrix.models }})
-    needs: changes
-    if: needs.changes.outputs.models == 'true'
-    # The protocol models explore every state of the real code at their CI
-    # bounds, so they stay off the platform test jobs and compile under the
-    # optimised `models` profile. Three balanced jobs keep peak CI concurrency
-    # under GitHub's 20-runner free-plan limit.
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        # Every protocol model, a module of the models' integration test
-        # binary: `just tests-check` fails when one is missing here.
-        models:
-          - family relay
-          - single_daemon composed presence
-          - path lifecycle replication client socket supervisor switch workspaces
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Named, because the nightly bounds restore it.
-      - uses: ./.github/actions/setup-rust
-        with:
-          shared-key: models
-          nextest: "true"
-          sccache: "true"
-      - name: Check each model at its CI bounds
-        shell: bash
-        # Every model of the job runs, whichever fails.
+          python-version: "3.14"
+      - name: Name the runner's Python python3 too
         run: |
-          pattern=$(echo "${{ matrix.models }}" | tr ' ' '|')
-          just cargo-test-crate models -- --cargo-profile models --no-fail-fast -E "binary_id(models::integration) & test(/^($pattern)::/)"
+          dir=$(dirname "$(command -v python)")
+          [ -e "$dir/python3.exe" ] || cp "$dir/python.exe" "$dir/python3.exe"
+          python3 --version
+      - if: env.REMOTE == 'true'
+        uses: ./.github/actions/setup-just
+      - name: Join the tailnet
+        if: env.REMOTE == 'true'
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ env.BUILD_HOST }}
+      - name: Build every Windows binary on the build host
+        if: env.REMOTE == 'true'
+        run: AMUX_NATIVELINK="grpc://$BUILD_HOST:50051" just check-windows
+      # The tests' results from earlier runs: the build host's cache can't
+      # be written from here, so they are kept in GitHub's (the NativeLink
+      # config, build/nativelink/windows.json5, says why that is enough).
+      - name: Restore the Windows tests' results
+        if: env.REMOTE == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/test-results
+          key: windows-test-results-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            windows-test-results-${{ github.sha }}-
+            windows-test-results-
+      # One step, so the NativeLink it starts in the background is still
+      # running while the tests do.
+      - name: Run the tests on a Windows worker
+        if: env.REMOTE == 'true'
+        run: |
+          rm -f "$RUNNER_TEMP/nativelink/port"
+          scripts/py scripts/nativelink.py windows "$RUNNER_TEMP/nativelink" --remote "grpc://$BUILD_HOST:50051" \
+            --results "$RUNNER_TEMP/test-results" > "$RUNNER_TEMP/nativelink.log" 2>&1 &
+          # It listens on a port the system picks (scripts/nativelink.py).
+          port=$(scripts/py -c 'import pathlib, socket, sys, time
+          port = pathlib.Path(sys.argv[1])
+          for _ in range(60):
+              try:
+                  number = int(port.read_text())
+                  socket.create_connection(("127.0.0.1", number), 1).close()
+                  print(number); sys.exit(0)
+              except (OSError, ValueError):
+                  time.sleep(1)
+          sys.exit("nativelink did not start")' "$RUNNER_TEMP/nativelink/port") || { cat "$RUNNER_TEMP/nativelink.log"; exit 1; }
+          AMUX_NATIVELINK="grpc://127.0.0.1:$port" just test-windows
+      - name: Say what Buck2 ran and what came from the cache
+        if: always() && env.REMOTE == 'true'
+        run: |
+          for log in buck-out/v2/log/*_build_*.pb.zst buck-out/v2/log/*_test_*.pb.zst; do
+            [ -e "$log" ] || continue
+            scripts/buck2 log summary "$log" | grep -E '^Showing|^- (Local|Remote|Cached|Other) actions' || true
+          done
+      - name: Show NativeLink's log
+        if: failure() && env.REMOTE == 'true'
+        run: tail -n 300 "$RUNNER_TEMP/nativelink.log" || true
+      - name: Keep the Windows tests' results
+        if: always() && env.REMOTE == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/test-results
+          key: windows-test-results-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      # Without the build host: what the Windows tests ran under before
+      # Buck2, on the runner's own four cores. A fork's run reads the Rust
+      # cache main's runs saved; a run by hand on main without the build
+      # host is what saves it.
+      - if: env.REMOTE != 'true'
+        uses: ./.github/actions/setup-rust
+        with:
+          shared-key: test
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          nextest: "true"
+          sccache: "true"
+      - name: Run the workspace tests under Cargo
+        if: env.REMOTE != 'true'
+        run: just cargo-test -- --profile ci --exclude models
 
-  terminal-journeys:
-    name: Terminal journeys (${{ matrix.os }})
-    needs: changes
-    if: needs.changes.outputs.product == 'true'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+  # The Apple apps and the workspace's tests on macOS, through Buck2
+  # (docs/CI.md, "The macOS jobs"). A NativeLink on the runner, in front of
+  # the build host's cache, runs every action on a macOS worker of its own;
+  # the results are kept in GitHub's cache, since the build host's can't be
+  # written from here, so an action whose inputs haven't changed is a hit.
+  # Two jobs side by side, since they share little: the apps build the
+  # bridge for the phone, the simulator and the Mac, the tests the workspace
+  # for this Mac. A fork's pull request, with no tailnet, runs on the
+  # runner's NativeLink alone.
+  macos:
+    name: ${{ matrix.name }}
+    runs-on: macos-26
+    timeout-minutes: 100
+    env:
+      REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && inputs.without-build-host != true }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          # The phone's suites lease the golden simulator, which the first
+          # step makes; then everything under apps/apple builds and its
+          # tests run: the package suites and the hosted app suite on the
+          # simulator, the Mac's tests on the runner. The phone's shipping
+          # build is left to `just ios release` on the Mac: its bridge is a
+          # fat-LTO link of the whole Rust graph for one more target, the
+          # heaviest build in the job on this runner's three cores, and it
+          # reruns on every Rust change.
+          - name: Apple apps
+            key: apple
+            run: just ios simulator golden && scripts/buck2 build //apps/apple/... && scripts/buck2 test //apps/apple/...
+          # Every workspace test that isn't Linux-only, the terminal
+          # journeys among them: the macOS half of what the Linux gate runs.
+          - name: macOS tests
+            key: tests
+            run: just test //crates/...
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Shares the test job's cache read-only (`just cargo-journey-terminal` uses
-      # --workspace feature unification so it reuses those rlibs directly).
-      - uses: ./.github/actions/setup-rust
+      - name: Refuse fixture update flags
+        run: scripts/no-update-flags.sh
+      - name: Select Xcode 26.6
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+          xcodebuild -version | grep -Fx 'Xcode 26.6'
+      - name: Assert simulator runtime and device type
+        if: matrix.key == 'apple'
+        run: |
+          xcrun simctl list runtimes --json | jq -e '.runtimes[] | select(.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-26-5" and .isAvailable == true)'
+          xcrun simctl list devicetypes --json | jq -e '.devicetypes[] | select(.identifier == "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro")'
+      # Python 3.14 unpacks the pinned Buck2 and NativeLink
+      # (scripts/buck-tools.py).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          shared-key: test
-          save-if: "false"
-      # Linux runners already ship tmux; macOS installs it via Homebrew.
-      - name: Install tmux on macOS
-        if: runner.os == 'macOS'
-        run: brew install tmux
-      - name: Run terminal journeys
-        # Every terminal story in the manifest, one after another; a failure
-        # does not stop the rest, and the job fails if any story did.
-        run: just cargo-journey-terminal all
-      - name: Upload the terminal journeys' results
-        if: always()
-        # The upload has waited on a failing artifact service for twenty
-        # minutes after the journeys were done.
-        timeout-minutes: 5
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: terminal-journeys-${{ matrix.os }}
-          path: target/journeys
-          if-no-files-found: warn
-          retention-days: 7
-
-  ios:
-    name: iOS target check
-    needs: changes
-    if: needs.changes.outputs.bridge == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          python-version: "3.14"
+      # The pinned toolchain Buck2's Rust rules call by path, with the
+      # phone's targets; Buck2 keeps its own outputs, so no Cargo cache.
       - uses: ./.github/actions/setup-rust
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
-      - name: Check iOS device and simulator graphs
-        run: just mobile-check
-
-  android:
-    name: Android target check
-    needs: changes
-    if: needs.changes.outputs.bridge == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-rust
+          cache: "false"
+      # The harness drives terminal sessions in tmux.
+      - name: Install tmux
+        run: brew install tmux
+      - name: Join the tailnet
+        if: env.REMOTE == 'true'
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
         with:
-          targets: aarch64-linux-android
-          shared-key: android-check
-      # The runner image carries the Android NDK and names it in
-      # ANDROID_NDK_HOME, which cargo-ndk reads.
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ env.BUILD_HOST }}
+      # The tailscale action points the whole of a macOS runner's DNS at
+      # MagicDNS, which cannot answer public names there: github.com stopped
+      # resolving and the NativeLink download failed. Give the system resolver
+      # back to the runner's own servers and send only the tailnet's domain to
+      # MagicDNS, the split Tailscale's own macOS client sets up.
+      - name: Resolve only the tailnet's names through MagicDNS
+        if: env.REMOTE == 'true'
+        run: |
+          sudo networksetup -setdnsservers Ethernet Empty
+          sudo networksetup -setsearchdomains Ethernet Empty
+          sudo mkdir -p /etc/resolver
+          echo "nameserver 100.100.100.100" | sudo tee "/etc/resolver/${BUILD_HOST#*.}" > /dev/null
+          sudo dscacheutil -flushcache
+          sudo killall -HUP mDNSResponder
+          scripts/py -c 'import socket, sys; [print(name, socket.gethostbyname(name)) for name in sys.argv[1:]]' \
+            github.com "$BUILD_HOST"
+      - name: Restore the results of earlier runs
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          tool: cargo-ndk@4.1.2
-      - name: Check the Android bridge graph
-        run: just android check
-
-  browser:
-    name: Browser extension
-    needs: changes
-    if: needs.changes.outputs.browser == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-rust
-        with:
-          targets: wasm32-unknown-unknown
-          shared-key: browser
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: js/package-lock.json
-      # Chromium's own libraries, which a bare runner lacks.
-      - name: Install Chromium for the end-to-end test
-        working-directory: js
-        run: npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
-      # Known vulnerabilities in what the extension ships (its runtime
-      # dependencies, bundled into it), not in the tools that build it.
-      - name: Audit the extension's shipped dependencies
-        working-directory: js
-        run: npm audit --omit=dev --audit-level=moderate
-      # Types, unit tests, and the extension in Chromium against the built
-      # amux and the fake providers. Skip re-running npm ci and playwright
-      # install inside the just recipe since the step above just ran both.
-      - name: Test the browser extension
+          path: ${{ runner.temp }}/results
+          key: macos-${{ matrix.key }}-results-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            macos-${{ matrix.key }}-results-${{ github.sha }}-
+            macos-${{ matrix.key }}-results-
+      - name: Start a NativeLink on the runner
+        run: |
+          if [ "$REMOTE" = true ]; then
+            nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --remote "grpc://$BUILD_HOST:50051" \
+              --results "$RUNNER_TEMP/results" > "$RUNNER_TEMP/nativelink.log" 2>&1 &
+          else
+            nohup scripts/py scripts/nativelink.py run --remote none > "$RUNNER_TEMP/nativelink.log" 2>&1 &
+          fi
+          for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/nativelink.log"; exit 1
+      # Bounded below the job's timeout, so a run that runs out of time
+      # still keeps what it finished: a job stopped by its own timeout or
+      # cancelled doesn't get to save the results, and every run after it
+      # started cold again.
+      - name: Run ${{ matrix.name }}
+        timeout-minutes: 75
         env:
-          AMUX_NPM_READY: "1"
-          AMUX_PLAYWRIGHT_READY: "1"
-        run: just browser cargo-test
-      - name: Upload the browser test's results
+          AMUX_NATIVELINK: grpc://127.0.0.1:50051
+        run: ${{ matrix.run }}
+      - name: Say what Buck2 ran and what came from the cache
+        if: always()
+        run: |
+          for log in buck-out/v2/log/*_build_*.pb.zst buck-out/v2/log/*_test_*.pb.zst; do
+            [ -e "$log" ] || continue
+            scripts/buck2 log summary "$log" | grep -E '^Showing|^- (Local|Remote|Cached|Other) actions' || true
+          done
+      - name: Show NativeLink's log
         if: failure()
-        timeout-minutes: 5
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        run: tail -n 300 "$RUNNER_TEMP/nativelink.log" || true
+      - name: Keep the results
+        if: always() && env.REMOTE == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          name: browser-test
-          path: js/test-results
-          if-no-files-found: ignore
-          retention-days: 7
+          path: ${{ runner.temp }}/results
+          key: macos-${{ matrix.key }}-results-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}

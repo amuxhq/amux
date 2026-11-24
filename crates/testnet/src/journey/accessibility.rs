@@ -32,6 +32,9 @@ const AUDIT_OUTPUT: &str = "target/ios/accessibility";
 const AUDIT_TEST: &str = "AmuxUITests/AccessibilityAuditTests";
 const AUDIT_RECORD: &str = "accessibility-audit.json";
 const UI_TESTS: &str = "sh.amux.AmuxUITests.xctrunner";
+/// The UI tests, their runner and the plan naming both, as `just ios
+/// accessibility` builds them (`//apps/apple:AmuxUITests`).
+const UI_TEST_RUN: &str = "target/ios/AmuxUITests/AmuxUITests.xctestrun";
 /// How long the test may take to build and start, and to audit one page.
 const STARTING: Duration = Duration::from_secs(900);
 const AUDITING: Duration = Duration::from_secs(300);
@@ -395,17 +398,11 @@ fn audit_the_way() -> Result<bool, String> {
     let started = File::create(&log)
         .and_then(|sink| {
             Command::new("xcodebuild")
-                .args([
-                    "test",
-                    "-project",
-                    "apps/apple/Amux.xcodeproj",
-                    "-scheme",
-                    "Amux",
-                ])
-                .args(["-configuration", "Debug", "-destination"])
+                .arg("test-without-building")
+                .arg("-xctestrun")
+                .arg(root.join(UI_TEST_RUN))
+                .arg("-destination")
                 .arg(format!("id={udid}"))
-                .arg("-derivedDataPath")
-                .arg(root.join("target/ios/DerivedData"))
                 .args(["-only-testing", AUDIT_TEST, "-quiet"])
                 .env("TEST_RUNNER_AMUX_AUDIT_DIRECTORY", directory.path())
                 .current_dir(&root)

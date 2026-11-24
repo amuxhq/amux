@@ -132,12 +132,12 @@ def literals(source):
     return sorted(found, key=lambda item: item.line)
 
 
-# Swift generated from the Rust definitions of the bridge's values: its
+# Swift generated from the Rust definitions of the bridge's values and
+# committed (the app's own are a build output, never in the tree): its
 # literals are wire keys and case names, which change with the Rust and are
 # never shown to anybody, and `ios-tools swift-types --check` already fails on
 # any hand edit.
 GENERATED = (
-    Path("apps/apple/Packages/AmuxCore/Sources/AmuxValues"),
     Path("apps/apple/Packages/AmuxPush/Sources/AmuxPush/Said.swift"),
 )
 

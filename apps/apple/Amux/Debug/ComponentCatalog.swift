@@ -1763,32 +1763,6 @@ struct ComponentReadinessReportingView: View {
     }
 }
 
-/// Browsable preview backed by the same inventory snapshot tests use.
-@MainActor
-struct ComponentCatalogGallery: View {
-    @State private var appearance = Appearance.light
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 24) {
-                ForEach(ComponentCatalog.examples) { example in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(example.id).font(.headline.monospaced())
-                        ComponentExampleView(
-                            example: example, appearance: appearance.colorScheme,
-                            reducesTransparency: false)
-                    }
-                }
-            }
-            .padding(20)
-        }
-    }
-}
-
-#Preview("Component Catalog") {
-    ComponentCatalogGallery()
-}
-
 extension ComponentCatalog {
     // MARK: - New agent
 

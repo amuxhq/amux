@@ -1703,19 +1703,6 @@
       {"literal": "\"host.subscribe\"", "context": ".identified(\"host.subscribe\", label: String(localized: \"Subscribe\"))", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"provider.\\(offered.provider)\"", "context": "id: \"provider.\\(offered.provider)\", label: offered.name,", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
     ],
-    "apps/apple/Amux/Debug/Previews.swift": [
-      {"literal": "\"Fleet · every example\"", "context": "#Preview(\"Fleet · every example\") { StoryGallery(.fleet) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"Hosts · every example\"", "context": "#Preview(\"Hosts · every example\") { StoryGallery(.hosts) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"Pairing · every example\"", "context": "#Preview(\"Pairing · every example\") { StoryGallery(.pairing) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"Review · every example\"", "context": "#Preview(\"Review · every example\") { StoryGallery(.review) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"Settings · remove account\"", "context": "#Preview(\"Settings · remove account\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"ada\"", "context": "YouScreen(accounts: stores.accounts, removing: AccountId(\"ada\")) { _ in }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"Settings · every example\"", "context": "#Preview(\"Settings · every example\") { StoryGallery(.settings) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"Settings · sign-in refused\"", "context": "#Preview(\"Settings · sign-in refused\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"Settings · signed in as another account\"", "context": "#Preview(\"Settings · signed in as another account\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"Settings · signing in\"", "context": "#Preview(\"Settings · signing in\") {", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
-      {"literal": "\"Report · every example\"", "context": "#Preview(\"Report · every example\") { StoryGallery(.report) }", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1}
-    ],
     "apps/apple/Packages/AmuxFeatures/Sources/AmuxFeatures/PagePlaceholder.swift": [
       {"literal": "\"\\(identifier).waiting\"", "context": ".identified(\"\\(identifier).waiting\", value: what)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},
       {"literal": "\"\\(identifier).empty\"", "context": ".identified(\"\\(identifier).empty\", value: detail)", "reason": "Stable element identifier or state value, not a displayed label.", "count": 1},

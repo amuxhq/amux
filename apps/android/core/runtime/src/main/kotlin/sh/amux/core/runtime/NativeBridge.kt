@@ -3,15 +3,16 @@ package sh.amux.core.runtime
 /**
  * Low-level JNI declarations backed by `crates/app-jni` (`libamux_app`).
  *
- * Host JVM tests may pass `-Damux.jni.lib=/abs/path/to/libamux_app.dylib` (or `.so`)
+ * Host JVM tests may pass `-Damux.jni.lib=path/to/libamux_app.so` (or `.dylib`)
  * so the real Rust library loads without Android packaging; on Android,
- * `System.loadLibrary("amux_app")` loads the bundled ABI library.
+ * `System.loadLibrary("amux_app")` loads the bundled ABI library. The path may
+ * be relative to the working directory, as the build gives it.
  */
 object NativeBridge {
     init {
         val explicit = System.getProperty("amux.jni.lib")?.takeIf { it.isNotBlank() }
         if (explicit != null) {
-            System.load(explicit)
+            System.load(java.io.File(explicit).absolutePath)
         } else {
             System.loadLibrary("amux_app")
         }

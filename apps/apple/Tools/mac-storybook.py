@@ -11,24 +11,21 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[3]
-DERIVED = ROOT / "target/mac/StorybookData"
 STATE = ROOT / "target/mac/storybook"
 LOG = STATE / "build.log"
 STATUS = STATE / "status"
 PLACE = STATE / "place.json"
 LIST = ROOT / "tests/stories.json"
-APP = DERIVED / "Build/Products/Debug/AmuxStorybook.app"
+# Copied out of buck-out, whose path changes with the configuration, so a
+# running storybook is found by one path.
+APP = ROOT / "target/mac/Debug/AmuxStorybook.app"
 BINARY = APP / "Contents/MacOS/AmuxStorybook"
 MAC = ROOT / "apps/apple/Mac"
-SPEC = MAC / "project.yml"
-PROJECT = MAC / "AmuxMac.xcodeproj"
-FRAMEWORK = ROOT / "target/ios/AmuxApp.xcframework"
 WATCHED = [
     MAC / "Storybook",
     ROOT / "apps/apple/Packages/AmuxMacScreens",
-    ROOT / "apps/apple/Packages/AmuxCore/Sources/AmuxValues",
     ROOT / "apps/apple/Packages/AmuxCore/Sources/AmuxWords",
-    SPEC,
+    ROOT / "apps/apple/BUCK",
     LIST,
 ]
 # Hang detectors, not expectations: on a desk a build with an empty cache took
@@ -60,23 +57,9 @@ def first_error(log: str) -> str:
 def build() -> str | None:
     """Builds the storybook, answering what went wrong or None."""
     STATE.mkdir(parents=True, exist_ok=True)
-    # The package graph needs the framework to exist, though nothing the
-    # storybook links uses it.
-    if not FRAMEWORK.exists():
-        subprocess.run(
-            [sys.executable, "-B", "apps/apple/Tools/ios-rust.py", "--mac"],
-            cwd=ROOT, check=True, timeout=1800)
-    pbxproj = PROJECT / "project.pbxproj"
-    if not pbxproj.exists() or SPEC.stat().st_mtime > pbxproj.stat().st_mtime:
-        subprocess.run(
-            ["xcodegen", "generate", "--spec", "project.yml", "--quiet"],
-            cwd=MAC, check=True, timeout=300)
     with LOG.open("w") as log:
         done = subprocess.run(
-            ["xcodebuild", "-project", str(PROJECT), "-scheme", "AmuxMacStorybook",
-             "-configuration", "Debug", "-destination", "platform=macOS,arch=arm64",
-             "-derivedDataPath", str(DERIVED), "-quiet",
-             "COMPILER_INDEX_STORE_ENABLE=NO", "build"],
+            ["scripts/buck2", "build", "//apps/apple:AmuxMacStorybook", "--out", str(APP)],
             cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, timeout=BUILD_BOUND)
     return None if done.returncode == 0 else first_error(LOG.read_text())
 

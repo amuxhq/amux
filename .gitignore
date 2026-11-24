@@ -69,8 +69,16 @@ apps/apple/Signing.local.xcconfig
 *.mobileprovision
 *.jks
 *.keystore
+# The debug key the Android debug and smoke-test builds are signed with
+# (build/android/BUCK): a throwaway, password `android`, that signs nothing
+# that ships, committed so every build of a debug APK carries the same key
+# and installs over the last.
+!build/android/debug.keystore
 apps/android/app/google-services.json
 
 # Buck2 output
 buck-out/
 .buckconfig.local
+
+# What the repository checks read from outside the checkout (build/checks/inputs.py).
+build/checks/inputs/

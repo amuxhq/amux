@@ -228,8 +228,10 @@ async fn a_journal_write_that_fails_ends_the_incarnation_and_the_next_writes_its
         .wait("the turn is under way", |log| log.has_text("recorded"))
         .await;
     let journal = agent.dir.join(agent::JOURNAL);
-    let end = agent.journal_end();
     std::fs::set_permissions(&journal, std::fs::Permissions::from_mode(0o500)).unwrap();
+    // Read once no segment can be added: frames the turn writes after the
+    // text, before it waits, may still be landing until then.
+    let end = agent.journal_end();
 
     agent.release();
     let cause = agent.exit().await;

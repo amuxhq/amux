@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The manifest Robolectric tests run under, merged with every library's
+     own (build/android.bzl): the API levels the app builds for, and the
+     activities and providers the libraries declare (ui-test-manifest's
+     ComponentActivity, which createComposeRule starts). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="sh.amux.test">
+    <uses-sdk android:minSdkVersion="34" android:targetSdkVersion="36" />
+    <application />
+</manifest>

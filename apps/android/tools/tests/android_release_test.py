@@ -48,24 +48,22 @@ class FakePlayTransport:
 
 
 class AndroidReleaseTests(unittest.TestCase):
-    SAMPLE_GRADLE = """
-android {
-    defaultConfig {
-        applicationId = "sh.amux.android"
-        minSdk = 34
-        targetSdk = 36
-        versionCode = releaseVersionCodeOverride ?: 1
-        versionName = releaseVersionNameOverride ?: "0.1.0"
-    }
-}
+    SAMPLE_VERSION = """
+# The version the app ships as.
+VERSION_NAME = "0.1.0"
+VERSION_CODE = 1
 """
 
     def test_project_numbers_and_rewrite(self) -> None:
-        self.assertEqual(android_release.project_numbers(self.SAMPLE_GRADLE), ("0.1.0", 1))
-        rewritten = android_release.rewrite_numbers(self.SAMPLE_GRADLE, "1.0.0", 4)
+        self.assertEqual(
+            android_release.project_numbers((android_release.REPO_ROOT / android_release.VERSION_FILE).read_text()),
+            android_release.project_numbers(self.SAMPLE_VERSION),
+        )
+        self.assertEqual(android_release.project_numbers(self.SAMPLE_VERSION), ("0.1.0", 1))
+        rewritten = android_release.rewrite_numbers(self.SAMPLE_VERSION, "1.0.0", 4)
         self.assertEqual(android_release.project_numbers(rewritten), ("1.0.0", 4))
-        self.assertIn("releaseVersionCodeOverride ?: 4", rewritten)
-        self.assertIn('releaseVersionNameOverride ?: "1.0.0"', rewritten)
+        self.assertIn("VERSION_CODE = 4", rewritten)
+        self.assertIn('VERSION_NAME = "1.0.0"', rewritten)
 
     def test_next_version_and_build_initial_and_subsequent(self) -> None:
         # Before any android-v* tags exist, start from project numbers or explicit overrides.
@@ -252,6 +250,15 @@ class AndroidDeployTests(unittest.TestCase):
         ):
             with self.assertRaises(googleplay.Refusal):
                 android_release.verify_signature(fake_aab, "/usr/bin/jarsigner")
+
+
+class SignCommandTest(unittest.TestCase):
+    def test_passwords_come_from_the_environment_not_the_command_line(self) -> None:
+        facts = {"keystore": Path("/keys/upload.jks"), "key_alias": "upload", "store_password": "s3cret", "key_password": "k3y"}
+        cmd = android_release.sign_command("jarsigner", Path("in.aab"), Path("out.aab"), facts)
+        self.assertNotIn("s3cret", cmd)
+        self.assertNotIn("k3y", cmd)
+        self.assertEqual(cmd[-3:], ["out.aab", "in.aab", "upload"])
 
 
 if __name__ == "__main__":

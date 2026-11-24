@@ -41,7 +41,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 QA = ROOT / "qa"
 TARGET = ROOT / "target" / "debug"
-APP = ROOT / "target" / "ios" / "DerivedData" / "Build" / "Products" / "Debug-iphonesimulator" / "Amux.app"
+APP = ROOT / "target" / "ios" / "Debug-iphonesimulator" / "Amux.app"
 STATE = Path.home() / ".local" / "state" / "amux-qa"
 SEVERITIES = ["data loss", "broken flow", "wrong state", "visual", "wording"]
 # `ctl down` waits up to three minutes for the net's door and one more for

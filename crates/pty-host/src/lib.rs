@@ -666,6 +666,20 @@ mod tests {
         assert_eq!(process.exit.wait().await.exit_code(), 7);
     }
 
+    /// A killed process whose parent died first is adopted and stays a
+    /// zombie until its new parent reaps it. On Linux that parent can be a
+    /// subreaper that reaps late (a build worker running the test), and
+    /// signal 0 still finds a zombie; it is dead all the same.
+    fn is_zombie(pid: i32) -> bool {
+        std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .ok()
+            .and_then(|stat| {
+                stat.rsplit_once(')')
+                    .map(|(_, rest)| rest.trim_start().starts_with('Z'))
+            })
+            .unwrap_or(false)
+    }
+
     #[tokio::test]
     async fn termination_kills_the_whole_process_group() {
         let process = spawn(shell("trap '' TERM; sleep 30 & echo $!; wait")).unwrap();
@@ -698,6 +712,9 @@ mod tests {
                 if result == -1
                     && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
                 {
+                    break;
+                }
+                if is_zombie(child_pid) {
                     break;
                 }
                 tokio::task::yield_now().await;

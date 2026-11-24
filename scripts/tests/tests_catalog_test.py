@@ -60,39 +60,37 @@ class TestsCatalogTest(unittest.TestCase):
         self.assertNotIn("support", modules)
         self.assertNotIn("stories", modules)
 
-    def test_every_protocol_model_is_in_a_ci_job(self):
+    def test_the_simulated_run_walks_exactly_the_simulated_suites(self):
         suites = [
-            {
-                "name": "protocol-models",
-                "cargo": [
-                    {"package": "models", "kind": "lib", "targets": ["models"]},
-                    {"package": "models", "modules": ["family", "presence"]},
-                ],
-            }
+            {"name": "both", "modes": ["real", "simulated"], "cargo": [{"package": "testnet", "modules": ["harness", "seeds"]}]},
+            {"name": "real", "modes": ["real"], "cargo": [{"package": "testnet", "modules": ["links"]}]},
         ]
-        workflow = (
-            "jobs:\n"
-            "  models:\n"
-            "    strategy:\n"
-            "      matrix:\n"
-            "        models:\n"
-            "          - family\n"
-            "          - retired other\n"
-            "  build:\n"
-            "    runs-on: ubuntu-latest\n"
+        buck = (
+            "amux_rust_test(\n"
+            "    runs = {\n"
+            '        "simulated": {\n'
+            '            "env": {"TESTNET_MODE": "simulated"},\n'
+            '            "filters": ["^harness::", "^retired::"],\n'
+            "        },\n"
+            "    },\n"
+            ")\n"
         )
 
         self.assertEqual(
-            catalog.validate_models_matrix(suites, workflow),
+            catalog.validate_simulated_run(suites, buck),
             [
-                "protocol-models model presence is not in the CI models job's matrix",
-                "the CI models job's matrix names other, which is no protocol-models model",
-                "the CI models job's matrix names retired, which is no protocol-models model",
+                "seeds runs on the simulated net but crates/testnet/BUCK's simulated run leaves it out",
+                "crates/testnet/BUCK's simulated run names retired, which no suite runs on the simulated net",
             ],
         )
         self.assertEqual(
-            catalog.validate_models_matrix(suites, "jobs:\n  test:\n    runs-on: x\n"),
-            [".github/workflows/ci.yml has no models job with a model matrix"],
+            catalog.validate_simulated_run(suites, "amux_rust_test(\n)\n"),
+            ["crates/testnet/BUCK has no simulated run with filters"],
+        )
+
+    def test_the_real_simulated_run_matches_the_catalogue(self):
+        self.assertEqual(
+            catalog.validate_simulated_run(catalog.load_catalog(), catalog.TESTNET_BUCK.read_text()), []
         )
 
     def test_every_suite_of_testnet_stories_declares_its_modes(self):

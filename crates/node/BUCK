@@ -68,7 +68,7 @@ amux_rust_library(
     deps = DEPS,
     test_deps = TEST_DEPS,
     test_srcs = native.glob(["tests/fixtures/discovery/**"]),
-    test_resources = ["//:sealed-pushes"],
+    test_resources = ["//apps/apple/Packages/AmuxPush:sealed-pushes"],
     binaries = True,
 )
 
@@ -83,6 +83,14 @@ amux_rust_test(
 export_file(
     name = "test_signing_key",
     src = "src/auth/test_signing_key.rs",
+    mode = "reference",
+    visibility = ["PUBLIC"],
+)
+
+# The record a Mac advertises, which the phone's parser is held to too
+# (apps/apple/Packages/AmuxCore's tests).
+export_file(
+    name = "tests/fixtures/discovery/advertisement.json",
     mode = "reference",
     visibility = ["PUBLIC"],
 )

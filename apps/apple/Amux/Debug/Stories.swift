@@ -11,11 +11,6 @@ import SwiftUI
 ///
 /// Debug-only for the same reason as the rest of the catalogue: none of this
 /// content belongs in a build somebody installs.
-///
-/// Xcode's previews of these are in the `…Previews.swift` files beside this
-/// one, a file per area: a preview refreshes by compiling the file that holds
-/// it again, so small files refresh sooner, and the canvas lists only the
-/// stories of the area open.
 extension ComponentCatalog {
     // MARK: - Fleet
 

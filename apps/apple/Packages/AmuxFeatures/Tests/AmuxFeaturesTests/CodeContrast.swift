@@ -7,7 +7,7 @@ import XCTest
 /// the rule and its arithmetic are here once, so the iPhone and the Mac
 /// cannot drift into checking different things.
 ///
-/// The Mac's tests compile this same file (apps/apple/Mac/project.yml), as
+/// The Mac's tests compile this same file (`AmuxMacTests` in apps/apple/BUCK), as
 /// the two apps share no test package.
 enum CodeContrast {
     /// The least contrast body text is held to (WCAG AA).

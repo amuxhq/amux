@@ -2,8 +2,9 @@
 """Take the Android app from a clean checkout to a signed, uploaded .aab.
 
 Everything a release needs is here and nothing beyond it: this script bumps
-the versionName and versionCode in apps/android/app/build.gradle.kts, builds
-and signs the Android App Bundle (:app:bundleRelease), verifies its signature,
+the version name and code in apps/android/app/version.bzl, builds the Android
+App Bundle with Buck2 (`//apps/android/app:bundle`, on a Linux worker), signs
+it with the upload key and verifies its signature,
 uploads it to Google Play's internal testing track, and only then commits the
 numbers, cuts the annotated `android-v<version>-b<build>` tag and pushes both.
 It never submits anything to Production: `just android deploy` promotes a
@@ -45,41 +46,34 @@ from googleplay import (  # noqa: E402
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-GRADLE_FILE = Path("apps/android/app/build.gradle.kts")
+VERSION_FILE = Path("apps/android/app/version.bzl")
 GOOGLE_SERVICES_FILE = Path("apps/android/app/google-services.json")
-GRADLE_WRAPPER = Path("apps/android/tools/gradle-run.sh")
-BUILT_AAB = Path("apps/android/app/build/outputs/bundle/release/app-release.aab")
-BUILT_MAPPING = Path("apps/android/app/build/outputs/mapping/release/mapping.txt")
+BUILT = Path("scripts/built")
+BUNDLE_TARGET = "//apps/android/app:bundle"
 RELEASE_DIRECTORY = Path("target/android/release")
 DEFAULT_KEYSTORE = Path.home() / ".googleplay" / "upload-keystore.jks"
 KEYCHAIN_SERVICE = "amux-googleplay"
 TAG_RE = re.compile(r"^android-v(\d+)\.(\d+)\.(\d+)-b(\d+)$")
-VERSION_CODE_RE = re.compile(
-    r'^(\s*versionCode\s*=\s*(?:releaseVersionCodeOverride\s*\?:\s*)?)(\d+)\b',
-    re.M,
-)
-VERSION_NAME_RE = re.compile(
-    r'^(\s*versionName\s*=\s*(?:releaseVersionNameOverride\s*\?:\s*)?)"([^"]+)"',
-    re.M,
-)
+VERSION_CODE_RE = re.compile(r"^(VERSION_CODE\s*=\s*)(\d+)\b", re.M)
+VERSION_NAME_RE = re.compile(r'^(VERSION_NAME\s*=\s*)"([^"]+)"', re.M)
 LOCALE = "en-US"
 MAX_PLAY_NOTES_LEN = 500
 
 
-def project_numbers(gradle_text: str) -> tuple[str, int]:
-    """Read (versionName, versionCode) from apps/android/app/build.gradle.kts."""
-    name_match = VERSION_NAME_RE.search(gradle_text)
-    code_match = VERSION_CODE_RE.search(gradle_text)
+def project_numbers(version_text: str) -> tuple[str, int]:
+    """Read (version name, version code) from apps/android/app/version.bzl."""
+    name_match = VERSION_NAME_RE.search(version_text)
+    code_match = VERSION_CODE_RE.search(version_text)
     if not name_match or not code_match:
         raise Refusal(
-            f"{GRADLE_FILE} sets no versionName or versionCode this script can read"
+            f"{VERSION_FILE} sets no VERSION_NAME or VERSION_CODE this script can read"
         )
     return name_match.group(2), int(code_match.group(2))
 
 
-def rewrite_numbers(gradle_text: str, version: str, build: int) -> str:
-    """Return `gradle_text` with versionName and versionCode updated."""
-    updated, name_count = VERSION_NAME_RE.subn(rf'\g<1>"{version}"', gradle_text, count=1)
+def rewrite_numbers(version_text: str, version: str, build: int) -> str:
+    """Return `version_text` with the version name and code updated."""
+    updated, name_count = VERSION_NAME_RE.subn(rf'\g<1>"{version}"', version_text, count=1)
     updated, code_count = VERSION_CODE_RE.subn(rf"\g<1>{build}", updated, count=1)
     if name_count != 1 or code_count != 1:
         missing = " and ".join(
@@ -87,7 +81,7 @@ def rewrite_numbers(gradle_text: str, version: str, build: int) -> str:
             for label, count in (("versionName", name_count), ("versionCode", code_count))
             if count != 1
         )
-        raise Refusal(f"{GRADLE_FILE} has no {missing} line this script can write")
+        raise Refusal(f"{VERSION_FILE} has no {missing} line this script can write")
     return updated
 
 
@@ -446,48 +440,82 @@ def play_notes(text: str) -> str:
     return trimmed[: MAX_PLAY_NOTES_LEN - 1].rstrip() + "…"
 
 
-def run_scope_audit() -> None:
-    """Build shipping libamux_app.so and prove no debug/test surface or dynamic SQLite ships."""
+def version_config(version: str, build: int) -> list[str]:
+    """The Buck2 options that build `version` (`build`) without writing them."""
+    return ["-c", f"amux.android_version_name={version}", "-c", f"amux.android_version_code={build}"]
+
+
+def run_scope_audit(version: str, build: int) -> None:
+    """Prove the bundle ships no debug/test surface or dynamic SQLite."""
     print("running release scope audit", flush=True)
     subprocess.run(
-        ["scripts/py", "-B", "apps/android/tools/android-scope-audit.py"],
+        ["scripts/buck2", "test", "//apps/android/app:scope-audit", *version_config(version, build)],
         cwd=REPO_ROOT,
         check=True,
-        timeout=2400,
+        timeout=3000,
     )
 
 
 def write_numbers(version: str, build: int) -> None:
-    path = REPO_ROOT / GRADLE_FILE
+    path = REPO_ROOT / VERSION_FILE
     path.write_text(rewrite_numbers(path.read_text(encoding="utf-8"), version, build), encoding="utf-8")
 
 
-def build_bundle(version: str, build: int, facts: dict, *, rehearse: bool) -> Path:
-    """Build and sign apps/android/app/build/outputs/bundle/release/app-release.aab."""
-    print(f"building signed release bundle for {version} ({build})", flush=True)
-    cmd = [
-        "sh",
-        str(GRADLE_WRAPPER),
-        ":app:bundleRelease",
-        "--no-daemon",
-        f"-Pamux.signing.storeFile={facts['keystore']}",
-        f"-Pamux.signing.keyAlias={facts['key_alias']}",
+def built(target: str, version: str, build: int) -> Path:
+    """What Buck2 built for `target` at `version` (`build`), fetched from the cache."""
+    out = subprocess.run(
+        ["sh", str(BUILT), target, *version_config(version, build)],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=3000,
+    )
+    return Path(out.stdout.strip())
+
+
+def sign_command(jarsigner: str, unsigned: Path, signed: Path, facts: dict) -> list[str]:
+    """jarsigner signing `unsigned` into `signed` with the upload key, its
+    passwords read from the environment rather than the command line."""
+    return [
+        jarsigner,
+        "-keystore",
+        str(facts["keystore"]),
+        "-storepass:env",
+        "AMUX_ANDROID_STORE_PASSWORD",
+        "-keypass:env",
+        "AMUX_ANDROID_KEY_PASSWORD",
+        "-sigalg",
+        "SHA256withRSA",
+        "-digestalg",
+        "SHA-256",
+        "-signedjar",
+        str(signed),
+        str(unsigned),
+        facts["key_alias"],
     ]
-    if rehearse:
-        cmd.extend(
-            [
-                f"-Pamux.versionName={version}",
-                f"-Pamux.versionCode={build}",
-            ]
-        )
+
+
+def build_bundle(version: str, build: int, facts: dict) -> tuple[Path, Path]:
+    """Build the bundle at `version` (`build`) and sign it with the upload key.
+
+    Buck2's bundle is unsigned: the upload key never enters the build, so it
+    is signed here, into target/android/release. Returns the signed bundle
+    and R8's mapping for it."""
+    print(f"building signed release bundle for {version} ({build})", flush=True)
+    unsigned = built(BUNDLE_TARGET, version, build)
+    if not unsigned.is_file():
+        raise Refusal(f"Buck2 succeeded but wrote no bundle at {unsigned}")
+    mapping = built(BUNDLE_TARGET + "[proguard_text_output]", version, build) / "mapping.txt"
+    destination = REPO_ROOT / RELEASE_DIRECTORY
+    destination.mkdir(parents=True, exist_ok=True)
+    signed = destination / "signed.aab"
+    signed.unlink(missing_ok=True)
     env = os.environ.copy()
     env["AMUX_ANDROID_STORE_PASSWORD"] = facts["store_password"]
     env["AMUX_ANDROID_KEY_PASSWORD"] = facts["key_password"]
-    subprocess.run(cmd, cwd=REPO_ROOT, env=env, check=True, timeout=1800)
-    built = REPO_ROOT / BUILT_AAB
-    if not built.is_file():
-        raise Refusal(f"Gradle succeeded but wrote no bundle at {BUILT_AAB}")
-    return built
+    subprocess.run(sign_command(facts["jarsigner"], unsigned, signed, facts), env=env, check=True, timeout=600)
+    return signed, mapping
 
 
 def verify_signature(aab: Path, jarsigner: str) -> None:
@@ -507,14 +535,13 @@ def verify_signature(aab: Path, jarsigner: str) -> None:
         raise Refusal(f"bundle signature verification failed: {detail}")
 
 
-def stage_release_artifacts(aab: Path, version: str, build: int, message: str) -> Path:
+def stage_release_artifacts(aab: Path, mapping: Path, version: str, build: int, message: str) -> Path:
     destination = REPO_ROOT / RELEASE_DIRECTORY / tag_name(version, build)
     if destination.exists():
         shutil.rmtree(destination)
     destination.mkdir(parents=True, exist_ok=True)
     copied_aab = destination / f"amux-android-{version}-b{build}.aab"
     shutil.copy2(aab, copied_aab)
-    mapping = REPO_ROOT / BUILT_MAPPING
     if mapping.is_file():
         shutil.copy2(mapping, destination / "mapping.txt")
     (destination / "ReleaseNotes.txt").write_text(message + "\n", encoding="utf-8")
@@ -561,7 +588,7 @@ def upload_to_play(
 
 def commit_and_tag(version: str, build: int, message: str) -> None:
     tag = tag_name(version, build)
-    subprocess.run(["git", "add", str(GRADLE_FILE)], cwd=REPO_ROOT, check=True, timeout=120)
+    subprocess.run(["git", "add", str(VERSION_FILE)], cwd=REPO_ROOT, check=True, timeout=120)
     subprocess.run(
         ["git", "commit", "-m", f"Android version {version} (build {build})"],
         cwd=REPO_ROOT,
@@ -623,10 +650,10 @@ def main(argv: list[str] | None = None) -> int:
     require_upload_key = not (args.rehearse or args.no_upload)
     checks, facts = inputs(require_upload_key=require_upload_key)
 
-    gradle_text = (REPO_ROOT / GRADLE_FILE).read_text(encoding="utf-8")
+    version_text = (REPO_ROOT / VERSION_FILE).read_text(encoding="utf-8")
     all_tags = git_tags()
     try:
-        here_version, here_build = project_numbers(gradle_text)
+        here_version, here_build = project_numbers(version_text)
         version = next_version(all_tags, here_version, args.version)
         build = next_build(all_tags, here_build, args.build)
         numbering = Check("the next version and build number", True, f"{version} ({build})")
@@ -665,7 +692,7 @@ def main(argv: list[str] | None = None) -> int:
     # Always audit shipping Rust + DEX scope before touching version numbers or
     # signing an .aab, so a debug surface or dynamic SQLite stops the run early.
     try:
-        run_scope_audit()
+        run_scope_audit(version, build)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as failed:
         reason = "timed out" if isinstance(failed, subprocess.TimeoutExpired) else "failed"
         print(f"scope-audit {reason}; nothing was modified", file=sys.stderr)
@@ -675,11 +702,11 @@ def main(argv: list[str] | None = None) -> int:
         write_numbers(version, build)
     step = "bundle"
     try:
-        built_aab = build_bundle(version, build, facts, rehearse=args.rehearse)
+        built_aab, mapping = build_bundle(version, build, facts)
         step = "verify"
         verify_signature(built_aab, facts["jarsigner"])
         step = "stage"
-        staged_aab = stage_release_artifacts(built_aab, version, build, message)
+        staged_aab = stage_release_artifacts(built_aab, mapping, version, build, message)
         print(f"staged {staged_aab.relative_to(REPO_ROOT)}")
         print(f"release notes beside it in {(staged_aab.parent / 'ReleaseNotes.txt').relative_to(REPO_ROOT)}")
         if not args.rehearse and not args.no_upload:
@@ -700,8 +727,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(
                 f"{step} {reason}, so nothing was committed and no tag was cut. "
-                f"{version} ({build}) is written into {GRADLE_FILE}; "
-                f"undo with `git checkout -- {GRADLE_FILE}`",
+                f"{version} ({build}) is written into {VERSION_FILE}; "
+                f"undo with `git checkout -- {VERSION_FILE}`",
                 file=sys.stderr,
             )
         return 1

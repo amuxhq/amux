@@ -147,7 +147,6 @@ class ClientKindCheckTest(unittest.TestCase):
         self.plant_swift(HOME, "let tint = Palette.codex")
         self.plant_swift(HOME, "// .codex is named in words only")
         for fixture in [
-            "apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift",
             "apps/apple/Packages/AmuxFeatures/Tests/AmuxFeaturesTests/ChatWordsTests.swift",
             "apps/apple/Amux/Debug/ComponentCatalog.swift",
         ]:

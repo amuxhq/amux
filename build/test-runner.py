@@ -43,6 +43,7 @@ come from the environment, for the recipes a person runs by hand:
 
 import argparse
 import concurrent.futures
+import errno
 import os
 import selectors
 import shutil
@@ -50,9 +51,11 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 LEAK_TIMEOUT = 1.0
+WINDOWS = sys.platform == "win32"
 
 
 def selected(name: str, filters: list[str]) -> bool:
@@ -63,14 +66,29 @@ def selected(name: str, filters: list[str]) -> bool:
     return any(name.startswith(f[1:]) if f.startswith("^") else f in name for f in filters)
 
 
+def starting(start):
+    """Start a process, again if the binary is busy. Linux refuses to run a
+    file some process holds open for writing (ETXTBSY), and a test binary
+    the worker has just written can be: a process another action forked
+    while the file was open inherits the descriptor, until it execs. That
+    lasts moments, so a few tries a moment apart get past it."""
+    for attempt in range(20):
+        try:
+            return start()
+        except OSError as error:
+            if error.errno != errno.ETXTBSY or attempt == 19:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
 def tests(binary: list[str], filters: list[str]) -> list[str]:
     def listing(*extra: str) -> list[str]:
-        out = subprocess.run(
+        out = starting(lambda: subprocess.run(
             binary + ["--list", "--format", "terse", *extra],
             check=True,
             capture_output=True,
             text=True,
-        ).stdout
+        )).stdout
         return [line[: -len(": test")] for line in out.splitlines() if line.endswith(": test")]
 
     ignored = set(listing("--ignored"))
@@ -86,21 +104,24 @@ def run_one(
     if not local:
         # Resolved: macOS's /tmp is a link to /private/tmp, and a path a test
         # compares against a canonical one must be canonical already.
-        scratch = tempfile.mkdtemp(prefix="t-", dir=os.path.realpath("/tmp"))
+        # Windows has no /tmp; its temporary folder is short enough.
+        scratch = tempfile.mkdtemp(prefix="t-", dir=tempfile.gettempdir() if WINDOWS else os.path.realpath("/tmp"))
         for sub in ("home", "tmp"):
             os.mkdir(os.path.join(scratch, sub))
         env.update(HOME=os.path.join(scratch, "home"), TMPDIR=os.path.join(scratch, "tmp"))
-    child = subprocess.Popen(
+        if WINDOWS:
+            # Where Windows programs look for the same two.
+            env.update(USERPROFILE=env["HOME"], TEMP=env["TMPDIR"], TMP=env["TMPDIR"])
+    child = starting(lambda: subprocess.Popen(
         binary + ["--exact", name, "--nocapture"],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        start_new_session=True,
+        start_new_session=not WINDOWS,
         env=env,
-    )
+    ))
     output = bytearray()
-    selector = selectors.DefaultSelector()
-    selector.register(child.stdout, selectors.EVENT_READ)
+    chunks = Chunks(child.stdout)
     deadline = start + slow * terminate_after
     reported_slow = False
     exited_at = None
@@ -118,29 +139,83 @@ def run_one(
         if not reported_slow and now - start > slow:
             reported_slow = True
             print(f"SLOW  {name} ({slow:.0f}s)", flush=True)
-        events = selector.select(timeout=0.1)
-        if events:
-            chunk = os.read(child.stdout.fileno(), 65536)
-            if not chunk:
-                break
+        chunk = chunks.next(timeout=0.1)
+        if chunk == b"":
+            break
+        if chunk:
             output += chunk
             if local:
                 sys.stdout.buffer.write(chunk)
                 sys.stdout.flush()
-    selector.close()
-    # Ends whatever the test left running. With nothing left but the test
-    # itself, exited and not yet reaped, macOS answers EPERM, not ESRCH.
-    try:
-        os.killpg(child.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        pass
+    chunks.close()
+    end_tree(child)
     child.wait()
-    child.stdout.close()
+    # On Windows the reader thread may still be blocked reading a pipe that
+    # an escaped process holds, and closing a handle under a blocked read
+    # can wait for it; the handle goes with the runner.
+    if not WINDOWS:
+        child.stdout.close()
     if scratch:
         shutil.rmtree(scratch, ignore_errors=True)
     if status == "pass" and child.returncode != 0:
         status = "fail"
     return name, status, time.monotonic() - start, bytes(output)
+
+
+class Chunks:
+    """What a test writes, a chunk at a time, waiting at most a timeout for
+    the next: None when nothing came, b"" once the pipe has closed, which
+    is when every process holding it has ended. A selector does this on
+    Unix; Windows can't select on a pipe, so a thread reads it there."""
+
+    def __init__(self, pipe):
+        self.pipe = pipe
+        if WINDOWS:
+            self.queue = []
+            self.ready = threading.Condition()
+            threading.Thread(target=self._read, daemon=True).start()
+        else:
+            self.selector = selectors.DefaultSelector()
+            self.selector.register(pipe, selectors.EVENT_READ)
+
+    def _read(self) -> None:
+        while True:
+            chunk = self.pipe.raw.read(65536) or b""
+            with self.ready:
+                self.queue.append(chunk)
+                self.ready.notify()
+            if not chunk:
+                return
+
+    def next(self, timeout: float) -> bytes | None:
+        if not WINDOWS:
+            if not self.selector.select(timeout=timeout):
+                return None
+            return os.read(self.pipe.fileno(), 65536)
+        with self.ready:
+            if not self.queue:
+                self.ready.wait(timeout)
+            return self.queue.pop(0) if self.queue else None
+
+    def close(self) -> None:
+        if not WINDOWS:
+            self.selector.close()
+
+
+def end_tree(child: subprocess.Popen) -> None:
+    """Ends the test and whatever it left running."""
+    if WINDOWS:
+        # Every process the test started, by the parent each was started
+        # from; a process whose parent has already ended is out of reach,
+        # as one that left its group is on Unix.
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(child.pid)], capture_output=True)
+        return
+    # With nothing left but the test itself, exited and not yet reaped,
+    # macOS answers EPERM, not ESRCH.
+    try:
+        os.killpg(child.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def main() -> int:

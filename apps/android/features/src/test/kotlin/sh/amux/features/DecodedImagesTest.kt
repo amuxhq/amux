@@ -2,7 +2,13 @@ package sh.amux.features
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+// Robolectric's Android, because DecodedImages holds an android.util.LruCache.
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class DecodedImagesTest {
     @Test
     fun aFittedImageKeepsItsLongerSideCovered() {

@@ -51,8 +51,8 @@ REQUIRED = {
     "evidence",
     "update",
 }
-CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
-MODELS_SUITE = "protocol-models"
+TESTNET_BUCK = ROOT / "crates" / "testnet" / "BUCK"
+SIMULATED = "simulated"
 PERF_BASELINE_ROOTS = (
     ROOT / "perf" / "baselines" / "desktop",
     ROOT / "perf" / "baselines" / "phone",
@@ -111,28 +111,15 @@ def cargo_inventory() -> tuple[
 
 
 def swift_inventory() -> set[str]:
+    """Every XCTest bundle the Apple build declares: each package's suite
+    (`package_tests`) and each test bundle in the apps' BUCK file."""
     targets: set[str] = set()
-    for manifest in sorted((ROOT / "apps" / "apple" / "Packages").glob("*/Package.swift")):
-        text = manifest.read_text()
-        targets.update(
-            re.findall(r"\.testTarget\s*\(\s*name:\s*\"([^\"]+)\"", text, re.DOTALL)
-        )
-
-    project = (ROOT / "apps" / "apple" / "project.yml").read_text().splitlines()
-    in_targets = False
-    current: str | None = None
-    for line in project:
-        if line == "targets:":
-            in_targets = True
-            continue
-        if in_targets and line == "schemes:":
-            break
-        match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
-        if in_targets and match:
-            current = match.group(1)
-            continue
-        if current and re.match(r"^    type: bundle\.(?:unit-test|ui-testing)\s*$", line):
-            targets.add(current)
+    for build in sorted((ROOT / "apps" / "apple").rglob("BUCK")):
+        text = build.read_text()
+        targets.update(re.findall(r"package_tests\(\s*name\s*=\s*\"([^\"]+)\"", text))
+        for call in re.findall(r"apple_bundle\((.*?)\n\)", text, re.DOTALL):
+            if re.search(r'extension\s*=\s*"xctest"', call):
+                targets.update(re.findall(r'product_name\s*=\s*"([^"]+)"', call))
     return targets
 
 
@@ -383,7 +370,7 @@ def validate(suites: list[dict[str, Any]]) -> tuple[list[str], set[tuple[str, st
     for baseline in sorted(discovered_baselines - set(catalog_baselines)):
         errors.append(f"performance baseline {baseline} is not listed")
 
-    errors.extend(validate_models_matrix(suites, CI_WORKFLOW.read_text()))
+    errors.extend(validate_simulated_run(suites, TESTNET_BUCK.read_text()))
 
     listed = set(catalog_cargo) | {
         (package, "test", f"{selections.INTEGRATION}::{module}") for package, module in catalog_modules
@@ -391,38 +378,40 @@ def validate(suites: list[dict[str, Any]]) -> tuple[list[str], set[tuple[str, st
     return errors, listed, set(catalog_swift)
 
 
-def models_matrix(text: str) -> set[str] | None:
-    """The models a CI workflow's models job runs: each matrix entry names a few."""
-    job = re.search(r"^  models:\n((?:    .*\n|\s*\n)*)", text, re.MULTILINE)
-    if job is None:
+def simulated_filters(text: str) -> set[str] | None:
+    """The suites testnet's `simulated` test target runs: the modules its
+    filters select (`"^module::"`), from crates/testnet/BUCK."""
+    run = re.search(r'"simulated": \{(.*?)\n        \},', text, re.DOTALL)
+    if run is None:
         return None
-    entries = re.search(r"^\s+models:\n((?:\s+- [\w ]+\n)+)", job.group(1), re.MULTILINE)
-    if entries is None:
+    filters = re.search(r'"filters": \[([^\]]*)\]', run.group(1))
+    if filters is None:
         return None
-    return {model for line in entries.group(1).splitlines() for model in line.split()[1:]}
+    return set(re.findall(r'"\^(\w+)::"', filters.group(1)))
 
 
-def validate_models_matrix(suites: list[dict[str, Any]], workflow: str) -> list[str]:
-    """Every protocol model's suite module is in an entry of the CI models job."""
-    suite = next((suite for suite in suites if suite["name"] == MODELS_SUITE), None)
-    if suite is None:
-        return [f"suite {MODELS_SUITE} is missing"]
-    targets = {
+def validate_simulated_run(suites: list[dict[str, Any]], buck: str) -> list[str]:
+    """`just test` walks the simulated stories as //crates/testnet:simulated,
+    whose filters name the suites by hand: they are every module of the
+    suites that declare a simulated mode, and nothing else."""
+    modules = {
         module
-        for entry in suite.get("cargo", [])
-        if entry.get("package") == "models"
-        for module in entry.get("modules", [])
+        for suite in suites
+        if SIMULATED in suite.get("modes", [])
+        for selector in suite.get("cargo", [])
+        if selector.get("package") == "testnet"
+        for module in selector.get("modules", [])
     }
-    matrix = models_matrix(workflow)
-    if matrix is None:
-        return [f"{CI_WORKFLOW.relative_to(ROOT)} has no models job with a model matrix"]
+    run = simulated_filters(buck)
+    if run is None:
+        return [f"{TESTNET_BUCK.relative_to(ROOT)} has no simulated run with filters"]
     errors = [
-        f"{MODELS_SUITE} model {target} is not in the CI models job's matrix"
-        for target in sorted(targets - matrix)
+        f"{module} runs on the simulated net but {TESTNET_BUCK.relative_to(ROOT)}'s simulated run leaves it out"
+        for module in sorted(modules - run)
     ]
     errors.extend(
-        f"the CI models job's matrix names {target}, which is no {MODELS_SUITE} model"
-        for target in sorted(matrix - targets)
+        f"{TESTNET_BUCK.relative_to(ROOT)}'s simulated run names {module}, which no suite runs on the simulated net"
+        for module in sorted(run - modules)
     )
     return errors
 

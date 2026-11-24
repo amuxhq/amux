@@ -1,7 +1,11 @@
 //! The Swift mirrors of the values the phone bridge carries, generated from
-//! their Rust definitions: `cargo run -p ios-tools -- swift-types` writes them
-//! and `--check` fails when the committed file differs, so a hand edit or a
-//! Rust change without a regeneration cannot land.
+//! their Rust definitions. The app's are a build output: Buck2 runs
+//! `ios-tools swift-types --values PATH` (apps/apple/Packages/AmuxCore/BUCK),
+//! so they cannot fall behind the Rust. The push values are committed, since
+//! the notification extension's package is read as well as built:
+//! `cargo run -p ios-tools -- swift-types` writes them and `--check` fails
+//! when the committed file differs, so a hand edit or a Rust change without
+//! a regeneration cannot land.
 //!
 //! The Rust values serialize with serde's defaults, and their schemas come
 //! from schemars. A struct becomes a Swift struct whose coding keys are the
@@ -16,9 +20,6 @@ use std::path::PathBuf;
 
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value};
-
-/// Where the mirrors live, from the repository root.
-pub const OUTPUT: &str = "apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift";
 
 /// The mirrors a notification extension reads. It links no Rust and none of
 /// the app's packages, so these sit in its own package and the rest of the
@@ -122,18 +123,20 @@ pub fn definitions() -> Map<String, Value> {
     generator.take_definitions(true)
 }
 
-/// `swift-types [--check]`, run from anywhere in the repository.
+/// `swift-types [--check | --values PATH]`, run from anywhere in the repository.
 pub fn main(args: &[String]) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let check = match args {
         [] => false,
         [flag] if flag == "--check" => true,
-        _ => return Err("usage: ios-tools swift-types [--check]".into()),
+        // The app's mirrors, at PATH: what the Buck2 build compiles
+        // (apps/apple/Packages/AmuxCore/BUCK).
+        [flag, path] if flag == "--values" => {
+            std::fs::write(path, generate(&definitions())?)?;
+            return Ok(());
+        }
+        _ => return Err("usage: ios-tools swift-types [--check | --values PATH]".into()),
     };
-    let definitions = definitions();
-    let files = [
-        (OUTPUT, generate(&definitions)?),
-        (PUSH_OUTPUT, generate_push(&definitions)?),
-    ];
+    let files = [(PUSH_OUTPUT, generate_push(&definitions())?)];
     write_or_check("swift-types", &files, check)
 }
 
@@ -912,15 +915,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-
-    #[test]
-    fn the_committed_mirrors_match_the_rust_definitions() {
-        let committed = std::fs::read_to_string(repository().join(OUTPUT)).unwrap_or_default();
-        assert!(
-            committed == generate(&definitions()).unwrap(),
-            "run `cargo run -p ios-tools -- swift-types` and commit the result"
-        );
-    }
 
     /// Every public value type in the crates the bridge reads from has a
     /// mirror, except the ones that never cross it.

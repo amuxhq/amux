@@ -2,7 +2,11 @@
 # and so does `packages.toolchain`, which installs it as a profile -- on a
 # machine where the tools should be on every shell's PATH, not only inside
 # `nix develop`. A machine definition can install the same list.
-{ pkgs }:
+#
+# `buildTools = false` leaves out build/tools.json's tools: that is the
+# list Buck2's Linux actions run with (flake.nix's `packages.actions`), and
+# a new buck2 or NativeLink shouldn't change the key of every Linux action.
+{ pkgs, buildTools ? true }:
 let
   # The stable toolchain, read from rust-toolchain.toml so that rustup users and
   # this list cannot disagree about the version, components or targets.
@@ -22,6 +26,8 @@ let
   cargoNightly = pkgs.writeShellScriptBin "cargo-nightly" ''
     PATH=${nightly}/bin:$PATH exec cargo "$@"
   '';
+
+  pinned = import ./build-tools.nix { inherit pkgs; };
 in
 [
   rust
@@ -36,7 +42,11 @@ in
   pkgs.tmux
   # The browser extension under js/: its build scripts, npm and its tests.
   pkgs.nodejs_24
-  # The Android app under apps/android/: Gradle/Kotlin builds, JVM tests and Rust JNI cross-compilation.
+  # The JDK's jarsigner signs the Android bundle for Google Play (`just
+  # android release`); Buck2 builds the app with nix/android.nix's own JDK.
+  # cargo-ndk has had no caller since Buck2 builds the JNI bridge; it goes
+  # with the next change to this list, since any change here rekeys every
+  # Linux action.
   pkgs.jdk21
   pkgs.cargo-ndk
 ]
@@ -44,3 +54,5 @@ in
 # bundled. Linux only. On macOS the iPhone bridge needs Apple's own toolchain
 # from Xcode, and Nix's compiler and SDK variables get in its way.
 ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.stdenv.cc ]
+# build/tools.json's buck2, reindeer, nativelink and cargo-nextest.
+++ pkgs.lib.optionals buildTools (builtins.attrValues pinned.tools)

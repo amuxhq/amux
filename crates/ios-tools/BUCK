@@ -22,12 +22,14 @@ amux_rust_library(
     deps = DEPS,
     test_deps = TEST_DEPS,
     test_include = {
-        "//:apps/apple/justfile": "apps/apple/justfile",
+        "//apps/apple:justfile": "apps/apple/justfile",
         "//:journeys/manifest.json": "journeys/manifest.json",
         "//:justfile": "justfile",
     },
     test_resources = [
-        "//:mirrors",
+        "//apps/apple/Packages/AmuxCore:mirrors",
+        "//apps/apple/Packages/AmuxPush:mirrors",
+        "//apps/android/push:mirrors",
         "//:scripts",
         "//crates/app-runtime:files",
         "//crates/ui-state:files",

@@ -33,7 +33,8 @@ output names each test that failed.
 load("@prelude//decls:re_test_common.bzl", "re_test_common")
 load("@prelude//rust:sources.bzl", "RustSources", "RustSourcesTSet")
 load("@prelude//tests:re_utils.bzl", "get_re_executors_from_props")
-load("//build/platforms:defs.bzl", "host_platform")
+load("//build/platforms:defs.bzl", "EXEC_RUNS_TARGET", "host_platform")
+load("@toolchains//:nix.bzl", "NixToolchainInfo")
 
 # Cargo.toml's [profile.dev.package.*]: crates the model checker runs
 # through, optimised in every build (`rustc_flags = OPTIMISED`).
@@ -82,21 +83,37 @@ def amux_files(name, srcs, visibility = ["PUBLIC"]):
     _files(name = name, srcs = srcs, visibility = visibility)
 
 def _binaries_impl(ctx: AnalysisContext) -> list[Provider]:
-    tree = ctx.actions.symlinked_dir(
-        "binaries",
-        {path: dep[DefaultInfo].default_outputs[0] for path, dep in ctx.attrs.binaries.items()},
-    )
+    # Each under its name with the binary's own extension, `.exe` for
+    # Windows, as Cargo leaves them: provider_fakes::binaries adds it, and
+    # Windows finds a program named without one only by adding it too.
+    binaries = {
+        path + dep[DefaultInfo].default_outputs[0].extension: dep[DefaultInfo].default_outputs[0]
+        for path, dep in ctx.attrs.binaries.items()
+    }
+    # Copies on Windows: a worker there materializes the links as Windows
+    # symbolic links with the forward-slashed relative targets Buck2 writes,
+    # which Windows doesn't resolve, so a test can't start a program
+    # through one.
+    tree = (ctx.actions.copied_dir if ctx.attrs._windows else ctx.actions.symlinked_dir)("binaries", binaries)
     return [DefaultInfo(default_output = tree)]
 
 # The binaries the integration suites start, in one directory, as
 # scripts/test-binaries.sh builds them for nextest: provider-fakes'
 # `binaries` module finds them through TESTNET_BINARIES. They are built for
 # the machine the tests run on, as the desktop product with test features,
-# whatever the test itself builds as (the phone bridge's tests are "app").
-amux_binaries = rule(
+# whatever the test itself builds as (the phone bridge's tests are "app"):
+# for a Linux test, Linux, and for a Windows test, Windows, wherever the
+# build was started.
+_amux_binaries = rule(
     impl = _binaries_impl,
-    attrs = {"binaries": attrs.dict(key = attrs.string(), value = attrs.exec_dep(), sorted = False)},
+    attrs = {
+        "binaries": attrs.dict(key = attrs.string(), value = attrs.exec_dep(), sorted = False),
+        "_windows": attrs.bool(default = select({"DEFAULT": False, "prelude//os:windows": True})),
+    },
 )
+
+def amux_binaries(**kwargs):
+    _amux_binaries(exec_compatible_with = EXEC_RUNS_TARGET, **kwargs)
 
 # The binaries in that directory (//crates/provider-fakes:binaries), by the
 # name provider_fakes::binaries finds each under.
@@ -116,8 +133,14 @@ _BINARIES_ENV = {"TESTNET_BINARIES": "$(location //crates/provider-fakes:binarie
 def _test_impl(ctx: AnalysisContext) -> list[Provider]:
     # A test with a `main` of its own (Cargo's `harness = false`) is a
     # program, run as it is.
-    command = cmd_args(ctx.attrs.binary[RunInfo]) if not ctx.attrs.harness else cmd_args(
-        "python3",
+    #
+    # A Linux test runs under the Linux toolchain (build/toolchains/nix.bzl):
+    # its Python runs the runner, and its bin directory is first on the
+    # PATH the test and what it starts (tmux, git) see.
+    nix = ctx.attrs._nix[NixToolchainInfo].run if ctx.attrs._nix else None
+    command = cmd_args(nix or [], "--" if nix else [], ctx.attrs.binary[RunInfo]) if not ctx.attrs.harness else cmd_args(
+        nix or [],
+        "bin/python3" if nix else ctx.attrs._python,
         ctx.attrs._runner,
         "--threads",
         str(ctx.attrs.threads),
@@ -127,6 +150,7 @@ def _test_impl(ctx: AnalysisContext) -> list[Provider]:
         str(ctx.attrs.terminate_after),
         "--",
         ctx.attrs.binary[RunInfo],
+        ctx.attrs.filters,
     )
     executors = get_re_executors_from_props(ctx)
     # `buck2 run` (how `just goldens` re-records) runs the runner here, in
@@ -162,6 +186,8 @@ _amux_test = rule(
     attrs = {
         "binary": attrs.dep(providers = [RunInfo]),
         "env": attrs.dict(key = attrs.string(), value = attrs.arg(), sorted = False, default = {}),
+        # The test runner's name filters: only the tests they select run.
+        "filters": attrs.list(attrs.string(), default = []),
         "harness": attrs.bool(default = True),
         "labels": attrs.list(attrs.string(), default = []),
         # .config/nextest.toml's bounds: slow after a minute, ended at three.
@@ -169,19 +195,40 @@ _amux_test = rule(
         "terminate_after": attrs.int(default = 3),
         "threads": attrs.int(default = 4),
         "_runner": attrs.source(default = "root//build:test-runner.py"),
+        # The Python the runner runs under, by the name the worker's PATH
+        # has it: Windows' installers make no python3.
+        "_python": attrs.string(default = select({
+            "DEFAULT": "python3",
+            "prelude//os:windows": "python",
+        })),
+        "_nix": attrs.option(attrs.exec_dep(providers = [NixToolchainInfo]), default = select({
+            "DEFAULT": None,
+            "prelude//os:linux": "root//:nix-linux",
+        })),
     } | re_test_common.test_args(),
 )
 
-def _test(name, env, run_env, labels, product, timeouts, whole_worker = False, harness = True, **binary):
+def _test(name, env, run_env, labels, product, timeouts, whole_worker = False, harness = True, nova_only = False, runs = {}, **binary):
     """A test binary `name` built from `binary` (rust_binary's attributes),
     run by the test runner with `run_env` and the compile-time `env`, as
-    the prelude's rust_test runs with both."""
+    the prelude's rust_test runs with both. Each of `runs` is another test
+    target running the same binary: its name to a dict of the `env` it adds
+    and the `filters` that select its tests."""
     rustc_flags = (["--test"] if harness else []) + binary.pop("rustc_flags", [])
+    platform = host_platform(product = product, purpose = "testing")
+    compatible = []
+    if nova_only:
+        # Built and run for Linux from any machine, so a Mac sends it to
+        # nova's worker; skipped when no Linux worker is in reach.
+        platform = "root//build/platforms:linux-{}-testing-dev".format(product)
+        compatible = ["root//build/constraints:linux-workers"]
+        labels = labels + ["nova-only"]
     native.rust_binary(
         name = name + "-binary",
         env = env,
         rustc_flags = rustc_flags,
-        default_target_platform = host_platform(product = product, purpose = "testing"),
+        default_target_platform = platform,
+        target_compatible_with = compatible,
         visibility = [],
         **binary
     )
@@ -192,9 +239,23 @@ def _test(name, env, run_env, labels, product, timeouts, whole_worker = False, h
         harness = harness,
         labels = labels,
         remote_execution = "whole-worker" if whole_worker else None,
-        default_target_platform = host_platform(product = product, purpose = "testing"),
+        default_target_platform = platform,
+        target_compatible_with = compatible,
         **timeouts
     )
+    for run, how in runs.items():
+        _amux_test(
+            name = run,
+            binary = ":" + name + "-binary",
+            env = env | run_env | how.get("env", {}),
+            filters = how.get("filters", []),
+            harness = harness,
+            labels = labels + how.get("labels", []),
+            remote_execution = "whole-worker" if whole_worker else None,
+            default_target_platform = platform,
+            target_compatible_with = compatible,
+            **timeouts
+        )
 
 def _crate_name() -> str:
     return native.package_name().split("/")[-1]
@@ -321,6 +382,8 @@ def amux_rust_test(
         timeouts = {},
         whole_worker = False,
         harness = True,
+        nova_only = False,
+        runs = {},
         **kwargs):
     """One integration-test binary: Cargo's `[[test]] name = ...`, which
     `autotests = false` crates keep to one per crate, built from
@@ -332,7 +395,12 @@ def amux_rust_test(
     runner's `slow`, `terminate_after` and `threads`; `whole_worker = True`
     reserves every core of the worker for a test that uses them all.
     `harness = False` for Cargo's `harness = false`: a test with its own
-    `main`, run as a program rather than by the test runner."""
+    `main`, run as a program rather than by the test runner. `nova_only =
+    True` for a test too heavy for a laptop's worker: it is always built and
+    run for Linux, on nova's worker, and is skipped when nova is out of
+    reach (label `nova-only`). `runs` names other test targets that run the
+    same binary differently: a name to the `env` each adds, the `filters`
+    that select its tests (build/test-runner.py's) and its `labels`."""
     crate = _crate_name()
     package = native.package_name()
     _test(
@@ -344,6 +412,8 @@ def amux_rust_test(
         product = product,
         timeouts = timeouts,
         whole_worker = whole_worker,
+        nova_only = nova_only,
+        runs = runs,
         crate = name.replace("-", "_"),
         crate_root = package + "/" + (crate_root or "tests/{}.rs".format(name)),
         srcs_filegroup = _tree(name + ".test", srcs if srcs != None else native.glob(["tests/**"]), include),

@@ -101,7 +101,7 @@ A lane says when and where a suite runs.
 
 | Lane | What it holds | Where it runs |
 | --- | --- | --- |
-| fast | Offline, credential-free, deterministic suites: most of the table above. | `just test` on every push, on Linux, macOS and Windows; `just ios gate` and the Android gate (`android.yml`) when a push touches those paths |
+| fast | Offline, credential-free, deterministic suites: most of the table above. | `just test` on every push, on Linux, macOS and Windows; `just ios gate` when a push touches its paths; the Android tests in `just test` on nova |
 | system | Real processes, PTYs, sockets and the supervisor, with bounded deadlines. | Also `just test`, since they are ordinary Cargo targets; the store on the simulator in `just ios captures` |
 | journey | Clients driving complete stories against a served network. | Terminal journeys on every push (Linux and macOS); iPhone journeys and accessibility audit in `just ios captures`, and Android emulator journeys and Robolectric Compose semantics, bounds, touch-target, heading and contrast accessibility audit via `just android journey` and `just android accessibility` |
 | tool | The repository's own machinery: scripts, source policy, CI command surface, the iOS and Android release scope audits. | Beside the fast lane (`just ios scope-audit`, `just android scope-audit`) |
@@ -131,7 +131,7 @@ whose stories run in both modes say so in the catalogue's `modes`.
 just sim                         # every simulated story, a few seeds each
 just sim --seeds 300 <name>      # 300 seeds of each story whose test name contains <name>
 just sim --seed 17 <name>        # exactly the failing seed, as a failure prints it
-just sim --seeds 2000            # thousands of seeds per story, as the nightly workflow walks them
+just sim --seeds 2000            # thousands of seeds per story, as the models nightly walks them
 ```
 
 Under `cargo nextest run` the same switch is the environment: `TESTNET_MODE=simulated`, with `TESTNET_SEEDS=N` or
@@ -167,23 +167,26 @@ them into as `TESTNET_BINARIES`. A test is reported slow after a minute and ende
 a process it started still holds its output fails, since that process would outlive it. The documentation tests,
 the C ABI's pointer checks (`just miri`) and the sanitizers run under `cargo test`.
 
-CI's runners have no Buck2 yet, so CI runs the same tests under [cargo-nextest](https://nexte.st), configured in
-[`.config/nextest.toml`](../.config/nextest.toml) to the same bounds, through `just cargo-test` and `just
-cargo-test-crate` (`brew install cargo-nextest`). There a setup script
+CI's Linux gate runs them through Buck2 on the build host. Its macOS and Windows runners have no Buck2 yet, so they
+run the same tests under [cargo-nextest](https://nexte.st), configured in
+[`.config/nextest.toml`](../.config/nextest.toml) to the same bounds, through `just cargo-test` (`brew install
+cargo-nextest`; the Nix dev shell has it). There a setup script
 ([`scripts/test-binaries.sh`](../scripts/test-binaries.sh)) builds the binaries the tests start before any test runs.
 
 ```sh
 just test                                  # every workspace test whose inputs changed
 just test //crates/node:integration        # one test target
+just checks                                # the repository's and the browser extension's checks
 just suite many-daemon-protocol-spec       # one suite of tests/catalog.toml
 scripts/buck2 run //crates/node:integration -- ^link_stories::relaunch   # some of a target's tests, by name
 just test-crate interpret                  # one crate
 just suite sqlite-store-contract           # the store's reader and writer suite, retention and SQLite file
 just suite client-model-spec               # the client model spec
 just test-tui                              # terminal presentation and goldens
-just offline-test                          # workspace tests with isolated config and no network (Linux, sudo)
+just offline-test                          # workspace tests with isolated config and no network (Linux)
 just journey terminal reach-host           # one terminal journey
 just journey terminal all                  # every terminal story, one line each, keeps going after a failure
+just test //crates/testnet:terminal-journeys   # the same as a cached test, as `just premerge` runs them
 just journey system survive-daemon         # the built binaries' system journey
 just ios unit                              # phone package and app-hosted unit suites
 just ios journey                           # the shared stories on the phone; `-- <story>` for one
@@ -233,6 +236,8 @@ sanitizer on a data race. The C itself is not instrumented, so a race inside SQL
 it does not. The app-ffi tests `just miri` leaves out (an installation, a tokio runtime) run here. The thread sanitizer runs
 on Linux only; [`scripts/sanitize.py`](../scripts/sanitize.py) says what it got wrong on macOS, and
 [`scripts/sanitize-thread.supp`](../scripts/sanitize-thread.supp) lists the reports it makes that are not races.
+A landing on Linux runs both when the merge changes one of those crates, and CI runs them after a push that did; the
+build host's nightly runs them over every change beneath those crates too ([CI](CI.md#nightlies)).
 
 `just tests-list` gives the focused recipe for every suite. Recipes carry outer timeouts; a timeout that fires is a
 hang to diagnose, not a limit to raise. On macOS a freshly built test binary can stall before its first

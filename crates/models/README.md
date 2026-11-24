@@ -430,10 +430,12 @@ properties are in `src/workspaces.rs`.
 ## Bounds
 
 A model explores real stores, so a state costs a store transaction or two
-rather than a few instructions. Each model runs in CI as a job of its own on
-a four-core runner, under that job's time guard, and its CI bounds are sized
-to fit it; bounds that would not fit move to the model's nightly test, which
-runs daily in its own workflow and locally through `just models-nightly`.
+rather than a few instructions. The models run at their CI bounds as one
+test target on eight cores of the Linux build host, in every premerge and
+landing, and its CI bounds are sized to keep that to about ten minutes;
+bounds that would not fit move to the model's nightly test, which the build
+host runs every night (docs/CI.md, "Nightlies") and anyone can run through
+`just models-nightly`.
 Every run prints how many states it explored and how long it took. The
 verdict does not depend on the number of threads, only which of several
 counterexamples is printed.

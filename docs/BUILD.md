@@ -12,7 +12,7 @@
 | --- | --- |
 | `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `x86_64-apple-ios` | The iPhone app's Rust bridge and `just mobile-check` |
 | `aarch64-linux-android`, `x86_64-linux-android` | The Android app's Rust bridge and `just android check` |
-| `x86_64-pc-windows-msvc` | The Windows release build and the [Windows cross-check](CI.md) |
+| `x86_64-pc-windows-msvc` | The Windows release build and the Windows builds on a Linux worker ([Windows builds](#windows-builds)) |
 | `x86_64-unknown-linux-gnu` | The Linux release build |
 | `wasm32-unknown-unknown` | The browser extension's WebAssembly, `browser-core` ([Browser extension](BROWSER.md)) |
 
@@ -26,13 +26,14 @@ Other tools a full checkout uses:
 - [`just`](https://github.com/casey/just) runs every task.
 - Python 3.11 or newer runs the repository scripts. `scripts/py` finds one
   even when `python3` on the PATH is the macOS system 3.9.
-- Xcode and XcodeGen build the iPhone app (see [the iPhone app](IOS.md)).
-- JDK 21, the Android SDK/NDK, and `cargo-ndk` build the Android app (see [the Android app](ANDROID.md), `just --list android`).
+- Buck2 builds the Apple apps with Xcode's compilers and SDKs (see [the iPhone app](IOS.md#builds)).
+- Buck2 builds the Android app on a Linux worker with its own SDK, NDK and JDK (see [the Android app](ANDROID.md), `just --list android`); a Mac needs the Android SDK's emulator and platform tools only to run what nova built.
 - `tmux` drives the terminal journeys.
-- Node 24 or newer, with npm, builds and tests the browser extension under
-  `js/` (`just browser build`, `just browser test`). Biome formats and lints it
-  (`just browser fmt`), and `js/.npmrc` stops packages' install scripts from
-  running.
+- Node 24 or newer, with npm, builds the browser extension under `js/`
+  (`just browser build`). Biome formats and lints it (`just browser fmt`),
+  and `js/.npmrc` stops packages' install scripts from running. Its checks
+  and tests (`just browser test`) bring their own Node, and their Chromium
+  comes with the Linux toolchain.
 - [`gitleaks`](https://github.com/gitleaks/gitleaks) scans what a push
   would publish for credentials. `just hooks` installs that scan as the
   pre-push hook, for every worktree at once; it reads `.gitleaks.toml`, and
@@ -47,8 +48,10 @@ On a machine with [Nix](https://nixos.org/download/) and flakes enabled,
 the Android SDK:
 the toolchain `rust-toolchain.toml` pins, the formatting nightly, `just`,
 `tmux`, Python, `git`, `gitleaks`, JDK 21 and `cargo-ndk`, the dependency checkers `just deny` and
-`just shear` run and, on Linux, a C compiler. `nix develop -c just test`
-runs one recipe in it. [`nix/toolchain.nix`](../nix/toolchain.nix) is the
+`just shear` run, the pinned `buck2`, `reindeer` and `nativelink`
+(`build/tools.json`) and, on Linux, a C compiler. `nix develop -c just test`
+runs one recipe in it; on Linux, where there is no rustup, that is how
+Buck2 finds the pinned Rust. [`nix/toolchain.nix`](../nix/toolchain.nix) is the
 list, and `flake.lock` pins every tool in it, so two machines on the same
 revision get the same tools. `nix profile install .#toolchain` installs the
 same list onto the PATH of every shell, for a machine that should always have
@@ -64,17 +67,20 @@ the same Rust dependencies and wire code on every machine. Protobuf
 generation uses a vendored `protoc`, so none needs installing.
 
 `just proto-compat` needs [buf](https://buf.build/docs/cli/installation/),
-which `nix/toolchain.nix` provides and CI pins to 1.75.0 in
-`.github/actions/setup-buf`; outside Nix, `brew install bufbuild/buf/buf`.
+which `nix/toolchain.nix` provides; outside Nix, `brew install
+bufbuild/buf/buf`. Its Buck2 test, `//:proto-compat`, brings its own.
 
 ## Buck2 and Cargo
 
 [Buck2](https://buck2.build) builds and tests the workspace for every
 `just` recipe a person or agent types. Cargo still builds the same crates
-from the same `Cargo.toml` files for what Buck2 doesn't do: CI (whose
-runners have no Buck2 yet, through the `cargo-` recipes), rust-analyzer,
-`just miri`, `just fuzz-smoke` and `just doctest`, and the release and
-phone builds, which move later.
+from the same `Cargo.toml` files for what Buck2 doesn't do: CI's Windows
+job when it has no build host, a fork's pull request (through `just
+cargo-test`), rust-analyzer, `just miri`, `just sanitize`, `just
+fuzz-smoke` and `just doctest`, and the nightlies. The Apple apps build
+with Buck2 ([the iPhone app](IOS.md#builds)), and so do the command-line
+release binaries ([Release](RELEASE.md)). CI's Linux gate and Windows job
+run through Buck2 on the build host ([CI](CI.md#the-linux-gate)).
 
 Each crate describes itself twice, so the two stay in step by hand:
 
@@ -88,7 +94,11 @@ Each crate describes itself twice, so the two stay in step by hand:
   dependency changes. reindeer reads no `[dev-dependencies]`, so a crate
   only tests use is also listed in `third-party/rust/dev-only`, a workspace
   member with no code. A crate whose build script reindeer can't run gets a
-  fixup under `third-party/rust/fixups/`.
+  fixup under `third-party/rust/fixups/`. Each library there is built
+  through [`build/third_party.bzl`](../build/third_party.bzl), which keeps
+  a crate's sources out of every dependent's compile: the prelude would
+  otherwise stage the sources of all of a crate's dependencies on the
+  worker for each compile, 11,000 files for a crate near the top.
 - A test finds its crate's files and binaries through the
   [`source-tree`](../crates/source-tree) crate (`crate_dir!()`, `bin!()`)
   rather than `env!("CARGO_MANIFEST_DIR")` and `env!("CARGO_BIN_EXE_…")`,
@@ -108,6 +118,13 @@ this Mac. The purpose is what keeps test code out of what ships:
   way, and so do the crates that only tests and tools use (`testnet`,
   `provider-fakes`, `models`, `qualification`, `shot`, `replay-support`):
   nothing shipping can depend on them.
+
+Product and purpose decide only the workspace's own crates' features, so a
+third-party crate is always built as `<target>-cli-shipping-<mode>`,
+whichever configuration reaches it, build tools included
+([`build/third_party.bzl`](../build/third_party.bzl)): each is compiled
+once per target and mode. A fixup can't make a third-party crate differ by
+product or purpose.
 
 The mode is the profile: `dev`, `release`, `full-debug`, `phone-dev`,
 `wasm` and `models`, with the flags the profiles below give Cargo, set in
@@ -162,6 +179,119 @@ the tests that read what changed.
 Build output is under `buck-out/`, which holds only what was asked for:
 everything else stays in the cache until something needs it. `scripts/buck2
 clean` empties it without losing the cache.
+
+### Linux builds and the build host
+
+Linux targets build and run on a Linux worker: a build host's NativeLink
+(nova), or the one on a Linux machine itself. Their toolchain is
+`packages.actions` in [`flake.nix`](../flake.nix), the same list as the dev
+shell less the build tools, and an action on the Linux worker realizes it
+(`//:nix-linux`, [`build/toolchains/nix.bzl`](../build/toolchains/nix.bzl)):
+every Linux compile, link and test calls its tools by that store path, so a
+change to the flake changes every Linux key, and a branch that changes the
+toolchain gets it built on the worker from whichever machine sent it. A Mac
+needs no Nix for this.
+
+A Mac sends its Linux actions to the build host through its own
+NativeLink, once set up with the host's address and the Mac's address on
+the tailnet, where the host's worker registers:
+
+```sh
+scripts/nativelink.py install --remote grpc://<host>:50051 --workers <this Mac's tailnet address>:50062
+```
+
+The build host's own setup names both. The Mac's cache then sits in front
+of the host's: what Buck2 uploads reaches the host too, and a result the
+host already has is a hit on the Mac, so a branch tested on the host is
+cache hits for the same configuration on the Mac and the other way round.
+macOS results stay on the Mac.
+
+When the host doesn't answer (or the tailnet is down), `scripts/buck2`
+says so, restarts NativeLink without it and turns Linux off for the tree:
+Linux actions fail at once rather than wait, and tests marked `nova_only`
+(the model checks' integration target, which takes every core for ten
+minutes) are skipped, which `just test` names at the end. When the host
+answers again it switches back. Each switch restarts NativeLink, which
+interrupts any build another tree has running at that moment.
+
+A Linux machine sends its actions to the NativeLink on its own loopback,
+as the build host's trees do, or to the one `AMUX_NATIVELINK` names
+(`grpc://<host>:50051`): that is how CI's Linux gate reaches the build
+host over the tailnet. `scripts/nativelink.py serve DIR` runs a NativeLink
+with its own worker and no remote in the foreground, for a Linux machine
+that has neither (a fork's pull request in CI).
+
+### Windows builds
+
+Everything built for `x86_64-pc-windows-msvc` compiles and links on a
+Linux worker, from any machine: Rust's own Windows target, LLVM's
+MSVC-compatible C compiler and linker (`clang-cl`, `lld-link`,
+`llvm-lib`), and Microsoft's C runtime and Windows SDK, which nixpkgs
+fetches with `xwin` from the Visual Studio release it pins, under
+Microsoft's licence. They are `packages.x86_64-linux.windows` in
+[`flake.nix`](../flake.nix) ([`nix/windows.nix`](../nix/windows.nix)),
+realized on the worker like the Linux toolchain (`//:nix-windows`), and
+apart from it, so an SDK update changes only Windows keys. A Windows
+machine only runs what it is given: the binaries a Windows test starts are
+built for Windows (`amux_binaries` in [`build/rust.bzl`](../build/rust.bzl)),
+and the test runs on a Windows worker (`exec-windows`), which only CI's
+Windows job has.
+
+```sh
+just check-windows    # every library, binary and test, for Windows
+```
+
+builds the whole workspace for `windows-cli-testing-dev` and downloads
+nothing. It needs a Linux worker in reach. A crate's C, which reindeer's
+fixups compile for Windows, is compiled against the C runtime as a DLL
+(`/MD`), as Rust's own Windows code and the `cc` crate's builds link it;
+`windows-targets` links the Windows API with `raw-dylib`
+(`third-party/rust/fixups/windows-targets`), since the import library its
+companion crate carries is found through a search path a build script
+gives Cargo, which reaches no dependent's link under Buck2.
+
+### Repository checks
+
+The repository's own checks are Buck2 tests too, so `just premerge` gets a
+check from the cache until a file it reads changes: a docs-only edit reruns
+the docs check and the tests that read that page, and nothing else. Each is a
+script run over exactly the files its target declares
+([`build/checks.bzl`](../build/checks.bzl)), in the root
+[`BUCK`](../BUCK) file: `docs-check`, `store-check`, `proto-compat`,
+`cores-check` (the sources half), `typed-provider-check`,
+`client-kind-check` and `codegen-check`. The browser extension's Biome,
+type checks, unit tests and end-to-end test are in
+[`js/BUCK`](../js/BUCK) ([Browser extension](BROWSER.md#building-and-testing)),
+and the terminal journeys are `//crates/testnet:terminal-journeys`.
+
+```sh
+just checks                    # the repository's and the JavaScript's checks
+just test //:docs-check        # one of them
+just docs-check                # the same: the recipes of the checks' names run their tests
+```
+
+A check is sent to the Linux worker when one is in reach, so a Mac and the
+build host run the same action and share its result; with none in reach
+it runs on the Mac's own worker. On a Mac, Node for the JavaScript's
+checks is the release `//build:node` pins, the version the Linux
+toolchain's is.
+
+A check that needs more than the checkout's files gets it from
+[`build/checks/inputs.py`](../build/checks/inputs.py), which `just test`
+runs first and which writes `build/checks/inputs/` (not committed): the
+list of files the checkout tracks, which the docs check resolves links
+against, so it reruns when a file is added or removed rather than whenever
+one changes; and the newest release's store schema and protobuf schemas,
+which the store and protocol checks compare with in place of git's
+history. A clone without the release tags therefore fails those two
+checks. A docs page that shows a source file word for word
+(`<!-- source: ... -->`) needs that file among the docs check's inputs.
+
+Some checks stay scripts that `just premerge` runs in the checkout: those
+that read the whole workspace's graph (`dependency-policy`, `deny`,
+`shear`, the tokio half of `cores-check`, `parity`, `shipping-check`), the
+suite catalogue's `tests-check`, which runs Cargo and `just` over the
+whole tree, and `script-tests`, whose tests ask git about the checkout.
 
 ## Profiles
 
@@ -228,12 +358,13 @@ The recipes a build or change usually needs:
 | `just parity` | Fails when a crate's `BUCK` and `Cargo.toml` disagree |
 | `just shipping-check` | Fails when a test-only crate or test feature reaches the desktop binary or the extension's WebAssembly as they ship |
 | `just buckify` | Regenerates `third-party/rust/BUCK` after a dependency changes |
-| `just cargo-test`, `just cargo-test-crate`, `just cargo-lint` | The same under Cargo and nextest, as CI runs them |
+| `just cargo-test` | The workspace tests under Cargo and nextest, as CI's macOS and Windows jobs run them |
 | `just fmt`, `just fmt-check` | Format, or check formatting, with the pinned nightly |
 | `just protobuf` | Regenerates the committed protobuf output |
 | `just codegen-check` | Fails if the committed protobuf output is stale |
+| `just checks` | The repository's and the browser extension's checks, as Buck2 tests ([Repository checks](#repository-checks)) |
 | `just mobile-check` | Check the provider-free client graph for iOS |
-| `just android check` | Check the provider-free client and JNI bridge graph for Android (`cargo-ndk`) |
+| `just android check` | Build the JNI bridge for Android, as it ships and as a driving build carries it |
 | `just android lint` | Check Android writing rules and the string inventory |
 | `just android graph-check` | Prove the `app-jni` graph carries no provider, host, schema, or test crate |
 | `just android unit` | Build the host JNI library and run all Android JVM and Robolectric unit suites |
@@ -270,16 +401,18 @@ Buck2's output with protoc 31.1 from protobuf's releases, so it runs again
 only when a schema changes. `just protobuf` copies the result into
 `crates/wire/src/generated`; `just codegen-check` fails if the committed
 files differ from it. Under Cargo, `cargo run -p xtask -- codegen` writes the
-same files with the protoc the `protoc-bin-vendored` crate carries, which is
-what CI checks (`just cargo-codegen-check`). `just proto-compat`
+same files with the protoc the `protoc-bin-vendored` crate carries.
+`just proto-compat`
 lints the schemas with buf, and fails when they no longer read what the latest
 release wrote: a field removed without reserving its number, a number reused
 or retyped, a name changed; [the wire](WIRE.md#compatibility) has the rules.
 
 **Swift and Kotlin value types.** The Swift mirrors of the view values the
-iPhone app reads (`apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift`)
-and the Kotlin mirrors the Android app reads
-(`apps/android/core/values/src/main/kotlin/sh/amux/values/Values.kt`,
+Apple apps read (`Values.swift`, which the Apple build generates with
+`ios-tools swift-types --values`, and the committed
+`apps/apple/Packages/AmuxPush/Sources/AmuxPush/Said.swift`) and the Kotlin
+mirrors the Android app reads (`Values.kt`, which the Android build
+generates, and the committed
 `apps/android/push/src/main/kotlin/sh/amux/push/Said.kt`) are generated from
 the same Rust definitions by `cargo run -p ios-tools -- swift-types` and
 `cargo run -p ios-tools -- kotlin-types`. Unit tests in the `ios-tools` crate,
@@ -308,6 +441,11 @@ test task. [`.wt.toml`](../.wt.toml) holds the tree's side:
   the tree) stops it, and the tree's Buck2 daemon with it.
 - The pinned iPhone simulators are machine-wide resources that the iOS
   recipes lease through `scripts/with`.
-- `just land` lands a branch from a worktree of its own under
-  `~/.cache/amux/land`, one landing at a time per machine, so it never
-  touches the tree it is run from ([AGENTS.md](../AGENTS.md)).
+- `just land` never touches the tree it is run from
+  ([AGENTS.md](../AGENTS.md)). With `git config --global amux.landInbox
+  nova:/var/lib/build/inbox.git` set, it pushes the branch to nova's landing
+  queue and waits for the verdict: the queue lands one request at a time,
+  from every machine, oldest first, and writes each landing's whole log
+  beside its result. `just land --local`, or no inbox set, lands from a
+  worktree of this machine's own under `~/.cache/amux/land`, one landing at
+  a time per machine; that is the way to land while nova is down.

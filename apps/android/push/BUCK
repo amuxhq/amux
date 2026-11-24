@@ -1,0 +1,22 @@
+load("//build:android.bzl", "amux_jvm_library", "resource_jar")
+load("//build:rust.bzl", "amux_files")
+
+amux_jvm_library(
+    name = "push",
+    serialization = True,
+    deps = ["//third-party/android:kotlinx-serialization-json"],
+    # The pushes the daemon's tests seal (crates/node/src/seal.rs) and the
+    # iPhone's open: reading the same file holds all three to one format.
+    test_deps = [":sealed-pushes"],
+)
+
+resource_jar(
+    name = "sealed-pushes",
+    srcs = {"sealed-pushes.json": "//apps/apple/Packages/AmuxPush:sealed-pushes.json"},
+)
+
+# Said.kt, which ios-tools' tests hold to the Rust definitions.
+amux_files(
+    name = "mirrors",
+    srcs = ["src/main/kotlin/sh/amux/push/Said.kt"],
+)

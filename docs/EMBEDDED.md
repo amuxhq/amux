@@ -196,17 +196,20 @@ specs or out of process by `testnet serve`. See [the testnet page](TESTNET.md).
 
 ## Generated Swift and Kotlin types
 
-Every value the bridge carries has a Swift mirror in
-`apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift` and Kotlin
-mirrors in `apps/android/core/values/src/main/kotlin/sh/amux/values/Values.kt`
-and `apps/android/push/src/main/kotlin/sh/amux/push/Said.kt`, generated from
-the same Rust definitions:
+Every value the bridge carries has Swift mirrors in `Values.swift` (which
+the Apple build writes, `ios-tools swift-types --values`, rather than
+committing it) and
+`apps/apple/Packages/AmuxPush/Sources/AmuxPush/Said.swift`, and Kotlin
+mirrors in `Values.kt` (which the Android build writes, `ios-tools
+kotlin-types --values`, rather than committing it) and
+`apps/android/push/src/main/kotlin/sh/amux/push/Said.kt`, generated from the
+same Rust definitions:
 
 ```sh
-cargo run -p ios-tools -- swift-types          # regenerate Swift mirrors
-cargo run -p ios-tools -- swift-types --check  # fail when Swift differs
-cargo run -p ios-tools -- kotlin-types         # regenerate Kotlin mirrors
-cargo run -p ios-tools -- kotlin-types --check # fail when Kotlin differs
+cargo run -p ios-tools -- swift-types          # regenerate the committed Swift mirrors
+cargo run -p ios-tools -- swift-types --check  # fail when they differ
+cargo run -p ios-tools -- kotlin-types         # regenerate the committed Kotlin mirrors
+cargo run -p ios-tools -- kotlin-types --check # fail when they differ
 ```
 
 `crates/ios-tools/src/swift_types.rs` lists the root types, from `ui-state`'s
@@ -276,50 +279,32 @@ Every call, its arguments and its threading are in
 ## Building the bridge
 
 The bridge is `app-ffi` built as `libamux_app.a`, with the header
-`amux_app.h`, packaged into an XCFramework whose module is `AmuxApp`.
-`apps/apple/Tools/ios_bridge.py` holds the names and layout both bridge recipes share.
+`amux_app.h`, whose Swift module is `AmuxApp`. On the Apple platforms Buck2
+builds it in the configuration each app build needs, and the Swift that
+imports it links the static library and its link arguments (ring's C
+among them) directly, so no XCFramework is assembled
+(`apps/apple/Packages/AmuxCore/BUCK`, `bridge()` in `apps/apple/defs.bzl`):
 
-```sh
-just ios rust      # the simulator slice a development build links
-just ios package   # every shipping slice, and the linkage check
-```
+- A Debug or Measured app links the simulator's or the phone's build with
+  `debug-tools` under the `phone-dev` profile (`release` without LTO, so a
+  Rust edit rebuilds quickly), force-loaded so the driving tools' entry
+  points stay in. The package suites link the same.
+- A Release app links the build without `debug-tools` under the `release`
+  profile (fat LTO, one codegen unit, `panic = "abort"`, optimised for
+  speed), and the app links with `-no_exported_symbols` so the linker can
+  dead-strip the bridge. `just ios scope-audit` refuses a Release app that
+  loads SQLite from the system rather than carrying the bridge's.
+- The Mac app links the macOS build the same way.
 
-- `just ios rust` builds the simulator slice with `debug-tools` under the
-  `phone-dev` profile (`release` without LTO, so a Rust edit rebuilds
-  quickly), into `target/ios/AmuxAppDebugTools.xcframework`, which
-  the Debug and Measured app configurations force-load. It also stages that
-  slice as `target/ios/AmuxApp.xcframework`, so the Swift packages' unit
-  tests link current Rust. When no Rust input changed since its last run it
-  runs no cargo at all, so a Swift-only edit pays nothing here. `just ios
-  build` and `just ios unit` depend on it.
-- `just ios package` builds the simulator and device slices without
-  `debug-tools` under the `release` profile (fat LTO, one codegen unit,
-  `panic = "abort"`, optimised for speed; the Release app links with
-  `-no_exported_symbols` so the linker can dead-strip the bridge), assembles
-  `target/ios/AmuxApp.xcframework`, and links it from Swift on the pinned
-  simulator to prove it loads and carries SQLite statically. Release and the
-  shipping recipes depend on it.
+A simulator build and a device build are different configurations of the
+same targets, so neither invalidates the other.
 
-Each target triple has its own Cargo target directory under
-`target/ios/rust-cargo/`, so simulator and device builds never invalidate each
-other, and `SDKROOT` is left unset for the same reason. Each run writes the
-slice sizes to `target/ios/size.txt`.
-
-On Android, `apps/android/tools/android-rust.py` builds `app-jni` as
-`libamux_app.so` via `cargo-ndk` into variant-isolated directories
-(`target/android/debug-jniLibs/` with `debug-tools` under `phone-dev`,
-`target/android/release-jniLibs/` without `debug-tools` under `release`) and
-builds a host shared library under `target/android/host-jni/` for JVM unit
-tests:
-
-```sh
-just android rust            # arm64-v8a debug bridge (with debug-tools)
-just android rust --host     # host OS shared library for JVM unit tests
-just android rust --release  # shipping arm64-v8a bridge (no debug-tools)
-```
-
-See [the Android page](ANDROID.md#rust-core-and-jni-bridge) for Gradle's
-`verifyReleaseJniLibs` guard and `just android scope-audit`.
+On Android, Buck2 builds `app-jni` as `libamux_app.so` in the
+configuration each build needs, on a Linux worker: with `debug-tools` under
+`phone-dev` for the debug APK, without them under `release` for the release
+builds and the bundle, and for the Linux host for the JVM unit tests (see
+[the Android page](ANDROID.md#rust-core-and-jni-bridge), and `just android
+scope-audit` for what the shipping library must not carry).
 
 ## Tests
 

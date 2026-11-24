@@ -7,8 +7,8 @@
 //! modification time (git rereads an entry written in the same second as
 //! the index, judged by the index file's time), so the person's index is
 //! never touched. The paths that differ from it are listed and measured
-//! before anything is added: a file over the size cap is left out and
-//! named, too many paths refuse the snapshot, and the rest are added to the
+//! before anything is added: a file over the size cap, or one that cannot
+//! be read, is left out and named, too many paths refuse the snapshot, and the rest are added to the
 //! copy with `.gitignore` respected. Its tree is committed with HEAD as the
 //! parent and a fixed identity, so no configuration of the person's is
 //! needed and nothing personal is stored.
@@ -30,9 +30,9 @@ use crate::{GitError, LARGE_FILE_BYTES, Scratch, Status};
 pub struct Snapshot {
     /// The snapshot's commit, by its full object id.
     pub commit: String,
-    /// The paths left out of it for being over
-    /// [`LARGE_FILE_BYTES`](crate::LARGE_FILE_BYTES), from the repository's
-    /// top folder.
+    /// The paths left out of it, from the repository's top folder: for
+    /// being over [`LARGE_FILE_BYTES`](crate::LARGE_FILE_BYTES), or for
+    /// being a file that could not be read. A reader lists both as large.
     pub omitted: Vec<String>,
     /// A merge or rebase was under way, so conflicted files hold their
     /// markers as content.
@@ -250,12 +250,13 @@ async fn attempt(
             // An untracked file gone since it was listed is simply not there.
             Err(_) => continue,
         };
-        if meta.is_file() && lfs.contains(path) {
-            pointed.push((path, meta));
+        let is_lfs = lfs.contains(path);
+        if left_out(root, path, &meta, limits, is_lfs, unmerged.contains(path)) {
+            omitted.push(lossy(path));
             continue;
         }
-        if left_out(&meta, limits, false, unmerged.contains(path)) {
-            omitted.push(lossy(path));
+        if meta.is_file() && is_lfs {
+            pointed.push((path, meta));
             continue;
         }
         added.push(path);
@@ -348,11 +349,27 @@ async fn attempt(
     }))
 }
 
-/// Whether a file a snapshot measured is left out of it: a regular file
-/// over the size cap, unless LFS tracks it (it is stored as its pointer) or
-/// it is in conflict (its markers are what a merge under way needs seen).
-fn left_out(meta: &std::fs::Metadata, limits: &Limits, lfs: bool, unmerged: bool) -> bool {
-    meta.is_file() && meta.len() > limits.large_file_bytes && !lfs && !unmerged
+/// Whether a file a snapshot measured at `path` is left out of it: a
+/// regular file over the size cap, unless LFS tracks it (it is stored as
+/// its pointer) or it is in conflict (its markers are what a merge under
+/// way needs seen); or one that cannot be read, which git's add would fail
+/// on, and with it every snapshot until the person removed or ignored it
+/// (a file a container left owned by root, say). Either way it is named,
+/// so the reader is told it is not there. A file gone since it was listed
+/// is not left out here: the add finds it gone and the snapshot is tried
+/// again.
+fn left_out(
+    root: &Path,
+    path: &[u8],
+    meta: &std::fs::Metadata,
+    limits: &Limits,
+    lfs: bool,
+    unmerged: bool,
+) -> bool {
+    meta.is_file()
+        && ((meta.len() > limits.large_file_bytes && !lfs && !unmerged)
+            || std::fs::File::open(on_disk(root, path))
+                .is_err_and(|error| error.kind() != std::io::ErrorKind::NotFound))
 }
 
 /// The paths in conflict in the index `git` runs on.
@@ -532,7 +549,14 @@ async fn still_left_out(
     let unmerged = unmerged(git).await?;
     Ok(paths.iter().all(|path| {
         std::fs::symlink_metadata(on_disk(root, path)).is_ok_and(|meta| {
-            left_out(&meta, limits, lfs.contains(*path), unmerged.contains(*path))
+            left_out(
+                root,
+                path,
+                &meta,
+                limits,
+                lfs.contains(*path),
+                unmerged.contains(*path),
+            )
         })
     }))
 }
@@ -612,6 +636,74 @@ pub async fn drop<S: AsRef<str>>(
         }
         // Emptied folders go too; one still holding an object stays.
         let _ = std::fs::remove_dir(fanout.path());
+    }
+    Ok(removed + drop_packed(store, &git, &reachable).await?)
+}
+
+/// What a pack is made of besides its index, every one git may write.
+const PACK_PARTS: &[&str] = &["pack", "rev", "bitmap", "mtimes", "promisor", "keep"];
+
+/// Removes from the packs in `store` every object not in `reachable`,
+/// answering how many went. Git writes some objects into a pack rather
+/// than loose (`git add` does for a file over the person's
+/// `core.bigFileThreshold`, which the size cap does not stop for a
+/// conflicted file, and a git too old to honour `GIT_NO_LAZY_FETCH` fetches
+/// into one), so loose objects alone would leave those for good. A pack
+/// nothing reachable is in goes; one only partly reachable is first written
+/// again with just what is, so a reader never finds a reachable object
+/// missing. Its index goes before the rest, since git finds a pack by it.
+async fn drop_packed(
+    store: &ObjectStore,
+    git: &impl Fn(&[&str]) -> tokio::process::Command,
+    reachable: &HashSet<String>,
+) -> Result<usize, GitError> {
+    let folder = store.dir().join("pack");
+    let entries = match std::fs::read_dir(&folder) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(GitError::Scratch(error)),
+    };
+    let mut indexes = Vec::new();
+    for entry in entries {
+        let path = entry.map_err(GitError::Scratch)?.path();
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        if name.starts_with("pack-") && name.ends_with(".idx") {
+            indexes.push(path);
+        }
+    }
+    let mut removed = 0;
+    for index in indexes {
+        let bytes = std::fs::read(&index).map_err(GitError::Scratch)?;
+        let listed = objects::checked("show-index", git(&["show-index"]), Some(bytes)).await?;
+        let held: Vec<String> = text(&listed)
+            .lines()
+            .filter_map(|line| line.split(' ').nth(1))
+            .map(str::to_owned)
+            .collect();
+        let kept: Vec<&String> = held.iter().filter(|id| reachable.contains(*id)).collect();
+        if kept.len() == held.len() {
+            continue;
+        }
+        if !kept.is_empty() {
+            let mut input = String::new();
+            for id in &kept {
+                input.push_str(id);
+                input.push('\n');
+            }
+            let mut pack = git(&["pack-objects", "-q", "--window=0"]);
+            pack.arg(folder.join("pack"));
+            objects::checked("pack-objects", pack, Some(input.into_bytes())).await?;
+        }
+        std::fs::remove_file(&index).map_err(GitError::Scratch)?;
+        for part in PACK_PARTS {
+            match std::fs::remove_file(index.with_extension(part)) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(GitError::Scratch(error));
+                }
+                _ => {}
+            }
+        }
+        removed += held.len() - kept.len();
     }
     Ok(removed)
 }

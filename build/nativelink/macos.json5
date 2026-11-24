@@ -1,0 +1,144 @@
+// NativeLink on CI's macOS runner (docs/CI.md, "The macOS job"): a worker
+// that runs the Mac's actions, in front of the build host's cache.
+// scripts/nativelink.py `macos` fills in the {{...}} values and runs it.
+//
+// The Apple apps, the bridge for the phone and the Mac, and the workspace's
+// tests for macOS all build and run on the worker below: only a Mac can.
+// Their outputs go to the build host's CAS as well as this machine's, and
+// the action cache is this machine's (LOCAL_AC), read before the build
+// host's: the build host's can't be written from here, so the results are
+// kept in GitHub's cache between runs, as the Windows job keeps its tests'.
+// A result whose outputs the build host has evicted is reported missing
+// and the action runs again.
+{
+  stores: [
+    {
+      name: "REMOTE_CAS",
+      grpc: {
+        instance_name: "main",
+        endpoints: [{ address: "{{remote}}" }],
+        store_type: "cas",
+        connections_per_endpoint: 4,
+        max_concurrent_requests: 64,
+        retry: { max_retries: 6, delay: 0.25, jitter: 0.5 },
+      },
+    },
+    {
+      name: "LOCAL_CAS",
+      filesystem: {
+        content_path: "{{cache}}/cas",
+        temp_path: "{{cache}}/cas-tmp",
+        eviction_policy: { max_bytes: {{cas_bytes}} },
+      },
+    },
+    {
+      // Uploads go to both; reads fill the local layer from the build
+      // host. The worker uses the same, so a test's outputs reach the
+      // build host too.
+      name: "CAS",
+      fast_slow: {
+        fast: { ref_store: { name: "LOCAL_CAS" } },
+        slow: { ref_store: { name: "REMOTE_CAS" } },
+      },
+    },
+    {
+      // The tests' results, kept between runs. One whose outputs the
+      // build host has evicted is reported missing, and the test runs.
+      name: "LOCAL_AC",
+      completeness_checking: {
+        backend: {
+          filesystem: {
+            content_path: "{{results}}",
+            temp_path: "{{cache}}/ac-tmp",
+            eviction_policy: { max_bytes: {{ac_bytes}} },
+          },
+        },
+        cas_store: { ref_store: { name: "CAS" } },
+      },
+    },
+    {
+      name: "REMOTE_AC",
+      completeness_checking: {
+        backend: {
+          grpc: {
+            instance_name: "main",
+            endpoints: [{ address: "{{remote}}" }],
+            store_type: "ac",
+            connections_per_endpoint: 4,
+            max_concurrent_requests: 64,
+            retry: { max_retries: 6, delay: 0.25, jitter: 0.5 },
+          },
+        },
+        cas_store: { ref_store: { name: "REMOTE_CAS" } },
+      },
+    },
+    {
+      // This machine's results, then the build host's, which are the
+      // compiles and links. Nothing here writes the build host's.
+      name: "AC",
+      fast_slow: {
+        fast: { ref_store: { name: "LOCAL_AC" } },
+        slow: { ref_store: { name: "REMOTE_AC" } },
+        fast_direction: "update",
+        slow_direction: "get",
+      },
+    },
+  ],
+  schedulers: [
+    {
+      name: "SCHEDULER",
+      simple: {
+        supported_platform_properties: {
+          OSFamily: "exact",
+          cpu_count: "minimum",
+          memory_kb: "minimum",
+          // Carried only so an Xcode upgrade changes every Mac action's key.
+          xcode: "ignore",
+        },
+      },
+    },
+  ],
+  workers: [
+    {
+      local: {
+        name: "macos-",
+        worker_api_endpoint: { uri: "grpc://127.0.0.1:50061" },
+        cas_fast_slow_store: "CAS",
+        upload_action_result: { ac_store: "LOCAL_AC" },
+        work_directory: "{{cache}}/work",
+        max_action_timeout_s: 3600,
+        // Only a modern python3, tmux and the operating system's own tools
+        // are on PATH, as on a developer's Mac (build/nativelink/mac.json5).
+        additional_environment: {
+          PATH: { value: "{{path}}" },
+        },
+        platform_properties: {
+          OSFamily: { values: ["macos"] },
+          cpu_count: { values: ["{{cores}}"] },
+          memory_kb: { values: ["{{memory_kb}}"] },
+        },
+      },
+    },
+  ],
+  servers: [
+    {
+      name: "clients",
+      listener: { http: { socket_address: "127.0.0.1:50051" } },
+      services: {
+        cas: [{ instance_name: "main", cas_store: "CAS" }],
+        ac: [{ instance_name: "main", ac_store: "AC" }],
+        execution: [{ instance_name: "main", cas_store: "CAS", scheduler: "SCHEDULER" }],
+        capabilities: [{ instance_name: "main", remote_execution: { scheduler: "SCHEDULER" } }],
+        bytestream: [{ instance_name: "main", cas_store: "CAS" }],
+      },
+    },
+    {
+      name: "workers",
+      listener: { http: { socket_address: "127.0.0.1:50061" } },
+      services: {
+        worker_api: { scheduler: "SCHEDULER" },
+        health: {},
+      },
+    },
+  ],
+}

@@ -15,8 +15,16 @@ migrations in schema.rs, so:
 The baseline is the newest release tag behind HEAD, or a ref named on the
 command line. Releases before 0.9.0 predate the rules and are not checked
 against.
+
+    store-check.py [REF]
+    store-check.py --baseline DIR
+
+`--baseline` reads the release from DIR/ref and its schema.rs from DIR
+instead of from git, which is how the check runs as a Buck2 test, with no
+history (build/checks/inputs.py writes DIR).
 """
 
+from pathlib import Path
 import re
 import sqlite3
 import subprocess
@@ -114,25 +122,41 @@ def git(*args):
     ).stdout
 
 
-def baseline(args):
-    """The ref to compare with, or None when no release is under the rule."""
-    if args:
-        return args[0]
-    tag = git("describe", "--tags", "--abbrev=0", "--match", "v[0-9]*").strip()
+def under_rule(tag):
     version = tuple(int(part) for part in tag.removeprefix("v").split("."))
     if version < FROZEN_SINCE:
         print(f"the newest release, {tag}, predates the rule from 0.9.0; nothing to check against")
+        return False
+    return True
+
+
+def baseline(args):
+    """The ref to compare with and its schema.rs, or None when no release is
+    under the rule."""
+    if args[:1] == ["--baseline"]:
+        directory = Path(args[1])
+        tag = (directory / "ref").read_text().strip()
+        if not tag:
+            raise SystemExit("store check: this clone has no release tag to compare with")
+        if not under_rule(tag):
+            return None
+        return tag, (directory / "schema.rs").read_text(encoding="utf-8")
+    if args:
+        return args[0], git("show", f"{args[0]}:{SCHEMA_FILE}")
+    tag = git("describe", "--tags", "--abbrev=0", "--match", "v[0-9]*").strip()
+    if not under_rule(tag):
         return None
-    return tag
+    return tag, git("show", f"{tag}:{SCHEMA_FILE}")
 
 
 def main(args):
-    ref = baseline(args)
-    if ref is None:
+    found_baseline = baseline(args)
+    if found_baseline is None:
         return 0
+    ref, old_source = found_baseline
     with open(SCHEMA_FILE, encoding="utf-8") as file:
         new = migrations(file.read())
-    old = migrations(git("show", f"{ref}:{SCHEMA_FILE}"))
+    old = migrations(old_source)
     found = edits(old, new) + losses(tables(old), tables(new))
     for loss in found:
         print(loss, file=sys.stderr)

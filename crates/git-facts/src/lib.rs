@@ -1519,7 +1519,10 @@ async fn run(
 ///   bytes on disk; where LFS is configured as required but not installed,
 ///   its filter would fail every read of a file whose cached times are
 ///   stale. A snapshot works out the pointer LFS would commit instead
-///   ([`snapshot`]'s note).
+///   ([`snapshot`]'s note). The person's other clean filters are left to
+///   run: the base side of every comparison holds what they cleaned, so a
+///   snapshot must hold it too, or a filtered file would compare its raw
+///   bytes with its cleaned ones in lines nobody changed.
 /// - A file whose times alone changed reads as unchanged, as by default.
 /// - Diff output is git's plain format, whatever the person prefers to
 ///   read: `a/` and `b/` prefixes, paths from the top folder, no colour.

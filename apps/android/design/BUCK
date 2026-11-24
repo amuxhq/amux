@@ -1,0 +1,19 @@
+load("//build:android.bzl", "amux_android_library")
+
+amux_android_library(
+    name = "design",
+    package = "sh.amux.design",
+    compose = True,
+    assets = True,
+    deps = [
+        "//third-party/android:androidx-compose-ui",
+        "//third-party/android:androidx-compose-ui-graphics",
+        "//third-party/android:androidx-compose-foundation",
+        "//third-party/android:androidx-compose-material3",
+        "//third-party/android:androidx-compose-material-icons-extended",
+    ],
+    test_deps = [
+        "//third-party/android:androidx-compose-ui-test-junit4",
+        "//third-party/android:androidx-compose-ui-test-manifest",
+    ],
+)

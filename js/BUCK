@@ -1,0 +1,112 @@
+# The browser extension's JavaScript (docs/BROWSER.md, "Building and
+# testing"): the npm packages, the checks and tests, and the extension built
+# around browser-core's WebAssembly. `just browser check` runs the checks,
+# `just browser test` everything.
+load("//build:js.bzl", "js_action", "js_check")
+
+# What npm installs from: the lockfile and the workspaces' manifests.
+_MANIFESTS = [
+    ".npmrc",
+    "extension/package.json",
+    "package-lock.json",
+    "package.json",
+    "page-review/package.json",
+]
+
+# Everything else of js/ the checks read; what the recipes and tests write
+# here is left out.
+_SOURCES = glob(
+    ["**"],
+    exclude = [
+        "BUCK",
+        "**/node_modules/**",
+        "**/dist/**",
+        "**/dist-dev/**",
+        "test-results/**",
+        "playwright-report/**",
+        "tour/**",
+    ],
+) + [".gitignore"]
+
+# On a Mac's own worker, Node is the pinned release; on Linux, the Linux
+# toolchain's (build/js.bzl).
+_NODE = select({
+    "DEFAULT": {"NODE_BIN": "$(location //build:node)/bin"},
+    "prelude//os:linux": {},
+})
+
+_CORE = "//crates/browser-core:browser-core[shared]"
+
+_WASM = select({
+    "DEFAULT": {"AMUX_BROWSER_CORE": (_CORE, "root//build/platforms:wasm-app-shipping-wasm")},
+    "prelude//os:linux": {"AMUX_BROWSER_CORE": (_CORE, "root//build/platforms:wasm-app-shipping-wasm-on-linux")},
+})
+
+js_action(
+    name = "node_modules",
+    args = ["install"],
+    out = "node_modules.tar",
+    srcs = _MANIFESTS,
+    deps = ["//build:js.py"],
+    env = _NODE,
+    visibility = ["PUBLIC"],
+)
+
+# Biome's format and lint, as `npm run check` starts.
+# The checks run in js/ with the packages installed (build/js.py run).
+js_check(
+    name = "biome",
+    command = ["npx", "biome", "ci", "--colors=off", "."],
+    srcs = _SOURCES,
+    env = _NODE,
+)
+
+js_check(
+    name = "types",
+    command = ["sh", "-c", "npx tsc -p page-review && npx tsc -p extension"],
+    srcs = _SOURCES,
+    env = _NODE,
+)
+
+js_check(
+    name = "unit",
+    command = ["npx", "vitest", "run"],
+    srcs = _SOURCES,
+    env = _NODE,
+)
+
+# The extension, as the store gets it (`dist`) and as a development tree
+# loads it (`dist-dev`), around browser-core's WebAssembly built as it ships.
+# A Linux build takes it built on Linux too: a Linux action can't read what
+# a Mac's worker built.
+[
+    js_action(
+        name = name,
+        args = ["run", "$(location :node_modules)", "--collect", "extension/" + name],
+        command = ["--", "node", "extension/build.ts"] + flags,
+        out = name,
+        directory = True,
+        srcs = _SOURCES,
+        deps = [":node_modules", "//build:js.py"],
+        env = _NODE,
+        env_deps = _WASM,
+        visibility = ["PUBLIC"],
+    )
+    for name, flags in [("dist", []), ("dist-dev", ["--dev"])]
+]
+
+# The end-to-end test: the development build in Chromium, against amux and
+# the fake providers (extension/test/e2e/harness.ts). Only on a Linux worker,
+# whose toolchain has the browser; skipped, and named, when none is in reach.
+js_check(
+    name = "e2e",
+    command = ["npx", "playwright", "test"],
+    srcs = _SOURCES,
+    deps = [":dist-dev", "//:nix-browser", "//crates/provider-fakes:binaries"],
+    env = {
+        "AMUX_CHROMIUM_ROOT": "$(location //:nix-browser)",
+        "AMUX_EXTENSION": "$(location :dist-dev)",
+        "TESTNET_BINARIES": "$(location //crates/provider-fakes:binaries)",
+    },
+    nova_only = True,
+)

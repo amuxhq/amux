@@ -9,7 +9,7 @@ newest NDK installed in the SDK is used, compared by version number, so 28.2
 is newer than 9.0 and 27.10 newer than 27.9.
 
 Run as a script, `sdk` prints the SDK's folder and `ndk` the NDK's, and each
-exits 1 when there is none; `gradle-run.sh` reads the SDK this way.
+exits 1 when there is none.
 """
 
 from __future__ import annotations

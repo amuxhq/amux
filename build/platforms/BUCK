@@ -1,7 +1,7 @@
 # Target platforms (what an output is for) and the execution platform (where
 # Buck2 sends an action). docs/BUILD.md, "Configurations", says how a target
 # picks its platform.
-load(":defs.bzl", "MODES", "TARGETS", "execution_platforms", "target_platform")
+load(":defs.bzl", "MODES", "TARGETS", "execution_platform", "execution_platforms", "target_platform")
 
 # One target platform per target, product, purpose and mode, named
 # `<target>-<product>-<purpose>-<mode>`: `macos-cli-shipping-dev` is a
@@ -22,17 +22,48 @@ load(":defs.bzl", "MODES", "TARGETS", "execution_platforms", "target_platform")
     for mode in MODES
 ]
 
-execution_platforms(
-    name = "execution",
-    # Build scripts, proc macros and code generators run here, so they are
-    # built as tools: a development build, with test features on.
-    constraints = [
-        "prelude//os:macos",
-        "prelude//cpu:arm64",
-        "root//build/constraints:cli",
-        "root//build/constraints:testing",
-        "root//build/constraints:dev",
+# The extension's WebAssembly as it ships, built on a Linux worker for the
+# JavaScript's Linux targets (build/constraints:on-linux).
+target_platform(
+    name = "wasm-app-shipping-wasm-on-linux",
+    constraints = TARGETS["wasm"] + [
+        "root//build/constraints:app",
+        "root//build/constraints:shipping",
+        "root//build/constraints:wasm",
+        "root//build/constraints:on-linux",
     ],
+    visibility = ["PUBLIC"],
+)
+
+# The iPhone app as the performance suite measures it, for the simulator
+# and for a phone: the development bridge under an optimised Swift build
+# (build/constraints:measured).
+[
+    target_platform(
+        name = "{}-app-shipping-measured".format(target),
+        constraints = TARGETS[target] + [
+            "root//build/constraints:app",
+            "root//build/constraints:shipping",
+            "root//build/constraints:phone-dev",
+            "root//build/constraints:measured",
+        ],
+        visibility = ["PUBLIC"],
+    )
+    for target in ["ios", "ios-sim"]
+]
+
+# Build scripts, proc macros and code generators run on an execution
+# platform, so they are built as tools: a development build, with test
+# features on.
+TOOL_CONSTRAINTS = [
+    "root//build/constraints:cli",
+    "root//build/constraints:testing",
+    "root//build/constraints:dev",
+]
+
+execution_platform(
+    name = "exec-macos",
+    constraints = ["prelude//os:macos", "prelude//cpu:arm64"] + TOOL_CONSTRAINTS,
     properties = {
         "OSFamily": "macos",
         "cpu_count": "1",
@@ -40,4 +71,48 @@ execution_platforms(
         # every action's key here (scripts/buck-config.py).
         "xcode": read_root_config("apple", "xcode", ""),
     },
+)
+
+execution_platform(
+    name = "exec-linux",
+    constraints = ["prelude//os:linux", "prelude//cpu:x86_64"] + TOOL_CONSTRAINTS,
+    properties = {
+        "OSFamily": "linux",
+        "cpu_count": "1",
+    },
+)
+
+# The Windows CI job's own worker, which runs Windows tests and nothing
+# else: everything built for Windows is compiled and linked on Linux
+# (nix/windows.nix). Only the binaries a Windows test starts are configured
+# for it (build/rust.bzl's amux_binaries), and the test itself asks for it
+# by its profile (build/toolchains/BUCK), so no compile is ever sent here.
+execution_platform(
+    name = "exec-windows",
+    constraints = ["prelude//os:windows", "prelude//cpu:x86_64"] + TOOL_CONSTRAINTS,
+    properties = {
+        "OSFamily": "windows",
+        "cpu_count": "1",
+    },
+    windows = True,
+)
+
+# A Mac prefers its own worker and sends what only Linux can run to nova's;
+# nova has no macOS worker to send anything to. With no Linux worker in
+# reach (`amux.linux = false`, which scripts/buck-config.py writes when nova
+# is unreachable or none is set up), there is no Linux platform, so a Linux
+# action fails at once rather than waiting for a worker that isn't coming.
+_LINUX = read_root_config("amux", "linux", "true") == "true"
+
+# A release build (build/constraints:local-build) runs every action on this
+# machine (`buck2 build --local-only`), so this machine's platform is its
+# only one: a Windows release's build scripts and proc macros are Windows
+# programs.
+_LOCAL = read_root_config("amux", "local", "false") == "true"
+
+_HOST = "macos" if host_info().os.is_macos else ("windows" if host_info().os.is_windows else "linux")
+
+execution_platforms(
+    name = "execution",
+    platforms = [":exec-" + _HOST] if _LOCAL else (([":exec-macos"] + ([":exec-linux"] if _LINUX else [])) if host_info().os.is_macos else [":exec-linux"]) + [":exec-windows"],
 )

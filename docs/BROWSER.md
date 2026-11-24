@@ -237,9 +237,9 @@ browser's own recipes and CI job, never in `just premerge`.
 ```sh
 just browser build          # browser-core as WebAssembly, then js/extension/dist
 just browser build --dev    # js/extension/dist-dev, the copy a development tree loads
-just browser test           # types, unit tests, and the end-to-end test
+just browser test           # Biome, types, unit tests, and the end-to-end test
 just browser tour           # screenshots of every surface, light and dark
-just browser check          # Biome, types and unit tests, without building
+just browser check          # Biome, types and unit tests, without the extension
 just browser fmt            # format and fix with Biome
 just browser dev-host       # let dist-dev reach this tree's amux
 ```
@@ -255,9 +255,20 @@ The development copy is named "amux (dev)" and starts the
 never reaches an installed amux; the installed extension's host is left alone.
 `just browser dev-host remove` takes it out.
 
+The checks and tests are Buck2 tests ([`js/BUCK`](../js/BUCK)), so each
+runs again only when a file it reads changes: `//js:biome`, `//js:types`,
+`//js:unit` and `//js:e2e`, over the npm packages `//js:node_modules`
+installs from the lockfile, and the extension `//js:dist-dev` builds around
+browser-core's WebAssembly (`//js:dist` is the store's build). They run on
+the Linux build host when it is in reach ([Building](BUILD.md#linux-builds-and-the-build-host)),
+and otherwise on the Mac, except the end-to-end test, which needs the Linux
+toolchain's Chromium: with no Linux worker in reach it is skipped, and `just
+browser test` names it. CI runs them in its Linux gate, on the build host,
+and `just browser audit` checks the dependencies the extension ships
+against the npm registry's advisories.
+
 The end-to-end test ([`review.spec.ts`](../js/extension/test/e2e/review.spec.ts))
-starts a daemon with the fake providers, loads the extension in Playwright's
-Chromium with a host manifest in a temporary profile (Chromium reads native
+starts a daemon with the fake providers, loads the extension in Chromium with a host manifest in a temporary profile (Chromium reads native
 messaging hosts from its user data folder), comments on a heading, a phrase and
 a box, sends them from the side panel, and reads what the fake provider was
 given. Playwright cannot press a toolbar button, which is what grants the tab,
@@ -279,8 +290,8 @@ The JavaScript is one npm workspace under `js/`, as the crates are one Cargo
 workspace: one lockfile, one base `tsconfig`, Biome for format and lint,
 Vitest and Playwright. It needs Node 24 or later, which runs the TypeScript
 build scripts directly. Packages' install scripts never run (`js/.npmrc`).
-`just premerge` runs `just browser check` when anything under `js/` differs from
-main, so a change elsewhere pays nothing for it.
+`just premerge` runs the extension's checks and tests with every other test,
+and a change elsewhere gets them from the cache.
 
 ## Rejected alternatives
 

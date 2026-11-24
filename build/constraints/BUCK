@@ -80,3 +80,66 @@ constraint_setting(
     )
     for mode in ["dev", "models", "release", "phone-dev", "wasm", "full-debug"]
 ]
+
+# Whether a Linux worker is in reach (scripts/buck-config.py writes
+# `amux.linux`). Targets that run only on Linux workers (`nova_only` in
+# build/rust.bzl) are compatible only with it, so with nova unreachable a
+# pattern such as //crates/... skips them, and says so, rather than trying
+# to run them on the Mac.
+config_setting(
+    name = "linux-workers",
+    values = {"amux.linux": "true"},
+    visibility = ["PUBLIC"],
+)
+
+# A release build (scripts/release-build.py writes `amux.local`): every
+# action on this machine, with this machine's own toolchains, rustup's Rust
+# and the system's C compiler, and nothing from a cache, so what ships is
+# built from scratch where it is built. Nix's Linux toolchain would link a
+# binary that runs only where Nix's C library is. The root cell's value:
+# `values` reads the cell of the target being configured, and the
+# toolchains cell, which selects on this, has none.
+config_setting(
+    name = "local-build",
+    root_values = {"amux.local": "true"},
+    visibility = ["PUBLIC"],
+)
+
+# A release build on Windows, with MSVC's tools (build/third_party.bzl).
+config_setting(
+    name = "local-windows-build",
+    constraint_values = ["prelude//os/constraints:os[windows]"],
+    root_values = {"amux.local": "true"},
+    visibility = ["PUBLIC"],
+)
+
+# Built by the Linux toolchain on a Linux worker, wherever the build starts,
+# for a target that isn't Linux itself: browser-core's WebAssembly as the
+# JavaScript's Linux targets take it (js/BUCK). A Linux action can't read
+# what a Mac's worker built, which stays in the Mac's cache.
+constraint_setting(
+    name = "builder",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "on-linux",
+    constraint_setting = ":builder",
+    visibility = ["PUBLIC"],
+)
+
+# The iPhone app's optimised build with its driving tools compiled in, which
+# the performance suite measures (docs/IOS.md, "Builds"): the Swift is
+# compiled as a release is, the bridge is the development one (`phone-dev`,
+# with the driving tools). Only the Apple rules read it (build/apple.bzl);
+# the bridge they link is configured without it.
+constraint_setting(
+    name = "apple-build",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "measured",
+    constraint_setting = ":apple-build",
+    visibility = ["PUBLIC"],
+)

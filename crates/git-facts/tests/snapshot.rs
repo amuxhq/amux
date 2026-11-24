@@ -808,6 +808,69 @@ async fn a_left_out_file_moves_the_tree_once_it_would_be_taken() {
     assert!(!moved().await.unwrap());
 }
 
+/// A file the snapshot cannot read, as one a container left owned by root
+/// in a bind-mounted folder, would fail git's add and with it every
+/// snapshot. It is left out and named as a file over the cap is, a tracked
+/// one keeping what the index holds; the tree has not moved while it stays
+/// unreadable, and has once a snapshot could take it.
+#[cfg(unix)]
+#[tokio::test]
+async fn an_unreadable_file_is_left_out_and_named() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let repo = repository();
+    let root = repo.path();
+    write(root, "tracked.txt", "committed\n");
+    git(root, &["add", "tracked.txt"]);
+    git(root, &["commit", "-q", "-m", "tracked"]);
+    write(root, "tracked.txt", "edited\n");
+    write(root, "locked.txt", "locked\n");
+    write(root, "base.txt", "edited\n");
+    let lock = |path: &str, mode: u32| {
+        std::fs::set_permissions(root.join(path), std::fs::Permissions::from_mode(mode)).unwrap();
+    };
+    lock("tracked.txt", 0o000);
+    lock("locked.txt", 0o000);
+    if std::fs::read(root.join("locked.txt")).is_ok() {
+        // Run as root, every file reads.
+        return;
+    }
+
+    let store = store();
+    let snapshot = take(root, &store.store).await;
+    let mut omitted = snapshot.omitted.clone();
+    omitted.sort();
+    assert_eq!(omitted, ["locked.txt", "tracked.txt"]);
+    assert_eq!(
+        paths(&tree(root, &store.store, &snapshot.commit).await),
+        ["base.txt", "tracked.txt"]
+    );
+    assert_eq!(
+        read(root, &store.store, &snapshot.commit, "tracked.txt")
+            .await
+            .unwrap(),
+        b"committed\n"
+    );
+    assert_eq!(
+        read(root, &store.store, &snapshot.commit, "base.txt")
+            .await
+            .unwrap(),
+        b"edited\n"
+    );
+    let moved = || {
+        snapshot::moved(
+            root,
+            &store.store,
+            &LIMITS,
+            &snapshot.commit,
+            &snapshot.omitted,
+        )
+    };
+    assert!(!moved().await.unwrap());
+    lock("locked.txt", 0o644);
+    assert!(moved().await.unwrap(), "readable again");
+    lock("tracked.txt", 0o644);
+}
+
 /// More changed and untracked paths than the cap refuse the snapshot,
 /// before anything is stored.
 #[tokio::test]
@@ -951,6 +1014,101 @@ async fn drop_keeps_named_snapshots_readable() {
         fsck.status.success(),
         "{}",
         String::from_utf8_lossy(&fsck.stderr)
+    );
+}
+
+/// The object ids every pack in the store holds.
+fn packed(repo: &Path, store: &ObjectStore) -> Vec<String> {
+    let mut ids = Vec::new();
+    for path in packs(store.dir()) {
+        if path.extension().is_none_or(|extension| extension != "idx") {
+            continue;
+        }
+        let output = Command::new("git")
+            .arg("show-index")
+            .current_dir(repo)
+            .stdin(std::fs::File::open(&path).unwrap())
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        ids.extend(
+            String::from_utf8(output.stdout)
+                .unwrap()
+                .lines()
+                .map(|line| line.split(' ').nth(1).unwrap().to_owned()),
+        );
+    }
+    ids.sort();
+    ids
+}
+
+/// Git writes some objects into a pack rather than loose: `git add` does
+/// for every file over the person's `core.bigFileThreshold`, and the size
+/// cap does not stop a conflicted file. Dropping removes packed objects no
+/// kept snapshot reaches as it does loose ones: a pack nothing kept reaches
+/// goes, and one only partly reached is written again with what is.
+#[tokio::test]
+async fn drop_removes_packed_objects_no_kept_snapshot_reaches() {
+    let repo = repository();
+    let root = repo.path();
+    git(root, &["config", "core.bigFileThreshold", "1k"]);
+    // `git add` streams a big file into a pack only when it would not
+    // convert it; with line-ending conversion on it hashes the converted
+    // text and writes it loose, whatever its size. Git for Windows turns
+    // `core.autocrlf` on in its system configuration, so without this the
+    // bulky files are never packed there and nothing here is tested.
+    git(root, &["config", "core.autocrlf", "false"]);
+    let bulky = |fill: &str| fill.repeat(4096);
+    write(root, "stays.bin", &bulky("s"));
+    write(root, "changes.bin", &bulky("a"));
+    let store = store();
+    let ids = async |commit: &str| {
+        let tree = tree(root, &store.store, commit).await;
+        (tree["stays.bin"].1.clone(), tree["changes.bin"].1.clone())
+    };
+    let first = take(root, &store.store).await.commit;
+    assert!(
+        !packs(store.store.dir()).is_empty(),
+        "git wrote the bulky files loose"
+    );
+    let (stays, a) = ids(&first).await;
+    write(root, "changes.bin", &bulky("b"));
+    let second = take(root, &store.store).await.commit;
+    let (_, b) = ids(&second).await;
+    write(root, "changes.bin", &bulky("c"));
+    let third = take(root, &store.store).await.commit;
+    let (_, c) = ids(&third).await;
+    let mut all = vec![stays.clone(), a.clone(), b.clone(), c.clone()];
+    all.sort();
+    assert_eq!(packed(root, &store.store), all);
+
+    let before = manifest(root);
+    snapshot::drop(root, &store.store, [&third]).await.unwrap();
+    unchanged(&before, root, "dropping packed objects");
+    let mut kept = vec![stays, c];
+    kept.sort();
+    assert_eq!(packed(root, &store.store), kept);
+    for gone in [&a, &b] {
+        assert!(!git_says(
+            root,
+            Some(store.store.dir()),
+            &["cat-file", "-e", gone]
+        ));
+    }
+    assert_eq!(
+        read(root, &store.store, &third, "stays.bin").await.unwrap(),
+        bulky("s").as_bytes()
+    );
+    assert_eq!(
+        read(root, &store.store, &third, "changes.bin")
+            .await
+            .unwrap(),
+        bulky("c").as_bytes()
+    );
+    assert_eq!(
+        snapshot::drop(root, &store.store, [&third]).await.unwrap(),
+        0,
+        "nothing left to drop the second time"
     );
 }
 
@@ -1331,6 +1489,57 @@ async fn a_folder_outside_a_repository_has_no_snapshot() {
         .await
         .unwrap_err();
     assert!(matches!(error, GitError::NotARepository), "{error:?}");
+}
+
+/// A clean filter other than LFS's (git-crypt, nbstripout, one of the
+/// person's own) runs when the snapshot adds a file it names, so the
+/// snapshot holds what a commit of the file would: the base's side holds
+/// cleaned bytes too, and a snapshot of the raw ones would show every line
+/// of such a file changed. The snapshot's diff from HEAD is the person's
+/// own `git diff HEAD`, and the tree has not moved right after it.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_clean_filter_runs_so_the_snapshot_holds_what_a_commit_would() {
+    let repo = repository();
+    let root = repo.path();
+    git(root, &["config", "filter.upper.clean", "tr a-z A-Z"]);
+    git(root, &["config", "filter.upper.smudge", "cat"]);
+    write(root, ".gitattributes", "*.up filter=upper\n");
+    write(root, "kept.up", "hello\n");
+    git(root, &["add", ".gitattributes", "kept.up"]);
+    git(root, &["commit", "-q", "-m", "filtered"]);
+    write(root, "kept.up", "hello world\n");
+    write(root, "new.up", "new\n");
+
+    let store = store();
+    let snapshot = take(root, &store.store).await;
+    let commit = snapshot.commit.as_str();
+    assert_eq!(
+        read(root, &store.store, commit, "kept.up").await.unwrap(),
+        b"HELLO WORLD\n"
+    );
+    assert_eq!(
+        read(root, &store.store, commit, "new.up").await.unwrap(),
+        b"NEW\n"
+    );
+    let shown = store
+        .store
+        .reading(
+            root,
+            &["diff", "--no-textconv", "HEAD", commit, "--", "kept.up"],
+        )
+        .output()
+        .await
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(shown.stdout).unwrap(),
+        git(root, &["diff", "--no-textconv", "HEAD", "--", "kept.up"]) + "\n"
+    );
+    assert!(
+        !snapshot::moved(root, &store.store, &LIMITS, commit, &snapshot.omitted)
+            .await
+            .unwrap()
+    );
 }
 
 /// The pointer LFS commits for `content`, as its spec writes one.

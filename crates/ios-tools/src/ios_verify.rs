@@ -22,22 +22,21 @@ const WORKSPACE: &[&str] = &["fmt-check", "lint", "test", "mobile-check"];
 
 /// Everything about the phone that building it can settle.
 ///
-/// These answer from code and from one simulator: what the device and
-/// simulator graphs are allowed to contain, whether the bridge and the app
-/// build, whether the packaged framework links and loads, and what the unit
-/// suites say. The suites that drive the running app run separately.
+/// These answer from code and from simulators: what the device and
+/// simulator graphs are allowed to contain, whether the app and every suite
+/// build, and what the unit suites say. The suites that drive the running
+/// app run separately.
 ///
-/// The app and every suite are built once, by `ios test-build`, and the
-/// suites then run what it built: built by each recipe in turn, the app was
-/// compiled three times and every package once per package beneath it.
+/// Buck2 builds the app and the suites once, in `ios test-build`, and `ios
+/// unit` runs them as Buck2 tests that lease their own simulators, so a
+/// suite whose inputs did not change is a cached pass.
 const GATE: &[&str] = &[
     "ios lint",
     "ios script-tests",
     "ios graph-check",
-    "ios rust",
     "ios simulator golden",
     "ios test-build",
-    "ios unit --skip-build",
+    "ios unit",
 ];
 
 /// Stages that run in the background while the stage after them does,
@@ -47,30 +46,24 @@ const GATE: &[&str] = &[
 /// printed whole once it finishes, so the two logs do not interleave.
 const ALONGSIDE: &[(&str, &str)] = &[("ios simulator golden", "ios test-build")];
 
-/// Stages that later ones run the product of: the bridge, the simulator and
-/// the built app and suites, and the bundle the audit reads. One of these
+/// Stages that later ones run the product of: the simulator and the built
+/// app and suites. One of these
 /// failing ends the run. Any other stage failing does not: the rest still
 /// run and the run fails at its end naming every stage that did, so that one
 /// run says everything a change left behind. Stopping at a failing lint hid
 /// stale snapshots behind it, and main stayed red a push longer for each.
-const NEEDED: &[&str] = &[
-    "ios rust",
-    "ios simulator golden",
-    "ios test-build",
-    "ios package",
-];
+const NEEDED: &[&str] = &["ios simulator golden", "ios test-build"];
 
-/// What the shipping bundle is held to: every slice built under the
-/// release profile, and the audit of what that bundle turned out to
-/// contain.
+/// What the shipping bundle is held to: the audit of what the Release build
+/// turned out to contain.
 ///
 /// Off the push path because of what it costs against what it can catch. It
-/// was ten minutes of a thirty-four minute gate, and it asks a question about
-/// the release build that no ordinary change can answer differently — the
-/// graphs the gate already checks are what decide whether a provider or a
-/// test crate can reach the phone. `just ios release` depends on both, so a
-/// release cannot be cut without them.
-const SHIPPING: &[&str] = &["ios package", "ios scope-audit"];
+/// asks a question about the release build that no ordinary change can
+/// answer differently — the graphs the gate already checks are what decide
+/// whether a provider or a test crate can reach the phone. `just ios
+/// release` audits the very bundle it signs, so a release cannot be cut
+/// without it.
+const SHIPPING: &[&str] = &["ios scope-audit"];
 
 /// Everything that drives a running app or validates its recorded state.
 ///
@@ -550,7 +543,7 @@ mod tests {
                 assert!(!NEEDED.contains(stage), "nothing runs what {stage} made");
             }
         }
-        for stage in ["ios rust", "ios simulator golden", "ios test-build"] {
+        for stage in ["ios simulator golden", "ios test-build"] {
             assert!(
                 NEEDED.contains(&stage),
                 "{stage} failing leaves nothing to run"
@@ -618,21 +611,27 @@ mod tests {
         assert_eq!(everything, [WORKSPACE.to_vec(), split].concat());
     }
 
-    /// The shipping stages leave the push path, so the release recipe is the
-    /// thing that must still owe them.
+    /// The shipping stage leaves the push path, so the release is the thing
+    /// that must still owe it: scripts/release.py audits the bundle it
+    /// signed, with the script the recipe runs.
     #[test]
     fn a_release_cannot_be_cut_without_the_shipping_stages() {
-        let release = IOS_JUSTFILE
-            .lines()
+        assert_eq!(SHIPPING, ["ios scope-audit"]);
+        let mut lines = IOS_JUSTFILE.lines();
+        lines
             .find(|line| line.starts_with("release "))
             .expect("an ios release recipe");
-        for shipping in SHIPPING {
-            let name = shipping.strip_prefix("ios ").unwrap_or(shipping);
-            assert!(
-                release.contains(name),
-                "`{release}` no longer depends on {name}, which nothing else now runs"
-            );
-        }
+        let body = lines.next().unwrap_or_default();
+        assert!(body.contains("scripts/release.py"), "`{body}`");
+        let audit = IOS_JUSTFILE
+            .lines()
+            .skip_while(|line| !line.starts_with("scope-audit "))
+            .nth(1)
+            .unwrap_or_default();
+        assert!(
+            audit.contains("apps/apple/Tools/ios-scope-audit.py"),
+            "`{audit}`"
+        );
     }
 
     #[test]

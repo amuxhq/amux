@@ -826,6 +826,31 @@ async fn core_dumps(install: &Install, count: usize) -> Vec<String> {
     .unwrap()
 }
 
+/// Waits for the installation to hold `count` sealed bundles of slow steps
+/// that took `input`. A clean shutdown gives the dumps still under way
+/// [`node::DUMPS_FINISH_WITHIN`] and aborts the rest, and with every step
+/// over its budget a dozen are under way at once, so a test reads the
+/// bundles it asserts on before it shuts down rather than after.
+async fn slow_dumps(install: &Install, input: &str, count: usize) {
+    let took = format!(" {input} step took ");
+    until("the bundles of the slow steps", || {
+        let dumps = install.core_dumps();
+        let took = &took;
+        async move {
+            let slow = dumps
+                .iter()
+                .filter(|reason| reason.starts_with(node::CORE_DUMP) && reason.contains(took))
+                .count();
+            match slow >= count {
+                true => Ok(()),
+                false => Err("too few bundles yet"),
+            }
+        }
+    })
+    .await
+    .unwrap();
+}
+
 /// The kind of input a slow step the daemon core dumped took, as its
 /// reason names it.
 fn slow_input(reason: &str) -> &str {
@@ -866,8 +891,8 @@ async fn steps_over_their_budget_are_one_dump_per_kind_of_input_within_the_inter
         runtime.ingest(agent.id).await.unwrap();
     }
     runtime.checkpoint().await.unwrap();
+    slow_dumps(&install, "Nudge", 1).await;
     drop(runtime);
-    // A clean shutdown waits for every dump under way.
     daemon.shutdown().await.unwrap();
     let reasons = install.core_dumps();
     let mut inputs: Vec<&str> = reasons.iter().map(|reason| slow_input(reason)).collect();
@@ -913,7 +938,7 @@ async fn steps_over_their_budget_dump_again_after_the_interval_counting_the_rest
         agent.append(&support::synthetic::item(&format!("after-{n}"), "again"));
         runtime.ingest(agent.id).await.unwrap();
     }
-    // A clean shutdown waits for every dump under way.
+    slow_dumps(&install, "Nudge", 2).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
 

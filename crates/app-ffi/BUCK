@@ -41,4 +41,6 @@ genrule(
     srcs = native.glob(["src/**", "cbindgen.toml"]),
     out = "out",
     cmd = "mkdir -p $OUT && $(exe //crates/ios-tools:ios-tools-bin) app-header $SRCDIR $OUT/amux_app.h",
+    # The Apple apps import it as the bridge's module (apps/apple/Packages/AmuxCore).
+    visibility = ["PUBLIC"],
 )

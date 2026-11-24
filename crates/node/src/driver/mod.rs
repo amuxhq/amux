@@ -1507,6 +1507,11 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
             }
         }
         Job::RemoveDir { path } => {
+            // An agent's review takes its snapshots into its directory
+            // under this turn: the removal waits for one under way, and
+            // an open after it finds the directory gone and takes none.
+            let turn = crate::reviews::turn(&path);
+            let _turn = turn.lock().await;
             blocking(move || {
                 agent_dir::local_socket::forget_short_addresses(&path);
                 match std::fs::remove_dir_all(&path) {

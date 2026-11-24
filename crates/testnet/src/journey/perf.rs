@@ -40,8 +40,8 @@ use super::phone::{
 use super::root;
 use crate::door::Control;
 
-const APP: &str = "target/ios/DerivedData/Build/Products/Measured-iphonesimulator/Amux.app";
-const DEVICE_APP: &str = "target/ios/DerivedData/Build/Products/Measured-iphoneos/Amux.app";
+const APP: &str = "target/ios/Measured-iphonesimulator/Amux.app";
+const DEVICE_APP: &str = "target/ios/Measured-iphoneos/Amux.app";
 const TOPOLOGY_TOOL: &str = "target/debug/perf-topology";
 const OUTPUT: &str = "target/ios/perf";
 const BASELINES: &str = "perf/baselines/phone";
@@ -1772,7 +1772,7 @@ pub(crate) fn run(asked: Asked) -> ExitCode {
     }
     if !app.is_dir() {
         return refused(format!(
-            "{} is not built; `apps/apple/Tools/ios-build.py --configuration Measured{}` builds it",
+            "{} is not built; `just ios build --configuration measured{}` builds it",
             app.display(),
             if asked.device { " --device" } else { "" }
         ));

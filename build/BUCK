@@ -1,4 +1,5 @@
 load(":archive_tool.bzl", "archive_tool")
+load(":rust.bzl", "amux_files")
 
 # The runner every Rust test binary runs under (build/rust.bzl).
 export_file(
@@ -16,12 +17,15 @@ _PROTOC = {
     "osx-aarch_64": "4aeea0a34b0992847b03a8489a8dbedf3746de01109b74cc2ce9b6888a901ed9",
 }
 
+#
+# remote_file's unzip is the prelude's own Python one: http_archive calls
+# an `unzip` command, which a Linux worker doesn't have.
 [
-    http_archive(
+    remote_file(
         name = "protoc-" + platform,
-        urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v31.1/protoc-31.1-{}.zip".format(platform)],
+        url = "https://github.com/protocolbuffers/protobuf/releases/download/v31.1/protoc-31.1-{}.zip".format(platform),
         sha256 = sha256,
-        type = "zip",
+        type = "exploded_zip",
     )
     for platform, sha256 in _PROTOC.items()
 ]
@@ -36,5 +40,58 @@ archive_tool(
         "prelude//os:macos": ":protoc-osx-aarch_64",
     }),
     path = "bin/protoc",
+    visibility = ["PUBLIC"],
+)
+
+# The repository checks (build/checks.bzl, the root BUCK file): the script
+# each runs in, and what build/checks/inputs.py writes for them from outside
+# the checkout's files. The inputs are globbed, so before inputs.py has run
+# a check finds nothing there and says so, rather than the build failing.
+export_file(
+    name = "checks/home.sh",
+    src = "checks/home.sh",
+    mode = "reference",
+    visibility = ["PUBLIC"],
+)
+
+amux_files(
+    name = "tracked",
+    srcs = glob(["checks/inputs/tracked"]),
+)
+
+amux_files(
+    name = "store-baseline",
+    srcs = glob(["checks/inputs/store-baseline/*"]),
+)
+
+amux_files(
+    name = "proto-baseline",
+    srcs = glob(["checks/inputs/proto-baseline/**"]),
+)
+
+# buf for the protocol check on a Mac's own worker, when no Linux worker is
+# in reach; on Linux it is the Linux toolchain's, the same version.
+http_file(
+    name = "buf",
+    urls = ["https://github.com/bufbuild/buf/releases/download/v1.73.0/buf-Darwin-arm64"],
+    sha256 = "6e6df0fef4522e4e43dfe7c341873c3f2c29ceb45a9dfa5e0bad5580b8b2022f",
+    executable = True,
+    visibility = ["PUBLIC"],
+)
+
+# The JavaScript's actions (build/js.bzl) and Node for them on a Mac's own
+# worker, the release of the version the Linux toolchain's nodejs_24 is.
+export_file(
+    name = "js.py",
+    src = "js.py",
+    mode = "reference",
+    visibility = ["PUBLIC"],
+)
+
+http_archive(
+    name = "node",
+    urls = ["https://nodejs.org/dist/v24.21.0/node-v24.21.0-darwin-arm64.tar.gz"],
+    sha256 = "bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057",
+    strip_prefix = "node-v24.21.0-darwin-arm64",
     visibility = ["PUBLIC"],
 )

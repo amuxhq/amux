@@ -2,7 +2,7 @@
 
 Everything below is about the two numbers, the tag that records them and the
 inputs the run refuses to proceed without — the decisions that are permanent
-once a build reaches Apple. No test here builds, signs, exports or uploads.
+once a build reaches Apple. No test here builds, signs, audits or uploads.
 """
 
 import contextlib
@@ -11,7 +11,6 @@ import importlib.util
 import io
 import os
 from pathlib import Path
-import plistlib
 import subprocess
 import sys
 import tempfile
@@ -137,22 +136,17 @@ class TheNumbersReachingTheProject(unittest.TestCase):
 
     @contextlib.contextmanager
     def project(self, text):
-        """A checkout whose spec is `text`, with project generation stubbed.
-
-        Generating the Xcode project is Xcode's business and needs the whole
-        app; what is under test is the two substitutions."""
+        """A checkout whose version file is `text`."""
         with checkout() as root:
-            written = self.spec(root, text)
-            with unittest.mock.patch.object(recipe.ios_project, "generate"):
-                yield written
+            yield self.spec(root, text)
 
     def test_both_numbers_are_substituted(self):
-        with self.project('    settings:\n'
-                          '      MARKETING_VERSION: "1.0.31"\n'
-                          '      CURRENT_PROJECT_VERSION: "1"\n') as written:
+        with self.project('"""The numbers."""\n\n'
+                          'MARKETING_VERSION = "1.0.31"\n'
+                          'BUILD_NUMBER = "1"\n') as written:
             recipe.write_numbers("1.2.3", 44)
-            self.assertIn('MARKETING_VERSION: "1.2.3"', written.read_text())
-            self.assertIn('CURRENT_PROJECT_VERSION: "44"', written.read_text())
+            self.assertIn('MARKETING_VERSION = "1.2.3"', written.read_text())
+            self.assertIn('BUILD_NUMBER = "44"', written.read_text())
             self.assertEqual(("1.2.3", 44),
                              recipe.project_numbers(written.read_text()))
 
@@ -160,19 +154,19 @@ class TheNumbersReachingTheProject(unittest.TestCase):
         # The failure this rules out: a renamed or restructured setting leaves
         # the text untouched, the write succeeds, and the release tags numbers
         # the built app does not carry.
-        text = "targets:\n  Amux:\n    type: application\n"
+        text = 'MAC_VERSION = "0.0.1"\n'
         with self.project(text) as written:
             with self.assertRaises(recipe.Refusal) as refused:
                 recipe.write_numbers("1.2.3", 44)
             self.assertIn("MARKETING_VERSION", str(refused.exception))
-            self.assertIn("CURRENT_PROJECT_VERSION", str(refused.exception))
+            self.assertIn("BUILD_NUMBER", str(refused.exception))
             self.assertEqual(text, written.read_text())
 
     def test_half_a_spec_is_refused_too(self):
-        with self.project('      MARKETING_VERSION: "1.0.31"\n') as written:
+        with self.project('MARKETING_VERSION = "1.0.31"\n') as written:
             with self.assertRaises(recipe.Refusal) as refused:
                 recipe.write_numbers("1.2.3", 44)
-            self.assertIn("CURRENT_PROJECT_VERSION", str(refused.exception))
+            self.assertIn("BUILD_NUMBER", str(refused.exception))
             self.assertNotIn("1.2.3", written.read_text())
 
     def test_the_committed_spec_is_one_the_substitutions_match(self):
@@ -184,12 +178,12 @@ class TheNumbersReachingTheProject(unittest.TestCase):
 
 class InterruptedRelease(unittest.TestCase):
     def test_step_failures_and_timeouts_explain_recovery_without_committing(self):
-        names = ("archive", "export", "validate")
+        names = ("build_app", "sign", "audit", "validate")
         for step in names:
             for rehearse in (False, True):
                 for failure, reason in (
-                    (subprocess.TimeoutExpired(["xcodebuild"], 1800), "timed out"),
-                    (subprocess.CalledProcessError(1, ["xcodebuild"]), "failed"),
+                    (subprocess.TimeoutExpired(["buck2"], 1800), "timed out"),
+                    (subprocess.CalledProcessError(1, ["buck2"]), "failed"),
                 ):
                     with self.subTest(step=step, rehearse=rehearse, reason=reason):
                         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
@@ -206,12 +200,14 @@ class InterruptedRelease(unittest.TestCase):
                             commit = stack.enter_context(unittest.mock.patch.object(recipe, "commit_and_tag"))
                             steps = {name: stack.enter_context(unittest.mock.patch.object(recipe, name))
                                      for name in names}
-                            steps["export"].return_value = Path(directory) / "amux.ipa"
+                            steps["build_app"].return_value = (Path(directory) / "Amux.app", Path(directory) / "dSYMs")
+                            steps["sign"].return_value = Path(directory) / "amux.ipa"
                             steps[step].side_effect = failure
                             error = stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
                             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
                             self.assertEqual(1, recipe.main())
-                            self.assertIn(f"{step} {reason}", error.getvalue())
+                            said = "build" if step == "build_app" else step
+                            self.assertIn(f"{said} {reason}", error.getvalue())
                             commit.assert_not_called()
                             if rehearse:
                                 write.assert_not_called()
@@ -228,9 +224,9 @@ class InterruptedRelease(unittest.TestCase):
 class TheRehearsal(unittest.TestCase):
     """The claim that a rehearsal wrote nothing is measured, not asserted.
 
-    A rehearsal regenerates the Xcode project and drives a full archive and
-    export; either could leave a tracked file changed, and a promise nobody
-    checked is exactly how that would go unnoticed."""
+    A rehearsal drives a full build, signing and audit; any of them could
+    leave a tracked file changed, and a promise nobody checked is exactly how
+    that would go unnoticed."""
 
     def test_a_tree_in_the_state_it_started_in_has_changed_nothing(self):
         self.assertEqual([], recipe.tree_changes("", ""))
@@ -238,8 +234,8 @@ class TheRehearsal(unittest.TestCase):
                                                  " M notes/scratch.md\n"))
 
     def test_a_file_the_run_wrote_is_named(self):
-        self.assertEqual([" M apps/apple/project.yml"], recipe.tree_changes(
-            "", " M apps/apple/project.yml\n"))
+        self.assertEqual([" M apps/apple/version.bzl"], recipe.tree_changes(
+            "", " M apps/apple/version.bzl\n"))
         self.assertEqual(["?? apps/apple/Amux/Generated.swift"], recipe.tree_changes(
             " M notes/scratch.md\n",
             " M notes/scratch.md\n?? apps/apple/Amux/Generated.swift\n"))
@@ -248,6 +244,20 @@ class TheRehearsal(unittest.TestCase):
         source = (SCRIPTS / "release.py").read_text()
         self.assertIn("changed = tree_changes(facts[\"tree\"], tree())", source)
         self.assertIn("rehearsal changed the tree, which it must not", source)
+
+
+class TheBuild(unittest.TestCase):
+    def test_the_app_and_its_symbols_are_told_apart(self):
+        app, symbols = recipe.outputs(
+            '{"root//apps/apple:Amux[dsyms]": "/b/dSYMs", "root//apps/apple:Amux": "/b/Amux.app"}')
+        self.assertEqual(Path("/b/Amux.app"), app)
+        self.assertEqual(Path("/b/dSYMs"), symbols)
+
+    def test_no_symbols_is_a_refusal(self):
+        # A release whose crash reports nobody could read is refused, not
+        # uploaded without them.
+        with self.assertRaises(recipe.Refusal):
+            recipe.outputs('{"root//apps/apple:Amux": "/b/Amux.app", "root//apps/apple:Amux[dsyms]": ""}')
 
 
 class TheTag(unittest.TestCase):
@@ -261,12 +271,18 @@ class TheProject(unittest.TestCase):
         self.assertRegex(version, r"^\d+\.\d+\.\d+$")
         self.assertGreaterEqual(build, 1)
 
-    def test_the_bundle_reads_them_from_the_build_settings(self):
-        # What lets a rehearsal archive the would-be release without touching
-        # the tree: both numbers can be passed to xcodebuild instead.
+    def test_the_bundle_reads_them_from_the_build(self):
+        # What lets a rehearsal build the would-be release without touching
+        # the tree: both numbers can be passed to Buck2 as configuration.
         plist = (ROOT / "apps/apple/Amux/Info.plist").read_text()
         self.assertIn("$(MARKETING_VERSION)", plist)
         self.assertIn("$(CURRENT_PROJECT_VERSION)", plist)
+        defaults = (ROOT / "apps/apple/defs.bzl").read_text()
+        self.assertIn('read_root_config("apple", "marketing_version"', defaults)
+        self.assertIn('read_root_config("apple", "build_number"', defaults)
+        source = (SCRIPTS / "release.py").read_text()
+        self.assertIn('f"apple.marketing_version={version}"', source)
+        self.assertIn('f"apple.build_number={build_number}"', source)
 
 
 class TheSigningFile(unittest.TestCase):
@@ -306,41 +322,18 @@ class TheSigningFile(unittest.TestCase):
             f"git -C {ROOT} check-ignore -q {recipe.SIGNING_FILE}"))
 
 
-class TheExportOptions(unittest.TestCase):
-    def test_the_committed_file_names_no_team(self):
-        options = plistlib.loads((ROOT / recipe.EXPORT_OPTIONS).read_bytes())
-        self.assertNotIn("teamID", options)
-
-    def test_it_exports_rather_than_uploads(self):
-        options = plistlib.loads((ROOT / recipe.EXPORT_OPTIONS).read_bytes())
-        self.assertEqual("export", options["destination"])
-        # Xcode would otherwise be free to rewrite the number that was tagged.
-        self.assertFalse(options["manageAppVersionAndBuildNumber"])
-
-    def test_the_team_is_inserted_at_run_time(self):
-        with checkout() as root:
-            (root / "apps/apple").mkdir(parents=True)
-            (root / recipe.EXPORT_OPTIONS).write_bytes(
-                (ROOT / recipe.EXPORT_OPTIONS).read_bytes())
-            written = recipe.export_options("ABCDE12345")
-            self.assertEqual(
-                "ABCDE12345", plistlib.loads(written.read_bytes())["teamID"])
-
-
-    def test_it_signs_by_hand_because_cloud_signing_cannot(self):
+class TheSigning(unittest.TestCase):
+    def test_each_bundle_is_signed_with_its_own_profile_and_grants(self):
         # Xcode's cloud signing refuses to fetch a profile for this account
-        # from a script, so the export names what it signs with.
-        options = plistlib.loads((ROOT / recipe.EXPORT_OPTIONS).read_bytes())
-        self.assertEqual("manual", options["signingStyle"])
-        self.assertEqual({"sh.amux.app", "sh.amux.app.notifications"},
-                         set(options["provisioningProfiles"]))
+        # from a script, so the release names what it signs with.
+        self.assertEqual(set(recipe.APP_STORE_PROFILES), set(recipe.ENTITLEMENTS))
+        for path in recipe.ENTITLEMENTS.values():
+            self.assertTrue((ROOT / path).is_file(), path)
 
     def test_the_named_certificate_carries_no_account_identifier(self):
         # A full identity name ends in "(<Team ID>)" and this file is
-        # committed, so the type is named and teamID picks the identity.
-        options = plistlib.loads((ROOT / recipe.EXPORT_OPTIONS).read_bytes())
-        self.assertEqual(recipe.DISTRIBUTION, options["signingCertificate"])
-        self.assertNotIn("(", options["signingCertificate"])
+        # committed, so the type is named and the team picks the identity.
+        self.assertNotIn("(", recipe.DISTRIBUTION)
 
 
 class TheDistributionCertificate(unittest.TestCase):
@@ -371,11 +364,8 @@ class TheProvisioningProfile(unittest.TestCase):
                 "ExpirationDate": now + datetime.timedelta(days=days,
                                                            hours=hours)}
 
-    def test_the_export_names_one_per_bundle_id(self):
-        with checkout() as root:
-            (root / "apps/apple").mkdir(parents=True)
-            (root / recipe.EXPORT_OPTIONS).write_bytes(
-                (ROOT / recipe.EXPORT_OPTIONS).read_bytes())
+    def test_the_release_names_one_per_bundle_id(self):
+        with checkout():
             self.assertEqual({"sh.amux.app": "amux App Store",
                               "sh.amux.app.notifications": "amux Notifications App Store"},
                              recipe.wanted_profiles())
@@ -427,15 +417,15 @@ class TheOrderOfARelease(unittest.TestCase):
     """Nothing permanent is recorded until Apple has accepted the build.
 
     A commit and an annotated tag are the only things a run leaves that a
-    `git checkout` cannot undo, so they come after the archive, the export and
-    the validation. Every step is stubbed here: what is under test is the
+    `git checkout` cannot undo, so they come after the build, the signing, the
+    audit and the validation. Every step is stubbed here: what is under test is the
     order they are called in and what a failure leaves behind."""
 
     def drive(self, breaks="", argv=("release.py",),
               real_numbers=False) -> tuple[int, list[str]]:
         """Run main() with every real step replaced by a recorder.
 
-        `breaks` names a step that fails the way xcodebuild or altool does;
+        `breaks` names a step that fails the way buck2 or altool does;
         `real_numbers` lets the run choose its own numbers from this
         checkout's spec and tags instead of being handed a pair."""
         called = []
@@ -460,8 +450,9 @@ class TheOrderOfARelease(unittest.TestCase):
                 "notes": lambda *_: "amux 1.0.32",
                 "tree": lambda: "",
                 "write_numbers": step("write_numbers"),
-                "archive": step("archive"),
-                "export": step("export", package),
+                "build_app": step("build_app", (Path(directory) / "Amux.app", Path(directory) / "dSYMs")),
+                "sign": step("sign", package),
+                "audit": step("audit"),
                 "validate": step("validate"),
                 "upload": step("upload"),
                 "commit_and_tag": step("commit_and_tag"),
@@ -487,7 +478,7 @@ class TheOrderOfARelease(unittest.TestCase):
         # never reaches it, and the tag records a build that actually arrived.
         code, called = self.drive()
         self.assertEqual(0, code)
-        self.assertEqual(["write_numbers", "archive", "export", "validate",
+        self.assertEqual(["write_numbers", "build_app", "sign", "audit", "validate",
                           "upload", "commit_and_tag", "publish"], called)
 
     def test_an_upload_failure_leaves_no_commit_and_no_tag(self):
@@ -516,15 +507,20 @@ class TheOrderOfARelease(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertNotIn("commit_and_tag", called)
 
-    def test_a_failed_archive_stops_before_the_export(self):
-        code, called = self.drive(breaks="archive")
+    def test_a_failed_build_stops_before_the_signing(self):
+        code, called = self.drive(breaks="build_app")
         self.assertEqual(1, code)
-        self.assertEqual(["write_numbers", "archive"], called)
+        self.assertEqual(["write_numbers", "build_app"], called)
+
+    def test_a_scope_failure_stops_before_apple_sees_the_build(self):
+        code, called = self.drive(breaks="audit")
+        self.assertEqual(1, code)
+        self.assertNotIn("validate", called)
 
     def test_a_rehearsal_writes_nothing_and_records_nothing(self):
         code, called = self.drive(argv=("release.py", "--rehearse"))
         self.assertEqual(0, code)
-        self.assertEqual(["archive", "export", "validate"], called)
+        self.assertEqual(["build_app", "sign", "audit", "validate"], called)
 
     def test_a_rehearsal_runs_though_no_tag_records_a_build_number(self):
         # This checkout has issued no ios-v* tag, so a release refuses its
@@ -537,7 +533,7 @@ class TheOrderOfARelease(unittest.TestCase):
         # Stops at the validation, which is what keeps a rehearsal free to run
         # as often as anybody likes: an upload would spend a build number
         # permanently and show the build to the whole team.
-        self.assertEqual(["archive", "export", "validate"], called)
+        self.assertEqual(["build_app", "sign", "audit", "validate"], called)
 
 
 class WhatItNeverDoes(unittest.TestCase):

@@ -1,35 +1,75 @@
 // NativeLink on a Mac: the cache and the worker every Buck2 action runs on
 // (docs/BUILD.md, "The build cache"). scripts/nativelink.py fills in the
-// {{...}} values and runs it under launchd.
+// {{...}} values and runs it under launchd. `nativelink.py serve` renders the
+// same, with no remote, for a Linux machine that has no build host to send
+// its actions to (a CI runner without the tailnet).
 //
 // Every action goes through this worker rather than Buck2's own local
 // executor: Buck2 records only remotely executed results in the action
 // cache, so this is what lets a test that passed in one worktree be a cache
 // hit in another. It is also the sandbox: an action sees only its declared
 // inputs.
+//
+// With a remote (`nativelink.py install --remote URL`, normally nova's
+// NativeLink), the remote's worker also registers with this scheduler over
+// the worker listener below, and runs the actions only Linux can run, and
+// the cache is this machine's in front of the remote's: what Buck2 uploads
+// reaches the remote too, so the remote's worker finds an action's inputs,
+// and results the remote holds are hits here. While the remote is out of
+// reach this runs from a second rendering with no remote in it at all, so
+// nothing waits on it (scripts/nativelink.py's start script picks one, and
+// scripts/buck-config.py restarts it when that changes).
 {
   stores: [
     {
-      name: "AC",
+      name: "LOCAL_CAS",
       filesystem: {
-        content_path: "{{cache}}/ac",
-        temp_path: "{{cache}}/ac-tmp",
-        eviction_policy: { max_bytes: {{ac_bytes}} },
+        content_path: "{{cache}}/cas",
+        temp_path: "{{cache}}/cas-tmp",
+        eviction_policy: { max_bytes: {{cas_bytes}} },
       },
     },
     {
-      name: "CAS",
+      // This machine's blobs only, for checking this machine's results.
+      name: "LOCAL_ONLY_CAS",
       fast_slow: {
-        fast: {
-          filesystem: {
-            content_path: "{{cache}}/cas",
-            temp_path: "{{cache}}/cas-tmp",
-            eviction_policy: { max_bytes: {{cas_bytes}} },
-          },
-        },
+        fast: { ref_store: { name: "LOCAL_CAS" } },
         slow: { noop: {} },
       },
     },
+    {
+      // The worker's: it hard-links inputs from the filesystem layer, and
+      // its outputs stay there. An input it lacks it reads from the remote,
+      // if there is one: Buck2 asks the remote what to upload, so an input
+      // the remote already has (a directory, a source file) isn't uploaded
+      // again and may never have reached this machine. This is also why
+      // the rendering without a remote exists: the worker asks this store
+      // about every output, and with the remote gone each question waits.
+      name: "WORKER_CAS",
+      fast_slow: {
+        fast: { ref_store: { name: "LOCAL_CAS" } },
+        slow: {{worker_slow}},
+        slow_direction: "get",
+      },
+    },
+    {
+      name: "LOCAL_AC",
+      // The two stores evict on their own, so an action result can outlive
+      // the outputs it names; Buck2 then fails the build ("not found in
+      // either fast or slow store") rather than running the action again.
+      // A result whose outputs are not all in the CAS is reported missing.
+      completeness_checking: {
+        backend: {
+          filesystem: {
+            content_path: "{{cache}}/ac",
+            temp_path: "{{cache}}/ac-tmp",
+            eviction_policy: { max_bytes: {{ac_bytes}} },
+          },
+        },
+        cas_store: { ref_store: { name: "LOCAL_ONLY_CAS" } },
+      },
+    },
+{{remote_stores}}
   ],
   schedulers: [
     {
@@ -52,22 +92,28 @@
       // cores it asks for (`cpu_count`, one unless a target asks for more),
       // so a test that wants the whole worker runs alone.
       local: {
-        name: "mac-",
+        name: "{{os}}-",
         worker_api_endpoint: { uri: "grpc://127.0.0.1:50061" },
-        cas_fast_slow_store: "CAS",
-        upload_action_result: { ac_store: "AC" },
+        cas_fast_slow_store: "WORKER_CAS",
+        upload_action_result: { ac_store: "LOCAL_AC" },
         work_directory: "{{cache}}/work",
         max_action_timeout_s: 3600,
         {{entrypoint}}
         // Only a modern python3 and the operating system's own tools are
-        // on PATH; every toolchain is called by its pinned path.
+        // on PATH (on Linux, also Nix, which realizes the toolchain); every
+        // toolchain is called by its pinned path.
         additional_environment: {
-          PATH: { value: "{{tool_bin}}:/usr/bin:/bin:/usr/sbin:/sbin" },
+          PATH: { value: "{{path}}" },
         },
         capacity: {},
-        directory_cache: {},
+        // No `directory_cache`. It keeps a copy of each action's whole
+        // input root, keyed by that root's digest, to clone into the next
+        // action with the same root; every Buck action's root is its own,
+        // so it never hits, and each action pays for building the cached
+        // copy and then cloning it. Without it, each input is hard-linked
+        // straight from the CAS into the action's directory.
         platform_properties: {
-          OSFamily: { values: ["macos"] },
+          OSFamily: { values: ["{{os}}"] },
           cpu_count: { values: ["{{cores}}"] },
           memory_kb: { values: ["{{memory_kb}}"] },
         },
@@ -94,6 +140,7 @@
         health: {},
       },
     },
+{{remote_workers}}
   ],
   global: { max_open_files: 24576 },
 }

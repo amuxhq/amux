@@ -1,0 +1,38 @@
+# The Android build's own pieces (docs/ANDROID.md, "Building").
+
+export_file(
+    name = "proguard-android-optimize.txt",
+    src = "proguard-android-optimize.txt",
+    visibility = ["PUBLIC"],
+)
+
+# What the Android toolchain runs as ProGuard for a release build: R8
+# (r8/R8Proguard.java says how).
+java_library(
+    name = "r8-proguard-lib",
+    srcs = ["r8/R8Proguard.java"],
+    java_version = "21",
+    deps = ["//third-party/android:r8"],
+)
+
+java_binary(
+    name = "r8-compat-proguard",
+    main_class = "sh.amux.build.R8Proguard",
+    deps = [":r8-proguard-lib"],
+    # R8's jar is signed for its own contents, not this one's.
+    blocklist = ["META-INF/.*\\.SF", "META-INF/.*\\.DSA", "META-INF/.*\\.RSA"],
+    visibility = ["PUBLIC"],
+)
+
+export_file(
+    name = "TestAndroidManifest.xml",
+    src = "TestAndroidManifest.xml",
+    visibility = ["PUBLIC"],
+)
+
+keystore(
+    name = "debug-keystore",
+    store = "debug.keystore",
+    properties = "debug.keystore.properties",
+    visibility = ["PUBLIC"],
+)

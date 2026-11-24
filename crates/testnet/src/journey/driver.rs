@@ -93,8 +93,9 @@ pub(crate) trait Driver {
     }
     fn elements(&self) -> Result<Drawn, String> {
         let state = self.query()?;
-        Ok(Drawn::of(
+        Ok(Drawn::on(
             state["elements"].as_array().map_or(&[], Vec::as_slice),
+            state["screen"].as_str(),
         ))
     }
     /// What the app shows now, compared with its reviewed golden.

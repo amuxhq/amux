@@ -15,6 +15,33 @@ TARGETS = {
 # Cargo's profiles.
 MODES = ["dev", "models", "release", "phone-dev", "wasm", "full-debug"]
 
+# For a rule with no toolchain to say it: a Linux target's actions run on
+# a Linux worker. Buck2 sends an action to the first execution platform it
+# fits, which on a Mac is the Mac's, so without this the same Linux target
+# would have one key built on nova and another built from a Mac, and an
+# execution dependency (a binary a Linux test starts) would be built for
+# macOS.
+EXEC_LIKE_TARGET = select({
+    "DEFAULT": [],
+    "prelude//os:linux": ["prelude//os:linux"],
+    # Android builds only on a Linux worker (docs/ANDROID.md).
+    "prelude//os:android": ["prelude//os:linux"],
+    # So does Windows (nix/windows.nix): only its tests run on Windows;
+    # but a release build of Windows is built on Windows.
+    "prelude//os:windows": select({
+        "DEFAULT": ["prelude//os:linux"],
+        "root//build/constraints:local-build": [],
+    }),
+})
+
+# For the binaries a test starts (build/rust.bzl's amux_binaries): built
+# for the machine the test runs on, which for a Windows test is Windows
+# though it is built on Linux.
+EXEC_RUNS_TARGET = select({
+    "DEFAULT": EXEC_LIKE_TARGET,
+    "prelude//os:windows": ["prelude//os:windows"],
+})
+
 def host_target() -> str:
     """The TARGETS entry for the machine Buck2 runs on."""
     if host_info().os.is_macos:
@@ -57,7 +84,7 @@ target_platform = rule(
     is_configuration_rule = True,
 )
 
-def _execution_platforms_impl(ctx):
+def _execution_platform_impl(ctx):
     configuration = _merged_configuration(ctx.attrs.constraints)
     platform = ExecutionPlatformInfo(
         label = ctx.label.raw_target(),
@@ -75,16 +102,41 @@ def _execution_platforms_impl(ctx):
             remote_execution_properties = ctx.attrs.properties,
             remote_execution_use_case = "buck2-default",
             remote_output_paths = "output_paths",
+            # A Windows action names its paths as Windows does; it runs on
+            # Windows, on CI's Windows worker or in a release build there.
+            use_windows_path_separators = ctx.attrs.windows,
         ),
     )
-    return [DefaultInfo(), ExecutionPlatformRegistrationInfo(platforms = [platform])]
+    return [DefaultInfo(), platform]
 
-execution_platforms = rule(
-    impl = _execution_platforms_impl,
+# One place an action can run: the constraints it satisfies and the
+# properties NativeLink's scheduler matches a worker by.
+execution_platform = rule(
+    impl = _execution_platform_impl,
     attrs = {
         "constraints": attrs.list(attrs.dep(providers = [ConfigurationInfo])),
         "properties": attrs.dict(attrs.string(), attrs.string()),
+        "windows": attrs.bool(default = False),
     },
+    is_configuration_rule = True,
+)
+
+def _execution_platforms_impl(ctx):
+    return [
+        DefaultInfo(),
+        ExecutionPlatformRegistrationInfo(
+            platforms = [p[ExecutionPlatformInfo] for p in ctx.attrs.platforms],
+        ),
+    ]
+
+# The places this host's Buck2 may send an action, in order of preference:
+# an action goes to the first whose constraints it is compatible with.
+execution_platforms = rule(
+    impl = _execution_platforms_impl,
+    attrs = {
+        "platforms": attrs.list(attrs.dep(providers = [ExecutionPlatformInfo])),
+    },
+    is_configuration_rule = True,
 )
 
 # The Rust target triple a configuration builds for: the toolchain's, and

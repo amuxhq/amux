@@ -1,9 +1,8 @@
 //! Releasing the Mac app: `release` makes a version exist, `deploy` puts it
 //! in front of a channel.
 //!
-//! The app versions on its own (`MARKETING_VERSION` in
-//! `apps/apple/Mac/project.yml`, tags `mac-v<version>`) and updates itself
-//! apart from amux. A release builds it here, on the release Mac, since its
+//! The app versions on its own (`MAC_VERSION` in `apps/apple/version.bzl`,
+//! tags `mac-v<version>`) and updates itself apart from amux. A release builds it here, on the release Mac, since its
 //! Developer ID signature is made with this Mac's certificate, and packs the
 //! one signed app two ways:
 //!
@@ -40,8 +39,13 @@ use crate::release::{
 };
 use crate::signing;
 
-const SPEC: &str = "apps/apple/Mac/project.yml";
-const PROJECT: &str = "apps/apple/Mac/AmuxMac.xcodeproj";
+const SPEC: &str = "apps/apple/version.bzl";
+const SETTING: &str = "MAC_VERSION = ";
+/// The app as Buck2 builds it to ship: Release, with the shipping bridge,
+/// signed only ad hoc, since a Developer ID signature names this Mac's
+/// certificate, which no build can declare as an input.
+const APP_TARGET: &str = "//apps/apple:AmuxMac";
+const PLATFORM: &str = "//build/platforms:macos-app-shipping-release";
 /// The Mac app's entry in its feed; the app looks itself up by it.
 pub const TARGET: &str = "mac-app";
 const BUNDLE: &str = "Amux.app";
@@ -71,31 +75,28 @@ fn dmg_name(version: &str) -> String {
     format!("Amux-{version}.dmg")
 }
 
-/// The version the spec carries.
+/// The version the version file carries for the Mac app.
 pub fn spec_version(spec: &str) -> Option<semver::Version> {
     spec.lines()
-        .find_map(|line| line.trim().strip_prefix("MARKETING_VERSION:"))
+        .find_map(|line| line.strip_prefix(SETTING))
         .and_then(|value| semver::Version::parse(value.trim().trim_matches('"')).ok())
 }
 
-/// The spec with both version settings at `version`, or None when it does
-/// not carry them.
+/// The version file with the Mac app's version at `version`, or None when
+/// it does not carry one.
 pub fn with_version(spec: &str, version: &str) -> Option<String> {
     let mut found = 0;
     let lines: Vec<String> = spec
         .lines()
         .map(|line| {
-            let indent = &line[..line.len() - line.trim_start().len()];
-            for key in ["MARKETING_VERSION:", "CURRENT_PROJECT_VERSION:"] {
-                if line.trim_start().starts_with(key) {
-                    found += 1;
-                    return format!("{indent}{key} \"{version}\"");
-                }
+            if line.starts_with(SETTING) {
+                found += 1;
+                return format!("{SETTING}\"{version}\"");
             }
             line.to_owned()
         })
         .collect();
-    (found == 2).then(|| lines.join("\n") + "\n")
+    (found == 1).then(|| lines.join("\n") + "\n")
 }
 
 /// The digests a release's tag message records, by file name: one
@@ -162,13 +163,12 @@ fn cut(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
         {
             return Err(format!("{tag} exists already").into());
         }
-        let current =
-            spec_version(&spec).ok_or_else(|| format!("{SPEC} has no MARKETING_VERSION"))?;
+        let current = spec_version(&spec).ok_or_else(|| format!("{SPEC} has no MAC_VERSION"))?;
         if wanted <= current {
             return Err(format!("{wanted} is not above the current version {current}").into());
         }
         let bumped = with_version(&spec, &version)
-            .ok_or_else(|| format!("{SPEC} does not carry both version settings"))?;
+            .ok_or_else(|| format!("{SPEC} does not carry MAC_VERSION"))?;
         std::fs::write(root.join(SPEC), bumped)?;
     }
 
@@ -256,7 +256,7 @@ fn cut(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    git(&root, &["add", SPEC, PROJECT])?;
+    git(&root, &["add", SPEC])?;
     git(
         &root,
         &["commit", "-q", "-m", &format!("Mac app {version}")],
@@ -282,7 +282,9 @@ fn cut(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// The Release build of the app, with the shipping bridge built to trust the
-/// release keys, signed only ad hoc.
+/// release keys, signed only ad hoc. The version is passed as configuration,
+/// so a rehearsal builds it with the tree untouched; a release has written
+/// the same version to the tree already.
 fn build(
     root: &Path,
     version: &str,
@@ -293,44 +295,25 @@ fn build(
         .map(|key| release::hex(key))
         .collect::<Vec<_>>()
         .join(",");
-    let status = Command::new("scripts/py")
-        .args(["-B", "apps/apple/Tools/ios-package.py", "--mac"])
-        .env("AMUX_RELEASE_PUBLIC_KEYS", &keys)
+    let built = Command::new("scripts/buck2")
+        .args(["build", APP_TARGET, "--target-platforms", PLATFORM])
+        .args(["-c", &format!("amux.release_public_keys={keys}")])
+        .args(["-c", &format!("apple.mac_version={version}")])
+        .arg("--show-full-simple-output")
         .current_dir(root)
-        .status()?;
-    if !status.success() {
-        return Err(format!("the shipping bridge did not build ({status})").into());
+        .stderr(std::process::Stdio::inherit())
+        .output()?;
+    if !built.status.success() {
+        return Err(format!("the Mac app did not build ({})", built.status).into());
     }
-    run(
-        &root.join("apps/apple/Mac"),
-        "xcodegen",
-        &["generate", "--spec", "project.yml", "--quiet"],
-    )?;
-    let derived = root.join("target/mac/ReleaseDerivedData");
-    let product = derived.join("Build/Products/Release").join(BUNDLE);
-    // Xcode builds into the last release's app and never removes what a
-    // build no longer makes, so a release starts from no app at all.
-    let _ = std::fs::remove_dir_all(&product);
-    run(
-        root,
-        "xcodebuild",
-        &[
-            "-project",
-            PROJECT,
-            "-scheme",
-            "AmuxMac",
-            "-configuration",
-            "Release",
-            "-destination",
-            "platform=macOS,arch=arm64",
-            "-derivedDataPath",
-            &derived.to_string_lossy(),
-            "-quiet",
-            &format!("MARKETING_VERSION={version}"),
-            &format!("CURRENT_PROJECT_VERSION={version}"),
-            "build",
-        ],
-    )?;
+    let product = String::from_utf8(built.stdout)?
+        .lines()
+        .last()
+        .map(PathBuf::from)
+        .ok_or("Buck2 named no app")?;
+    if !product.join("Contents/Info.plist").is_file() {
+        return Err(format!("Buck2 named {}, which is not an app", product.display()).into());
+    }
     Ok(product)
 }
 
@@ -340,6 +323,12 @@ fn copy_bundle(from: &Path, to: &Path) -> Result<(), Box<dyn std::error::Error>>
         &repository_root(),
         "ditto",
         &[&from.to_string_lossy(), &to.to_string_lossy()],
+    )?;
+    // Buck2's outputs are read-only, and the copy is signed in place.
+    run(
+        &repository_root(),
+        "chmod",
+        &["-R", "u+w", &to.to_string_lossy()],
     )
 }
 
@@ -559,14 +548,14 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
 mod tests {
     use super::*;
 
-    const SPEC_TEXT: &str = "targets:\n  AmuxMac:\n    settings:\n      base:\n        MARKETING_VERSION: \"0.0.0\"\n        CURRENT_PROJECT_VERSION: \"0.0.0\"\n        ENABLE_HARDENED_RUNTIME: YES\n";
+    const SPEC_TEXT: &str = "\"\"\"The numbers.\"\"\"\n\nMARKETING_VERSION = \"1.0.38\"\nBUILD_NUMBER = \"47\"\n\nMAC_VERSION = \"0.0.0\"\n";
 
     #[test]
-    fn a_release_writes_both_version_settings_and_nothing_else() {
+    fn a_release_writes_the_mac_version_and_nothing_else() {
         assert_eq!(spec_version(SPEC_TEXT), Some(semver::Version::new(0, 0, 0)));
         let bumped = with_version(SPEC_TEXT, "0.0.1").unwrap();
         assert_eq!(bumped, SPEC_TEXT.replace("\"0.0.0\"", "\"0.0.1\""));
-        assert_eq!(with_version("MARKETING_VERSION: \"1\"\n", "0.0.1"), None);
+        assert_eq!(with_version("MARKETING_VERSION = \"1\"\n", "0.0.1"), None);
     }
 
     #[test]

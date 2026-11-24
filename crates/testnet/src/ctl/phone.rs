@@ -216,9 +216,7 @@ fn app() -> Result<PathBuf, String> {
             // target/debug/testnet -> target/ios/...
             exe.parent()
                 .and_then(Path::parent)
-                .map(|target| {
-                    target.join("ios/DerivedData/Build/Products/Debug-iphonesimulator/Amux.app")
-                })
+                .map(|target| target.join("ios/Debug-iphonesimulator/Amux.app"))
                 .unwrap_or_default()
         }
     };

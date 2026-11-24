@@ -279,42 +279,77 @@ The repository's own checks are Buck2 tests too, so `just premerge` gets a
 check from the cache until a file it reads changes: a docs-only edit reruns
 the docs check and the tests that read that page, and nothing else. Each is a
 script run over exactly the files its target declares
-([`build/checks.bzl`](../build/checks.bzl)), in the root
-[`BUCK`](../BUCK) file: `docs-check`, `store-check`, `proto-compat`,
-`cores-check` (the sources half), `typed-provider-check`,
-`client-kind-check` and `codegen-check`. The browser extension's Biome,
-type checks, unit tests and end-to-end test are in
-[`js/BUCK`](../js/BUCK) ([Browser extension](BROWSER.md#building-and-testing)),
-and the terminal journeys are `//crates/testnet:terminal-journeys`.
+([`build/checks.bzl`](../build/checks.bzl)):
+
+- in the root [`BUCK`](../BUCK) file: `docs-check`, `store-check`,
+  `proto-compat`, `cores-check` (the sources half), `typed-provider-check`,
+  `client-kind-check`, `codegen-check`, `deny`, and the unit tests of the
+  repository's scripts, one test per file (`//:script-tests-land_queue`);
+- beside the apps' scripts: the Apple apps' writing lints and their recipe
+  scripts' tests ([`apps/apple/Tools/BUCK`](../apps/apple/Tools/BUCK)), and
+  the Android app's ([`apps/android/BUCK`](../apps/android/BUCK),
+  [`apps/android/tools/BUCK`](../apps/android/tools/BUCK)); the Swift and
+  Kotlin mirrors of the bridge's values are held to their Rust by
+  `//crates/ios-tools:unit`;
+- in [`js/BUCK`](../js/BUCK): the browser extension's Biome, type checks,
+  unit tests, end-to-end test and npm audit ([Browser extension](BROWSER.md#building-and-testing));
+- the terminal journeys, `//crates/testnet:terminal-journeys`.
 
 ```sh
 just checks                    # the repository's and the JavaScript's checks
 just test //:docs-check        # one of them
 just docs-check                # the same: the recipes of the checks' names run their tests
+just script-tests              # a set of them, by label (`just test //: --include script-tests`)
 ```
 
 A check is sent to the Linux worker when one is in reach, so a Mac and the
 build host run the same action and share its result; with none in reach
-it runs on the Mac's own worker. On a Mac, Node for the JavaScript's
-checks is the release `//build:node` pins, the version the Linux
-toolchain's is.
+it runs on the Mac's own worker, except `deny`, whose dependency checker
+is the Linux toolchain's: it is skipped then, and `just test` names it. On a Mac,
+Node for the JavaScript's checks is the release `//build:node` pins, the
+version the Linux toolchain's is. A check finds nothing it didn't declare:
+a test that reads a file outside its inputs fails, rather than passing on
+whatever the checkout holds.
 
 A check that needs more than the checkout's files gets it from
 [`build/checks/inputs.py`](../build/checks/inputs.py), which `just test`
-runs first and which writes `build/checks/inputs/` (not committed): the
-list of files the checkout tracks, which the docs check resolves links
-against, so it reruns when a file is added or removed rather than whenever
-one changes; and the newest release's store schema and protobuf schemas,
-which the store and protocol checks compare with in place of git's
-history. A clone without the release tags therefore fails those two
-checks. A docs page that shows a source file word for word
-(`<!-- source: ... -->`) needs that file among the docs check's inputs.
+runs first and which writes `build/checks/inputs/` (not committed):
 
-Some checks stay scripts that `just premerge` runs in the checkout: those
-that read the whole workspace's graph (`dependency-policy`, `deny`,
-`shear`, the tokio half of `cores-check`, `parity`, `shipping-check`), the
-suite catalogue's `tests-check`, which runs Cargo and `just` over the
-whole tree, and `script-tests`, whose tests ask git about the checkout.
+- the list of files the checkout tracks, which the docs check resolves
+  links against, so it reruns when a file is added or removed rather than
+  whenever one changes. A docs page that shows a source file word for word
+  (`<!-- source: ... -->`) needs that file among the docs check's inputs.
+- the newest release's store schema and protobuf schemas, which the store
+  and protocol checks compare with in place of git's history. A clone
+  without the release tags therefore fails those two checks.
+- what `deny` reads: Cargo's resolved graph with every feature (which needs
+  Cargo's registry, so it can't be made inside an action) and the
+  workspace's manifests, made again when a manifest or the lockfile
+  changes; a snapshot of the RustSec advisory database; and crates.io's
+  index entry for each crate in the graph, which says whether a release was
+  yanked. The last two are refreshed at most once a day, the index by
+  `cargo update --dry-run`, which writes no lockfile. `deny` itself runs
+  offline on them, so its result is a function of its inputs: it reruns
+  when the lockfile, a manifest, `deny.toml` or a day's snapshot changes.
+- today's date (UTC), for the npm audit. npm's advisories are a question
+  to its registry that no file can stand in for, so `//js:audit` asks it
+  inside the action and declares the date: its answer is kept for the rest
+  of the day and asked again on the next, or when the lockfile changes.
+
+`just premerge` is `just test` over the whole graph and, at the same time,
+the checks that stay scripts ([`build/checks/premerge.py`](../build/checks/premerge.py)),
+each run in the checkout with its output kept and printed when it fails:
+
+| Check | Why it isn't a Buck2 test |
+| --- | --- |
+| `fmt-check` | rustfmt on the dated nightly over every Rust file: a test target would need every file of the workspace and the nightly realized on the worker, to replace a three-second run |
+| `dependency-policy`, `shear`, the tokio half of `cores-check` | They read Cargo's resolved graph (`cargo metadata`, `cargo tree`), which needs Cargo's registry, and shear every crate's code besides |
+| `tests-check` | It checks the suite catalogue against every crate's targets as Cargo sees them, every `just` recipe, and every path the catalogue names: its inputs would be the whole checkout |
+| `parity`, `shipping-check` | Queries of Buck2's own graph (`uquery`, `cquery`), which no action of that graph can make |
+| `lint` | Clippy is Buck2 actions, cached like the tests, but a build of each target's clippy output, which `buck2 test` doesn't build, so it is a `buck2 build` beside the test run |
+
+`no-update-flags`, which refuses fixture-regeneration variables in the
+environment, runs first, before anything starts.
 
 ## Profiles
 

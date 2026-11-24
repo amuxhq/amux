@@ -916,6 +916,18 @@ mod tests {
 
     use super::*;
 
+    /// What `swift-types --check` checks, as a test, so the build's cache
+    /// runs it only when the Rust definitions or the committed file change.
+    #[test]
+    fn the_committed_push_mirrors_match_the_rust_definitions() {
+        let generated = generate_push(&definitions()).unwrap();
+        let committed = std::fs::read_to_string(repository().join(PUSH_OUTPUT)).unwrap_or_default();
+        assert!(
+            committed == generated,
+            "{PUSH_OUTPUT} differs from the Rust definitions; run `cargo run -p ios-tools -- swift-types` and commit the result"
+        );
+    }
+
     /// Every public value type in the crates the bridge reads from has a
     /// mirror, except the ones that never cross it.
     #[test]

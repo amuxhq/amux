@@ -11,6 +11,7 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,16 @@ recipe = importlib.util.module_from_spec(specification)
 specification.loader.exec_module(recipe)
 
 ROOT = SCRIPTS.parent
+
+
+def ignored_by_the_checkout(root, path):
+    """Whether the checkout's .gitignore ignores `path`, asked of a repository
+    holding only that file: a test runs where the checkout's files are but
+    its git directory may not be (a Buck2 action)."""
+    with tempfile.TemporaryDirectory() as scratch:
+        shutil.copy(root / ".gitignore", scratch)
+        subprocess.run(["git", "init", "-q", scratch], check=True)
+        return subprocess.run(["git", "-C", scratch, "check-ignore", "-q", str(path)]).returncode == 0
 
 
 @contextlib.contextmanager
@@ -318,8 +329,7 @@ class TheSigningFile(unittest.TestCase):
             self.assertEqual("", facts["team"])
 
     def test_the_repository_ignores_it(self):
-        self.assertEqual(0, os.system(
-            f"git -C {ROOT} check-ignore -q {recipe.SIGNING_FILE}"))
+        self.assertTrue(ignored_by_the_checkout(ROOT, recipe.SIGNING_FILE))
 
 
 class TheSigning(unittest.TestCase):

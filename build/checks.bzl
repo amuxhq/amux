@@ -107,3 +107,27 @@ def amux_check(name, command, srcs = [], deps = [], env = {}, labels = [], linux
         target_compatible_with = ["root//build/constraints:linux-workers"] if linux_only else [],
         **kwargs
     )
+
+def amux_script_tests(prefix, tests, srcs = [], deps = [], extra = {}):
+    """The unit tests of a directory of scripts, one check per test file,
+    so each is cached apart and they run side by side: `tests/land_queue_test.py`
+    under the prefix `script-tests` is `:script-tests-land_queue`, and every
+    one carries the label `prefix` (`just test //: --include script-tests`).
+    `tests` are this package's test files. Each reads `srcs` and `deps`, the
+    test files and the scripts they test;
+    `extra` maps a test's stem to the `srcs` and `deps` it reads beyond those
+    (another package's files, a schema it holds a script to)."""
+    package = native.package_name()
+    for test in tests:
+        directory, _, file = "/".join([part for part in [package, test] if part]).rpartition("/")
+        stem = file.removesuffix("_test.py")
+        more = extra.get(stem, {})
+        amux_check(
+            name = prefix + "-" + stem,
+            # -B: a test imports the script it tests, and nothing should be
+            # written beside the action's inputs.
+            command = ["python3", "-B", "-m", "unittest", "discover", "-s", directory, "-p", file, "-t", directory],
+            srcs = srcs + more.get("srcs", []),
+            deps = deps + more.get("deps", []),
+            labels = [prefix],
+        )

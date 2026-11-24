@@ -92,6 +92,17 @@ config_setting(
     visibility = ["PUBLIC"],
 )
 
+# A release build (scripts/release-build.py writes `amux.local`): every
+# action on this machine, with this machine's own toolchains, rustup's Rust
+# and the system's C compiler, and nothing from a cache, so what ships is
+# built from scratch where it is built. Nix's Linux toolchain would link a
+# binary that runs only where Nix's C library is.
+config_setting(
+    name = "local-build",
+    values = {"amux.local": "true"},
+    visibility = ["PUBLIC"],
+)
+
 # Built by the Linux toolchain on a Linux worker, wherever the build starts,
 # for a target that isn't Linux itself: browser-core's WebAssembly as the
 # JavaScript's Linux targets take it (js/BUCK). A Linux action can't read

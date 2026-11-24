@@ -205,9 +205,12 @@ store-check *ARGS:
 upgrade-fixture: nextest
     {{bounded}} 600 cargo nextest run --locked -p node --run-ignored only -E 'test(write_this_releases_profile)'
 
-# Build the shipping binary and enforce the release dependency policy.
+# Build the shipping binary as a release builds it, and enforce the release
+# dependency policy. Buck2 builds it from scratch with this machine's own
+# toolchains (scripts/release-build.py) into target/release/, or
+# target/<triple>/release/ with `--target`, which must name this machine.
 release-check *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 cargo build --locked --release -p amux --bins "$@"
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 scripts/py scripts/release-build.py "$@"
     if [ "${1-}" = -- ]; then shift; fi; scripts/release-policy-check.sh "$@"
 
 # Install the pre-push credential scan (scripts/hooks/pre-push) for every worktree.

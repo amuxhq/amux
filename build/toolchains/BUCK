@@ -23,17 +23,35 @@ load(":android.bzl", "android_file", "android_sdk", "android_tool", "android_too
 # Windows: its genrules with the Linux toolchain, its compiles and links
 # with the Windows one (_NIX_COMPILE).
 _NIX = select({
-    "DEFAULT": None,
-    "prelude//os:linux": "root//:nix-linux",
-    "root//build/constraints:on-linux": "root//:nix-linux",
-    "prelude//os:android": "root//:nix-linux",
-    "prelude//os:windows": "root//:nix-linux",
+    "DEFAULT": select({
+        "DEFAULT": None,
+        "prelude//os:linux": "root//:nix-linux",
+        "root//build/constraints:on-linux": "root//:nix-linux",
+        "prelude//os:android": "root//:nix-linux",
+        "prelude//os:windows": "root//:nix-linux",
+    }),
+    # A release build uses this machine's own toolchains
+    # (build/constraints:local-build).
+    "root//build/constraints:local-build": None,
 })
 
 _NIX_COMPILE = select({
     "DEFAULT": _NIX,
-    "prelude//os:windows": "root//:nix-windows",
+    "prelude//os:windows": select({
+        "DEFAULT": "root//:nix-windows",
+        "root//build/constraints:local-build": None,
+    }),
 })
+
+# A release build's C tools are this machine's own: on Windows MSVC's,
+# which the prelude finds with vswhere; on Linux whichever `cc` and `c++`
+# are on PATH (GCC on CI's runner, as Cargo's release builds linked with);
+# on a Mac Xcode's, as always.
+_LOCAL = read_root_config("amux", "local", "false") == "true"
+
+_LOCAL_WINDOWS = _LOCAL and host_info().os.is_windows
+
+_LOCAL_LINUX = _LOCAL and host_info().os.is_linux
 
 # The Windows toolchain's tools (nix/windows.nix) where the C toolchain
 # looks for GCC's names: LLVM's MSVC-compatible ones, which take cl.exe's,
@@ -79,21 +97,22 @@ _IOS_C_FLAGS = select({
 # (build/platforms/BUCK), so an Xcode upgrade changes their keys.
 amux_cxx_toolchain(
     name = "cxx",
-    archiver = "/usr/bin/ar",
-    compiler = "/usr/bin/clang",
+    archiver = "ar" if _LOCAL_LINUX else "/usr/bin/ar",
+    compiler = "cc" if _LOCAL_LINUX else "/usr/bin/clang",
     compiler_type = select({"DEFAULT": "clang", "prelude//os:linux": "gcc", "prelude//os:windows": "windows"}),
-    archiver_type = select({"DEFAULT": None, "prelude//os:windows": "windows_clang"}),
+    archiver_type = select({"DEFAULT": None, "prelude//os:windows": None if _LOCAL_WINDOWS else "windows_clang"}),
+    tools = "prelude//toolchains/msvc:msvc_tools" if _LOCAL_WINDOWS else None,
     # The C runtime as a DLL, as Rust's own Windows code and the `cc`
     # crate's builds link it: clang-cl alone would pick the static one, and
     # one binary would then carry both. A phone's or the simulator's C is
     # compiled for it (_IOS_C_FLAGS).
     c_flags = _IOS_C_FLAGS + select({"DEFAULT": [], "prelude//os:windows": ["/MD"]}),
     cxx_flags = _IOS_C_FLAGS + select({"DEFAULT": [], "prelude//os:windows": ["/MD"]}),
-    cxx_compiler = "/usr/bin/clang++",
+    cxx_compiler = "c++" if _LOCAL_LINUX else "/usr/bin/clang++",
     # WebAssembly links with the lld the pinned Rust ships, as Cargo's wasm32
     # builds do; rustc tells it which flavour.
     linker = select({
-        "DEFAULT": "/usr/bin/clang++",
+        "DEFAULT": "c++" if _LOCAL_LINUX else "/usr/bin/clang++",
         "prelude//os:none": "{}/lib/rustlib/{}/bin/rust-lld".format(
             read_root_config("rust", "toolchain_dir", ""),
             "aarch64-apple-darwin" if host_info().os.is_macos else "x86_64-unknown-linux-gnu",

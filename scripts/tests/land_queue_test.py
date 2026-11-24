@@ -112,6 +112,17 @@ class LandingTest(Repos):
         self.assertEqual(self.result("20261123T100000.000000Z-mac-feature"), first)
         self.assertEqual(queue.pending(self.inbox), [])
 
+    def test_the_merge_is_the_senders_whoever_the_queue_runs_as(self):
+        commit(self.dev, "a", "1\n", "One")
+        self.request("r1")
+
+        with mock_env({"GIT_AUTHOR_NAME": "Queue", "GIT_AUTHOR_EMAIL": "queue@example.com",
+                       "GIT_COMMITTER_NAME": "Queue", "GIT_COMMITTER_EMAIL": "queue@example.com"}):
+            self.land("r1")
+
+        self.assertEqual(git(self.origin, "log", "-1", "--format=%an <%ae>|%cn <%ce>", self.main()),
+                         "Lander <lander@example.com>|Lander <lander@example.com>")
+
     def test_a_failing_gate_stops_with_the_end_of_its_log_and_main_unmoved(self):
         before = self.main()
         commit(self.dev, "a", "1\n", "One")

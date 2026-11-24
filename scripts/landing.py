@@ -21,6 +21,7 @@ stop it landing the fix.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -91,9 +92,13 @@ def miri_covers(tree: Path, base: str, wrap: Callable[[Sequence[str], Path], Seq
     return any(path.startswith(crate) for path in changed for crate in crates)
 
 
-def land_once(tree: Path, commit: str, message: str, gate: Gate, step: Callable[[str], None]) -> str | None:
+def land_once(
+    tree: Path, commit: str, message: str, gate: Gate, step: Callable[[str], None], lander: dict[str, str] | None = None
+) -> str | None:
     """One try: the merge's sha once pushed, or None when the push was
-    refused. Raises Stopped for a conflict or a failing check."""
+    refused. Raises Stopped for a conflict or a failing check. `lander`
+    is the merge commit's author and committer, as git's GIT_AUTHOR_* and
+    GIT_COMMITTER_* variables; without it, git's own configuration."""
     step("fetching origin/main")
     git("fetch", "--quiet", "origin", "main", cwd=tree)
     git("reset", "--quiet", "--hard", cwd=tree)
@@ -105,7 +110,7 @@ def land_once(tree: Path, commit: str, message: str, gate: Gate, step: Callable[
     step(f"merging {commit[:12]} onto {base[:12]}")
     merged = subprocess.run(
         ["git", "merge", "--quiet", "--no-ff", "-m", message, commit],
-        cwd=tree, text=True, capture_output=True,
+        cwd=tree, text=True, capture_output=True, env=dict(os.environ, **(lander or {})),
     )
     if merged.returncode != 0:
         conflicts = git("diff", "--name-only", "--diff-filter=U", cwd=tree, capture=True, check=False)
@@ -124,11 +129,13 @@ def land_once(tree: Path, commit: str, message: str, gate: Gate, step: Callable[
     return git("rev-parse", "HEAD", cwd=tree, capture=True)
 
 
-def land(tree: Path, commit: str, message: str, gate: Gate, step: Callable[[str], None]) -> str:
+def land(
+    tree: Path, commit: str, message: str, gate: Gate, step: Callable[[str], None], lander: dict[str, str] | None = None
+) -> str:
     """Lands commit, trying again from the fetch when someone landed first.
     Returns the merge's sha; raises Stopped when it can't."""
     for _ in range(ATTEMPTS):
-        landed = land_once(tree, commit, message, gate, step)
+        landed = land_once(tree, commit, message, gate, step, lander)
         if landed:
             return landed
         step("the push was refused: someone landed first; starting again")

@@ -74,15 +74,26 @@ def pending(inbox: Path) -> list[str]:
     return sorted(rid for rid in refs(inbox, "queue") if rid not in done)
 
 
-def request(inbox: Path, rid: str) -> tuple[str, str]:
-    """The commit a request names and the landing's message."""
+def request(inbox: Path, rid: str) -> tuple[str, str, dict[str, str] | None]:
+    """The commit a request names, the landing's message, and who sent it:
+    the tag's tagger, who authors the merge commit. The queue's own account
+    has no git identity of its own, and a landing is its sender's."""
     ref = f"refs/queue/{rid}"
     commit = git("rev-parse", "--verify", f"{ref}^{{commit}}", cwd=inbox, capture=True)
     # A tag's contents are its message; a bare commit's, which `just land`
     # never sends, would be the commit's own, so it counts as none.
     is_tag = git("cat-file", "-t", ref, cwd=inbox, capture=True) == "tag"
-    message = git("for-each-ref", "--format=%(contents)", ref, cwd=inbox, capture=True) if is_tag else ""
-    return commit, message.strip()
+    if not is_tag:
+        return commit, "", None
+    message = git("for-each-ref", "--format=%(contents)", ref, cwd=inbox, capture=True)
+    name, email = git("for-each-ref", "--format=%(taggername)%00%(taggeremail:trim)", ref, cwd=inbox, capture=True).split("\0")
+    lander = {
+        "GIT_AUTHOR_NAME": name,
+        "GIT_AUTHOR_EMAIL": email,
+        "GIT_COMMITTER_NAME": name,
+        "GIT_COMMITTER_EMAIL": email,
+    }
+    return commit, message.strip(), lander
 
 
 def write_blob(inbox: Path, ref: str, text: str) -> None:
@@ -149,12 +160,12 @@ def land_request(inbox: Path, tree: Path, rid: str, gate_for: Callable[..., Gate
             say(f"{rid}: {what}")
 
         try:
-            commit, message = request(inbox, rid)
+            commit, message, lander = request(inbox, rid)
             if not message:
                 raise Stopped("the request carries no message; land it with `just land \"What the branch does\"`")
             step(f"fetching {commit[:12]} from the inbox")
             git("fetch", "--quiet", str(inbox), f"refs/queue/{rid}", cwd=tree)
-            landed = land(tree, commit, message, gate_for(log), step)
+            landed = land(tree, commit, message, gate_for(log), step, lander)
             verdict = f"LANDED {landed}\n"
         except Stopped as stopped:
             verdict = f"STOPPED {stopped}\n"

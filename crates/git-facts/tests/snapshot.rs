@@ -1052,6 +1052,12 @@ async fn drop_removes_packed_objects_no_kept_snapshot_reaches() {
     let repo = repository();
     let root = repo.path();
     git(root, &["config", "core.bigFileThreshold", "1k"]);
+    // `git add` streams a big file into a pack only when it would not
+    // convert it; with line-ending conversion on it hashes the converted
+    // text and writes it loose, whatever its size. Git for Windows turns
+    // `core.autocrlf` on in its system configuration, so without this the
+    // bulky files are never packed there and nothing here is tested.
+    git(root, &["config", "core.autocrlf", "false"]);
     let bulky = |fill: &str| fill.repeat(4096);
     write(root, "stays.bin", &bulky("s"));
     write(root, "changes.bin", &bulky("a"));

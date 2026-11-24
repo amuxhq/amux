@@ -308,6 +308,16 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: macos-26
     timeout-minutes: 100
+    # The organisation has five macOS runners and a run takes three, so a
+    # burst of landings queued nine macOS jobs, each behind the last. Each
+    # macOS job of main's runs waits for the one running before it, which
+    # finishes and keeps its store, and a newer push takes the place of one
+    # still waiting: the newer commit holds every change the skipped one
+    # did, so its verdict covers both. A job never stops part way, so no
+    # finished work is lost.
+    concurrency:
+      group: macos-${{ matrix.key }}-${{ github.event_name }}-${{ github.ref }}
+      cancel-in-progress: false
     env:
       AMUX_BUILD_HERE: "1"
       # The most each job's CAS holds, so the three jobs' stores and the

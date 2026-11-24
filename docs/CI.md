@@ -48,10 +48,14 @@ changed, and takes the rest from the cache. The macOS jobs, through Buck2
 too, rerun only what changed; the Windows Cargo job runs whole.
 
 A push to `main` is a landed commit, and its run is that commit's verdict,
-so a later push doesn't stop it: every commit on `main` is judged whole,
-and the macOS jobs, which keep their results between runs, are never cut
-off before they keep them. A newer push to a pull request's branch does
-stop the run of the push before it, which it supersedes.
+so a later push doesn't stop it, and the macOS jobs, which keep their store
+between runs, are never cut off before they keep it. The macOS jobs are the
+exception to judging every commit whole: the organisation has five macOS
+runners and a run takes three, so each macOS job waits for the same job of
+the run before it, and a newer push takes the place of one still waiting.
+The newer commit holds every change the skipped one did. A newer push to a
+pull request's branch stops the run of the push before it, which it
+supersedes.
 
 An organisation on GitHub's free plan runs 20 jobs at once and the rest
 wait, so the run has as few jobs as keep each under ten minutes: work that

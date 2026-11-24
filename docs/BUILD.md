@@ -178,7 +178,11 @@ the tests that read what changed.
 
 Build output is under `buck-out/`, which holds only what was asked for:
 everything else stays in the cache until something needs it. `scripts/buck2
-clean` empties it without losing the cache.
+clean` empties it without losing the cache. Buck2 never removes an output
+from `buck-out/` by itself, so it grows with every build; `scripts/buck2
+clean --stale 1d` removes what no build used in the last day, through the
+running daemon, which stays warm. The landing queue trims its tree that way
+every six hours.
 
 ### Linux builds and the build host
 

@@ -283,6 +283,50 @@ class CheckTest(Repos):
         self.assertEqual(run(self.inbox, self.root / "missing"), 1)
 
 
+class TrimTest(unittest.TestCase):
+    """The tree's buck-out is trimmed through its Buck2 daemon: a fake
+    scripts/buck2 here records what it was asked."""
+
+    def setUp(self):
+        self.tree = Path(tempfile.mkdtemp(prefix="land-queue-trim-"))
+        self.addCleanup(subprocess.run, ["rm", "-rf", str(self.tree)])
+        self.asked = self.tree / "asked"
+        (self.tree / "scripts").mkdir()
+        self.buck2(0)
+
+    def buck2(self, status: int):
+        fake = self.tree / "scripts" / "buck2"
+        fake.write_text(f'#!/bin/sh\necho "$WRAPPED $*" >> {self.asked}\nexit {status}\n')
+        fake.chmod(0o755)
+
+    def trim(self) -> str:
+        def wrap(argv, tree):
+            return ["env", f"WRAPPED=in {tree.name}", *argv]
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            queue.trim(self.tree, wrap)
+        return out.getvalue()
+
+    def test_stale_outputs_go_through_the_daemon_in_the_merges_toolchain(self):
+        (self.tree / "buck-out").mkdir()
+
+        said = self.trim()
+
+        self.assertEqual(self.asked.read_text(), f"in {self.tree.name} clean --stale {queue.TRIM_AGE}\n")
+        self.assertIn("trimmed buck-out", said)
+
+    def test_a_tree_that_never_built_is_left_alone(self):
+        self.assertEqual(self.trim(), "")
+        self.assertFalse(self.asked.exists())
+
+    def test_a_failing_trim_is_said_and_the_queue_goes_on(self):
+        (self.tree / "buck-out").mkdir()
+        self.buck2(3)
+
+        self.assertIn("trimming buck-out failed (exited 3)", self.trim())
+
+
 @contextlib.contextmanager
 def patched(module, **values):
     saved = {name: getattr(module, name) for name in values}

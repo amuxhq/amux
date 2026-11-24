@@ -26,6 +26,13 @@
 [buck2]
   digest_algorithms = SHA256
   materializations = deferred
+  # What lets `buck2 clean --stale` trim buck-out under a running daemon
+  # (docs/BUILD.md); without it the command does nothing.
+  defer_write_actions = true
+  # A daemon reads defer_write_actions when it starts, and changing that
+  # setting doesn't restart one; changing daemon_buster does. Bump it with
+  # any such setting so running daemons pick the change up.
+  daemon_buster = 1
 
 # Every action goes to NativeLink (scripts/nativelink.py): on a Mac, the one
 # on this machine. Buck2 records only remotely executed results in the

@@ -322,20 +322,27 @@ the development workspace's third-party graph, and a cold build of it
 takes about half as long. The debug tools are in both. Release builds are
 unchanged.
 
-The iPhone app job makes the golden simulator first (`just ios simulator
-golden`), before NativeLink starts, and the worker hands every test that
-device's udid (`AMUX_SIMULATOR_UDID`, `scripts/nativelink.py`), outside the
-action's key; the tests take it in turns, under a lock ([the iPhone
-app](IOS.md#builds)). A test that looked the device up itself asked
-CoreSimulator while the runner compiled on all three cores, and `simctl
-list` took over three minutes; xcodebuild, handed the udid, can still give
-up on finding the device then, and is asked again when it does. It then
-builds every target under `apps/apple` but the Mac app's and runs the
-phone's suites; the Mac app job builds the Mac app, its storybook and
-screens and runs the Mac app's tests. Each is one `buck2 test
---build-default-info` over its targets, so a suite starts as soon as what
-it needs is built: the Mac app's bridge and the development workspace its
-tests start are two chains of about a quarter of an hour each on the
+The iPhone app job first builds every target under `apps/apple` but the
+Mac app's, and only then makes and boots the golden simulator (`just ios
+simulator golden`) and runs the phone's suites on it. A booted simulator
+is some 240 processes holding about 3 GB of the runner's 7 GB, with a load
+of 150 to 350 on its three cores: compiling beside it took the job to 21
+minutes after a protocol change, and in its first minutes stalled every
+process on the runner for 20 s at a time, long enough for NativeLink to
+give up on reading a blob from its own store (a 30 s limit fixed in
+NativeLink) and fail the build. With the device made, NativeLink starts
+again so its worker hands every test that device's udid
+(`AMUX_SIMULATOR_UDID`, `scripts/nativelink.py`), outside the action's key;
+the tests take it in turns, under a lock ([the iPhone app](IOS.md#builds)).
+A test that looked the device up itself asked CoreSimulator while the
+runner compiled on all three cores, and `simctl list` took over three
+minutes; xcodebuild, handed the udid, can still give up on finding the
+device then, and is asked again when it does. The Mac app job builds the
+Mac app, its storybook and screens and runs the Mac app's tests in one
+`buck2 test --build-default-info` over its targets, so a suite starts as
+soon as what it needs is built: the Mac app's bridge and the development
+workspace its tests start are two chains of about a quarter of an hour
+each on the
 runner, and one after the other they were half an hour. The
 Release app for a phone is not built here: its bridge is a fat-LTO link of
 the whole Rust graph for one more target, and it reruns on every Rust
@@ -343,11 +350,19 @@ change; `just ios release` builds and audits it on the Mac. The run step is boun
 at 75 minutes inside a 100-minute job, so a cold run that runs out of time
 still saves what it finished and the next run picks up from there, as a
 cancelled one does: NativeLink is stopped before the store is archived,
-since it may still be writing to it. Buck2's event logs and NativeLink's
-log are kept as the run's `buck2-logs-*` artifacts for a week (`scripts/buck2
-log what-ran`, `log critical-path`). A run started by hand with `cold` set
+since it may still be writing to it. A Buck2 command that failed only
+because NativeLink gave up on such a read runs once more
+(`scripts/rerun-on-cache-timeout.sh`), taking what the first finished from
+the cache; any other failure stands. Spotlight is turned off on the
+runners, which otherwise indexed every output Buck2 wrote. Buck2's event
+logs, NativeLink's log and what the runner did every ten seconds (load,
+memory, swap and the busiest processes, `scripts/ci-sample-system.sh`) are
+kept as the run's `buck2-logs-*` artifacts for a week (`scripts/buck2 log
+what-ran`, `log critical-path`). A run started by hand with `cold` set
 starts the macOS jobs with no kept store, to time them from nothing.
-The macOS tests job runs `just test //crates/...` but the journeys: on macOS that is the
+The macOS tests job builds every test binary first, then runs `just test
+//crates/...` but the journeys: beside the compiles of a protocol change,
+on three cores, the system suites crawled and failed on timing. On macOS that is the
 system lane as well, since the built `amux` binary's suites (`process`,
 `supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor`
 suite and the `survive-daemon` system journey are ordinary Buck2 tests. The `linux-only` tests are the Linux gate's and are

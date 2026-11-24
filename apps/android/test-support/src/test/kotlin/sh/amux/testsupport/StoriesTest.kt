@@ -83,6 +83,8 @@ class StoriesTest {
     }
 
     private fun findStoriesJson(): File {
+        // The build names the file; run from elsewhere, look up from here.
+        System.getProperty("amux.stories")?.let { return File(it).canonicalFile }
         val candidates = listOf(
             File("../../../tests/stories.json"),
             File("../../tests/stories.json"),

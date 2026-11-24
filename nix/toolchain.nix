@@ -42,7 +42,11 @@ in
   pkgs.tmux
   # The browser extension under js/: its build scripts, npm and its tests.
   pkgs.nodejs_24
-  # The Android app under apps/android/: Gradle/Kotlin builds, JVM tests and Rust JNI cross-compilation.
+  # The JDK's jarsigner signs the Android bundle for Google Play (`just
+  # android release`); Buck2 builds the app with nix/android.nix's own JDK.
+  # cargo-ndk has had no caller since Buck2 builds the JNI bridge; it goes
+  # with the next change to this list, since any change here rekeys every
+  # Linux action.
   pkgs.jdk21
   pkgs.cargo-ndk
 ]

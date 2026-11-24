@@ -278,21 +278,3 @@ jobs:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
       - name: Check iOS device and simulator graphs
         run: just mobile-check
-
-  android:
-    name: Android target check
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-rust
-        with:
-          targets: aarch64-linux-android
-          shared-key: android-check
-      # The runner image carries the Android NDK and names it in
-      # ANDROID_NDK_HOME, which cargo-ndk reads.
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: cargo-ndk@4.1.2
-      - name: Check the Android bridge graph
-        run: just android check

@@ -24,6 +24,8 @@ MODES = ["dev", "models", "release", "phone-dev", "wasm", "full-debug"]
 EXEC_LIKE_TARGET = select({
     "DEFAULT": [],
     "prelude//os:linux": ["prelude//os:linux"],
+    # Android builds only on a Linux worker (docs/ANDROID.md).
+    "prelude//os:android": ["prelude//os:linux"],
 })
 
 def host_target() -> str:

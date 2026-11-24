@@ -1,0 +1,42 @@
+# The prelude's Android manifest tools (prelude//toolchains/android/src/com/
+# facebook/buck/android/manifest, copied as they are at the pinned buck2):
+# the prelude builds them against a manifest-merger jar it fetches from
+# Maven Central, which never had it (it is on Google's Maven repository),
+# so outside Meta they can't be built. These build the same sources against
+# //third-party/android's merger, and build/toolchains/BUCK puts them in the
+# Android toolchain in place of the prelude's. Bump them with buck2.
+
+_PLATFORM = "root//build/platforms:linux-app-shipping-dev"
+
+java_library(
+    name = "manifest",
+    srcs = glob(["*.java"]),
+    java_version = "11",
+    default_target_platform = _PLATFORM,
+    deps = [
+        "prelude//toolchains/android/src/com/facebook/buck/android:manifest_utils",
+        "prelude//toolchains/android/src/com/facebook/buck/android/apkmodule:module-only",
+        "prelude//toolchains/android/src/com/facebook/buck/util:throwing_print_writer",
+        "prelude//toolchains/android/src/com/facebook/buck/util/environment:platform",
+        "prelude//toolchains/android/third-party:args4j",
+        "prelude//toolchains/android/third-party:guava",
+        "prelude//toolchains/android/third-party:infer-annotations",
+        "prelude//toolchains/android/third-party:kotlin-annotations",
+        "//third-party/android:manifest-merger",
+    ],
+)
+
+[
+    java_binary(
+        name = name,
+        main_class = "com.facebook.buck.android.manifest." + main,
+        blocklist = ["META-INF/.*\\.DSA", "META-INF/.*\\.SF", "META-INF/.*\\.RSA"],
+        default_target_platform = _PLATFORM,
+        visibility = ["PUBLIC"],
+        deps = [":manifest"],
+    )
+    for name, main in {
+        "generate_manifest": "GenerateManifestExecutableMain",
+        "replace_application_id_placeholders": "ReplaceApplicationIdPlaceholdersExecutableMain",
+    }.items()
+]

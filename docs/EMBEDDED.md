@@ -198,15 +198,16 @@ specs or out of process by `testnet serve`. See [the testnet page](TESTNET.md).
 
 Every value the bridge carries has a Swift mirror in
 `apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift` and Kotlin
-mirrors in `apps/android/core/values/src/main/kotlin/sh/amux/values/Values.kt`
-and `apps/android/push/src/main/kotlin/sh/amux/push/Said.kt`, generated from
-the same Rust definitions:
+mirrors in `Values.kt` (which the Android build writes, `ios-tools
+kotlin-types --values`, rather than committing it) and
+`apps/android/push/src/main/kotlin/sh/amux/push/Said.kt`, generated from the
+same Rust definitions:
 
 ```sh
 cargo run -p ios-tools -- swift-types          # regenerate Swift mirrors
 cargo run -p ios-tools -- swift-types --check  # fail when Swift differs
-cargo run -p ios-tools -- kotlin-types         # regenerate Kotlin mirrors
-cargo run -p ios-tools -- kotlin-types --check # fail when Kotlin differs
+cargo run -p ios-tools -- kotlin-types         # regenerate the committed Kotlin mirrors
+cargo run -p ios-tools -- kotlin-types --check # fail when they differ
 ```
 
 `crates/ios-tools/src/swift_types.rs` lists the root types, from `ui-state`'s
@@ -305,21 +306,12 @@ Each target triple has its own Cargo target directory under
 other, and `SDKROOT` is left unset for the same reason. Each run writes the
 slice sizes to `target/ios/size.txt`.
 
-On Android, `apps/android/tools/android-rust.py` builds `app-jni` as
-`libamux_app.so` via `cargo-ndk` into variant-isolated directories
-(`target/android/debug-jniLibs/` with `debug-tools` under `phone-dev`,
-`target/android/release-jniLibs/` without `debug-tools` under `release`) and
-builds a host shared library under `target/android/host-jni/` for JVM unit
-tests:
-
-```sh
-just android rust            # arm64-v8a debug bridge (with debug-tools)
-just android rust --host     # host OS shared library for JVM unit tests
-just android rust --release  # shipping arm64-v8a bridge (no debug-tools)
-```
-
-See [the Android page](ANDROID.md#rust-core-and-jni-bridge) for Gradle's
-`verifyReleaseJniLibs` guard and `just android scope-audit`.
+On Android, Buck2 builds `app-jni` as `libamux_app.so` in the
+configuration each build needs, on a Linux worker: with `debug-tools` under
+`phone-dev` for the debug APK, without them under `release` for the release
+builds and the bundle, and for the Linux host for the JVM unit tests (see
+[the Android page](ANDROID.md#rust-core-and-jni-bridge), and `just android
+scope-audit` for what the shipping library must not carry).
 
 ## Tests
 

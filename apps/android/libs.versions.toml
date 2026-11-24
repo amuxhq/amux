@@ -1,0 +1,111 @@
+# The Android app's libraries and their versions: the one place they are
+# edited. scripts/android-deps.py resolves them into third-party/android/BUCK.
+[versions]
+# The Kotlin the Buck2 prelude's compiler is (its kotlincd toolchain), which
+# the compiler plugins below must match exactly.
+kotlin = "2.3.21"
+composeBom = "2026.01.01"
+coreKtx = "1.17.0"
+activityCompose = "1.11.0"
+lifecycle = "2.9.4"
+fragment = "1.8.9"
+browser = "1.9.0"
+kotlinxSerialization = "1.10.0"
+kotlinxCoroutines = "1.10.2"
+okhttp = "5.3.2"
+firebaseBom = "35.2.0"
+playBilling = "9.1.0"
+junit = "4.13.2"
+androidxTestRunner = "1.7.0"
+robolectric = "4.16.1"
+roborazzi = "1.59.0"
+# The Android framework Robolectric runs the tests against (their
+# `@Config(sdk = [34])`), as the jar Robolectric would otherwise download
+# when a test starts.
+robolectricAndroidAll = "14-robolectric-10818077-i7"
+# R8, which shrinks and obfuscates the release build.
+r8 = "8.13.19"
+manifestMerger = "31.13.2"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+androidx-fragment = { group = "androidx.fragment", name = "fragment", version.ref = "fragment" }
+androidx-lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "lifecycle" }
+androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "browser" }
+
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
+
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
+play-billing-ktx = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "playBilling" }
+
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }
+roborazzi-compose = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose", version.ref = "roborazzi" }
+roborazzi-junit-rule = { group = "io.github.takahirom.roborazzi", name = "roborazzi-junit-rule", version.ref = "roborazzi" }
+robolectric-android-all = { group = "org.robolectric", name = "android-all-instrumented", version.ref = "robolectricAndroidAll" }
+
+kotlin-compose-compiler-plugin = { group = "org.jetbrains.kotlin", name = "kotlin-compose-compiler-plugin-embeddable", version.ref = "kotlin" }
+kotlin-serialization-compiler-plugin = { group = "org.jetbrains.kotlin", name = "kotlin-serialization-compiler-plugin-embeddable", version.ref = "kotlin" }
+r8 = { group = "com.android.tools", name = "r8", version.ref = "r8" }
+# The merger the Buck2 prelude's manifest tool runs (build/android/manifest).
+manifest-merger = { group = "com.android.tools.build", name = "manifest-merger", version.ref = "manifestMerger" }
+
+# What scripts/android-deps.py resolves, in three sets: what the app ships,
+# what only its tests and debug builds add, and the build's own tools. The
+# app's versions are resolved first and hold for the other two, so a test
+# library never moves what ships.
+[bundles]
+app = [
+    "androidx-core-ktx",
+    "androidx-activity-compose",
+    "androidx-fragment",
+    "androidx-lifecycle-process",
+    "androidx-browser",
+    "androidx-compose-ui",
+    "androidx-compose-ui-graphics",
+    "androidx-compose-foundation",
+    "androidx-compose-material3",
+    "androidx-compose-material-icons-extended",
+    "kotlinx-serialization-json",
+    "kotlinx-coroutines-core",
+    "kotlinx-coroutines-android",
+    "okhttp",
+    "firebase-messaging",
+    "play-billing-ktx",
+]
+test = [
+    "androidx-compose-ui-test-junit4",
+    "androidx-compose-ui-test-manifest",
+    "kotlinx-coroutines-test",
+    "junit",
+    "androidx-test-runner",
+    "robolectric",
+    "roborazzi",
+    "roborazzi-compose",
+    "roborazzi-junit-rule",
+    "robolectric-android-all",
+]
+tools = [
+    "kotlin-compose-compiler-plugin",
+    "kotlin-serialization-compiler-plugin",
+    "r8",
+    "manifest-merger",
+]
+

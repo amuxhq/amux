@@ -134,12 +134,13 @@ class MainActivityTest {
             activityInfo.launchMode,
         )
 
-        // Inspect the merged debug manifest XML directly for autoVerify and <queries> intents.
-        val mergedManifest = listOf(
-            File("build/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml"),
-            File("app/build/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml"),
-            File("src/main/AndroidManifest.xml"),
-        ).firstOrNull { it.isFile }
+        // Inspect the merged debug manifest XML directly for autoVerify and
+        // <queries> intents: the one the build gave Robolectric, which it
+        // names in the test config on the classpath.
+        val testConfig = java.util.Properties().apply {
+            MainActivityTest::class.java.getResourceAsStream("/com/android/tools/test_config.properties")?.use { load(it) }
+        }
+        val mergedManifest = testConfig.getProperty("android_merged_manifest")?.let(::File)?.takeIf { it.isFile }
         assertNotNull("manifest file must exist for inspection", mergedManifest)
         val doc = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
             .newDocumentBuilder()

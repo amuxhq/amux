@@ -1,0 +1,61 @@
+# The prelude's tools that split a shrunk release build into dex files
+# (prelude//toolchains/android/src/com/facebook/buck/android/dex and its
+# proguard translator, copied as they are at the pinned buck2): the
+# translator marks a type argument `@Nullable` with JetBrains' annotations
+# 13.0, the version the prelude fetches, whose `@Nullable` can't mark a
+# type, so JDK 21's javac refuses it and outside Meta they can't be built.
+# The copy here drops those two marks, and reads past the comments R8
+# writes in its mapping (`# compiler: R8`), which ProGuard's never had;
+# build/toolchains/BUCK puts the tools in the Android toolchain in place of
+# the prelude's. Bump them with buck2.
+
+_PLATFORM = "root//build/platforms:linux-app-shipping-dev"
+
+_DEX = "prelude//toolchains/android/src/com/facebook/buck/android/dex"
+
+java_library(
+    name = "translator",
+    srcs = ["ProguardMapping.java", "ProguardTranslatorFactory.java"],
+    java_version = "11",
+    default_target_platform = _PLATFORM,
+    deps = [
+        "prelude//toolchains/android/third-party:guava",
+        "prelude//toolchains/android/third-party:infer-annotations",
+        "prelude//toolchains/android/third-party:kotlin-annotations",
+    ],
+)
+
+java_library(
+    name = "mains",
+    srcs = ["JarSplitterExecutableMain.java", "MultiDexExecutableMain.java"],
+    java_version = "11",
+    default_target_platform = _PLATFORM,
+    deps = [
+        ":translator",
+        "prelude//toolchains/android/src/com/facebook/buck/android/apkmodule:module-only",
+        "prelude//toolchains/android/third-party:args4j",
+        "prelude//toolchains/android/third-party:guava",
+        "prelude//toolchains/android/third-party:infer-annotations",
+        "prelude//toolchains/android/third-party:kotlin-annotations",
+        _DEX + ":canary",
+        _DEX + ":dex",
+    ],
+    # D8's API to compile against; the prelude's own D8, which only its
+    # own tools may name, comes with its dex library at run time.
+    provided_deps = ["//third-party/android:r8"],
+)
+
+[
+    java_binary(
+        name = name,
+        main_class = "com.facebook.buck.android.dex." + main,
+        blocklist = ["META-INF/.*\\.DSA", "META-INF/.*\\.SF", "META-INF/.*\\.RSA"],
+        default_target_platform = _PLATFORM,
+        visibility = ["PUBLIC"],
+        deps = [":mains"],
+    )
+    for name, main in {
+        "jar_splitter": "JarSplitterExecutableMain",
+        "multi_dex": "MultiDexExecutableMain",
+    }.items()
+]

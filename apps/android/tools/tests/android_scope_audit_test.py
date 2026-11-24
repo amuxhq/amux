@@ -289,20 +289,7 @@ class AndroidScopeAuditTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             apk = build_fake_apk(Path(tmp) / "no-so.apk", so_bytes=None)
             with self.assertRaisesRegex(RuntimeError, "missing required native library"):
-                audit.audit_native_libraries(apk, abis=["arm64-v8a"])
-
-    def test_locate_release_apk_picks_newest_candidate(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            apk_dir = Path(tmp)
-            unsigned = apk_dir / "app-release-unsigned.apk"
-            signed = apk_dir / "app-release.apk"
-            unsigned.write_bytes(b"u")
-            signed.write_bytes(b"s")
-            os_utime = (1_700_000_000, 1_700_000_000)
-            import os
-            os.utime(unsigned, os_utime)
-            os.utime(signed, (1_700_000_100, 1_700_000_100))
-            self.assertEqual(audit.locate_release_apk(apk_dir), signed)
+                audit.audit_native_libraries(apk, abis=["arm64-v8a"], readelf="llvm-readelf", nm="llvm-nm")
 
 
 if __name__ == "__main__":

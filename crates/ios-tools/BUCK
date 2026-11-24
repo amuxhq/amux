@@ -28,6 +28,7 @@ amux_rust_library(
     },
     test_resources = [
         "//:mirrors",
+        "//apps/android/push:mirrors",
         "//:scripts",
         "//crates/app-runtime:files",
         "//crates/ui-state:files",

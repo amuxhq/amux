@@ -81,8 +81,8 @@ pub(crate) fn run(named: Vec<String>) -> ExitCode {
     let apk = debug_apk();
     if !apk.is_file() {
         eprintln!(
-            "debug APK not found at {}; run `just android build` first",
-            apk.display()
+            "debug APK not found at {:?}; `just android journey` builds it and names it in AMUX_ANDROID_APK",
+            apk
         );
         return ExitCode::FAILURE;
     }
@@ -181,8 +181,12 @@ fn android_story(name: &str) -> Result<PathBuf, String> {
     Ok(root().join(declared))
 }
 
+/// The debug APK Buck2 built (`//apps/android/app:debug`), which
+/// `just android journey` names in `AMUX_ANDROID_APK`.
 fn debug_apk() -> PathBuf {
-    root().join("apps/android/app/build/outputs/apk/debug/app-debug.apk")
+    std::env::var_os("AMUX_ANDROID_APK")
+        .map(PathBuf::from)
+        .unwrap_or_default()
 }
 
 fn find_adb() -> Result<PathBuf, String> {

@@ -17,17 +17,23 @@ SPEC.loader.exec_module(storybook)
 
 
 class AndroidStorybookTest(unittest.TestCase):
-    def test_build_gradle_command_includes_filter_and_no_daemon(self):
-        out_dir = Path("/tmp/amux-storybook-test")
-        cmd = storybook.build_gradle_command(
-            out_dir=out_dir,
-            filters=["fleet.busy", "hosts"],
-            no_daemon=True,
-        )
-        self.assertIn(":app:testDebugUnitTest", cmd)
-        self.assertIn("-Damux.storybook.capture=true", cmd)
-        self.assertIn("-Damux.storybook.filter=fleet.busy,hosts", cmd)
-        self.assertIn("--no-daemon", cmd)
+    def test_build_capture_command_builds_the_capture_for_the_filters(self):
+        cmd = storybook.build_capture_command(["fleet.busy", "hosts"])
+        self.assertIn("//apps/android/app:storybook", cmd)
+        self.assertIn("amux.android_storybook_filter=fleet.busy,hosts", cmd)
+
+    def test_copy_capture_replaces_the_previous_pictures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            captured = Path(tmp) / "captured"
+            (captured / "png").mkdir(parents=True)
+            (captured / "png" / "fleet.busy.light.png").write_bytes(b"new")
+            (captured / "manifest.json").write_text("{}")
+            out_dir = Path(tmp) / "out"
+            (out_dir / "png").mkdir(parents=True)
+            (out_dir / "png" / "gone.light.png").write_bytes(b"old")
+            storybook.copy_capture(captured, out_dir)
+            self.assertEqual(sorted(p.name for p in (out_dir / "png").iterdir()), ["fleet.busy.light.png"])
+            self.assertTrue((out_dir / "manifest.json").is_file())
 
     def test_write_gallery_validates_pngs_and_generates_html(self):
         with tempfile.TemporaryDirectory() as tmp:

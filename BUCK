@@ -42,18 +42,32 @@ amux_files(
     srcs = glob(["docs/guide/**"]),
 )
 
+# The parsed prose the storybooks draw, on the Android test-support
+# module's classpath.
+export_file(
+    name = "markdown-fixtures.json",
+    src = "apps/apple/Packages/AmuxCore/Sources/AmuxFixtures/Fixtures/markdown-fixtures.json",
+    visibility = ["PUBLIC"],
+)
+
+# The same file on the Android push module's test classpath.
+export_file(
+    name = "sealed-pushes.json",
+    src = "apps/apple/Packages/AmuxPush/Tests/AmuxPushTests/Fixtures/sealed-pushes.json",
+    visibility = ["PUBLIC"],
+)
+
 amux_files(
     name = "sealed-pushes",
     srcs = ["apps/apple/Packages/AmuxPush/Tests/AmuxPushTests/Fixtures/sealed-pushes.json"],
 )
 
 # The phone apps' committed mirrors of the view values and fixtures, which
-# ios-tools' tests hold to the Rust definitions.
+# ios-tools' tests hold to the Rust definitions (the Android app's are in
+# its packages: //apps/android/push:mirrors).
 amux_files(
     name = "mirrors",
     srcs = [
-        "apps/android/core/values/src/main/kotlin/sh/amux/values/Values.kt",
-        "apps/android/push/src/main/kotlin/sh/amux/push/Said.kt",
         "apps/apple/Packages/AmuxCore/Sources/AmuxFixtures/Fixtures/markdown-fixtures.json",
         "apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift",
         "apps/apple/Packages/AmuxPush/Sources/AmuxPush/Said.swift",
@@ -179,6 +193,19 @@ nix_toolchain(
     name = "nix-browser",
     srcs = ["flake.lock", "flake.nix", "nix/build-tools.nix", "nix/toolchain.nix", "rust-toolchain.toml"],
     output = "packages.x86_64-linux.browser",
+    exec_compatible_with = ["prelude//os:linux"],
+    target_compatible_with = ["prelude//os:linux"],
+    visibility = ["PUBLIC"],
+)
+
+# The Android toolchain (nix/android.nix): the JDK and Google's Android SDK,
+# realized on the Linux worker like the toolchain above, apart from it so a
+# Rust toolchain change doesn't rekey Kotlin compiles and an SDK bump
+# doesn't rekey Rust ones.
+nix_toolchain(
+    name = "nix-android",
+    srcs = ["flake.lock", "flake.nix", "nix/android.nix"],
+    output = "packages.x86_64-linux.android",
     exec_compatible_with = ["prelude//os:linux"],
     target_compatible_with = ["prelude//os:linux"],
     visibility = ["PUBLIC"],

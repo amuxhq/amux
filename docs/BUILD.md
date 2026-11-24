@@ -27,7 +27,7 @@ Other tools a full checkout uses:
 - Python 3.11 or newer runs the repository scripts. `scripts/py` finds one
   even when `python3` on the PATH is the macOS system 3.9.
 - Xcode and XcodeGen build the iPhone app (see [the iPhone app](IOS.md)).
-- JDK 21, the Android SDK/NDK, and `cargo-ndk` build the Android app (see [the Android app](ANDROID.md), `just --list android`).
+- Buck2 builds the Android app on a Linux worker with its own SDK, NDK and JDK (see [the Android app](ANDROID.md), `just --list android`); a Mac needs the Android SDK's emulator and platform tools only to run what nova built.
 - `tmux` drives the terminal journeys.
 - Node 24 or newer, with npm, builds the browser extension under `js/`
   (`just browser build`). Biome formats and lints it (`just browser fmt`),
@@ -334,7 +334,7 @@ The recipes a build or change usually needs:
 | `just codegen-check` | Fails if the committed protobuf output is stale |
 | `just checks` | The repository's and the browser extension's checks, as Buck2 tests ([Repository checks](#repository-checks)) |
 | `just mobile-check` | Check the provider-free client graph for iOS |
-| `just android check` | Check the provider-free client and JNI bridge graph for Android (`cargo-ndk`) |
+| `just android check` | Build the JNI bridge for Android, as it ships and as a driving build carries it |
 | `just android lint` | Check Android writing rules and the string inventory |
 | `just android graph-check` | Prove the `app-jni` graph carries no provider, host, schema, or test crate |
 | `just android unit` | Build the host JNI library and run all Android JVM and Robolectric unit suites |
@@ -380,7 +380,7 @@ or retyped, a name changed; [the wire](WIRE.md#compatibility) has the rules.
 **Swift and Kotlin value types.** The Swift mirrors of the view values the
 iPhone app reads (`apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift`)
 and the Kotlin mirrors the Android app reads
-(`apps/android/core/values/src/main/kotlin/sh/amux/values/Values.kt`,
+(`Values.kt`, which the Android build generates, and the committed
 `apps/android/push/src/main/kotlin/sh/amux/push/Said.kt`) are generated from
 the same Rust definitions by `cargo run -p ios-tools -- swift-types` and
 `cargo run -p ios-tools -- kotlin-types`. Unit tests in the `ios-tools` crate,

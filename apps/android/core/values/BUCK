@@ -1,0 +1,21 @@
+load("//build:android.bzl", "LINUX_EXEC", "LINUX_WORKERS", "PLATFORM", "amux_jvm_library")
+load("//build:rust.bzl", "amux_files")
+
+# Values.kt, generated from the Rust definitions of the values the bridge
+# carries (crates/ios-tools' kotlin_types.rs), so it can't drift from them.
+genrule(
+    name = "Values.kt",
+    out = "Values.kt",
+    cmd = "$(exe //crates/ios-tools:ios-tools-bin) kotlin-types --values $OUT",
+    default_target_platform = PLATFORM,
+    target_compatible_with = LINUX_WORKERS,
+    exec_compatible_with = LINUX_EXEC,
+)
+
+amux_jvm_library(
+    name = "values",
+    srcs = [":Values.kt"],
+    serialization = True,
+    exported_deps = ["//apps/android/push:push"],
+    deps = ["//third-party/android:kotlinx-serialization-json"],
+)

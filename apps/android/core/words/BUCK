@@ -1,0 +1,11 @@
+load("//build:android.bzl", "amux_jvm_library")
+
+amux_jvm_library(
+    name = "words",
+    serialization = True,
+    deps = [
+        "//apps/android/core/values:values",
+        "//apps/android/push:push",
+        "//third-party/android:kotlinx-serialization-json",
+    ],
+)

@@ -1,8 +1,10 @@
 """The macro reindeer's generated third-party/rust/BUCK builds each crate
 library with (reindeer.toml, `rust_library`).
 
-It is the prelude's `cargo.rust_library` with one difference: a dependent's
-compile does not carry this crate's sources. The prelude adds the sources of
+It is the prelude's `cargo.rust_library` with two differences. A crate is
+configured once per target and mode, whatever product and purpose reach it
+(the transition below). And a dependent's compile does not carry this
+crate's sources. The prelude adds the sources of
 every transitive Rust dependency to each rustc and clippy action as hidden
 inputs (its `RustSources` provider), so a crate near the top of the graph
 staged 11,000 files of extracted crates.io archives on the worker for every
@@ -23,15 +25,81 @@ fallback (build/platforms), so they are absent from every compile alike.
 """
 
 load("@prelude//rust:cargo_package.bzl", "cargo")
-load("//build/platforms:defs.bzl", "EXEC_LIKE_TARGET")
+load("//build/platforms:defs.bzl", "EXEC_LIKE_TARGET", "MODES", "TARGETS")
 load("@prelude//rust:link_info.bzl", "RustProcMacroPlugin")
 load("@prelude//rust:sources.bzl", "RustSources")
+
+# Product and purpose (build/constraints) decide the features of the
+# workspace's own crates only: reindeer resolves a third-party crate's
+# features once for the whole workspace, and nothing in third-party/rust
+# selects on either. Left alone, a crate would still be configured once per
+# product and purpose that reaches it (and once more as a build tool, on an
+# execution platform), and each configuration has its own output paths, so
+# the same compile ran and was cached up to five times over. So a
+# third-party crate is always configured as the desktop product as it
+# ships, keeping the target, SDK and mode: `macos-app-testing-dev` and the
+# `exec-macos` execution platform both become `macos-cli-shipping-dev`.
+#
+# The new configuration takes the name of the target platform it equals,
+# so it is that platform's configuration, not one that only looks like it.
+_PLATFORMS = "root//build/platforms:"
+
+_THIRD_PARTY_PLATFORM = {
+    _PLATFORMS + "{}-{}-{}-{}".format(target, product, purpose, mode): _PLATFORMS + "{}-cli-shipping-{}".format(target, mode)
+    for target in TARGETS
+    for product in ["cli", "app"]
+    for purpose in ["shipping", "testing"]
+    for mode in MODES
+}
+
+# The execution platforms (build/platforms/BUCK) carry the tools'
+# constraints: cli, testing, dev.
+_THIRD_PARTY_PLATFORM.update({
+    _PLATFORMS + "exec-macos": _PLATFORMS + "macos-cli-shipping-dev",
+    _PLATFORMS + "exec-linux": _PLATFORMS + "linux-cli-shipping-dev",
+})
+
+def _third_party_platform_impl(platform: PlatformInfo, refs: struct) -> PlatformInfo:
+    constraints = dict(platform.configuration.constraints)
+    for value in [refs.cli[ConstraintValueInfo], refs.shipping[ConstraintValueInfo]]:
+        constraints[value.setting.label] = value
+
+    # The prelude marks the configuration of a crate's build script with
+    # the platform the script is building for, which the script's own
+    # platform-specific features select on. The mark then rides along to
+    # every library the script depends on, none of which reads it, and would
+    # configure `cc` once more for each platform a build script runs for.
+    constraints.pop(refs.buildscript_for_platform[ConstraintSettingInfo].label, None)
+    if constraints == platform.configuration.constraints:
+        # Already there: every crate's dependencies pass through this again.
+        return platform
+    return PlatformInfo(
+        # A platform not named above (one made by another transition) gets
+        # a name of its own; once transitioned it is left as it is, so the
+        # name doesn't grow along a chain of crates.
+        label = _THIRD_PARTY_PLATFORM.get(platform.label, platform.label + "-cli-shipping"),
+        configuration = ConfigurationInfo(constraints = constraints, values = platform.configuration.values),
+    )
+
+_third_party_platform = transition(
+    impl = _third_party_platform_impl,
+    refs = {
+        "cli": "root//build/constraints:cli",
+        "shipping": "root//build/constraints:shipping",
+        "buildscript_for_platform": "prelude//rust/buildscript:buildscript_for_platform",
+    },
+)
 
 def _without_sources_impl(ctx: AnalysisContext) -> list[Provider]:
     return [p for p in ctx.attrs.actual.providers if not isinstance(p, RustSources)]
 
 _without_sources = rule(
     impl = _without_sources_impl,
+    # Every third-party library is reached through this rule (its public
+    # name, or a proc macro's plugin), so this is where its configuration
+    # changes; what it builds from (the inner library, its build script
+    # run, its C code and download) follows.
+    cfg = _third_party_platform,
     # Proc macros reach a crate's dependents as plugins, which pass through
     # a dependency only where it says so, as the prelude's `deps` do.
     attrs = {"actual": attrs.dep(pulls_and_pushes_plugins = [RustProcMacroPlugin])},

@@ -115,6 +115,13 @@ this Mac. The purpose is what keeps test code out of what ships:
   `provider-fakes`, `models`, `qualification`, `shot`, `replay-support`):
   nothing shipping can depend on them.
 
+Product and purpose decide only the workspace's own crates' features, so a
+third-party crate is always built as `<target>-cli-shipping-<mode>`,
+whichever configuration reaches it, build tools included
+([`build/third_party.bzl`](../build/third_party.bzl)): each is compiled
+once per target and mode. A fixup can't make a third-party crate differ by
+product or purpose.
+
 The mode is the profile: `dev`, `release`, `full-debug`, `phone-dev`,
 `wasm` and `models`, with the flags the profiles below give Cargo, set in
 [`build/toolchains`](../build/toolchains). `--target-platforms` picks

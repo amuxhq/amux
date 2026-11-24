@@ -6,7 +6,7 @@
 //! driver's, and anything that only produces a result is a [`Job`] whose
 //! outcome comes back as an input. Every step ends by checking the cheap
 //! invariants, and a violation is reported as [`Output::Dump`] rather than
-//! carried on from. See the principles in `docs/ARCHITECTURE.md`.
+//! carried on from. `docs/ARCHITECTURE.md` gives the principles.
 
 #![forbid(unsafe_code)]
 

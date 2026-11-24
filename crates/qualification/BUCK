@@ -176,13 +176,11 @@ amux_rust_test(
     name = "integration",
     version = "0.1.0",
     deps = DEPS + TEST_DEPS,
+    # Only the binaries its suites start: each is a link of its own, which
+    # every change to a crate below this one would otherwise repeat.
     run_env = {
         "CARGO_BIN_EXE_acp-probe": "$(location :acp-probe)",
         "CARGO_BIN_EXE_claude-probe": "$(location :claude-probe)",
-        "CARGO_BIN_EXE_codex-probe": "$(location :codex-probe)",
-        "CARGO_BIN_EXE_perf": "$(location :perf)",
-        "CARGO_BIN_EXE_perf-topology": "$(location :perf-topology)",
-        "CARGO_BIN_EXE_relay-curve": "$(location :relay-curve)",
     },
     resources = ["//crates/interpret:fixtures"],
     binaries = True,

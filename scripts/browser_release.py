@@ -12,7 +12,8 @@
                     revision, and the last upload.
 
 The store is reached as the publisher's service account, whose JSON key is
-at ~/.chromewebstore/service-account.json (docs/RELEASE.md). Deploying
+the credential `chromewebstore/service-account` (scripts/credentials.py,
+docs/RELEASE.md). Deploying
 uploads the zip the release made, not a fresh build, so the store gets the
 bytes the tag recorded.
 """
@@ -34,6 +35,9 @@ import urllib.parse
 import urllib.request
 import zipfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import credentials  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "js/extension/static/manifest.json"
 DIST = ROOT / "js/extension/dist"
@@ -46,7 +50,7 @@ PUBLISHER = "cd66548b-541f-40d1-a918-939b30c1ea9a"
 ITEM = "omnhphmiepghpgpbfgjebeaajfppkhie"
 API = "https://chromewebstore.googleapis.com"
 SCOPE = "https://www.googleapis.com/auth/chromewebstore"
-KEY_FILE = Path.home() / ".chromewebstore/service-account.json"
+SERVICE_ACCOUNT = "chromewebstore/service-account"
 
 
 class Refusal(Exception):
@@ -137,10 +141,11 @@ def openssl_sign(private_key: str, data: bytes) -> bytes:
 class Store:
     """The Chrome Web Store API for the one item, as the service account."""
 
-    def __init__(self, key_file: Path):
-        if not key_file.exists():
-            raise Refusal(f"no service account key at {key_file} (docs/RELEASE.md, the browser extension's setup)")
-        account = json.loads(key_file.read_text())
+    def __init__(self):
+        try:
+            account = json.loads(credentials.read(SERVICE_ACCOUNT))
+        except credentials.Missing as missing:
+            raise Refusal(f"{missing} (docs/RELEASE.md, the browser extension's setup)") from None
         token_uri = account.get("token_uri", "https://oauth2.googleapis.com/token")
         body = urllib.parse.urlencode({
             "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
@@ -235,12 +240,12 @@ def run(*args: str, timeout: int) -> None:
         raise Refusal(f"{' '.join(args)} failed")
 
 
-def release(version: str, key_file: Path) -> None:
+def release(version: str) -> None:
     parts(version)
     if git("status", "--porcelain").strip():
         raise Refusal("the tree has changes; a release commits only the version")
-    if not key_file.exists():
-        raise Refusal(f"no service account key at {key_file}, so the release could not be deployed")
+    if not credentials.holds(SERVICE_ACCOUNT):
+        raise Refusal(f"the credential command has no {SERVICE_ACCOUNT}, so the release could not be deployed")
     tag = f"browser-v{version}"
     if git("tag", "--list", tag).strip():
         raise Refusal(f"{tag} already exists")
@@ -291,9 +296,9 @@ def wait_for_upload(store: Store, answer: dict, version: str) -> None:
         raise Refusal(f"the store read version {answer['crxVersion']} from the upload, not {version}")
 
 
-def deploy(version: str, staged: bool, dry_run: bool, key_file: Path) -> None:
+def deploy(version: str, staged: bool, dry_run: bool) -> None:
     parts(version)
-    store = Store(key_file)
+    store = Store()
     status = store.status()
     print(describe(status))
     action = plan(status, version)
@@ -331,11 +336,11 @@ def main(arguments: list[str]) -> int:
     options = parser.parse_args(arguments)
     try:
         if options.command == "release":
-            release(options.version, KEY_FILE)
+            release(options.version)
         elif options.command == "deploy":
-            deploy(options.version, options.staged, options.dry_run, KEY_FILE)
+            deploy(options.version, options.staged, options.dry_run)
         else:
-            print(describe(Store(KEY_FILE).status()))
+            print(describe(Store().status()))
     except Refusal as refusal:
         print(f"browser {options.command}: {refusal}", file=sys.stderr)
         return 1

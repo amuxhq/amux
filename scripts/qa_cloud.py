@@ -21,8 +21,10 @@ import json
 import os
 import re
 import secrets
-import subprocess
 import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import credentials  # noqa: E402
 
 BASE = "https://amux.sh"
 CLIENT_ID = "mobile"
@@ -32,7 +34,8 @@ SCOPES = ["openid", "profile", "email", "offline_access", "api"]
 # tracked tree on purpose: this repository is public and the addresses name
 # accounts with QA privileges.
 ADDRESS_FILE = Path(".autopilot/qa-account.env")
-KEYCHAIN_SERVICE = "amuxcloud-qa"
+# A QA account's password is the credential `amuxcloud-qa/<address>`.
+CREDENTIAL = "amuxcloud-qa"
 
 # What a message says it is. Each recipe sets this to its own name so a
 # failure reads as coming from the command the person ran.
@@ -81,31 +84,19 @@ def address(variable: str) -> str:
 
 
 def password(for_address: str) -> str:
-    """Read from the login keychain at the moment it is needed, and never
+    """Read from the credential command at the moment it is needed, and never
     written anywhere."""
-    if not keychain_holds(for_address):
-        fail(
-            f"the login keychain has no password for {masked(for_address)} "
-            f"under service {KEYCHAIN_SERVICE}. Add it with: security "
-            f'add-generic-password -s {KEYCHAIN_SERVICE} -a "<the address>" -w'
-        )
-    return read_keychain(for_address)
+    try:
+        return credentials.read(f"{CREDENTIAL}/{for_address}")
+    except credentials.Missing:
+        # The address is masked rather than echoed in the command's message.
+        fail(f"the credential command has no {CREDENTIAL}/<address> for "
+             f"{masked(for_address)} (docs/CLOUD.md)")
 
 
-def read_keychain(for_address: str) -> str:
-    found = subprocess.run(
-        ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE,
-         "-a", for_address, "-w"],
-        capture_output=True, text=True, timeout=60)
-    return found.stdout.rstrip("\n") if found.returncode == 0 else ""
-
-
-def keychain_holds(for_address: str) -> bool:
-    """Whether there is a password to read, asked without reading one."""
-    return bool(for_address) and subprocess.run(
-        ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE,
-         "-a", for_address],
-        capture_output=True, text=True, timeout=60).returncode == 0
+def holds_password(for_address: str) -> bool:
+    """Whether there is a password to read; it is read to find out."""
+    return bool(for_address) and credentials.holds(f"{CREDENTIAL}/{for_address}")
 
 
 def through(opener, prepared) -> tuple[int, str, str]:
@@ -246,7 +237,7 @@ def sign_in(browser: Browser, who: str, secret: str, challenge: str,
         if status == 200:
             fail(
                 "amux.sh would not sign that account in. The address and the "
-                "keychain password are what to check; neither is printed."
+                "password the credential command holds are what to check; neither is printed."
             )
         if not redirect:
             fail(f"the sign-in form answered {status} and went nowhere")

@@ -24,8 +24,9 @@ Three ways to run it:
                 --no-upload and --no-push each stop short of their step.
 
 The Team ID comes from the untracked apps/apple/Signing.local.xcconfig and the App
-Store Connect key from this Mac's login keychain; neither is ever written to a
-file this repository tracks.
+Store Connect key from the operator's credential command
+(scripts/credentials.py); neither is ever written to a file this repository
+tracks.
 """
 
 from pathlib import Path
@@ -34,15 +35,17 @@ import datetime
 import json
 import plistlib
 import re
-import shutil
 import subprocess
 import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import credentials  # noqa: E402
 
 SPEC = Path("apps/apple/version.bzl")
 SIGNING_FILE = Path("apps/apple/Signing.local.xcconfig")
 TEAM_SETTING = "DEVELOPMENT_TEAM"
-KEYCHAIN_SERVICE = "amux-appstoreconnect"
-KEY_DIRECTORY = Path.home() / ".appstoreconnect/private_keys"
+# The App Store Connect key's credentials: two identifiers and the .p8.
+CONNECT = "appstoreconnect"
 # The profile each bundle is distributed under, by bundle id. Named rather
 # than fetched: Xcode's cloud signing cannot mint or fetch a profile for this
 # account from a script (it answers "Cloud signing permission error" and then
@@ -183,12 +186,12 @@ def tags() -> list[str]:
     return listed.stdout.splitlines()
 
 
-def keychain(account: str) -> str:
-    found = subprocess.run(
-        ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE,
-         "-a", account, "-w"],
-        capture_output=True, text=True, timeout=60)
-    return found.stdout.strip() if found.returncode == 0 else ""
+def connect(field: str) -> str:
+    """One of the App Store Connect key's credentials, or the empty string."""
+    try:
+        return credentials.read(f"{CONNECT}/{field}").strip()
+    except credentials.Missing:
+        return ""
 
 
 def team() -> str:
@@ -317,27 +320,24 @@ def inputs() -> tuple[list[Check], dict]:
         "assignment; .gitignore already covers the file, and docs/RELEASE.md "
         "holds its contract"))
 
-    key, issuer = keychain("key-id"), keychain("issuer-id")
+    key, issuer = connect("key-id"), connect("issuer-id")
     facts["key"], facts["issuer"] = key, issuer
     checks.append(Check(
         "the App Store Connect key's identifiers", bool(key and issuer),
-        f"in this Mac's login keychain under service {KEYCHAIN_SERVICE}"
+        f"{CONNECT}/key-id and {CONNECT}/issuer-id, from the credential command"
         if key and issuer else
-        f"the login keychain has no {'key-id' if not key else 'issuer-id'} "
-        f"under service {KEYCHAIN_SERVICE}. docs/RELEASE.md has the one-time "
-        "setup that puts it there"))
+        f"the credential command has no {CONNECT}/"
+        f"{'key-id' if not key else 'issuer-id'}. docs/RELEASE.md has the "
+        "one-time setup that puts it there"))
 
-    private = KEY_DIRECTORY / f"AuthKey_{key}.p8" if key else None
-    facts["key_path"] = private
-    # The path is not printed: a key file is named after its key id, and this
-    # report is read aloud, pasted into notes and captured as evidence. The
-    # directory is enough to find it by hand.
+    private = bool(connect("private-key"))
     checks.append(Check(
-        "the App Store Connect private key", bool(private and private.exists()),
-        f"the key file for that key id is in {KEY_DIRECTORY}"
-        if private and private.exists() else
-        f"no key file in {KEY_DIRECTORY} for that key id. The .p8 downloads "
-        "from App Store Connect exactly once and can never be fetched again"))
+        "the App Store Connect private key", private,
+        f"{CONNECT}/private-key, from the credential command"
+        if private else
+        f"the credential command has no {CONNECT}/private-key. The .p8 "
+        "downloads from App Store Connect exactly once and can never be "
+        "fetched again"))
 
     # The release signs by hand, so the certificate and the profile are inputs
     # a person produces once, exactly like the key. Checking them here is what
@@ -485,15 +485,15 @@ def validate(package: Path, facts: dict) -> None:
     why it is safe as the last step of every run, including a rehearsal that
     happens as often as anybody likes.
 
-    altool finds the private key itself; ~/.appstoreconnect/private_keys is
-    one of the directories it searches, so only the two identifiers are
-    passed and neither is ever written to a file."""
+    The private key is on disk only while altool runs."""
     print("validating with Apple", flush=True)
-    subprocess.run([
-        "xcrun", "altool", "--validate-app",
-        "-f", str(package), "-t", "ios",
-        "--api-key", facts["key"], "--api-issuer", facts["issuer"],
-    ], check=True, timeout=1800)
+    with credentials.file(f"{CONNECT}/private-key", f"AuthKey_{facts['key']}.p8") as p8:
+        subprocess.run([
+            "xcrun", "altool", "--validate-app",
+            "-f", str(package), "-t", "ios",
+            "--api-key", facts["key"], "--api-issuer", facts["issuer"],
+            "--p8-file-path", str(p8),
+        ], check=True, timeout=1800)
 
 
 def upload(package: Path, facts: dict) -> None:
@@ -510,11 +510,13 @@ def upload(package: Path, facts: dict) -> None:
     the tree should record a build that reached Apple, not one that failed on
     the way."""
     print("uploading to App Store Connect", flush=True)
-    subprocess.run([
-        "xcrun", "altool", "--upload-app",
-        "-f", str(package), "-t", "ios",
-        "--api-key", facts["key"], "--api-issuer", facts["issuer"],
-    ], check=True, timeout=3600)
+    with credentials.file(f"{CONNECT}/private-key", f"AuthKey_{facts['key']}.p8") as p8:
+        subprocess.run([
+            "xcrun", "altool", "--upload-app",
+            "-f", str(package), "-t", "ios",
+            "--api-key", facts["key"], "--api-issuer", facts["issuer"],
+            "--p8-file-path", str(p8),
+        ], check=True, timeout=3600)
     print("uploaded; TestFlight shows it once Apple has processed it", flush=True)
 
 

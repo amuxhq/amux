@@ -432,14 +432,13 @@ environment wins; otherwise the recipes read `.autopilot/qa-account.env` at
 the repository root, an untracked, operator-written file that sets those
 variables and nothing else. There is no built-in address.
 
-**The password.** Read from the login keychain when it is needed, with
-`security find-generic-password -s amuxcloud-qa -a "<the address>" -w`, and
-never printed, logged or written down. Add one with `security
-add-generic-password -s amuxcloud-qa -a "<the address>" -w`.
+**The password.** The credential `amuxcloud-qa/<the address>`, read from the
+operator's credential command when it is needed
+([RELEASE](RELEASE.md#credentials)) and never printed, logged or written down.
 
 **What is never printed.** An address appears only masked; the password, the
 authorization code and every token are used and dropped; the account
-identifier is not printed at all. When the address, the keychain entry or the
+identifier is not printed at all. When the address, the password or the
 login form is missing, a recipe names which and exits non-zero.
 
 ## Which cloud a pairing invitation names

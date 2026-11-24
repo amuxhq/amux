@@ -20,15 +20,17 @@ Three ways to run it:
                 testing, commit, tag and push. --no-upload and --no-push each
                 stop short of their step.
 
-The upload keystore sits outside this repository (default
-~/.googleplay/upload-keystore.jks), its alias and passwords live in this Mac's
-login keychain under `amux-googleplay`, and the Google Play service account
-JSON sits at ~/.googleplay/service-account.json (docs/RELEASE.md).
+The upload keystore, its alias and passwords, and the Google Play service
+account's JSON key come from the operator's credential command
+(scripts/credentials.py); the keystore is on disk only while a run lasts.
+`AMUX_ANDROID_*` and `AMUX_GOOGLEPLAY_KEY_FILE` name them instead
+(docs/RELEASE.md).
 """
 
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack, contextmanager
 import os
 from pathlib import Path
 import re
@@ -41,8 +43,8 @@ from googleplay import (  # noqa: E402
     PACKAGE_NAME,
     PlayPublisher,
     Refusal,
-    key_file_path,
-    load_service_account,
+    credentials,
+    service_account,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -51,8 +53,8 @@ GOOGLE_SERVICES_FILE = Path("apps/android/app/google-services.json")
 BUILT = Path("scripts/built")
 BUNDLE_TARGET = "//apps/android/app:bundle"
 RELEASE_DIRECTORY = Path("target/android/release")
-DEFAULT_KEYSTORE = Path.home() / ".googleplay" / "upload-keystore.jks"
-KEYCHAIN_SERVICE = "amux-googleplay"
+# The upload key's credentials: the keystore, its alias and passwords.
+UPLOAD_KEY = "googleplay"
 TAG_RE = re.compile(r"^android-v(\d+)\.(\d+)\.(\d+)-b(\d+)$")
 VERSION_CODE_RE = re.compile(r"^(VERSION_CODE\s*=\s*)(\d+)\b", re.M)
 VERSION_NAME_RE = re.compile(r'^(VERSION_NAME\s*=\s*)"([^"]+)"', re.M)
@@ -190,28 +192,32 @@ def tree_changes(before: str, after: str) -> list[str]:
     )
 
 
-def keystore_path() -> Path:
+@contextmanager
+def upload_keystore():
+    """The upload keystore for the run: the file `AMUX_ANDROID_KEYSTORE` names,
+    or else the credential command's, on disk until the run ends. None when
+    neither has one."""
     override = os.environ.get("AMUX_ANDROID_KEYSTORE", "").strip()
-    return Path(override).expanduser() if override else DEFAULT_KEYSTORE
+    if override:
+        yield Path(override).expanduser()
+        return
+    with ExitStack() as stack:
+        try:
+            path = stack.enter_context(
+                credentials.file(f"{UPLOAD_KEY}/upload-keystore", "upload-keystore.jks"))
+        except credentials.Missing:
+            path = None
+        yield path
 
 
-def keychain(account: str) -> str:
-    if not shutil.which("security"):
-        return ""
-    found = subprocess.run(
-        ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account, "-w"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    return found.stdout.strip() if found.returncode == 0 else ""
-
-
-def secret(env_var: str, keychain_account: str) -> str:
+def secret(env_var: str, field: str) -> str:
     value = os.environ.get(env_var, "").strip()
     if value:
         return value
-    return keychain(keychain_account)
+    try:
+        return credentials.read(f"{UPLOAD_KEY}/{field}").strip()
+    except credentials.Missing:
+        return ""
 
 
 def find_jdk_tool(name: str) -> str | None:
@@ -276,7 +282,7 @@ class Check:
         return f"  [{'present' if self.held else 'MISSING'}] {self.what}: {self.detail}"
 
 
-def inputs(*, require_upload_key: bool = True) -> tuple[list[Check], dict]:
+def inputs(store: Path | None, *, require_upload_key: bool = True) -> tuple[list[Check], dict]:
     checks: list[Check] = []
     facts: dict = {}
 
@@ -293,15 +299,18 @@ def inputs(*, require_upload_key: bool = True) -> tuple[list[Check], dict]:
         )
     )
 
-    store = keystore_path()
     facts["keystore"] = store
+    held = bool(store and store.is_file())
     checks.append(
         Check(
             "the upload keystore",
-            store.is_file(),
-            str(store)
-            if store.is_file()
-            else f"{store} is missing (docs/RELEASE.md, Android one-time setup)",
+            held,
+            "read from the environment's AMUX_ANDROID_KEYSTORE"
+            if held and os.environ.get("AMUX_ANDROID_KEYSTORE", "").strip()
+            else f"{UPLOAD_KEY}/upload-keystore, from the credential command"
+            if held
+            else f"{store or 'the credential command'} has no upload keystore "
+            "(docs/RELEASE.md, Android one-time setup)",
         )
     )
 
@@ -330,11 +339,11 @@ def inputs(*, require_upload_key: bool = True) -> tuple[list[Check], dict]:
             Check(
                 "the keystore credentials",
                 False,
-                "missing in keychain service "
-                f"{KEYCHAIN_SERVICE!r} (or AMUX_ANDROID_* env): {', '.join(missing_creds)}",
+                "the credential command (or AMUX_ANDROID_* env) has no "
+                + ", ".join(f"{UPLOAD_KEY}/{name}" for name in missing_creds),
             )
         )
-    elif store.is_file() and keytool:
+    elif held and keytool:
         ok, detail = check_keystore_credentials(keytool, store, alias, store_pw)
         checks.append(Check("the keystore credentials", ok, detail))
     else:
@@ -365,15 +374,15 @@ def inputs(*, require_upload_key: bool = True) -> tuple[list[Check], dict]:
         )
     )
 
-    sa_path = key_file_path()
-    facts["service_account_path"] = sa_path
+    facts["service_account"] = None
     try:
-        account = load_service_account(sa_path)
+        account = service_account()
+        facts["service_account"] = account
         checks.append(
             Check(
                 "the Google Play service account key",
                 True,
-                f"{sa_path} ({account['client_email']})",
+                account["client_email"],
             )
         )
     except Refusal as error:
@@ -561,7 +570,7 @@ def upload_to_play(
 ) -> None:
     """Upload the signed .aab to Google Play's internal testing track."""
     print(f"uploading {aab.name} to Google Play ({track} track)", flush=True)
-    publisher = PlayPublisher(facts["service_account_path"], package_name=PACKAGE_NAME)
+    publisher = PlayPublisher(facts["service_account"], package_name=PACKAGE_NAME)
     with publisher.edit(
         commit=True,
         changes_not_sent_for_review=changes_not_sent_for_review,
@@ -647,8 +656,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.preflight and args.rehearse:
         parser.error("--preflight and --rehearse are different runs")
 
+    # The keystore is on disk for the whole run: it is checked first and
+    # signs the bundle at the end.
+    with upload_keystore() as store:
+        return run(args, store)
+
+
+def run(args: argparse.Namespace, store: Path | None) -> int:
     require_upload_key = not (args.rehearse or args.no_upload)
-    checks, facts = inputs(require_upload_key=require_upload_key)
+    checks, facts = inputs(store, require_upload_key=require_upload_key)
 
     version_text = (REPO_ROOT / VERSION_FILE).read_text(encoding="utf-8")
     all_tags = git_tags()

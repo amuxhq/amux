@@ -1,3 +1,4 @@
+mod credentials;
 mod mac;
 mod release;
 mod signing;

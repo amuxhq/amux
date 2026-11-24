@@ -19,8 +19,7 @@ new screenshots: a live version's listing is fixed until the next one.
 The frames go in the 6.9-inch set, and every other iPhone set of the
 listing is removed, so that smaller iPhones show these frames scaled rather
 than an older set made for them. iPad sets are left alone. The key is the one
-`just ios release` signs in with: its identifiers in the login keychain, its
-private key under ~/.appstoreconnect/private_keys (docs/RELEASE.md).
+`just ios release` signs in with (docs/RELEASE.md).
 """
 
 from __future__ import annotations

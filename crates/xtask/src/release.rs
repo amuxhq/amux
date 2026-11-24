@@ -1,7 +1,8 @@
 //! Publishing the daemon's release feed: the signing key and the channel
-//! manifests. The private key is a 32-byte Ed25519 seed that lives only in
-//! a keychain of its own on this Mac, which asks for its password on every
-//! read; the workflow that builds releases never sees it, and neither does
+//! manifests. The private key is a 32-byte Ed25519 seed the operator's
+//! credential command holds as `amux/release-key`, and must ask for the
+//! operator's presence on every read; the workflow that builds releases
+//! never sees it, and neither does
 //! the server that serves manifests, so neither can sign a manifest
 //! machines would take. A second key, the backup, is kept offline and
 //! trusted by every build beside it, so a release signed with the backup
@@ -24,8 +25,7 @@
 //! preview promoted to stable); cutting does not.
 //!
 //! ```text
-//! xtask release key generate        make a seed, keep it, print its public half
-//! xtask release key generate --file PATH   make the offline backup in a new file instead
+//! xtask release key generate --file PATH   make a seed in a new file, print its public half
 //! xtask release cut VERSION         bump, lock, release-check, commit, tag, push
 //! xtask release deploy VERSION [--channel stable|preview] [--rollout N] [--key-file PATH]
 //! ```
@@ -36,17 +36,10 @@ use std::process::Command;
 
 use release::{Manifest, Release};
 
-use crate::signing;
+use crate::{credentials, signing};
 
-/// The keychain item that holds the seed, as `security` names it.
-const KEYCHAIN_SERVICE: &str = "amux-release-key";
-/// The keychain that holds it. It has a password of its own, unlike the
-/// login keychain, which every process running as the operator can read
-/// without a prompt. Its item names no application allowed to read it, so
-/// every read, this tool's included, asks for that password.
-const KEYCHAIN: &str = "amux-release.keychain";
-/// Seconds the keychain stays unlocked after a read.
-const KEYCHAIN_LOCK_SECS: &str = "60";
+/// The credential that holds the seed (`crate::credentials`).
+const RELEASE_KEY: &str = "amux/release-key";
 /// The workflow whose `env` names the keys the published binaries trust.
 pub(crate) const WORKFLOW: &str = ".github/workflows/release.yml";
 const PUBLIC_KEY_VARIABLE: &str = "AMUX_RELEASE_PUBLIC_KEYS";
@@ -64,30 +57,18 @@ const MACOS_TARGET: &str = "aarch64-apple-darwin";
 pub fn main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
     match words.as_slice() {
-        ["key", "generate"] => generate(),
-        ["key", "generate", "--file", path] => backup(Path::new(path)),
+        ["key", "generate", "--file", path] => generate(Path::new(path)),
         ["cut", version] => cut(version),
         ["deploy", version, rest @ ..] => deploy(version, rest),
-        _ => Err("usage: xtask release <key generate [--file PATH]|cut VERSION|deploy VERSION [--channel stable|preview] [--rollout N] [--key-file PATH]>".into()),
+        _ => Err("usage: xtask release <key generate --file PATH|cut VERSION|deploy VERSION [--channel stable|preview] [--rollout N] [--key-file PATH]>".into()),
     }
 }
 
-/// Makes a seed from the system's randomness and keeps it in the release
-/// keychain, making that keychain first when there is none. Refuses when
-/// the keychain already holds one: a key is rotated by removing the old
-/// item deliberately, never by a second run overwriting it.
-fn generate() -> Result<(), Box<dyn std::error::Error>> {
-    refuse_if_kept()?;
-    let seed = release::new_seed();
-    keep(&seed)?;
-    println!("{}", release::hex(&release::public_key(&seed)));
-    Ok(())
-}
-
-/// Makes the backup seed in a new file at `path`, readable only by its
-/// owner, and prints its public half. The seed goes nowhere else: it is
-/// meant to leave this Mac, and the file to be deleted once it has.
-fn backup(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+/// Makes a seed from the system's randomness in a new file at `path`,
+/// readable only by its owner, and prints its public half. The seed goes
+/// nowhere else: the release key is meant to move into the credential
+/// command and the backup offline, and the file to be deleted once it has.
+fn generate(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write as _;
     let seed = release::new_seed();
     let mut options = std::fs::OpenOptions::new();
@@ -105,94 +86,11 @@ fn backup(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn account() -> String {
-    std::env::var("USER").unwrap_or_else(|_| "amux".into())
-}
-
-/// Refuses when the release keychain already holds a seed.
-pub(crate) fn refuse_if_kept() -> Result<(), Box<dyn std::error::Error>> {
-    if keychain_path().exists()
-        && security(&["find-generic-password", "-s", KEYCHAIN_SERVICE, KEYCHAIN]).is_ok()
-    {
-        return Err(format!(
-            "the release keychain already holds an item for service {KEYCHAIN_SERVICE}; \
-             delete it with `security delete-generic-password -s {KEYCHAIN_SERVICE} {KEYCHAIN}` \
-             to keep another"
-        )
-        .into());
-    }
-    Ok(())
-}
-
-/// Keeps `seed` in the release keychain, made first when missing, as an
-/// item no application may read without the keychain's password.
-fn keep(seed: &[u8; 32]) -> Result<(), Box<dyn std::error::Error>> {
-    if !keychain_path().exists() {
-        // `-P` asks for the new password in a system dialog. Asked on the
-        // terminal instead, it would be read by a process the recipe's
-        // timeout runs outside the terminal's foreground, which cannot turn
-        // echo off or read the answer.
-        println!(
-            "Choose a password for the release keychain in the dialog, different from your \
-             login password."
-        );
-        let status = Command::new("security")
-            .args(["create-keychain", "-P", KEYCHAIN])
-            .status()?;
-        if !status.success() {
-            return Err("security create-keychain failed".into());
-        }
-        security(&[
-            "set-keychain-settings",
-            "-l",
-            "-u",
-            "-t",
-            KEYCHAIN_LOCK_SECS,
-            KEYCHAIN,
-        ])?;
-    }
-    security(&[
-        "add-generic-password",
-        "-s",
-        KEYCHAIN_SERVICE,
-        "-a",
-        &account(),
-        // No application may read the item without asking.
-        "-T",
-        "",
-        "-w",
-        &release::hex(seed),
-        KEYCHAIN,
-    ])?;
-    Ok(())
-}
-
-pub(crate) fn keychain_path() -> PathBuf {
-    let home = std::env::var_os("HOME").expect("HOME is set");
-    Path::new(&home).join("Library/Keychains/amux-release.keychain-db")
-}
-
-/// The seed from the release keychain, after its password.
-pub(crate) fn keychain_seed() -> Result<[u8; 32], Box<dyn std::error::Error>> {
-    read_seed(KEYCHAIN).map_err(|_| {
-        format!(
-            "no release key in the release keychain {KEYCHAIN} (service {KEYCHAIN_SERVICE}); \
-             `xtask release key generate` makes one"
-        )
-        .into()
-    })
-}
-
-/// The seed kept in `keychain`.
-fn read_seed(keychain: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
-    let seed = security(&[
-        "find-generic-password",
-        "-s",
-        KEYCHAIN_SERVICE,
-        "-w",
-        keychain,
-    ])?;
-    release::parse_key(&seed).ok_or_else(|| "the keychain item is not 64 hex digits".into())
+/// The seed from the credential command, which asks for the operator first.
+pub(crate) fn kept_seed() -> Result<[u8; 32], Box<dyn std::error::Error>> {
+    let seed = credentials::read(RELEASE_KEY)?;
+    release::parse_key(&seed)
+        .ok_or_else(|| format!("{RELEASE_KEY} is not a seed of 64 hex digits").into())
 }
 
 /// The backup seed in the file at `path`.
@@ -201,20 +99,6 @@ pub(crate) fn file_seed(path: &Path) -> Result<[u8; 32], Box<dyn std::error::Err
         .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
     release::parse_key(&text)
         .ok_or_else(|| format!("{} is not a seed of 64 hex digits", path.display()).into())
-}
-
-/// Runs `security` with `args`; what it printed when it succeeded.
-fn security(args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
-    let output = Command::new("security").args(args).output()?;
-    if !output.status.success() {
-        return Err(format!(
-            "security {} failed: {}",
-            args[0],
-            String::from_utf8_lossy(&output.stderr).trim()
-        )
-        .into());
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// The keys the workflow compiles into the binaries it publishes.
@@ -265,14 +149,15 @@ fn cut(version: &str) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     // The keys are checked here without reading the seed, which would ask
-    // for the keychain's password a second time; the deploy reads it and
-    // checks it against them.
+    // for the operator a second time; the deploy reads it and checks it
+    // against them.
     trusted_keys(&std::fs::read_to_string(root.join(WORKFLOW))?)?;
-    if !keychain_path().exists() {
-        return Err(format!(
-            "this Mac has no release keychain {KEYCHAIN}, so the release could not be deployed"
-        )
-        .into());
+    if !credentials::configured() {
+        return Err(
+            "this machine has no credential command to hold the release key, so the release \
+             could not be deployed (docs/RELEASE.md)"
+                .into(),
+        );
     }
     let current = current_version(&std::fs::read_to_string(root.join(VERSIONED[0]))?)?;
     if wanted <= current {
@@ -423,7 +308,7 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
 
     let seed = match &options.key_file {
         Some(path) => file_seed(path)?,
-        None => keychain_seed()?,
+        None => kept_seed()?,
     };
     let key = release::public_key(&seed);
     if !trusted.contains(&key) {
@@ -775,10 +660,10 @@ mod tests {
     }
 
     #[test]
-    fn a_backup_seed_reads_back_from_its_file() {
+    fn a_generated_seed_reads_back_from_its_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("backup.key");
-        backup(&path).unwrap();
+        generate(&path).unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
@@ -787,7 +672,7 @@ mod tests {
         }
         assert!(file_seed(&path).is_ok());
         assert!(
-            backup(&path).is_err(),
+            generate(&path).is_err(),
             "an existing file is never overwritten"
         );
     }

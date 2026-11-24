@@ -27,9 +27,9 @@ release VERSION:
 deploy VERSION *ARGS:
     shift; if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 3600 cargo run --locked -q -p xtask -- release deploy {{VERSION}} "$@"
 
-# `just amux release-key generate` makes a key in its own keychain and prints
-# its public half; `generate --file PATH` makes the offline backup in a new
-# file instead.
+# `just amux release-key generate --file PATH` makes a key in a new file and
+# prints its public half: the release key, for the credential command, or
+# the offline backup (docs/RELEASE.md).
 # The release signing key.
 release-key *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 600 cargo run --locked -q -p xtask -- release key "$@"

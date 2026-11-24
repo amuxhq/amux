@@ -3,7 +3,7 @@ load(
     "//build:android.bzl",
     "LINUX_EXEC",
     "LINUX_WORKERS",
-    "NOVA_ONLY",
+    "LINUX_ONLY",
     "PLATFORM",
     "amux_android_library",
     "amux_apk",
@@ -233,7 +233,7 @@ android_instrumentation_apk(
     deps = [":release-smoke-test-lib"],
     default_target_platform = PLATFORM,
     target_compatible_with = LINUX_WORKERS,
-    labels = NOVA_ONLY,
+    labels = LINUX_ONLY,
 )
 
 # The Play bundle. It is unsigned: `just android release` signs it with the

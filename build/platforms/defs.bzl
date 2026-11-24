@@ -18,9 +18,9 @@ MODES = ["dev", "models", "release", "phone-dev", "wasm", "full-debug"]
 # For a rule with no toolchain to say it: a Linux target's actions run on
 # a Linux worker. Buck2 sends an action to the first execution platform it
 # fits, which on a Mac is the Mac's, so without this the same Linux target
-# would have one key built on nova and another built from a Mac, and an
-# execution dependency (a binary a Linux test starts) would be built for
-# macOS.
+# would have one key built on the build host and another built from a Mac,
+# and an execution dependency (a binary a Linux test starts) would be built
+# for macOS.
 EXEC_LIKE_TARGET = select({
     "DEFAULT": [],
     "prelude//os:linux": ["prelude//os:linux"],

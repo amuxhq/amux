@@ -10,10 +10,11 @@
 // hit in another. It is also the sandbox: an action sees only its declared
 // inputs.
 //
-// With a remote (`nativelink.py install --remote URL`, normally nova's
-// NativeLink), the remote's worker also registers with this scheduler over
-// the worker listener below, and runs the actions only Linux can run, and
-// the cache is this machine's in front of the remote's: what Buck2 uploads
+// With a remote (`nativelink.py install --remote URL`, normally the build
+// host's NativeLink), the remote's worker also registers with this
+// scheduler over the worker listener below, and runs the actions only
+// Linux can run, and the cache is this machine's in front of the remote's:
+// what Buck2 uploads
 // reaches the remote too, so the remote's worker finds an action's inputs,
 // and results the remote holds are hits here. While the remote is out of
 // reach this runs from a second rendering with no remote in it at all, so

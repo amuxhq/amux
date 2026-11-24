@@ -27,7 +27,7 @@ Other tools a full checkout uses:
 - Python 3.11 or newer runs the repository scripts. `scripts/py` finds one
   even when `python3` on the PATH is the macOS system 3.9.
 - Buck2 builds the Apple apps with Xcode's compilers and SDKs (see [the iPhone app](IOS.md#builds)).
-- Buck2 builds the Android app on a Linux worker with its own SDK, NDK and JDK (see [the Android app](ANDROID.md), `just --list android`); a Mac needs the Android SDK's emulator and platform tools only to run what nova built.
+- Buck2 builds the Android app on a Linux worker with its own SDK, NDK and JDK (see [the Android app](ANDROID.md), `just --list android`); a Mac needs the Android SDK's emulator and platform tools only to run what the build host built.
 - `tmux` drives the terminal journeys.
 - Node 24 or newer, with npm, builds the browser extension under `js/`
   (`just browser build`). Biome formats and lints it (`just browser fmt`),
@@ -186,8 +186,8 @@ every six hours.
 
 ### Linux builds and the build host
 
-Linux targets build and run on a Linux worker: a build host's NativeLink
-(nova), or the one on a Linux machine itself. Their toolchain is
+Linux targets build and run on a Linux worker: a build host's NativeLink,
+or the one on a Linux machine itself. Their toolchain is
 `packages.actions` in [`flake.nix`](../flake.nix), the same list as the dev
 shell less the build tools, and an action on the Linux worker realizes it
 (`//:nix-linux`, [`build/toolchains/nix.bzl`](../build/toolchains/nix.bzl)):
@@ -228,7 +228,7 @@ price of uploading every Mac build over the tailnet.
 
 When the host doesn't answer (or the tailnet is down), `scripts/buck2`
 says so, restarts NativeLink without it and turns Linux off for the tree:
-Linux actions fail at once rather than wait, and tests marked `nova_only`
+Linux actions fail at once rather than wait, and tests marked `linux_only`
 (the model checks' integration target, which takes every core for ten
 minutes) are skipped, which `just test` names at the end. When the host
 answers again it switches back. Each switch restarts NativeLink, which
@@ -467,12 +467,22 @@ test task. [`.wt.toml`](../.wt.toml) holds the tree's side:
   recipes lease through `scripts/with`.
 - `just land` never touches the tree it is run from
   ([AGENTS.md](../AGENTS.md)). With `git config --global amux.landInbox
-  nova:/var/lib/build/inbox.git` set, it pushes the branch to nova's landing
-  queue and waits for the verdict: the queue lands one request at a time,
-  from every machine, oldest first, and writes each landing's whole log
-  beside its result. `just land --local`, or no inbox set, lands from a
-  worktree of this machine's own under `~/.cache/amux/land`, one landing at
-  a time per machine; that is the way to land while nova is down. Either
+  <inbox>` set to your landing host's inbox (an SSH URL such as
+  `host:/path/to/inbox.git`, or a path on the landing host itself), it
+  pushes the branch to that host's landing queue and waits for the verdict:
+  the queue lands one request at a time, from every machine, oldest first,
+  and writes each landing's whole log beside its result. `just land
+  --local`, or no inbox set, lands from a worktree of this machine's own
+  under `~/.cache/amux/land`, one landing at a time per machine; that is
+  the way to land while the landing host is down. Either
   way the landing runs `just premerge` and nothing else: the protocol
   models, the C ABI's pointer checks and the sanitizers run in the nightly
   ([CI](CI.md#nightlies)).
+- A landing host runs the queue from a checkout of main, as an account that
+  may push to the repository: `python3 scripts/land_queue.py serve --inbox
+  <inbox> --tree <tree> --nix --self-update`, where the inbox is a bare
+  repository everyone who lands can write and the tree is a clone of its
+  own that landings reset and clean. `--nix` runs each check in the merge's
+  own `nix develop`; `--self-update` moves the queue to main's copy of its
+  code when a landing changes it. Where those live, and the service that
+  runs it, are the host's configuration, not this repository's.

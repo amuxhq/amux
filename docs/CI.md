@@ -101,12 +101,14 @@ the tailnet, so a commit the landing queue or a premerge on the build host
 already tested is cache hits. The runner joins the tailnet as `tag:ci`
 with the repository's Tailscale OAuth client (`TS_OAUTH_CLIENT_ID`,
 `TS_OAUTH_SECRET`), which the tailnet's rules let reach the build cache's
-port and nothing else; the build host's name is `BUILD_HOST` at the top of
-`ci.yml`. The pinned tools come from the repository's Nix flake (`nix
-develop`), as on the build host, so the runner's actions have the build
-host's keys.
+port and nothing else. The build host's name on the tailnet is the
+repository's `BUILD_HOST` Actions variable (`gh variable set BUILD_HOST
+--body <host>`), which `ci.yml` reads into its environment. The pinned
+tools come from the repository's Nix flake (`nix develop`), as on the build
+host, so the runner's actions have the build host's keys.
 
-A fork's pull request gets no secrets and so no tailnet. Its gate starts a
+A fork's pull request gets no secrets and so no tailnet, and a repository
+with no `BUILD_HOST` set has no build host to reach. Its gate starts a
 NativeLink on the runner (`scripts/nativelink.py serve`) and builds and
 tests everything there: slower, the same checks. All of it on one
 four-core runner takes longer than a test run's bound, so the gate runs in
@@ -349,7 +351,7 @@ starts the macOS jobs with no kept store, to time them from nothing.
 The macOS tests job runs `just test //crates/...` but the journeys: on macOS that is the
 system lane as well, since the built `amux` binary's suites (`process`,
 `supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor`
-suite and the `survive-daemon` system journey are ordinary Buck2 tests. The `nova-only` tests are the Linux gate's and are
+suite and the `survive-daemon` system journey are ordinary Buck2 tests. The `linux-only` tests are the Linux gate's and are
 skipped.
 
 `just ios verify` is the whole sequence a developer runs before pushing a

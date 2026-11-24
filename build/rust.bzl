@@ -86,13 +86,15 @@ def _binaries_impl(ctx: AnalysisContext) -> list[Provider]:
     # Each under its name with the binary's own extension, `.exe` for
     # Windows, as Cargo leaves them: provider_fakes::binaries adds it, and
     # Windows finds a program named without one only by adding it too.
-    tree = ctx.actions.symlinked_dir(
-        "binaries",
-        {
-            path + dep[DefaultInfo].default_outputs[0].extension: dep[DefaultInfo].default_outputs[0]
-            for path, dep in ctx.attrs.binaries.items()
-        },
-    )
+    binaries = {
+        path + dep[DefaultInfo].default_outputs[0].extension: dep[DefaultInfo].default_outputs[0]
+        for path, dep in ctx.attrs.binaries.items()
+    }
+    # Copies on Windows: a worker there materializes the links as Windows
+    # symbolic links with the forward-slashed relative targets Buck2 writes,
+    # which Windows doesn't resolve, so a test can't start a program
+    # through one.
+    tree = (ctx.actions.copied_dir if ctx.attrs._windows else ctx.actions.symlinked_dir)("binaries", binaries)
     return [DefaultInfo(default_output = tree)]
 
 # The binaries the integration suites start, in one directory, as
@@ -104,7 +106,10 @@ def _binaries_impl(ctx: AnalysisContext) -> list[Provider]:
 # build was started.
 _amux_binaries = rule(
     impl = _binaries_impl,
-    attrs = {"binaries": attrs.dict(key = attrs.string(), value = attrs.exec_dep(), sorted = False)},
+    attrs = {
+        "binaries": attrs.dict(key = attrs.string(), value = attrs.exec_dep(), sorted = False),
+        "_windows": attrs.bool(default = select({"DEFAULT": False, "prelude//os:windows": True})),
+    },
 )
 
 def amux_binaries(**kwargs):

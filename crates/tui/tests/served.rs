@@ -787,6 +787,11 @@ async fn start_with_a_file(app: &mut tui::App, host: Option<&[u8]>) -> (Vec<u8>,
     use tui::setup::Item;
 
     let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap();
+    // The new agent's chat opens once the fleet lists it, which can be
+    // after the start returns: its row comes over the inventory, and from
+    // another host it is replicated over the link. So the loop below tells
+    // the client of every fleet change, as its run loop does.
+    let mut fleet_changed = app.fleet.changed();
     press(app, KeyCode::Char('n'));
     // The draft takes its settings from the defaults as it first shows.
     terminal.draw(|frame| app.draw(frame)).unwrap();
@@ -815,6 +820,10 @@ async fn start_with_a_file(app: &mut tui::App, host: Option<&[u8]>) -> (Vec<u8>,
         loop {
             while let Ok(event) = app.receiver.try_recv() {
                 app.event(event);
+            }
+            if fleet_changed.has_changed().unwrap_or(false) {
+                fleet_changed.mark_unchanged();
+                app.fleet_changed();
             }
             app.housekeep();
             let found = app.chat.as_ref().and_then(|chat| {

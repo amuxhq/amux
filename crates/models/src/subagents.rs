@@ -149,6 +149,7 @@ mod tests {
                 provider: String::new(),
                 picked: None,
                 acp_sign_in: None,
+                acp_catalogue: None,
                 end: IngestEnd::Read,
                 seen: 0,
                 skipped: 0,

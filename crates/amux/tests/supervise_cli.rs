@@ -46,8 +46,9 @@ impl Install {
         std::fs::write(
             &config,
             format!(
-                "root = {:?}\nsupervisor = {supervisor}\nupdates = \"manual\"\n{keep_awake}{extra}",
+                "root = {:?}\nsupervisor = {supervisor}\nupdates = \"manual\"\n{keep_awake}{extra}\n{}",
                 data.display().to_string(),
+                crate::support::NO_REAL_AGENTS,
             ),
         )
         .unwrap();

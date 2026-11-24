@@ -253,6 +253,111 @@ pub(crate) fn fit(
     })
 }
 
+/// The model an ACP agent's session takes for `asked`, a model named at
+/// its start, and the effort the name carries, if it carries one. An ACP
+/// agent drops a model its session does not offer and runs on its own
+/// default, saying nothing, so a name is matched onto what the host's copy
+/// lists before the agent starts: the value itself; else, ignoring case,
+/// a value or display name; else a value or display name with an effort
+/// the model takes, as Antigravity's own `agy models` spells its models
+/// (`gemini-3.8-flash-low`, "Gemini 3.8 Flash (Low)") where its sessions
+/// take the model `gemini-3.8-flash` and the effort `low` apart. Err with
+/// the values it takes where no model matches, or more than one does.
+pub(crate) fn acp_model(
+    catalogue: &Catalogue,
+    asked: &str,
+) -> Result<(String, Option<String>), Vec<String>> {
+    let models = &catalogue.models;
+    if let Some(exact) = models.iter().find(|offered| offered.value == asked) {
+        return Ok((exact.value.clone(), None));
+    }
+    let same = |name: &str| !name.is_empty() && name.eq_ignore_ascii_case(asked);
+    let mut found: Vec<(String, Option<String>)> = models
+        .iter()
+        .filter(|offered| same(&offered.value) || same(&offered.display_name))
+        .map(|offered| (offered.value.clone(), None))
+        .collect();
+    if found.is_empty() {
+        found = models
+            .iter()
+            .flat_map(|offered| {
+                offered.efforts.iter().filter_map(move |effort| {
+                    let spelled = [
+                        format!("{}-{effort}", offered.value),
+                        format!("{} ({effort})", offered.display_name),
+                    ];
+                    spelled
+                        .iter()
+                        .any(|spelled| same(spelled))
+                        .then(|| (offered.value.clone(), Some(effort.clone())))
+                })
+            })
+            .collect();
+    }
+    found.dedup();
+    match <[_; 1]>::try_from(found) {
+        Ok([one]) => Ok(one),
+        Err(_) => Err(models.iter().map(|offered| offered.value.clone()).collect()),
+    }
+}
+
+impl ProfileRuntime {
+    /// Names an ACP agent's model as its session takes it ([`acp_model`]),
+    /// for a person's start and an agent's alike, setting the effort the
+    /// name carries where none was asked. A model the host's copy does not
+    /// list is refused with what it lists; one named with an effort that
+    /// another asked effort contradicts is refused too. Where the copy
+    /// lists no models (an agent a person added, before a conversation),
+    /// the name passes through as given.
+    pub(crate) async fn name_acp_model(
+        &self,
+        request: &mut CreateAgentRequest,
+    ) -> Result<(), RegistryError> {
+        let Some(create_agent_request::Agent::Acp(acp)) = request.agent.as_mut() else {
+            return Ok(());
+        };
+        let Some(asked) = acp.model.clone() else {
+            return Ok(());
+        };
+        let catalogue = match self.offers().offered(&acp.agent) {
+            Some(held) => Some(held),
+            None => self
+                .host_catalogue(&acp.agent)
+                .await
+                .ok()
+                .map(|offered| offered.catalogue),
+        };
+        let Some(catalogue) = catalogue.filter(|catalogue| !catalogue.models.is_empty()) else {
+            return Ok(());
+        };
+        let here = self
+            .edge()
+            .map_or_else(|| "this device".to_owned(), |edge| edge.host_name());
+        let (model, effort) = acp_model(&catalogue, &asked).map_err(|offered| {
+            let offered: Vec<&str> = offered.iter().map(String::as_str).collect();
+            RegistryError::UnknownModel(format!(
+                "{} on {here} offers no model {asked:?}; it offers {}",
+                acp.agent,
+                list(&offered)
+            ))
+        })?;
+        if let Some(effort) = effort {
+            match acp.effort.as_deref() {
+                None => acp.effort = Some(effort),
+                Some(asked_effort) if asked_effort == effort => {}
+                Some(asked_effort) => {
+                    return Err(RegistryError::UnknownModel(format!(
+                        "{asked:?} is {model} at effort {effort}, but effort {asked_effort} \
+                         was asked; name the model {model} with the effort you want"
+                    )));
+                }
+            }
+        }
+        acp.model = Some(model);
+        Ok(())
+    }
+}
+
 /// Words listed as a person would say them: `a, b or c`, or `nothing`.
 fn list(words: &[&str]) -> String {
     match words {
@@ -405,6 +510,56 @@ mod tests {
     use wire::{CodexCreateConfig, OfferedModel, PermissionLevel as Level};
 
     use super::*;
+
+    /// An ACP agent's model named as Antigravity's own CLI prints it is the
+    /// model and effort its session takes apart; a name in another case is
+    /// the value it means; a value itself stands; anything else is refused
+    /// with the values the session takes, never passed on to be dropped.
+    #[test]
+    fn an_acp_model_is_named_as_its_session_takes_it() {
+        let model = |value: &str, name: &str, efforts: &[&str]| OfferedModel {
+            value: value.into(),
+            display_name: name.into(),
+            efforts: efforts.iter().map(|effort| (*effort).to_owned()).collect(),
+            ..Default::default()
+        };
+        let efforts = ["low", "medium", "high", "xhigh"];
+        let catalogue = Catalogue {
+            models: vec![
+                model("gemini-3.8-flash", "Gemini 3.8 Flash", &efforts),
+                model("gemini-4-neon", "Gemini 4 Neon", &efforts),
+                model("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)", &efforts),
+            ],
+            ..Default::default()
+        };
+        let named = |asked: &str| acp_model(&catalogue, asked);
+        assert_eq!(named("gemini-4-neon"), Ok(("gemini-4-neon".into(), None)));
+        assert_eq!(
+            named("gemini-3.8-flash-low"),
+            Ok(("gemini-3.8-flash".into(), Some("low".into())))
+        );
+        assert_eq!(
+            named("Gemini 4 Neon (XHigh)"),
+            Ok(("gemini-4-neon".into(), Some("xhigh".into())))
+        );
+        assert_eq!(named("GEMINI-4-NEON"), Ok(("gemini-4-neon".into(), None)));
+        assert_eq!(
+            named("Gemini 3.8 Flash"),
+            Ok(("gemini-3.8-flash".into(), None))
+        );
+        // A value that looks like another's spelling is itself.
+        assert_eq!(
+            named("gpt-oss-120b-medium"),
+            Ok(("gpt-oss-120b-medium".into(), None))
+        );
+        let refused = named("gemini-9-ultra").unwrap_err();
+        assert_eq!(
+            refused,
+            ["gemini-3.8-flash", "gemini-4-neon", "gpt-oss-120b-medium"]
+        );
+        // An effort the model does not take is not its spelling.
+        assert!(named("gemini-4-neon-max").is_err());
+    }
 
     /// A subagent gets its parent's level, or a narrower one asked for;
     /// a wider one is refused naming the parent's. A parent whose level is

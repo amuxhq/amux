@@ -876,16 +876,31 @@ starts the provider just long enough to ask what it offers and whether it is
 signed in, and keeps the answer per provider under the profile's `providers/`
 folder. It asks again when the copy is half an hour old, when the provider's
 `--version` prints something new (read at most once a minute), and for a copy
-that says signed out once a minute has passed. Both Claude kinds share
+that says signed out once a minute has passed. A caller is answered with the
+copy the host holds, however old, and never waits on the provider while there
+is one: a copy that is due is asked again in the background, one ask at a time
+per provider, and when the answer moves what the host's entry says (the hash,
+the sign-in or the version) the entry is published again, so every client
+fetches the new copy by the hash it already follows. Only a host that holds no
+copy yet waits for the helper. Both Claude kinds share
 Claude's copy; terminal Claude, which offers nothing a program can read,
 offers its host's Claude models and commands. An ACP agent is asked with
-`initialize` alone, so asking leaves no conversation in its history; where
-that lists no models (every built-in but Grok), its copy is what the host's
-newest conversation with the agent published, and nothing before the first.
-The host asks each ACP agent its config names as it starts and whenever that
-list changes, all at once, so its entry lists every agent it offers without a
-client asking. Each joins the entry as its answer comes, so a client's list of
-agents follows the entry while it is open. A helper that fails answers with the copy when there is one, else
+`initialize`, and then for its models in a way that leaves nothing behind
+in the agent's history or folders: Grok lists them in `initialize` itself,
+and Antigravity and OpenCode, which list them only in a session, by their
+own listing commands, `agy models` and `opencode models`, beside the modes
+amux knows each has. Where the helper lists no models (an agent a person added), the
+copy is what the host's newest conversation with the agent published, and
+nothing before the first; a conversation's commands fill in too where the
+helper lists none. A helper's listing stands over a conversation's, since a
+conversation's catalogue may be old or show what its own project adds. A
+conversation that publishes a catalogue the copy was not made from has the
+copy made again at once. The daemon asks Claude and Codex as it starts, and
+each ACP agent its config names as it starts and whenever that list changes,
+all at once and in the background, so its entry lists every agent it offers
+without a client asking. Each joins the entry as its answer comes, so a
+client's list of agents follows the entry while it is open. A helper that
+fails answers with the copy when there is one, else
 `UNAVAILABLE`; a request that names no provider, or one the host does not
 know, is `INVALID_ARGUMENT`, and an ACP agent whose program is not found there
 `FAILED_PRECONDITION`. Each host keeps the model and effort a person last

@@ -67,7 +67,8 @@ pub(crate) fn log_to_stderr() {
 /// installation's agent settings, its repositories, which Claude it runs
 /// and the ACP agents it knows, built in or added in `[agents.<id>]`;
 /// and the experiments switched on, with their own settings, which the
-/// daemon runs until it stops.
+/// daemon runs until it stops. The daemon asks Claude and Codex what they
+/// offer as it starts.
 fn launch(config: &InstallationConfig) -> Result<Launch> {
     let install_path = std::env::current_exe().context("finding the amux binary")?;
     let experiments = config.experiments.enabled();
@@ -92,6 +93,7 @@ fn launch(config: &InstallationConfig) -> Result<Launch> {
         agents,
         experiments,
         suspension,
+        ask_providers_at_start: true,
         ..Launch::default()
     })
 }

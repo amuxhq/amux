@@ -129,6 +129,11 @@ pub struct Launch {
     /// How often a copy's provider version is read to see whether it
     /// changed, and how soon a copy that says signed out is asked again.
     pub catalogue_recheck_ms: i64,
+    /// Whether Claude and Codex are asked what they offer as the runtime
+    /// starts, in the background, so a person opening a new agent finds
+    /// the copy there. The daemon does; off by default, so a runtime that
+    /// runs no provider (the phone's) and a test never start one unasked.
+    pub ask_providers_at_start: bool,
     /// How long one step of the profile's core may take before it is
     /// reported with a dump.
     pub step_budget: daemon_core::StepBudget,
@@ -194,6 +199,7 @@ impl Default for Launch {
             claude_kind: wire::Kind::ClaudeSdk,
             catalogue_max_age_ms: 30 * 60_000,
             catalogue_recheck_ms: 60_000,
+            ask_providers_at_start: false,
             step_budget: daemon_core::StepBudget::DAEMON,
             agent_step_budget_micros: 0,
             dump_interval_ms: core_ring::DumpLimit::INTERVAL_MS,
@@ -307,6 +313,10 @@ pub enum RegistryError {
     /// host cannot give; the words say which.
     #[error("{0}")]
     Delegation(String),
+    /// An ACP agent started on a model its session does not take, which
+    /// it would drop for its own default; the words list what it takes.
+    #[error("{0}")]
+    UnknownModel(String),
     /// What an agent asked for a subagent that it may not give: more
     /// authority than its own, or a setting that is the person's to choose.
     #[error("{0}")]
@@ -372,7 +382,8 @@ impl RegistryError {
             | Self::BadCwd(_)
             | Self::NoFarCwd(_)
             | Self::BadName(_)
-            | Self::ForAgents(_) => ErrorCode::InvalidArgument,
+            | Self::ForAgents(_)
+            | Self::UnknownModel(_) => ErrorCode::InvalidArgument,
             Self::KindNotRun { .. }
             | Self::UnknownAgent(_)
             | Self::AgentNotInstalled { .. }
@@ -1112,9 +1123,12 @@ impl ProfileRuntime {
         {
             self.runs_kind(&edge.capabilities(), &edge.host_name(), agent.kind())?;
         }
+        let mut request = request;
+        // An ACP agent's model as its session names it, a person's start
+        // and an agent's alike.
+        self.name_acp_model(&mut request).await?;
         // What an agent asked for its subagent, settled against its own
         // row and this host's offers ([`crate::delegation`]).
-        let mut request = request;
         let delegated = match caller {
             Caller::Agent { agent, .. } => Some(self.delegate(&mut request, *agent).await?),
             Caller::Person { .. } => {
@@ -1886,8 +1900,10 @@ impl ProfileRuntime {
         Ok(report)
     }
 
-    /// Starts the background work: the retention sweep now and then on its
-    /// interval, and the analytics check-ins.
+    /// Starts the background work, once the daemon has gone live (a build
+    /// that only prepared starts no provider): the retention sweep now and
+    /// then on its interval, the analytics check-ins, and asking Claude and
+    /// Codex what they offer.
     pub fn start_background(&self) {
         let retention = self.start_retention();
         self.background.lock().unwrap().push(retention);
@@ -1895,6 +1911,7 @@ impl ProfileRuntime {
             let check_ins = self.start_check_ins();
             self.background.lock().unwrap().push(check_ins);
         }
+        self.refresh_own_at_start();
     }
 
     /// Records the profile's check-in once a day while it runs.
@@ -2010,10 +2027,21 @@ impl ProfileRuntime {
         if report.frames == 0 {
             return;
         }
-        // An ACP agent met a sign-in, or found it gone: the host's entry
-        // says so now, not at the next ask of what the agent offers.
-        if let Some((provider, state)) = &report.acp_sign_in
-            && self.offers().signed_in(provider) != Some(*state != wire::SignInState::SignedOut)
+        // An ACP agent met a sign-in, or found it gone, or a conversation
+        // with it published a catalogue the host's copy was not made from:
+        // the host's entry says so now, not at the next ask of what the
+        // agent offers. The copy is made again from what the conversations
+        // showed, which asks the agent nothing while the copy holds.
+        let signed_in = report.acp_sign_in.as_ref().filter(|(provider, state)| {
+            self.offers().signed_in(provider) != Some(*state != wire::SignInState::SignedOut)
+        });
+        let published = report
+            .acp_catalogue
+            .as_ref()
+            .filter(|(provider, hash)| self.offers().learned_other_than(provider, hash));
+        if let Some(provider) = signed_in
+            .map(|(provider, _)| provider)
+            .or(published.map(|(provider, _)| provider))
             && let Ok(handle) = tokio::runtime::Handle::try_current()
         {
             let runtime = Arc::downgrade(self);
@@ -2022,7 +2050,7 @@ impl ProfileRuntime {
                 if let Some(runtime) = runtime.upgrade()
                     && let Err(error) = runtime.agent_catalogue(&provider).await
                 {
-                    tracing::debug!(provider, %error, "republishing an agent's sign-in");
+                    tracing::debug!(provider, %error, "republishing what an agent offers");
                 }
             });
         }

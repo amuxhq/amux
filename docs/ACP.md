@@ -109,13 +109,26 @@ A host tells clients what each agent offers (models, efforts, modes, commands) b
 Agent can offer pickers. For an ACP agent, asking must leave nothing behind in the agent's own history:
 
 - The catalogue helper (`amux internal catalogue <id>`, in [`agent::catalogue`](../crates/agent/src/catalogue.rs))
-  runs the agent's command, sends `initialize` and stops. It learns the version, resumability, the prompt
-  capabilities and the sign-in methods, plus whatever a built-in lists without a session (Grok's models and
-  commands in `initialize`'s `_meta`).
-- Anything else comes from the agent's most recent conversation on that host: each conversation publishes its
-  catalogue, and [`node::offers`](../crates/node/src/offers.rs) keeps the newest (`Learned`). Before any
-  conversation, New Agent offers no models for an agent that lists none without a session, and the agent starts on
-  its own defaults.
+  runs the agent's command and sends `initialize`. It learns the version, resumability, the prompt capabilities and
+  the sign-in methods. Then it asks for the models the way the agent's quirks say leaves nothing behind
+  (`ModelListing` in [`interpret::acp`](../crates/interpret/src/acp/mod.rs)): Grok lists its models and commands in
+  `initialize`'s `_meta`; Antigravity and OpenCode list them only in a session, so the helper runs their own listing
+  commands instead, `agy models` (a line per model and effort, `gemini-3.8-flash-low`, read back into the model and
+  its efforts) and `opencode models` (a model id per line), and adds the modes amux knows each has (`wire::levels`).
+- What the helper cannot list comes from the agent's most recent conversation on that host: each conversation
+  publishes its catalogue, and [`node::offers`](../crates/node/src/offers.rs) keeps the newest (`Learned`). For an
+  agent a person added that is everything; for the built-ins it is the commands Antigravity and OpenCode say only
+  in a prompted session. The helper's listing stands over a conversation's: it is asked in the host's own folder
+  and kept fresh, while a conversation's may be old or show what its project's own config adds. Before any
+  conversation, New Agent offers no models for an agent a person added, and the agent starts on its own defaults.
+- A model named at an agent's start, by a person or by an agent starting a subagent, is matched onto the values
+  the copy lists before the agent starts (`name_acp_model` in [`node::delegation`](../crates/node/src/delegation.rs)):
+  ignoring case, by value or display name, and in `agy models`' spelling of a model and effort together
+  (`gemini-3.8-flash-low`). An ACP agent drops a config value it does not offer and runs on its default without a
+  word, so a name that matches nothing is refused with the values it takes. A copy that lists no models passes the
+  name through.
+- The copy is served at once however old it is; one that is due is asked again in the background, and the host's
+  entry is published again when the answer moves it.
 - A person's model and effort picks are remembered per agent id (`new_agent.<id>`), as for Claude and Codex; a mode
   pick never is, since the default comes from the agent's own settings.
 
@@ -180,7 +193,7 @@ words.
 | Clients read capabilities and a descriptor | Branching on kind in clients: new kinds fell through to "Claude" or "Codex" silently. |
 | An agent that cannot reopen a conversation never suspends and its exit is final | Starting a fresh conversation and calling it a resume: that is still presenting a different conversation as the same one. |
 | amux holds the queue for every agent; send-now only where the agent is known to steer | Sending concurrent `session/prompt`s: ACP does not define it, and the three built-ins do three different things with it. |
-| The host's catalogue comes from `initialize`, a built-in's session-less sources, then the last conversation | Opening a throwaway session to ask: it leaves a stray conversation in the agent's own history, and none of the built-ins offers a way to delete one. |
+| The host's catalogue comes from `initialize`, a built-in's own listing command, then the last conversation | Opening a throwaway session to ask any agent: OpenCode keeps every session it opens as a stray "New session" in its own history, and none of the built-ins offers a way to delete one. Antigravity lists no session it was never prompted in, but writes a file of about 400 KB for each one that it never removes, even after `session/close`; asked every half hour, that is some 18 MB a day. |
 | A hand-typed protocol crate checked against the vendored schema | The official `agent-client-protocol` crate: barred by the dependency policy, and not tolerant in the way amux decodes. |
 | No file-system or terminal client capabilities | Running the agent's files and terminals through amux: more surface for no gain to a person now. |
 | Built-ins curated in code, commands taken from the official ACP registry; a person's own in config | Installing agents from the registry at runtime: it downloads code, and its Antigravity entry runs a separate bundled binary rather than the `agy` people have. |

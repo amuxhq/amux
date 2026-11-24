@@ -7598,8 +7598,8 @@ impl ::prost::Name for AcpAnswer {
     }
 }
 /// What `amux internal catalogue <agent>` read in an ACP agent's `initialize`
-/// answer, beyond its catalogue. The helper opens no session, so asking
-/// leaves no conversation in the agent's history.
+/// answer, beyond its catalogue. Asking leaves no conversation in the
+/// agent's history.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AcpOffer {
     /// The agent's own name for itself; empty where it gives none (Grok).
@@ -7617,7 +7617,7 @@ pub struct AcpOffer {
     #[prost(message, repeated, tag = "5")]
     pub sign_in_methods: ::prost::alloc::vec::Vec<AcpSignInMethod>,
     /// Signed in or out where `initialize` alone shows it (Grok); unspecified
-    /// where only opening a session would tell.
+    /// where only a conversation would tell.
     #[prost(enumeration = "SignInState", tag = "6")]
     pub sign_in: i32,
 }

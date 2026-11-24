@@ -23,6 +23,11 @@ use crate::reach::{AttemptOutcome, Plan};
 use crate::{DumpReason, codec};
 
 /// Everything that can happen to the daemon, decoded by the driver.
+///
+/// A peer's answer is held inline though it dwarfs the other inputs: each
+/// input is built once and moved straight into the core, so boxing it would
+/// cost an allocation per answer to save memory nothing holds for long.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Input {
     /// The clocks, as an input: the core reads time from nothing else.

@@ -109,8 +109,9 @@ mod tests {
     /// gRPC lets a sender pad a binary header's base64 or not.
     #[test]
     fn a_padded_header_reads_too() {
-        // 26 bytes encoded, which base64 pads.
-        let caller = Caller::agent([7; 16], "code", 1, PermissionLevel::Auto);
+        // 26 bytes encoded (no incarnation or level, which proto3 leaves
+        // out at zero), which base64 pads.
+        let caller = Caller::agent([7; 16], "code", 0, PermissionLevel::Unspecified);
         let padded = base64::engine::general_purpose::STANDARD.encode(caller.encode_to_vec());
         assert!(padded.ends_with('='));
         assert_eq!(Caller::from_header(padded.as_bytes()), Ok(caller));

@@ -1,4 +1,4 @@
-//! Committed protobuf messages for every amux protocol boundary: the session
+//! The committed protobuf messages of every amux protocol boundary: the session
 //! records the journal frames and the store keeps, the agent process's spec
 //! and control frames, and the client, pairing, profile and installation
 //! services.

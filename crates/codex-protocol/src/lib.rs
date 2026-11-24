@@ -14,8 +14,8 @@
 //! into a [`Drift`], which is how the recording checks catch a provider
 //! change.
 //!
-//! The crate is pure: no process, socket or async code, so the interpreter
-//! the phone links can depend on it.
+//! The crate is pure, with no process, socket or async code, so the
+//! interpreter the phone links can depend on it.
 
 mod macros;
 mod probe;

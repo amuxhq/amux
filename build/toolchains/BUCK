@@ -44,14 +44,23 @@ _NIX_COMPILE = select({
 })
 
 # A release build's C tools are this machine's own: on Windows MSVC's,
-# which the prelude finds with vswhere; on Linux whichever `cc` and `c++`
-# are on PATH (GCC on CI's runner, as Cargo's release builds linked with);
-# on a Mac Xcode's, as always.
+# which the prelude finds with vswhere (so none is named below); on Linux
+# whichever `cc` and `c++` are on PATH (GCC on CI's runner, as Cargo's
+# release builds linked with); on a Mac Xcode's, as always.
 _LOCAL = read_root_config("amux", "local", "false") == "true"
 
 _LOCAL_WINDOWS = _LOCAL and host_info().os.is_windows
 
 _LOCAL_LINUX = _LOCAL and host_info().os.is_linux
+
+# Where this machine's `cc`, `c++` and `ar` are, by full path, for a release
+# build on Linux (scripts/buck-config.py finds them on PATH): a build
+# script's compiler is started without a PATH search.
+_LOCAL_CC = read_root_config("amux", "local_cc", "/usr/bin/cc")
+
+_LOCAL_CXX = read_root_config("amux", "local_cxx", "/usr/bin/c++")
+
+_LOCAL_AR = read_root_config("amux", "local_ar", "/usr/bin/ar")
 
 # The Windows toolchain's tools (nix/windows.nix) where the C toolchain
 # looks for GCC's names: LLVM's MSVC-compatible ones, which take cl.exe's,
@@ -97,8 +106,8 @@ _IOS_C_FLAGS = select({
 # (build/platforms/BUCK), so an Xcode upgrade changes their keys.
 amux_cxx_toolchain(
     name = "cxx",
-    archiver = "ar" if _LOCAL_LINUX else "/usr/bin/ar",
-    compiler = "cc" if _LOCAL_LINUX else "/usr/bin/clang",
+    archiver = _LOCAL_AR if _LOCAL_LINUX else (None if _LOCAL_WINDOWS else "/usr/bin/ar"),
+    compiler = _LOCAL_CC if _LOCAL_LINUX else (None if _LOCAL_WINDOWS else "/usr/bin/clang"),
     compiler_type = select({"DEFAULT": "clang", "prelude//os:linux": "gcc", "prelude//os:windows": "windows"}),
     archiver_type = select({"DEFAULT": None, "prelude//os:windows": None if _LOCAL_WINDOWS else "windows_clang"}),
     tools = "prelude//toolchains/msvc:msvc_tools" if _LOCAL_WINDOWS else None,
@@ -108,11 +117,11 @@ amux_cxx_toolchain(
     # compiled for it (_IOS_C_FLAGS).
     c_flags = _IOS_C_FLAGS + select({"DEFAULT": [], "prelude//os:windows": ["/MD"]}),
     cxx_flags = _IOS_C_FLAGS + select({"DEFAULT": [], "prelude//os:windows": ["/MD"]}),
-    cxx_compiler = "c++" if _LOCAL_LINUX else "/usr/bin/clang++",
+    cxx_compiler = _LOCAL_CXX if _LOCAL_LINUX else (None if _LOCAL_WINDOWS else "/usr/bin/clang++"),
     # WebAssembly links with the lld the pinned Rust ships, as Cargo's wasm32
     # builds do; rustc tells it which flavour.
     linker = select({
-        "DEFAULT": "c++" if _LOCAL_LINUX else "/usr/bin/clang++",
+        "DEFAULT": _LOCAL_CXX if _LOCAL_LINUX else (None if _LOCAL_WINDOWS else "/usr/bin/clang++"),
         "prelude//os:none": "{}/lib/rustlib/{}/bin/rust-lld".format(
             read_root_config("rust", "toolchain_dir", ""),
             "aarch64-apple-darwin" if host_info().os.is_macos else "x86_64-unknown-linux-gnu",

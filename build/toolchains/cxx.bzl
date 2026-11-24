@@ -95,6 +95,11 @@ def _system_cxx_toolchain_impl(ctx: AnalysisContext):
 def _cxx_tools_info_toolchain_impl(ctx: AnalysisContext):
     return _cxx_toolchain_from_cxx_tools_info(ctx, ctx.attrs.cxx_tools_info[CxxToolsInfo])
 
+def _not_gcc(tool) -> bool:
+    """Whether a tool isn't GCC's driver, going by its name wherever it is:
+    `g++`, or the system's `c++`, which on a Linux runner is GCC's."""
+    return str(tool).split("/")[-1] not in ("g++", "c++")
+
 def _cxx_toolchain_from_cxx_tools_info(ctx: AnalysisContext, cxx_tools_info: CxxToolsInfo, target_name = "x86_64"):
     os = ctx.attrs._target_os_type[OsLookup].os
     nix = getattr(ctx.attrs, "nix", None)
@@ -111,7 +116,7 @@ def _cxx_toolchain_from_cxx_tools_info(ctx: AnalysisContext, cxx_tools_info: Cxx
     # (Only through a compiler driver: a linker named outright, as wasm-ld
     # is, takes no driver flags. The Linux toolchain's driver is GCC's,
     # which links with its own binutils.)
-    additional_linker_flags = ["-fuse-ld=lld"] if os == Os("linux") and not nix and not getattr(ctx.attrs, "linker_type", None) and cxx_tools_info.linker not in ("g++", "c++") and cxx_tools_info.cxx_compiler not in ("g++", "c++") else []
+    additional_linker_flags = ["-fuse-ld=lld"] if os == Os("linux") and not nix and not getattr(ctx.attrs, "linker_type", None) and _not_gcc(cxx_tools_info.linker) and _not_gcc(cxx_tools_info.cxx_compiler) else []
 
     # A target whose linker isn't the host's (wasm-ld for WebAssembly) says
     # which kind it is.

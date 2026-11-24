@@ -274,6 +274,14 @@ def write(mode: str) -> None:
         f"  linux = {'true' if linux(mode) else 'false'}",
         f"  local = {'true' if mode == 'local-build' else 'false'}",
     ]
+    if mode == "local-build" and platform.system() == "Linux":
+        # A release build's C tools (build/toolchains/BUCK), by full path:
+        # the prelude starts a build script's compiler without a PATH
+        # search.
+        for key, tool in (("local_cc", "cc"), ("local_cxx", "c++"), ("local_ar", "ar")):
+            found = shutil.which(tool)
+            if found:
+                lines.append(f"  {key} = {found}")
     if linux_worker_cores():
         # The cores a whole-worker Linux test asks for, when this machine's
         # own worker, not the build host's, runs them (a fork's CI run,

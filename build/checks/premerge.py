@@ -50,6 +50,7 @@ SCRIPTS = [
 
 def main(patterns: list[str]) -> int:
     started = time.monotonic()
+    wall_start = time.time()
     # What the check targets read from outside the checkout is written now,
     # before any Buck2 command starts, so `just test` below, which writes it
     # too, finds nothing left to change. Buck2's daemon runs two commands at
@@ -89,6 +90,15 @@ def main(patterns: list[str]) -> int:
         time.sleep(0.1)
     if tests.wait() != 0:
         failed.append((f"just test {' '.join(patterns)}", None))
+    # Where the tests' time went (build/checks/timing.py), so a landing's
+    # log says it for the build host too.
+    ours = [log for log in (ROOT / "buck-out/v2/log").glob("*_test_*_events.pb.zst") if log.stat().st_mtime >= wall_start]
+    if ours:
+        newest = max(ours, key=lambda log: log.stat().st_mtime)
+        try:
+            subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "build/checks/timing.py"), str(newest)], cwd=ROOT, stdin=subprocess.DEVNULL, timeout=300)
+        except subprocess.TimeoutExpired:
+            print("timing: no summary (it took over five minutes)", flush=True)
 
     for name, log in failed:
         if log is not None:

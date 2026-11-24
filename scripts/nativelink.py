@@ -274,8 +274,10 @@ WINDOWS_ENVIRONMENT = [
     "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "USERNAME", "COMPUTERNAME", "TEMP", "TMP",
 ]
 
-# Every Windows test asks for the whole worker (build/toolchains/BUCK).
-WINDOWS_WHOLE_WORKER = 4
+# The slots the Windows worker offers, more than the runner's four cores,
+# since a test spends about two fifths of its time fetching its binary
+# (build/toolchains/BUCK).
+WINDOWS_WHOLE_WORKER = 6
 
 
 def windows(cache: Path, remote: str, results: Path | None, cores: int) -> None:

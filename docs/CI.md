@@ -47,15 +47,14 @@ a change can reach: Buck2 reruns only the tests and checks whose inputs
 changed, and takes the rest from the cache. The macOS jobs, through Buck2
 too, rerun only what changed; the Windows Cargo job runs whole.
 
-A push to `main` is a landed commit, and its run is that commit's verdict,
-so a later push doesn't stop it, and the macOS jobs, which keep their store
-between runs, are never cut off before they keep it. The macOS jobs are the
-exception to judging every commit whole: the organisation has five macOS
-runners and a run takes three, so each macOS job waits for the same job of
-the run before it, and a newer push takes the place of one still waiting.
-The newer commit holds every change the skipped one did. A newer push to a
-pull request's branch stops the run of the push before it, which it
-supersedes.
+CI on `main` judges the newest commit, not every commit. Each job of a
+push's run waits for the same job of the run before it, and a newer push
+takes the place of one still waiting; a job that has started is never
+stopped, so the macOS jobs always keep their store. The newer commit holds
+every change of the ones it skipped, so a burst of landings is judged once,
+at its end, rather than queuing an hour of runs: the organisation has five
+macOS runners and a run takes three. A newer push to a pull request's
+branch stops the run of the push before it, which it supersedes.
 
 An organisation on GitHub's free plan runs 20 jobs at once and the rest
 wait, so the run has as few jobs as keep each under ten minutes: work that
@@ -142,9 +141,9 @@ The build host's action cache can't be written from CI, so the tests'
 results go into the runner's own, which the job keeps in GitHub's cache
 between runs (`windows-test-results-*`); what each test printed goes to the
 build host's cache too, so a kept result still finds it. Each test binary
-takes one of the worker's four cores and runs two of its tests at a time,
-so four binaries run at once and one's download from the build host
-overlaps the others' running. The job keeps Buck2's and NativeLink's logs
+takes one of the worker's six slots, on the runner's four cores, and runs
+two of its tests at a time, so six binaries run at once and their
+downloads from the build host overlap the others' running. The job keeps Buck2's and NativeLink's logs
 as its `buck2-logs-windows` artifact. Left out, as under Cargo: the protocol models,
 the simulated stories and the terminal journeys.
 

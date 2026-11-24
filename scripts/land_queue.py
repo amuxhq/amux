@@ -119,10 +119,14 @@ def logged_gate(log, wrap: Wrap | None, **checks) -> Gate:
     """The gate, with each command's output going to the landing's log.
     `checks` replaces the gate's commands (the tests' own)."""
 
+    # The queue's account has no login shell (its SHELL is nologin), and
+    # tmux, which the terminal journeys drive, starts each pane with $SHELL.
+    env = dict(os.environ, SHELL="/bin/sh")
+
     def run(argv: Sequence[str], cwd: Path) -> int:
         log.write(f"$ {' '.join(argv)}\n")
         log.flush()
-        return subprocess.run(list(argv), cwd=cwd, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL).returncode
+        return subprocess.run(list(argv), cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL).returncode
 
     gate = Gate(run=run, **checks)
     if wrap is not None:

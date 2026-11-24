@@ -294,8 +294,11 @@ golden`), which the phone's suites lease: on a runner, with no `wt`, a test
 takes `amux-iphone-1` under a lock ([the iPhone app](IOS.md#builds)). It
 then builds every target under `apps/apple` but the Mac app's and runs the
 phone's suites; the Mac app job builds the Mac app, its storybook and
-screens and runs the Mac app's tests. Neither fetches the outputs it
-builds (`--materializations=none`): nothing in the job reads them. The
+screens and runs the Mac app's tests. Each is one `buck2 test
+--build-default-info` over its targets, so a suite starts as soon as what
+it needs is built: the Mac app's bridge and the development workspace its
+tests start are two chains of about a quarter of an hour each on the
+runner, and one after the other they were half an hour. The
 Release app for a phone is not built here: its bridge is a fat-LTO link of
 the whole Rust graph for one more target, and it reruns on every Rust
 change; `just ios release` builds and audits it on the Mac. The run step is bounded

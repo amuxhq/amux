@@ -1,18 +1,8 @@
 #!/bin/sh
 # Run the pinned buck2 (build/tools.json), fetching it on first use, after
 # making sure .buckconfig.local names this machine's toolchains at their
-# pinned versions (scripts/buck-config.py).
+# pinned versions and where its actions go (scripts/buck-config.py).
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
-root=$(dirname "$here")
-local_config="$root/.buckconfig.local"
-if [ ! -f "$local_config" ] \
-        || [ "$root/rust-toolchain.toml" -nt "$local_config" ] \
-        || [ "$root/build/tools.json" -nt "$local_config" ] \
-        || [ "$root/flake.lock" -nt "$local_config" ] \
-        || [ "$root/nix/toolchain.nix" -nt "$local_config" ] \
-        || [ "$here/buck-config.py" -nt "$local_config" ] \
-        || [ "$HOME/Library/Caches/amux/nativelink/cores" -nt "$local_config" ]; then
-    "$here/py" "$here/buck-config.py"
-fi
+"$here/py" "$here/buck-config.py"
 exec "$("$here/py" "$here/buck-tools.py" path buck2)" "$@"

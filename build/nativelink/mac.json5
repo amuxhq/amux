@@ -7,23 +7,51 @@
 // cache, so this is what lets a test that passed in one worktree be a cache
 // hit in another. It is also the sandbox: an action sees only its declared
 // inputs.
+//
+// With a remote (`nativelink.py install --remote URL`, normally nova's
+// NativeLink), the remote's worker also registers with this scheduler over
+// the worker listener below, and runs the actions only Linux can run, and
+// the cache is this machine's in front of the remote's: what Buck2 uploads
+// reaches the remote too, so the remote's worker finds an action's inputs,
+// and results the remote holds are hits here. While the remote is out of
+// reach this runs from a second rendering with no remote in it at all, so
+// nothing waits on it (scripts/nativelink.py's start script picks one, and
+// scripts/buck-config.py restarts it when that changes).
 {
   stores: [
     {
-      name: "CAS",
+      name: "LOCAL_CAS",
+      filesystem: {
+        content_path: "{{cache}}/cas",
+        temp_path: "{{cache}}/cas-tmp",
+        eviction_policy: { max_bytes: {{cas_bytes}} },
+      },
+    },
+    {
+      // This machine's blobs only, for checking this machine's results.
+      name: "LOCAL_ONLY_CAS",
       fast_slow: {
-        fast: {
-          filesystem: {
-            content_path: "{{cache}}/cas",
-            temp_path: "{{cache}}/cas-tmp",
-            eviction_policy: { max_bytes: {{cas_bytes}} },
-          },
-        },
+        fast: { ref_store: { name: "LOCAL_CAS" } },
         slow: { noop: {} },
       },
     },
     {
-      name: "AC",
+      // The worker's: it hard-links inputs from the filesystem layer, and
+      // its outputs stay there. An input it lacks it reads from the remote,
+      // if there is one: Buck2 asks the remote what to upload, so an input
+      // the remote already has (a directory, a source file) isn't uploaded
+      // again and may never have reached this machine. This is also why
+      // the rendering without a remote exists: the worker asks this store
+      // about every output, and with the remote gone each question waits.
+      name: "WORKER_CAS",
+      fast_slow: {
+        fast: { ref_store: { name: "LOCAL_CAS" } },
+        slow: {{worker_slow}},
+        slow_direction: "get",
+      },
+    },
+    {
+      name: "LOCAL_AC",
       // The two stores evict on their own, so an action result can outlive
       // the outputs it names; Buck2 then fails the build ("not found in
       // either fast or slow store") rather than running the action again.
@@ -36,9 +64,10 @@
             eviction_policy: { max_bytes: {{ac_bytes}} },
           },
         },
-        cas_store: { ref_store: { name: "CAS" } },
+        cas_store: { ref_store: { name: "LOCAL_ONLY_CAS" } },
       },
     },
+{{remote_stores}}
   ],
   schedulers: [
     {
@@ -63,8 +92,8 @@
       local: {
         name: "mac-",
         worker_api_endpoint: { uri: "grpc://127.0.0.1:50061" },
-        cas_fast_slow_store: "CAS",
-        upload_action_result: { ac_store: "AC" },
+        cas_fast_slow_store: "WORKER_CAS",
+        upload_action_result: { ac_store: "LOCAL_AC" },
         work_directory: "{{cache}}/work",
         max_action_timeout_s: 3600,
         {{entrypoint}}
@@ -108,6 +137,7 @@
         health: {},
       },
     },
+{{remote_workers}}
   ],
   global: { max_open_files: 24576 },
 }

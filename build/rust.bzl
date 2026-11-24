@@ -187,16 +187,25 @@ _amux_test = rule(
     } | re_test_common.test_args(),
 )
 
-def _test(name, env, run_env, labels, product, timeouts, whole_worker = False, harness = True, **binary):
+def _test(name, env, run_env, labels, product, timeouts, whole_worker = False, harness = True, nova_only = False, **binary):
     """A test binary `name` built from `binary` (rust_binary's attributes),
     run by the test runner with `run_env` and the compile-time `env`, as
     the prelude's rust_test runs with both."""
     rustc_flags = (["--test"] if harness else []) + binary.pop("rustc_flags", [])
+    platform = host_platform(product = product, purpose = "testing")
+    compatible = []
+    if nova_only:
+        # Built and run for Linux from any machine, so a Mac sends it to
+        # nova's worker; skipped when no Linux worker is in reach.
+        platform = "root//build/platforms:linux-{}-testing-dev".format(product)
+        compatible = ["root//build/constraints:linux-workers"]
+        labels = labels + ["nova-only"]
     native.rust_binary(
         name = name + "-binary",
         env = env,
         rustc_flags = rustc_flags,
-        default_target_platform = host_platform(product = product, purpose = "testing"),
+        default_target_platform = platform,
+        target_compatible_with = compatible,
         visibility = [],
         **binary
     )
@@ -207,7 +216,8 @@ def _test(name, env, run_env, labels, product, timeouts, whole_worker = False, h
         harness = harness,
         labels = labels,
         remote_execution = "whole-worker" if whole_worker else None,
-        default_target_platform = host_platform(product = product, purpose = "testing"),
+        default_target_platform = platform,
+        target_compatible_with = compatible,
         **timeouts
     )
 
@@ -336,6 +346,7 @@ def amux_rust_test(
         timeouts = {},
         whole_worker = False,
         harness = True,
+        nova_only = False,
         **kwargs):
     """One integration-test binary: Cargo's `[[test]] name = ...`, which
     `autotests = false` crates keep to one per crate, built from
@@ -347,7 +358,10 @@ def amux_rust_test(
     runner's `slow`, `terminate_after` and `threads`; `whole_worker = True`
     reserves every core of the worker for a test that uses them all.
     `harness = False` for Cargo's `harness = false`: a test with its own
-    `main`, run as a program rather than by the test runner."""
+    `main`, run as a program rather than by the test runner. `nova_only =
+    True` for a test too heavy for a laptop's worker: it is always built and
+    run for Linux, on nova's worker, and is skipped when nova is out of
+    reach (label `nova-only`)."""
     crate = _crate_name()
     package = native.package_name()
     _test(
@@ -359,6 +373,7 @@ def amux_rust_test(
         product = product,
         timeouts = timeouts,
         whole_worker = whole_worker,
+        nova_only = nova_only,
         crate = name.replace("-", "_"),
         crate_root = package + "/" + (crate_root or "tests/{}.rs".format(name)),
         srcs_filegroup = _tree(name + ".test", srcs if srcs != None else native.glob(["tests/**"]), include),

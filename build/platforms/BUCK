@@ -53,8 +53,13 @@ execution_platform(
 )
 
 # A Mac prefers its own worker and sends what only Linux can run to nova's;
-# nova has no macOS worker to send anything to.
+# nova has no macOS worker to send anything to. With no Linux worker in
+# reach (`amux.linux = false`, which scripts/buck-config.py writes when nova
+# is unreachable or none is set up), there is no Linux platform, so a Linux
+# action fails at once rather than waiting for a worker that isn't coming.
+_LINUX = read_root_config("amux", "linux", "true") == "true"
+
 execution_platforms(
     name = "execution",
-    platforms = [":exec-macos", ":exec-linux"] if host_info().os.is_macos else [":exec-linux"],
+    platforms = ([":exec-macos"] + ([":exec-linux"] if _LINUX else [])) if host_info().os.is_macos else [":exec-linux"],
 )

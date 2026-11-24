@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 # A run started by hand during the night's waits for it rather than
-# competing for the same caches.
+# running beside it.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
@@ -26,6 +26,10 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
 
+# No job keeps a Rust cache. GitHub's cache holds 10 GB for the whole
+# repository, and the per-push jobs need it to start warm (the macOS jobs'
+# stores alone are most of it); each of these saved 270-610 MB a night to
+# save a compile that is minutes of a job that runs for hours.
 jobs:
   # The models' integration tests, one module per model, so a model added
   # there is checked here without anyone listing it.
@@ -60,12 +64,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
-      # Every model builds the same test binary, so one cache serves them
-      # all, saved by the quickest.
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          shared-key: nightly-models
-          save-if: ${{ matrix.model == 'switch' }}
       - name: Fetch the pinned tools
         run: nix develop --command true
       - name: Check the model
@@ -81,30 +79,18 @@ jobs:
         include:
           - name: Pointer checks over the C ABI
             kind: pointers
-            cache: nightly-miri
-            save: true
             timeout: 60
           - name: Address sanitizer
             kind: address
-            cache: nightly-sanitize-address
-            save: true
             timeout: 90
           - name: Thread sanitizer
             kind: thread
-            cache: nightly-sanitize-thread
-            save: true
             timeout: 90
-          # The offline tests and the seeds build the same workspace tests,
-          # so they share a cache, which the offline job saves.
           - name: Offline tests
             kind: offline
-            cache: nightly-test
-            save: true
             timeout: 120
           - name: Simulated stories, 2000 seeds
             kind: seeds
-            cache: nightly-test
-            save: false
             timeout: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -117,10 +103,6 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
           df -h /
       - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          shared-key: ${{ matrix.cache }}
-          save-if: ${{ matrix.save }}
       - name: Fetch the pinned tools
         run: nix develop --command true
       - name: Run ${{ matrix.kind }}

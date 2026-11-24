@@ -355,7 +355,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn an_agent_is_answered_only_about_its_own_children() {
         let host = Host::start().await;
-        let lead = Caller::agent_of(host.here, host.lead, "lead");
+        let lead = Caller::agent_of(host.here, host.lead, "lead", 1, wire::PermissionLevel::Auto);
         assert_eq!(host.answers(host.coder, &lead).await, Ok(()));
         for (agent, why) in [
             (host.other, "no one's child"),
@@ -368,7 +368,13 @@ mod tests {
                 "{why}"
             );
         }
-        let coder = Caller::agent_of(host.here, host.coder, "coder");
+        let coder = Caller::agent_of(
+            host.here,
+            host.coder,
+            "coder",
+            1,
+            wire::PermissionLevel::Auto,
+        );
         assert_eq!(
             host.answers(host.lead, &coder).await,
             Err(tonic::Code::PermissionDenied),
@@ -384,13 +390,25 @@ mod tests {
         // An agent of the paired host is answered about the child it made
         // here, and about no other; the same id on the paired host is
         // another agent than this host's lead.
-        let remote = Caller::agent_of(host.paired, host.remote, "remote");
+        let remote = Caller::agent_of(
+            host.paired,
+            host.remote,
+            "remote",
+            1,
+            wire::PermissionLevel::Auto,
+        );
         assert_eq!(host.answers(host.helper, &remote).await, Ok(()));
         assert_eq!(
             host.answers(host.coder, &remote).await,
             Err(tonic::Code::PermissionDenied)
         );
-        let lead_elsewhere = Caller::agent_of(host.paired, host.lead, "lead");
+        let lead_elsewhere = Caller::agent_of(
+            host.paired,
+            host.lead,
+            "lead",
+            1,
+            wire::PermissionLevel::Auto,
+        );
         assert_eq!(
             host.answers(host.coder, &lead_elsewhere).await,
             Err(tonic::Code::PermissionDenied)
@@ -403,7 +421,7 @@ mod tests {
         let host = Host::start().await;
         for caller in [
             Caller::person_here(Surface::Terminal),
-            Caller::agent_of(host.here, host.lead, "lead"),
+            Caller::agent_of(host.here, host.lead, "lead", 1, wire::PermissionLevel::Auto),
         ] {
             let changes = host.changes(host.away, &caller).await.unwrap_err();
             let preview = host.preview(host.away, &caller).await.unwrap_err();

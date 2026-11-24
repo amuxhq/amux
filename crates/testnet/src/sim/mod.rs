@@ -406,6 +406,26 @@ impl SimNet {
             AGENT_GRACE_MS,
             sim.net.now_ms(),
         );
+        // The parent's host states the incarnation making the create, from
+        // its own row, as node's does from the caller's.
+        let parent_incarnation = match &decl.parent {
+            Some(parent) => {
+                let parent = self.agent_named(parent)?;
+                let key = parent.key();
+                let at = self.host_index(&parent.host)?;
+                read(&sim, at, |store| {
+                    Ok(store
+                        .agent(&key)
+                        .map_err(|error| error.to_string())?
+                        .map_or(0, |row| row.incarnation))
+                })
+                .map_err(|error| NetError::Host {
+                    host: parent.host.clone(),
+                    error,
+                })?
+            }
+            None => 0,
+        };
         let create = Create {
             agent,
             cwd,
@@ -415,6 +435,7 @@ impl SimNet {
             workspace: None,
             recent: None,
             spec,
+            parent_incarnation,
         };
         match &decl.journal {
             Some(name) => sim
@@ -827,6 +848,113 @@ impl World for SimNet {
             })),
         )?
         .ok_or_else(|| answered_without_row(&at.host, &what))
+    }
+
+    fn next_start(
+        &self,
+        agent: &str,
+        steps: Vec<provider_fakes::script::Step>,
+    ) -> Result<Ack, NetError> {
+        let at = self.agent_named(agent)?;
+        let id = AgentId(at.id.into_bytes());
+        self.sim().net.add_agent(id, agent, &steps);
+        Ok(self.ack(format!("{agent}'s next start plays its new script")))
+    }
+
+    async fn message(
+        &self,
+        from: &str,
+        to: &str,
+        label: &str,
+        text: &str,
+    ) -> Result<Ack, NetError> {
+        let sender = self.agent_named(from)?.clone();
+        let recipient = self.agent_named(to)?.clone();
+        let (f, h) = (
+            self.host_index(&sender.host)?,
+            self.host_index(&recipient.host)?,
+        );
+        let link = match f == h {
+            true => None,
+            false => Some(self.link(&sender.host, &recipient.host)?),
+        };
+        let mut sim = self.sim();
+        failed(&sim)?;
+        // A carried call is made while the link between the two hosts is
+        // up, as a create from another host is.
+        if !(sim.is_up(f) && sim.is_up(h) && link.is_none_or(|link| sim.net.is_live(link))) {
+            return Err(NetError::Host {
+                host: sender.host.clone(),
+                error: format!("{from}'s message to {to}: no channel to {}", recipient.host),
+            });
+        }
+        // The recipient's host takes the sender from the caller, as node's
+        // host services build the envelope.
+        let envelope = wire::Envelope {
+            id: crate::net::message_id(label),
+            context: None,
+            from: Some(wire::Sender {
+                value: Some(wire::sender::Value::Agent(wire::AgentSender {
+                    agent: Some(sender.parent()),
+                    name: sender.name.clone(),
+                })),
+            }),
+            to: Some(recipient.parent()),
+            body: Some(wire::envelope::Body::Message(wire::MessageBody {
+                text: text.to_owned(),
+                attachments: Vec::new(),
+            })),
+        };
+        let what = format!("{from}'s message to {to}");
+        // The sender's host states the incarnation sending, from its own
+        // row, and the recipient's host hears it before the message, as
+        // node's host services tell the core.
+        let key = sender.key();
+        let incarnation = read(&sim, f, |store| {
+            Ok(store
+                .agent(&key)
+                .map_err(|error| error.to_string())?
+                .map_or(0, |row| row.incarnation))
+        })
+        .map_err(|error| NetError::Host {
+            host: sender.host.clone(),
+            error,
+        })?;
+        registry_call(
+            &mut sim,
+            h,
+            &what,
+            ClientRequest::HeardFromCaller {
+                agent: AgentId(recipient.id.into_bytes()),
+                caller: (
+                    HostId(sender.host_id.into_bytes()),
+                    AgentId(sender.id.into_bytes()),
+                ),
+                incarnation,
+            },
+        )?;
+        let call = sim.net.client_call(
+            h,
+            ClientRequest::SendMessage {
+                envelope: Box::new(envelope),
+            },
+        );
+        let ended = wait(&mut sim, &what, |sim| {
+            sim.net
+                .client(h, call)
+                .and_then(|client| client.ended().cloned())
+                .ok_or_else(|| "not yet answered".to_owned())
+        })?;
+        sim.net.take_client(h, call);
+        failed(&sim)?;
+        drop(sim);
+        match ended {
+            daemon_core::payload::Status::Ok => Ok(self.ack(format!("{what} accepted"))),
+            status => Err(NetError::Host {
+                host: recipient.host,
+                error: format!("{what}: the call ended {status:?}"),
+            }),
+        }
     }
 
     async fn peer_message(

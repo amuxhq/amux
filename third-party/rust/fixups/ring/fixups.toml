@@ -109,6 +109,19 @@ include_paths = ["include", "."]
 fixup_include_paths = ["include"]
 compiler_flags = ["/WX-"]
 preferred_linkage = "static"
+# Windows on Arm: ring's C and its Arm64 assembly in the Windows (win64)
+# flavour, which clang-cl assembles itself, as ring's build script has clang
+# do; there is no nasm step as on x64. poly1305_arm.c is 32-bit Arm's.
+[['cfg(all(version = "=0.17.14", target_arch = "aarch64", target_os = "windows", target_env = "msvc"))'.cxx_library]]
+name = "ring-c-asm-win-arm64"
+srcs = ["crypto/**/*.c", "pregenerated/*armv8*-win64.S", "pregenerated/*armx*-win64.S", "third_party/fiat/asm/*.S"]
+exclude = ["crypto/poly1305/poly1305_arm.c"]
+headers = ["include/**/*.h", "crypto/**/*.h", "third_party/**/*.h", "crypto/**/*.inl"]
+include_paths = ["include", "."]
+fixup_include_paths = ["include"]
+compiler_flags = ["/WX-"]
+preferred_linkage = "static"
+
 [['cfg(all(version = "=0.17.14", target_arch = "x86_64", target_os = "windows"))'.prebuilt_cxx_library]]
 name = "ring-asm-windows-x86_84"
 static_libs = ["pregenerated/*x86_64*-nasm.o"]

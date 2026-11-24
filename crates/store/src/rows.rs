@@ -24,7 +24,7 @@ const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent_host
     ingest_cursor, next_revision, source_cursor, source_generation, \
     complete_from_order, exhausted, owes_report, created_at_ms, incarnation, background_jobs, \
     descendants, filing, filed_at_ms, title, name_given, last_said, native, experimental, provider, \
-    settings";
+    settings, parent_incarnation";
 
 const ITEM_COLUMNS: &str =
     "key, position, revision, at_ms, input_id, text, kind, attachments, body";
@@ -236,8 +236,11 @@ pub(crate) fn update_of(columns: &[&str]) -> String {
 
 /// What `put_agent` writes over a held row. An own row takes the registry
 /// columns, and one moving to a new incarnation is back in phase starting
-/// with a turn owed: the new process has said nothing yet. A replica takes
-/// the registry columns and the envelope its inventory row carries.
+/// with a turn owed: the new process has said nothing yet. Its parent
+/// incarnation only rises, so a write from a row read before the parent was
+/// last heard from does not undo it. A replica takes the registry columns,
+/// its origin's parent incarnation and the envelope its inventory row
+/// carries.
 pub(crate) fn registry_update(own: bool) -> String {
     let registry = update_of(REGISTRY);
     if own {
@@ -248,12 +251,13 @@ pub(crate) fn registry_update(own: bool) -> String {
              phase = CASE WHEN excluded.incarnation > agents.incarnation \
                THEN {starting} ELSE agents.phase END, \
              owes_report = CASE WHEN excluded.incarnation > agents.incarnation \
-               THEN 1 ELSE agents.owes_report END",
+               THEN 1 ELSE agents.owes_report END, \
+             parent_incarnation = MAX(agents.parent_incarnation, excluded.parent_incarnation)",
             starting = wire::Phase::Starting as i32,
         )
     } else {
         format!(
-            "{registry}, {}, {}, {}",
+            "{registry}, parent_incarnation = excluded.parent_incarnation, {}, {}, {}",
             update_of(INVENTORY_ENVELOPE),
             update_of(INVENTORY_COUNTS),
             update_of(EXPERIMENTAL)
@@ -345,6 +349,7 @@ fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
             experimental: Default::default(),
             provider: row.get::<_, Option<String>>(33)?.unwrap_or_default(),
             settings: None,
+            parent_incarnation: row.get(35)?,
         },
         row.get(14)?,
         row.get(13)?,
@@ -510,17 +515,6 @@ impl Rows<'_> {
         self.agents_where("name = ?1", params![name])
     }
 
-    /// The incarnation an agent's row holds, if it is held.
-    pub(crate) fn incarnation(&self, agent: &AgentKey) -> Result<Option<u32>, StoreError> {
-        Ok(self
-            .conn
-            .prepare_cached(
-                "SELECT incarnation FROM agents WHERE origin_host = ?1 AND agent_id = ?2",
-            )?
-            .query_row(params![agent.host, agent.agent], |row| row.get(0))
-            .optional()?)
-    }
-
     /// Inserts the row whole, or writes `update` (a `DO UPDATE SET` list)
     /// over the held one.
     pub(crate) fn upsert_agent(&self, row: &AgentRow, update: &str) -> Result<(), StoreError> {
@@ -528,7 +522,7 @@ impl Rows<'_> {
             .prepare_cached(&format!(
                 "INSERT INTO agents ({AGENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
                  ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
-                 ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
+                 ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
             ))?
             .execute(params![
                 row.agent.host,
@@ -570,6 +564,7 @@ impl Rows<'_> {
                 row.settings
                     .as_ref()
                     .map(|settings| settings.encode_to_vec()),
+                row.parent_incarnation,
             ])?;
         Ok(())
     }

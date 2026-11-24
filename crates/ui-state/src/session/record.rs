@@ -397,6 +397,7 @@ fn agent(agent: Agent) -> Agent {
         // own ids are kept.
         provider,
         settings: agent.settings,
+        parent_incarnation: agent.parent_incarnation,
     }
 }
 

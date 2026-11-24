@@ -220,6 +220,17 @@ host already has is a hit on the Mac, so a branch tested on the host is
 cache hits for the same configuration on the Mac and the other way round.
 macOS results stay on the Mac.
 
+An output built on the host stays there until the Mac needs it, so a Linux
+test sent from the Mac brings back only its result. `buck2 build` is
+different: it fetches every output it was asked for into `buck-out`. A
+Linux test binary is 150–240 MB, and the tailnet carries about 10 MB/s, so
+building the Linux test binaries above `daemon-core` from the Mac fetched
+2.5–2.7 GiB and took 365–414 s, where the build itself took 124–186 s;
+while the download ran, every other call to the host queued behind it.
+With `--materializations none`, which `just check-windows` passes for the
+same reason, the same build took 128 s and fetched 2 MiB. The host builds it
+in 85 s. Pass it whenever the Mac won't run what it builds.
+
 Asked whether it holds a blob, the Mac's cache asks the host, then its own
 layer for what the host lacks. Buck2 asks before it uploads an action's
 inputs, and again as an output it refers to nears the end of the three
@@ -259,32 +270,84 @@ that has neither (a fork's pull request in CI).
 
 ### Windows builds
 
-Everything built for `x86_64-pc-windows-msvc` compiles and links on a
-Linux worker, from any machine: Rust's own Windows target, LLVM's
+Everything built for Windows compiles and links on a Linux worker, from
+any machine, for x64 (`x86_64-pc-windows-msvc`, what releases ship and CI
+tests; the `windows` target platforms) or for Arm64
+(`aarch64-pc-windows-msvc`, Windows on Arm; `windows-arm64`): Rust's own Windows target, LLVM's
 MSVC-compatible C compiler and linker (`clang-cl`, `lld-link`,
 `llvm-lib`), and Microsoft's C runtime and Windows SDK, which nixpkgs
 fetches with `xwin` from the Visual Studio release it pins, under
 Microsoft's licence. They are `packages.x86_64-linux.windows` in
 [`flake.nix`](../flake.nix) ([`nix/windows.nix`](../nix/windows.nix)),
 realized on the worker like the Linux toolchain (`//:nix-windows`), and
-apart from it, so an SDK update changes only Windows keys. A Windows
+apart from it, so an SDK update changes only Windows keys. Each
+architecture has its own compiler and linker wrappers over its own CRT and
+SDK (Arm64's under `arm64/bin`), beside one Rust that carries both. A Windows
 machine only runs what it is given: the binaries a Windows test starts are
 built for Windows (`amux_binaries` in [`build/rust.bzl`](../build/rust.bzl)),
-and the test runs on a Windows worker (`exec-windows`), which only CI's
-Windows job has.
+and the test runs on a Windows worker (`exec-windows`), which CI's
+Windows job has, and so does a Windows development machine (below).
 
 ```sh
 just check-windows    # every library, binary and test, for Windows
+AMUX_WINDOWS_PLATFORM=windows-arm64 just check-windows    # for Windows on Arm
 ```
 
-builds the whole workspace for `windows-cli-testing-dev` and downloads
-nothing. It needs a Linux worker in reach. A crate's C, which reindeer's
+builds the whole workspace for `windows-cli-testing-dev` (on a Windows on
+Arm machine, `windows-arm64-cli-testing-dev`) and downloads nothing. It needs a Linux worker in reach. A crate's C, which reindeer's
 fixups compile for Windows, is compiled against the C runtime as a DLL
 (`/MD`), as Rust's own Windows code and the `cc` crate's builds link it;
 `windows-targets` links the Windows API with `raw-dylib`
 (`third-party/rust/fixups/windows-targets`), since the import library its
 companion crate carries is found through a search path a build script
 gives Cargo, which reaches no dependent's link under Buck2.
+
+### A Windows development machine
+
+A Windows machine you develop on is set up like a Mac in front of a build
+host: its own checkout, and its own NativeLink, whose cache fronts the build
+host's and whose worker runs the Windows tests. The build host's worker
+registers with it too and runs the Linux actions, which on Windows means
+every compile and link, so nothing builds on the Windows machine itself.
+It needs:
+
+- Git for Windows, with its `bin` directory on `PATH`: the recipes run under
+  its `sh` (the justfile's `windows-shell`).
+- `just`, and Python 3.12 or newer, also named `python3`. Python's installer
+  makes only `python.exe`, and the `python3.exe` that answers first is a
+  stub that opens the Microsoft Store; a copy of `python.exe` named
+  `python3.exe` beside it does.
+- Developer Mode (symbolic links without elevation), long paths, and
+  `git config core.autocrlf false`, so a checkout's goldens and fixtures
+  keep main's bytes.
+- The build host's NativeLink in reach, and this machine reachable from the
+  build host's worker on the port it registers at.
+
+```sh
+python scripts/nativelink.py install --remote grpc://<host>:50051 --workers <this machine's address>:50062
+just test-windows
+```
+
+`install` runs NativeLink as a scheduled task of yours that starts at boot,
+signed in or not, and starts it again a minute after it stops; at boot the
+address the build host's worker registers at may not be up yet, and
+NativeLink exits until it is. Its cache and log are under
+`C:\amux\nativelink`, near the drive's root because an action's directory
+is under it, and from the profile's `AppData` a test's git objects passed
+the 260 characters git on Windows allows a path. The worker offers every core, and never
+fewer than the six a Windows test that takes the whole worker asks for
+(`build/toolchains/BUCK`). Unlike a Mac's, it doesn't fall back to building
+alone when the build host is out of reach: a Windows machine can't compile
+anything itself, so Linux actions wait for it instead.
+
+On Windows on Arm (a Windows VM on an Apple Silicon Mac), `just
+check-windows` and `just test-windows` build and run Arm64 binaries, natively;
+`AMUX_WINDOWS_PLATFORM=windows` runs the x64 ones instead, under Windows'
+emulation, which matches what CI tests but is slower. The worker says it is
+Arm (its `cpu` property), and an Arm64 test asks for that
+(`exec-windows-arm64`), so it never reaches CI's x64 runner; an x64 test asks
+for no `cpu` and may run on either. Buck2 and NativeLink themselves are their
+x64 builds, under emulation: the pins name no Arm build for Windows.
 
 ### Repository checks
 
@@ -362,7 +425,18 @@ each run in the checkout with its output kept and printed when it fails:
 | `lint` | Clippy is Buck2 actions, cached like the tests, but a build of each target's clippy output, which `buck2 test` doesn't build, so it is a `buck2 build` beside the test run |
 
 `no-update-flags`, which refuses fixture-regeneration variables in the
-environment, runs first, before anything starts.
+environment, runs first, before anything starts, and then
+`build/checks/inputs.py`: Buck2's daemon runs the test run and clippy's
+build at once only while both see the same files, so what the check
+targets read is written before either starts.
+
+At the end, [`build/checks/timing.py`](../build/checks/timing.py) says
+where the test run's time went: how many compiles, links and tests ran
+rather than came from the cache, the worker time each kind took and the
+longest of each, how many actions the worker ran at once, and the critical
+path. A landing's log carries the same lines from the build host.
+`scripts/py build/checks/timing.py <event log>` says it for any Buck2
+command's log in `buck-out/v2/log`.
 
 ## Profiles
 

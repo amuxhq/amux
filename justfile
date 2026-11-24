@@ -66,21 +66,27 @@ build:
 check:
     {{bounded}} 3600 {{buck2}} build //crates/...
 
+# Which Windows the two recipes below build for: x64, as releases ship and
+# CI tests, except on a Windows on Arm machine, whose own tests run natively
+# as Arm64 (docs/BUILD.md, "A Windows development machine").
+# AMUX_WINDOWS_PLATFORM names either (`windows`, `windows-arm64`) instead.
+windows_platform := env("AMUX_WINDOWS_PLATFORM", if os() == "windows" { `scripts/py -c "import platform; print('windows-arm64' if platform.machine().lower() in ('arm64', 'aarch64') else 'windows')"` } else { "windows" })
+
 # Compile and link every workspace library, binary and test for Windows,
 # on a Linux worker with the Windows toolchain (nix/windows.nix), from any
 # machine; nothing comes back but the result. CI's Windows job runs its
 # tests from these builds.
 check-windows:
-    {{bounded}} 3600 {{buck2}} build //crates/... --target-platforms root//build/platforms:windows-cli-testing-dev --materializations none
+    {{bounded}} 3600 {{buck2}} build //crates/... --target-platforms root//build/platforms:{{windows_platform}}-cli-testing-dev --materializations none
 
 # The workspace's tests for Windows, as CI's Windows job runs them after
 # `just check-windows` (docs/CI.md, "The Windows job"): only a Windows
-# worker runs them, which only that job has. Left out, as before Buck2: the
-# protocol models (the nightly's), the simulated stories, the linux-only
-# tests and the live lanes.
+# worker runs them, which CI's Windows job has, and so does a Windows
+# development machine. Left out, as before Buck2: the protocol models (the
+# nightly's), the simulated stories, the linux-only tests and the live lanes.
 # Run the workspace's tests for Windows on a Windows worker.
 test-windows *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --target-platforms root//build/platforms:windows-cli-testing-dev --exclude live --exclude nightly --exclude simulated --exclude linux-only --exclude journey -- --timeout 3600
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --target-platforms root//build/platforms:{{windows_platform}}-cli-testing-dev --exclude live --exclude nightly --exclude simulated --exclude linux-only --exclude journey -- --timeout 3600
 
 # Every test runs in a process of its own (build/test-runner.py), and a
 # passing result is cached in NativeLink, so only tests whose inputs changed

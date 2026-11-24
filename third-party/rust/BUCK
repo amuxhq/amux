@@ -252,6 +252,9 @@ third_party_rust_library(
         "wincon",
     ],
     platform = {
+        "windows-arm64-msvc": dict(
+            deps = [":anstyle-wincon-3"],
+        ),
         "windows-msvc": dict(
             deps = [":anstyle-wincon-3"],
         ),
@@ -379,6 +382,9 @@ third_party_rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     platform = {
+        "windows-arm64-msvc": dict(
+            deps = [":windows-sys-0.61"],
+        ),
         "windows-msvc": dict(
             deps = [":windows-sys-0.61"],
         ),
@@ -552,6 +558,14 @@ third_party_rust_library(
                 ":objc2-core-foundation-0.3",
                 ":objc2-core-graphics-0.3",
                 ":objc2-foundation-0.3",
+            ],
+        ),
+        "windows-arm64-msvc": dict(
+            deps = [
+                ":clipboard-win-5",
+                ":image-0.25",
+                ":log-0.4",
+                ":windows-sys-0.59",
             ],
         ),
         "windows-msvc": dict(
@@ -2908,6 +2922,12 @@ third_party_rust_library(
                 ":signal-hook-mio-0.2",
             ],
         ),
+        "windows-arm64-msvc": dict(
+            deps = [
+                ":crossterm_winapi-0.9",
+                ":winapi-0.3",
+            ],
+        ),
         "windows-msvc": dict(
             deps = [
                 ":crossterm_winapi-0.9",
@@ -4223,6 +4243,9 @@ third_party_rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     platform = {
+        "windows-arm64-msvc": dict(
+            deps = [":winapi-0.3"],
+        ),
         "windows-msvc": dict(
             deps = [":winapi-0.3"],
         ),
@@ -5028,6 +5051,9 @@ third_party_rust_library(
         ),
         "wasm32": dict(
             deps = [":rustix-1"],
+        ),
+        "windows-arm64-msvc": dict(
+            deps = [":windows-link-0.2"],
         ),
         "windows-msvc": dict(
             deps = [":windows-link-0.2"],
@@ -6252,6 +6278,14 @@ third_party_rust_library(
                 ":percent-encoding-2",
             ],
         ),
+        "windows-arm64-msvc": dict(
+            features = ["client-proxy"],
+            deps = [
+                ":base64-0.22",
+                ":ipnet-2",
+                ":percent-encoding-2",
+            ],
+        ),
         "windows-msvc": dict(
             features = ["client-proxy"],
             deps = [
@@ -6810,6 +6844,9 @@ third_party_rust_library(
         "wasm32": dict(
             deps = [":libc-0.2"],
         ),
+        "windows-arm64-msvc": dict(
+            deps = [":windows-sys-0.61"],
+        ),
         "windows-msvc": dict(
             deps = [":windows-sys-0.61"],
         ),
@@ -6865,6 +6902,9 @@ third_party_rust_library(
         "macos-arm64": dict(
             features = ["tiff"],
             deps = [":tiff-0.11"],
+        ),
+        "windows-arm64-msvc": dict(
+            features = ["bmp"],
         ),
         "windows-msvc": dict(
             features = ["bmp"],
@@ -7366,6 +7406,12 @@ third_party_rust_library(
         "wasm32": dict(
             deps = [":jiff-tzdb-platform-0.1"],
         ),
+        "windows-arm64-msvc": dict(
+            deps = [
+                ":jiff-tzdb-platform-0.1",
+                ":windows-link-0.2",
+            ],
+        ),
         "windows-msvc": dict(
             deps = [
                 ":jiff-tzdb-platform-0.1",
@@ -7527,6 +7573,9 @@ third_party_rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     platform = {
+        "windows-arm64-msvc": dict(
+            deps = [":windows-sys-0.45"],
+        ),
         "windows-msvc": dict(
             deps = [":windows-sys-0.45"],
         ),
@@ -7758,6 +7807,9 @@ third_party_rust_library(
         ),
         "macos-arm64": dict(
             deps = [":libc-0.2"],
+        ),
+        "windows-arm64-msvc": dict(
+            deps = [":getrandom-0.4"],
         ),
         "windows-msvc": dict(
             deps = [":getrandom-0.4"],
@@ -8940,6 +8992,9 @@ third_party_rust_library(
         "macos-arm64": dict(
             deps = [":libc-0.2"],
         ),
+        "windows-arm64-msvc": dict(
+            deps = [":windows-sys-0.61"],
+        ),
         "windows-msvc": dict(
             deps = [":windows-sys-0.61"],
         ),
@@ -9263,6 +9318,9 @@ third_party_rust_library(
                 ":mio-1",
             ],
         ),
+        "windows-arm64-msvc": dict(
+            deps = [":windows-sys-0.61"],
+        ),
         "windows-msvc": dict(
             deps = [":windows-sys-0.61"],
         ),
@@ -9349,6 +9407,11 @@ third_party_rust_library(
         "std",
     ],
     platform = {
+        "windows-arm64-msvc": dict(
+            named_deps = {
+                "windows": ":windows-sys-0.59",
+            },
+        ),
         "windows-msvc": dict(
             named_deps = {
                 "windows": ":windows-sys-0.59",
@@ -10219,6 +10282,9 @@ third_party_rust_library(
         "macos-arm64": dict(
             deps = [":libc-0.2"],
         ),
+        "windows-arm64-msvc": dict(
+            deps = [":windows-link-0.2"],
+        ),
         "windows-msvc": dict(
             deps = [":windows-link-0.2"],
         ),
@@ -10681,6 +10747,15 @@ third_party_rust_library(
     },
     features = ["default"],
     platform = {
+        "windows-arm64-msvc": dict(
+            deps = [
+                ":bitflags-1",
+                ":lazy_static-1",
+                ":shared_library-0.1",
+                ":winapi-0.3",
+                ":winreg-0.10",
+            ],
+        ),
         "windows-msvc": dict(
             deps = [
                 ":bitflags-1",
@@ -11892,6 +11967,9 @@ third_party_rust_library(
         "wasm32": dict(
             deps = [":web-time-1"],
         ),
+        "windows-arm64-msvc": dict(
+            deps = [":socket2-0.6"],
+        ),
         "windows-msvc": dict(
             deps = [":socket2-0.6"],
         ),
@@ -12080,6 +12158,13 @@ third_party_rust_library(
         ),
         "macos-arm64": dict(
             deps = [":socket2-0.6"],
+        ),
+        "windows-arm64-msvc": dict(
+            deps = [
+                ":once_cell-1",
+                ":socket2-0.6",
+                ":windows-sys-0.52",
+            ],
         ),
         "windows-msvc": dict(
             deps = [
@@ -12903,6 +12988,9 @@ third_party_rust_library(
         "wasm32": dict(
             deps = [":rustix-0.38"],
         ),
+        "windows-arm64-msvc": dict(
+            deps = [":windows-0.58"],
+        ),
         "windows-msvc": dict(
             deps = [":windows-0.58"],
         ),
@@ -13467,6 +13555,26 @@ third_party_rust_library(
                 ":web-sys-0.3",
             ],
         ),
+        "windows-arm64-msvc": dict(
+            deps = [
+                ":http-body-1",
+                ":http-body-util-0.1",
+                ":hyper-1",
+                ":hyper-rustls-0.27",
+                ":hyper-util-0.1",
+                ":log-0.4",
+                ":percent-encoding-2",
+                ":pin-project-lite-0.2",
+                ":rustls-0.23",
+                ":rustls-pki-types-1",
+                ":tokio-1",
+                ":tokio-rustls-0.26",
+                ":tower-0.5",
+                ":tower-http-0.6",
+                ":tower-service-0.3",
+                ":webpki-roots-1",
+            ],
+        ),
         "windows-msvc": dict(
             deps = [
                 ":http-body-1",
@@ -13560,38 +13668,49 @@ third_party_http_archive(
         "pregenerated/aesni-x86_64-nasm.o",
         "pregenerated/aesv8-armx-ios64.S",
         "pregenerated/aesv8-armx-linux64.S",
+        "pregenerated/aesv8-armx-win64.S",
         "pregenerated/aesv8-gcm-armv8-ios64.S",
         "pregenerated/aesv8-gcm-armv8-linux64.S",
+        "pregenerated/aesv8-gcm-armv8-win64.S",
         "pregenerated/armv8-mont-ios64.S",
         "pregenerated/armv8-mont-linux64.S",
+        "pregenerated/armv8-mont-win64.S",
         "pregenerated/chacha-armv8-ios64.S",
         "pregenerated/chacha-armv8-linux64.S",
+        "pregenerated/chacha-armv8-win64.S",
         "pregenerated/chacha-x86_64-elf.S",
         "pregenerated/chacha-x86_64-nasm.o",
         "pregenerated/chacha20_poly1305_armv8-ios64.S",
         "pregenerated/chacha20_poly1305_armv8-linux64.S",
+        "pregenerated/chacha20_poly1305_armv8-win64.S",
         "pregenerated/chacha20_poly1305_x86_64-elf.S",
         "pregenerated/chacha20_poly1305_x86_64-nasm.o",
         "pregenerated/ghash-neon-armv8-ios64.S",
         "pregenerated/ghash-neon-armv8-linux64.S",
+        "pregenerated/ghash-neon-armv8-win64.S",
         "pregenerated/ghash-x86_64-elf.S",
         "pregenerated/ghash-x86_64-nasm.o",
         "pregenerated/ghashv8-armx-ios64.S",
         "pregenerated/ghashv8-armx-linux64.S",
+        "pregenerated/ghashv8-armx-win64.S",
         "pregenerated/p256-armv8-asm-ios64.S",
         "pregenerated/p256-armv8-asm-linux64.S",
+        "pregenerated/p256-armv8-asm-win64.S",
         "pregenerated/p256-x86_64-asm-elf.S",
         "pregenerated/p256-x86_64-asm-nasm.o",
         "pregenerated/sha256-armv8-ios64.S",
         "pregenerated/sha256-armv8-linux64.S",
+        "pregenerated/sha256-armv8-win64.S",
         "pregenerated/sha256-x86_64-elf.S",
         "pregenerated/sha256-x86_64-nasm.o",
         "pregenerated/sha512-armv8-ios64.S",
         "pregenerated/sha512-armv8-linux64.S",
+        "pregenerated/sha512-armv8-win64.S",
         "pregenerated/sha512-x86_64-elf.S",
         "pregenerated/sha512-x86_64-nasm.o",
         "pregenerated/vpaes-armv8-ios64.S",
         "pregenerated/vpaes-armv8-linux64.S",
+        "pregenerated/vpaes-armv8-win64.S",
         "pregenerated/vpaes-x86_64-elf.S",
         "pregenerated/vpaes-x86_64-nasm.o",
         "pregenerated/x86_64-mont-elf.S",
@@ -13664,6 +13783,12 @@ third_party_rust_library(
         ),
         "wasm32": dict(
             features = ["wasm32_unknown_unknown_js"],
+        ),
+        "windows-arm64-msvc": dict(
+            deps = [
+                ":ring-0.17-ring-c-asm-win-arm64",
+                ":windows-sys-0.52",
+            ],
         ),
         "windows-msvc": dict(
             deps = [
@@ -14056,6 +14181,81 @@ cxx_library(
 )
 
 cxx_library(
+    name = "ring-0.17-ring-c-asm-win-arm64",
+    srcs = [
+        ":ring-0.17.14.crate[crypto/constant_time_test.c]",
+        ":ring-0.17.14.crate[crypto/cpu_intel.c]",
+        ":ring-0.17.14.crate[crypto/crypto.c]",
+        ":ring-0.17.14.crate[crypto/curve25519/curve25519.c]",
+        ":ring-0.17.14.crate[crypto/curve25519/curve25519_64_adx.c]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/aes/aes_nohw.c]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/bn/montgomery.c]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/bn/montgomery_inv.c]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/ec/ecp_nistz.c]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/ec/gfp_p256.c]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/ec/gfp_p384.c]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/ec/p256.c]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/ec/p256-nistz.c]",
+        ":ring-0.17.14.crate[crypto/limbs/limbs.c]",
+        ":ring-0.17.14.crate[crypto/mem.c]",
+        ":ring-0.17.14.crate[crypto/poly1305/poly1305.c]",
+        ":ring-0.17.14.crate[pregenerated/aesv8-armx-win64.S]",
+        ":ring-0.17.14.crate[pregenerated/aesv8-gcm-armv8-win64.S]",
+        ":ring-0.17.14.crate[pregenerated/armv8-mont-win64.S]",
+        ":ring-0.17.14.crate[pregenerated/chacha-armv8-win64.S]",
+        ":ring-0.17.14.crate[pregenerated/chacha20_poly1305_armv8-win64.S]",
+        ":ring-0.17.14.crate[pregenerated/ghash-neon-armv8-win64.S]",
+        ":ring-0.17.14.crate[pregenerated/ghashv8-armx-win64.S]",
+        ":ring-0.17.14.crate[pregenerated/p256-armv8-asm-win64.S]",
+        ":ring-0.17.14.crate[pregenerated/sha256-armv8-win64.S]",
+        ":ring-0.17.14.crate[pregenerated/sha512-armv8-win64.S]",
+        ":ring-0.17.14.crate[pregenerated/vpaes-armv8-win64.S]",
+        ":ring-0.17.14.crate[third_party/fiat/asm/fiat_curve25519_adx_mul.S]",
+        ":ring-0.17.14.crate[third_party/fiat/asm/fiat_curve25519_adx_square.S]",
+    ],
+    headers = [
+        ":ring-0.17.14.crate[crypto/curve25519/curve25519_tables.h]",
+        ":ring-0.17.14.crate[crypto/curve25519/internal.h]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/bn/internal.h]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/ec/ecp_nistz.h]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/ec/ecp_nistz384.h]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/ec/ecp_nistz384.inl]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/ec/p256-nistz.h]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/ec/p256-nistz-table.h]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/ec/p256_shared.h]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/ec/p256_table.h]",
+        ":ring-0.17.14.crate[crypto/fipsmodule/ec/util.h]",
+        ":ring-0.17.14.crate[crypto/internal.h]",
+        ":ring-0.17.14.crate[crypto/limbs/limbs.h]",
+        ":ring-0.17.14.crate[crypto/limbs/limbs.inl]",
+        ":ring-0.17.14.crate[include/ring-core/aes.h]",
+        ":ring-0.17.14.crate[include/ring-core/asm_base.h]",
+        ":ring-0.17.14.crate[include/ring-core/base.h]",
+        ":ring-0.17.14.crate[include/ring-core/check.h]",
+        ":ring-0.17.14.crate[include/ring-core/mem.h]",
+        ":ring-0.17.14.crate[include/ring-core/target.h]",
+        ":ring-0.17.14.crate[include/ring-core/type_check.h]",
+        ":ring-0.17.14.crate[third_party/fiat/curve25519_32.h]",
+        ":ring-0.17.14.crate[third_party/fiat/curve25519_64.h]",
+        ":ring-0.17.14.crate[third_party/fiat/curve25519_64_adx.h]",
+        ":ring-0.17.14.crate[third_party/fiat/curve25519_64_msvc.h]",
+        ":ring-0.17.14.crate[third_party/fiat/p256_32.h]",
+        ":ring-0.17.14.crate[third_party/fiat/p256_64.h]",
+        ":ring-0.17.14.crate[third_party/fiat/p256_64_msvc.h]",
+        "fixups/ring/include/ring_core_generated/prefix_symbols.h",
+        "fixups/ring/include/ring_core_generated/prefix_symbols_asm.h",
+    ],
+    compiler_flags = ["/WX-"],
+    include_directories = ["fixups/ring/include"],
+    preferred_linkage = "static",
+    preprocessor_flags = [
+        "-I$(location :ring-0.17.14.crate)/include",
+        "-I$(location :ring-0.17.14.crate)/.",
+    ],
+    visibility = [],
+)
+
+cxx_library(
     name = "ring-0.17-ring-c-win-x86_84",
     srcs = [
         ":ring-0.17.14.crate[crypto/constant_time_test.c]",
@@ -14181,6 +14381,9 @@ third_party_rust_library(
             deps = [":libsqlite3-sys-0.39"],
         ),
         "macos-arm64": dict(
+            deps = [":libsqlite3-sys-0.39"],
+        ),
+        "windows-arm64-msvc": dict(
             deps = [":libsqlite3-sys-0.39"],
         ),
         "windows-msvc": dict(
@@ -14814,6 +15017,9 @@ third_party_rust_library(
         "macos-arm64": dict(
             features = ["tls12"],
         ),
+        "windows-arm64-msvc": dict(
+            features = ["tls12"],
+        ),
         "windows-msvc": dict(
             features = ["tls12"],
         ),
@@ -15118,6 +15324,9 @@ third_party_rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     platform = {
+        "windows-arm64-msvc": dict(
+            deps = [":winapi-util-0.1"],
+        ),
         "windows-msvc": dict(
             deps = [":winapi-util-0.1"],
         ),
@@ -15878,6 +16087,9 @@ third_party_rust_library(
                 ":libc-0.2",
             ],
         ),
+        "windows-arm64-msvc": dict(
+            deps = [":windows-sys-0.61"],
+        ),
         "windows-msvc": dict(
             deps = [":windows-sys-0.61"],
         ),
@@ -15938,6 +16150,9 @@ third_party_rust_library(
             deps = [":cpufeatures-0.2"],
         ),
         "macos-arm64": dict(
+            deps = [":cpufeatures-0.2"],
+        ),
+        "windows-arm64-msvc": dict(
             deps = [":cpufeatures-0.2"],
         ),
         "windows-msvc": dict(
@@ -16046,6 +16261,9 @@ third_party_rust_library(
             deps = [":cpufeatures-0.3"],
         ),
         "macos-arm64": dict(
+            deps = [":cpufeatures-0.3"],
+        ),
+        "windows-arm64-msvc": dict(
             deps = [":cpufeatures-0.3"],
         ),
         "windows-msvc": dict(
@@ -16513,6 +16731,9 @@ third_party_rust_library(
         "wasm32": dict(
             deps = [":libc-0.2"],
         ),
+        "windows-arm64-msvc": dict(
+            deps = [":windows-sys-0.61"],
+        ),
         "windows-msvc": dict(
             deps = [":windows-sys-0.61"],
         ),
@@ -16578,6 +16799,9 @@ third_party_rust_library(
         ),
         "macos-arm64": dict(
             deps = [":libc-0.2"],
+        ),
+        "windows-arm64-msvc": dict(
+            deps = [":windows-sys-0.61"],
         ),
         "windows-msvc": dict(
             deps = [":windows-sys-0.61"],
@@ -17254,6 +17478,12 @@ third_party_rust_library(
                 ":rustix-1",
             ],
         ),
+        "windows-arm64-msvc": dict(
+            deps = [
+                ":getrandom-0.3",
+                ":windows-sys-0.52",
+            ],
+        ),
         "windows-msvc": dict(
             deps = [
                 ":getrandom-0.3",
@@ -17894,6 +18124,13 @@ third_party_rust_library(
                 ":socket2-0.6",
             ],
         ),
+        "windows-arm64-msvc": dict(
+            features = ["windows-sys"],
+            deps = [
+                ":socket2-0.6",
+                ":windows-sys-0.61",
+            ],
+        ),
         "windows-msvc": dict(
             features = ["windows-sys"],
             deps = [
@@ -18022,6 +18259,12 @@ third_party_rust_library(
             ],
         ),
         "macos-arm64": dict(
+            features = [
+                "ring",
+                "tls12",
+            ],
+        ),
+        "windows-arm64-msvc": dict(
             features = [
                 "ring",
                 "tls12",
@@ -18746,6 +18989,12 @@ third_party_rust_library(
             ],
         ),
         "macos-arm64": dict(
+            features = [
+                "retry",
+                "timeout",
+            ],
+        ),
+        "windows-arm64-msvc": dict(
             features = [
                 "retry",
                 "timeout",
@@ -21620,6 +21869,13 @@ third_party_rust_library(
             ],
             deps = [":getrandom-0.4"],
         ),
+        "windows-arm64-msvc": dict(
+            features = [
+                "rng",
+                "v4",
+            ],
+            deps = [":getrandom-0.4"],
+        ),
         "windows-msvc": dict(
             features = [
                 "rng",
@@ -21875,6 +22131,9 @@ third_party_rust_library(
         "CARGO_PKG_VERSION_PRE": "",
     },
     platform = {
+        "windows-arm64-msvc": dict(
+            deps = [":winapi-util-0.1"],
+        ),
         "windows-msvc": dict(
             deps = [":winapi-util-0.1"],
         ),
@@ -23027,6 +23286,11 @@ third_party_rust_library(
         "Win32_System_SystemInformation",
         "default",
     ],
+    platform = {
+        "windows-arm64-msvc": dict(
+            features = ["Win32_System_Threading"],
+        ),
+    },
     visibility = [],
     deps = [":windows-targets-0.52"],
 )
@@ -23194,8 +23458,15 @@ third_party_rust_library(
         "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    platform = {
+        "windows-arm64-msvc": dict(
+            deps = [":windows_aarch64_msvc-0.42"],
+        ),
+        "windows-msvc": dict(
+            deps = [":windows_x86_64_msvc-0.42"],
+        ),
+    },
     visibility = [],
-    deps = [":windows_x86_64_msvc-0.42"],
 )
 
 third_party_http_archive(
@@ -23230,12 +23501,89 @@ third_party_rust_library(
         "CARGO_PKG_VERSION_PATCH": "6",
         "CARGO_PKG_VERSION_PRE": "",
     },
+    platform = {
+        "windows-arm64-msvc": dict(
+            deps = [":windows_aarch64_msvc-0.52"],
+        ),
+        "windows-msvc": dict(
+            deps = [":windows_x86_64_msvc-0.52"],
+        ),
+    },
     rustc_flags = [
         "--cfg",
         "windows_raw_dylib",
     ],
     visibility = [],
-    deps = [":windows_x86_64_msvc-0.52"],
+)
+
+third_party_http_archive(
+    name = "windows_aarch64_msvc-0.42.2.crate",
+    sha256 = "e08e8864a60f06ef0d0ff4ba04124db8b0fb3be5776a5cd47641e942e58c4d43",
+    size_bytes = 666981,
+    strip_prefix = "windows_aarch64_msvc-0.42.2",
+    urls = ["https://static.crates.io/crates/windows_aarch64_msvc/0.42.2/download"],
+    visibility = [],
+)
+
+third_party_rust_library(
+    name = "windows_aarch64_msvc-0.42",
+    srcs = [":windows_aarch64_msvc-0.42.2.crate"],
+    crate = "windows_aarch64_msvc",
+    crate_root = "windows_aarch64_msvc-0.42.2.crate/src/lib.rs",
+    edition = "2018",
+    env = {
+        "CARGO_BIN_NAME": "windows_aarch64_msvc",
+        "CARGO_CRATE_NAME": "windows_aarch64_msvc",
+        "CARGO_MANIFEST_DIR": "windows_aarch64_msvc-0.42.2.crate",
+        "CARGO_PKG_AUTHORS": "Microsoft",
+        "CARGO_PKG_DESCRIPTION": "Import lib for Windows",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "windows_aarch64_msvc",
+        "CARGO_PKG_README": "",
+        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
+        "CARGO_PKG_RUST_VERSION": "",
+        "CARGO_PKG_VERSION": "0.42.2",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "42",
+        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
+)
+
+third_party_http_archive(
+    name = "windows_aarch64_msvc-0.52.6.crate",
+    sha256 = "09ec2a7bb152e2252b53fa7803150007879548bc709c039df7627cabbd05d469",
+    size_bytes = 832615,
+    strip_prefix = "windows_aarch64_msvc-0.52.6",
+    urls = ["https://static.crates.io/crates/windows_aarch64_msvc/0.52.6/download"],
+    visibility = [],
+)
+
+third_party_rust_library(
+    name = "windows_aarch64_msvc-0.52",
+    srcs = [":windows_aarch64_msvc-0.52.6.crate"],
+    crate = "windows_aarch64_msvc",
+    crate_root = "windows_aarch64_msvc-0.52.6.crate/src/lib.rs",
+    edition = "2021",
+    env = {
+        "CARGO_BIN_NAME": "windows_aarch64_msvc",
+        "CARGO_CRATE_NAME": "windows_aarch64_msvc",
+        "CARGO_MANIFEST_DIR": "windows_aarch64_msvc-0.52.6.crate",
+        "CARGO_PKG_AUTHORS": "Microsoft",
+        "CARGO_PKG_DESCRIPTION": "Import lib for Windows",
+        "CARGO_PKG_HOMEPAGE": "",
+        "CARGO_PKG_NAME": "windows_aarch64_msvc",
+        "CARGO_PKG_README": "",
+        "CARGO_PKG_REPOSITORY": "https://github.com/microsoft/windows-rs",
+        "CARGO_PKG_RUST_VERSION": "1.56",
+        "CARGO_PKG_VERSION": "0.52.6",
+        "CARGO_PKG_VERSION_MAJOR": "0",
+        "CARGO_PKG_VERSION_MINOR": "52",
+        "CARGO_PKG_VERSION_PATCH": "6",
+        "CARGO_PKG_VERSION_PRE": "",
+    },
+    visibility = [],
 )
 
 third_party_http_archive(
@@ -24461,6 +24809,9 @@ third_party_rust_library(
         ),
         "wasm32": dict(
             deps = [":zstd-sys-2-zstd"],
+        ),
+        "windows-arm64-msvc": dict(
+            deps = [":zstd-sys-2-zstd-msvc"],
         ),
         "windows-msvc": dict(
             deps = [":zstd-sys-2-zstd-msvc"],

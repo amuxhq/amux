@@ -79,6 +79,36 @@ async fn an_away_parents_rows_wait_and_a_stale_incarnation_is_dropped() {
     .await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_resumed_parent_that_messages_its_exited_far_child_hears_back() {
+    run_story(
+        stories::desk_and_server,
+        stories::a_resumed_parent_that_messages_its_exited_far_child_hears_back,
+        stories::a_resumed_parent_that_messages_its_exited_far_child_hears_back,
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_resumed_parent_waits_only_for_the_children_it_engaged_and_hears_nothing_from_the_rest() {
+    run_story(
+        stories::desk_server_and_phone_in_a_line,
+        stories::a_resumed_parent_waits_only_for_the_children_it_engaged_and_hears_nothing_from_the_rest,
+        stories::a_resumed_parent_waits_only_for_the_children_it_engaged_and_hears_nothing_from_the_rest,
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_late_word_of_its_parents_earlier_exit_does_not_stop_a_re_engaged_child() {
+    run_story(
+        stories::desk_and_server,
+        stories::a_late_word_of_its_parents_earlier_exit_does_not_stop_a_re_engaged_child,
+        stories::a_late_word_of_its_parents_earlier_exit_does_not_stop_a_re_engaged_child,
+    )
+    .await;
+}
+
 mod stories {
     use std::time::Duration;
 
@@ -139,6 +169,18 @@ mod stories {
             .host("phone")
             .link("desk", "server")
             .link("desk", "phone")
+            .link("server", "phone")
+            .agent(lead())
+    }
+
+    /// Three hosts in a line, so cutting the far link leaves the phone with
+    /// no way to the server: no third host carries across it.
+    pub fn desk_server_and_phone_in_a_line() -> Topology {
+        Topology::new()
+            .host("desk")
+            .host("server")
+            .host("phone")
+            .link("desk", "server")
             .link("server", "phone")
             .agent(lead())
     }
@@ -666,6 +708,218 @@ mod stories {
             "a message for lead's incarnation {} reaching desk: dropped ({})",
             current - 1,
             refused.message()
+        );
+        net.shutdown().await.unwrap();
+    }
+
+    /// How many items `agent` received whose text holds `wanted`.
+    async fn heard(net: &impl World, agent: &str, wanted: &str) -> usize {
+        received(net, agent)
+            .await
+            .iter()
+            .filter(|item| item.text.contains(wanted))
+            .count()
+    }
+
+    async fn until_heard(net: &impl World, agent: &str, wanted: &str, times: usize) {
+        net.until(
+            &format!("{agent} to have heard {wanted:?} {times} times"),
+            || async move {
+                let got = received(net, agent).await;
+                let count = got.iter().filter(|item| item.text.contains(wanted)).count();
+                (count >= times).then_some(()).ok_or_else(|| {
+                    format!(
+                        "{agent} received {:?}",
+                        got.iter().map(|item| &item.text).collect::<Vec<_>>()
+                    )
+                })
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    /// A parent stopped and resumed, which messages the far child it had
+    /// before, hears the child's answer. The child's host may not yet have
+    /// heard of the resume when the message arrives (here its link was down
+    /// for both, and the message comes as the link is back), so what the
+    /// child reports is for the parent incarnation that asked, as the
+    /// parent's host stated it on the message, not for whatever that host's
+    /// copy of the parent's row says by then. A report stamped from the
+    /// copy was for the parent's earlier life, and its host dropped it.
+    pub async fn a_resumed_parent_that_messages_its_exited_far_child_hears_back(
+        mut net: impl World,
+    ) {
+        net.turn_ended("lead", 1).await.unwrap();
+        net.spawn_child("lead", child("helper", "server", says("Suite green.")))
+            .await
+            .unwrap();
+        until_heard(&net, "lead", "Suite green.", 1).await;
+        until_exited(&net, "server", "helper").await;
+        println!("helper reported and exited");
+
+        net.sever_link("desk", "server").unwrap();
+        net.wait_link("desk", "server", false).await.unwrap();
+        net.close_agent("lead").await.unwrap();
+        until_exited(&net, "desk", "lead").await;
+        let resumed = net.resume("lead", None).await.unwrap();
+        assert_eq!(resumed.incarnation, 2);
+        println!("lead stopped and resumed while server was away");
+
+        net.next_start("helper", says("Suite green again."))
+            .unwrap();
+        net.restore_link("desk", "server").await.unwrap();
+        net.wait_link("desk", "server", true).await.unwrap();
+        // Sent as soon as desk's node can carry it, while server may still be
+        // catching up with desk.
+        net.until("the resumed lead's message to reach helper", || async {
+            net.message("lead", "helper", "again", "Run the suite again.")
+                .await
+        })
+        .await
+        .expect("the resumed parent's message resumes its child");
+        until_heard(&net, "lead", "Suite green again.", 1).await;
+        let helper = row(&net, "server", "helper").await.unwrap();
+        println!(
+            "helper resumed as incarnation {} and the resumed lead heard it again",
+            helper.incarnation
+        );
+        net.shutdown().await.unwrap();
+    }
+
+    /// A sub-agent stopped while its child's host is away, then resumed by
+    /// the person, is a new life that never asked that child for anything.
+    /// Its host's copy of the child still says live, but the child was
+    /// engaged by the sub-agent's earlier life: the resumed sub-agent does
+    /// not wait for it, and exits once its own turn is done. When the
+    /// child's host is back it stops the child, whose parent has exited,
+    /// and the child's last report, for the earlier life, is dropped
+    /// rather than delivered to the later one.
+    pub async fn a_resumed_parent_waits_only_for_the_children_it_engaged_and_hears_nothing_from_the_rest(
+        mut net: impl World,
+    ) {
+        net.turn_ended("lead", 1).await.unwrap();
+        net.spawn_child(
+            "lead",
+            child(
+                "mid",
+                "server",
+                vec![waits("mid-go"), text("Started the scout."), Step::TurnEnd],
+            ),
+        )
+        .await
+        .unwrap();
+        net.spawn_child(
+            "mid",
+            child(
+                "scout",
+                "phone",
+                vec![waits("never"), text("Scout done."), Step::TurnEnd],
+            ),
+        )
+        .await
+        .unwrap();
+        until_live(&net, "phone", "scout").await;
+        until_live(&net, "server", "scout").await;
+        // Mid's turn ends and it stays, idle, for scout's last report.
+        net.open_gate("mid-go").unwrap();
+        net.turn_ended("mid", 1).await.unwrap();
+        net.sever_link("server", "phone").unwrap();
+        net.wait_link("server", "phone", false).await.unwrap();
+        net.close_agent("mid").await.unwrap();
+        until_exited(&net, "server", "mid").await;
+        assert_eq!(
+            lifecycle(&net, "phone", "scout").await,
+            Some(Lifecycle::Live),
+            "scout runs on while phone cannot hear of the stop"
+        );
+        net.next_start("mid", says("Mid carries on alone."))
+            .unwrap();
+        let resumed = net.resume("mid", Some("Carry on.")).await.unwrap();
+        assert_eq!(resumed.incarnation, 2);
+        println!("mid stopped and resumed while phone was away; scout runs on");
+
+        net.until("the resumed mid to exit once its turn is done", || async {
+            let mid = row(&net, "server", "mid").await;
+            let mid = mid.as_ref();
+            (mid.is_some_and(|mid| {
+                mid.incarnation == 2 && mid.lifecycle == Lifecycle::Exited as i32
+            }))
+            .then_some(())
+            .ok_or_else(|| {
+                format!(
+                    "mid {:?}",
+                    mid.map(|mid| (mid.incarnation, Lifecycle::try_from(mid.lifecycle)))
+                )
+            })
+        })
+        .await
+        .expect("the resumed mid waited for a child its earlier life engaged");
+        let mid = row(&net, "server", "mid").await.unwrap();
+        assert_eq!(mid.exit_cause, wire::ExitCause::Finished as i32);
+        println!("the resumed mid finished without waiting for scout");
+
+        net.restore_link("server", "phone").await.unwrap();
+        until_exited(&net, "phone", "scout").await;
+        until_outbox(&net, "scout's report to be dropped", "phone", 0).await;
+        assert_eq!(
+            heard(&net, "mid", "stopped").await + heard(&net, "mid", "Scout").await,
+            0,
+            "the resumed mid heard from scout: {:?}",
+            received(&net, "mid")
+                .await
+                .iter()
+                .map(|item| &item.text)
+                .collect::<Vec<_>>()
+        );
+        println!("phone back: scout stopped, and its report for mid's earlier life dropped");
+        net.shutdown().await.unwrap();
+    }
+
+    /// A parent stopped and resumed messages its far child, which is still
+    /// at work, before the child's host has heard that the parent stopped.
+    /// That word comes after the message: it is of an exit older than the
+    /// incarnation that just engaged the child, so the child is not stopped
+    /// for it, and what it reports from then on reaches the resumed parent.
+    /// Should the word come first, the child is stopped, as a child of the
+    /// parent's earlier life, and the message resumes it to do the work
+    /// again: the resumed parent hears it either way.
+    pub async fn a_late_word_of_its_parents_earlier_exit_does_not_stop_a_re_engaged_child(
+        mut net: impl World,
+    ) {
+        let work = || {
+            vec![
+                waits("finish"),
+                text("Suite green."),
+                Step::TurnEnd,
+                text("Suite green, flaky test too."),
+                Step::TurnEnd,
+            ]
+        };
+        net.turn_ended("lead", 1).await.unwrap();
+        net.spawn_child("lead", child("helper", "server", work()))
+            .await
+            .unwrap();
+        until_live(&net, "server", "helper").await;
+        net.next_start("helper", work()).unwrap();
+        net.close_agent("lead").await.unwrap();
+        until_exited(&net, "desk", "lead").await;
+        net.resume("lead", None).await.unwrap();
+        net.open_gate("finish").unwrap();
+        // A message that met helper as it stopped may be lost with its
+        // connection: sent again under its id, it is taken once.
+        net.until("the resumed lead's message to reach helper", || async {
+            net.message("lead", "helper", "flaky", "Then run the flaky test too.")
+                .await
+        })
+        .await
+        .expect("the resumed parent's message reaches its child");
+        println!("lead stopped, resumed and messaged helper");
+        until_heard(&net, "lead", "Suite green", 1).await;
+        let helper = row(&net, "server", "helper").await.unwrap();
+        println!(
+            "the resumed lead heard helper's work: helper at incarnation {}",
+            helper.incarnation
         );
         net.shutdown().await.unwrap();
     }

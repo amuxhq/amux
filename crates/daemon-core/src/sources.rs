@@ -1715,6 +1715,7 @@ pub fn from_wire(agent: &Agent) -> AgentRow {
     row.title = agent.title.clone();
     row.last_said = agent.last_said.clone();
     row.settings = agent.settings.as_deref().cloned();
+    row.parent_incarnation = agent.parent_incarnation;
     row.native = agent.native.clone();
     row.provider = agent.provider.clone();
     // What the origin says under each experiment, whole and undecoded,
@@ -1778,6 +1779,7 @@ mod tests {
             kind: wire::Kind::Codex as i32,
             cwd: "/src".into(),
             lifecycle: lifecycle as i32,
+            incarnation: 1,
             ..Agent::default()
         }
     }
@@ -1995,6 +1997,7 @@ mod tests {
 
     fn far_child(new_workspace: bool) -> ClientRequest {
         ClientRequest::CreateAgent(Box::new(crate::Create {
+            parent_incarnation: 1,
             agent: FAR_CHILD,
             cwd: "/src".into(),
             given: Some("child".into()),

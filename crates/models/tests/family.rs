@@ -26,6 +26,18 @@ fn every_family_promise_holds_over_suspensions_and_restarts_at_ci_bounds() {
     verdict.assert_holds();
 }
 
+/// With the parent's later lives: the person resumes it after it exits, and
+/// it messages its child in either life.
+#[test]
+fn every_family_promise_holds_over_a_resumed_parent_at_ci_bounds() {
+    let verdict = check(
+        &FamilyDeliveries::resuming(),
+        Bounds::exhaustive().threads(models::threads()),
+    );
+    println!("{verdict}");
+    verdict.assert_holds();
+}
+
 /// The nightly bounds, run by hand or by the nightly recipe.
 #[test]
 #[ignore = "nightly bounds: minutes on every core"]

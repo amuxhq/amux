@@ -112,6 +112,8 @@ pub fn create(name: &str, spec: wire::AgentSpec) -> ClientRequest {
         new_workspace: false,
         workspace: None,
         recent: None,
+        // A parent its spec names makes the create in its first life.
+        parent_incarnation: u32::from(spec.parent.is_some()),
         spec,
     }))
 }

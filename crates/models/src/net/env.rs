@@ -367,6 +367,9 @@ pub enum Lane {
     Provider(usize),
 }
 
+// A host's input is held inline, as the core holds it: boxing it would add
+// an allocation to every clone of every state the checker explores.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Delivery {
     Host(usize, Dbg<Input>),

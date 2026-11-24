@@ -185,4 +185,14 @@ ALTER TABLE agents ADD COLUMN provider TEXT;
 -- column.
 ALTER TABLE agents ADD COLUMN settings BLOB;
 "#,
+    // 6: the parent incarnation each child's reports are for, as the child's
+    // host heard it from the parent.
+    r#"
+-- The newest incarnation of the parent the agent's host heard from the
+-- parent itself, on the create and on each message, input or resume it
+-- sent since: its reports are for it, and a parent waits only for the
+-- children it engaged in its current run. An own row's only rises; a
+-- replica's is its origin's. 0 with no parent.
+ALTER TABLE agents ADD COLUMN parent_incarnation INTEGER NOT NULL DEFAULT 0;
+"#,
 ];

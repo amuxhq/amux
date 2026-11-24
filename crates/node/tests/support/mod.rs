@@ -451,11 +451,18 @@ pub async fn served_to(
             Calling::PersonHere(analytics::Client::Terminal),
         ),
         Some(agent) => {
-            let name = runtime
-                .agent(agent)
-                .await
-                .map(|row| row.name)
-                .unwrap_or_default();
+            // As the tools socket's entry states the agent: from its row.
+            let row = runtime.agent(agent).await.ok();
+            let (name, incarnation, level) = row.map_or_else(
+                || (String::new(), 1, wire::PermissionLevel::Unspecified),
+                |row| {
+                    let level = row.settings.as_deref().map_or(
+                        wire::PermissionLevel::Unspecified,
+                        wire::AgentSettings::permission_level,
+                    );
+                    (row.name, row.incarnation, level)
+                },
+            );
             served_as(
                 runtime,
                 Served::Tools(agent),
@@ -463,6 +470,8 @@ pub async fn served_to(
                     host: runtime.host(),
                     agent,
                     name,
+                    incarnation,
+                    level,
                 },
             )
         }

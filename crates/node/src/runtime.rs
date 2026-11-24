@@ -1067,6 +1067,33 @@ impl ProfileRuntime {
         Ok(answered)
     }
 
+    /// Tells the core that `caller` is calling on one of this host's
+    /// agents, `id`, before the node passes on what it asks (a message,
+    /// input or a resume): when the caller is the agent's parent, the
+    /// agent's row records the incarnation the caller's host stated, which
+    /// the agent's reports are for. A person states nothing.
+    pub(crate) async fn heard_from(
+        &self,
+        id: AgentId,
+        caller: &crate::api::Caller,
+    ) -> Result<(), RegistryError> {
+        let crate::api::Caller::Agent {
+            agent, incarnation, ..
+        } = caller
+        else {
+            return Ok(());
+        };
+        let request = ClientRequest::HeardFromCaller {
+            agent: core_agent(id),
+            caller: (
+                daemon_core::HostId(agent.host.into_bytes()),
+                core_agent(agent.agent),
+            ),
+            incarnation: *incarnation,
+        };
+        self.registry(id, request).await.map(|_| ())
+    }
+
     /// A registry call answered with the agent's row.
     async fn registry_row(
         &self,
@@ -1130,7 +1157,9 @@ impl ProfileRuntime {
         // What an agent asked for its subagent, settled against its own
         // row and this host's offers ([`crate::delegation`]).
         let delegated = match caller {
-            Caller::Agent { agent, .. } => Some(self.delegate(&mut request, *agent).await?),
+            Caller::Agent { agent, level, .. } => {
+                Some(self.delegate(&mut request, *agent, *level).await?)
+            }
             Caller::Person { .. } => {
                 person_picks(&request)?;
                 None
@@ -1231,6 +1260,9 @@ impl ProfileRuntime {
             workspace,
             recent,
             spec,
+            // The calling agent is the parent: the incarnation its host
+            // stated is the one the child first hears from.
+            parent_incarnation: caller.stated().map_or(0, |(incarnation, _)| incarnation),
         };
         let mut created = self
             .registry_row(id, ClientRequest::CreateAgent(Box::new(create)))

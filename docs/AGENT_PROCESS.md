@@ -378,10 +378,10 @@ its agents' current run began at: a resume of a suspended agent continues
 the run, any other resume starts a new one, and a report for the run's first
 incarnation or a later one counts. Without an entry only the current
 incarnation's report counts. The child's host drops a report itself only
-for a parent row that is gone or exited under another incarnation, or a host
-no longer paired; a live parent under another incarnation may have been
-suspended rather than stopped, so the report goes to its host, which answers
-that the incarnation is gone when its run is.
+when the parent's host is no longer paired; whatever its copy of the parent
+says, the report goes to the parent's host, which alone knows whether the
+parent was suspended or stopped, and which answers that the incarnation is
+gone when its run is, or when the parent has exited.
 
 ### A restart of the machine
 

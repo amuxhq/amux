@@ -1,20 +1,24 @@
 //! The deliveries outbox and each agent's message lane.
 //!
 //! A deliveries row is written in the transaction that commits a child's
-//! turn end, or when a child's incarnation exits without one. A drain pass
-//! hands each row to its parent and deletes it once the parent has
-//! accepted; a row whose parent was stopped since it was written (its row
-//! exited under another incarnation, or its own host answers that the
-//! incarnation is gone) is dropped, because a resumed parent is not waiting
-//! for anything, and so is a row for a parent on a host this one is no
-//! longer paired with. A parent's host judges a report against the run the
-//! parent is in: under the suspension experiment a run carries on across
-//! the resumes that follow a suspension or a restart, so a report for any
-//! incarnation of it counts; without it, only the current incarnation's. A
-//! parent that is only out of reach keeps its rows waiting, and once one of
-//! its rows finds it unreachable the rest of its rows wait for the next
-//! pass rather than each waiting out a full patience. A pass that kept
-//! rows is followed by another after
+//! turn end, or when a child's incarnation exits without one, for the
+//! parent incarnation the child's row last heard from: the newest its
+//! parent's own host stated on the create, or on a message, input or resume
+//! the parent sent since. A drain pass hands each row to its parent and
+//! deletes it once the parent has accepted. This host judges nothing about
+//! the parent from its copy of the parent's row: the parent's own host
+//! decides, from its own. It answers that a row is stale when the parent is
+//! gone, has exited (resuming an exited agent begins a new run, which is
+//! waiting for nothing from the old one), or is in a run the row's
+//! incarnation is not of, and the row is dropped. Under the suspension
+//! experiment a run carries on across the resumes that follow a suspension
+//! or a restart, so a report for any incarnation of it counts; without it,
+//! only the current incarnation's. The one thing this host judges is its
+//! own trust: a row for a parent on a host it is no longer paired with is
+//! dropped. A parent that is only out of reach keeps its rows waiting, and
+//! once one of its rows finds it unreachable the rest of its rows wait for
+//! the next pass rather than each waiting out a full patience. A pass that
+//! kept rows is followed by another after
 //! [`Settings::delivery_retry_ms`](crate::Settings::delivery_retry_ms);
 //! anything that may make a row deliverable meanwhile starts one at once,
 //! after the pass under way when there is one.
@@ -30,7 +34,7 @@
 //! once per incarnation. A message to an exited agent resumes it, with the
 //! message as the new incarnation's first input: one from the person or the
 //! agent's own parent always, one from another agent unless the
-//! recipient is closed, and a child's report never. A suspended agent's
+//! recipient is closed, and a child's report never: it is stale. A suspended agent's
 //! row is live with no process, and any message resumes it, a child's
 //! report included. A parent on
 //! another host is delivered the report on that host's peer service, built
@@ -403,15 +407,17 @@ impl Daemon {
             .find(|row| delivery_envelope_id(row) == id))
     }
 
-    /// What this host can answer about a row before handing it over: the
-    /// parent's row here, own or replica, says whether the parent is still
-    /// the incarnation the row is for, and whether it is live to receive it.
-    fn judge(&mut self, mut row: Delivery) -> Result<Judged, StoreError> {
+    /// What this host can answer about a row before handing it over: only
+    /// whether the parent's host is still paired, which is this host's own
+    /// trust. Everything about the parent is its own host's to judge, from
+    /// its own row: the report goes to it at once, stamped for the parent
+    /// incarnation the child last heard from, and that host answers
+    /// whether the incarnation's run is the parent's current one.
+    fn judge(&mut self, row: Delivery) -> Result<Judged, StoreError> {
         if AgentId::from_slice(&row.parent.agent).is_none() {
             return Ok(Judged::Counted(Outcome::Kept { unreachable: false }));
         }
-        let own = row.parent.host == self.store.own_host();
-        if !own {
+        if row.parent.host != self.store.own_host() {
             let Some(host) = HostId::from_slice(&row.parent.host) else {
                 return Ok(Judged::Counted(Outcome::Kept { unreachable: false }));
             };
@@ -423,38 +429,6 @@ impl Daemon {
                 return Ok(Judged::Counted(Outcome::Stale { there: false }));
             }
         }
-        let Some(parent) = self.store.agent(&row.parent)? else {
-            if row.parent_incarnation == 0 {
-                tracing::warn!(
-                    parent = %crate::hex(&row.parent.agent),
-                    "a child's delivery waits: its parent's row is not held"
-                );
-                return Ok(Judged::Counted(Outcome::Kept { unreachable: false }));
-            }
-            // Held once and gone now: the parent was deleted (its children
-            // follow it) or its host unpaired. Nothing is waiting for this.
-            self.remove_delivery(&row, Removal::Stale)?;
-            return Ok(Judged::Counted(Outcome::Stale { there: false }));
-        };
-        if row.parent_incarnation == 0 {
-            // Written while the parent's row was not held: stamped now,
-            // with the parent's incarnation as its row first shows it.
-            row.parent_incarnation = parent.incarnation;
-            self.store.put_delivery(&row)?;
-        }
-        if parent.lifecycle == Lifecycle::Exited as i32 {
-            // Stopped since the report was written: nothing waits for it.
-            if parent.incarnation != row.parent_incarnation {
-                self.remove_delivery(&row, Removal::Stale)?;
-                return Ok(Judged::Counted(Outcome::Stale { there: false }));
-            }
-            // Not waiting now; a resume makes the row stale.
-            return Ok(Judged::Counted(Outcome::Kept { unreachable: false }));
-        }
-        // A live parent under another incarnation may have been suspended
-        // or restarted, not stopped, and only its own host knows which: the
-        // report goes to it, and it answers that the incarnation is gone
-        // when its run is.
         let child = self
             .store
             .agent(&AgentKey::new(self.store.own_host(), row.child_id.clone()))?;
@@ -790,6 +764,12 @@ impl Daemon {
         {
             return Err(MessageRefusal::Stale);
         }
+        // A child's report for a parent that has exited can never be taken:
+        // resuming an exited agent begins a new run. It is stale at once, so
+        // the child's host drops it rather than asking again.
+        if row.lifecycle == Lifecycle::Exited as i32 && message.wakes == Wakes::Never {
+            return Err(MessageRefusal::Stale);
+        }
         if row.lifecycle == Lifecycle::Exited as i32 {
             return match message.wakes.judge(&row) {
                 Ok(()) => Ok(Some(Stage::Resuming)),
@@ -807,7 +787,11 @@ impl Daemon {
     /// Whether a child's report for the recipient's `incarnation` is for
     /// its current run: the incarnation the run began at or a later one,
     /// as the suspension experiment keeps it, else exactly the current one.
-    fn of_current_run(&self, row: &store::AgentRow, incarnation: u32) -> Result<bool, StoreError> {
+    pub(crate) fn of_current_run(
+        &self,
+        row: &store::AgentRow,
+        incarnation: u32,
+    ) -> Result<bool, StoreError> {
         Ok(match self.store.run_start(&row.agent.agent)? {
             Some(start) => (start..=row.incarnation).contains(&incarnation),
             None => incarnation == row.incarnation,
@@ -938,7 +922,10 @@ impl Daemon {
             Whose::Report => {
                 let outcome = match result {
                     Ok(()) => Outcome::Accepted { there: false },
-                    Err(MessageRefusal::Stale) => Outcome::Stale { there: false },
+                    // A parent deleted here is waiting for nothing either.
+                    Err(MessageRefusal::Stale | MessageRefusal::NoAgent) => {
+                        Outcome::Stale { there: false }
+                    }
                     Err(MessageRefusal::Lost | MessageRefusal::Unavailable) => {
                         Outcome::Kept { unreachable: true }
                     }
@@ -1612,20 +1599,26 @@ mod tests {
         );
     }
 
+    /// The child's host judges nothing about a parent on another host from
+    /// its copy of the parent's row: live, exited under another
+    /// incarnation, or not held at all, the report goes to the parent's own
+    /// host at once, which decides.
     #[test]
-    fn the_childs_host_hands_a_live_parents_report_over_under_another_incarnation_and_drops_an_exited_ones()
-     {
-        for (lifecycle, handed) in [
-            (wire::Lifecycle::Live, true),
-            (wire::Lifecycle::Exited, false),
+    fn the_childs_host_hands_a_far_parents_report_over_whatever_its_copy_of_the_parent_says() {
+        for copy in [
+            Some(wire::Lifecycle::Live),
+            Some(wire::Lifecycle::Exited),
+            None,
         ] {
             let dir = tempfile::tempdir().expect("a temporary directory");
             let mut daemon = daemon(&dir);
             let parent = AgentKey::new(FAR.0.to_vec(), PARENT.0.to_vec());
-            let mut row = AgentRow::new(parent.clone(), 1, "/src");
-            row.incarnation = 2;
-            row.lifecycle = lifecycle as i32;
-            daemon.store.put_agent(&row).unwrap();
+            if let Some(lifecycle) = copy {
+                let mut row = AgentRow::new(parent.clone(), 1, "/src");
+                row.incarnation = 2;
+                row.lifecycle = lifecycle as i32;
+                daemon.store.put_agent(&row).unwrap();
+            }
             owe_report(&mut daemon, parent);
             daemon.trust_for_test(crate::trust::TrustStore::of_hosts(vec![FAR]));
             step(&mut daemon, Input::Started);
@@ -1640,13 +1633,27 @@ mod tests {
                     }
                 )
             });
-            assert_eq!(sent, handed, "{lifecycle:?}: {out:?}");
-            assert_eq!(
-                daemon.store.deliveries().unwrap().len(),
-                usize::from(handed)
-            );
+            assert!(sent, "{copy:?}: {out:?}");
+            assert_eq!(daemon.store.deliveries().unwrap().len(), 1);
             assert_eq!(violations(&out), Vec::<crate::Check>::new());
         }
+    }
+
+    /// A report for a parent here that has exited is stale at once: the
+    /// parent's next life is a new run, waiting for nothing from this one.
+    #[test]
+    fn a_report_for_an_exited_parent_here_is_dropped_as_stale() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut daemon = daemon(&dir);
+        let mut parent = AgentRow::new(daemon.own_key(PARENT), 1, "/src");
+        parent.lifecycle = wire::Lifecycle::Exited as i32;
+        daemon.store.put_agent(&parent).unwrap();
+        let key = daemon.own_key(PARENT);
+        owe_report(&mut daemon, key);
+        let out = step(&mut daemon, Input::Swept);
+        assert!(!resumed(&out, PARENT), "{out:?}");
+        assert!(daemon.store.deliveries().unwrap().is_empty(), "{out:?}");
+        assert_eq!(violations(&out), Vec::<crate::Check>::new());
     }
 
     /// A report for a parent on another host is delivered from the outbox
@@ -1771,7 +1778,7 @@ mod tests {
     /// The person stops a parent while it is suspending and a child's
     /// report it refused as exiting waits for the exit: the stop is done
     /// before the report is judged again, so the report finds the parent
-    /// stopped and resumes nothing.
+    /// stopped, resumes nothing and is dropped.
     #[test]
     fn a_report_waiting_out_a_suspension_the_person_stopped_resumes_nothing() {
         let dir = tempfile::tempdir().expect("a temporary directory");
@@ -1844,10 +1851,9 @@ mod tests {
                 wire::ExitCause::Stopped as i32
             )
         );
-        assert_eq!(
-            daemon.store.deliveries().unwrap().len(),
-            1,
-            "the report is kept"
+        assert!(
+            daemon.store.deliveries().unwrap().is_empty(),
+            "the report for the stopped parent is dropped as stale"
         );
     }
 }

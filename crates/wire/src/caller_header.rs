@@ -5,7 +5,7 @@ use base64::Engine as _;
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 use prost::Message as _;
 
-use crate::amux::v1::{AgentCaller, Caller, Person, caller};
+use crate::amux::v1::{AgentCaller, Caller, PermissionLevel, Person, caller};
 
 /// gRPC writes a binary header's value in base64 and lets a sender pad it
 /// or not, so a reader takes either.
@@ -49,12 +49,20 @@ impl Caller {
         }
     }
 
-    /// One of the carrying host's agents.
-    pub fn agent(agent_id: impl Into<Vec<u8>>, name: impl Into<String>) -> Self {
+    /// One of the carrying host's agents, its incarnation and permission
+    /// level as that host's own row has them.
+    pub fn agent(
+        agent_id: impl Into<Vec<u8>>,
+        name: impl Into<String>,
+        incarnation: u32,
+        permission_level: PermissionLevel,
+    ) -> Self {
         Self {
             of: Some(caller::Of::Agent(AgentCaller {
                 agent_id: agent_id.into(),
                 name: name.into(),
+                incarnation,
+                permission_level: permission_level as i32,
             })),
         }
     }
@@ -85,7 +93,10 @@ mod tests {
 
     #[test]
     fn a_caller_round_trips_through_its_header() {
-        for caller in [Caller::person("ios"), Caller::agent([7; 16], "coder")] {
+        for caller in [
+            Caller::person("ios"),
+            Caller::agent([7; 16], "coder", 1, PermissionLevel::Auto),
+        ] {
             let header = caller.to_header();
             assert!(
                 header.bytes().all(|byte| byte.is_ascii_graphic()),
@@ -98,8 +109,9 @@ mod tests {
     /// gRPC lets a sender pad a binary header's base64 or not.
     #[test]
     fn a_padded_header_reads_too() {
-        // 26 bytes encoded, which base64 pads.
-        let caller = Caller::agent([7; 16], "code");
+        // 26 bytes encoded (no incarnation or level, which proto3 leaves
+        // out at zero), which base64 pads.
+        let caller = Caller::agent([7; 16], "code", 0, PermissionLevel::Unspecified);
         let padded = base64::engine::general_purpose::STANDARD.encode(caller.encode_to_vec());
         assert!(padded.ends_with('='));
         assert_eq!(Caller::from_header(padded.as_bytes()), Ok(caller));

@@ -129,7 +129,7 @@ def _test_impl(ctx: AnalysisContext) -> list[Provider]:
     nix = ctx.attrs._nix[NixToolchainInfo].run if ctx.attrs._nix else None
     command = cmd_args(nix or [], "--" if nix else [], ctx.attrs.binary[RunInfo]) if not ctx.attrs.harness else cmd_args(
         nix or [],
-        "bin/python3" if nix else "python3",
+        "bin/python3" if nix else ctx.attrs._python,
         ctx.attrs._runner,
         "--threads",
         str(ctx.attrs.threads),
@@ -184,6 +184,12 @@ _amux_test = rule(
         "terminate_after": attrs.int(default = 3),
         "threads": attrs.int(default = 4),
         "_runner": attrs.source(default = "root//build:test-runner.py"),
+        # The Python the runner runs under, by the name the worker's PATH
+        # has it: Windows' installers make no python3.
+        "_python": attrs.string(default = select({
+            "DEFAULT": "python3",
+            "prelude//os:windows": "python",
+        })),
         "_nix": attrs.option(attrs.exec_dep(providers = [NixToolchainInfo]), default = select({
             "DEFAULT": None,
             "prelude//os:linux": "root//:nix-linux",

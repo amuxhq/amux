@@ -42,6 +42,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
+# The repository's Python (scripts/py picks one), for its other scripts;
+# Windows can't start a shell script, and there this is that one already.
+PY = [sys.executable] if os.name == "nt" else [str(ROOT / "scripts/py")]
 OUT = ROOT / ".buckconfig.local"
 NATIVELINK = Path.home() / "Library/Caches/amux/nativelink"
 WORKER_CORES = NATIVELINK / "cores"
@@ -188,12 +191,16 @@ def stale() -> bool:
 
 def write(mode: str) -> None:
     channel = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
+    # A Windows machine builds nothing itself: Windows targets compile on a
+    # Linux worker with the Windows toolchain (nix/windows.nix), so no
+    # action names a compiler of its own.
+    toolchain_dir = "" if platform.system() == "Windows" else sysroot(channel)
     lines = [
         "# Written by scripts/buck-config.py; not committed. It is rewritten",
         "# when the pinned toolchains change, or where actions go does.",
         f"# mode: {mode}",
         "[rust]",
-        f"  toolchain_dir = {sysroot(channel)}",
+        f"  toolchain_dir = {toolchain_dir}",
     ]
     lines += [
         # The cores this machine's NativeLink worker offers
@@ -237,7 +244,7 @@ def skipped(patterns: list[str]) -> None:
     `patterns` that a run therefore skipped."""
     if linux(mode()):
         return
-    buck2 = run(str(ROOT / "scripts/py"), str(ROOT / "scripts/buck-tools.py"), "path", "buck2")
+    buck2 = run(*PY, str(ROOT / "scripts/buck-tools.py"), "path", "buck2")
     query = subprocess.run(
         [buck2, "uquery", f"attrfilter(labels, nova-only, set({' '.join(patterns)}))"],
         cwd=ROOT, capture_output=True, text=True,
@@ -264,7 +271,7 @@ def main() -> None:
         write(now)
     if was is not None and now != was:
         # The running daemon still holds the old endpoints.
-        buck2 = run(str(ROOT / "scripts/py"), str(ROOT / "scripts/buck-tools.py"), "path", "buck2")
+        buck2 = run(*PY, str(ROOT / "scripts/buck-tools.py"), "path", "buck2")
         subprocess.run([buck2, "kill"], cwd=ROOT, capture_output=True)
         print(f"buck-config: actions now go {DESCRIBE[now.split(' ')[0]]}; restarted this tree's Buck2 daemon", file=sys.stderr)
     if now == "local":

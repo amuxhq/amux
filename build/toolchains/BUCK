@@ -219,12 +219,13 @@ remote_test_execution_toolchain(
             },
         },
         # On the Windows CI job's own worker (build/platforms/BUCK), the
-        # only place a Windows test can run. Its worker offers
-        # _WINDOWS_WHOLE_WORKER cores, which a test that uses every core
-        # asks for wherever it is sent from, as on Linux.
+        # only place a Windows test can run. Every Windows test binary takes
+        # the whole worker, its runner four cases at a time: four at once
+        # is what the runner's four cores ran under nextest, and the Windows
+        # tests have failed on timing under more load than that.
         "prelude//os:windows": {
             "default": {
-                "capabilities": {"OSFamily": "windows", "cpu_count": "1"},
+                "capabilities": {"OSFamily": "windows", "cpu_count": _WINDOWS_WHOLE_WORKER},
                 "use_case": "buck2-default",
             },
             "whole-worker": {

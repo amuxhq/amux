@@ -280,9 +280,14 @@ amux_cxx_toolchain = rule(
         "rc_compiler": attrs.option(attrs.string(), default = None),
         "rc_flags": attrs.list(attrs.arg(), default = []),
         "supports_content_based_paths": attrs.bool(default = False),
+        # The same defaults on every host, so an action's key doesn't
+        # depend on which machine Buck2 ran on: the prelude picks MSVC's
+        # tools on a Windows host, whose archiver and linker kinds would
+        # then reach Linux targets built from CI's Windows job. Windows
+        # targets name their own tools (build/toolchains/BUCK).
         "_cxx_tools_info": attrs.exec_dep(
             providers = [CxxToolsInfo],
-            default = "prelude//toolchains/msvc:msvc_tools" if host_info().os.is_windows else "prelude//toolchains/cxx/clang:path_clang_tools",
+            default = "prelude//toolchains/cxx/clang:path_clang_tools",
         ),
         "_target_os_type": buck.target_os_type_arg(),
     },

@@ -7,14 +7,16 @@
 # worktree manager running a machine-wide hook all have different paths, and
 # one of them found the system 3.9 first. That made a script pass from one
 # caller and fail from another with an import error naming nothing useful,
-# so the interpreter is chosen here rather than assumed. PATH comes first so
+# so the interpreter is chosen here rather than assumed. On Windows the
+# installers make only `python`, and `python3` is a stub that offers the
+# Microsoft Store. PATH comes first so
 # a virtualenv or CI image wins; the absolute paths are where the usual
 # installers put a newer Python when PATH is bare.
 
 set -eu
 
 for candidate in \
-        python3 python3.14 python3.13 python3.12 python3.11 \
+        python3 python3.14 python3.13 python3.12 python3.11 python \
         /opt/homebrew/bin/python3 /usr/local/bin/python3 \
         "$HOME"/.local/bin/python3.1[1-9]; do
     if command -v "$candidate" > /dev/null 2>&1 \

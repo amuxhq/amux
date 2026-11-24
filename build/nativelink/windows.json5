@@ -1,0 +1,148 @@
+// NativeLink on CI's Windows runner (docs/CI.md, "The Windows job"):
+// a worker that runs Windows tests, in front of the build host's cache.
+// scripts/nativelink.py `windows` fills in the {{...}} values and runs it.
+//
+// Every Windows binary is compiled and linked on the build host's Linux
+// worker first (`just check-windows`, sent straight to the build host).
+// Buck2 then sends the tests here: each build action is a hit in the build
+// host's action cache, read through this one, and each test runs on the
+// worker below, which fetches the binaries it needs from the build host's
+// CAS. So the runner compiles nothing, and a test runs through remote
+// execution, which is what records its result: Buck2 doesn't record a test
+// it ran itself.
+//
+// The build host's action cache can't be written from here, so a test's
+// result goes into this machine's (LOCAL_AC), which the job keeps in
+// GitHub's cache between runs; its outputs (what the test printed) go to
+// the build host's CAS as well, so a kept result still finds them.
+{
+  stores: [
+    {
+      name: "REMOTE_CAS",
+      grpc: {
+        instance_name: "main",
+        endpoints: [{ address: "{{remote}}" }],
+        store_type: "cas",
+        connections_per_endpoint: 4,
+        max_concurrent_requests: 64,
+        retry: { max_retries: 6, delay: 0.25, jitter: 0.5 },
+      },
+    },
+    {
+      name: "LOCAL_CAS",
+      filesystem: {
+        content_path: "{{cache}}/cas",
+        temp_path: "{{cache}}/cas-tmp",
+        eviction_policy: { max_bytes: {{cas_bytes}} },
+      },
+    },
+    {
+      // Uploads go to both; reads fill the local layer from the build
+      // host. The worker uses the same, so a test's outputs reach the
+      // build host too.
+      name: "CAS",
+      fast_slow: {
+        fast: { ref_store: { name: "LOCAL_CAS" } },
+        slow: { ref_store: { name: "REMOTE_CAS" } },
+      },
+    },
+    {
+      // The tests' results, kept between runs. One whose outputs the
+      // build host has evicted is reported missing, and the test runs.
+      name: "LOCAL_AC",
+      completeness_checking: {
+        backend: {
+          filesystem: {
+            content_path: "{{results}}",
+            temp_path: "{{cache}}/ac-tmp",
+            eviction_policy: { max_bytes: {{ac_bytes}} },
+          },
+        },
+        cas_store: { ref_store: { name: "CAS" } },
+      },
+    },
+    {
+      name: "REMOTE_AC",
+      completeness_checking: {
+        backend: {
+          grpc: {
+            instance_name: "main",
+            endpoints: [{ address: "{{remote}}" }],
+            store_type: "ac",
+            connections_per_endpoint: 4,
+            max_concurrent_requests: 64,
+            retry: { max_retries: 6, delay: 0.25, jitter: 0.5 },
+          },
+        },
+        cas_store: { ref_store: { name: "REMOTE_CAS" } },
+      },
+    },
+    {
+      // This machine's results, then the build host's, which are the
+      // compiles and links. Nothing here writes the build host's.
+      name: "AC",
+      fast_slow: {
+        fast: { ref_store: { name: "LOCAL_AC" } },
+        slow: { ref_store: { name: "REMOTE_AC" } },
+        fast_direction: "update",
+        slow_direction: "get",
+      },
+    },
+  ],
+  schedulers: [
+    {
+      name: "SCHEDULER",
+      simple: {
+        supported_platform_properties: {
+          OSFamily: "exact",
+          cpu_count: "minimum",
+          memory_kb: "minimum",
+        },
+      },
+    },
+  ],
+  workers: [
+    {
+      local: {
+        name: "windows-",
+        worker_api_endpoint: { uri: "grpc://127.0.0.1:50061" },
+        cas_fast_slow_store: "CAS",
+        upload_action_result: { ac_store: "LOCAL_AC" },
+        work_directory: "{{cache}}/work",
+        max_action_timeout_s: 3600,
+        // A process on Windows needs the system's own variables (a socket
+        // can't start without SystemRoot), and the tests the runner's
+        // Python and git; the worker gives an action none of its own.
+        additional_environment: {
+{{environment}}
+        },
+        platform_properties: {
+          OSFamily: { values: ["windows"] },
+          cpu_count: { values: ["{{cores}}"] },
+          memory_kb: { values: ["{{memory_kb}}"] },
+        },
+      },
+    },
+  ],
+  servers: [
+    {
+      name: "clients",
+      listener: { http: { socket_address: "127.0.0.1:50051" } },
+      services: {
+        cas: [{ instance_name: "main", cas_store: "CAS" }],
+        ac: [{ instance_name: "main", ac_store: "AC" }],
+        execution: [{ instance_name: "main", cas_store: "CAS", scheduler: "SCHEDULER" }],
+        capabilities: [{ instance_name: "main", remote_execution: { scheduler: "SCHEDULER" } }],
+        bytestream: [{ instance_name: "main", cas_store: "CAS" }],
+      },
+    },
+    {
+      name: "workers",
+      listener: { http: { socket_address: "127.0.0.1:50061" } },
+      services: {
+        worker_api: { scheduler: "SCHEDULER" },
+        health: {},
+      },
+    },
+  ],
+}

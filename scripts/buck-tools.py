@@ -20,6 +20,7 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +35,8 @@ def host() -> str:
         return "aarch64-apple-darwin"
     if system == "Linux" and machine in ("x86_64", "amd64"):
         return "x86_64-unknown-linux-gnu"
+    if system == "Windows" and machine in ("x86_64", "amd64"):
+        return "x86_64-pc-windows-msvc"
     sys.exit(f"buck-tools: no pinned tools for {system} {machine}")
 
 
@@ -41,9 +44,14 @@ def pins() -> dict:
     return {k: v for k, v in json.loads(PINS.read_text()).items() if not k.startswith("/")}
 
 
-def binary(name: str) -> Path:
+def version(name: str) -> str:
+    """The pinned version for this host: an asset may name its own."""
     pin = pins()[name]
-    return CACHE / name / pin["version"] / name
+    return pin["assets"].get(host(), {}).get("version", pin["version"])
+
+
+def binary(name: str) -> Path:
+    return CACHE / name / version(name) / (name + (".exe" if platform.system() == "Windows" else ""))
 
 
 def unzstd(data: bytes) -> bytes:
@@ -68,8 +76,8 @@ def fetch(name: str) -> Path:
     pin = pins()[name]
     asset = pin["assets"].get(host())
     if asset is None:
-        sys.exit(f"buck-tools: {name} {pin['version']} has no asset for {host()}")
-    print(f"buck-tools: fetching {name} {pin['version']}", file=sys.stderr)
+        sys.exit(f"buck-tools: {name} {version(name)} has no asset for {host()}")
+    print(f"buck-tools: fetching {name} {version(name)}", file=sys.stderr)
     with urllib.request.urlopen(asset["url"], timeout=300) as response:
         data = response.read()
     digest = hashlib.sha256(data).hexdigest()
@@ -86,6 +94,9 @@ def fetch(name: str) -> Path:
             if member is None:
                 sys.exit(f"buck-tools: {asset['url']} has no {asset['member']}")
             contents = member.read()
+    elif asset["url"].endswith(".zip"):
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            contents = archive.read(asset["member"])
     else:
         contents = data
     target.parent.mkdir(parents=True, exist_ok=True)

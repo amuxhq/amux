@@ -392,6 +392,9 @@ jobs:
           - name: macOS journeys
             key: journeys
             cas_gib: 8
+            # With no store of its own yet, the tests job's, which holds
+            # everything the journeys build.
+            fallback: macos-tests-store-
             run: just test //crates/testnet:terminal-journeys
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -435,6 +438,7 @@ jobs:
           restore-keys: |
             macos-${{ matrix.key }}-store-${{ github.sha }}-
             macos-${{ matrix.key }}-store-
+            ${{ matrix.fallback || format('macos-{0}-store-', matrix.key) }}
       - name: Start a NativeLink on the runner
         run: |
           nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --cas-gib "${{ matrix.cas_gib }}" \

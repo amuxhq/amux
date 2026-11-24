@@ -68,7 +68,7 @@ takes seconds shares a job.
 | Windows | `windows-latest`, its builds on the build host | `just check-windows` on the build host, then `just test-windows` on a Windows worker of the runner's own ([The Windows job](#the-windows-job)); without the build host, `just cargo-test` |
 | Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why. After the gate, when the push changed what app-ffi is built from |
 | Address sanitizer, Thread sanitizer | `ubuntu-latest` | `just sanitize address` and `just sanitize thread`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race. After the gate, when the push changed one of the crates whose tests they run |
-| Apple apps | `macos-26`, its actions on a worker of its own | `just ios simulator golden`, then through Buck2 every target under `apps/apple` built, the shipping app for a phone built too, and every Apple test run: the package suites and the hosted app suite on the simulator, the Mac app's tests on the runner ([The macOS jobs](#the-macos-jobs)) |
+| Apple apps | `macos-26`, its actions on a worker of its own | `just ios simulator golden`, then through Buck2 every target under `apps/apple` built and every Apple test run: the package suites and the hosted app suite on the simulator, the Mac app's tests on the runner ([The macOS jobs](#the-macos-jobs)) |
 | macOS tests | `macos-26`, its actions on a worker of its own | `just test //crates/...` through Buck2: every workspace test that isn't Linux-only, the terminal journeys and the system suites among them |
 
 On Windows, suites that need Unix processes, PTYs or sockets are compiled
@@ -279,8 +279,14 @@ on the runner's NativeLink alone (`nativelink.py run --remote none`).
 The Apple apps job makes the golden simulator first (`just ios simulator
 golden`), which the phone's suites lease: on a runner, with no `wt`, a test
 takes `amux-iphone-1` under a lock ([the iPhone app](IOS.md#builds)). It
-then builds every target under `apps/apple`, the Release app for a phone
-too, which holds the device graph to compiling, and runs every Apple test.
+then builds every target under `apps/apple` and runs every Apple test. The
+Release app for a phone is not built here: its bridge is a fat-LTO link of
+the whole Rust graph for one more target, the heaviest build in the job on
+the runner's three cores, and it reruns on every Rust change;
+`just ios release` builds and audits it on the Mac. The run step is bounded
+at 75 minutes inside a 100-minute job, so a cold run that runs out of time
+still saves what it finished and the next run picks up from there; a
+cancelled job saves nothing.
 The macOS tests job runs `just test //crates/...`: on macOS that is the
 system lane as well, since the built `amux` binary's suites (`process`,
 `supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor`

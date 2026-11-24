@@ -22,6 +22,8 @@ let
   cargoNightly = pkgs.writeShellScriptBin "cargo-nightly" ''
     PATH=${nightly}/bin:$PATH exec cargo "$@"
   '';
+
+  pinned = import ./build-tools.nix { inherit pkgs; };
 in
 [
   rust
@@ -44,3 +46,5 @@ in
 # bundled. Linux only. On macOS the iPhone bridge needs Apple's own toolchain
 # from Xcode, and Nix's compiler and SDK variables get in its way.
 ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.stdenv.cc ]
+# build/tools.json's buck2, reindeer and nativelink.
+++ builtins.attrValues pinned.tools

@@ -9,6 +9,8 @@ local_config="$root/.buckconfig.local"
 if [ ! -f "$local_config" ] \
         || [ "$root/rust-toolchain.toml" -nt "$local_config" ] \
         || [ "$root/build/tools.json" -nt "$local_config" ] \
+        || [ "$root/flake.lock" -nt "$local_config" ] \
+        || [ "$root/nix/toolchain.nix" -nt "$local_config" ] \
         || [ "$here/buck-config.py" -nt "$local_config" ] \
         || [ "$HOME/Library/Caches/amux/nativelink/cores" -nt "$local_config" ]; then
     "$here/py" "$here/buck-config.py"

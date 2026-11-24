@@ -8,14 +8,15 @@ the version), and Xcode, whose path doesn't, is named by its version and
 build in a platform property every Mac action carries. A toolchain upgrade
 therefore changes every key it should.
 
-scripts/buck2 runs this whenever rust-toolchain.toml, build/tools.json or
-the worker's core count is newer than .buckconfig.local, so the file
+scripts/buck2 runs this whenever rust-toolchain.toml, the Nix pins,
+build/tools.json or the worker's core count is newer than .buckconfig.local, so the file
 follows the pins without anyone remembering to.
 """
 
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -23,7 +24,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / ".buckconfig.local"
-JUSTFILE = ROOT / "justfile"
 WORKER_CORES = Path.home() / "Library/Caches/amux/nativelink/cores"
 
 
@@ -32,19 +32,22 @@ def run(*args: str, env: dict | None = None) -> str:
 
 
 def sysroot(channel: str) -> str:
+    """The pinned stable toolchain's directory: rustup's for the channel, or,
+    inside `nix develop` where there is no rustup, the shell's own, which
+    nix/toolchain.nix reads from the same rust-toolchain.toml."""
+    if shutil.which("rustup") is None:
+        try:
+            release = re.search(r"^release: (.+)$", run("rustc", "-vV"), re.M)
+            if release and release.group(1) == channel:
+                return run("rustc", "--print", "sysroot")
+        except (OSError, subprocess.CalledProcessError):
+            pass
+        sys.exit(f"buck-config: no rustup, and no rustc {channel} on PATH; run it inside `nix develop`")
     env = dict(os.environ, RUSTUP_TOOLCHAIN=channel)
     try:
         return run("rustc", "--print", "sysroot", env=env)
     except (OSError, subprocess.CalledProcessError):
         sys.exit(f"buck-config: no Rust toolchain {channel}; run `rustup toolchain install {channel}`")
-
-
-def nightly_channel() -> str:
-    # The justfile names the dated nightly once (`nightly_cargo`).
-    match = re.search(r"nightly-(\d{4}-\d{2}-\d{2})", JUSTFILE.read_text())
-    if not match:
-        sys.exit("buck-config: the justfile names no dated nightly")
-    return f"nightly-{match.group(1)}"
 
 
 def worker_cores() -> int:
@@ -59,7 +62,6 @@ def main() -> None:
         "# when the pinned toolchains change.",
         "[rust]",
         f"  toolchain_dir = {sysroot(channel)}",
-        f"  nightly_dir = {sysroot(nightly_channel())}",
     ]
     lines += [
         # The cores this machine's NativeLink worker offers

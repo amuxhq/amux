@@ -46,6 +46,21 @@ def binary(name: str) -> Path:
     return CACHE / name / pin["version"] / name
 
 
+def unzstd(data: bytes) -> bytes:
+    # Python has zstd from 3.14; an older one (Debian's 3.13) uses the zstd
+    # command. Inside `nix develop` nothing is fetched: the shell has them.
+    try:
+        from compression import zstd
+    except ImportError:
+        import subprocess
+
+        try:
+            return subprocess.run(["zstd", "-dc"], input=data, capture_output=True, check=True).stdout
+        except (OSError, subprocess.CalledProcessError):
+            sys.exit("buck-tools: unpacking needs Python 3.14 or the zstd command; or run inside `nix develop`")
+    return zstd.decompress(data)
+
+
 def fetch(name: str) -> Path:
     target = binary(name)
     if target.exists():
@@ -64,9 +79,7 @@ def fetch(name: str) -> Path:
             f"but build/tools.json pins {asset['sha256']}"
         )
     if asset["url"].endswith(".zst"):
-        from compression import zstd
-
-        contents = zstd.decompress(data)
+        contents = unzstd(data)
     elif asset["url"].endswith(".tar.gz"):
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
             member = archive.extractfile(asset["member"])

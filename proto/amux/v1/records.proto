@@ -54,8 +54,10 @@ message MessageBody {
 // A child's report to its parent, written by the child's daemon from its
 // outbox; no sender can send one.
 message ChildReport {
-  // The parent's incarnation the report is for: the recipient's daemon
-  // drops it for any other.
+  // The parent's incarnation the report is for: the newest the child's host
+  // heard from the parent itself (Agent.parent_incarnation) when the child's
+  // turn ended or it exited. The recipient's daemon drops it unless it is of
+  // the parent's current run, and drops it for a parent that has exited.
   uint32 to_incarnation = 1;
   // The child's own incarnation it is from, so its parent matches the
   // report to that incarnation whichever comes first, the report or the

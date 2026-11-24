@@ -192,7 +192,7 @@ processes the frames in journal order, inside one transaction:
 | Append | Appends the text to the held item and assigns it the next revision. The broadcast `Append` carries the item's previous revision as `base_revision`. An append naming a key the store does not hold is skipped and counted. |
 | Snapshot | Assigns the next revision, stores the snapshot on the agent row and copies `phase`, `working_on`, `phase_since_ms`, `git` and `background_jobs` from its envelope onto the row. |
 | Snapshot changing what its `notice` owes the person | Deletes the agent's pending `notifications` rows and, for a notice a top-level agent raised or any agent's ask, inserts one due after the push delay. Another ask is a change; another ask behind the same one is not. |
-| `turn_end` on an agent with a parent | Inserts a `deliveries` row carrying a copy of the turn's last message, the turn's outcome and whether it is the incarnation's `last`; a turn end marked last clears `owes_report`. |
+| `turn_end` on an agent with a parent | Inserts a `deliveries` row carrying a copy of the turn's last message, the turn's outcome and whether it is the incarnation's `last`, for the parent incarnation the agent's row holds (`parent_incarnation`); a turn end marked last clears `owes_report`. |
 | `incarnation_end` | Copies the cause and its words onto the row as `exit_cause` and `exit_detail`. The row stays live until the daemon marks the agent exited, which keeps this cause, so a daemon that stops in between leaves it for the next one. |
 | A subagent's part (`agents`) | Files its items, appends and snapshot under the subagent's own row, with the subagent's own orders and revisions, as the host's are filed under the host. Its starts and ends are its lifecycle, written in the same transaction as the host's cursor, since there is no process whose exit the registry could see later: a start on a row that has ended makes it live and open again and clears its exit cause, and an end on a live one marks it exited with its cause, filing a finished one closed. The commit returns these in journal order for the registry. It never makes a delivery or sets `owes_report`. A snapshot leaves the row's title alone: a subagent's title is the registry's. A part naming no row, or a row that is not one of this agent's own subagents, is skipped and returned. |
 
@@ -458,6 +458,7 @@ The schema is the text in
 | `exhausted` | No older history exists: the origin said so, or retention trimmed it |
 | `owes_report` | Own rows: the incarnation has not yet sent its parent its last report, from its start until a turn end marked `last` (and again should a later turn start). An incarnation that exits still owing one, its turn open or ended idle, tells its parent it failed. |
 | `created_at_ms`, `incarnation` | Creation time and the `spec.<n>` it is running |
+| `parent_incarnation` | For an agent with a parent, the newest incarnation of the parent that has spoken to it, as the caller header of the parent's own calls states it: the create, a message, input or a resume. An own row keeps the larger of the stored and the written value, so no write lowers it; a replica takes its origin's. A child's reports are stamped with it, and its parent's exit is weighed against it. 0 for an agent with no parent |
 | `native` | An encoded `amux.v1.NativeChild` on a provider subagent, the provider's id for it; NULL on an agent amux started, which is every row written before the column existed. Owned by the registry; a replica copies its origin's |
 | `experimental` | What the row says to everyone under each experiment: the wire's `Agent.experimental` map, version to encoded message, which the store never decodes. Held as a message whose one field is that map, so the column holds the entries as the wire encodes them; NULL holds none. A replica's is its origin's, replaced whole by each inventory row whatever this host runs, so a host with an experiment off still stores and serves a peer's entries, and those of versions it has never heard of. An own row's is written by the experiments this host runs (`Sqlite::set_experimental`); a registry write leaves it. See [experiment tables](#experiment-tables) |
 
@@ -491,7 +492,7 @@ The rest:
 
 | Table | Rows |
 | --- | --- |
-| `deliveries` | The daemon's outbox to parents: a child's report that a turn ended (`text` is its last message, `outcome` how the turn ended, `last` whether it was the incarnation's last) or, with `exited` set, that the incarnation ended without a last report (`exit_cause` and `exit_detail` say how, as the row's do; always the incarnation's last), so each child incarnation sends exactly one last report. Keyed by child, incarnation, `exited` and turn id; the parent is the one the child's row names. Holds a copy of the message, because retention may remove the child's transcript while a parent is offline. |
+| `deliveries` | The daemon's outbox to parents: a child's report that a turn ended (`text` is its last message, `outcome` how the turn ended, `last` whether it was the incarnation's last) or, with `exited` set, that the incarnation ended without a last report (`exit_cause` and `exit_detail` say how, as the row's do; always the incarnation's last), so each child incarnation sends exactly one last report. Keyed by child, incarnation, `exited` and turn id; the parent is the one the child's row names, and `parent_incarnation` the incarnation of it the report is for, copied from the child's row in the transaction that writes the report. Holds a copy of the message, because retention may remove the child's transcript while a parent is offline. |
 | `notifications` | The push outbox: one row per turn into `needs_you`, keyed by agent and snapshot revision, with a due time (`due_at_ms`) and the push's `name`, `working_on` and `text`, built from envelope fields only. Deleted unsent if the phase leaves `needs_you` first, and with the agent. |
 | `hosts` | One row per peer host: the generation its inventory last reported, for the host entry this machine publishes. |
 | `trusted_hosts` | One row per paired host: its pinned key, name, when it was paired, whether it is on the account, what it last said of itself (signed in, platform), its SSH target, the addresses it last answered at and the addresses it listed with their sources (both JSON). Pairing, unpairing and a rollback commit synced; the rest are ordinary commits. |
@@ -744,8 +745,8 @@ since the journal below the cursor was already deleted.
    by when this host last read them, or, for one it has not read, by when its
    phase began.
    Their agents row stays, with an empty block, because it is the origin's
-   registry entry: it says whether a parent is live and which incarnation a
-   child's delivery names.
+   registry entry: it says whether a parent is live, which the family rule
+   reads.
 2. If still over, sourced agents first lose any rows a Reset left below their
    block, then are trimmed to their newest K rows, largest first, keeping the
    block contiguous.

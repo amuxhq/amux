@@ -159,6 +159,10 @@ impl Host {
                     host: here,
                     agent: self.caller.id,
                     name: self.caller.name.clone(),
+                    // As the tools socket's entry states it from the row,
+                    // which has reported no settings.
+                    incarnation: 1,
+                    level: wire::PermissionLevel::Unspecified,
                 },
             ),
             Who::PersonThere => (Served::Link, Calling::PersonAt(peer(), Client::Ios)),
@@ -168,6 +172,10 @@ impl Host {
                     host: peer(),
                     agent: self.there,
                     name: "caller-there".to_owned(),
+                    // As its own host states it: the level its row there
+                    // says, which the copy here mirrors.
+                    incarnation: 1,
+                    level: wire::PermissionLevel::Auto,
                 },
             ),
         };
@@ -909,12 +917,12 @@ async fn a_delete_preview_is_answered_to_whoever_may_delete() {
 }
 
 /// What an agent may ask for its subagent is settled on the create itself:
-/// the ceiling is read from the parent's row (here, this host's copy of a
-/// paired host's agent at auto), a parent whose level is not known gets
+/// the ceiling is the level the parent's own host states on the call (here,
+/// a paired host's agent at auto), a parent whose level is not known gets
 /// read-only and nothing wider, a fork needs a conversation to copy, and a
 /// person can ask for neither a fork nor a level.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_subagents_authority_is_settled_against_its_parents_row() {
+async fn a_subagents_authority_is_settled_against_the_level_its_parents_host_states() {
     let setup = Setup::new();
     let host = setup.start().await;
     host.settled().await;

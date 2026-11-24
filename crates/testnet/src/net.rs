@@ -1460,6 +1460,33 @@ impl Net {
         Ok(client::Client::connect(&socket, client::Surface::Terminal).await?)
     }
 
+    /// `from` sends `to` a message of `text` under the id `label` names, as
+    /// its send tool does: on its own tools socket, addressed to the recipient's host, which takes the
+    /// sender from the caller. Answers once the recipient has accepted it,
+    /// resumed with it when it had exited.
+    pub async fn message(
+        &self,
+        from: &str,
+        to: &str,
+        label: &str,
+        text: &str,
+    ) -> Result<Ack, NetError> {
+        let recipient = self.agent(to)?.clone();
+        self.tools(from)
+            .await?
+            .agent(&recipient)
+            .send_message(
+                message_id(label),
+                None,
+                wire::MessageBody {
+                    text: text.to_owned(),
+                    attachments: Vec::new(),
+                },
+            )
+            .await?;
+        Ok(self.ack(format!("{from}'s message to {to} accepted")))
+    }
+
     /// `parent` spawns `decl` as its own spawn tool does: the request goes
     /// to `parent`'s agent process on its own socket, and that process
     /// makes the create, addressed to `decl.host` by its id, as the spawn
@@ -3917,6 +3944,15 @@ pub fn submission(id: &[u8], text: &str) -> wire::PromptSubmission {
             attachments: Vec::new(),
         }),
     }
+}
+
+/// A message's 16-byte id, readable as `label` in what a host keeps: the
+/// same label is the same message, which its recipient takes once.
+pub fn message_id(label: &str) -> Vec<u8> {
+    assert!(label.len() <= 16, "{label:?} is longer than an id");
+    let mut id = label.as_bytes().to_vec();
+    id.resize(16, b'.');
+    id
 }
 
 pub fn prompt(kind: FakeKind, id: &[u8], text: &str) -> Input {

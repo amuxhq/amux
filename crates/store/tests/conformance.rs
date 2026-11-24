@@ -443,10 +443,14 @@ fn a_turn_end_with_a_parent_inserts_a_delivery() {
     let lone = own("lone");
     let mut store = with_agent(with_agent(store, &child), &lone);
     let mut parent_row = AgentRow::new(parent.clone(), wire::Kind::Codex, "/p");
-    parent_row.incarnation = 3;
+    // The parent has moved on since it last spoke to the child: the report
+    // is for the incarnation the child's own row last heard from, not the
+    // one this host's copy of the parent shows.
+    parent_row.incarnation = 4;
     store.put_agent(&parent_row).unwrap();
     let mut child_row = store.agent(&child).unwrap().unwrap();
     child_row.parent = Some(parent.clone());
+    child_row.parent_incarnation = 3;
     child_row.incarnation = 2;
     store.put_agent(&child_row).unwrap();
 

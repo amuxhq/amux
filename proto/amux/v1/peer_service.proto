@@ -37,8 +37,8 @@ service PeerService {
   rpc GetBlob(PeerServiceGetBlobRequest) returns (PeerServiceGetBlobResponse);
   // A child's report to its parent here. The child is one of the calling
   // host's agents: that host is whoever the link authenticated. A report is
-  // for one incarnation of its parent, dropped for any other, and never
-  // wakes the parent.
+  // for one incarnation of its parent, dropped when the parent has exited or
+  // is in a run that incarnation is not of, and never wakes the parent.
   rpc DeliverReport(DeliverReportRequest) returns (DeliverReportResponse);
 }
 
@@ -95,7 +95,8 @@ message DeliverReportRequest {
   string child_name = 3;
   // The parent, one of this host's agents.
   bytes parent_agent_id = 4;
-  // Carries the parent's incarnation it is for.
+  // Carries the parent's incarnation it is for, as the child's host stated
+  // it; this host judges it against the parent's current run.
   ChildReport report = 5;
 }
 

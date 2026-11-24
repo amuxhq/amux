@@ -278,6 +278,14 @@ message Agent {
   // runs with. Absent until its interpreter reports them, and on a row from
   // an earlier build.
   optional AgentSettings settings = 24;
+  // For an agent with a parent: the newest incarnation of the parent that
+  // the agent's host heard from the parent itself, as the parent's host
+  // stated it on the create and on each message, input or resume the
+  // parent sent since. The agent's reports are for that incarnation, and a
+  // parent waits only for the children it engaged in its current run.
+  // Never raised by a person's or another agent's call. 0 for an agent
+  // with no parent.
+  uint32 parent_incarnation = 25;
 }
 
 // What marks a provider subagent's row.

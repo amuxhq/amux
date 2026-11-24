@@ -133,8 +133,18 @@ async fn a_paired_hosts_agent_acts_over_the_link_only_on_its_own_children() {
     let pair = Pair::new().await;
     let laptop = pair.laptop_runtime.host();
     let mut desk = wire::agent_service_client(pair.to_desk().await);
-    let live = wire::Caller::agent(pair.live.id.as_bytes().to_vec(), "live");
-    let ended = wire::Caller::agent(pair.ended.id.as_bytes().to_vec(), "ended");
+    let live = wire::Caller::agent(
+        pair.live.id.as_bytes().to_vec(),
+        "live",
+        1,
+        wire::PermissionLevel::Auto,
+    );
+    let ended = wire::Caller::agent(
+        pair.ended.id.as_bytes().to_vec(),
+        "ended",
+        1,
+        wire::PermissionLevel::Auto,
+    );
     let person = wire::Caller::person("phone");
     let work = pair.desk.work.clone();
 

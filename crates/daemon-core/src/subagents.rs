@@ -586,6 +586,7 @@ mod tests {
 
         fn live(&mut self, agent: AgentId, name: &str, parent: Option<AgentId>) {
             let (_, out) = self.call(ClientRequest::CreateAgent(Box::new(Create {
+                parent_incarnation: u32::from(parent.is_some()),
                 agent,
                 cwd: "/src".into(),
                 given: Some(name.into()),
@@ -846,6 +847,7 @@ mod tests {
         let mut rig = rig();
         rig.host_writes(&[starts(SUB, &["s1"])]);
         let (_, out) = rig.call(ClientRequest::CreateAgent(Box::new(Create {
+            parent_incarnation: 1,
             agent: CHILD,
             cwd: "/src".into(),
             given: Some("helper".into()),

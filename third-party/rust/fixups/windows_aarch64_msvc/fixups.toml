@@ -1,0 +1,4 @@
+# Arm64's counterpart of windows_x86_64_msvc: its build script only adds the
+# import library it carries to Cargo's search path, which reaches no
+# dependent's link under Buck (windows-targets links with raw-dylib instead).
+buildscript.run = false

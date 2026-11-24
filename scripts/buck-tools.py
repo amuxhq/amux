@@ -35,7 +35,10 @@ def host() -> str:
         return "aarch64-apple-darwin"
     if system == "Linux" and machine in ("x86_64", "amd64"):
         return "x86_64-unknown-linux-gnu"
-    if system == "Windows" and machine in ("x86_64", "amd64"):
+    # Windows on Arm (a Windows VM on an Apple Silicon Mac) runs the x64
+    # builds under its emulation, as it runs the x64 binaries a Windows
+    # test starts; the pins name only those.
+    if system == "Windows" and machine in ("x86_64", "amd64", "arm64", "aarch64"):
         return "x86_64-pc-windows-msvc"
     sys.exit(f"buck-tools: no pinned tools for {system} {machine}")
 

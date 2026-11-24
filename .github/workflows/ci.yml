@@ -76,9 +76,9 @@ jobs:
         if: env.REMOTE != 'true'
         run: |
           sudo mkdir -p /mnt/nativelink && sudo chown "$(id -u):$(id -g)" /mnt/nativelink
-          nohup nix develop --command scripts/py scripts/nativelink.py serve /mnt/nativelink > /mnt/nativelink.log 2>&1 &
+          nohup nix develop --command scripts/py scripts/nativelink.py serve /mnt/nativelink > /mnt/nativelink/log 2>&1 &
           for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
-          cat /mnt/nativelink.log; exit 1
+          cat /mnt/nativelink/log; exit 1
       - name: Say which Cargo checks this change reaches
         id: cargo
         env:

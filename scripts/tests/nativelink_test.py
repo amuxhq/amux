@@ -1,15 +1,13 @@
-"""What the Mac's NativeLink start script (scripts/nativelink.py) does to the
-local cache layer as it picks a configuration: it runs here against a cache
-directory of its own, a stand-in for the NativeLink binary that records the
+"""What the Mac's NativeLink start script (scripts/nativelink.py) picks, and
+the configuration it renders: the script runs here against a cache directory
+of its own, a stand-in for the NativeLink binary that records the
 configuration it was given, and a listener standing in for the remote."""
 
 import importlib.util
-import os
 import socket
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 
@@ -40,7 +38,6 @@ class StartScriptTest(unittest.TestCase):
             "CONFIG": self.cache / "config.json5",
             "CONFIG_LOCAL": self.cache / "config-local.json5",
             "SERVING": self.cache / "serving",
-            "UNSHARED_SINCE": self.cache / "unshared-since",
             "binary": lambda: str(fake),
         }.items():
             original = getattr(nativelink, name)
@@ -70,38 +67,21 @@ class StartScriptTest(unittest.TestCase):
         self.remote.close()
         return {"remote": f"grpc://127.0.0.1:{port}", "workers": "127.0.0.1:50062"}
 
-    def blob(self, name: str, age: float) -> Path:
-        path = self.blobs / name
-        path.write_text(name)
-        when = time.time() - age
-        os.utime(path, (when, when))
-        return path
+    def test_it_runs_in_front_of_the_remote_while_the_remote_answers(self):
+        self.assertEqual(self.start(self.reachable()), "config.json5")
 
-    def test_what_the_local_layer_gained_without_the_remote_goes_when_it_is_back(self):
-        before = self.blob("before", age=3600)
+    def test_it_runs_without_the_remote_while_the_remote_is_out_of_reach(self):
         self.assertEqual(self.start(self.unreachable()), "config-local.json5")
-        os.utime(nativelink.UNSHARED_SINCE, (time.time() - 60, time.time() - 60))
-        during = self.blob("during", age=0)
+
+    def test_what_the_local_layer_gained_without_the_remote_is_kept(self):
+        during = self.blobs / "during"
+        self.assertEqual(self.start(self.unreachable()), "config-local.json5")
+        during.write_text("during")
         self.remote = socket.socket()
         self.remote.bind(("127.0.0.1", 0))
         self.remote.listen()
         self.assertEqual(self.start(self.reachable()), "config.json5")
-        self.assertTrue(before.exists())
-        self.assertFalse(during.exists())
-        self.assertFalse(nativelink.UNSHARED_SINCE.exists())
-
-    def test_starting_without_the_remote_again_keeps_when_that_began(self):
-        self.start({})
-        began = nativelink.UNSHARED_SINCE.stat().st_mtime
-        os.utime(nativelink.UNSHARED_SINCE, (began - 60, began - 60))
-        self.start({})
-        self.assertEqual(nativelink.UNSHARED_SINCE.stat().st_mtime, began - 60)
-
-    def test_a_layer_that_always_had_the_remote_is_kept(self):
-        kept = self.blob("kept", age=0)
-        self.assertEqual(self.start(self.reachable()), "config.json5")
-        self.assertTrue(kept.exists())
-        self.assertFalse(nativelink.UNSHARED_SINCE.exists())
+        self.assertTrue(during.exists())
 
 
 class ConfigTest(unittest.TestCase):
@@ -115,7 +95,15 @@ class ConfigTest(unittest.TestCase):
         self.assertIn('slow_direction: "read_only"', cas)
         template = nativelink.TEMPLATE.read_text()
         self.assertIn('cas: [{ instance_name: "main", cas_store: "CAS" }]', template)
+        self.assertIn('execution: [{ instance_name: "main", cas_store: "CAS",', template)
         self.assertIn('bytestream: [{ instance_name: "main", cas_store: "SHARED_CAS" }]', template)
+
+    def test_the_remotes_worker_reads_this_machines_layer_where_it_registers(self):
+        workers = nativelink.remote_workers("100.64.0.1:50062")
+        self.assertIn('socket_address: "100.64.0.1:50062"', workers)
+        self.assertIn('worker_api: { scheduler: "SCHEDULER" }', workers)
+        self.assertIn('cas: [{ instance_name: "main", cas_store: "LOCAL_ONLY_CAS" }]', workers)
+        self.assertIn('bytestream: [{ instance_name: "main", cas_store: "LOCAL_ONLY_CAS" }]', workers)
 
 
 if __name__ == "__main__":

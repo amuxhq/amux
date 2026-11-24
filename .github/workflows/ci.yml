@@ -133,9 +133,19 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      actions: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
+      # rust-cache saves a new entry whenever the lockfile or toolchain
+      # changes and never removes one; GitHub's cache is shared by every job
+      # and evicts the least recently used past 10 GB, which could be a
+      # macOS job's store. So every entry of this job's but the newest goes.
+      - name: Drop this job's older Rust caches
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/py scripts/ci_cache.py prune v0-rust-doctest- --keep 1
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: doctest
@@ -331,11 +341,11 @@ jobs:
     concurrency:
       group: macos-${{ matrix.key }}-${{ github.event_name }}-${{ github.ref }}
       cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: write
     env:
       AMUX_BUILD_HERE: "1"
-      # The most each job's CAS holds, so the three jobs' stores and the
-      # other jobs' caches fit in GitHub's 10 GB for the repository.
-      CAS_GIB: "6"
     strategy:
       fail-fast: false
       matrix:
@@ -350,6 +360,10 @@ jobs:
           # more target, and it reruns on every Rust change.
           - name: iPhone app
             key: iphone
+            # The most the job's CAS holds, so the three jobs' stores and
+            # the other jobs' caches fit in GitHub's 10 GB for the
+            # repository; compressed, a store is about a fifth of this.
+            cas_gib: 6
             run: >-
               just ios simulator golden &&
               scripts/buck2 test --build-default-info
@@ -359,6 +373,7 @@ jobs:
           # on the runner, the same way.
           - name: Mac app
             key: mac
+            cas_gib: 6
             run: >-
               scripts/buck2 test --build-default-info
               $(scripts/buck2 uquery "attrregexfilter(default_target_platform, macos, //apps/apple/...)")
@@ -366,6 +381,9 @@ jobs:
           # journeys among them: the macOS half of what the Linux gate runs.
           - name: macOS tests
             key: tests
+            # Every test binary of the workspace: a cold run's outputs are
+            # 9.5 GB on disk, 1.9 GB compressed.
+            cas_gib: 12
             run: just test //crates/...
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -411,7 +429,7 @@ jobs:
             macos-${{ matrix.key }}-store-
       - name: Start a NativeLink on the runner
         run: |
-          nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --cas-gib "$CAS_GIB" \
+          nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --cas-gib "${{ matrix.cas_gib }}" \
             > "$RUNNER_TEMP/nativelink.log" 2>&1 &
           for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/nativelink.log"; exit 1
@@ -458,6 +476,7 @@ jobs:
           for _ in $(seq 30); do pgrep -f "$RUNNER_TEMP/nativelink/config.json5" > /dev/null || break; sleep 1; done
           du -sh "$RUNNER_TEMP"/nativelink/cas* "$RUNNER_TEMP"/nativelink/ac* || true
       - name: Keep the store
+        id: save
         if: always()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -467,3 +486,15 @@ jobs:
             ${{ runner.temp }}/nativelink/ac
             ${{ runner.temp }}/nativelink/ac.exec
           key: macos-${{ matrix.key }}-store-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      # Only the newest store of each job is worth keeping, and GitHub's
+      # cache evicts the least recently used past 10 GB for the whole
+      # repository: an older store, read by the run that restored it, can
+      # outlive another job's newer cache.
+      - name: Drop this job's older stores
+        if: always() && steps.save.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          scripts/py scripts/ci_cache.py prune macos-${{ matrix.key }}-store-
+          --except macos-${{ matrix.key }}-store-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}

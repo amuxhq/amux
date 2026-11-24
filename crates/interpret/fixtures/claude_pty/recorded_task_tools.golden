@@ -1,10 +1,11 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
-effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cd96cd29
+effect catalogue 9d924e4e models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 9d924e4e
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Transcript type=assistant uuid=fecf3c49-ef27-43f8-88ca-e3addea98097
+snapshot settings model=claude-haiku-4-5-20251001 effort=? permission=? level=?
 snapshot WORKING queue=[] working_on=- at=1789588946787 asks=[] session=3dcce16f-d19b-43a8-bf2e-14a05759022a model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=10492/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 recorded 3: fact Transcript type=user uuid=a3e51bd9-cb02-4736-88f8-1b4a498d7b2d
 snapshot WORKING queue=[] working_on=- at=1789588946807 asks=[] session=3dcce16f-d19b-43a8-bf2e-14a05759022a model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=10492/? tasks=[1:TASK_LIST_STATUS_PENDING:"Resume from the live checklist"] active=[] usage=? servers=[] sign_in=? background=?

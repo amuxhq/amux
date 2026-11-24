@@ -9,7 +9,8 @@
 //! - a person may make every call;
 //! - an agent, of this host or a paired one, may message any agent, and
 //!   make every other call naming an agent only on its own direct children;
-//! - an agent starts children with their kind's default settings only, and
+//! - an agent starts children on the model, effort and workspace it picks
+//!   and a permission no wider than its own (`crate::delegation`), and
 //!   files them only as closed.
 //!
 //! An agent this node holds only a copy of is another host's to answer for,
@@ -31,7 +32,6 @@ use wire::{
     PreviewDeleteRequest, PreviewDeleteResponse, PutBlobRequest, PutBlobResponse,
     RenameAgentRequest, RenameAgentResponse, ResumeAgentRequest, ResumeAgentResponse,
     SendInputRequest, SendMessageRequest, SendMessageResponse, SetFilingRequest, SetFilingResponse,
-    create_agent_request,
 };
 
 use super::changes::person_or_parent;
@@ -159,25 +159,6 @@ fn first_prompt(
     Some(InputShape::Prompt(kind, pages))
 }
 
-/// Whether a create asks for its kind with nothing but the defaults: a
-/// permission mode, a model or provider arguments are the person's to
-/// choose, never another agent's.
-fn only_defaults(agent: &create_agent_request::Agent) -> bool {
-    match agent {
-        create_agent_request::Agent::ClaudePty(config)
-        | create_agent_request::Agent::ClaudeSdk(config) => *config == Default::default(),
-        create_agent_request::Agent::Codex(config) => *config == Default::default(),
-        // Which agent program is the child's to name; its settings are not.
-        create_agent_request::Agent::Acp(config) => {
-            *config
-                == wire::AcpCreateConfig {
-                    agent: config.agent.clone(),
-                    ..Default::default()
-                }
-        }
-    }
-}
-
 #[tonic::async_trait]
 impl AgentService for Agents {
     async fn create_agent(
@@ -186,14 +167,6 @@ impl AgentService for Agents {
     ) -> Result<Response<CreateAgentResponse>, Status> {
         let caller = Caller::of(&request)?;
         let request = request.into_inner();
-        if let (Caller::Agent { .. }, Some(agent)) = (&caller, &request.agent)
-            && !only_defaults(agent)
-        {
-            return Err(status(wire_error(
-                ErrorCode::PermissionDenied,
-                "an agent starts children with their kind's default settings only",
-            )));
-        }
         let runtime = self.runtime()?;
         let kind = request
             .agent

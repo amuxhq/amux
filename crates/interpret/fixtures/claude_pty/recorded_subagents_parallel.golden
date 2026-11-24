@@ -1,14 +1,16 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
-effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cd96cd29
+effect catalogue 9d924e4e models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 9d924e4e
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1794831979170 text="" BOUNDARY_KIND_STARTED
+snapshot settings model=claude-haiku-5-5 effort=? permission=? level=?
 snapshot IDLE queue=[] working_on=- at=1794831979170 asks=[] session=c98b35b2-866d-4458-b882-37c034b8305e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot settings model=claude-haiku-5-5 effort=? permission=default level=ask
 snapshot IDLE queue=[] working_on=- at=1794831979659 asks=[] session=c98b35b2-866d-4458-b882-37c034b8305e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 13 recorded 11: fact Transcript type=user uuid=207081b2-0585-4f7b-9ef9-723f46cab13c
 item 207081b2-0585-4f7b-9ef9-723f46cab13c prompt final at=1794831979824 text="In a single message, launch three `reader` subagents in parallel: one for a.txt, one for b.txt and one for c.txt. When all three have reported, reply with their three words in file order, separated by spaces."
@@ -29,6 +31,7 @@ agent sub-b9d113db snapshot WORKING queue=[] working_on=- at=1794831982181 asks=
 effect follow subagent a9cfc547b206113ad
 ## 67 recorded 65: fact Transcript type=assistant uuid=464bc404-9606-4a72-89d1-0fb7efd76f24
 item toolu_01N5zxGrayAzJdzy32WzUuDu tool final at=1794831981820 text="" Agent TOOL_STATE_RUNNING opens=sub-8f4c80a2 started=1794831981820 input=subagent:"Read a.txt"
+snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask
 snapshot WORKING queue=[] working_on=- at=1794831982624 asks=[] session=c98b35b2-866d-4458-b882-37c034b8305e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36040/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 68 recorded 66: fact Transcript type=user uuid=d72ea036-a3bd-4b9b-a11c-f8712bd7eb1e
 item toolu_01N5zxGrayAzJdzy32WzUuDu tool final at=1794831981820 text="" Agent TOOL_STATE_RUNNING background opens=sub-8f4c80a2 started=1794831981820 input=subagent:"Read a.txt"

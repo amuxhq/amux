@@ -74,6 +74,7 @@ class NewAgentStoreTest {
                 neverAsks = false,
                 settable = true,
                 models = emptyList(),
+                level = 0,
             ),
             OfferedPermission(
                 value = "auto",
@@ -82,6 +83,7 @@ class NewAgentStoreTest {
                 neverAsks = false,
                 settable = true,
                 models = listOf("gpt-6-astra"),
+                level = 0,
             ),
             OfferedPermission(
                 value = "locked",
@@ -90,11 +92,12 @@ class NewAgentStoreTest {
                 neverAsks = false,
                 settable = false,
                 models = emptyList(),
+                level = 0,
             ),
         ),
         modes = listOf(
-            OfferedMode(value = "default", displayName = "Default", normal = true, settable = true),
-            OfferedMode(value = "plan", displayName = "Plan", normal = false, settable = true),
+            OfferedMode(value = "default", displayName = "Default", normal = true, settable = true, level = 0),
+            OfferedMode(value = "plan", displayName = "Plan", normal = false, settable = true, level = 0),
         ),
         skills = emptyList(),
         newAgent = null,
@@ -120,6 +123,7 @@ class NewAgentStoreTest {
                 neverAsks = false,
                 settable = true,
                 models = emptyList(),
+                level = 0,
             ),
         ),
         modes = emptyList(),

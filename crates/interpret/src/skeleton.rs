@@ -346,9 +346,12 @@ pub const VOCABULARY: &[(&str, &[&str])] = &[
             "interruptAgent",
             "listAgents",
             // amux's own tool server's tools.
-            crate::SEND_TOOL,
-            crate::STATUS_TOOL,
+            wire::MESSAGE_TOOL,
+            wire::WORKING_ON_TOOL,
             wire::ATTACH_TOOL,
+            wire::former_tools::SEND_TOOL,
+            wire::former_tools::STATUS_TOOL,
+            wire::former_tools::ATTACH_TOOL,
         ],
     ),
     // What a Codex subagent did, reported on its parent's thread; what

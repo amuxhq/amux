@@ -1,12 +1,12 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on="Review the parser" at=1000 asks=[] model=?
+snapshot STARTING queue=[] working_on=- at=1000 asks=[] model=?
 ## 1 tick 1000
 ## 2 fact {"channel":"stream","json":{"type":"ready"}}
 effect write "{\"text\":\"\\n  Review the parser\\nand report back\",\"type\":\"user\"}"
-snapshot WORKING queue=[] working_on="Review the parser" at=1000 asks=[] model=?
+snapshot WORKING queue=[] working_on=- at=1000 asks=[] model=?
 ## 3 fact {"channel":"stream","json":{"id":"u1","text":"Review the parser\nand report back","type":"user"}}
 item u1 prompt final input=initial at=1000 text="Review the parser\nand report back"
 ## 4 fact {"channel":"stream","json":{"type":"turn_end"}}
 item turn:1 turn final at=1000 text="" #1 started=1000
-snapshot IDLE queue=[] working_on="Review the parser" at=1000 asks=[] model=?
+snapshot IDLE queue=[] working_on=- at=1000 asks=[] model=?
 turn_end 1 last=-

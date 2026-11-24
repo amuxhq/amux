@@ -89,6 +89,7 @@ impl Daemon {
                 provider: String::new(),
                 picked: None,
                 acp_sign_in: None,
+                acp_catalogue: None,
                 end: IngestEnd::Failed(error.to_string()),
                 seen,
                 skipped: 0,
@@ -156,6 +157,7 @@ impl Daemon {
             provider: String::new(),
             picked: None,
             acp_sign_in: None,
+            acp_catalogue: None,
             end: if batch.more {
                 IngestEnd::More
             } else {
@@ -205,19 +207,24 @@ impl Daemon {
                     held.effort = newer.effort.or(held.effort);
                     held
                 });
-            report.acp_sign_in = batch
+            if let Some(snapshot) = batch
                 .frames
                 .iter()
                 .rev()
                 .find_map(|(_, step)| step.snapshot.as_ref())
                 .filter(|snapshot| snapshot.kind == wire::Kind::Acp as i32)
-                .and_then(|snapshot| {
+                && let Ok(body) = {
                     use prost::Message as _;
-                    let body = wire::AcpSnapshot::decode(snapshot.body.as_slice()).ok()?;
-                    let state = body.sign_in?.state();
-                    let agent = body.agent?;
-                    (state != wire::SignInState::Unspecified).then_some((agent, state))
-                });
+                    wire::AcpSnapshot::decode(snapshot.body.as_slice())
+                }
+                && let Some(agent) = body.agent
+            {
+                let state = body.sign_in.map(|sign_in| sign_in.state());
+                report.acp_sign_in = state
+                    .filter(|state| *state != wire::SignInState::Unspecified)
+                    .map(|state| (agent.clone(), state));
+                report.acp_catalogue = snapshot.catalogue.clone().map(|hash| (agent, hash));
+            }
             if (report.turn_ends > 0 || report.picked.is_some())
                 && let Some(row) = self.store.agent(&key)?
             {
@@ -523,6 +530,7 @@ mod tests {
                 provider: String::new(),
                 picked: None,
                 acp_sign_in: None,
+                acp_catalogue: None,
                 end: IngestEnd::More,
                 seen: end,
                 skipped: 0,

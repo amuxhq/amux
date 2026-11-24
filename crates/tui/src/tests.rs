@@ -3390,6 +3390,7 @@ fn codex_offer() -> wire::Catalogue {
         display_name: display_name.into(),
         normal: value == "default",
         settable: true,
+        ..Default::default()
     };
     wire::Catalogue {
         new_agent: Some(wire::NewAgentDefaults {

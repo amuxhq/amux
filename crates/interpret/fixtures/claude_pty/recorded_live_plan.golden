@@ -1,14 +1,16 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
-effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cd96cd29
+effect catalogue 9d924e4e models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 9d924e4e
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1793452838733 text="" BOUNDARY_KIND_STARTED
+snapshot settings model=claude-haiku-5-5 effort=? permission=? level=?
 snapshot IDLE queue=[] working_on=- at=1793452838733 asks=[] session=e83fefc5-bfdd-4af6-9496-2ca10a6d66e7 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot settings model=claude-haiku-5-5 effort=? permission=plan level=read-only
 snapshot IDLE queue=[] working_on=- at=1793452839206 asks=[] session=e83fefc5-bfdd-4af6-9496-2ca10a6d66e7 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 13 recorded 11: fact Transcript type=user uuid=cdf94c4a-3c59-4bb3-a9ae-8d412e5a9fb1
 item cdf94c4a-3c59-4bb3-a9ae-8d412e5a9fb1 prompt final at=1793452839452 text="Plan changing README.md's only line from CURRENT to UPDATED. It is a one-step plan: do not ask me anything, and put the plan to me for approval with the ExitPlanMode tool."
@@ -23,6 +25,7 @@ snapshot WORKING queue=[] working_on=- at=1793452841123 asks=[] session=e83fefc5
 snapshot WORKING queue=[] working_on=- at=1793452841157 asks=[] session=e83fefc5-bfdd-4af6-9496-2ca10a6d66e7 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=plan context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 52 recorded 50: fact Transcript type=assistant uuid=a9f7081f-3fdd-4a42-bcc8-3dbd1e78fd81
 item toolu_015G41xQVYW4xCAMxU3FBmnW tool final at=1793452840741 text="" ToolSearch TOOL_STATE_RUNNING search started=1793452840741 input="{\"max_results\":1,\"query\":\"select:ExitPlanMode\"}"
+snapshot settings model=claude-sonnet-5-5 effort=medium permission=plan level=read-only
 snapshot WORKING queue=[] working_on=- at=1793452841253 asks=[] session=e83fefc5-bfdd-4af6-9496-2ca10a6d66e7 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=medium mode=plan context=36604/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 53 recorded 51: fact Transcript type=user uuid=7518d721-5a63-4a6a-a0af-873d24d7c688
 item toolu_015G41xQVYW4xCAMxU3FBmnW tool final at=1793452840741 text="" ToolSearch TOOL_STATE_SUCCEEDED search started=1793452840741 ended=1793452840795 input="{\"max_results\":1,\"query\":\"select:ExitPlanMode\"}"
@@ -38,11 +41,14 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1793452843181 asks=[ask:1->toolu_01R
 notice ask ask:1 plan "Update README.md" why="" more=0
 ## 81 recorded 79: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01RrQACjhmGNC6Wby3sPAFox
 item toolu_01RrQACjhmGNC6Wby3sPAFox plan final at=1793452843162 text="# Plan: Update README.md\n\n## Context\nREADME.md contains a single line, `CURRENT`. The goal is to change it to `UPDATED`.\n\n## Step\n1. Edit `<MACHINE_PATH>, replacing line 1 `CURRENT` with `UPDATED`.\n\n## Verification\nRead README.md and confirm its only line is `UPDATED`.\n" PLAN_VERDICT_APPROVED
+snapshot settings model=claude-sonnet-5-5 effort=medium permission=default level=ask
 snapshot WORKING queue=[] working_on=- at=1793452843300 asks=[] session=e83fefc5-bfdd-4af6-9496-2ca10a6d66e7 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=medium mode=default context=36604/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 82 recorded 80: fact Hook hook_event_name=PostModelSwitch
+snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask
 snapshot WORKING queue=[] working_on=- at=1793452843300 asks=[] session=e83fefc5-bfdd-4af6-9496-2ca10a6d66e7 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36604/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 85 recorded 83: fact Transcript type=assistant uuid=c6b8584d-982c-4780-8e9c-68f3d5017a7b
 item toolu_01Lzb4UfUrKMAGnWnt55TCRw tool final at=1793452843328 text="" Write TOOL_STATE_RUNNING started=1793452843328 input=write:"<MACHINE_PATH>"
+snapshot settings model=claude-sonnet-5-5 effort=medium permission=default level=ask
 snapshot WORKING queue=[] working_on=- at=1793452843755 asks=[] session=e83fefc5-bfdd-4af6-9496-2ca10a6d66e7 model=claude-sonnet-5-5 model_name="Sonnet 5.5" effort=medium mode=default context=37739/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 87 recorded 85: fact Transcript type=user uuid=cbb951a9-4a73-4f99-9dc1-393c8fb78eba
 item toolu_01Lzb4UfUrKMAGnWnt55TCRw tool final at=1793452843328 text="" Write TOOL_STATE_SUCCEEDED started=1793452843328 ended=1793452843418 created input=write:"<MACHINE_PATH>" out="File created successfully at: <MACHINE_PATH> (file state is …"
@@ -56,6 +62,7 @@ snapshot NEEDS_YOU queue=[] working_on=- at=1793452845575 asks=[ask:2->- permiss
 notice ask ask:2 change "<MACHINE_PATH>" files=1 created=Some(false) why="" more=0
 ## 103 recorded 101: fact Transcript type=assistant uuid=8d45041f-a318-4091-8b0c-abe45a36c6c0
 item 8d45041f-a318-4091-8b0c-abe45a36c6c0 thinking final at=1793452845417 text=""
+snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask
 snapshot NEEDS_YOU queue=[] working_on=- at=1793452845604 asks=[ask:2->- permission:Edit/session mode=acceptEdits] session=e83fefc5-bfdd-4af6-9496-2ca10a6d66e7 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=38754/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 notice ask ask:2 change "<MACHINE_PATH>" files=1 created=Some(false) why="" more=0
 ## 105 recorded 103: fact Transcript type=assistant uuid=2711bfe7-2dd2-4906-bda7-67fd2f839ce9

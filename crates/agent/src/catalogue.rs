@@ -23,12 +23,18 @@
 //!
 //! On success the exit code is 0 and `<file>` holds an encoded
 //! `ProviderOffer`. For an ACP agent the helper sends `initialize` and
-//! nothing else, so no conversation is left in the agent's history:
+//! nothing else, so nothing is left in the agent's history or its folders,
+//! and then runs the agent's own listing command where it has one
+//! (`interpret::acp::ModelListing`): `agy models` for Antigravity,
+//! `opencode models` for OpenCode. Grok's `initialize` lists its models; an
+//! agent a person added lists none before a conversation:
 //!
 //! - `provider_version`: the version `initialize` names (`agentInfo`, or
 //!   Grok's `_meta.agentVersion`), empty when it names none;
-//! - `catalogue`: what the agent lists without a session, which is Grok's
-//!   models with their efforts and its commands, and nothing for the rest;
+//! - `catalogue`: what the agent lists without a conversation: Grok's
+//!   models with their efforts and its commands; Antigravity's models with
+//!   their efforts and OpenCode's models, each with the modes amux knows it
+//!   has; nothing for an agent a person added;
 //! - `acp`: its own name, whether a conversation can be reopened (resume,
 //!   load or neither), whether prompts take images and embedded files, its
 //!   sign-in methods with the hint each gives, and its sign-in state where
@@ -39,7 +45,9 @@
 //!
 //! The program not starting, exiting before it answers, or refusing
 //! `initialize` exits non-zero with the reason on stderr, and writes no
-//! file. The helper waits as long as its caller lets it.
+//! file; the models not coming leaves the rest of the answer standing. The
+//! helper waits as long as its caller lets it for `initialize`, and at most
+//! ten seconds more for the models.
 
 use std::path::Path;
 use std::process::Stdio;
@@ -361,9 +369,13 @@ impl CodexProbe {
     }
 }
 
-/// An ACP agent's `initialize` answer is all the host asks it: anything
-/// more needs a session, which would stay in the agent's history.
+/// An ACP agent is asked `initialize`, and then its models by its own
+/// listing command where it has one ([`interpret::acp::ModelListing`]):
+/// `agy models`, `opencode models`. That failing leaves what `initialize`
+/// said standing.
 async fn ask_acp(agent: &str, command: &str, args: &[String]) -> Result<ProviderOffer, String> {
+    use interpret::acp::ModelListing;
+    let listing = interpret::acp::quirks(agent).lists_models;
     let mut child = tokio::process::Command::new(crate::acp::program(
         command,
         &std::collections::HashMap::new(),
@@ -389,24 +401,15 @@ async fn ask_acp(agent: &str, command: &str, args: &[String]) -> Result<Provider
         .await
         .map_err(|error| format!("writing to {agent}: {error}"))?;
     let mut lines = BufReader::new(stdout).lines();
-    let answer = loop {
-        let Some(line) = lines
-            .next_line()
-            .await
-            .map_err(|error| format!("reading {agent}: {error}"))?
-        else {
-            return Err(format!("{agent} ended before it answered initialize"));
-        };
-        if let Ok(acp_protocol::AgentMessage::Response {
-            id: acp_protocol::RequestId::String(id),
-            result,
-            ..
-        }) = acp_protocol::decode(line.as_bytes())
-            && id == INITIALIZE
-        {
-            break result;
-        }
-    };
+    let answer = acp_answer(&mut lines, agent, INITIALIZE)
+        .await?
+        .map_err(|error| format!("{agent} refused initialize: {}", error.message));
+    let init = answer.and_then(|answer| {
+        let init: acp_protocol::agent::InitializeResponse = acp_protocol::result(&answer)
+            .map_err(|error| format!("{agent}'s initialize answer: {error}"))?;
+        crate::acp::speaks(agent, &init)?;
+        Ok(init)
+    });
     // The end of its input ends an agent; one that lingers is killed.
     drop(stdin);
     if tokio::time::timeout(ACP_EXIT_WAIT, child.wait())
@@ -421,12 +424,16 @@ async fn ask_acp(agent: &str, command: &str, args: &[String]) -> Result<Provider
         }
         let _ = child.start_kill();
     }
-    let answer =
-        answer.map_err(|error| format!("{agent} refused initialize: {}", error.message))?;
-    let init: acp_protocol::agent::InitializeResponse = acp_protocol::result(&answer)
-        .map_err(|error| format!("{agent}'s initialize answer: {error}"))?;
-    crate::acp::speaks(agent, &init)?;
-    let offer = interpret::acp::host_offer(agent, &init);
+    let init = init?;
+    let mut offer = interpret::acp::host_offer(agent, &init);
+    if let ModelListing::Command { args, .. } = listing
+        && let Some(printed) = listed(command, args).await
+    {
+        let listed = interpret::acp::listed_catalogue(agent, &printed);
+        if !listed.models.is_empty() {
+            offer.catalogue = listed;
+        }
+    }
     Ok(ProviderOffer {
         signed_in: offer.signed_in(),
         catalogue: Some(offer.catalogue),
@@ -438,6 +445,64 @@ async fn ask_acp(agent: &str, command: &str, args: &[String]) -> Result<Provider
         launched: Vec::new(),
     })
 }
+
+/// The agent's answer to the request `id`: its result, or its refusal.
+/// Whatever else it writes meanwhile is passed over.
+async fn acp_answer(
+    lines: &mut tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
+    agent: &str,
+    id: &str,
+) -> Result<Result<serde_json::Value, acp_protocol::RpcError>, String> {
+    loop {
+        let Some(line) = lines
+            .next_line()
+            .await
+            .map_err(|error| format!("reading {agent}: {error}"))?
+        else {
+            return Err(format!("{agent} ended before it answered {id}"));
+        };
+        if let Ok(acp_protocol::AgentMessage::Response {
+            id: acp_protocol::RequestId::String(answered),
+            result,
+            ..
+        }) = acp_protocol::decode(line.as_bytes())
+            && answered == id
+        {
+            return Ok(result);
+        }
+    }
+}
+
+/// What the agent's program prints run with `args` in place of its ACP
+/// ones, in the helper's folder and environment; None where it cannot run,
+/// fails, or takes longer than [`LISTING_PATIENCE`].
+async fn listed(command: &str, args: &[&str]) -> Option<String> {
+    let mut listing = tokio::process::Command::new(crate::acp::program(
+        command,
+        &std::collections::HashMap::new(),
+    ));
+    listing
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    for key in crate::claude::launch::CHILD_SESSION_ENV_SCRUB {
+        listing.env_remove(key);
+    }
+    let output = tokio::time::timeout(LISTING_PATIENCE, listing.output())
+        .await
+        .ok()?
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// How long an agent has to list its models once it has answered
+/// `initialize`, inside the deadline the daemon gives the whole ask.
+const LISTING_PATIENCE: Duration = Duration::from_secs(10);
 
 /// How long an ACP agent has to exit once the probe has closed its input.
 const ACP_EXIT_WAIT: Duration = Duration::from_secs(2);

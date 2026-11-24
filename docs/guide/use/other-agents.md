@@ -26,16 +26,21 @@ then send it a message, and it starts and answers everything in order.
 
 New Agent, in the terminal and in the Mac and iPhone apps, lists every agent
 the chosen device offers, by name, your own among them. An agent that isn't
-signed in there says so, with what to do. Until you've had a conversation with
-an agent on that device, amux doesn't know its models yet: it starts on its
-own model and settings. From the command line, give the agent's id to
-`amux new`:
+signed in there says so, with what to do. Antigravity, OpenCode and Grok list
+their models there as soon as the device has asked them, which it does when
+amux starts, without leaving a conversation in the agent's own history. For an
+agent you added yourself, amux learns its models from your first conversation
+with it on that device; until then it starts on its own model and settings.
+From the command line, give the agent's id to `amux new`:
 
 ```sh
 amux new opencode --prompt "Find where we parse the config and explain it"
 ```
 
-`--model` and `--effort` pick from what the agent offers. `--permission`
+`--model` and `--effort` pick from what the agent offers. Antigravity also
+takes a model the way `agy models` prints it, such as `gemini-3.8-flash-low`,
+which is the model and its effort together. A model the agent doesn't offer
+on that device is refused, with the ones it does. `--permission`
 picks one of the agent's own modes, such as `plan`. Leave them out and the
 agent starts with its own settings. A model or effort you change in its chat
 becomes what that agent starts with next time on that device, kept under its

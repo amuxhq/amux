@@ -28,8 +28,11 @@ import "amux/v1/session.proto";
 // - A person may make every call.
 // - An agent may message any agent. Every other call naming an agent it
 //   may make only on its own direct children.
-// - An agent makes children with their kind's default settings only, and
-//   files them only as closed.
+// - An agent makes children whose model and effort it may pick from what
+//   this host offers, never kept as the person's picks, and whose
+//   permission it asks for only by level, never wider than its own; a
+//   provider's own arguments, modes and permission values are the
+//   person's. It files its children only as closed.
 
 service AgentService {
   // Makes an agent on this host. An agent that calls is its parent.
@@ -98,6 +101,24 @@ message CreateAgentRequest {
   // No host: the call's address is the host. No parent: an agent that
   // calls is the parent, a person's agent has none, and a create is
   // refused when the calling agent has exited or gone.
+
+  // Start the agent from a copy of its parent's conversation, with
+  // initial_prompt as its next prompt. Refused with INVALID_ARGUMENT from
+  // a person, who has no conversation to copy; refused for a calling agent
+  // on a host other than the parent's, of a provider other than the
+  // parent's, and for a provider that cannot fork
+  // (AgentCapabilities.forks). False starts a new conversation, as builds
+  // before it did.
+  bool fork = 12;
+  // For a calling agent only: the subagent's permission by amux's level,
+  // mapped by the host onto the widest permission its provider offers at
+  // or below that level. Unspecified is the parent's own level, or
+  // read-only when the parent's has none. Wider than the parent's is
+  // refused with PERMISSION_DENIED; so is any level but full for a
+  // provider whose permissions have no level, since nothing could hold it
+  // there. Refused with INVALID_ARGUMENT from a person, who picks the
+  // provider's own permission in the config.
+  PermissionLevel permission_level = 13;
 }
 
 message CreateAgentResponse {

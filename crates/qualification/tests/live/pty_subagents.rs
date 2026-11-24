@@ -459,10 +459,10 @@ impl Install {
                 serde_json::json!({
                     "reporter": {
                         "description": "Reports its status through amux and lists the fleet.",
-                        "prompt": "Call the mcp__amux__status tool with the text 'subagent \
-                                   checking in'. Then call the mcp__amux__agents tool. Then \
+                        "prompt": "Call the mcp__amux__set_working_on tool with the text 'subagent \
+                                   checking in'. Then call the mcp__amux__list_agents tool. Then \
                                    reply with exactly DONE.",
-                        "tools": ["mcp__amux__status", "mcp__amux__agents"],
+                        "tools": ["mcp__amux__set_working_on", "mcp__amux__list_agents"],
                         "model": "haiku",
                     },
                 }),

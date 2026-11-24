@@ -71,6 +71,25 @@ pub fn main() -> i32 {
             return DRIFT_EXIT;
         }
     };
+    // `models` prints the script's models as Antigravity's `agy models`
+    // does: a line per model and effort, its id and name with the effort
+    // folded in, and a line of its own for a model with no efforts.
+    if args.first().map(String::as_str) == Some("models")
+        && let Mode::Script(script) = &mode
+    {
+        for model in &script.models {
+            let name = model.display_name.as_deref().unwrap_or(&model.value);
+            if model.efforts.is_empty() {
+                println!("{}\t{name}", model.value);
+            }
+            for effort in &model.efforts {
+                let mut word = effort.clone();
+                word[..1].make_ascii_uppercase();
+                println!("{}-{effort}\t{name} ({word})", model.value);
+            }
+        }
+        return 0;
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

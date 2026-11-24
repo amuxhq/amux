@@ -416,6 +416,9 @@ message OfferedPermission {
   bool settable = 5;
   // Empty: every model. Otherwise only these.
   repeated string models = 6;
+  // Where it sits on amux's scale, written by the interpreter like
+  // display_name; unspecified for a value with no level.
+  PermissionLevel level = 7;
 }
 
 message OfferedMode {
@@ -423,6 +426,11 @@ message OfferedMode {
   string display_name = 2;
   bool normal = 3;
   bool settable = 4;
+  // For an ACP agent, whose modes are its permissions: where the mode sits
+  // on amux's scale, from the built-in agent's known modes. Unspecified
+  // for Codex's modes, which are not permissions, and for a mode of an
+  // agent a person added.
+  PermissionLevel level = 5;
 }
 
 // A model the provider offers this session, as the provider lists it.

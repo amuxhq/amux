@@ -469,8 +469,8 @@ impl Install {
         self.send(
             scenario,
             "Use the Agent tool (subagent_type general-purpose) to start one subagent whose \
-             task is: first call the mcp__amux__status tool with text set to 'checking from a \
-             subagent', then call the mcp__amux__agents tool, and report the agent names it \
+             task is: first call the mcp__amux__set_working_on tool with working_on set to 'checking from a \
+             subagent', then call the mcp__amux__list_agents tool, and report the agent names it \
              lists. When it has reported back, reply with the single word DONE.",
         )
         .await?;
@@ -485,7 +485,7 @@ impl Install {
         // amux draws its own status call as no row, so the calls are read
         // from what Claude sent.
         let called = subagent_calls(&self.collect(scenario)?)?;
-        for tool in ["mcp__amux__status", "mcp__amux__agents"] {
+        for tool in ["mcp__amux__set_working_on", "mcp__amux__list_agents"] {
             if !called.iter().any(|name| name == tool) {
                 return Err(format!("the subagent's calls were {called:?}"));
             }

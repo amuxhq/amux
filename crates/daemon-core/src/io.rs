@@ -589,6 +589,11 @@ pub struct Ingested {
     /// these frames says, where it says one: the host's word on whether the
     /// provider is signed in follows what its agents meet.
     pub acp_sign_in: Option<(String, wire::SignInState)>,
+    /// An ACP agent's provider id and the hash of the catalogue its newest
+    /// snapshot in these frames names, where it names one: the host's copy
+    /// of what the provider offers fills in from what its conversations
+    /// publish.
+    pub acp_catalogue: Option<(String, Vec<u8>)>,
     pub end: IngestEnd,
     /// How far the step found the agent's journal, as a global offset:
     /// the journal cut here reads as the step read it.

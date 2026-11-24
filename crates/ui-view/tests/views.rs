@@ -1341,12 +1341,14 @@ fn offered_controls(kind: Kind) -> (Vec<wire::OfferedPermission>, Vec<wire::Offe
                     display_name: "Default".into(),
                     normal: true,
                     settable: true,
+                    ..Default::default()
                 },
                 wire::OfferedMode {
                     value: "plan".into(),
                     display_name: "Plan".into(),
                     normal: false,
                     settable: true,
+                    ..Default::default()
                 },
             ],
         ),

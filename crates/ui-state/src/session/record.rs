@@ -249,6 +249,8 @@ fn snapshot(kind: Kind, snapshot: Snapshot) -> Snapshot {
         background_jobs: snapshot.background_jobs,
         notice: None,
         capabilities: snapshot.capabilities,
+        // Catalogue values and a level: nothing of the person's.
+        settings: snapshot.settings,
     }
 }
 
@@ -394,6 +396,7 @@ fn agent(agent: Agent) -> Agent {
         // A person's own agent is named by what they chose; only amux's
         // own ids are kept.
         provider,
+        settings: agent.settings,
     }
 }
 

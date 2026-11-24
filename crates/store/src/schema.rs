@@ -177,4 +177,12 @@ ALTER TABLE agents ADD COLUMN experimental BLOB;
 -- claude, Codex's codex), and on a replica its origin sent without one.
 ALTER TABLE agents ADD COLUMN provider TEXT;
 "#,
+    // 5: how each agent runs, so a listing can say it without a snapshot.
+    r#"
+-- amux.v1.AgentSettings: the model, effort and permission the agent runs
+-- with, copied from the newest snapshot, and for a replica from its
+-- inventory row. NULL while unknown, and on every row written before this
+-- column.
+ALTER TABLE agents ADD COLUMN settings BLOB;
+"#,
 ];

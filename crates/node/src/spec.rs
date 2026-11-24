@@ -412,6 +412,8 @@ pub struct Incarnation<'a> {
     pub offered: Option<Catalogue>,
     /// The branch the agent's worktree was made from, when its host made one.
     pub base_branch: Option<String>,
+    /// The parent's conversation a forked agent's first incarnation copies.
+    pub fork: Option<wire::ForkFrom>,
 }
 
 /// The spec of one incarnation, its program as configured now; refused for
@@ -449,6 +451,7 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> Result<AgentSpec, Registry
         bootstrap: at.bootstrap,
         offered: at.offered,
         base_branch: at.base_branch,
+        fork: at.fork,
         experimental: experimental(launch, parentless),
     })
 }
@@ -634,6 +637,7 @@ mod tests {
                     bootstrap: None,
                     offered: None,
                     base_branch: None,
+                    fork: None,
                 },
             )
             .unwrap()
@@ -696,6 +700,7 @@ mod tests {
                 bootstrap: None,
                 offered: None,
                 base_branch: None,
+                fork: None,
             },
         )
     }

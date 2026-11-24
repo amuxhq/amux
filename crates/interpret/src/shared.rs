@@ -11,11 +11,12 @@ use serde::{Deserialize, Serialize};
 /// amux's own tools. A send is drawn as the message it sent, never as a
 /// tool call; an attach answers with the attachment's element, which its
 /// step carries as the attachment, never as text.
-pub use wire::{AMUX_TOOL_SERVER, ATTACH_TOOL, SEND_TOOL, STATUS_TOOL};
+pub use wire::AMUX_TOOL_SERVER;
 use wire::{
-    AgentMessage, AgentSpec, Append, Attachment, Bootstrap, Envelope, Item, Notice, Phase,
-    PromptInput, QueuedInput, Refusal, Rejected, Sender, Snapshot, Step, TurnEnd, bootstrap,
-    child_report, envelope, sender,
+    ATTACH_TOOL, AgentMessage, AgentSpec, Append, Attachment, Bootstrap, Envelope, Item,
+    MESSAGE_TOOL, Notice, Phase, PromptInput, QueuedInput, Refusal, Rejected, Sender, Snapshot,
+    Step, TurnEnd, WORKING_ON_TOOL, bootstrap, child_report, envelope, former_tools, is_tool,
+    sender,
 };
 
 use crate::checks::{self, Watch};
@@ -560,9 +561,10 @@ pub struct Shared<A: OpenAsk> {
     trouble: Option<wire::BlockedNotice>,
     /// The newest plan's own title; a plan ask points at it.
     plan_title: String,
-    /// The agent declared its work with the status tool: from then on only
-    /// that call changes working_on. Until then it is the first line of
-    /// the newest prompt the agent took.
+    /// The agent declared its work with its set_working_on tool. Until it
+    /// does, the snapshot says nothing it works on: a state an earlier
+    /// build checkpointed may hold a prompt's first line here, which is
+    /// never shown.
     declared: bool,
     turn: TurnCounter,
     /// Prompts handed to the provider and not yet reflected, oldest first:
@@ -636,6 +638,10 @@ pub struct Shared<A: OpenAsk> {
     /// an earlier build wrote, which the next incarnation fills.
     #[serde(default, with = "serde_pb::opt_msg")]
     capabilities: Option<wire::AgentCapabilities>,
+    /// The model, effort and permission the agent runs with, as its kind
+    /// last said them, for the snapshot's envelope.
+    #[serde(default, with = "serde_pb::opt_msg")]
+    settings: Option<wire::AgentSettings>,
     /// What the checks after every step watch.
     watch: Watch,
 }
@@ -684,8 +690,7 @@ impl EarlyBoundary {
 
 impl<A: OpenAsk> Shared<A> {
     /// The state an agent starts from: its queue seeded from the spawn's
-    /// prompt, working_on from that prompt's first line, the clock at the
-    /// spec's creation time.
+    /// prompt, the clock at the spec's creation time.
     pub fn new(spec: &AgentSpec, kind: wire::Kind) -> Self {
         let mut shared = Self {
             agent: spec.agent_id.clone(),
@@ -726,6 +731,7 @@ impl<A: OpenAsk> Shared<A> {
             housekept: false,
             subagents: BTreeMap::new(),
             capabilities: wire::AgentCapabilities::of_kind(kind),
+            settings: None,
             watch: Watch::default(),
         };
         shared.bootstrap(spec);
@@ -780,7 +786,6 @@ impl<A: OpenAsk> Shared<A> {
         if held {
             return;
         }
-        self.prompted(&entry.text);
         if self.opens(&entry) {
             self.opening = Some(entry);
         } else {
@@ -934,7 +939,9 @@ impl<A: OpenAsk> Shared<A> {
             kind: self.kind,
             body,
             phase,
-            working_on: self.working_on.clone(),
+            // Only what the agent declared: a prompt is the person's or
+            // the parent's words, never something to show the fleet.
+            working_on: self.declared.then(|| self.working_on.clone()).flatten(),
             title: self.title.clone(),
             // Taken only while the agent is not working, so the replies a
             // turn writes as it goes cost no snapshot beyond the turn's
@@ -951,6 +958,7 @@ impl<A: OpenAsk> Shared<A> {
             background_jobs: self.jobs.as_ref().map_or(0, |jobs| jobs.jobs.len() as u32),
             notice: notice.map(Box::new),
             capabilities: self.capabilities,
+            settings: self.settings.clone().map(Box::new),
         };
         let changed = self.last_snapshot.as_ref().is_none_or(|last| {
             Snapshot {
@@ -965,6 +973,30 @@ impl<A: OpenAsk> Shared<A> {
     }
 
     /// Says what the agent can do from now on, on its next snapshot.
+    /// Says on the snapshot's envelope how the agent runs: its model,
+    /// effort and permission by its catalogue's values, the permission's
+    /// level by its provider's table. Nothing is said while all are
+    /// unknown.
+    pub fn set_settings(
+        &mut self,
+        provider: &str,
+        model: Option<&str>,
+        effort: Option<&str>,
+        permission: Option<&str>,
+    ) {
+        let known =
+            |value: Option<&str>| value.filter(|value| !value.is_empty()).map(str::to_owned);
+        let settings = wire::AgentSettings {
+            model: known(model),
+            effort: known(effort),
+            permission: known(permission),
+            permission_level: permission.map_or(wire::PermissionLevel::Unspecified, |permission| {
+                wire::levels::of(provider, permission)
+            }) as i32,
+        };
+        self.settings = (settings != wire::AgentSettings::default()).then_some(settings);
+    }
+
     pub fn set_capabilities(&mut self, capabilities: wire::AgentCapabilities) {
         self.capabilities = Some(capabilities);
     }
@@ -1320,12 +1352,10 @@ impl<A: OpenAsk> Shared<A> {
             sender: Some(sender),
         };
         if self.ready() && self.queue.is_empty() {
-            self.prompted(&entry.text);
             self.mark_submitted(&entry.input_id);
             self.accept(emit, input_id, false);
             Some(entry)
         } else if self.opens(&entry) {
-            self.prompted(&entry.text);
             self.opening = Some(entry);
             self.accept(emit, input_id, false);
             None
@@ -1388,7 +1418,6 @@ impl<A: OpenAsk> Shared<A> {
             return None;
         }
         let entry = self.opening.take().or_else(|| self.queue.pop())?;
-        self.prompted(&entry.text);
         self.mark_submitted(&entry.input_id);
         Some(entry)
     }
@@ -1870,25 +1899,12 @@ impl<A: OpenAsk> Shared<A> {
 
     // --- working_on ------------------------------------------------------
 
-    /// Set from the status tool call; never cleared automatically.
+    /// Set from the set_working_on tool call; never cleared automatically.
     pub fn set_working_on(&mut self, working_on: Option<String>) {
         self.declared = true;
         self.working_on = working_on
             .map(|text| without_terminal_codes(&text))
             .filter(|text| !text.trim().is_empty());
-    }
-
-    /// A prompt handed to the provider: what the agent works on, until it
-    /// declares its work itself. A slash command is not work.
-    fn prompted(&mut self, text: &str) {
-        if self.declared {
-            return;
-        }
-        if let Some(line) =
-            first_line(&without_terminal_codes(text)).filter(|line| !line.starts_with('/'))
-        {
-            self.working_on = Some(line);
-        }
     }
 
     pub fn working_on(&self) -> Option<&str> {
@@ -1972,18 +1988,22 @@ pub(crate) fn first_string(arguments: &serde_json::Value) -> String {
         .to_owned()
 }
 
+///
+/// Each of these knows the tool by the name a release before 0.11 gave it
+/// too: an agent resumed from then has calls by those names in its
+/// provider's history.
 pub fn is_status_tool(server: &str, tool: &str) -> bool {
-    server == AMUX_TOOL_SERVER && tool == STATUS_TOOL
+    server == AMUX_TOOL_SERVER && is_tool(tool, WORKING_ON_TOOL, former_tools::STATUS_TOOL)
 }
 
 /// Whether a tool-server call is amux's attach tool.
 pub fn is_attach_tool(server: &str, tool: &str) -> bool {
-    server == AMUX_TOOL_SERVER && tool == ATTACH_TOOL
+    server == AMUX_TOOL_SERVER && is_tool(tool, ATTACH_TOOL, former_tools::ATTACH_TOOL)
 }
 
 /// Whether a tool-server call is amux's send tool.
 pub fn is_send_tool(server: &str, tool: &str) -> bool {
-    server == AMUX_TOOL_SERVER && tool == SEND_TOOL
+    server == AMUX_TOOL_SERVER && is_tool(tool, MESSAGE_TOOL, former_tools::SEND_TOOL)
 }
 
 /// Where a send tool call has got to.
@@ -2329,13 +2349,6 @@ fn queued_from_bootstrap(bootstrap: &Bootstrap) -> Option<QueuedInput> {
     })
 }
 
-/// The first line with visible text, placeholders removed.
-fn first_line(text: &str) -> Option<String> {
-    text.lines()
-        .map(|line| line.replace('\u{FFFC}', "").trim().to_owned())
-        .find(|line| !line.is_empty())
-}
-
 /// The sender of a person's input.
 pub fn human() -> Sender {
     Sender {
@@ -2492,12 +2505,13 @@ mod tests {
     }
 
     /// What an agent says it works on is printed by `amux ls` as it is, so
-    /// terminal codes in it, from the status tool or a prompt, never reach
-    /// the field.
+    /// terminal codes in it never reach the field.
     #[test]
     fn working_on_carries_no_terminal_codes() {
         let mut shared = shared();
-        shared.prompted("\u{1b}]52;c;cHduZWQ=\u{7}Fix the \u{9b}2Jparser");
+        shared.set_working_on(Some(
+            "\u{1b}]52;c;cHduZWQ=\u{7}Fix the \u{9b}2Jparser".into(),
+        ));
         assert_eq!(shared.working_on(), Some("Fix the parser"));
         shared.set_working_on(Some("\u{1b}[31mSplitting\u{1b}[0m\u{8} it".into()));
         assert_eq!(shared.working_on(), Some("Splitting it"));
@@ -2662,18 +2676,24 @@ mod tests {
         );
         assert_eq!(status_working_on(br#"{"working_on": null}"#), Some(None));
         assert_eq!(status_working_on(br#"{"other": 1}"#), None);
-        assert!(is_status_tool("amux", "status"));
+        assert!(is_status_tool("amux", "set_working_on"));
+        assert!(
+            is_status_tool("amux", "status"),
+            "the name releases before 0.11 gave it"
+        );
         assert!(!is_status_tool("other", "status"));
+        assert!(is_send_tool("amux", "message_agent") && is_send_tool("amux", "send"));
         let mut shared = shared();
         shared.set_working_on(Some("  ".into()));
         assert_eq!(shared.working_on(), None);
     }
 
-    /// An agent made with a prompt that never declares its work reads as
-    /// working on its newest prompt, not its first for good; a declaration
-    /// rules from then on, and a slash command is not work.
+    /// A prompt never stands in for declared work: it is the person's or
+    /// the parent's words, which the fleet listing must not show. Only a
+    /// declaration fills the snapshot's working_on, and a checkpoint an
+    /// earlier build left with a prompt's line there shows nothing.
     #[test]
-    fn undeclared_work_follows_the_newest_prompt() {
+    fn only_declared_work_reaches_the_snapshot() {
         let spec = AgentSpec {
             agent_id: b"a".to_vec(),
             bootstrap: Some(wire::Bootstrap {
@@ -2688,25 +2708,18 @@ mod tests {
             ..Default::default()
         };
         let mut shared: Shared<Ask> = Shared::new(&spec, wire::Kind::Unspecified);
-        assert_eq!(shared.working_on(), Some("Run the first thing"));
-        shared.provider_started();
-        assert!(shared.next_queued().is_some());
-        let mut emit = Emit::default();
-        let mut turn = |shared: &mut Shared<Ask>, id: &[u8], text: &str| {
-            shared.turn_ended(&mut emit, wire::TurnOutcome::Completed);
-            let prompt = PromptInput {
-                text: text.into(),
-                ..Default::default()
-            };
-            shared.admit_prompt(&mut emit, id, prompt, human());
-        };
-        turn(&mut shared, b"p1", "\nChange hello.txt\nto bye");
-        assert_eq!(shared.working_on(), Some("Change hello.txt"));
-        turn(&mut shared, b"p2", "/compact");
-        assert_eq!(shared.working_on(), Some("Change hello.txt"));
+        let said = |step: &Step| step.snapshot.as_ref().and_then(|s| s.working_on.clone());
+        assert_eq!(said(&shared.initial_step(Vec::new())), None);
+        shared.working_on = Some("a prompt an earlier build kept".into());
+        assert_eq!(
+            said(&shared.finish(Emit::default(), Vec::new(), None).step),
+            None
+        );
         shared.set_working_on(Some("Reviewing the parser".into()));
-        turn(&mut shared, b"p3", "Something else");
-        assert_eq!(shared.working_on(), Some("Reviewing the parser"));
+        assert_eq!(
+            said(&shared.finish(Emit::default(), Vec::new(), None).step).as_deref(),
+            Some("Reviewing the parser")
+        );
     }
 
     #[test]

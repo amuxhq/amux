@@ -1,20 +1,23 @@
 //! The host's copy of what an ACP agent offers, read from its `initialize`
-//! answer alone: asking for more would mean opening a session, which leaves
-//! a conversation in the agent's history (Antigravity and OpenCode offer no
-//! way to delete one).
+//! answer and, for the models an agent tells only a session, from its own
+//! listing command ([`super::ModelListing`]): `agy models` for Antigravity,
+//! `opencode models` for OpenCode. A session is never opened just to ask:
+//! each would leave something behind in the agent's own folders.
 
 use acp_protocol::agent::InitializeResponse;
 use acp_protocol::update::AvailableCommand;
 use serde::Deserialize;
 use wire::{AcpOffer, AcpReopen, AcpSignInMethod, Catalogue, NewAgentDefaults, OfferedModel};
 
-use super::{Reopens, quirks};
+use super::{ModelListing, Printed, Reopens, quirks};
 
 /// What the host keeps of an agent that answered `initialize`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct HostOffer {
-    /// What a new agent can pick from before any session: empty but for
-    /// what an agent lists without one (Grok's models and commands).
+    /// What a new agent can pick from before any session, by `initialize`
+    /// alone: empty but for what an agent lists there (Grok's models and
+    /// commands). [`listed_catalogue`] reads what an agent's listing command
+    /// prints.
     pub catalogue: Catalogue,
     pub acp: AcpOffer,
     /// The version the agent names, empty where it names none.
@@ -112,7 +115,7 @@ pub fn host_offer(agent: &str, init: &InitializeResponse) -> HostOffer {
         .map(|info| info.version.clone())
         .or(meta.agent_version.clone())
         .unwrap_or_default();
-    let catalogue = if quirks.offers_in_initialize {
+    let catalogue = if quirks.lists_models == ModelListing::Initialize {
         session_less(meta)
     } else {
         Catalogue::default()
@@ -214,4 +217,141 @@ fn session_less(meta: Meta) -> Catalogue {
             .collect(),
         ..Default::default()
     }
+}
+
+/// What agent `agent` offers by what its listing command printed
+/// ([`ModelListing::Command`]): its models, read as the agent prints them
+/// ([`Printed`]), and the modes amux knows the agent has, at their levels,
+/// with none called normal, since which one a session starts in is the
+/// person's own setting. A line that is not a model (a warning the program
+/// printed) is passed over.
+pub fn listed_catalogue(agent: &str, printed: &str) -> Catalogue {
+    let models = match quirks(agent).lists_models {
+        ModelListing::Command {
+            printed: Printed::IdsByEffort,
+            ..
+        } => by_effort(printed),
+        _ => printed
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.contains(char::is_whitespace))
+            .map(|id| OfferedModel {
+                value: id.to_owned(),
+                ..Default::default()
+            })
+            .collect(),
+    };
+    let modes = wire::levels::acp_modes(agent)
+        .iter()
+        .map(|(value, level)| wire::OfferedMode {
+            value: (*value).to_owned(),
+            display_name: (*value).to_owned(),
+            normal: false,
+            settable: true,
+            level: *level as i32,
+        })
+        .collect();
+    Catalogue {
+        models,
+        modes,
+        ..Default::default()
+    }
+}
+
+/// The models of a listing printed one line per model and effort
+/// ([`Printed::IdsByEffort`]), in the order each model is first printed,
+/// each with its efforts from least to most.
+fn by_effort(printed: &str) -> Vec<OfferedModel> {
+    /// One printed line: the id and name with the effort taken off, and
+    /// the effort; or, for a line whose name carries no effort, the whole
+    /// id and name and no effort.
+    struct Line<'a> {
+        model: &'a str,
+        name: &'a str,
+        effort: Option<String>,
+        id: &'a str,
+        full_name: &'a str,
+    }
+    let lines: Vec<Line> = printed
+        .lines()
+        .filter_map(|line| {
+            let (id, name) = line.trim().split_once('\t')?;
+            let (id, name) = (id.trim(), name.trim());
+            if id.is_empty() || id.contains(char::is_whitespace) {
+                return None;
+            }
+            let effort = name
+                .strip_suffix(')')
+                .and_then(|name| name.rsplit_once(" ("))
+                .and_then(|(base, effort)| {
+                    let effort = effort.to_ascii_lowercase();
+                    // Brackets name a variant too ("Orchestrator (Neon)"),
+                    // which is a model of its own.
+                    if !EFFORTS.contains(&effort.as_str()) {
+                        return None;
+                    }
+                    let model = id.strip_suffix(&format!("-{effort}"))?;
+                    Some((model, base, effort))
+                });
+            Some(match effort {
+                Some((model, base, effort)) => Line {
+                    model,
+                    name: base,
+                    effort: Some(effort),
+                    id,
+                    full_name: name,
+                },
+                None => Line {
+                    model: id,
+                    name,
+                    effort: None,
+                    id,
+                    full_name: name,
+                },
+            })
+        })
+        .collect();
+    let mut models: Vec<OfferedModel> = Vec::new();
+    for line in &lines {
+        if models
+            .iter()
+            .any(|model| model.value == line.model || model.value == line.id)
+        {
+            continue;
+        }
+        let efforts: Vec<String> = lines
+            .iter()
+            .filter(|other| other.effort.is_some() && other.model == line.model)
+            .filter_map(|other| other.effort.clone())
+            .collect();
+        models.push(if efforts.len() > 1 {
+            let mut efforts = efforts;
+            efforts.sort_by_key(|effort| effort_rank(effort));
+            efforts.dedup();
+            OfferedModel {
+                value: line.model.to_owned(),
+                display_name: line.name.to_owned(),
+                efforts,
+                ..Default::default()
+            }
+        } else {
+            OfferedModel {
+                value: line.id.to_owned(),
+                display_name: line.full_name.to_owned(),
+                ..Default::default()
+            }
+        });
+    }
+    models
+}
+
+/// The efforts a listing names in brackets, from least to most.
+const EFFORTS: [&str; 6] = ["minimal", "low", "medium", "high", "xhigh", "max"];
+
+/// Where an effort sorts, from least to most.
+fn effort_rank(effort: &str) -> usize {
+    EFFORTS
+        .iter()
+        .position(|known| *known == effort)
+        .unwrap_or(EFFORTS.len())
 }

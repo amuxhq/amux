@@ -158,6 +158,11 @@ pub struct AgentRow {
     /// names the program ([`wire::agents::provider_or_implied`]). The
     /// registry owns it; a replica copies its origin's.
     pub provider: String,
+    /// How the agent runs: its model, effort and permission. Copied from
+    /// the snapshot envelope at commit, and for a replica from its
+    /// inventory row; None while unknown and on a row written before the
+    /// store kept it.
+    pub settings: Option<wire::AgentSettings>,
 }
 
 impl AgentRow {
@@ -210,6 +215,7 @@ impl AgentRow {
             native: None,
             experimental: std::collections::BTreeMap::new(),
             provider: String::new(),
+            settings: None,
         }
     }
 

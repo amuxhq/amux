@@ -541,6 +541,7 @@ fn offered_permissions() -> Vec<OfferedPermission> {
             never_asks: named.never_asks,
             settable: true,
             models: Vec::new(),
+            level: wire::levels::codex(named.value) as i32,
         })
         .collect()
 }
@@ -553,6 +554,8 @@ fn offered_modes() -> Vec<OfferedMode> {
             display_name: (*display_name).to_owned(),
             normal: *value == "default",
             settable: true,
+            // Codex's modes say how it works, not what it may do.
+            level: wire::PermissionLevel::Unspecified as i32,
         })
         .collect()
 }
@@ -2221,6 +2224,13 @@ impl Interpreter for Codex {
             state.submit(&mut emit, entry, Vec::new());
         }
         state.child_snapshots(&mut emit);
+        let permission = state.permission_value();
+        state.shared.set_settings(
+            wire::agents::CODEX,
+            state.model.as_deref(),
+            state.effort.as_deref(),
+            permission,
+        );
         let body = state.body();
         let notice = state.shared.notice(crate::notice::codex_ask);
         state.shared.finish(emit, body, notice)

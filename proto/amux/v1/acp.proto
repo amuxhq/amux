@@ -287,8 +287,8 @@ message AcpAnswer {
 // ---------------------------------------------------------------------------
 
 // What `amux internal catalogue <agent>` read in an ACP agent's `initialize`
-// answer, beyond its catalogue. The helper opens no session, so asking
-// leaves no conversation in the agent's history.
+// answer, beyond its catalogue. Asking leaves no conversation in the
+// agent's history.
 message AcpOffer {
   // The agent's own name for itself; empty where it gives none (Grok).
   string name = 1;
@@ -300,7 +300,7 @@ message AcpOffer {
   // The ways the agent says it can be signed in to, as it lists them.
   repeated AcpSignInMethod sign_in_methods = 5;
   // Signed in or out where `initialize` alone shows it (Grok); unspecified
-  // where only opening a session would tell.
+  // where only a conversation would tell.
   SignInState sign_in = 6;
 }
 

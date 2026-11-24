@@ -1,8 +1,8 @@
 //! amux's tool server: `amux internal mcp <dir>`, which the harness spawns from the
 //! install path and speaks MCP to over stdio.
 //!
-//! Its identity is its agent's directory. Four fleet tools (agents, hosts,
-//! send, stop) dial the daemon at `<dir>/tools.sock`, the socket the
+//! Its identity is its agent's directory. Four fleet tools (list_agents,
+//! list_hosts, message_agent, stop_subagent) dial the daemon at `<dir>/tools.sock`, the socket the
 //! daemon listens on for this agent alone, so whoever answers knows the
 //! caller is this agent from the connection, and nothing in a request
 //! claims an id. What the tools read (the fleet, and the agent or host a
@@ -12,14 +12,14 @@
 //! call for its own host and passes any other on, unread, to the host it
 //! names, which applies every rule about the caller against its own row.
 //!
-//! Spawn asks the agent process instead, on `<dir>/private/agent.sock`,
+//! start_subagent asks the agent process instead, on `<dir>/private/agent.sock`,
 //! naming the host by the id the daemon resolved its name to, and the
 //! agent process makes the create, addressed to that host, on the same
 //! socket ([`create`]): an agent waits for the children it asked for, and
 //! this way its process knows of each one before any daemon does, even one
-//! made on another host. The other two never reach the daemon: status
-//! returns ok and is observed by the interpreter as the provider's
-//! tool-call fact, and attach writes the file into `<dir>/blobs/` and
+//! made on another host. The other two never reach the daemon:
+//! set_working_on returns ok and is observed by the interpreter as the provider's
+//! tool-call fact, and attach_file writes the file into `<dir>/blobs/` and
 //! returns the element the model puts in its reply. Nothing here writes
 //! the journal; the agent process is its one writer.
 //!
@@ -39,6 +39,7 @@ use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Status};
 use uuid::Uuid;
 use wire::agent_service_client::AgentServiceClient;
+use wire::host_service_client::HostServiceClient;
 use wire::inventory_service_client::InventoryServiceClient;
 use wire::{
     Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, ExitCause, Filing, HostEntry,
@@ -74,63 +75,113 @@ const HERE: &str = "amux-tools";
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
 
-/// Every tool this server offers, and whether Claude may run it without
-/// asking. `attach` asks: it reads any file the agent names and copies it
-/// into the blob folder, which Claude may read without asking, so letting it
-/// through unasked would read files the person's own permission rules deny.
-/// Claude's check sees the call before the file is read, as for any read.
-pub(crate) const TOOLS: [(&str, bool); 7] = [
-    (wire::AGENTS_TOOL, true),
-    (wire::HOSTS_TOOL, true),
-    (wire::SEND_TOOL, true),
-    (wire::SPAWN_TOOL, true),
-    (wire::STOP_TOOL, true),
-    (wire::STATUS_TOOL, true),
-    (wire::ATTACH_TOOL, false),
+/// Every tool this server offers, whether Claude may run it without asking,
+/// and whether Claude lists it without a tool search. `attach_file` asks:
+/// it reads any file the agent names and copies it into the blob folder,
+/// which Claude may read without asking, so letting it through unasked
+/// would read files the person's own permission rules deny. Claude's check
+/// sees the call before the file is read, as for any read.
+///
+/// Claude defers a tool server's tools behind its tool search, so a model
+/// knows a deferred tool by its name alone until it searches. Four are
+/// always loaded: an agent that never loads attach_file writes a path in
+/// prose, which no phone can open, and starting, messaging and finding
+/// agents is what the server is for. stop_subagent is wanted only after a
+/// start, when the agent already has the tools; set_working_on has the
+/// provider's own title to fall back on; list_hosts is named in
+/// start_subagent's description.
+pub(crate) const TOOLS: [Tool; 7] = [
+    Tool::new(wire::START_TOOL, true, true),
+    Tool::new(wire::MESSAGE_TOOL, true, true),
+    Tool::new(wire::AGENTS_TOOL, true, true),
+    Tool::new(wire::ATTACH_TOOL, false, true),
+    Tool::new(wire::STOP_TOOL, true, false),
+    Tool::new(wire::HOSTS_TOOL, true, false),
+    Tool::new(wire::WORKING_ON_TOOL, true, false),
 ];
+
+/// One of the server's tools as [`TOOLS`] lists it.
+#[derive(Clone, Copy)]
+pub(crate) struct Tool {
+    pub(crate) name: &'static str,
+    /// Claude may run it without asking.
+    pub(crate) unasked: bool,
+    /// Claude lists it without a tool search.
+    pub(crate) always_loaded: bool,
+}
+
+impl Tool {
+    const fn new(name: &'static str, unasked: bool, always_loaded: bool) -> Self {
+        Self {
+            name,
+            unasked,
+            always_loaded,
+        }
+    }
+}
 
 /// The tools Claude may run without asking.
 pub(crate) fn unasked() -> impl Iterator<Item = &'static str> {
     TOOLS
         .into_iter()
-        .filter_map(|(name, unasked)| unasked.then_some(name))
+        .filter_map(|tool| tool.unasked.then_some(tool.name))
 }
 
 const AGENTS: &str = "List the amux fleet: every agent the person has not settled, with its \
-name, kind (the agent program it runs: claude, codex or another agent's id), host, whether it \
-is live, what it is doing and working on, its parent, and which one is you.";
+name, provider (the agent program it runs: claude, codex or an ACP agent's id), host, whether \
+it is live, what it is doing, what it declared it is working on (else its conversation's title), \
+its model, effort, permission and branch when known, its parent, and which one is you.";
 const HOSTS: &str = "List the hosts this fleet trusts: each one's name, whether it is online, \
-which one is this host, and the agents each offers to spawn. Spawn on another host by its \
-name.";
+which one is this host, and the agents each offers to start, with the models, efforts and \
+permission levels each takes, its defaults, and whether it can fork your conversation. \
+start_subagent picks from this.";
 const SEND: &str = "Send a message to another amux agent by name. It answers once the \
-recipient's provider has the message, or says why it could not. When a message reaches you \
-from an amux agent, reply with this tool to that agent's name.";
-const SPAWN: &str = "Start a child agent with a first prompt: claude, codex, or another \
-agent the host offers, by the id hosts lists. It runs on this host unless you name \
-another trusted host, in your working directory unless you give one. On another host, give \
-a folder there: ask the person which one if you do not know one. The child does \
-its work and stops. When it finishes, its last message arrives as a new message in the main \
-conversation of the amux agent these tools belong to: a subagent that spawns one is not sent \
-it, its top-level agent is. A later send to the child resumes it.";
-const STOP: &str = "Stop one of your own child agents now, done with it: its turn is \
-cancelled, it ends, and so do the agents it started. Its history stays, and a later send from \
-you resumes it.";
-const STATUS: &str = "Say what you are working on, so people and other agents can find the \
-right collaborator. Null clears it.";
-const ATTACH: &str = "Attach a file from this host to your reply. Returns an amux attachment \
-element; put that element in your reply exactly as returned so every viewer can open the \
-file.";
+recipient's provider has the message, or says why it could not. A message to one of your own \
+subagents continues it, whether it is working or has finished: that is how you give it more \
+work. A subagent that was stopped is started again only by its parent. When a message reaches \
+you from an amux agent, reply with this tool to that agent's name.";
+const SPAWN: &str = "Start a subagent: a child agent that does a task and reports back to you. \
+Unlike your provider's own subagents, it shows in the person's fleet, can be claude, codex or \
+another agent a host offers (list_hosts lists them with their models, efforts and permission \
+levels), can run on another paired host, and outlives your turn. It works in your working \
+directory on this host unless you give a cwd; on another host, give a folder there, and ask the \
+person which one if you do not know one. Choose its model and effort for the work; permission \
+is read-only, ask, auto or full, and defaults to yours, which is also the most you can give. \
+new_workspace starts it in a new git worktree on a branch named after it. fork starts it from \
+a copy of your conversation so far, with task as its next message: only for the same provider \
+as yours, on this host. When it finishes, its last message arrives as a new message in the \
+main conversation of the amux agent these tools belong to (a provider subagent of yours that \
+calls this starts the child for that agent, and fork copies that agent's conversation, not \
+the provider subagent's). Do not poll or wait for it. A later message_agent to it continues \
+it.";
+const STOP: &str = "Stop one of your own subagents now, done with it: its turn is \
+cancelled, it ends, and so do the agents it started. Its history stays, and a later \
+message_agent from you starts it again.";
+const STATUS: &str = "Set what you are working on, so people and other agents can find the \
+right collaborator. Until you set it, the fleet shows your conversation's title. Null clears \
+it.";
+const ATTACH: &str = "Attach a file from this host to your reply, so every viewer, the phone \
+included, can open it: a path written in prose cannot be opened there. Returns an amux \
+attachment element; put that element in your reply exactly as returned.";
 
-/// What the server tells the model at initialize. Claude defers MCP tools
-/// behind its tool search, naming them only, but always shows a server's
-/// instructions: these say what each tool is for in the words a search
-/// for it would use, and stay short, since Claude caps them.
+/// What the server tells the model at initialize. Claude defers some MCP
+/// tools behind its tool search, naming them only, but always shows a
+/// server's instructions: these say what each tool is for in the words a
+/// search for it would use, and stay short, since Claude caps them.
 const INSTRUCTIONS: &str = "amux runs a fleet of coding agents, and you are one. Use these \
-tools to work with other agents: send a message to another agent, or reply to one that \
-messaged you (send); start a child agent, claude, codex or another a host offers, on this or \
-another host (spawn); \
-stop a child agent (stop); list the agents in the fleet (agents) and the hosts they run on \
-(hosts); say what you are working on (status); and attach a file to your reply (attach).";
+tools to work with other agents: start a subagent of any provider a host offers, with the \
+model, effort, permission and workspace the task needs (start_subagent); message another \
+agent, or reply to one that messaged you (message_agent); stop a subagent (stop_subagent); \
+list the agents in the fleet (list_agents) and the hosts they run on with what each offers \
+(list_hosts); set what you are working on (set_working_on); and attach a file to your reply \
+(attach_file).";
+
+/// What the answer to a start tells the parent to do next: a subagent's
+/// report arrives as a new message, so a parent that polls only burns its
+/// own turns.
+const NEXT: &str = "It works on its own and messages you when it finishes: its report \
+arrives as a new message in your conversation. Do not poll or wait for it; carry on with \
+other work or end your turn.";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ToolsError {
@@ -265,10 +316,10 @@ impl Server {
         Some(match name {
             wire::AGENTS_TOOL => self.agents().await,
             wire::HOSTS_TOOL => self.hosts().await,
-            wire::SEND_TOOL => self.send(arguments).await,
-            wire::SPAWN_TOOL => self.spawn(arguments).await,
+            wire::MESSAGE_TOOL => self.send(arguments).await,
+            wire::START_TOOL => self.spawn(arguments).await,
             wire::STOP_TOOL => self.stop(arguments).await,
-            wire::STATUS_TOOL => status(arguments),
+            wire::WORKING_ON_TOOL => status(arguments),
             wire::ATTACH_TOOL => self.attach(arguments),
             _ => return None,
         })
@@ -305,13 +356,27 @@ impl Server {
                 let mut row = json!({
                     "name": agent.name,
                     "id": interpret::to_hex(&agent.agent_id),
-                    "kind": kind_word(agent),
+                    "provider": kind_word(agent),
                     "host": host_name(&agent.host_id),
                     "live": agent.lifecycle() == Lifecycle::Live,
                     "phase": word(agent.phase().as_str_name(), "PHASE_"),
                 });
-                if let Some(working_on) = &agent.working_on {
+                // What it declared, else the title its provider gave the
+                // conversation; never a prompt, which is the person's or
+                // the parent's words.
+                if let Some(working_on) = agent
+                    .working_on
+                    .as_ref()
+                    .or(agent.title.as_ref())
+                    .filter(|said| !said.is_empty())
+                {
                     row["working_on"] = json!(working_on);
+                }
+                if let Some(settings) = &agent.settings {
+                    settings_into(&mut row, settings);
+                }
+                if let Some(branch) = agent.git.as_ref().and_then(|git| git.branch.as_ref()) {
+                    row["branch"] = json!(branch);
                 }
                 if let Some(cause) = exit_words(agent) {
                     row["exit_cause"] = json!(cause);
@@ -330,39 +395,71 @@ impl Server {
 
     async fn hosts(&self) -> Answer {
         let (hosts, agents) = self.inventory().await?;
-        let here = agents
-            .iter()
-            .find(|agent| agent.agent_id == self.me)
-            .map(|agent| agent.host_id.clone());
-        let rows = hosts
-            .iter()
-            .filter(|host| host.trusted().is_some())
-            .map(|host| {
-                let presence = match host.reach() {
-                    Some(wire::trusted::Reach::Online(_)) => "online",
-                    Some(wire::trusted::Reach::Away(_)) => "away",
-                    _ => "offline",
+        let me = agents.iter().find(|agent| agent.agent_id == self.me);
+        let here = me.map(|agent| agent.host_id.clone());
+        let mut rows = Vec::new();
+        for host in hosts.iter().filter(|host| host.trusted().is_some()) {
+            let presence = match host.reach() {
+                Some(wire::trusted::Reach::Online(_)) => "online",
+                Some(wire::trusted::Reach::Away(_)) => "away",
+                _ => "offline",
+            };
+            let this_host = here.as_deref() == Some(host.host_id());
+            // What the host lists itself is what a start there can name:
+            // Claude and Codex, and the ACP agents installed there. What
+            // each offers is asked only of a host that can answer now, and
+            // asked even when its entry names no copy yet: a host lists
+            // Claude and Codex before anyone has asked what they offer.
+            let mut offers = Vec::new();
+            for provider in &host.providers {
+                let catalogue = match this_host || presence == "online" {
+                    true => self.catalogue(host.host_id(), &provider.provider_id).await,
+                    false => None,
                 };
-                // What the host lists itself is what a spawn there can
-                // name: Claude and Codex, and the ACP agents installed
-                // there.
-                let offers: Vec<&str> = host
-                    .providers
-                    .iter()
-                    .map(|provider| provider.provider_id.as_str())
-                    .collect();
-                let mut row = json!({
-                    "name": host.name(),
-                    "presence": presence,
-                    "agents": offers,
-                });
-                if here.as_deref() == Some(host.host_id()) {
-                    row["this_host"] = json!(true);
-                }
-                row
-            })
-            .collect::<Vec<_>>();
-        Ok(json!({ "hosts": rows }).to_string())
+                offers.push(offered(provider, catalogue.as_ref()));
+            }
+            let mut row = json!({
+                "name": host.name(),
+                "presence": presence,
+                "agents": offers,
+            });
+            if this_host {
+                row["this_host"] = json!(true);
+            }
+            rows.push(row);
+        }
+        let mut answer = json!({ "hosts": rows });
+        // What a subagent gets when no permission is asked for, and the
+        // most it can be given.
+        if let Some(level) = me
+            .and_then(|me| me.settings.as_ref())
+            .and_then(|settings| settings.permission_level().word())
+        {
+            answer["your_permission"] = json!(level);
+        }
+        Ok(answer.to_string())
+    }
+
+    /// What `provider` offers on the host `host_id`, as that host's copy
+    /// says; None when it cannot be read now. Asked of that host itself.
+    async fn catalogue(&self, host_id: &[u8], provider: &str) -> Option<wire::Catalogue> {
+        use prost::Message as _;
+        let host = host_of(host_id).ok()?;
+        let request = wire::GetCatalogueRequest {
+            provider: provider.to_owned(),
+        };
+        let answer = dial(
+            &self.dir,
+            To::Host(host),
+            |mut stubs| {
+                let request = request.clone();
+                async move { stubs.hosts.get_catalogue(request).await }
+            },
+            true,
+        )
+        .await
+        .ok()?;
+        wire::Catalogue::decode(answer.bytes.as_slice()).ok()
     }
 
     /// `{"id": "<hex>"}` once the recipient's provider has the message: the
@@ -415,15 +512,43 @@ impl Server {
     /// Asked of the agent process, which asks the child's host. The parent
     /// is not in the request: the host sets it from the caller, this agent,
     /// as it sets a message's sender.
+    /// The host also holds the permission to the caller's own: what is
+    /// checked here is only what can be said better here.
     async fn spawn(&self, arguments: &Value) -> Answer {
-        let agent = agent_named(&required(arguments, "kind")?)?;
-        let prompt = required(arguments, "prompt")?;
+        let provider = required(arguments, "agent")?;
+        let model = optional(arguments, "model");
+        let effort = optional(arguments, "effort");
+        let agent = agent_named(&provider, model, effort)?;
+        let prompt = required(arguments, "task")?;
         let name = optional(arguments, "name");
         // A name is never an address: the daemon resolves it against this
         // host and the hosts it trusts, and the create goes to the id.
         let host = match optional(arguments, "host") {
             Some(name) => Some(self.resolve_host(&name).await?),
             None => None,
+        };
+        let level = match optional(arguments, "permission") {
+            None => wire::PermissionLevel::Unspecified,
+            Some(word) => wire::PermissionLevel::from_word(&word).ok_or_else(|| {
+                Refusal(format!(
+                    "no permission {word:?}; use read-only, ask, auto or full"
+                ))
+            })?,
+        };
+        let new_workspace = flag(arguments, "new_workspace")?;
+        let fork = flag(arguments, "fork")?;
+        let level = match level {
+            wire::PermissionLevel::Unspecified => match host {
+                // A named host may be another, which may hold no copy of
+                // this agent's row yet, so the start names this agent's own
+                // level, the default a subagent gets. A host that holds the
+                // row checks the start against it either way.
+                Some(_) => self.own_level().await,
+                None => level,
+            },
+            // The child's host refuses a level its provider cannot be
+            // held to, in words, from what it offers.
+            asked => asked,
         };
         let cwd = optional(arguments, "cwd").unwrap_or_else(|| match host {
             // A named host may be this one or another, and the host decides:
@@ -445,6 +570,9 @@ impl Server {
                 input_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 prompt: Some(prompt),
             }),
+            new_workspace,
+            fork,
+            permission_level: level as i32,
             ..CreateAgentRequest::default()
         };
         let host = host.map_or_else(Vec::new, |host| host.as_bytes().to_vec());
@@ -458,11 +586,42 @@ impl Server {
                 )));
             }
         };
-        Ok(json!({
+        let mut answer = json!({
             "name": agent.name,
             "id": interpret::to_hex(&agent.agent_id),
-        })
-        .to_string())
+            "provider": kind_word(&agent),
+        });
+        if !agent.cwd.is_empty() {
+            answer["cwd"] = json!(agent.cwd);
+        }
+        if let Some(settings) = &agent.settings {
+            settings_into(&mut answer, settings);
+        }
+        // A new workspace's branch is named after the agent, as its host
+        // made it.
+        if new_workspace {
+            answer["branch"] = json!(agent.name);
+        }
+        if fork {
+            answer["forked"] = json!(true);
+        }
+        answer["next"] = json!(NEXT);
+        Ok(answer.to_string())
+    }
+
+    /// This agent's own permission level, as its row says; unspecified
+    /// when it cannot be read now or has none.
+    async fn own_level(&self) -> wire::PermissionLevel {
+        let Ok((_, agents)) = self.inventory().await else {
+            return wire::PermissionLevel::Unspecified;
+        };
+        agents
+            .iter()
+            .find(|agent| agent.agent_id == self.me)
+            .and_then(|me| me.settings.as_ref())
+            .map_or(wire::PermissionLevel::Unspecified, |settings| {
+                settings.permission_level()
+            })
     }
 
     /// A real stop, as a person's close: the child ends now, filed away as
@@ -775,6 +934,7 @@ impl To {
 struct Stubs {
     inventory: InventoryServiceClient<Channel>,
     agents: AgentServiceClient<Channel>,
+    hosts: HostServiceClient<Channel>,
 }
 
 /// Runs a call that acts (a send, spawn or stop) at most once. Only
@@ -810,7 +970,8 @@ where
             Ok(channel) => {
                 let stubs = Stubs {
                     inventory: wire::inventory_service_client(channel.clone()),
-                    agents: wire::agent_service_client(channel),
+                    agents: wire::agent_service_client(channel.clone()),
+                    hosts: wire::host_service_client(channel),
                 };
                 match call(stubs).await {
                     Ok(response) => return Ok(response.into_inner()),
@@ -899,7 +1060,7 @@ fn word(name: &str, prefix: &str) -> String {
 }
 
 /// The agent program a row runs, as the tools say it: its provider id, the
-/// one a spawn names. Both ways of driving Claude are `claude`, for the same
+/// one a start names. Both ways of driving Claude are `claude`, for the same
 /// reason a parent cannot pick one.
 fn kind_word(agent: &Agent) -> String {
     match agent.provider_id() {
@@ -931,24 +1092,119 @@ fn exit_words(agent: &Agent) -> Option<String> {
     }
 }
 
-/// The agent a spawn call names by its provider id. A Claude child runs
-/// headless: people read a child in amux's chat, so how its Claude is
-/// driven is no business of the parent's. Any other id is an ACP agent's,
-/// which only the host it runs on knows whether it offers, so that host
-/// refuses one it does not; an id no agent can have is refused here.
-fn agent_named(id: &str) -> Result<create_agent_request::Agent, Refusal> {
+/// The agent a start names by its provider id, on the model and effort it
+/// names. A Claude child runs headless: people read a child in amux's chat,
+/// so how its Claude is driven is no business of the parent's. Any other id
+/// is an ACP agent's, which only the host it runs on knows whether it
+/// offers, so that host refuses one it does not; an id no agent can have is
+/// refused here. The host checks the model and effort against what it
+/// offers.
+fn agent_named(
+    id: &str,
+    model: Option<String>,
+    effort: Option<String>,
+) -> Result<create_agent_request::Agent, Refusal> {
     use create_agent_request::Agent;
     match id {
-        wire::agents::CLAUDE => Ok(Agent::ClaudeSdk(wire::ClaudeCreateConfig::default())),
-        wire::agents::CODEX => Ok(Agent::Codex(wire::CodexCreateConfig::default())),
-        _ if wire::agents::shape_problem(id).is_none() => Ok(Agent::Acp(wire::AcpCreateConfig {
-            agent: id.to_owned(),
+        wire::agents::CLAUDE => Ok(Agent::ClaudeSdk(wire::ClaudeCreateConfig {
+            model,
+            effort,
             ..Default::default()
         })),
+        wire::agents::CODEX => Ok(Agent::Codex(wire::CodexCreateConfig {
+            model,
+            effort,
+            ..Default::default()
+        })),
+        _ if wire::agents::shape_problem(id).is_none() => Ok(Agent::Acp(wire::AcpCreateConfig {
+            agent: id.to_owned(),
+            model,
+            effort,
+            mode: None,
+        })),
         _ => Err(format!(
-            "no agent {id:?}; use claude, codex or another agent a host offers, by the id hosts lists"
+            "no agent {id:?}; use claude, codex or another agent a host offers, by the id list_hosts lists"
         )
         .into()),
+    }
+}
+
+/// How an agent runs, into a listing's row or a start's answer: its
+/// model, effort and permission, the permission by its level where it has
+/// one.
+fn settings_into(row: &mut Value, settings: &wire::AgentSettings) {
+    if let Some(model) = &settings.model {
+        row["model"] = json!(model);
+    }
+    if let Some(effort) = &settings.effort {
+        row["effort"] = json!(effort);
+    }
+    match (settings.permission_level().word(), &settings.permission) {
+        (Some(level), _) => row["permission"] = json!(level),
+        (None, Some(value)) => row["permission"] = json!(value),
+        (None, None) => {}
+    }
+}
+
+/// One agent a host offers, as list_hosts says it: its id and name, and
+/// from the host's catalogue, when it could be read, its models with their
+/// efforts, the permission levels it takes and what it starts on.
+fn offered(provider: &wire::ProviderOnHost, catalogue: Option<&wire::Catalogue>) -> Value {
+    let id = provider.provider_id.as_str();
+    let mut row = json!({ "id": id });
+    if let Some(descriptor) = &provider.descriptor
+        && !descriptor.name.is_empty()
+    {
+        row["name"] = json!(descriptor.name);
+    }
+    if provider.catalogue.is_some() && !provider.signed_in {
+        row["signed_in"] = json!(false);
+    }
+    let forks = provider
+        .capabilities
+        .as_ref()
+        .is_some_and(|capabilities| capabilities.forks);
+    row["forks"] = json!(forks);
+    let levels: Vec<&str> = wire::levels::levels(&wire::levels::offered(id, catalogue))
+        .into_iter()
+        .filter_map(wire::PermissionLevel::word)
+        .collect();
+    row["permissions"] = json!(levels);
+    let Some(catalogue) = catalogue else {
+        return row;
+    };
+    let models: Vec<Value> = catalogue
+        .models
+        .iter()
+        .map(|model| {
+            let mut entry = json!({ "model": model.value });
+            if !model.efforts.is_empty() {
+                entry["efforts"] = json!(model.efforts);
+            }
+            if let Some(effort) = &model.default_effort {
+                entry["default_effort"] = json!(effort);
+            }
+            entry
+        })
+        .collect();
+    row["models"] = json!(models);
+    if let Some(defaults) = &catalogue.new_agent {
+        if let Some(model) = &defaults.model {
+            row["default_model"] = json!(model);
+        }
+        if let Some(effort) = &defaults.effort {
+            row["default_effort"] = json!(effort);
+        }
+    }
+    row
+}
+
+/// A yes-or-no argument; absent is no.
+fn flag(arguments: &Value, name: &str) -> Result<bool, Refusal> {
+    match &arguments[name] {
+        Value::Null => Ok(false),
+        Value::Bool(value) => Ok(*value),
+        _ => Err(Refusal(format!("{name} is true or false"))),
     }
 }
 
@@ -1003,7 +1259,9 @@ fn rpc_error(id: Value, code: i64, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
 }
 
-/// The seven tools as MCP lists them.
+/// The seven tools as MCP lists them. A tool Claude lists without a tool
+/// search carries Claude's `anthropic/alwaysLoad` metadata; other
+/// providers ignore it.
 fn definitions() -> Value {
     let object = |properties: Value, required: &[&str]| {
         json!({
@@ -1014,53 +1272,79 @@ fn definitions() -> Value {
         })
     };
     let read_only = json!({ "readOnlyHint": true });
-    json!([
-        { "name": wire::AGENTS_TOOL, "description": AGENTS, "inputSchema": object(json!({}), &[]),
-          "annotations": read_only },
-        { "name": wire::HOSTS_TOOL, "description": HOSTS, "inputSchema": object(json!({}), &[]),
-          "annotations": read_only },
-        { "name": wire::SEND_TOOL, "description": SEND, "inputSchema": object(json!({
+    let mut tools = json!([
+        { "name": wire::START_TOOL, "description": SPAWN, "inputSchema": object(json!({
+            "agent": { "type": "string", "description": "The agent to start: claude, codex, or the id of another agent the host offers (list_hosts lists them)." },
+            "task": { "type": "string", "description": "What it is to do: its first message, or with fork its next one." },
+            "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": wire::AGENT_NAME_MOST, "description": "Lowercase letters, digits and hyphens; one is chosen when omitted." },
+            "host": { "type": "string", "description": "A trusted host's name; this host when omitted." },
+            "cwd": { "type": "string", "description": "A path on the host the child runs on; required when that is another host." },
+            "model": { "type": "string", "description": "A model the agent offers on that host, as list_hosts names it; the host's default when omitted." },
+            "effort": { "type": "string", "description": "An effort the model takes, as list_hosts names it; the host's default when omitted." },
+            "permission": { "type": "string", "enum": ["read-only", "ask", "auto", "full"], "description": "How much it may do without asking; yours when omitted, and never more than yours." },
+            "new_workspace": { "type": "boolean", "description": "Start it in a new git worktree of cwd's repository, on a branch named after it." },
+            "fork": { "type": "boolean", "description": "Start it from a copy of your conversation, with task as its next message. Only for your own provider, on this host." },
+          }), &["agent", "task"]) },
+        { "name": wire::MESSAGE_TOOL, "description": SEND, "inputSchema": object(json!({
             "to": { "type": "string", "description": "The recipient agent's name." },
             "text": { "type": "string" },
             "context": { "type": "string", "description": "An optional thread label the recipient sees with the message." },
           }), &["to", "text"]) },
-        { "name": wire::SPAWN_TOOL, "description": SPAWN, "inputSchema": object(json!({
-            "kind": { "type": "string", "description": "The agent to start: claude, codex, or the id of another agent the host offers (hosts lists them)." },
-            "prompt": { "type": "string" },
-            "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": wire::AGENT_NAME_MOST, "description": "Lowercase letters, digits and hyphens; one is chosen when omitted." },
-            "cwd": { "type": "string", "description": "A path on the host the child runs on; required when that is another host." },
-            "host": { "type": "string", "description": "A trusted host's name; this host when omitted." },
-          }), &["kind", "prompt"]) },
-        { "name": wire::STOP_TOOL, "description": STOP, "inputSchema": object(json!({
-            "name": { "type": "string" },
-          }), &["name"]) },
-        { "name": wire::STATUS_TOOL, "description": STATUS, "inputSchema": object(json!({
-            "working_on": { "type": ["string", "null"] },
-          }), &["working_on"]) },
+        { "name": wire::AGENTS_TOOL, "description": AGENTS, "inputSchema": object(json!({}), &[]),
+          "annotations": read_only },
         { "name": wire::ATTACH_TOOL, "description": ATTACH, "inputSchema": object(json!({
             "path": { "type": "string" },
             "name": { "type": "string", "description": "The name viewers see; the file's own name when omitted." },
           }), &["path"]) },
-    ])
+        { "name": wire::STOP_TOOL, "description": STOP, "inputSchema": object(json!({
+            "name": { "type": "string" },
+          }), &["name"]) },
+        { "name": wire::HOSTS_TOOL, "description": HOSTS, "inputSchema": object(json!({}), &[]),
+          "annotations": read_only },
+        { "name": wire::WORKING_ON_TOOL, "description": STATUS, "inputSchema": object(json!({
+            "working_on": { "type": ["string", "null"] },
+          }), &["working_on"]) },
+    ]);
+    for (definition, tool) in tools.as_array_mut().into_iter().flatten().zip(TOOLS) {
+        if tool.always_loaded {
+            definition["_meta"] = json!({ "anthropic/alwaysLoad": true });
+        }
+    }
+    tools
 }
 
 #[cfg(test)]
 mod tests {
-    /// The approval table names exactly the tools the server lists, so a new
-    /// tool cannot be offered without deciding whether it asks first.
+    /// The table names exactly the tools the server lists, in its order,
+    /// so a new tool cannot be offered without deciding whether it asks
+    /// first and whether Claude loads it unsearched.
     #[test]
-    fn every_listed_tool_has_an_approval_and_attach_asks() {
-        let listed: Vec<String> = super::definitions()
+    fn every_listed_tool_is_tabled_and_attach_asks() {
+        let definitions = super::definitions();
+        let listed: Vec<&str> = definitions
             .as_array()
             .unwrap()
             .iter()
-            .map(|tool| tool["name"].as_str().unwrap().to_owned())
+            .map(|tool| tool["name"].as_str().unwrap())
             .collect();
-        let tabled: Vec<String> = super::TOOLS
-            .iter()
-            .map(|(name, _)| (*name).to_owned())
-            .collect();
+        let tabled: Vec<&str> = super::TOOLS.iter().map(|tool| tool.name).collect();
         assert_eq!(listed, tabled);
         assert!(!super::unasked().any(|name| name == wire::ATTACH_TOOL));
+        let loaded: Vec<&str> = definitions
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|tool| tool["_meta"]["anthropic/alwaysLoad"] == true)
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            loaded,
+            [
+                wire::START_TOOL,
+                wire::MESSAGE_TOOL,
+                wire::AGENTS_TOOL,
+                wire::ATTACH_TOOL
+            ]
+        );
     }
 }

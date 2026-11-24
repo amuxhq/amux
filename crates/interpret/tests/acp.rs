@@ -224,7 +224,8 @@ fn said_capabilities(stepped: &interpret::Stepped) -> Option<wire::AgentCapabili
 /// not said before `initialize` answers, and what that answer offered
 /// after, with send-now for an agent known to steer. It is resumable until
 /// it has a conversation to lose, as the daemon starts a later process for
-/// one with none: then only where its process said it reopens one.
+/// one with none: then only where its process said it reopens one. It
+/// forks where its process offered `session/fork`.
 #[test]
 fn an_acp_agents_snapshot_says_what_its_process_can_do() {
     for (provider, steers) in [("antigravity", true), ("my-own-agent", false)] {
@@ -240,12 +241,20 @@ fn an_acp_agents_snapshot_says_what_its_process_can_do() {
                 rpc(
                     serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::INITIALIZE_REQUEST,
                     "result": {"protocolVersion": 1, "agentCapabilities": {
-                        "loadSession": reopens, "promptCapabilities": {"image": true}}}}),
+                        "loadSession": reopens, "promptCapabilities": {"image": true},
+                        "sessionCapabilities": if reopens {
+                            serde_json::json!({"fork": {}})
+                        } else {
+                            serde_json::json!({})
+                        }}}}),
                 ),
             );
             assert_eq!(
                 said_capabilities(&answered),
-                Some(wire::AgentCapabilities::acp(true, true, steers)),
+                Some(wire::AgentCapabilities {
+                    forks: reopens,
+                    ..wire::AgentCapabilities::acp(true, true, steers)
+                }),
                 "{provider} once it answered, with no conversation yet"
             );
             let opened = Acp::step(
@@ -257,7 +266,10 @@ fn an_acp_agents_snapshot_says_what_its_process_can_do() {
             );
             assert_eq!(
                 said_capabilities(&opened),
-                Some(wire::AgentCapabilities::acp(reopens, true, steers)),
+                Some(wire::AgentCapabilities {
+                    forks: reopens,
+                    ..wire::AgentCapabilities::acp(reopens, true, steers)
+                }),
                 "{provider} with a conversation, reopening it: {reopens}"
             );
         }
@@ -1072,21 +1084,183 @@ fn a_stderr_line_is_logged_and_drawn_nowhere() {
 
 /// The `initialize` answer a recording holds.
 fn recorded_initialize(recording: &str) -> InitializeResponse {
+    serde_json::from_value(recorded_answer(recording, 1)).unwrap()
+}
+
+/// The result the agent answered the recording's request `id` with: 1 is
+/// its `initialize`, 2 its `session/new`.
+fn recorded_answer(recording: &str, id: u64) -> serde_json::Value {
     let io =
         std::fs::read_to_string(fixtures().join("live").join(recording).join("io.jsonl")).unwrap();
     io.lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
         .filter(|row| row["dir"] == "stdout")
         .filter_map(|row| serde_json::from_str::<serde_json::Value>(row["line"].as_str()?).ok())
-        .find(|message| message["id"] == 1 && message.get("result").is_some())
-        .and_then(|message| serde_json::from_value(message["result"].clone()).ok())
-        .unwrap_or_else(|| panic!("{recording} holds no initialize answer"))
+        .find(|message| message["id"] == id && message.get("result").is_some())
+        .map(|message| message["result"].clone())
+        .unwrap_or_else(|| panic!("{recording} holds no answer to request {id}"))
+}
+
+/// `agy models` prints a line per model and effort (`agy-models.txt`, as
+/// Antigravity 1.5.16 printed it): the host's copy has each model once, by
+/// the value its sessions take, with the efforts it was printed with from
+/// least to most, beside the modes amux knows Antigravity has. A model
+/// printed with one effort keeps its whole id, which is what a session
+/// takes (`gpt-oss-120b-medium`).
+#[test]
+fn agy_models_output_lists_antigravitys_models() {
+    let printed = std::fs::read_to_string(fixtures().join("agy-models.txt")).unwrap();
+    let copy = interpret::acp::listed_catalogue("antigravity", &printed);
+    let models: Vec<(&str, &str, Vec<&str>)> = copy
+        .models
+        .iter()
+        .map(|model| {
+            (
+                model.value.as_str(),
+                model.display_name.as_str(),
+                model.efforts.iter().map(String::as_str).collect(),
+            )
+        })
+        .collect();
+    let efforts = |efforts: &[&'static str]| efforts.to_vec();
+    assert_eq!(
+        models,
+        [
+            (
+                "gemini-4-neon",
+                "Gemini 4 Neon",
+                efforts(&["low", "medium", "high", "xhigh"])
+            ),
+            (
+                "gemini-4-carbon",
+                "Gemini 4 Carbon",
+                efforts(&["low", "medium", "high"])
+            ),
+            (
+                "gemini-4-argon",
+                "Gemini 4 Argon",
+                efforts(&["low", "medium", "high"])
+            ),
+            (
+                "gemini-4-hydrogen",
+                "Gemini 4 Hydrogen",
+                efforts(&["low", "medium", "high", "xhigh"])
+            ),
+            (
+                "gemini-pro-orchestrator-neon",
+                "Orchestrator (Neon)",
+                efforts(&[])
+            ),
+            (
+                "gemini-pro-orchestrator",
+                "Orchestrator (Carbon)",
+                efforts(&[])
+            ),
+            (
+                "gemini-pro-orchestrator-argon",
+                "Orchestrator (Argon)",
+                efforts(&[])
+            ),
+            (
+                "gemini-3.8-flash",
+                "Gemini 3.8 Flash",
+                efforts(&["low", "medium", "high"])
+            ),
+            (
+                "claude-opus-5-5",
+                "Claude Opus 5.5",
+                efforts(&["low", "medium", "high"])
+            ),
+            (
+                "claude-sonnet-5-5",
+                "Claude Sonnet 5.5",
+                efforts(&["low", "medium", "high"])
+            ),
+            ("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)", efforts(&[])),
+        ]
+    );
+    let modes: Vec<(&str, bool, wire::PermissionLevel)> = copy
+        .modes
+        .iter()
+        .map(|mode| (mode.value.as_str(), mode.normal, mode.level()))
+        .collect();
+    assert_eq!(
+        modes,
+        [
+            ("plan", false, wire::PermissionLevel::ReadOnly),
+            ("default", false, wire::PermissionLevel::Ask),
+            ("accept-edits", false, wire::PermissionLevel::Auto),
+            ("auto", false, wire::PermissionLevel::Auto),
+        ]
+    );
+}
+
+/// `opencode models` prints one model id per line: each is a model with no
+/// efforts, beside the modes amux knows OpenCode has, none called normal.
+/// A line that is not an id is passed over.
+#[test]
+fn opencode_models_output_lists_its_models() {
+    let printed = "opencode/beam-free\nopencode/big-pickle\n\n  opencode/flint-40b-free  \nWARN cache is old\n";
+    let copy = interpret::acp::listed_catalogue("opencode", printed);
+    let models: Vec<&str> = copy.models.iter().map(|m| m.value.as_str()).collect();
+    assert_eq!(
+        models,
+        [
+            "opencode/beam-free",
+            "opencode/big-pickle",
+            "opencode/flint-40b-free"
+        ]
+    );
+    assert!(copy.models.iter().all(|model| model.efforts.is_empty()));
+    let modes: Vec<(&str, bool, wire::PermissionLevel)> = copy
+        .modes
+        .iter()
+        .map(|mode| (mode.value.as_str(), mode.normal, mode.level()))
+        .collect();
+    assert_eq!(
+        modes,
+        [
+            ("plan", false, wire::PermissionLevel::ReadOnly),
+            ("build", false, wire::PermissionLevel::Full),
+        ]
+    );
+    assert!(copy.commands.is_empty());
+    // An agent amux knows no modes of lists its models alone.
+    assert!(
+        interpret::acp::listed_catalogue("my-agent", "m1\n")
+            .modes
+            .is_empty()
+    );
+}
+
+/// Each built-in lists its models without a conversation its own way, and
+/// an agent a person added only in one.
+#[test]
+fn each_built_in_lists_its_models_its_own_way() {
+    use interpret::acp::{ModelListing, Printed};
+    assert_eq!(quirks("grok").lists_models, ModelListing::Initialize);
+    assert_eq!(
+        quirks("antigravity").lists_models,
+        ModelListing::Command {
+            args: &["models"],
+            printed: Printed::IdsByEffort
+        }
+    );
+    assert_eq!(
+        quirks("opencode").lists_models,
+        ModelListing::Command {
+            args: &["models"],
+            printed: Printed::Ids
+        }
+    );
+    assert_eq!(quirks("my-agent").lists_models, ModelListing::InSession);
 }
 
 /// The host's copy of each built-in, from its recorded `initialize` alone:
 /// Grok lists its models, efforts and commands there and shows whether it
-/// is signed in; Antigravity and OpenCode list nothing a session would, and
-/// only a session tells whether they are signed in.
+/// is signed in; Antigravity and OpenCode list nothing a session would
+/// there, which the helper asks them for in their own ways, and
+/// `initialize` cannot tell whether they are signed in.
 #[test]
 fn the_hosts_copy_comes_from_initialize_alone() {
     let grok = interpret::acp::host_offer("grok", &recorded_initialize("grok-catalogue"));
@@ -1139,8 +1313,11 @@ fn the_hosts_copy_comes_from_initialize_alone() {
         assert!(offer.acp.images && offer.acp.embedded_context);
         assert_eq!(
             offer.capabilities,
-            wire::AgentCapabilities::acp(true, true, agent == "antigravity"),
-            "{agent}: it resumes and takes images; only Antigravity steers"
+            wire::AgentCapabilities {
+                forks: agent == "opencode",
+                ..wire::AgentCapabilities::acp(true, true, agent == "antigravity")
+            },
+            "{agent}: it resumes and takes images; only Antigravity steers, and only OpenCode forks"
         );
         assert_eq!(offer.acp.sign_in, wire::SignInState::Unspecified as i32);
         assert!(offer.signed_in());

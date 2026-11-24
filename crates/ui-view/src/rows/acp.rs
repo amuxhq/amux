@@ -350,18 +350,23 @@ fn amux_tool(tool: &wire::AcpTool, input: &Value) -> Option<(&'static str, Value
     let server = wire::AMUX_TOOL_SERVER;
     let named = |name: &str| {
         let name = name.strip_prefix("Run ").unwrap_or(name);
+        // Each by its name now and by the one a release before 0.11 gave
+        // it, which a resumed agent's history still holds.
         [
-            wire::SPAWN_TOOL,
-            wire::STOP_TOOL,
-            wire::AGENTS_TOOL,
-            wire::HOSTS_TOOL,
+            (wire::START_TOOL, wire::former_tools::SPAWN_TOOL),
+            (wire::STOP_TOOL, wire::former_tools::STOP_TOOL),
+            (wire::AGENTS_TOOL, wire::former_tools::AGENTS_TOOL),
+            (wire::HOSTS_TOOL, wire::former_tools::HOSTS_TOOL),
         ]
         .into_iter()
-        .find(|tool| {
-            name == format!("mcp_{server}_{tool}")
-                || name == format!("{server}__{tool}")
-                || name == format!("{server}_{tool}")
+        .find(|(now, before)| {
+            [now, before].into_iter().any(|tool| {
+                name == format!("mcp_{server}_{tool}")
+                    || name == format!("{server}__{tool}")
+                    || name == format!("{server}_{tool}")
+            })
         })
+        .map(|(now, _)| now)
     };
     if let Some(found) = named(&tool.title) {
         return Some((found, input.clone()));
@@ -498,9 +503,12 @@ mod tests {
     #[test]
     fn amuxs_own_tools_are_found_however_an_agent_names_them() {
         for title in [
+            "mcp_amux_start_subagent",
+            "Run mcp_amux_start_subagent",
+            "amux_start_subagent",
+            "amux__start_subagent",
+            // As a release before 0.11 named it.
             "mcp_amux_spawn",
-            "Run mcp_amux_spawn",
-            "amux_spawn",
             "amux__spawn",
         ] {
             let tool = wire::AcpTool {
@@ -509,7 +517,7 @@ mod tests {
             };
             assert_eq!(
                 amux_tool(&tool, &serde_json::json!({"name": "a"})).map(|(tool, _)| tool),
-                Some(wire::SPAWN_TOOL),
+                Some(wire::START_TOOL),
                 "{title}"
             );
         }

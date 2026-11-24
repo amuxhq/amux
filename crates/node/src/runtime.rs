@@ -129,6 +129,11 @@ pub struct Launch {
     /// How often a copy's provider version is read to see whether it
     /// changed, and how soon a copy that says signed out is asked again.
     pub catalogue_recheck_ms: i64,
+    /// Whether Claude and Codex are asked what they offer as the runtime
+    /// starts, in the background, so a person opening a new agent finds
+    /// the copy there. The daemon does; off by default, so a runtime that
+    /// runs no provider (the phone's) and a test never start one unasked.
+    pub ask_providers_at_start: bool,
     /// How long one step of the profile's core may take before it is
     /// reported with a dump.
     pub step_budget: daemon_core::StepBudget,
@@ -194,6 +199,7 @@ impl Default for Launch {
             claude_kind: wire::Kind::ClaudeSdk,
             catalogue_max_age_ms: 30 * 60_000,
             catalogue_recheck_ms: 60_000,
+            ask_providers_at_start: false,
             step_budget: daemon_core::StepBudget::DAEMON,
             agent_step_budget_micros: 0,
             dump_interval_ms: core_ring::DumpLimit::INTERVAL_MS,
@@ -303,6 +309,22 @@ pub enum RegistryError {
     /// say why.
     #[error("{0}")]
     Subagent(String),
+    /// What an agent asked for a subagent that the subagent's provider or
+    /// host cannot give; the words say which.
+    #[error("{0}")]
+    Delegation(String),
+    /// An ACP agent started on a model its session does not take, which
+    /// it would drop for its own default; the words list what it takes.
+    #[error("{0}")]
+    UnknownModel(String),
+    /// What an agent asked for a subagent that it may not give: more
+    /// authority than its own, or a setting that is the person's to choose.
+    #[error("{0}")]
+    NotYours(String),
+    /// What only an agent starting a subagent may ask, asked by a person;
+    /// the words say what instead.
+    #[error("{0}")]
+    ForAgents(&'static str),
 }
 
 /// What [`ProfileRuntime::ingest`] committed.
@@ -359,7 +381,9 @@ impl RegistryError {
             | Self::NoKind
             | Self::BadCwd(_)
             | Self::NoFarCwd(_)
-            | Self::BadName(_) => ErrorCode::InvalidArgument,
+            | Self::BadName(_)
+            | Self::ForAgents(_)
+            | Self::UnknownModel(_) => ErrorCode::InvalidArgument,
             Self::KindNotRun { .. }
             | Self::UnknownAgent(_)
             | Self::AgentNotInstalled { .. }
@@ -367,6 +391,7 @@ impl RegistryError {
             | Self::ParentEnded(_)
             | Self::HasParent(_)
             | Self::Subagent(_)
+            | Self::Delegation(_)
             | Self::UnreadableAttachment => ErrorCode::FailedPrecondition,
             Self::StartTimeout(_) | Self::StopTimeout(_) => ErrorCode::Aborted,
             Self::Worktree(error) => match error {
@@ -377,6 +402,7 @@ impl RegistryError {
                 | git_facts::WorktreeError::BadBranchName(_) => ErrorCode::FailedPrecondition,
                 git_facts::WorktreeError::Git(_) => ErrorCode::Internal,
             },
+            Self::NotYours(_) => ErrorCode::PermissionDenied,
             Self::Store(_) | Self::Io(_) | Self::Ingest(_) | Self::Core(_) => ErrorCode::Internal,
             Self::Refused(error) => return error.clone(),
         };
@@ -1092,15 +1118,36 @@ impl ProfileRuntime {
                 (None, Some(parent))
             }
         };
+        if let Some(agent) = &request.agent
+            && let Some(edge) = self.edge()
+        {
+            self.runs_kind(&edge.capabilities(), &edge.host_name(), agent.kind())?;
+        }
+        let mut request = request;
+        // An ACP agent's model as its session names it, a person's start
+        // and an agent's alike.
+        self.name_acp_model(&mut request).await?;
+        // What an agent asked for its subagent, settled against its own
+        // row and this host's offers ([`crate::delegation`]).
+        let delegated = match caller {
+            Caller::Agent { agent, .. } => Some(self.delegate(&mut request, *agent).await?),
+            Caller::Person { .. } => {
+                person_picks(&request)?;
+                None
+            }
+        };
         let Some(agent) = request.agent else {
             return Err(RegistryError::NoKind);
         };
         let kind = agent.kind();
-        if let Some(edge) = self.edge() {
-            self.runs_kind(&edge.capabilities(), &edge.host_name(), kind)?;
-        }
-        let picked =
-            spec::picked_at_creation(&agent, request.remember_model, request.remember_effort);
+        // A subagent's model and effort are its parent's picks, never kept
+        // as the person's.
+        let picked = match delegated {
+            Some(_) => None,
+            None => {
+                spec::picked_at_creation(&agent, request.remember_model, request.remember_effort)
+            }
+        };
         // The host's copy of what the provider offers, which says which
         // efforts a remembered model takes.
         let offered = self.offers().offered(agent.provider_id());
@@ -1168,6 +1215,7 @@ impl ProfileRuntime {
                 bootstrap,
                 offered: None,
                 base_branch: None,
+                fork: delegated.as_ref().and_then(|(_, fork)| fork.clone()),
             },
         )?;
         let recent = Path::new(&cwd)
@@ -1184,11 +1232,22 @@ impl ProfileRuntime {
             recent,
             spec,
         };
-        let created = self
+        let mut created = self
             .registry_row(id, ClientRequest::CreateAgent(Box::new(create)))
             .await?;
         if let Some(picked) = picked {
             self.remember_pick(picked).await;
+        }
+        // The provider has not said how it runs yet, so the answer says
+        // what the start resolved to; the row takes the provider's own
+        // word from its first snapshot.
+        if let Some((fitted, _)) = delegated
+            && created.settings.is_none()
+        {
+            let mut settings = fitted.settings;
+            settings.model = filled_model(&filled).or(settings.model);
+            settings.effort = filled_effort(&filled).or(settings.effort);
+            created.settings = Some(Box::new(settings));
         }
         Ok(created)
     }
@@ -1406,6 +1465,8 @@ impl ProfileRuntime {
                 bootstrap,
                 offered: None,
                 base_branch: previous.base_branch.clone(),
+                // A later incarnation reopens the agent's own conversation.
+                fork: None,
             },
         )
         .map(Some)
@@ -1839,8 +1900,10 @@ impl ProfileRuntime {
         Ok(report)
     }
 
-    /// Starts the background work: the retention sweep now and then on its
-    /// interval, and the analytics check-ins.
+    /// Starts the background work, once the daemon has gone live (a build
+    /// that only prepared starts no provider): the retention sweep now and
+    /// then on its interval, the analytics check-ins, and asking Claude and
+    /// Codex what they offer.
     pub fn start_background(&self) {
         let retention = self.start_retention();
         self.background.lock().unwrap().push(retention);
@@ -1848,6 +1911,7 @@ impl ProfileRuntime {
             let check_ins = self.start_check_ins();
             self.background.lock().unwrap().push(check_ins);
         }
+        self.refresh_own_at_start();
     }
 
     /// Records the profile's check-in once a day while it runs.
@@ -1963,10 +2027,21 @@ impl ProfileRuntime {
         if report.frames == 0 {
             return;
         }
-        // An ACP agent met a sign-in, or found it gone: the host's entry
-        // says so now, not at the next ask of what the agent offers.
-        if let Some((provider, state)) = &report.acp_sign_in
-            && self.offers().signed_in(provider) != Some(*state != wire::SignInState::SignedOut)
+        // An ACP agent met a sign-in, or found it gone, or a conversation
+        // with it published a catalogue the host's copy was not made from:
+        // the host's entry says so now, not at the next ask of what the
+        // agent offers. The copy is made again from what the conversations
+        // showed, which asks the agent nothing while the copy holds.
+        let signed_in = report.acp_sign_in.as_ref().filter(|(provider, state)| {
+            self.offers().signed_in(provider) != Some(*state != wire::SignInState::SignedOut)
+        });
+        let published = report
+            .acp_catalogue
+            .as_ref()
+            .filter(|(provider, hash)| self.offers().learned_other_than(provider, hash));
+        if let Some(provider) = signed_in
+            .map(|(provider, _)| provider)
+            .or(published.map(|(provider, _)| provider))
             && let Ok(handle) = tokio::runtime::Handle::try_current()
         {
             let runtime = Arc::downgrade(self);
@@ -1975,7 +2050,7 @@ impl ProfileRuntime {
                 if let Some(runtime) = runtime.upgrade()
                     && let Err(error) = runtime.agent_catalogue(&provider).await
                 {
-                    tracing::debug!(provider, %error, "republishing an agent's sign-in");
+                    tracing::debug!(provider, %error, "republishing what an agent offers");
                 }
             });
         }
@@ -2330,6 +2405,60 @@ fn acp_reopens(body: Option<&[u8]>) -> bool {
             snapshot.reopen(),
             wire::AcpReopen::Resume | wire::AcpReopen::Load
         )
+}
+
+/// Refuses what only an agent starting a subagent asks: a person has no
+/// conversation to fork, and picks the provider's own permission rather
+/// than a level to be capped.
+fn person_picks(request: &wire::CreateAgentRequest) -> Result<(), RegistryError> {
+    if request.fork {
+        return Err(RegistryError::ForAgents(
+            "fork copies the calling agent's conversation, and a person's create has none; \
+             leave fork unset",
+        ));
+    }
+    if request.permission_level() != wire::PermissionLevel::Unspecified {
+        return Err(RegistryError::ForAgents(
+            "permission_level is for an agent starting a subagent; a person names the \
+             provider's own permission in the config",
+        ));
+    }
+    Ok(())
+}
+
+/// The model a creation's config names, after the host's remembered picks.
+fn filled_model(agent: &wire::create_agent_request::Agent) -> Option<String> {
+    use wire::create_agent_request::Agent;
+    match agent {
+        Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => claude.model.clone(),
+        Agent::Codex(codex) => codex.model.clone(),
+        Agent::Acp(acp) => acp.model.clone(),
+    }
+}
+
+/// The effort a creation's config names, after the host's remembered picks.
+fn filled_effort(agent: &wire::create_agent_request::Agent) -> Option<String> {
+    use wire::create_agent_request::Agent;
+    match agent {
+        Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => claude.effort.clone(),
+        Agent::Codex(codex) => codex.effort.clone(),
+        Agent::Acp(acp) => acp.effort.clone(),
+    }
+}
+
+/// The provider's id for the conversation an agent's snapshot body says
+/// it runs: Claude's session, Codex's thread, an ACP agent's session.
+pub(crate) fn provider_session(body: &[u8], kind: Kind) -> Option<String> {
+    use prost::Message as _;
+    let session = match kind {
+        Kind::ClaudeSdk | Kind::ClaudePty => {
+            wire::ClaudeSnapshot::decode(body).ok()?.provider_session
+        }
+        Kind::Codex => wire::CodexSnapshot::decode(body).ok()?.thread_id,
+        Kind::Acp => wire::AcpSnapshot::decode(body).ok()?.session_id,
+        Kind::Unspecified => None,
+    };
+    session.filter(|session| !session.is_empty())
 }
 
 /// The model, permission, mode and effort an agent last ran with, as its

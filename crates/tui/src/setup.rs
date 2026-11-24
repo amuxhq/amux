@@ -543,6 +543,7 @@ impl Setup {
             // What a chat's sibling merely copied is not the person's pick.
             remember_model: !own && self.model.is_some() && self.model != self.copied.0,
             remember_effort: !own && self.effort.is_some() && self.effort != self.copied.1,
+            ..CreateAgentRequest::default()
         }
     }
 }

@@ -489,11 +489,12 @@ async fn an_agent_acts_only_on_its_own_children_and_a_person_on_any() {
     host.stop().await;
 }
 
-/// An agent starts its children with their kind's defaults, never a
-/// permission mode or settings of its choosing, and files them only as
-/// closed; pinning one or filing it open again is the person's.
+/// An agent never names its children's permission or mode in the
+/// provider's own terms (it asks by level, settled against its own), and
+/// files them only as closed; pinning one or filing it open again is the
+/// person's.
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_starts_children_with_defaults_and_files_them_only_closed() {
+async fn an_agent_names_no_raw_permission_for_children_and_files_them_only_closed() {
     let mut setup = Setup::new();
     let mut mine = Vec::new();
     for who in EVERYONE {
@@ -525,6 +526,37 @@ async fn an_agent_starts_children_with_defaults_and_files_them_only_closed() {
             made.unwrap_or_else(|status| panic!("{who:?}: {status:?}"));
             assert!(host.row(id).await.is_some(), "{who:?}");
         }
+
+        // An ACP child's program and level are its creator's to name, its
+        // mode is not: a mode is the provider's own term for a permission.
+        // This host offers no ACP agent, so a create the rule lets through
+        // is refused for that instead.
+        let acp = |mode: Option<&str>, name: &str| wire::CreateAgentRequest {
+            agent: Some(wire::create_agent_request::Agent::Acp(
+                wire::AcpCreateConfig {
+                    agent: "opencode".into(),
+                    mode: mode.map(str::to_owned),
+                    ..Default::default()
+                },
+            )),
+            ..create(&work, name, None)
+        };
+        let moded = host
+            .agents(who)
+            .create_agent(acp(Some("plan"), &format!("{tag}-acp-plan")))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            moded.code() == Code::PermissionDenied,
+            who.is_agent(),
+            "{who:?}: {moded:?}"
+        );
+        let plain = host
+            .agents(who)
+            .create_agent(acp(None, &format!("{tag}-acp")))
+            .await
+            .unwrap_err();
+        assert_ne!(plain.code(), Code::PermissionDenied, "{who:?}: {plain:?}");
 
         // A person pins only an agent with no parent, so the person's
         // filing is tried on the agent it made just now.
@@ -872,6 +904,128 @@ async fn a_delete_preview_is_answered_to_whoever_may_delete() {
         } else {
             asked.unwrap_or_else(|status| panic!("{who:?}: {status:?}"));
         }
+    }
+    host.stop().await;
+}
+
+/// What an agent may ask for its subagent is settled on the create itself:
+/// the ceiling is read from the parent's row (here, this host's copy of a
+/// paired host's agent at auto), a parent whose level is not known gets
+/// read-only and nothing wider, a fork needs a conversation to copy, and a
+/// person can ask for neither a fork nor a level.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_subagents_authority_is_settled_against_its_parents_row() {
+    let setup = Setup::new();
+    let host = setup.start().await;
+    host.settled().await;
+    let work = host.install.work.clone();
+    let level = |made: &wire::Agent| {
+        made.settings
+            .as_ref()
+            .map(|settings| (settings.permission.clone(), settings.permission_level()))
+    };
+
+    // The paired host's agent, as this host's copy holds it, runs at auto.
+    let mut there = AgentRow::new(
+        AgentKey::new(peer().as_bytes().to_vec(), host.there.as_bytes().to_vec()),
+        wire::Kind::ClaudeSdk,
+        "/",
+    );
+    there.name = "caller-there".to_owned();
+    there.settings = Some(wire::AgentSettings {
+        permission: Some("acceptEdits".into()),
+        permission_level: wire::PermissionLevel::Auto as i32,
+        ..Default::default()
+    });
+    host.install.store().put_agent(&there).unwrap();
+    let wider = wire::CreateAgentRequest {
+        permission_level: wire::PermissionLevel::Full as i32,
+        ..create(&work, "wider", None)
+    };
+    let refused = host
+        .agents(Who::AgentThere)
+        .create_agent(wider)
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::PermissionDenied);
+    assert!(
+        refused.message().contains("full is wider than yours, auto"),
+        "{refused:?}"
+    );
+    let made = host
+        .agents(Who::AgentThere)
+        .create_agent(create(&work, "same", None))
+        .await
+        .unwrap()
+        .into_inner()
+        .agent
+        .unwrap();
+    assert_eq!(
+        level(&made),
+        Some((Some("acceptEdits".into()), wire::PermissionLevel::Auto)),
+        "the parent's own level by default"
+    );
+
+    // This host's caller has reported no settings, so its level is not
+    // known: its child is read-only, and asking wider is refused.
+    let made = host
+        .agents(Who::AgentHere)
+        .create_agent(create(&work, "unknown", None))
+        .await
+        .unwrap()
+        .into_inner()
+        .agent
+        .unwrap();
+    assert_eq!(
+        level(&made),
+        Some((Some("plan".into()), wire::PermissionLevel::ReadOnly))
+    );
+    let ask = wire::CreateAgentRequest {
+        permission_level: wire::PermissionLevel::Ask as i32,
+        ..create(&work, "unknown-ask", None)
+    };
+    let refused = host
+        .agents(Who::AgentHere)
+        .create_agent(ask)
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::PermissionDenied, "{refused:?}");
+
+    // A fork copies the caller's conversation, which it does not have yet.
+    let fork = wire::CreateAgentRequest {
+        fork: true,
+        ..create(&work, "fork", None)
+    };
+    let refused = host
+        .agents(Who::AgentHere)
+        .create_agent(fork.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::FailedPrecondition, "{refused:?}");
+    assert!(
+        refused.message().contains("has not started yet"),
+        "{refused:?}"
+    );
+    let id = uuid::Uuid::from_slice(&fork.agent_id).unwrap();
+    assert!(host.row(id).await.is_none(), "no child was made");
+
+    // A person has no conversation to fork and no level to be held to.
+    for asked in [
+        wire::CreateAgentRequest {
+            fork: true,
+            ..create(&work, "person-fork", None)
+        },
+        wire::CreateAgentRequest {
+            permission_level: wire::PermissionLevel::ReadOnly as i32,
+            ..create(&work, "person-level", None)
+        },
+    ] {
+        let refused = host
+            .agents(Who::PersonHere)
+            .create_agent(asked)
+            .await
+            .unwrap_err();
+        assert_eq!(refused.code(), Code::InvalidArgument, "{refused:?}");
     }
     host.stop().await;
 }

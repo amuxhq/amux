@@ -41,7 +41,7 @@ use acp_protocol::{
     ClientMessage, ClientNotification, ClientRequest, ClientResponse, ContentBlock, Empty, Extra,
     RequestId, RpcError,
 };
-pub use offer::{HostOffer, host_offer};
+pub use offer::{HostOffer, host_offer, listed_catalogue};
 use prost::Message as _;
 use serde::{Deserialize, Serialize};
 pub use wire::agents::{BUILT_INS, BuiltIn, built_in};
@@ -98,6 +98,9 @@ pub enum Opening {
     Resume(String),
     /// `session/load`: the agent reopens it and replays it all first.
     Load(String),
+    /// The agent has no conversation yet and starts from a copy of its
+    /// parent's, this one: `session/fork`, answered as a new session is.
+    Fork(String),
     /// The agent has a conversation and cannot reopen it in a new process.
     /// The agent process exits for good with [`UNRESUMABLE`] as the cause:
     /// a fresh conversation is never passed off as the old one resumed.
@@ -114,8 +117,24 @@ pub const UNRESUMABLE: &str = "the agent cannot reopen its conversation in a new
 /// over ([`Opening::Unresumable`]), which [`Interpreter::holds`] reports
 /// while its process runs, so the agent never suspends on its own.
 pub fn opening(init: &InitializeResponse, saved: Option<&str>) -> Opening {
+    opening_or_fork(init, saved, None)
+}
+
+/// As [`opening`], for an agent whose first incarnation copies the
+/// conversation `fork`, its parent's: with no conversation of its own yet,
+/// it forks that one where the agent offers `session/fork`. An agent that
+/// does not starts a new conversation; its host refuses such a fork before
+/// the agent exists, so this is only a host from before the agent changed.
+pub fn opening_or_fork(
+    init: &InitializeResponse,
+    saved: Option<&str>,
+    fork: Option<&str>,
+) -> Opening {
     let Some(saved) = saved else {
-        return Opening::New;
+        return match fork {
+            Some(fork) if Reopens::of(init).fork => Opening::Fork(fork.to_owned()),
+            _ => Opening::New,
+        };
     };
     let reopens = Reopens::of(init);
     if reopens.resume {
@@ -138,11 +157,14 @@ fn capabilities(
     reopens: Option<Reopens>,
     takes: Option<Takes>,
 ) -> AgentCapabilities {
-    AgentCapabilities::acp(
-        !session || reopens.is_some_and(|reopens| reopens.resume || reopens.load),
-        takes.is_some_and(|takes| takes.images),
-        quirks(agent).steers,
-    )
+    AgentCapabilities {
+        forks: reopens.is_some_and(|reopens| reopens.fork),
+        ..AgentCapabilities::acp(
+            !session || reopens.is_some_and(|reopens| reopens.resume || reopens.load),
+            takes.is_some_and(|takes| takes.images),
+            quirks(agent).steers,
+        )
+    }
 }
 
 /// What tells one ACP agent from another, where the protocol leaves room.
@@ -165,10 +187,9 @@ pub struct Quirks {
     /// Grok lists `cached_token` signed in (`grok-catalogue`) and not
     /// signed out (`grok-signed_out`).
     pub signed_in_method: Option<&'static str>,
-    /// `initialize`'s `_meta` lists the models, with their efforts, and the
-    /// commands a session would offer, so the host's copy has them without
-    /// opening a session. Seen in `grok-catalogue`.
-    pub offers_in_initialize: bool,
+    /// How the agent lists its models to a host that has had no
+    /// conversation with it, for the host's copy.
+    pub lists_models: ModelListing,
     /// How the agent names a call to a tool server's tool, by which a call
     /// to amux's own server is told from the rest.
     pub tool_naming: ToolNaming,
@@ -193,6 +214,53 @@ pub struct Quirks {
     /// in `_x.ai/session_notification`, and a call it blocks fails with
     /// words saying so. Seen in `grok-allow`.
     pub xai_review: bool,
+}
+
+/// How an agent lists its models, their efforts and its modes without a
+/// conversation, as the catalogue helper asks it for the host's copy. Each
+/// way is the agent's own, chosen so that asking leaves nothing in the
+/// agent's history: a session that stays there would show up in the
+/// person's own list of the agent's conversations.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ModelListing {
+    /// Only a conversation's session lists them, so the host's copy has
+    /// them once one of its conversations published a catalogue. An agent
+    /// a person added, of which amux knows nothing more.
+    #[default]
+    InSession,
+    /// `initialize`'s `_meta` lists the models, with their efforts, and the
+    /// commands a session would offer. Seen in `grok-catalogue`.
+    Initialize,
+    /// The agent's program, run with `args` in place of its ACP ones,
+    /// prints its models as `printed` says, and its modes are the ones amux
+    /// knows it has ([`wire::levels::acp_modes`]). Antigravity and OpenCode
+    /// list models only in a session's answer, and asking that way leaves
+    /// something behind each time: OpenCode keeps every session it opens,
+    /// prompted or not, as a "New session" in its history; Antigravity lists
+    /// one only once prompted, but writes a file of about 400 KB for it in
+    /// its own folder that it never removes, even after `session/close`.
+    /// Their own listing commands leave nothing.
+    Command {
+        args: &'static [&'static str],
+        printed: Printed,
+    },
+}
+
+/// How an agent's listing command prints its models.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Printed {
+    /// One model id per line, as `opencode models` prints
+    /// `opencode/beam-free`: no names, no efforts.
+    Ids,
+    /// One line per model and effort, its id with the effort after a dash,
+    /// a tab, and its name with the effort in brackets, as `agy models`
+    /// prints `gemini-3.8-flash-low\tGemini 3.8 Flash (Low)`; brackets that
+    /// name no effort name a model (`Orchestrator (Neon)`). A session
+    /// takes the model (`gemini-3.8-flash`) and the effort (`low`) apart,
+    /// so the lines of one model are one model with those efforts; a model
+    /// printed with a single effort is a model of its own whose id carries
+    /// it (`gpt-oss-120b-medium`, which is the value a session takes).
+    IdsByEffort,
 }
 
 /// How an agent names a tool server's tool on its calls. ACP gives a call
@@ -252,28 +320,43 @@ fn double_underscore(name: &str, server: &str, tool: &str) -> bool {
 /// amux's own tools that run without asking. `attach` asks, as it does in
 /// Claude: it copies any file the agent names into the agent's blob folder,
 /// which the agent then reads unasked, so a read the agent's own settings
-/// would ask about goes through them first.
-const AMUX_TOOLS_UNASKED: [&str; 6] = [
+/// would ask about goes through them first. Each by its name now and by the
+/// one a release before 0.11 gave it, which a resumed agent may still call.
+const AMUX_TOOLS_UNASKED: [&str; 12] = [
     wire::AGENTS_TOOL,
     wire::HOSTS_TOOL,
-    wire::SEND_TOOL,
-    wire::SPAWN_TOOL,
+    wire::MESSAGE_TOOL,
+    wire::START_TOOL,
     wire::STOP_TOOL,
-    wire::STATUS_TOOL,
+    wire::WORKING_ON_TOOL,
+    wire::former_tools::AGENTS_TOOL,
+    wire::former_tools::HOSTS_TOOL,
+    wire::former_tools::SEND_TOOL,
+    wire::former_tools::SPAWN_TOOL,
+    wire::former_tools::STOP_TOOL,
+    wire::former_tools::STATUS_TOOL,
 ];
+
+/// What Antigravity's and OpenCode's programs are run with to print their
+/// models.
+const LIST_MODELS: &[&str] = &["models"];
 
 /// The quirks of the agent with this id.
 pub fn quirks(agent: &str) -> Quirks {
     match agent {
         "antigravity" => Quirks {
             steers: true,
+            lists_models: ModelListing::Command {
+                args: LIST_MODELS,
+                printed: Printed::IdsByEffort,
+            },
             tool_naming: ToolNaming::RunMcp,
             ..Quirks::default()
         },
         "grok" => Quirks {
             usage_in_answer_meta: true,
             signed_in_method: Some("cached_token"),
-            offers_in_initialize: true,
+            lists_models: ModelListing::Initialize,
             tool_naming: ToolNaming::DoubleUnderscore,
             xai_questions: true,
             context_in_update_meta: true,
@@ -282,6 +365,10 @@ pub fn quirks(agent: &str) -> Quirks {
             ..Quirks::default()
         },
         "opencode" => Quirks {
+            lists_models: ModelListing::Command {
+                args: LIST_MODELS,
+                printed: Printed::Ids,
+            },
             tool_naming: ToolNaming::Underscore,
             ..Quirks::default()
         },
@@ -294,6 +381,9 @@ pub fn quirks(agent: &str) -> Quirks {
 struct Reopens {
     resume: bool,
     load: bool,
+    /// It offers `session/fork`: a new session from a copy of another.
+    #[serde(default)]
+    fork: bool,
 }
 
 impl Reopens {
@@ -311,6 +401,7 @@ impl Reopens {
             resume: session.is_some_and(|session| matches!(session.resume, Some(Some(_)))),
             load: caps.load_session.or(caps.load_session_again) == Some(true)
                 || session.is_some_and(|session| session.load.is_some()),
+            fork: session.is_some_and(|session| matches!(session.fork, Some(Some(_)))),
         }
     }
 }
@@ -473,6 +564,63 @@ fn choices(
     }
     choices.sort_by_key(|choice| choice.category);
     choices
+}
+
+/// The models a session's choices offer, each with the values of its
+/// thought-level option as its efforts.
+fn offered_models(choices: &[Choice]) -> Vec<OfferedModel> {
+    let choice = |category| choices.iter().find(|choice| choice.category == category);
+    let efforts: Vec<String> = choice(Category::Effort)
+        .map(|choice| {
+            choice
+                .values
+                .iter()
+                .map(|value| value.value.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    choice(Category::Model)
+        .map(|choice| {
+            choice
+                .values
+                .iter()
+                .map(|value| OfferedModel {
+                    value: value.value.clone(),
+                    display_name: value.name.clone(),
+                    description: value.description.clone(),
+                    efforts: efforts.clone(),
+                    ..Default::default()
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The models and modes a session of `agent` with these choices offers:
+/// what its conversation publishes. `normal` is the mode the agent's
+/// sessions start in, its own default.
+fn session_catalogue(agent: &str, choices: &[Choice], normal: Option<&str>) -> Catalogue {
+    Catalogue {
+        models: offered_models(choices),
+        modes: choices
+            .iter()
+            .find(|choice| choice.category == Category::Mode)
+            .map(|choice| {
+                choice
+                    .values
+                    .iter()
+                    .map(|value| OfferedMode {
+                        value: value.value.clone(),
+                        display_name: value.name.clone(),
+                        normal: normal == Some(value.value.as_str()),
+                        settable: true,
+                        level: wire::levels::acp_mode(agent, &value.value) as i32,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        ..Default::default()
+    }
 }
 
 /// A request amux made and has not had answered.
@@ -787,57 +935,20 @@ impl State {
     }
 
     fn offered_models(&self) -> Vec<OfferedModel> {
-        let efforts: Vec<String> = self
-            .choice(Category::Effort)
-            .map(|choice| {
-                choice
-                    .values
-                    .iter()
-                    .map(|value| value.value.clone())
-                    .collect()
-            })
-            .unwrap_or_default();
-        self.choice(Category::Model)
-            .map(|choice| {
-                choice
-                    .values
-                    .iter()
-                    .map(|value| OfferedModel {
-                        value: value.value.clone(),
-                        display_name: value.name.clone(),
-                        description: value.description.clone(),
-                        efforts: efforts.clone(),
-                        ..Default::default()
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
+        offered_models(&self.choices)
     }
 
     fn catalogue(&self) -> Catalogue {
         // ACP names no normal mode. The one the first session started in is
         // the agent's own default, from its own settings, so clients leave
         // it unsaid, as they do Claude's and Codex's normal modes.
-        let normal = self.starting.get(&Category::Mode);
         Catalogue {
-            models: self.offered_models(),
             commands: self.commands.clone(),
-            modes: self
-                .choice(Category::Mode)
-                .map(|choice| {
-                    choice
-                        .values
-                        .iter()
-                        .map(|value| OfferedMode {
-                            value: value.value.clone(),
-                            display_name: value.name.clone(),
-                            normal: normal == Some(&value.value),
-                            settable: true,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-            ..Default::default()
+            ..session_catalogue(
+                &self.agent,
+                &self.choices,
+                self.starting.get(&Category::Mode).map(String::as_str),
+            )
         }
     }
 
@@ -1218,7 +1329,10 @@ impl State {
         [Some(tool.title.as_str()), used.as_deref()]
             .into_iter()
             .flatten()
-            .any(|name| naming.runs_amux(name, wire::ATTACH_TOOL))
+            .any(|name| {
+                naming.runs_amux(name, wire::ATTACH_TOOL)
+                    || naming.runs_amux(name, wire::former_tools::ATTACH_TOOL)
+            })
     }
 
     /// Whether the call's row was drawn finished, after which nothing more
@@ -2004,6 +2118,17 @@ impl Interpreter for Acp {
             let catalogue = state.catalogue();
             state.shared.set_catalogue(&mut emit, catalogue);
         }
+        let (model, effort, mode) = (
+            state.current(Category::Model),
+            state.current(Category::Effort),
+            state.current(Category::Mode),
+        );
+        state.shared.set_settings(
+            &state.agent,
+            model.as_deref(),
+            effort.as_deref(),
+            mode.as_deref(),
+        );
         let body = state.body();
         let notice = state.shared.notice(crate::notice::acp_ask);
         state.shared.finish(emit, body, notice)

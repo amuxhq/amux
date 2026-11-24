@@ -25,6 +25,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 use tonic::codegen::http;
 use tonic::{Request, Response, Status};
 use wire::agent_service_server::AgentService;
+use wire::host_service_server::HostService;
 use wire::inventory_service_server::InventoryService;
 use wire::{
     Agent as Row, AgentRef, AgentSpec, CreateAgentRequest, HostEntry, InventoryEvent, Kind,
@@ -206,6 +207,55 @@ impl InventoryService for Fleet {
     }
 }
 
+/// What laptop's Codex offers: one model with its efforts, and Codex's
+/// permissions. Nothing else is offered anywhere.
+#[tonic::async_trait]
+impl HostService for Fleet {
+    async fn get_catalogue(
+        &self,
+        request: Request<wire::GetCatalogueRequest>,
+    ) -> Result<Response<wire::GetCatalogueResponse>, Status> {
+        use prost::Message as _;
+        let host = answering(&authority(&request));
+        if host != HERE || request.get_ref().provider != "codex" {
+            return Err(Status::not_found("no copy"));
+        }
+        let catalogue = wire::Catalogue {
+            models: vec![wire::OfferedModel {
+                value: "gpt-6-luna".into(),
+                efforts: vec!["low".into(), "high".into()],
+                default_effort: Some("low".into()),
+                ..Default::default()
+            }],
+            permissions: wire::codex::PERMISSIONS
+                .iter()
+                .map(|named| wire::OfferedPermission {
+                    value: named.value.into(),
+                    settable: true,
+                    level: wire::levels::codex(named.value) as i32,
+                    ..Default::default()
+                })
+                .collect(),
+            new_agent: Some(wire::NewAgentDefaults {
+                model: Some("gpt-6-luna".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        Ok(Response::new(wire::GetCatalogueResponse {
+            hash: Vec::new(),
+            bytes: catalogue.encode_to_vec(),
+        }))
+    }
+
+    async fn pin_folder(
+        &self,
+        _: Request<wire::PinFolderRequest>,
+    ) -> Result<Response<wire::PinFolderResponse>, Status> {
+        Err(Status::unimplemented("pin"))
+    }
+}
+
 #[tonic::async_trait]
 impl AgentService for Fleet {
     /// Made on the host the call is addressed to, which refuses a child of
@@ -226,8 +276,21 @@ impl AgentService for Fleet {
             ));
         }
         let name = request.name.clone().unwrap_or_else(|| "quiet-otter".into());
+        let mut made = row(&request.agent_id, &host, &name);
+        made.cwd = request.cwd.clone();
+        // The settings a host fits a start's picks to: here, what was
+        // asked, the level as the permission.
+        if let Some(create_agent_request::Agent::Codex(codex)) = &request.agent {
+            made.kind = Kind::Codex as i32;
+            made.settings = Some(Box::new(wire::AgentSettings {
+                model: codex.model.clone(),
+                effort: codex.effort.clone(),
+                permission: None,
+                permission_level: request.permission_level,
+            }));
+        }
         Ok(Response::new(wire::CreateAgentResponse {
-            agent: Some(row(&request.agent_id, &host, &name)),
+            agent: Some(made),
         }))
     }
 
@@ -397,7 +460,8 @@ impl Daemon {
             let _ = tonic::transport::Server::builder()
                 .layer(addressed)
                 .add_service(wire::inventory_service_server(fleet.clone()))
-                .add_service(wire::agent_service_server(fleet))
+                .add_service(wire::agent_service_server(fleet.clone()))
+                .add_service(wire::host_service_server(fleet))
                 .serve_with_incoming(incoming)
                 .await;
         });
@@ -438,6 +502,9 @@ fn host(id: &[u8], name: &str, reach: wire::trusted::Reach, offers: &[&str]) -> 
         .iter()
         .map(|provider| wire::ProviderOnHost {
             provider_id: (*provider).to_owned(),
+            // The host has a copy, which list_hosts asks for.
+            catalogue: Some(vec![1]),
+            signed_in: true,
             ..Default::default()
         })
         .collect();
@@ -451,8 +518,21 @@ fn fleet() -> Fleet {
     me.kind = Kind::ClaudePty as i32;
     me.phase = Phase::Working as i32;
     me.working_on = Some("Splitting the parser".into());
+    me.settings = Some(Box::new(wire::AgentSettings {
+        model: Some("claude-haiku-5-5".into()),
+        effort: Some("low".into()),
+        permission: Some("acceptEdits".into()),
+        permission_level: wire::PermissionLevel::Auto as i32,
+    }));
+    me.git = Some(wire::Git {
+        branch: Some("parser".into()),
+        ..Default::default()
+    });
     let mut reviewer = row(&REVIEWER, &STUDIO, "reviewer");
     reviewer.kind = Kind::Codex as i32;
+    // Declared nothing: the title its provider gave the conversation
+    // stands in.
+    reviewer.title = Some("Reviewing the lexer".into());
     // A child running an ACP agent, named by its agent's id.
     let mut child = row(&CHILD, &HERE, "helper");
     child.kind = Kind::Acp as i32;
@@ -621,7 +701,13 @@ async fn the_server_lists_the_seven_tools() {
     assert_eq!(
         names,
         [
-            "agents", "hosts", "send", "spawn", "stop", "status", "attach"
+            "start_subagent",
+            "message_agent",
+            "list_agents",
+            "attach_file",
+            "stop_subagent",
+            "list_hosts",
+            "set_working_on"
         ]
     );
     let unknown = mcp
@@ -672,15 +758,18 @@ async fn agents_lists_the_fleet_read_to_caught_up_and_marks_you() {
     reviewer.exit_cause = wire::ExitCause::ProviderExited as i32;
     reviewer.exit_detail = Some("exit code 1".into());
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
-    let listed = mcp.ok("agents", json!({})).await;
+    let listed = mcp.ok("list_agents", json!({})).await;
     assert_eq!(
         listed,
         json!({ "agents": [
-            { "name": "lead", "id": interpret::to_hex(&ME), "kind": "claude", "host": "laptop",
-              "live": true, "phase": "working", "working_on": "Splitting the parser", "you": true },
-            { "name": "reviewer", "id": interpret::to_hex(&REVIEWER), "kind": "codex",
-              "host": "Studio", "live": true, "phase": "idle" },
-            { "name": "helper", "id": interpret::to_hex(&CHILD), "kind": "opencode",
+            { "name": "lead", "id": interpret::to_hex(&ME), "provider": "claude", "host": "laptop",
+              "live": true, "phase": "working", "working_on": "Splitting the parser", "you": true,
+              "model": "claude-haiku-5-5", "effort": "low", "permission": "auto",
+              "branch": "parser" },
+            { "name": "reviewer", "id": interpret::to_hex(&REVIEWER), "provider": "codex",
+              "host": "Studio", "live": true, "phase": "idle",
+              "working_on": "Reviewing the lexer" },
+            { "name": "helper", "id": interpret::to_hex(&CHILD), "provider": "opencode",
               "host": "laptop", "live": false, "phase": "idle", "exit_cause": "finished",
               "parent": "lead" },
         ]})
@@ -692,14 +781,31 @@ async fn agents_lists_the_fleet_read_to_caught_up_and_marks_you() {
 async fn hosts_lists_trusted_hosts_and_this_one() {
     let mut mcp = Mcp::start().await;
     let _daemon = Daemon::listen(&mcp.dir, fleet());
-    let listed = mcp.ok("hosts", json!({})).await;
+    let listed = mcp.ok("list_hosts", json!({})).await;
+    // Each agent's permission levels come from its catalogue where its
+    // host could be asked, else from what amux knows the provider always
+    // offers; its models only from a catalogue. The away host is not
+    // asked.
+    let claude =
+        json!({ "id": "claude", "forks": false, "permissions": ["read-only", "ask", "auto"] });
     assert_eq!(
         listed,
         json!({ "hosts": [
             { "name": "laptop", "presence": "online", "this_host": true,
-              "agents": ["claude", "codex", "opencode"] },
-            { "name": "Studio", "presence": "away", "agents": ["claude", "codex"] },
-        ]})
+              "agents": [
+                claude,
+                { "id": "codex", "forks": false, "permissions": ["read-only", "ask", "auto", "full"],
+                  "models": [{ "model": "gpt-6-luna", "efforts": ["low", "high"], "default_effort": "low" }],
+                  "default_model": "gpt-6-luna" },
+                { "id": "opencode", "forks": false, "permissions": ["read-only", "full"] },
+              ] },
+            { "name": "Studio", "presence": "away",
+              "agents": [
+                claude,
+                { "id": "codex", "forks": false, "permissions": ["read-only", "ask", "auto", "full"] },
+              ] },
+          ],
+          "your_permission": "auto" })
     );
 }
 
@@ -713,7 +819,7 @@ async fn send_resolves_the_recipient_and_addresses_its_host() {
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
     let sent = mcp
         .ok(
-            "send",
+            "message_agent",
             json!({ "to": "reviewer", "text": "Please review.", "context": "parser" }),
         )
         .await;
@@ -744,24 +850,84 @@ async fn send_says_plainly_when_the_name_or_the_delivery_fails() {
     fleet.refuse_send = Some(Status::failed_precondition("reviewer has exited"));
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
     assert_eq!(
-        mcp.refused("send", json!({ "to": "ghost", "text": "hi" }))
+        mcp.refused("message_agent", json!({ "to": "ghost", "text": "hi" }))
             .await,
         "no agent named ghost"
     );
     assert_eq!(
-        mcp.refused("send", json!({ "to": "twin", "text": "hi" }))
+        mcp.refused("message_agent", json!({ "to": "twin", "text": "hi" }))
             .await,
         "twin names more than one agent; pick one with twin@here or twin@studio",
         "the daemon's refusal, offering the name@host forms, reaches the model as it is"
     );
     assert_eq!(
-        mcp.refused("send", json!({ "to": "reviewer", "text": "hi" }))
+        mcp.refused("message_agent", json!({ "to": "reviewer", "text": "hi" }))
             .await,
         "reviewer has exited"
     );
     assert_eq!(
-        mcp.refused("send", json!({ "to": "reviewer" })).await,
+        mcp.refused("message_agent", json!({ "to": "reviewer" }))
+            .await,
         "text is required"
+    );
+}
+
+/// A start carries the mind, authority and isolation the parent chose: its
+/// model and effort in the provider's config, the permission as a level,
+/// a new workspace and a fork. The answer says what the host fitted them
+/// to, the branch a new workspace is on, and that the parent waits for no
+/// report. A permission that is no level is refused before anything is
+/// asked.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_start_carries_the_mind_authority_and_isolation_it_chose() {
+    let mut mcp = Mcp::start().await;
+    let fleet = fleet();
+    let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
+    let spawned = mcp
+        .ok(
+            "start_subagent",
+            json!({ "agent": "codex", "task": "Scout it.", "name": "scout", "model": "gpt-6-luna",
+                    "effort": "high", "permission": "read-only", "new_workspace": true,
+                    "fork": true }),
+        )
+        .await;
+    let calls = fleet.calls();
+    let Some(Call::Create(_, asked)) = calls.last() else {
+        panic!("a create, got {calls:?}");
+    };
+    assert_eq!(
+        asked.agent,
+        Some(create_agent_request::Agent::Codex(
+            wire::CodexCreateConfig {
+                model: Some("gpt-6-luna".into()),
+                effort: Some("high".into()),
+                ..Default::default()
+            }
+        ))
+    );
+    assert_eq!(asked.permission_level(), wire::PermissionLevel::ReadOnly);
+    assert!(asked.new_workspace && asked.fork);
+    assert_eq!(spawned["model"], "gpt-6-luna");
+    assert_eq!(spawned["effort"], "high");
+    assert_eq!(spawned["permission"], "read-only");
+    assert_eq!(spawned["branch"], "scout");
+    assert_eq!(spawned["forked"], true);
+    assert_eq!(spawned["provider"], "codex");
+
+    let asked_before = fleet.calls().len();
+    assert_eq!(
+        mcp.refused(
+            "start_subagent",
+            json!({ "agent": "codex", "task": "x", "permission": "bypass" })
+        )
+        .await,
+        "no permission \"bypass\"; use read-only, ask, auto or full"
+    );
+    assert!(
+        !fleet.calls()[asked_before..]
+            .iter()
+            .any(|call| matches!(call, Call::Create(..))),
+        "nothing was created"
     );
 }
 
@@ -779,17 +945,19 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
 
     let spawned = mcp
         .ok(
-            "spawn",
-            json!({ "kind": "codex", "prompt": "Write the tests.", "name": "tester" }),
+            "start_subagent",
+            json!({ "agent": "codex", "task": "Write the tests.", "name": "tester" }),
         )
         .await;
     let calls = fleet.calls();
     let [Call::Create(addressed, here)] = calls.as_slice() else {
         panic!("one create, got {calls:?}");
     };
-    assert_eq!(
-        spawned,
-        json!({ "name": "tester", "id": interpret::to_hex(&here.agent_id) })
+    assert_eq!(spawned["name"], "tester");
+    assert_eq!(spawned["id"], interpret::to_hex(&here.agent_id));
+    assert!(
+        spawned["next"].as_str().unwrap().contains("Do not poll"),
+        "the answer says what to do next: {spawned}"
     );
     assert_eq!(
         wire::host_of_authority(addressed),
@@ -810,16 +978,25 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
 
     let spawned = mcp
         .ok(
-            "spawn",
-            json!({ "kind": "claude", "prompt": "Review it.", "host": "studio", "cwd": "~/src/app" }),
+            "start_subagent",
+            json!({ "agent": "claude", "task": "Review it.", "host": "studio", "cwd": "~/src/app" }),
         )
         .await;
     let calls = fleet.calls();
-    let [_, Call::ResolveHost(name), Call::Create(addressed, there)] = calls.as_slice() else {
-        panic!("the host resolved, then a second create, got {calls:?}");
+    // A named host may hold no copy of the parent's row yet, so the start
+    // names the parent's own level, read from the fleet.
+    let [
+        _,
+        Call::ResolveHost(name),
+        Call::Inventory,
+        Call::Create(addressed, there),
+    ] = calls.as_slice()
+    else {
+        panic!("the host resolved, the parent's level read, then a second create, got {calls:?}");
     };
     assert_eq!(name, "studio");
     assert_eq!(*addressed, to(STUDIO), "the create goes to the host's id");
+    assert_eq!(there.permission_level(), wire::PermissionLevel::Auto);
     assert_eq!(there.cwd, "~/src/app");
     assert_eq!(
         there.agent,
@@ -828,8 +1005,8 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
     assert_eq!(spawned["name"], "quiet-otter", "{spawned}");
 
     mcp.ok(
-        "spawn",
-        json!({ "kind": "codex", "prompt": "Look here.", "host": "laptop" }),
+        "start_subagent",
+        json!({ "agent": "codex", "task": "Look here.", "host": "laptop" }),
     )
     .await;
     let calls = fleet.calls();
@@ -844,8 +1021,8 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
 
     assert_eq!(
         mcp.refused(
-            "spawn",
-            json!({ "kind": "codex", "prompt": "x", "host": "Studio" })
+            "start_subagent",
+            json!({ "agent": "codex", "task": "x", "host": "Studio" })
         )
         .await,
         "starting an agent on Studio needs a folder there: pass cwd as a path on Studio, \
@@ -854,8 +1031,8 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
     );
     assert_eq!(
         mcp.refused(
-            "spawn",
-            json!({ "kind": "codex", "prompt": "x", "host": "stranger" })
+            "start_subagent",
+            json!({ "agent": "codex", "task": "x", "host": "stranger" })
         )
         .await,
         "no trusted host is named stranger; trusted hosts: laptop, Studio"
@@ -863,8 +1040,8 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
     // Any other id is an ACP agent's, for the host it runs on to start or
     // refuse; one no agent can have never reaches the daemon.
     mcp.ok(
-        "spawn",
-        json!({ "kind": "opencode", "prompt": "Explain it." }),
+        "start_subagent",
+        json!({ "agent": "opencode", "task": "Explain it." }),
     )
     .await;
     let calls = fleet.calls();
@@ -885,9 +1062,12 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
         "the ACP agent with its own settings"
     );
     assert_eq!(
-        mcp.refused("spawn", json!({ "kind": "Gemini CLI", "prompt": "x" }))
-            .await,
-        "no agent \"Gemini CLI\"; use claude, codex or another agent a host offers, by the id hosts lists"
+        mcp.refused(
+            "start_subagent",
+            json!({ "agent": "Gemini CLI", "task": "x" })
+        )
+        .await,
+        "no agent \"Gemini CLI\"; use claude, codex or another agent a host offers, by the id list_hosts lists"
     );
     let calls = fleet.calls();
     assert!(
@@ -907,8 +1087,8 @@ async fn a_spawn_goes_through_the_agent_process_which_asks_the_daemon_once() {
     let daemon = Daemon::listen(&mcp.dir, fleet.clone());
     let spawned = mcp
         .ok(
-            "spawn",
-            json!({ "kind": "codex", "prompt": "Write the tests." }),
+            "start_subagent",
+            json!({ "agent": "codex", "task": "Write the tests." }),
         )
         .await;
     let calls = fleet.calls();
@@ -916,8 +1096,11 @@ async fn a_spawn_goes_through_the_agent_process_which_asks_the_daemon_once() {
         panic!("one create, got {calls:?}");
     };
     assert_eq!(
-        spawned,
-        json!({ "name": "quiet-otter", "id": interpret::to_hex(&created.agent_id) }),
+        (&spawned["name"], &spawned["id"]),
+        (
+            &json!("quiet-otter"),
+            &json!(interpret::to_hex(&created.agent_id))
+        ),
         "the daemon's answer came back"
     );
     assert_eq!(
@@ -926,8 +1109,8 @@ async fn a_spawn_goes_through_the_agent_process_which_asks_the_daemon_once() {
     );
 
     mcp.refused(
-        "spawn",
-        json!({ "kind": "codex", "prompt": "x", "host": "studio" }),
+        "start_subagent",
+        json!({ "agent": "codex", "task": "x", "host": "studio" }),
     )
     .await;
     assert_eq!(
@@ -943,7 +1126,7 @@ async fn a_spawn_goes_through_the_agent_process_which_asks_the_daemon_once() {
     };
     let _daemon = Daemon::listen(&mcp.dir, severed.clone());
     let refusal = mcp
-        .refused("spawn", json!({ "kind": "codex", "prompt": "x" }))
+        .refused("start_subagent", json!({ "agent": "codex", "task": "x" }))
         .await;
     assert!(refusal.contains("may have taken it"), "{refusal}");
     assert_eq!(
@@ -959,7 +1142,7 @@ async fn a_spawn_goes_through_the_agent_process_which_asks_the_daemon_once() {
 async fn a_spawn_with_no_daemon_is_refused_plainly() {
     let mut mcp = Mcp::start().await;
     assert_eq!(
-        mcp.refused("spawn", json!({ "kind": "codex", "prompt": "x" }))
+        mcp.refused("start_subagent", json!({ "agent": "codex", "task": "x" }))
             .await,
         NOT_RUNNING
     );
@@ -978,7 +1161,7 @@ async fn a_spawn_whose_agent_process_is_not_listening_is_refused_plainly() {
     let fleet = fleet();
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
     assert_eq!(
-        mcp.refused("spawn", json!({ "kind": "codex", "prompt": "x" }))
+        mcp.refused("start_subagent", json!({ "agent": "codex", "task": "x" }))
             .await,
         NOT_TAKING_SPAWNS
     );
@@ -1033,7 +1216,10 @@ async fn stop_closes_the_named_child_on_its_host() {
     let mut mcp = Mcp::start().await;
     let fleet = fleet();
     let daemon = Daemon::listen(&mcp.dir, fleet.clone());
-    assert_eq!(mcp.ok("stop", json!({ "name": "helper" })).await, json!({}));
+    assert_eq!(
+        mcp.ok("stop_subagent", json!({ "name": "helper" })).await,
+        json!({})
+    );
     let calls = fleet.calls();
     let [Call::Resolve(_), Call::Stop(addressed, request)] = calls.as_slice() else {
         panic!("resolve then stop, got {calls:?}");
@@ -1051,7 +1237,8 @@ async fn stop_closes_the_named_child_on_its_host() {
     };
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
     assert_eq!(
-        mcp.refused("stop", json!({ "name": "reviewer" })).await,
+        mcp.refused("stop_subagent", json!({ "name": "reviewer" }))
+            .await,
         "reviewer did not stop: an agent settles only its own children"
     );
     let calls = fleet.calls();
@@ -1067,12 +1254,16 @@ async fn status_answers_ok_without_the_daemon() {
     let mut mcp = Mcp::start().await;
     let started = tokio::time::Instant::now();
     assert_eq!(
-        mcp.ok("status", json!({ "working_on": "Splitting the parser" }))
-            .await,
+        mcp.ok(
+            "set_working_on",
+            json!({ "working_on": "Splitting the parser" })
+        )
+        .await,
         json!("ok")
     );
     assert_eq!(
-        mcp.ok("status", json!({ "working_on": null })).await,
+        mcp.ok("set_working_on", json!({ "working_on": null }))
+            .await,
         json!("ok")
     );
     assert!(started.elapsed() < RETRY_WINDOW, "no daemon was waited for");
@@ -1088,7 +1279,9 @@ async fn attach_stores_the_file_by_its_hash_and_answers_the_element() {
     let hash = sha2::Sha256::digest(bytes).to_vec();
     let started = tokio::time::Instant::now();
 
-    let (element, error) = mcp.call("attach", json!({ "path": "chart.png" })).await;
+    let (element, error) = mcp
+        .call("attach_file", json!({ "path": "chart.png" }))
+        .await;
     assert!(!error, "{element}");
     assert!(started.elapsed() < RETRY_WINDOW, "no daemon was waited for");
     let stored = mcp.dir.join(agent::BLOBS).join(interpret::to_hex(&hash));
@@ -1108,12 +1301,14 @@ async fn attach_stores_the_file_by_its_hash_and_answers_the_element() {
 
     let (named, _) = mcp
         .call(
-            "attach",
+            "attach_file",
             json!({ "path": mcp.cwd.join("chart.png"), "name": "Q3 chart" }),
         )
         .await;
     assert!(named.contains("name=\"Q3 chart\""), "{named}");
-    let missing = mcp.refused("attach", json!({ "path": "nope.txt" })).await;
+    let missing = mcp
+        .refused("attach_file", json!({ "path": "nope.txt" }))
+        .await;
     assert!(missing.starts_with("reading "), "{missing}");
 }
 
@@ -1135,12 +1330,12 @@ async fn attach_calls_a_file_an_image_by_its_bytes() {
             .clone()
             .unwrap()
     };
-    let (svg, _) = mcp.call("attach", json!({ "path": "logo.svg" })).await;
+    let (svg, _) = mcp.call("attach_file", json!({ "path": "logo.svg" })).await;
     assert!(
         matches!(of(&svg), wire::attachment::Of::File(_)),
         "an SVG is attached as an image: {svg}"
     );
-    let (jpeg, _) = mcp.call("attach", json!({ "path": "shot.png" })).await;
+    let (jpeg, _) = mcp.call("attach_file", json!({ "path": "shot.png" })).await;
     let wire::attachment::Of::Image(blob) = of(&jpeg) else {
         panic!("a JPEG is not attached as an image: {jpeg}");
     };
@@ -1155,7 +1350,9 @@ async fn attach_refuses_a_file_over_the_attachment_limit() {
     let huge = std::fs::File::create(mcp.cwd.join("huge.bin")).unwrap();
     huge.set_len(wire::ATTACHMENT_SIZE_LIMIT as u64 + 1)
         .unwrap();
-    let refused = mcp.refused("attach", json!({ "path": "huge.bin" })).await;
+    let refused = mcp
+        .refused("attach_file", json!({ "path": "huge.bin" }))
+        .await;
     assert_eq!(
         refused,
         "huge.bin is too large to attach: files can be at most 64 MB"
@@ -1180,7 +1377,7 @@ async fn attach_reads_only_a_regular_file() {
     assert!(made.success());
     std::os::unix::fs::symlink("/dev/zero", mcp.cwd.join("zeros.bin")).unwrap();
     for name in ["pipe", "zeros.bin"] {
-        let refused = mcp.refused("attach", json!({ "path": name })).await;
+        let refused = mcp.refused("attach_file", json!({ "path": name })).await;
         assert!(
             refused.ends_with("is not a regular file"),
             "{name}: {refused}"
@@ -1221,7 +1418,7 @@ async fn send_refuses_an_attachment_stored_over_the_limit() {
     );
     let refused = mcp
         .refused(
-            "send",
+            "message_agent",
             json!({ "to": "reviewer", "text": format!("Here: {element}") }),
         )
         .await;
@@ -1252,13 +1449,13 @@ async fn a_fleet_call_retries_over_an_update_and_reports_a_missing_daemon() {
             Daemon::listen(&dir, fleet)
         }
     });
-    let listed = mcp.ok("hosts", json!({})).await;
+    let listed = mcp.ok("list_hosts", json!({})).await;
     assert_eq!(listed["hosts"].as_array().unwrap().len(), 2);
     drop(restarted.await.unwrap());
 
     let started = tokio::time::Instant::now();
     assert_eq!(
-        mcp.refused("agents", json!({})).await,
+        mcp.refused("list_agents", json!({})).await,
         NOT_RUNNING,
         "no daemon listens any more"
     );
@@ -1286,12 +1483,15 @@ async fn a_call_the_daemon_may_have_taken_is_never_made_again() {
         let mut mcp = Mcp::start().await;
         let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
         let calls = [
-            ("send", json!({ "to": "reviewer", "text": "Look at this" })),
             (
-                "spawn",
-                json!({ "kind": "codex", "prompt": "Write the tests" }),
+                "message_agent",
+                json!({ "to": "reviewer", "text": "Look at this" }),
             ),
-            ("stop", json!({ "name": "helper" })),
+            (
+                "start_subagent",
+                json!({ "agent": "codex", "task": "Write the tests" }),
+            ),
+            ("stop_subagent", json!({ "name": "helper" })),
         ];
         for (tool, arguments) in calls {
             let refusal = mcp.refused(tool, arguments).await;
@@ -1333,12 +1533,15 @@ async fn the_harness_runs_the_tool_server_from_the_install_path(kind: Kind) {
     let agent = Agent::start(Setup {
         kind,
         steps: vec![
-            tool("status", json!({ "working_on": "Reviewing the parser" })),
             tool(
-                "send",
+                "set_working_on",
+                json!({ "working_on": "Reviewing the parser" }),
+            ),
+            tool(
+                "message_agent",
                 json!({ "to": "reviewer", "text": "Ready for review." }),
             ),
-            tool("send", json!({ "to": "ghost", "text": "Anyone?" })),
+            tool("message_agent", json!({ "to": "ghost", "text": "Anyone?" })),
             Step::TurnEnd,
         ],
         ..Setup::sdk()
@@ -1432,7 +1635,7 @@ async fn a_one_shot_agent_that_spawns(arguments: Value) -> (Agent, support::Daem
         parent: true,
         steps: vec![
             Step::Tool(Tool {
-                name: Some("mcp__amux__spawn".to_owned()),
+                name: Some("mcp__amux__start_subagent".to_owned()),
                 class: ToolClass::Consequential,
                 input: Some(arguments),
                 outcome: Default::default(),
@@ -1471,8 +1674,7 @@ fn marked_last(agent: &Agent) -> Vec<bool> {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_sub_agent_stays_for_the_child_it_spawned_before_its_daemon_names_it() {
     let (agent, mut daemon, fleet, _tools) =
-        a_one_shot_agent_that_spawns(json!({ "kind": "codex", "prompt": "Write the tests." }))
-            .await;
+        a_one_shot_agent_that_spawns(json!({ "agent": "codex", "task": "Write the tests." })).await;
     assert_eq!(fleet.calls().len(), 1, "{:?}", fleet.calls());
     assert_eq!(marked_last(&agent), [false], "its child still works");
     assert!(!agent.finished());
@@ -1487,11 +1689,16 @@ async fn a_sub_agent_stays_for_the_child_it_spawned_before_its_daemon_names_it()
 #[tokio::test(flavor = "multi_thread")]
 async fn a_sub_agent_stays_for_a_child_it_spawned_on_another_host() {
     let (agent, mut daemon, fleet, _tools) = a_one_shot_agent_that_spawns(
-        json!({ "kind": "codex", "prompt": "Write the tests.", "host": "Studio", "cwd": "~/src/app" }),
+        json!({ "agent": "codex", "task": "Write the tests.", "host": "Studio", "cwd": "~/src/app" }),
     )
     .await;
     let calls = fleet.calls();
-    let [Call::ResolveHost(_), Call::Create(addressed, _)] = calls.as_slice() else {
+    let [
+        Call::ResolveHost(_),
+        Call::Inventory,
+        Call::Create(addressed, _),
+    ] = calls.as_slice()
+    else {
         panic!("the host resolved, then the create, got {calls:?}");
     };
     assert_eq!(*addressed, to(STUDIO));
@@ -1506,11 +1713,14 @@ async fn a_sub_agent_stays_for_a_child_it_spawned_on_another_host() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_sub_agent_whose_spawn_was_refused_finishes_at_its_turns_end() {
     let (agent, _daemon, fleet, _tools) =
-        a_one_shot_agent_that_spawns(json!({ "kind": "codex", "prompt": "x", "host": "Studio" }))
+        a_one_shot_agent_that_spawns(json!({ "agent": "codex", "task": "x", "host": "Studio" }))
             .await;
     let calls = fleet.calls();
     assert!(
-        matches!(calls.as_slice(), [Call::ResolveHost(_), Call::Create(..)]),
+        matches!(
+            calls.as_slice(),
+            [Call::ResolveHost(_), Call::Inventory, Call::Create(..)]
+        ),
         "{calls:?}"
     );
     assert_eq!(agent.exit().await, ExitCause::Finished);

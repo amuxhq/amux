@@ -502,8 +502,10 @@ pub struct Snapshot {
     /// open. The daemon copies phase and working_on onto the inventory row.
     #[prost(enumeration = "Phase", tag = "5")]
     pub phase: i32,
-    /// From the status tool call or the spawn prompt; never cleared
-    /// automatically.
+    /// What the agent declared with its set_working_on tool call; never
+    /// cleared automatically, and absent until it declares something. Builds
+    /// before 0.11 wrote the first line of the newest prompt here while
+    /// nothing was declared.
     #[prost(string, optional, tag = "6")]
     pub working_on: ::core::option::Option<::prost::alloc::string::String>,
     /// The interpreter's clock when the step that produced this snapshot ran.
@@ -554,6 +556,12 @@ pub struct Snapshot {
     /// every kind, the same way, to decide which controls to offer.
     #[prost(message, optional, tag = "15")]
     pub capabilities: ::core::option::Option<AgentCapabilities>,
+    /// The model, effort and permission the agent runs with, by the values its
+    /// catalogue names, and the permission's level. The daemon copies it onto
+    /// the inventory row, so a listing says how every agent runs without
+    /// decoding a body. Absent in a snapshot an earlier build wrote.
+    #[prost(message, optional, boxed, tag = "16")]
+    pub settings: ::core::option::Option<::prost::alloc::boxed::Box<AgentSettings>>,
 }
 impl ::prost::Name for Snapshot {
     const NAME: &'static str = "Snapshot";
@@ -563,6 +571,33 @@ impl ::prost::Name for Snapshot {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Snapshot".into()
+    }
+}
+/// How an agent runs, as its interpreter last learned it. Each value is
+/// absent while unknown.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AgentSettings {
+    #[prost(string, optional, tag = "1")]
+    pub model: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub effort: ::core::option::Option<::prost::alloc::string::String>,
+    /// The provider's own value: a Claude permission mode, a Codex permission,
+    /// an ACP agent's mode.
+    #[prost(string, optional, tag = "3")]
+    pub permission: ::core::option::Option<::prost::alloc::string::String>,
+    /// Where that permission sits on amux's scale; unspecified when the
+    /// provider's value has no level (an ACP agent a person added).
+    #[prost(enumeration = "PermissionLevel", tag = "4")]
+    pub permission_level: i32,
+}
+impl ::prost::Name for AgentSettings {
+    const NAME: &'static str = "AgentSettings";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AgentSettings".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AgentSettings".into()
     }
 }
 /// What an agent can do that differs between agents and kinds, as data: a
@@ -607,6 +642,11 @@ pub struct AgentCapabilities {
     /// client refuses it before sending.
     #[prost(bool, tag = "8")]
     pub passes_unknown_commands: bool,
+    /// A subagent can start from a copy of this agent's conversation
+    /// (CreateAgentRequest.fork): its program copies a conversation into a
+    /// new one of its own.
+    #[prost(bool, tag = "9")]
+    pub forks: bool,
 }
 impl ::prost::Name for AgentCapabilities {
     const NAME: &'static str = "AgentCapabilities";
@@ -1206,6 +1246,53 @@ impl ::prost::Name for Lagged {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.Lagged".into()
+    }
+}
+/// How much an agent may do without asking, on one scale for every
+/// provider, narrowest first. Each provider's permissions (an ACP agent's
+/// modes) map onto it in its catalogue. An agent starting a subagent may
+/// give it its own level or a narrower one, never a wider one; an agent
+/// whose own level is not known may give read-only only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum PermissionLevel {
+    /// Not known, or not on the scale.
+    Unspecified = 0,
+    /// Reads and plans; changes nothing (Claude's plan, Codex's read-only).
+    ReadOnly = 1,
+    /// Asks before it edits or runs anything (Claude's and Codex's default).
+    Ask = 2,
+    /// Edits and runs commands in its workspace without asking, within its
+    /// provider's own checks (Claude's acceptEdits and auto, Codex's auto).
+    Auto = 3,
+    /// Does anything without asking (Claude's bypassPermissions, Codex's
+    /// full-access).
+    Full = 4,
+}
+impl PermissionLevel {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "PERMISSION_LEVEL_UNSPECIFIED",
+            Self::ReadOnly => "PERMISSION_LEVEL_READ_ONLY",
+            Self::Ask => "PERMISSION_LEVEL_ASK",
+            Self::Auto => "PERMISSION_LEVEL_AUTO",
+            Self::Full => "PERMISSION_LEVEL_FULL",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PERMISSION_LEVEL_UNSPECIFIED" => Some(Self::Unspecified),
+            "PERMISSION_LEVEL_READ_ONLY" => Some(Self::ReadOnly),
+            "PERMISSION_LEVEL_ASK" => Some(Self::Ask),
+            "PERMISSION_LEVEL_AUTO" => Some(Self::Auto),
+            "PERMISSION_LEVEL_FULL" => Some(Self::Full),
+            _ => None,
+        }
     }
 }
 /// The kind is the interpreter.
@@ -2621,6 +2708,10 @@ pub struct OfferedPermission {
     /// Empty: every model. Otherwise only these.
     #[prost(string, repeated, tag = "6")]
     pub models: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Where it sits on amux's scale, written by the interpreter like
+    /// display_name; unspecified for a value with no level.
+    #[prost(enumeration = "PermissionLevel", tag = "7")]
+    pub level: i32,
 }
 impl ::prost::Name for OfferedPermission {
     const NAME: &'static str = "OfferedPermission";
@@ -2644,6 +2735,12 @@ pub struct OfferedMode {
     pub normal: bool,
     #[prost(bool, tag = "4")]
     pub settable: bool,
+    /// For an ACP agent, whose modes are its permissions: where the mode sits
+    /// on amux's scale, from the built-in agent's known modes. Unspecified
+    /// for Codex's modes, which are not permissions, and for a mode of an
+    /// agent a person added.
+    #[prost(enumeration = "PermissionLevel", tag = "5")]
+    pub level: i32,
 }
 impl ::prost::Name for OfferedMode {
     const NAME: &'static str = "OfferedMode";
@@ -4628,6 +4725,11 @@ pub struct Agent {
         ::prost::alloc::string::String,
         ::prost::alloc::vec::Vec<u8>,
     >,
+    /// The snapshot's settings: the model, effort and permission the agent
+    /// runs with. Absent until its interpreter reports them, and on a row from
+    /// an earlier build.
+    #[prost(message, optional, boxed, tag = "24")]
+    pub settings: ::core::option::Option<::prost::alloc::boxed::Box<AgentSettings>>,
 }
 impl ::prost::Name for Agent {
     const NAME: &'static str = "Agent";
@@ -7496,8 +7598,8 @@ impl ::prost::Name for AcpAnswer {
     }
 }
 /// What `amux internal catalogue <agent>` read in an ACP agent's `initialize`
-/// answer, beyond its catalogue. The helper opens no session, so asking
-/// leaves no conversation in the agent's history.
+/// answer, beyond its catalogue. Asking leaves no conversation in the
+/// agent's history.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AcpOffer {
     /// The agent's own name for itself; empty where it gives none (Grok).
@@ -7515,7 +7617,7 @@ pub struct AcpOffer {
     #[prost(message, repeated, tag = "5")]
     pub sign_in_methods: ::prost::alloc::vec::Vec<AcpSignInMethod>,
     /// Signed in or out where `initialize` alone shows it (Grok); unspecified
-    /// where only opening a session would tell.
+    /// where only a conversation would tell.
     #[prost(enumeration = "SignInState", tag = "6")]
     pub sign_in: i32,
 }
@@ -9105,6 +9207,25 @@ pub struct CreateAgentRequest {
     /// refused when the calling agent has exited or gone.
     #[prost(bool, tag = "10")]
     pub remember_effort: bool,
+    /// Start the agent from a copy of its parent's conversation, with
+    /// initial_prompt as its next prompt. Refused with INVALID_ARGUMENT from
+    /// a person, who has no conversation to copy; refused for a calling agent
+    /// on a host other than the parent's, of a provider other than the
+    /// parent's, and for a provider that cannot fork
+    /// (AgentCapabilities.forks). False starts a new conversation, as builds
+    /// before it did.
+    #[prost(bool, tag = "12")]
+    pub fork: bool,
+    /// For a calling agent only: the subagent's permission by amux's level,
+    /// mapped by the host onto the widest permission its provider offers at
+    /// or below that level. Unspecified is the parent's own level, or
+    /// read-only when the parent's has none. Wider than the parent's is
+    /// refused with PERMISSION_DENIED; so is any level but full for a
+    /// provider whose permissions have no level, since nothing could hold it
+    /// there. Refused with INVALID_ARGUMENT from a person, who picks the
+    /// provider's own permission in the config.
+    #[prost(enumeration = "PermissionLevel", tag = "13")]
+    pub permission_level: i32,
     /// Which interpreter, with that kind's settings. The host refuses a kind
     /// it does not run.
     #[prost(oneof = "create_agent_request::Agent", tags = "4, 5, 6, 11")]
@@ -17381,6 +17502,12 @@ pub struct AgentSpec {
     /// "codex".
     #[prost(string, tag = "17")]
     pub provider: ::prost::alloc::string::String,
+    /// Set on the first incarnation of an agent started from a copy of its
+    /// parent's conversation: the conversation its provider copies into a new
+    /// one of the agent's own. Absent otherwise; a later incarnation reopens
+    /// the agent's own conversation.
+    #[prost(message, optional, tag = "18")]
+    pub fork: ::core::option::Option<ForkFrom>,
     /// What experiments tell the agent process, each entry keyed by an
     /// experiment's version (e.g. "suspension/1") and holding an encoded
     /// amux.experimental message. A process reads only the entries of the
@@ -17400,6 +17527,28 @@ impl ::prost::Name for AgentSpec {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.AgentSpec".into()
+    }
+}
+/// The parent's conversation a forked agent starts from.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ForkFrom {
+    /// The provider's id for it: Claude's session, Codex's thread, an ACP
+    /// agent's session.
+    #[prost(string, tag = "1")]
+    pub session: ::prost::alloc::string::String,
+    /// The folder the parent's conversation runs in, where its provider keeps
+    /// it.
+    #[prost(string, tag = "2")]
+    pub cwd: ::prost::alloc::string::String,
+}
+impl ::prost::Name for ForkFrom {
+    const NAME: &'static str = "ForkFrom";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.ForkFrom".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.ForkFrom".into()
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]

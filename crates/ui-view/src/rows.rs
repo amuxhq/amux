@@ -1462,10 +1462,16 @@ fn amux_call(
     if server != wire::AMUX_TOOL_SERVER {
         return None;
     }
+    // Each by its name now and by the one a release before 0.11 gave it,
+    // which a resumed agent's history still holds.
+    use wire::former_tools;
     let action = match tool {
-        wire::AGENTS_TOOL | wire::HOSTS_TOOL => return Some(RowKind::Hidden),
-        wire::SPAWN_TOOL => ChildAction::Start,
-        wire::STOP_TOOL => ChildAction::Stop,
+        wire::AGENTS_TOOL
+        | wire::HOSTS_TOOL
+        | former_tools::AGENTS_TOOL
+        | former_tools::HOSTS_TOOL => return Some(RowKind::Hidden),
+        wire::START_TOOL | former_tools::SPAWN_TOOL => ChildAction::Start,
+        wire::STOP_TOOL | former_tools::STOP_TOOL => ChildAction::Stop,
         _ => return None,
     };
     // A spawn may leave the name to amux; its answer then names the child,
@@ -1486,8 +1492,11 @@ fn amux_call(
     };
     // The agent it starts, by its provider's name as the caller's host
     // gives it, else the name amux knows it by, else as the call names
-    // it; empty when it names none.
-    let kind = field(input, "kind");
+    // it (`agent`, or `kind` before 0.11); empty when it names none.
+    let kind = match field(input, "agent") {
+        named if named.is_empty() => field(input, "kind"),
+        named => named,
+    };
     let kind = session
         .host()
         .and_then(|host| host.provider(&kind))

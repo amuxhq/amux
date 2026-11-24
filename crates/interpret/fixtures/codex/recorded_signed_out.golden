@@ -4,18 +4,19 @@ snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? model=? model_name
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1793447530010 text="" BOUNDARY_KIND_STARTED
+snapshot settings model=gpt-6.1-sol effort=? permission=read-only level=read-only
 snapshot IDLE queue=[] working_on=- at=1793447530010 asks=[] thread=01a191cd-8e0e-7c71-8f8a-d4539f0844f3 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
 ## 7 recorded 6: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1793447530010 asks=[] thread=01a191cd-8e0e-7c71-8f8a-d4539f0844f3 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
 ## 9 recorded 8: fact Rpc method=mcpServer/startupStatus/updated
 snapshot IDLE queue=[] working_on=- at=1793447530014 asks=[] thread=01a191cd-8e0e-7c71-8f8a-d4539f0844f3 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 10 recorded 9: fact Rpc "{\"id\":\"amux-models-1\",\"result\":{\"data\":[{\"additionalSpeedTiers\":[\"fa…
-effect catalogue 2d9cf11b models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max},gpt-5.5{low/medium*/high/xhigh}] commands=5 permissions=[read-only,default,auto,full-access] modes=[default,plan]
-snapshot catalogue 2d9cf11b
+effect catalogue a8e04d4f models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max},gpt-5.5{low/medium*/high/xhigh}] commands=5 permissions=[read-only,default,auto,full-access] modes=[default,plan]
+snapshot catalogue a8e04d4f
 snapshot IDLE queue=[] working_on=- at=1793447530014 asks=[] thread=01a191cd-8e0e-7c71-8f8a-d4539f0844f3 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 12 recorded 11: fact Rpc "{\"id\":\"amux-skills\",\"result\":{\"data\":[{\"cwd\":\"<MACHINE_PATH>\",\"err…
-effect catalogue 6d8a2e56 models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max},gpt-5.5{low/medium*/high/xhigh}] commands=5 skills=11 permissions=[read-only,default,auto,full-access] modes=[default,plan]
-snapshot catalogue 6d8a2e56
+effect catalogue fbf71bd1 models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max},gpt-5.5{low/medium*/high/xhigh}] commands=5 skills=11 permissions=[read-only,default,auto,full-access] modes=[default,plan]
+snapshot catalogue fbf71bd1
 snapshot IDLE queue=[] working_on=- at=1793447530015 asks=[] thread=01a191cd-8e0e-7c71-8f8a-d4539f0844f3 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 17 recorded 16: fact Rpc method=deprecationNotice
 effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
@@ -23,7 +24,7 @@ effect log "Codex deprecation notice: Full-history hydration is deprecated for p
 effect reply 0x98663ab4362d4fb3a7975e161738cab4 accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"98663ab4362d4fb3a7975e161738cab4\",\"input\":[{\"text\":\"Reply with exactly SIGNED_OUT.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a191cd-8e0e-7c71-8f8a-d4539f0844f3\"}}"
 item prompt:98663ab4362d4fb3a7975e161738cab4 prompt final input=0x98663ab4362d4fb3a7975e161738cab4 at=1793447530059 text="Reply with exactly SIGNED_OUT."
-snapshot WORKING queue=[] working_on="Reply with exactly SIGNED_OUT." at=1793447530059 asks=[] thread=01a191cd-8e0e-7c71-8f8a-d4539f0844f3 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793447530059 asks=[] thread=01a191cd-8e0e-7c71-8f8a-d4539f0844f3 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
 ## 31 recorded 30: fact Rpc method=error
 item error:01a191cd-8e4d-7052-bc16-685dc4f61d2e error final at=1793447530824 text="" responseStreamDisconnected "unexpected status 401 Unauthorized: Missing bearer or basic authentication in he…" retry=true 2/5
 ## 33 recorded 32: fact Rpc method=error
@@ -46,9 +47,9 @@ item error:01a191cd-8e4d-7052-bc16-685dc4f61d2e error final at=1793447541118 tex
 item error:01a191cd-8e4d-7052-bc16-685dc4f61d2e error final at=1793447543100 text="" responseStreamDisconnected "unexpected status 401 Unauthorized: Missing bearer or basic authentication in he…" retry=true 5/5
 ## 52 recorded 51: fact Rpc method=error
 item error:01a191cd-8e4d-7052-bc16-685dc4f61d2e error final at=1793447546233 text="" httpConnectionFailed "unexpected status 401 Unauthorized: Missing bearer or basic authentication in he…" retry=false 0/0
-snapshot WORKING queue=[] working_on="Reply with exactly SIGNED_OUT." at=1793447546233 asks=[] thread=01a191cd-8e0e-7c71-8f8a-d4539f0844f3 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_FAILED - "unexpected status 401 Unauthorized: Missing bearer or basic …" background=?
+snapshot WORKING queue=[] working_on=- at=1793447546233 asks=[] thread=01a191cd-8e0e-7c71-8f8a-d4539f0844f3 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_FAILED - "unexpected status 401 Unauthorized: Missing bearer or basic …" background=?
 ## 54 recorded 53: fact Rpc method=turn/completed
 item turn:1 turn final at=1793447546236 text="" #1 TURN_OUTCOME_FAILED started=1793447530064
-snapshot IDLE queue=[] working_on="Reply with exactly SIGNED_OUT." at=1793447546236 asks=[] thread=01a191cd-8e0e-7c71-8f8a-d4539f0844f3 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_FAILED - "unexpected status 401 Unauthorized: Missing bearer or basic …" background=[]
+snapshot IDLE queue=[] working_on=- at=1793447546236 asks=[] thread=01a191cd-8e0e-7c71-8f8a-d4539f0844f3 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_FAILED - "unexpected status 401 Unauthorized: Missing bearer or basic …" background=[]
 notice blocked signed-out
 turn_end 1 last=-

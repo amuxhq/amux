@@ -4,8 +4,9 @@
 
 Every agent, of every kind, gets the same seven tools from amux's MCP tool
 server. With them an agent can list the fleet and its hosts, message another
-agent, start a child of any kind on any paired host, stop its own
-children, say what it is working on, and show a person a file it made. What
+agent, start a subagent of any kind on any paired host with the model,
+effort, permission and workspace the work needs, stop its own subagents,
+say what it is working on, and show a person a file it made. What
 the tools read, the agent's daemon answers from what it holds; what they do
 is addressed to the host that owns the agent it acts on, which sets every
 message's sender and every child's parent from who called. No daemon has
@@ -30,8 +31,8 @@ install path, so a process already started stays the version it started as,
 and a server a provider starts later is whatever is at that path. The agent
 process registers it when it launches the provider:
 Claude gets it through `--mcp-config` as a server named `amux`, with every
-tool but `attach` allowed by name in its settings (`mcp__amux__agents` and so
-on) so they run without a permission prompt. `attach` goes through Claude's own
+tool but `attach_file` allowed by name in its settings (`mcp__amux__list_agents`
+and so on) so they run without a permission prompt. `attach_file` goes through Claude's own
 permission check like any read: it copies any file it is given into the blob
 folder Claude may read without asking, so an unasked attach would read files
 the person's own rules deny. In default mode it asks once per call; auto mode
@@ -40,6 +41,24 @@ applies its own check; bypass mode runs it. Codex gets it through
 Codex asks to approve a call to it, the interpreter approves at once, for the
 session, without opening an ask; Codex's sandbox already reads any file. The server speaks MCP as
 newline-delimited JSON-RPC on stdin and stdout.
+
+Claude defers a tool server's tools behind its tool search, so a model knows
+a deferred tool by its name alone until it searches. Four tools carry
+Claude's `anthropic/alwaysLoad` metadata in their `_meta`, so Claude lists
+them without a search: `start_subagent`, `message_agent`, `list_agents` and
+`attach_file`. An agent that never loads `attach_file` writes a path in
+prose, which a phone cannot open. The other three stay deferred:
+`stop_subagent` is needed only after a start, when the agent has the tools
+already; `set_working_on` has the conversation's title to fall back on; and
+`list_hosts` is named in `start_subagent`'s description. Other providers
+ignore the metadata. The names say what each tool reaches and does, since a
+deferred tool is often known by its name alone.
+
+The tools were named `agents`, `hosts`, `send`, `spawn`, `stop`, `status` and
+`attach` before 0.11. An agent that was running when its host upgraded keeps
+the tool list it started with under Claude's old allowlist, so it needs a
+restart to see the new names; the interpreters and views still read calls
+by the old names, which a resumed agent's provider history holds.
 
 Its identity is its agent's directory. The daemon listens on
 `<dir>/tools.sock` for that agent alone, from the agent's start and again
@@ -54,8 +73,8 @@ agent caller is applied by the host that answers, against its own row;
 [the protocol](PROTOCOL.md#the-tools-socket) describes them.
 
 Five tools are fleet tools; two never reach the daemon. Four of the five
-(`agents`, `hosts`, `send`, `stop`) dial the daemon themselves. The fifth,
-`spawn`, asks its own agent process, which asks the daemon for it: the agent
+(`list_agents`, `list_hosts`, `message_agent`, `stop_subagent`) dial the
+daemon themselves. The fifth, `start_subagent`, asks its own agent process, which asks the daemon for it: the agent
 process listens on `<dir>/private/agent.sock` for its tool server alone,
 takes the `CreateAgentRequest` the tool server would have sent and the id of
 the host it is for, makes that call on `<dir>/tools.sock` itself, addressed
@@ -84,9 +103,10 @@ record like any other fact.
 A fleet call that cannot connect redials with backoff (50 ms doubling to
 500 ms) for up to five seconds, which covers the daemon restarting for an
 update. With no daemon after that, the call answers `amux daemon isn't
-running`. Reads (`agents`, `hosts`, and resolving a name) also redial when the
-connection drops under them. A call the daemon acts on (`send`, `spawn`,
-`stop`) is made at most once: if the daemon goes away after the call went
+running`. Reads (`list_agents`, `list_hosts`, the catalogues they read, and
+resolving a name) also redial when the connection drops under them. A call
+the daemon acts on (`message_agent`, `start_subagent`, `stop_subagent`) is
+made at most once: if the daemon goes away after the call went
 out, the tool answers that the daemon went away before confirming, that it
 may have taken the call, and that the call was not made again. The agent
 process makes a spawn's call under the same rule.
@@ -95,48 +115,201 @@ process makes a spawn's call under the same rule.
 
 | Tool | Arguments | Answer | Reaches |
 | --- | --- | --- | --- |
-| `agents` | none | `{"agents": [...]}`, one row per agent the person has not settled | `InventoryService.SubscribeInventory`, read to `CaughtUp` |
-| `hosts` | none | `{"hosts": [...]}`, the trusted hosts | the same inventory |
-| `send` | `to`, `text`, `context?` | `{"id": "<envelope id>"}` once the recipient has the message | `ResolveAgent`, then `SendMessage` addressed to the recipient's host |
-| `spawn` | `kind`, `prompt`, `name?`, `cwd?`, `host?` | `{"name", "id"}` of the child | `ResolveHost` for a named host, then `CreateAgent` addressed to it, made by the agent process |
-| `stop` | `name` | `{}` once the child has ended | `ResolveAgent`, then `SetFiling` (closed) addressed to the child's host |
-| `status` | `working_on`: a string, or null | `ok` | nothing |
-| `attach` | `path`, `name?` | the attachment element | nothing |
+| `list_agents` | none | `{"agents": [...]}`, one row per agent the person has not settled | `InventoryService.SubscribeInventory`, read to `CaughtUp` |
+| `list_hosts` | none | `{"hosts": [...]}`, the trusted hosts and what each offers | the same inventory, then `HostService.GetCatalogue` addressed to each host that can answer |
+| `start_subagent` | `agent`, `task`, `name?`, `host?`, `cwd?`, `model?`, `effort?`, `permission?`, `new_workspace?`, `fork?` | the child's name, id and settings, and a `next` line | `ResolveHost` for a named host, then `CreateAgent` addressed to it, made by the agent process |
+| `message_agent` | `to`, `text`, `context?` | `{"id": "<envelope id>"}` once the recipient has the message | `ResolveAgent`, then `SendMessage` addressed to the recipient's host |
+| `stop_subagent` | `name` | `{}` once the child has ended | `ResolveAgent`, then `SetFiling` (closed) addressed to the child's host |
+| `set_working_on` | `working_on`: a string, or null | `ok` | nothing |
+| `attach_file` | `path`, `name?` | the attachment element | nothing |
 
 A refusal comes back as the tool's error text, in words a model can act on:
 `no agent named <name>`, `<name> names more than one agent; pick one with
 <name>@<host> or <name>@<host>` (agents on two hosts sharing a name),
 `the recipient has stopped; only a message from its parent starts it
-again` (a `send` to an exited agent that is not the sender's child), `<name> did not stop: <why>` (a `stop` the daemon refused, such as
-one aimed at an agent that is not the caller's child), `<host> cannot be
-reached`, or the daemon's own message.
+again` (a message to an exited agent that is not the sender's child),
+`<name> did not stop: <why>` (a stop the daemon refused, such as one aimed at
+an agent that is not the caller's child), `<host> cannot be reached`, the
+start refusals [below](#start_subagent), or the daemon's own message.
 
-### agents
+### list_agents
 
 Every agent in the fleet, own and replicated from paired hosts. Each row has
-`name` (the id in hex when the agent has no name), `id`, `kind` (the agent
-program's provider id: `claude` however Claude is driven, `codex`, or an ACP
-agent's id such as `opencode`), `host` (the host's name), `live`, and `phase`
-(`starting`, `idle`, `working` or `needs_you`); and, when they apply,
-`working_on`, `exit_cause` (how an exited agent ended: the cause's name, then
-its own words when it has any, as `finished`, `stopped` or
-`provider_exited: exit code 1`), `parent`
-(the parent's name), and `you: true` on the caller's own row. Provider
-subagents (Claude's Agent tool, Codex's child threads) are left out: neither
-provider lets anything but the parent's model reach one, so none can be
-messaged. Both read-only tools are marked with MCP's
-`readOnlyHint`.
+`name` (the id in hex when the agent has no name), `id`, `provider` (the
+agent program's provider id: `claude` however Claude is driven, `codex`, or
+an ACP agent's id such as `opencode`), `host` (the host's name), `live`, and
+`phase` (`starting`, `idle`, `working` or `needs_you`); and, when they are
+known, `working_on`, `model`, `effort`, `permission`, `branch`, `exit_cause`
+(how an exited agent ended: the cause's name, then its own words when it has
+any, as `finished`, `stopped` or `provider_exited: exit code 1`), `parent`
+(the parent's name), and `you: true` on the caller's own row.
 
-### hosts
+`working_on` is what the agent declared with `set_working_on`, else the title
+its provider gave the conversation, else absent. It is never a prompt: a
+prompt is the person's or the parent's words, and the fleet listing is read
+by every agent. `model`, `effort` and `permission` are what the agent runs
+with as its provider last reported them (the row's `settings`), the
+permission by its level (`read-only`, `ask`, `auto` or `full`) where its
+value has one and by the provider's own value otherwise. `branch` is the git
+branch its folder is on.
+
+Provider subagents (Claude's Agent tool, Codex's child threads) are left out:
+neither provider lets anything but the parent's model reach one, so none can
+be messaged. Both listing tools are marked with MCP's `readOnlyHint`.
+
+### list_hosts
 
 The hosts this profile trusts, one row each with `name`, `presence`
-(`online` or `offline`), `agents` (the provider ids the host lists itself as
-offering: `claude`, `codex` and each ACP agent installed there, what a
-`spawn` there can name), and `this_host: true` on the caller's host. Discovery
-candidates are left out: a model spawns only on hosts a person has paired.
-Agents and hosts are separate tools so each answers one question.
+(`online`, `away` or `offline`), `agents`, and `this_host: true` on the
+caller's host; and beside the hosts, `your_permission`, the caller's own
+level, which is what a subagent gets by default and the most it can be
+given. Discovery candidates are left out: a model starts subagents only on
+hosts a person has paired. Agents and hosts are separate tools so each
+answers one question.
 
-### send
+Each entry in `agents` is one provider the host lists itself as offering
+(`claude`, `codex` and each ACP agent installed there), what a start there
+can name: its `id` and `name`, `forks` (whether it can start a subagent from
+a copy of a conversation, from the provider's `AgentCapabilities.forks`),
+`permissions` (the levels it offers, narrowest first), `signed_in: false`
+when its host says it is signed out, and from the host's catalogue, read with
+`GetCatalogue` addressed to that host when it is this host or online,
+`models` (each with its `efforts` and `default_effort`), `default_model` and
+`default_effort`. A host that cannot be asked lists only what its entry
+says; the levels then come from what amux knows each provider always
+offers.
+
+### start_subagent
+
+Starts a subagent, a child agent that does `task` and reports back. `agent`
+is a provider id from `list_hosts`: `claude`, `codex`, or an ACP agent's id.
+A Claude child is always headless Claude (`claude_sdk`): people read a child
+in amux's chat, so how its Claude is driven is not the parent's choice. Any
+other well-formed id is created as that ACP agent, and the host it runs on
+refuses one it does not offer, in its own words; an id no agent can have is
+refused by the tool. The create carries `task` as its first input, a prompt
+submission, which can hold nothing but a prompt. `name` names it. `host` is
+a trusted host's name, as a person would say it; the tool server resolves
+it with `ResolveHost`, the create is addressed to the id that answers, and
+omitted it means the caller's own host. `cwd` is a path on the host the
+child runs on, where `~` and a path not from the root start at that host's
+home: omitted on the caller's host (named or not, by any of its names) it is
+the caller's own working directory, and omitted on another host the start is
+refused in words that name that host and ask for a folder on it: no folder
+there is a safe guess, so the caller asks the person or uses a path it
+knows. The caller becomes the child's parent; the request cannot name any
+other parent. The tool server knows its caller only by the socket the call
+came on, so a provider subagent that calls it starts the child as the agent
+whose process runs it: the new agent is that agent's child, its report
+reaches that agent's main conversation, and a fork copies that agent's
+conversation, as the tool's description says. [Families](#families)
+describes what a child is.
+
+What a parent may choose is kept in three kinds, because they differ:
+
+- **The mind.** `model` and `effort` go in the provider's create config, and
+  the child's host checks them against its catalogue for that provider: a
+  model it does not list (by value, or by the model an alias stands for) is
+  refused listing the ones it does, and so is an effort the model does not
+  take. A model or effort asked of a provider whose catalogue the host cannot
+  read is refused too, since nothing can say it exists. They are never kept
+  as the person's picks (`remember_model` and `remember_effort` are refused
+  from an agent), so the person's own defaults do not drift because an agent
+  chose something. Left out, the child starts on the model and effort the
+  host starts a new agent on (its catalogue's `new_agent`), named in the
+  start as a person's client names them, since the provider's own default
+  may be another.
+- **Authority.** `permission` is a level on one scale for every provider,
+  narrowest first: `read-only` < `ask` < `auto` < `full`. Left out, the
+  child gets its parent's level at the moment of the start; the parent may
+  ask for a narrower one, and a wider one is refused naming the parent's
+  (`permission full is wider than yours, auto: a subagent gets at most your
+  own; ask for auto or narrower`). The create carries the level as
+  `permission_level`: left out, it is unspecified and the child's host
+  reads the parent's level from its row for the parent, except that a start
+  on a named host carries the parent's own level, since that host may not
+  have copied the parent's row yet. A parent whose own level is not known
+  (its permission has no level, or it has not reported its settings yet)
+  gets a `read-only` child, and may ask for nothing wider: any other default
+  could exceed it. The child's host maps it onto the widest
+  permission its provider offers at or below it, preferring the provider's
+  ordinary one at a tie; a provider with nothing that narrow is refused,
+  naming what it offers. The ceiling binds only the parent's request: the
+  person can change the child's permission afterwards. A top-level agent
+  still takes its default from the provider's own config. Provider
+  arguments and a permission or mode named in the provider's own terms are
+  refused from an agent: they bypass the scale.
+- **Isolation.** `new_workspace` starts the child in a new worktree of its
+  folder's repository, on a branch named after the child, exactly as
+  `CreateAgentRequest.new_workspace` does for a person
+  ([new workspaces](PROTOCOL.md#new-workspaces)). It widens nothing.
+
+The levels map onto each provider's permissions so:
+
+| Level | Claude | Codex | Antigravity | OpenCode |
+| --- | --- | --- | --- | --- |
+| `read-only` | `plan` | `read-only` | `plan` | `plan` |
+| `ask` | `default` | `default` | `default` | |
+| `auto` | `acceptEdits`, `auto` | `auto` | `accept-edits`, `auto` | |
+| `full` | `bypassPermissions` | `full-access` | | `build` |
+
+Claude's `acceptEdits` sits at `auto` because the Codex permission it
+resembles, edits allowed in the workspace with commands still checked, is
+Codex's `auto`. OpenCode's `build` runs tools as the person's OpenCode config
+allows, which by default is everything, so it counts as `full`. Codex's
+plan and default modes are a separate axis from its permissions and stay out
+of a start. Grok's modes choose how hard it thinks, so Grok, like an ACP
+agent a person added, has no levels. Nothing could hold such an agent to a
+level, so a subagent of it is started only by a parent at `full`, which its
+own default cannot exceed, and starts on that default; from any other
+parent the start is refused in words saying why. The interpreters write each value's level into the
+catalogue (`OfferedPermission.level`, and `OfferedMode.level` for an ACP
+agent, whose modes are its permissions), and `wire::levels` holds the table
+the daemon maps with; a built-in ACP agent whose catalogue has not listed its
+modes yet maps onto the modes amux knows it has.
+
+`fork` starts the child from a copy of the parent's conversation, with `task`
+as its next prompt. The child's host refuses it for a parent on another host
+(the conversation lives on the parent's), for a child of another provider
+than the parent's (one provider cannot read another's conversation), for a
+provider that cannot fork (`AgentCapabilities.forks`: Antigravity does not
+offer `session/fork`), and before the parent has a conversation. The parent's
+host reads the conversation's id from the parent's newest snapshot and puts
+it in the child's first spec (`AgentSpec.fork`, with the parent's folder);
+each provider then copies it its own way:
+
+- **Claude**: `--resume <parent session> --fork-session --session-id <child
+  session>`. Claude finds the parent's session by its id from any folder, so a
+  fork into a new workspace works, and it tells the model the folder
+  changed. The parent's own call to `start_subagent` is still unanswered when
+  the copy is taken; Claude closes it in the copy as interrupted, with its
+  outcome unknown, and the parent is untouched.
+- **Codex**: `thread/fork` on the child's own app server, in place of
+  `thread/start`, with the child's folder, model, approval, sandbox and
+  effort given explicitly: a fork otherwise takes Codex's configured default
+  model and the parent's approval and sandbox. Codex accepts a running
+  thread, and the running turn reads as interrupted in the copy. A forked
+  thread's history points into the parent's rollout file rather than copying
+  it, so it reads back only while that file stays where it is. amux never
+  removes or archives a provider's rollouts, but archiving or deleting the
+  parent's conversation in Codex itself may break the child's history.
+- **ACP agents**: `session/fork`, which is still unstable in ACP and
+  advertised as `sessionCapabilities.fork`, sent in place of `session/new`
+  and answered as a new session is. Of the built-ins only OpenCode offers it.
+
+A later incarnation of a forked child reopens its own conversation, not its
+parent's.
+
+The answer is a JSON object: `name`, `id`, `provider`, `cwd`, and the
+settings the child starts on as its host resolved them (`model`, `effort`,
+`permission` by level), `branch` for a new workspace, `forked: true` for a
+fork, and `next`, which tells the parent that the child messages it when it
+finishes, its report arriving as a new message, and that it should not poll
+or wait. The answer comes once the child's process says hello, before its
+provider has started, so it reports the model the host resolved;
+`list_agents` shows the one the provider reports once it is known.
+
+### message_agent
 
 Sends `text` to the agent named `to`, with an optional `context`, a thread
 label the recipient sees with the message. `to` is resolved as `ResolveAgent`
@@ -144,41 +317,19 @@ resolves a reference (a name, `name@host`, or an id in any form amux prints),
 across the fleet, own and replica rows alike; an unknown name is refused
 before anything is sent, and a name agents on two hosts share is refused
 offering the `name@host` forms that pick each. An attachment element in
-`text` (what `attach` answered) travels as an attachment: the recipient's
-host fetches the file, and the recipient reads it at a path on its own host
-([attachments](ATTACHMENTS.md)). Each attachment is measured as stored in the
-sender's blobs, not as its element says; one over the 64 MB attachment limit
-is refused in words naming the limit, and nothing is sent. The answer is the envelope id, once
-the recipient's provider has the message; [delivery](#delivery) describes
-what that means. When a message reaches an agent from another agent, the
-tool's description tells it to reply with `send` to that agent's name.
+`text` (what `attach_file` answered) travels as an attachment: the
+recipient's host fetches the file, and the recipient reads it at a path on
+its own host ([attachments](ATTACHMENTS.md)). Each attachment is measured as
+stored in the sender's blobs, not as its element says; one over the 64 MB
+attachment limit is refused in words naming the limit, and nothing is sent.
+The answer is the envelope id, once the recipient's provider has the
+message; [delivery](#delivery) describes what that means. The tool's
+description says that a message to one of the caller's own subagents
+continues it, working or finished, and that a stopped subagent is started
+again only by its parent; and that when a message reaches an agent from
+another agent, it replies with this tool to that agent's name.
 
-### spawn
-
-Starts a child agent of `kind` (a provider id: `claude`, `codex`, or an ACP
-agent's id from `hosts`) with `prompt` as its first input. A Claude child is
-always headless Claude (`claude_sdk`): people read a child in amux's chat, so
-how its Claude is driven is not the parent's choice. Any other well-formed id
-is created as that ACP agent, and the host it runs on refuses one it does not
-offer, in its own words; an id no agent can have is refused by the tool. The
-create carries the first input as a prompt submission, which can hold nothing
-but a prompt, and names the kind by its arm with that kind's default
-settings. `name` names it. `host` is a trusted host's name, as a person would say it; the tool
-server resolves it with `ResolveHost`, the create is addressed to the id that
-answers, and omitted it means the caller's own host. `cwd` is a path on
-the host the child runs on, where `~` and a path not from the root start at
-that host's home: omitted on the caller's host (named or not, by
-any of its names) it is the caller's own working directory, and omitted on
-another host the spawn is refused in words that name that host and ask for
-a folder on it: no folder there is a safe guess, so the caller asks the
-person or uses a path it knows. The caller becomes the child's parent; the request cannot name any other parent.
-The tool server knows its caller only by the socket the call came on, so a
-provider subagent that spawns spawns as the agent whose process runs it: the
-new agent is that agent's child, and its report reaches that agent's main
-conversation, as the tool's description says for every caller.
-[Families](#families) describes what a child is.
-
-### stop
+### stop_subagent
 
 Stops one of the caller's own direct children, exactly as a person's close
 does: `SetFiling` with `FILING_CLOSED`, addressed to the child's host. That
@@ -187,24 +338,23 @@ other agent with `PERMISSION_DENIED`. The child's
 turn is cancelled the provider's own way, the child ends as stopped and filed
 as closed, out of the agents' listing, and the stopped child's own
 descendants are closed with it on their hosts (see [families](#families)).
-The child's history stays, and a later `send` from its parent resumes it. There is no
-separate interrupt tool: an agent reaches another agent's queue only by
-messaging it.
+The child's history stays, and a later message from its parent resumes it.
+There is no separate interrupt tool: an agent reaches another agent's queue
+only by messaging it.
 
-### status
+### set_working_on
 
 Declares what the agent is working on, so people and other agents can find
 the right collaborator; `null` clears it. The tool server only checks the
 argument's type and answers `ok`. The call is a provider fact: the interpreter
-sees the `amux` server's `status` call in the provider's record and sets
-`working_on` in its next snapshot, and the daemon copies it onto the agent's
-inventory row at commit. Nothing else clears it: an idle agent's last
-declared work is exactly what another agent may want to know. An agent that
-never calls it shows the first line of the newest prompt handed to it (a
-slash command aside), so an agent given many prompts does not read as still
-on its first.
+sees the `amux` server's `set_working_on` call (or `status`, its name before
+0.11) in the provider's record and sets `working_on` in its next snapshot,
+and the daemon copies it onto the agent's inventory row at commit. Nothing
+else sets or clears it: an idle agent's last declared work is exactly what
+another agent may want to know. An agent that never calls it has no
+`working_on`; `list_agents` shows its conversation's title instead.
 
-### attach
+### attach_file
 
 Attaches a file from the agent's host to the agent's reply. The tool server
 reads the file (a relative path is taken from the agent's working directory),
@@ -225,13 +375,20 @@ blobs and the element syntax.
 ## What the interpreter makes of the calls
 
 The interpreters recognise two of amux's own tools by server and tool name
-(`interpret::is_status_tool`, `interpret::is_send_tool`):
+(`interpret::is_status_tool`, `interpret::is_send_tool`), each by its name now
+and by its name before 0.11:
 
-- `status` becomes `working_on` in the snapshot, as above.
-- `send` is drawn as an agent-message item on the sender's side, on the tool
-  call's own key: the text sent, the recipient as the model named it, the
-  context, and a send state that moves from sending to sent (with the envelope
-  id) or rejected (with the reason the tool returned).
+- `set_working_on` (`status`) becomes `working_on` in the snapshot, as above.
+- `message_agent` (`send`) is drawn as an agent-message item on the sender's
+  side, on the tool call's own key: the text sent, the recipient as the model
+  named it, the context, and a send state that moves from sending to sent
+  (with the envelope id) or rejected (with the reason the tool returned).
+
+Every interpreter also writes the agent's settings on its snapshot's envelope
+(`Snapshot.settings`: model, effort, permission and the permission's level),
+which the daemon copies onto the inventory row for `list_agents`. The views
+draw a start or stop of a subagent, by either name, as what it did, and hide
+the listing calls.
 
 ## Messaging lanes
 
@@ -268,7 +425,7 @@ milliseconds. A person's
 
 A send goes from the model to the recipient's provider like this:
 
-1. The harness calls `send` on the tool server, which resolves `to` with
+1. The harness calls `message_agent` on the tool server, which resolves `to` with
    `ResolveAgent` and calls `SendMessage` on `tools.sock`, addressed to the
    recipient's host: a fresh id, the recipient's id, the text and the
    context. It names no sender.
@@ -277,7 +434,7 @@ A send goes from the model to the recipient's provider like this:
    host makes the `Envelope`: an ordinary message whose `from` is the agent
    that called (its id, host and name), and runs the recipient's lane.
 3. A recipient that has exited is resumed with the message as its first
-   input, unless it is closed (by the person, by its parent's `stop`, or
+   input, unless it is closed (by the person, by its parent's `stop_subagent`, or
    by finishing as a one-shot child): then only its parent's message
    resumes it, and any other sender is refused in words, that the
    recipient is closed and only the person or its parent start it again.
@@ -334,7 +491,7 @@ parent edge: it talks to its user, and the daemon knows who that is.
 
 **Spawn.** A `CreateAgent` an agent makes makes that agent the parent, on
 whichever host the create is addressed to. The call is the agent process's,
-made for its tool server's `spawn` ([the tool server](#the-tool-server)).
+made for its tool server's `start_subagent` ([the tool server](#the-tool-server)).
 The child's host writes the child's row first, so a crash leaves a row the next
 start marks exited rather than a directory nothing lists; then the directory
 and `spec.1` with the kind, working directory, parent and the first prompt;
@@ -368,7 +525,7 @@ transcript and its parent edge stay.
 
 The agent process knows of its children from two sides, and each side owns
 what it alone can know. What the agent asked for, the agent process knows
-itself, because `spawn` goes through it: it holds the child from the moment
+itself, because `start_subagent` goes through it: it holds the child from the moment
 the request arrives, before the daemon has heard of it, and the tool server
 gets the daemon's answer only once the process has taken it, so no turn can
 end on a spawn the process has not heard of. What exists, the daemon knows:
@@ -423,7 +580,7 @@ as for a live child. Any other sender is told the child has exited. A person
 resuming the child from the fleet or with `amux resume` starts the same next
 incarnation.
 
-**Stop and delete.** The `stop` tool reaches direct children only. A stop
+**Stop and delete.** The `stop_subagent` tool reaches direct children only. A stop
 or a delete, by the tool or by a person, acts on the agent it names; its
 family follows by one rule, which each host enforces for its own agents from
 the parent's row as that host holds it. A parent whose row says it exited,
@@ -435,9 +592,9 @@ host by exactly the same path. A child whose host is away hears nothing until
 it is back and has caught up with the parent's host, and then follows; a
 child whose parent's host is merely out of reach, or no longer paired, carries
 on, and its report waits for the parent's host (or, once unpaired, is
-dropped). A resumed parent hears nothing extra about stopped children. A
-`spawn` an agent makes once its host sees it as exited is refused ("agent …
-has ended and starts no more agents"). A `spawn` onto another host that has
+dropped). A resumed parent hears nothing extra about stopped children.
+A `start_subagent` call an agent makes once its host sees it as exited is refused ("agent …
+has ended and starts no more agents"). A start onto another host that has
 not yet caught up with the parent's host since they reconnected, or has not
 yet heard of the parent, is made: should the parent turn out to have been
 deleted meanwhile, the child finishes its work and exits. One made just as it
@@ -565,7 +722,7 @@ carried call, the one-hop rule and the links underneath.
   list, each tool against a scripted daemon, a spawn's way through the agent
   process (asked of the daemon once; refused, unconfirmed and with no agent
   process listening), a subagent staying for a child its daemon has not
-  named, the retry window over a daemon restart, and `attach` without a
+  named, the retry window over a daemon restart, and `attach_file` without a
   daemon.
 - [`crates/agent-core/src/tests.rs`](../crates/agent-core/src/tests.rs) and
   `awaited.rs` beside it: the one-shot rule for each way a spawn can end.

@@ -156,6 +156,35 @@ async fn ask(channel: &Channel, provider: &str) -> Asked {
     ask_with(Request::new(catalogue_of(provider)), channel).await
 }
 
+/// Waits until the host's entry lists `provider` as `holds` wants, and
+/// returns the hash it names.
+async fn until_listed(
+    runtime: &node::ProfileRuntime,
+    provider: &str,
+    holds: impl Fn(&ProviderOnHost) -> bool,
+) -> Vec<u8> {
+    until(&format!("the entry to list {provider} anew"), || {
+        let entry = runtime.host_entry();
+        let offered = entry.provider(provider).cloned();
+        let holds = offered.as_ref().is_some_and(&holds);
+        async move {
+            match offered {
+                Some(offered) if holds => offered.catalogue.ok_or("no copy".to_owned()),
+                other => Err(format!("{other:?}")),
+            }
+        }
+    })
+    .await
+    .unwrap()
+}
+
+/// GetCatalogue for `provider`, which must answer the copy `hash` names.
+async fn ask_for(channel: &Channel, provider: &str, hash: &[u8]) -> Asked {
+    let asked = ask(channel, provider).await;
+    assert_eq!(asked.blob.hash, hash, "the copy the entry names");
+    asked
+}
+
 fn values<T>(listed: &[T], value: impl Fn(&T) -> &str) -> Vec<&str> {
     listed.iter().map(value).collect()
 }
@@ -294,6 +323,38 @@ async fn a_host_says_what_its_providers_offer_with_no_agent_running() {
     daemon.shutdown().await.unwrap();
 }
 
+/// The daemon asks Claude and Codex what they offer as it starts, in the
+/// background, so the host's entry names both copies before any client
+/// asks, and a client's first ask is answered from the copy.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_daemon_asks_its_providers_as_it_starts() {
+    let host = Host::new(&Script {
+        models: vec![model("opus")],
+        ..Script::default()
+    });
+    let mut launch = host.launch();
+    launch.ask_providers_at_start = true;
+    let daemon = serving(&host.install, "boot-1", launch).await;
+    let runtime = runtime(&daemon, &host.install);
+    let claude = until_listed(&runtime, "claude", |_| true).await;
+    let codex = until_listed(&runtime, "codex", |_| true).await;
+    let socket = profile_socket(&runtime).await;
+    assert_eq!(
+        values(&ask_for(&socket, "claude", &claude).await.models, |m| &m
+            .value),
+        ["opus"]
+    );
+    ask_for(&socket, "codex", &codex).await;
+    assert_eq!(
+        host.asked(CLAUDE_ASKED),
+        1,
+        "asked once, as the daemon started"
+    );
+    assert_eq!(host.asked(CODEX_ASKED), 1);
+    drop((socket, runtime));
+    daemon.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_signed_out_provider_says_so_and_is_asked_again_once_due() {
     let host = Host::new(&Script {
@@ -317,10 +378,13 @@ async fn a_signed_out_provider_says_so_and_is_asked_again_once_due() {
         "both read signed out"
     );
 
-    // Signing in shows at the next ask.
+    // Signing in shows once the copy is asked again, which the next ask
+    // starts in the background: it is answered with the copy it has.
     host.play(&Script::default());
-    let codex = ask(&socket, "codex").await;
+    assert_eq!(ask(&socket, "codex").await, codex, "the copy, at once");
+    let codex = until_listed(&runtime, "codex", |offered| offered.signed_in).await;
     assert_eq!(host.asked(CODEX_ASKED), 2);
+    let codex = ask_for(&socket, "codex", &codex).await;
     let entry = listed(runtime.host_entry().providers);
     assert!(entry.contains(&on_host("codex", &codex, true)), "{entry:?}");
 
@@ -358,15 +422,22 @@ async fn a_new_provider_version_is_asked_again() {
         "2.1.300 (Claude Code)"
     );
 
+    // A new version is found by the ask that reads it, in the background:
+    // that ask is answered with the copy at once, and the host's entry
+    // names the new copy once the helper has answered.
     host.play(&Script {
         version: Some("2.1.301".into()),
         models: vec![model("opus"), model("fable")],
         ..Script::default()
     });
-    let second = ask(&socket, "claude").await;
+    assert_eq!(ask(&socket, "claude").await, first, "the copy, at once");
+    let hash = until_listed(&runtime, "claude", |offered| {
+        offered.catalogue.as_ref() != Some(&first.blob.hash)
+    })
+    .await;
     assert_eq!(host.asked(CLAUDE_ASKED), 2);
+    let second = ask_for(&socket, "claude", &hash).await;
     assert_eq!(values(&second.models, |m| &m.value), ["opus", "fable"]);
-    assert_ne!(second.blob.hash, first.blob.hash);
     assert!(listed(runtime.host_entry().providers).contains(&on_host("claude", &second, true)));
 
     drop((socket, runtime));
@@ -940,6 +1011,161 @@ async fn an_acp_agents_copy_is_its_initialize_answer_and_what_its_conversations_
         runtime.agent_catalogue("theirs").await,
         Err(node::CatalogueError::NoAgent(_))
     ));
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// Antigravity lists its models with `agy models`, so the host's copy has
+/// them before any conversation with it, and asking opens no session: the
+/// helper runs the agent's program with `models` after `initialize` and
+/// reads a line per model and effort as the models with their efforts.
+#[tokio::test(flavor = "multi_thread")]
+async fn antigravitys_copy_lists_its_models_before_any_conversation() {
+    let host = Host::new(&Script {
+        models: vec![model("gemini-fast"), model("gemini-deep")],
+        ..Script::default()
+    });
+    let sessions = host.install.path("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let mut launch = with_acp_agent(&host, &sessions);
+    launch.agents[0].id = "antigravity".into();
+    launch.agents[0].name = "Antigravity".into();
+    let daemon = host.install.start("boot-1", launch).await;
+    let runtime = support::runtime(&daemon, &host.install);
+    let copy = runtime.agent_catalogue("antigravity").await.unwrap();
+    assert_eq!(
+        values(&copy.catalogue.models, |m| &m.value),
+        ["gemini-fast", "gemini-deep"]
+    );
+    assert_eq!(copy.catalogue.models[0].efforts, ["low", "high"]);
+    let sent = std::fs::read_to_string(&host.log).unwrap_or_default();
+    assert!(
+        !sent.contains("session/"),
+        "asking opens no session: {sent}"
+    );
+    assert_eq!(
+        runtime
+            .host_entry()
+            .provider("antigravity")
+            .unwrap()
+            .catalogue,
+        Some(copy.blob.hash.clone())
+    );
+
+    // A model named as Antigravity's own CLI spells it is the model and
+    // effort the session takes; one it does not offer is refused with the
+    // models it does, before any agent starts, never dropped for the
+    // agent's default.
+    let cwd = host.install.path("work");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let start = |model: &str| wire::CreateAgentRequest {
+        agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
+        cwd: cwd.to_string_lossy().into_owned(),
+        agent: Some(wire::create_agent_request::Agent::Acp(
+            wire::AcpCreateConfig {
+                agent: "antigravity".into(),
+                model: Some(model.into()),
+                ..Default::default()
+            },
+        )),
+        ..wire::CreateAgentRequest::default()
+    };
+    let refused = runtime
+        .spawn(start("gemini-9-ultra"), None)
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code(), tonic::Code::InvalidArgument, "{refused:?}");
+    assert!(
+        refused.message().contains("gemini-fast or gemini-deep"),
+        "{refused:?}"
+    );
+    runtime
+        .spawn(start("gemini-deep-high"), None)
+        .await
+        .expect("the agent starts");
+    until("the session to take the model and effort", || {
+        let sent = std::fs::read_to_string(&host.log).unwrap_or_default();
+        let set = |value: &str| {
+            sent.lines()
+                .any(|line| line.contains("session/set_config_option") && line.contains(value))
+        };
+        let taken = set("\"gemini-deep\"") && set("\"high\"");
+        async move { taken.then_some(()).ok_or("not yet set") }
+    })
+    .await
+    .unwrap();
+    kill_all(&runtime).await;
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
+/// A conversation that publishes a catalogue the host's copy was not made
+/// from has the copy made again at once, without asking the agent, so the
+/// host's entry names the new copy and every client fetches it by the hash
+/// it follows.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_conversations_new_catalogue_republishes_the_hosts_copy() {
+    use prost::Message as _;
+    let host = Host::new(&Script::default());
+    let sessions = host.install.path("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let mut agent = SyntheticAgent::new(&host.install, "chatter", 1 << 20);
+    let mut row = agent.row(&host.install);
+    row.kind = wire::Kind::Acp as i32;
+    host.install.store().put_agent(&row).unwrap();
+    agent.go_live();
+    let daemon = host
+        .install
+        .start("boot-1", with_acp_agent(&host, &sessions))
+        .await;
+    let runtime = support::runtime(&daemon, &host.install);
+    let before = runtime.agent_catalogue("mine").await.unwrap();
+    assert!(before.catalogue.models.is_empty(), "no conversation yet");
+    let asked = host.asked("\"initialize\"");
+
+    let catalogue = Catalogue {
+        models: vec![wire::OfferedModel {
+            value: "mine-fast".into(),
+            ..Default::default()
+        }],
+        ..Catalogue::default()
+    };
+    let bytes = catalogue.encode_to_vec();
+    let hash = Sha256::digest(&bytes).to_vec();
+    let blobs = agent.dir.join("blobs");
+    std::fs::create_dir_all(&blobs).unwrap();
+    let hex: String = hash.iter().map(|byte| format!("{byte:02x}")).collect();
+    std::fs::write(blobs.join(hex), &bytes).unwrap();
+    agent.append(&wire::Step {
+        snapshot: Some(wire::Snapshot {
+            kind: wire::Kind::Acp as i32,
+            phase: wire::Phase::Idle as i32,
+            catalogue: Some(hash),
+            at_ms: 10,
+            body: wire::AcpSnapshot {
+                agent: Some("mine".into()),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    agent.nudge().await;
+
+    let copy = until_listed(&runtime, "mine", |offered| {
+        offered.catalogue.as_ref() != Some(&before.blob.hash)
+    })
+    .await;
+    let after = runtime.agent_catalogue("mine").await.unwrap();
+    assert_eq!(after.blob.hash, copy);
+    assert_eq!(values(&after.catalogue.models, |m| &m.value), ["mine-fast"]);
+    assert_eq!(
+        host.asked("\"initialize\""),
+        asked,
+        "made again without asking the agent"
+    );
+    agent.die().await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }

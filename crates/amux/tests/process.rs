@@ -63,6 +63,14 @@ impl Install {
         for (name, fake) in [("claude", "fake-claude-sdk"), ("codex", "fake-codex")] {
             std::os::unix::fs::symlink(binaries().join(fake), bin.join(name)).unwrap();
         }
+        // The built-in ACP agents' commands, shadowed by a program that
+        // fails at once: a daemon whose config file is removed under it
+        // reads the built-ins' own commands again, which on the machine's
+        // PATH would start the Antigravity, OpenCode or Grok installed
+        // there (see `support::NO_REAL_AGENTS`).
+        for name in ["agy", "opencode", "grok"] {
+            std::os::unix::fs::symlink("/usr/bin/false", bin.join(name)).unwrap();
+        }
         let script = root.path().join("script.json");
         std::fs::write(
             &script,
@@ -80,8 +88,9 @@ impl Install {
             &config,
             format!(
                 "root = {:?}\nsupervisor = false\n\
-                 [agent]\ngrace_secs = {GRACE_SECS}\ndrain_secs = 5\n",
+                 [agent]\ngrace_secs = {GRACE_SECS}\ndrain_secs = 5\n{}",
                 data.display().to_string(),
+                crate::support::NO_REAL_AGENTS,
             ),
         )
         .unwrap();

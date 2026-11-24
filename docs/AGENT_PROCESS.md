@@ -240,7 +240,7 @@ the next before the daemon says the first has gone, and a child with its own
 child reports mid-way and again at its end.
 
 Which children there are to wait for, the agent learns from two sides. The
-children it asked for it knows itself: its tool server's `spawn` goes
+children it asked for it knows itself: its tool server's `start_subagent` goes
 through the process ([the tool server](#the-tool-server)), which tells the
 core of the child before the request reaches the daemon and of the daemon's
 answer before the tool server has it. A turn's end and a daemon's frame
@@ -595,7 +595,7 @@ Claude is started through `pty_host::spawn` with the spec's arguments plus:
   `Stop`, `SubagentStart`, `Elicitation`, `MessageDisplay` and
   `PostModelSwitch`, the two that wait for a decision with a timeout of
   seven days, accepts messages from other sessions at once, and allows amux's own tools
-  (all but `attach`, which asks like any read) and reading the agent's `blobs/` folder (where the files a person attaches
+  (all but `attach_file`, which asks like any read) and reading the agent's `blobs/` folder (where the files a person attaches
   are) without asking. Headless Claude gets the same settings.
 - `--mcp-config` naming amux's tool server (see [the tool server](#the-tool-server)).
 - `--messaging-socket-path private/messaging.sock`.

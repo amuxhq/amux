@@ -23,6 +23,14 @@ use wire::session_event;
 /// rebuilt test binary.
 pub const NO_DISCOVERY: (&str, &str) = ("AMUX_TEST_DISCOVERY_MODE", "disabled");
 
+/// Config naming every built-in ACP agent by a command no machine has, so
+/// a test's daemon, which runs with the machine's PATH, never starts the
+/// Antigravity, OpenCode or Grok installed where the test runs: asking one
+/// what it offers opens a session in it, which Antigravity keeps on disk.
+pub const NO_REAL_AGENTS: &str = "[agents.antigravity]\ncommand = \"amux-test-no-agent\"\n\
+     [agents.opencode]\ncommand = \"amux-test-no-agent\"\n\
+     [agents.grok]\ncommand = \"amux-test-no-agent\"\n";
+
 /// How long any one wait may take before it is a hang: twice the shared
 /// default, since these tests spawn the built binary and real agent
 /// processes under the supervisor, and a cold start under a loaded runner

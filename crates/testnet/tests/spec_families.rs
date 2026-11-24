@@ -1219,7 +1219,7 @@ async fn an_agents_stop_tool_stops_its_child_and_the_childs_descendants() {
                     text("I will have a helper run the suite."),
                     Step::TurnEnd,
                     tool(
-                        "mcp__amux__stop",
+                        "mcp__amux__stop_subagent",
                         serde_json::json!({"name": "helper"}),
                         None,
                     ),
@@ -1357,7 +1357,7 @@ async fn a_file_one_agent_sends_another_arrives_on_the_recipients_own_host() {
                 text("I will have a helper read the notes."),
                 Step::TurnEnd,
                 tool(
-                    "mcp__amux__send",
+                    "mcp__amux__message_agent",
                     serde_json::json!({"to": "helper", "text": format!("Please read {element}")}),
                     None,
                 ),

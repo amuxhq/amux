@@ -81,8 +81,9 @@ impl Desk {
             format!(
                 "root = {:?}\nsupervisor = {supervised}\nupdates = \"manual\"\n\
                  keep_awake = false\nreleases_url = {releases_url:?}\n\
-                 [agent]\ngrace_secs = {grace_secs}\ndrain_secs = 5\n",
+                 [agent]\ngrace_secs = {grace_secs}\ndrain_secs = 5\n{}",
                 data.display().to_string(),
+                super::NO_REAL_AGENTS,
             ),
         )
         .unwrap();

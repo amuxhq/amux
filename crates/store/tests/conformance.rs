@@ -266,6 +266,12 @@ fn snapshots_copy_their_envelope_onto_the_row() {
         }),
         on_branch: None,
     };
+    let settings = wire::AgentSettings {
+        model: Some("haiku".into()),
+        effort: Some("low".into()),
+        permission: Some("plan".into()),
+        permission_level: wire::PermissionLevel::ReadOnly as i32,
+    };
     let step = Step {
         items: vec![item("m1", "hi")],
         snapshot: Some(Snapshot {
@@ -274,6 +280,7 @@ fn snapshots_copy_their_envelope_onto_the_row() {
             background_jobs: 2,
             title: Some("Fix the build".into()),
             last_said: Some("The build is green.".into()),
+            settings: Some(Box::new(settings.clone())),
             ..snapshot(Phase::Working, Some("fixing the build"), 777)
         }),
         ..Default::default()
@@ -292,6 +299,7 @@ fn snapshots_copy_their_envelope_onto_the_row() {
     assert_eq!(row.background_jobs, 2);
     assert_eq!(row.title.as_deref(), Some("Fix the build"));
     assert_eq!(row.last_said.as_deref(), Some("The build is green."));
+    assert_eq!(row.settings, Some(settings));
     assert_eq!(held_snapshot(&row), 2);
     assert_eq!(row.snapshot.as_ref(), Some(snap));
 }

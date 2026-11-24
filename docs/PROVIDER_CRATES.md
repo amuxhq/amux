@@ -91,7 +91,7 @@ takes every message type from its protocol crate.
   loaded session as the interpreter decides, with amux's tool server given
   as an MCP entry. It turns a prompt's attachments into content blocks the
   agent said it takes. The agent process uses it for every ACP agent, and
-  the catalogue helper uses it to send `initialize` alone.
+  the catalogue helper uses it to send `initialize`.
 
 ## Who checks what
 

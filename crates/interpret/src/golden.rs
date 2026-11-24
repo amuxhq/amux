@@ -2007,6 +2007,7 @@ struct Carried<'a> {
     catalogue: Option<&'a Vec<u8>>,
     title: Option<&'a str>,
     last_said: Option<&'a str>,
+    settings: Option<&'a wire::AgentSettings>,
     /// The agent whose steps these are, when the rendering knows it.
     host: Option<Vec<u8>>,
     /// What each provider subagent's own parts carry, by its agent id.
@@ -2164,6 +2165,20 @@ fn render_part<'a, I: Interpreter>(
             "{prefix}snapshot said {:?}",
             carried.last_said.unwrap_or("-")
         );
+    }
+    if snapshot.settings.as_deref() != carried.settings {
+        carried.settings = snapshot.settings.as_deref();
+        let label = carried.settings.map_or("none".to_owned(), |settings| {
+            let or_unknown = |value: &Option<String>| value.clone().unwrap_or_else(|| "?".into());
+            format!(
+                "model={} effort={} permission={} level={}",
+                or_unknown(&settings.model),
+                or_unknown(&settings.effort),
+                or_unknown(&settings.permission),
+                settings.permission_level().word().unwrap_or("?")
+            )
+        });
+        let _ = writeln!(out, "{prefix}snapshot settings {label}");
     }
     let _ = writeln!(
         out,

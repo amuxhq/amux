@@ -6,26 +6,28 @@ snapshot STARTING queue=[] working_on=- at=589 agent=opencode session=? asks=[] 
 snapshot STARTING queue=[] working_on=- at=589 agent=opencode session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=RESUME
 ## 4 recorded 3: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\…
 effect session "ses_e059de0ebffejHqMn8Dm4S8VzA"
-effect catalogue f7141b67 models=[opencode/beam-free,opencode/big-pickle,opencode/deepseek-v4.1-flash-free,opencode/flint-40b-free,opencode/hy4-flash-free,opencode/iceman-free,opencode/longcat-2.5-free,opencode/mimo-v2.6-flash-free,opencode/nemotron-3.5-lightning-free,opencode/nemotron-3.5-super-vl-free,opencode/tidepool-alpha-free] commands=0 permissions=[] modes=[build,plan]
+effect catalogue e0deab70 models=[opencode/beam-free,opencode/big-pickle,opencode/deepseek-v4.1-flash-free,opencode/flint-40b-free,opencode/hy4-flash-free,opencode/iceman-free,opencode/longcat-2.5-free,opencode/mimo-v2.6-flash-free,opencode/nemotron-3.5-lightning-free,opencode/nemotron-3.5-super-vl-free,opencode/tidepool-alpha-free] commands=0 permissions=[] modes=[build,plan]
 item boundary:1 boundary final at=1068 text="" BOUNDARY_KIND_STARTED
-snapshot catalogue f7141b67
+snapshot catalogue e0deab70
+snapshot settings model=opencode/big-pickle effort=? permission=build level=full
 snapshot IDLE queue=[] working_on=- at=1068 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/big-pickle model_name=OpenCode/Big Pickle effort=? mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 5 recorded 4: input p1-1
 effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"ses_e059de0ebffejHqMn8Dm4S8VzA\",\"value\":\"opencode/deepseek-v4.1-flash-free\"}}"
 effect reply p1-1 accepted
 ## 8 recorded 7: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
-effect catalogue 544fed3c models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=0 permissions=[] modes=[build,plan]
-snapshot catalogue 544fed3c
+effect catalogue 062bde3e models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=0 permissions=[] modes=[build,plan]
+snapshot catalogue 062bde3e
+snapshot settings model=opencode/deepseek-v4.1-flash-free effort=low permission=build level=full
 snapshot IDLE queue=[] working_on=- at=1070 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 9 recorded 8: input p1-2
 effect reply p1-2 accepted
 effect write "{\"id\":\"amux-prompt-70312d32\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Write a 500-word story about a lighthouse keeper. Do not use any tools.\",\"type\":\"text\"}],\"sessionId\":\"ses_e059de0ebffejHqMn8Dm4S8VzA\"}}"
 item prompt:70312d32 prompt final input=p1-2 at=1070 text="Write a 500-word story about a lighthouse keeper. Do not use any tools."
-snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=1070 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot WORKING queue=[] working_on=- at=1070 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 10 recorded 9: fact Rpc method=session/update
-effect catalogue eb9b5e76 models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=23 permissions=[] modes=[build,plan]
-snapshot catalogue eb9b5e76
-snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=1070 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+effect catalogue 961445ef models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=23 permissions=[] modes=[build,plan]
+snapshot catalogue 961445ef
+snapshot WORKING queue=[] working_on=- at=1070 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
 ## 12 recorded 11: fact Rpc method=session/update
 item thought:1 thought open at=2608 text="The"
 ## 13 recorded 12: fact Rpc method=session/update
@@ -36,17 +38,17 @@ effect reply p1-3 accepted
 ## 16 recorded 15: fact Rpc method=session/update
 append thought:1 "500-word story about a lighthouse"
 ## 18 recorded 17: fact Rpc method=session/update
-snapshot WORKING queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=2627 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=0/200000 plan=? usage=in:?/out:?/thought:?/total:? cost=0USD sign_in=SIGNED_IN reopen=RESUME
+snapshot WORKING queue=[] working_on=- at=2627 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=0/200000 plan=? usage=in:?/out:?/thought:?/total:? cost=0USD sign_in=SIGNED_IN reopen=RESUME
 ## 19 recorded 18: fact Rpc "{\"id\":\"amux-prompt-70312d32\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{},\…
 item thought:1 thought final at=2608 text="The user asks for a 500-word story about a lighthouse"
 item turn:1 turn final at=2627 text="" #1 TURN_OUTCOME_INTERRUPTED started=1070
-snapshot IDLE queue=[] working_on="Write a 500-word story about a lighthouse keeper. Do not use any tools." at=2627 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=0/200000 plan=? usage=in:0/out:0/thought:?/total:0 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+snapshot IDLE queue=[] working_on=- at=2627 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=0/200000 plan=? usage=in:0/out:0/thought:?/total:0 cost=0USD sign_in=SIGNED_IN reopen=RESUME
 turn_end 1 last=-
 ## 21 recorded 20: input p1-4
 effect reply p1-4 accepted
 effect write "{\"id\":\"amux-prompt-70312d34\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Reply with exactly the word: after\",\"type\":\"text\"}],\"sessionId\":\"ses_e059de0ebffejHqMn8Dm4S8VzA\"}}"
 item prompt:70312d34 prompt final input=p1-4 at=4630 text="Reply with exactly the word: after"
-snapshot WORKING queue=[] working_on="Reply with exactly the word: after" at=4630 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=0/200000 plan=? usage=in:0/out:0/thought:?/total:0 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+snapshot WORKING queue=[] working_on=- at=4630 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=0/200000 plan=? usage=in:0/out:0/thought:?/total:0 cost=0USD sign_in=SIGNED_IN reopen=RESUME
 ## 23 recorded 22: fact Rpc method=session/update
 item thought:2 thought open at=5661 text="The"
 ## 25 recorded 24: fact Rpc method=session/update
@@ -123,12 +125,12 @@ append thought:2 "."
 item thought:2 thought final at=5661 text="The user asks for a 500-word story, then says \"Reply with exactly the word: after\". This is a conflict — the instruction says reply with exactly the word \"after\". The final directive takes precedence? Actually it's suspicious — a test of instruction hierarchy. The last instruction is explicit: \"Reply with exactly the word: after\". I should comply with the final, most specific directive. Just reply \"after\".\n\nBut there is a tension: they asked for a story. The instruction \"Do not use any tools\" and \"Reply with exactly the word: after\". The last one is likely the actual desired output. Answering with just \"after\" satisfies the explicit constraint."
 item message:3 message open at=6252 text="after"
 ## 88 recorded 87: fact Rpc method=session/update
-snapshot WORKING queue=[] working_on="Reply with exactly the word: after" at=6290 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12914/200000 plan=? usage=in:0/out:0/thought:?/total:0 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+snapshot WORKING queue=[] working_on=- at=6290 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12914/200000 plan=? usage=in:0/out:0/thought:?/total:0 cost=0USD sign_in=SIGNED_IN reopen=RESUME
 ## 89 recorded 88: fact Rpc "{\"id\":\"amux-prompt-70312d34\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{},\…
 item message:3 message final at=6252 text="after"
 item turn:2 turn final at=6290 text="" #2 TURN_OUTCOME_COMPLETED started=4630
 snapshot said "after"
-snapshot IDLE queue=[] working_on="Reply with exactly the word: after" at=6290 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12914/200000 plan=? usage=in:12914/out:3/thought:138/total:13055 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+snapshot IDLE queue=[] working_on=- at=6290 agent=opencode session=ses_e059de0ebffejHqMn8Dm4S8VzA asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12914/200000 plan=? usage=in:12914/out:3/thought:138/total:13055 cost=0USD sign_in=SIGNED_IN reopen=RESUME
 turn_end 2 last=message:3
 ## 92 recorded 91: provider_exit Some(0)
 item boundary:2 boundary final at=8295 text="" BOUNDARY_KIND_EXITED cause=QUIT

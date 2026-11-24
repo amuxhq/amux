@@ -214,8 +214,12 @@ those unknowns with exhaustive struct literals, so a field added to a
 snapshot body does not compile until someone decides what its unknown is.
 
 amux's own tools are recognised in the provider's record, never drawn as tool
-calls: a `status` call sets `working_on` in the next snapshot, and a `send`
-call becomes the agent message it sent.
+calls: a `set_working_on` call sets `working_on` in the next snapshot, and a
+`message_agent` call becomes the agent message it sent. Both are recognised by
+their names before 0.11 too (`status` and `send`), which a resumed agent's
+history holds. Each snapshot's envelope carries the agent's settings (model,
+effort, permission and its level), which the daemon copies onto the
+inventory row.
 
 ## Checkpoints
 
@@ -1138,7 +1142,7 @@ answer.
     state; a child's notifications are read by the same rules as the
     agent's, with that copy swapped in and what they write going to the
     child's part of the step. Its token use, settings, tool servers and
-    status draw nothing. amux's `status` called on a child's thread sets the
+    status draw nothing. amux's `set_working_on` called on a child's thread sets the
     subagent's own working-on line; amux's other tools act as the agent.
   - **Its asks.** A request naming a child's thread opens in that
     subagent's snapshot and points at its own work (a file-change ask shows
@@ -1324,7 +1328,7 @@ a file, each an attachment at its place in the message's text. A
 file the agent only names would read it unasked into blobs the agent reads
 and every device is sent. When a message completes, the words
 between its attachments go through the element reader, so an element the
-model wrote is an attachment too. A call to amux's `attach` tool carries the
+model wrote is an attachment too. A call to amux's `attach_file` tool carries the
 attachment its element names. What a tool call holds is never an
 attachment ([Attachments](ATTACHMENTS.md#bytes-and-metadata)).
 
@@ -1391,7 +1395,7 @@ for one of amux's own tools is answered allow once at once and opens no
 ask (an agent offering no allow once is asked as for any call, since an
 allow always nobody chose would be a session grant), recognised by the agent's naming quirk from the call's earlier title
 and the request's title, name and input (OpenCode retitles a call in its
-request, `opencode-allow`); `attach` asks, as it does in Claude, since it
+request, `opencode-allow`); `attach_file` asks, as it does in Claude, since it
 copies a file the agent names to where the agent reads unasked.
 `elicitation/create` opens a form or link ask row. A field whose choices
 are a `oneOf` of constants with titles (as Antigravity's questions are,

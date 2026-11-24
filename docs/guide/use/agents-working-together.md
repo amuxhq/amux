@@ -1,6 +1,6 @@
 ---
 title: Agents working together
-description: Let your agents message each other and start subagents of their own, Claude or Codex, on any of your devices.
+description: Let your agents message each other and start subagents of their own, with the model, permission and worktree each task needs, on any of your devices.
 sidebar:
   order: 5
 ---
@@ -24,13 +24,15 @@ up. Ask for it in plain words.
 amux gives every agent a small set of tools:
 
 - **See the fleet**: every agent on your devices, what each is working on,
-  and whether it's busy or needs you.
-- **See your devices**: the devices you've paired, and which are online.
+  which model it runs, and whether it's busy or needs you.
+- **See your devices**: the devices you've paired, which are online, and the
+  agents, models and permissions each one offers.
 - **Message another agent**: by name, on any of your devices. The message
   arrives labelled with who sent it, so the agent knows it isn't from you, and
   it can reply the same way.
-- **Start a subagent**: a new Claude or Codex agent with a task, on this device
-  or another one you've paired.
+- **Start a subagent**: a new Claude, Codex or other agent with a task, on this
+  device or another one you've paired, with the model and effort the task
+  needs, in its own worktree if it asks for one.
 - **Settle its own subagents**, and only its own.
 - **Say what it's working on**, so you and the other agents can find the
   right one to ask.
@@ -60,6 +62,27 @@ yourself.
 
 To start a subagent on another device, the agent needs a folder on that
 device. If it doesn't know one, it asks you.
+
+A subagent never gets more permission than the agent that started it. By
+default it gets the same, and the agent can ask for less, such as read-only
+for a review; asking for more is refused. Permission here is one scale for
+every kind of agent, from read-only through asking you, to working on its
+own, to full access, and amux picks the matching setting in Claude, Codex or
+Antigravity. An agent whose own permission amux can't place on that scale
+starts its subagents read-only. An agent that has no such settings at all,
+such as Grok or one you added yourself, can only be started as a subagent by
+an agent with full access. You can still change a subagent's permission
+yourself afterwards. The model and effort an agent picks for a subagent
+apply to that subagent only, and never change the defaults you've chosen.
+
+An agent can also start a subagent from a copy of its own conversation, so
+the subagent knows everything the agent knew so far. That works for a Claude
+agent starting a Claude subagent, or Codex starting Codex, on the same
+device.
+
+What an agent is working on is what it said it's working on, or else the
+title of its conversation. It's never your prompt, since every agent can read
+the fleet.
 
 Claude subagents always run in amux's chat, even if you usually chat in Claude
 Code's own interface, so you can read them from any device.

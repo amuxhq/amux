@@ -23,7 +23,8 @@ const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent_host
     lifecycle, exit_cause, exit_detail, phase, working_on, phase_since_ms, git, snapshot, \
     ingest_cursor, next_revision, source_cursor, source_generation, \
     complete_from_order, exhausted, owes_report, created_at_ms, incarnation, background_jobs, \
-    descendants, filing, filed_at_ms, title, name_given, last_said, native, experimental, provider";
+    descendants, filing, filed_at_ms, title, name_given, last_said, native, experimental, provider, \
+    settings";
 
 const ITEM_COLUMNS: &str =
     "key, position, revision, at_ms, input_id, text, kind, attachments, body";
@@ -141,6 +142,7 @@ const INVENTORY_ENVELOPE: &[&str] = &[
     "git",
     "background_jobs",
     "last_said",
+    "settings",
 ];
 
 /// What a replica's inventory row counts that its origin owns: its live
@@ -164,6 +166,7 @@ pub(crate) const COMMITTED: &[&str] = &[
     "background_jobs",
     "title",
     "last_said",
+    "settings",
     "snapshot",
     "ingest_cursor",
     "next_revision",
@@ -183,6 +186,7 @@ pub(crate) const SUBAGENT_COMMITTED: &[&str] = &[
     "background_jobs",
     "title",
     "last_said",
+    "settings",
     "snapshot",
     "ingest_cursor",
     "next_revision",
@@ -202,6 +206,7 @@ pub(crate) const ABSORBED: &[&str] = &[
     "background_jobs",
     "title",
     "last_said",
+    "settings",
     "snapshot",
     "source_cursor",
     "source_generation",
@@ -256,10 +261,11 @@ pub(crate) fn registry_update(own: bool) -> String {
     }
 }
 
-/// An agents row with its snapshot, git, native and experimental columns
-/// still encoded.
+/// An agents row with its snapshot, git, native, experimental and
+/// settings columns still encoded.
 type RawAgent = (
     AgentRow,
+    Option<Vec<u8>>,
     Option<Vec<u8>>,
     Option<Vec<u8>>,
     Option<Vec<u8>>,
@@ -338,17 +344,19 @@ fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
             native: None,
             experimental: Default::default(),
             provider: row.get::<_, Option<String>>(33)?.unwrap_or_default(),
+            settings: None,
         },
         row.get(14)?,
         row.get(13)?,
         row.get(31)?,
         row.get(32)?,
+        row.get(34)?,
     ))
 }
 
 /// Decodes the message columns `agent_row` leaves as bytes.
 fn finish_agent(
-    (mut row, snapshot, git, native, experimental): RawAgent,
+    (mut row, snapshot, git, native, experimental, settings): RawAgent,
 ) -> Result<AgentRow, StoreError> {
     let corrupt = |error: prost::DecodeError| StoreError::Corrupt(error.to_string());
     row.snapshot = snapshot
@@ -364,6 +372,10 @@ fn finish_agent(
         .transpose()
         .map_err(corrupt)?;
     row.experimental = decode_experimental(experimental.as_deref()).map_err(corrupt)?;
+    row.settings = settings
+        .map(|bytes| wire::AgentSettings::decode(bytes.as_slice()))
+        .transpose()
+        .map_err(corrupt)?;
     Ok(row)
 }
 
@@ -516,7 +528,7 @@ impl Rows<'_> {
             .prepare_cached(&format!(
                 "INSERT INTO agents ({AGENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
                  ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
-                 ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
+                 ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
             ))?
             .execute(params![
                 row.agent.host,
@@ -555,6 +567,9 @@ impl Rows<'_> {
                 row.native.as_ref().map(|native| native.encode_to_vec()),
                 encode_experimental(&row.experimental),
                 (!row.provider.is_empty()).then_some(&row.provider),
+                row.settings
+                    .as_ref()
+                    .map(|settings| settings.encode_to_vec()),
             ])?;
         Ok(())
     }

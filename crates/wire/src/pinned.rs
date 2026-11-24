@@ -46,6 +46,13 @@ const PINNED: &[(&str, &[&str])] = &[
         &[
             r#"pub const SURFACE_HEADER: &str = "amux-surface";"#,
             r#"pub const CALLER_HEADER: &str = "amux-caller-bin";"#,
+            r#"pub const WORKING_ON_TOOL: &str = "set_working_on";"#,
+            r#"pub const MESSAGE_TOOL: &str = "message_agent";"#,
+            r#"pub const ATTACH_TOOL: &str = "attach_file";"#,
+            r#"pub const START_TOOL: &str = "start_subagent";"#,
+            r#"pub const STOP_TOOL: &str = "stop_subagent";"#,
+            r#"pub const AGENTS_TOOL: &str = "list_agents";"#,
+            r#"pub const HOSTS_TOOL: &str = "list_hosts";"#,
             r#"pub const STATUS_TOOL: &str = "status";"#,
             r#"pub const SEND_TOOL: &str = "send";"#,
             r#"pub const ATTACH_TOOL: &str = "attach";"#,

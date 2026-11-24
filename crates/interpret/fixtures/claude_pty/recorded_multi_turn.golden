@@ -1,14 +1,16 @@
 ## 0 initial
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
-effect catalogue cd96cd29 models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue cd96cd29
+effect catalogue 9d924e4e models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 9d924e4e
 snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1793452857850 text="" BOUNDARY_KIND_STARTED
+snapshot settings model=claude-haiku-5-5 effort=? permission=? level=?
 snapshot IDLE queue=[] working_on=- at=1793452857850 asks=[] session=a3c8e9a3-2250-4490-9391-6a7b0d53a7f0 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
+snapshot settings model=claude-haiku-5-5 effort=? permission=default level=ask
 snapshot IDLE queue=[] working_on=- at=1793452858352 asks=[] session=a3c8e9a3-2250-4490-9391-6a7b0d53a7f0 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
 ## 13 recorded 11: fact Transcript type=user uuid=1ba72233-920f-48d8-a942-81c90234a074
 item 1ba72233-920f-48d8-a942-81c90234a074 prompt final at=1793452858556 text="Remember the word ALBATROSS. Reply with exactly REMEMBERED."
@@ -19,6 +21,7 @@ snapshot WORKING queue=[] working_on=- at=1793452859174 asks=[] session=a3c8e9a3
 item stream:204f7943-eacb-42f4-9fc4-71e1521bc46d message open at=1793452859177 text="REMEMBERED"
 ## 43 recorded 41: fact Transcript type=assistant uuid=c91d0650-a9b6-41b8-ba8d-3dd51817af65
 item stream:204f7943-eacb-42f4-9fc4-71e1521bc46d message final at=1793452859347 text="REMEMBERED"
+snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask
 snapshot WORKING queue=[] working_on=- at=1793452859307 asks=[] session=a3c8e9a3-2250-4490-9391-6a7b0d53a7f0 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35604/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
 ## 48 recorded 46: fact Transcript type=system subtype=turn_duration uuid=de1a1270-3e7c-44db-a162-6b199c65d3d8
 item turn:1 turn final at=1793452859401 text="" #1 TURN_OUTCOME_COMPLETED started=1793452858546

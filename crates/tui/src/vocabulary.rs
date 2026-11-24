@@ -3569,12 +3569,14 @@ fn control_chats() -> Vec<(
             display_name: "Normal".into(),
             normal: true,
             settable: true,
+            ..Default::default()
         },
         OfferedMode {
             value: "plan".into(),
             display_name: "Plan".into(),
             normal: false,
             settable: true,
+            ..Default::default()
         },
     ];
     let model = |value: &str, name: &str, efforts: &[&str]| wire::OfferedModel {

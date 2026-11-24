@@ -341,7 +341,7 @@ jobs:
   macos:
     name: ${{ matrix.name }}
     runs-on: macos-26
-    timeout-minutes: 180
+    timeout-minutes: 100
     env:
       REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && inputs.without-build-host != true }}
     strategy:
@@ -349,13 +349,16 @@ jobs:
       matrix:
         include:
           # The phone's suites lease the golden simulator, which the first
-          # step makes; then everything under apps/apple builds, the
-          # shipping app for a phone too (the device graph), and its tests
-          # run: the package suites and the hosted app suite on the
-          # simulator, the Mac's tests on the runner.
+          # step makes; then everything under apps/apple builds and its
+          # tests run: the package suites and the hosted app suite on the
+          # simulator, the Mac's tests on the runner. The phone's shipping
+          # build is left to `just ios release` on the Mac: its bridge is a
+          # fat-LTO link of the whole Rust graph for one more target, the
+          # heaviest build in the job on this runner's three cores, and it
+          # reruns on every Rust change.
           - name: Apple apps
             key: apple
-            run: just ios simulator golden && scripts/buck2 build //apps/apple/... && scripts/buck2 build //apps/apple:Amux --target-platforms //build/platforms:ios-app-shipping-release && scripts/buck2 test //apps/apple/...
+            run: just ios simulator golden && scripts/buck2 build //apps/apple/... && scripts/buck2 test //apps/apple/...
           # Every workspace test that isn't Linux-only, the terminal
           # journeys among them: the macOS half of what the Linux gate runs.
           - name: macOS tests
@@ -430,7 +433,12 @@ jobs:
           fi
           for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/nativelink.log"; exit 1
+      # Bounded below the job's timeout, so a run that runs out of time
+      # still keeps what it finished: a job stopped by its own timeout or
+      # cancelled doesn't get to save the results, and every run after it
+      # started cold again.
       - name: Run ${{ matrix.name }}
+        timeout-minutes: 75
         env:
           AMUX_NATIVELINK: grpc://127.0.0.1:50051
         run: ${{ matrix.run }}

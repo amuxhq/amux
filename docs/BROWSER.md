@@ -263,8 +263,9 @@ browser-core's WebAssembly (`//js:dist` is the store's build). They run on
 the Linux build host when it is in reach ([Building](BUILD.md#linux-builds-and-the-build-host)),
 and otherwise on the Mac, except the end-to-end test, which needs the Linux
 toolchain's Chromium: with no Linux worker in reach it is skipped, and `just
-browser test` names it. CI, which has no Buck2 yet, runs them all in the
-checkout with `just browser cargo-test`.
+browser test` names it. CI runs them in its Linux gate, on the build host,
+and `just browser audit` checks the dependencies the extension ships
+against the npm registry's advisories.
 
 The end-to-end test ([`review.spec.ts`](../js/extension/test/e2e/review.spec.ts))
 starts a daemon with the fake providers, loads the extension in Chromium with a host manifest in a temporary profile (Chromium reads native

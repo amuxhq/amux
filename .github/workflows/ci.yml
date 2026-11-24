@@ -175,189 +175,19 @@ jobs:
         if: env.COVERED == 'true'
         run: nix develop --command ${{ matrix.run }}
 
-  # Which jobs this change can affect (scripts/ci-affected.py): a change to
-  # documentation, another workflow or a manual script runs only the policy
-  # job, either phone app alone runs the mirror tests and leaves the rest to
-  # its own gate, and product, models, sanitizers, bridge and browser run when a crate
-  # they are built from changed.
-  changes:
-    name: What this change affects
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: read
-    outputs:
-      tests: ${{ steps.affected.outputs.tests }}
-      mirrors: ${{ steps.affected.outputs.mirrors }}
-      product: ${{ steps.affected.outputs.product }}
-      models: ${{ steps.affected.outputs.models }}
-      sanitizers: ${{ steps.affected.outputs.sanitizers }}
-      bridge: ${{ steps.affected.outputs.bridge }}
-      browser: ${{ steps.affected.outputs.browser }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Read what changed
-        id: affected
-        shell: bash
-        env:
-          EVENT: ${{ github.event_name }}
-          PULL_BASE: ${{ github.event.pull_request.base.sha }}
-          GH_TOKEN: ${{ github.token }}
-        # A push is compared with the last push whose run finished, passing
-        # or failing, and not with the push before it: that one's run may
-        # have been stopped by this one, its changes never judged. With no
-        # such run, or for a run started by hand, every job runs.
-        run: |
-          case "$EVENT" in
-            push)
-              base=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=$GITHUB_REF_NAME&event=push&status=completed&per_page=50" \
-                --jq '[.workflow_runs[] | select(.conclusion == "success" or .conclusion == "failure")][0].head_sha // ""' || true)
-              ;;
-            pull_request) base=$PULL_BASE ;;
-            *) base= ;;
-          esac
-          echo "compared with ${base:-nothing}"
-          python3 scripts/ci-affected.py --base "$base" --head "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
-
-  check-and-clippy:
-    name: Format, Check and Clippy
-    needs: changes
-    if: needs.changes.outputs.tests == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Formatting is seconds of work on the pinned nightly's rustfmt, so it
-      # shares this job rather than waiting for a runner of its own. The
-      # stable toolchain is installed second, which leaves it the default.
-      - uses: ./.github/actions/setup-rust
-        with:
-          toolchain: nightly
-          components: rustfmt
-          cache: "false"
-          just: "false"
-      - uses: ./.github/actions/setup-rust
-        with:
-          components: clippy
-      - name: Check formatting
-        run: just fmt-check
-      - name: Run Clippy
-        if: always()
-        run: just cargo-lint
-
-  ios-tools:
-    name: Phone mirror and CLI tests
-    needs: changes
-    if: needs.changes.outputs.mirrors == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-rust
-        with:
-          shared-key: test
-          save-if: "false"
-          nextest: "true"
-          sccache: "true"
-      - name: Run ios-tools tests
-        run: just cargo-test-crate ios-tools
-
-  miri:
-    name: Pointer checks over the C ABI
-    needs: changes
-    if: needs.changes.outputs.bridge == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-rust
-        with:
-          toolchain: nightly
-          components: miri, rust-src
-      - name: Run the C ABI tests under the checking interpreter
-        run: just miri
-
-  sanitizers:
-    name: Sanitizers (${{ matrix.kind }})
-    needs: changes
-    if: needs.changes.outputs.sanitizers == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        kind: [address, thread]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-rust
-        with:
-          toolchain: nightly
-          components: rust-src
-          key: sanitize-${{ matrix.kind }}
-      - name: Run the unsafe code's tests under the sanitizer
-        run: just sanitize ${{ matrix.kind }}
-
-  codegen-and-policy:
-    name: Codegen and dependency policy
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # The protocol and store checks read the latest release tag's schemas.
-          fetch-depth: 0
-      - uses: ./.github/actions/setup-rust
-      - uses: ./.github/actions/setup-buf
-      - name: Check committed protobuf code
-        run: just cargo-codegen-check
-      - name: Lint the protocol and check it still reads what the latest release wrote
-        run: just proto-compat
-      - name: Check the store only grew since the latest release
-        run: just store-check
-      - name: Enforce dependency boundaries
-        run: just dependency-policy
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: cargo-deny@0.20.2,cargo-shear@1.14.0
-      - name: Check dependency advisories, licences and sources
-        run: just deny
-      - name: Check every dependency is used
-        run: just shear
-      - name: Check the state-machine cores carry no runtime, lock or await
-        run: just cores-check
-      - name: Check provider messages go through the protocol crates
-        run: just typed-provider-check
-      - name: Check client crates decide by capabilities, not by kind
-        run: just client-kind-check
-      - name: Check the test suite catalogue
-        run: just tests-check
-      - name: Run the scripts' own unit tests
-        run: just script-tests
-      - name: Check the documentation's links, figures and map
-        run: just docs-check
-
+  # macOS and Windows still test under Cargo and nextest until their own
+  # Buck2 jobs replace these; Linux is the Linux gate's.
   test:
     name: Test (${{ matrix.label }})
-    needs: changes
-    if: needs.changes.outputs.tests == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        # Linux and macOS split the suite into two halves side by side.
-        # Windows compiles out the slow Unix/PTY/system suites, so its full
-        # run fits in one job without paying a second workspace compile.
+        # macOS splits the suite into two halves side by side. Windows
+        # compiles out the slow Unix/PTY/system suites, so its full run fits
+        # in one job without paying a second workspace compile.
         include:
-          - os: ubuntu-latest
-            label: "ubuntu-latest, 1 of 2"
-            partition: "--partition count:1/2"
-            save-cache: "true"
-          - os: ubuntu-latest
-            label: "ubuntu-latest, 2 of 2"
-            partition: "--partition count:2/2"
-            save-cache: "false"
           - os: macos-latest
             label: "macos-latest, 1 of 2"
             partition: "--partition count:1/2"
@@ -375,17 +205,15 @@ jobs:
       - name: Refuse fixture update flags
         shell: bash
         run: scripts/no-update-flags.sh
-      # Named, because the weekly offline tests, simulated stories, ios-tools
-      # and terminal journeys restore this cache read-only. Only shard 1 saves
-      # per OS to avoid concurrent cache writes.
+      # Named, because the terminal journeys restore this cache read-only.
+      # Only shard 1 saves per OS to avoid concurrent cache writes.
       - uses: ./.github/actions/setup-rust
         with:
           shared-key: test
           save-if: ${{ matrix.save-cache }}
           nextest: "true"
           sccache: "true"
-      # testnet's ctl test drives the terminal client in tmux; Linux runners
-      # have it already.
+      # testnet's ctl test drives the terminal client in tmux.
       - name: Install tmux on macOS
         if: runner.os == 'macOS'
         run: brew install tmux
@@ -393,85 +221,26 @@ jobs:
         # The ci profile reports every failing test, not only the first: a
         # platform that stops early hides the failures behind it until the
         # next run.
-        # This is the fast lane and, on Linux and macOS, the system lane too:
-        # the built amux binary's process, attach, overlap and supervise_cli
-        # suites, node's supervisor suite and the survive-daemon system
-        # journey are ordinary test suites, compiled out on Windows. The
-        # protocol models run in the models job instead, on Linux only.
+        # This is the fast lane and, on macOS, the system lane too: the built
+        # amux binary's process, attach, overlap and supervise_cli suites,
+        # node's supervisor suite and the survive-daemon system journey are
+        # ordinary test suites, compiled out on Windows. The protocol models
+        # run in the Linux gate, on the build host.
         run: just cargo-test -- --profile ci --exclude models ${{ matrix.partition }}
       - name: Say what sccache fetched and compiled
         if: always()
         shell: bash
         run: sccache --show-stats
 
-  platform-free:
-    name: Simulated stories and doctests
-    needs: changes
-    if: needs.changes.outputs.product == 'true'
-    # What reads the same on every platform runs once, on Linux, rather than
-    # in each test job, as the models do.
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-rust
-        with:
-          shared-key: test
-          save-if: "false"
-          nextest: "true"
-          sccache: "true"
-      - name: Walk the simulated stories by seed
-        # The same stories under TESTNET_MODE=simulated, a few seeds each;
-        # a failure prints the seed and the `just sim --seed` that reruns
-        # it. It builds what the workspace test run builds.
-        run: just sim
-      - name: Run doctests
-        run: just doctest
-
-  models:
-    name: Models (${{ matrix.models }})
-    needs: changes
-    if: needs.changes.outputs.models == 'true'
-    # The protocol models explore every state of the real code at their CI
-    # bounds, so they stay off the platform test jobs and compile under the
-    # optimised `models` profile. Three balanced jobs keep peak CI concurrency
-    # under GitHub's 20-runner free-plan limit.
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        # Every protocol model, a module of the models' integration test
-        # binary: `just tests-check` fails when one is missing here.
-        models:
-          - family relay
-          - single_daemon composed presence
-          - path lifecycle replication client socket supervisor switch workspaces
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Named, because the nightly bounds restore it.
-      - uses: ./.github/actions/setup-rust
-        with:
-          shared-key: models
-          nextest: "true"
-          sccache: "true"
-      - name: Check each model at its CI bounds
-        shell: bash
-        # Every model of the job runs, whichever fails.
-        run: |
-          pattern=$(echo "${{ matrix.models }}" | tr ' ' '|')
-          just cargo-test-crate models -- --cargo-profile models --no-fail-fast -E "binary_id(models::integration) & test(/^($pattern)::/)"
-
+  # Linux's are a Buck2 test in the Linux gate.
   terminal-journeys:
     name: Terminal journeys (${{ matrix.os }})
-    needs: changes
-    if: needs.changes.outputs.product == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Shares the test job's cache read-only (`just cargo-journey-terminal` uses
@@ -480,9 +249,7 @@ jobs:
         with:
           shared-key: test
           save-if: "false"
-      # Linux runners already ship tmux; macOS installs it via Homebrew.
-      - name: Install tmux on macOS
-        if: runner.os == 'macOS'
+      - name: Install tmux
         run: brew install tmux
       - name: Run terminal journeys
         # Every terminal story in the manifest, one after another; a failure
@@ -502,8 +269,6 @@ jobs:
 
   ios:
     name: iOS target check
-    needs: changes
-    if: needs.changes.outputs.bridge == 'true'
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -516,8 +281,6 @@ jobs:
 
   android:
     name: Android target check
-    needs: changes
-    if: needs.changes.outputs.bridge == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -533,47 +296,3 @@ jobs:
           tool: cargo-ndk@4.1.2
       - name: Check the Android bridge graph
         run: just android check
-
-  browser:
-    name: Browser extension
-    needs: changes
-    if: needs.changes.outputs.browser == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-rust
-        with:
-          targets: wasm32-unknown-unknown
-          shared-key: browser
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: js/package-lock.json
-      # Chromium's own libraries, which a bare runner lacks.
-      - name: Install Chromium for the end-to-end test
-        working-directory: js
-        run: npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
-      # Known vulnerabilities in what the extension ships (its runtime
-      # dependencies, bundled into it), not in the tools that build it.
-      - name: Audit the extension's shipped dependencies
-        working-directory: js
-        run: npm audit --omit=dev --audit-level=moderate
-      # Types, unit tests, and the extension in Chromium against the built
-      # amux and the fake providers. Skip re-running npm ci and playwright
-      # install inside the just recipe since the step above just ran both.
-      - name: Test the browser extension
-        env:
-          AMUX_NPM_READY: "1"
-          AMUX_PLAYWRIGHT_READY: "1"
-        run: just browser cargo-test
-      - name: Upload the browser test's results
-        if: failure()
-        timeout-minutes: 5
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: browser-test
-          path: js/test-results
-          if-no-files-found: ignore
-          retention-days: 7

@@ -31,14 +31,6 @@ build *ARGS:
 test:
     {{bounded}} 1800 {{just}} test //js:
 
-# CI's twin of `test`, building the WebAssembly and the binaries with Cargo.
-# Check and test the extension on Cargo's build, as CI does.
-cargo-test:
-    {{bounded}} 900 cargo build --locked -p browser-core --target wasm32-unknown-unknown --profile wasm
-    {{bounded}} 300 sh -c 'cd js && { [ "${AMUX_NPM_READY-}" = 1 ] || npm ci --no-audit --no-fund --loglevel=error; } && cd extension && node build.ts --dev'
-    {{bounded}} 900 cargo build --locked -p amux -p provider-fakes --bins
-    {{bounded}} 600 sh -c 'cd js && npm run check && npx vitest run && { [ "${AMUX_PLAYWRIGHT_READY-}" = 1 ] || npx playwright install chromium >/dev/null; } && npx playwright test'
-
 # Known vulnerabilities in what the extension ships (its runtime
 # dependencies, bundled into it), not in the tools that build it. Asks the
 # npm registry, so it is no Buck2 test: an advisory appears without any file

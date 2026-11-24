@@ -67,17 +67,19 @@ the same Rust dependencies and wire code on every machine. Protobuf
 generation uses a vendored `protoc`, so none needs installing.
 
 `just proto-compat` needs [buf](https://buf.build/docs/cli/installation/),
-which `nix/toolchain.nix` provides and CI pins to 1.75.0 in
-`.github/actions/setup-buf`; outside Nix, `brew install bufbuild/buf/buf`.
+which `nix/toolchain.nix` provides; outside Nix, `brew install
+bufbuild/buf/buf`. Its Buck2 test, `//:proto-compat`, brings its own.
 
 ## Buck2 and Cargo
 
 [Buck2](https://buck2.build) builds and tests the workspace for every
 `just` recipe a person or agent types. Cargo still builds the same crates
-from the same `Cargo.toml` files for what Buck2 doesn't do: CI (whose
-runners have no Buck2 yet, through the `cargo-` recipes), rust-analyzer,
-`just miri`, `just fuzz-smoke` and `just doctest`, and the release and
-phone builds, which move later.
+from the same `Cargo.toml` files for what Buck2 doesn't do: CI's macOS
+and Windows jobs (whose runners have no Buck2 yet, through `just
+cargo-test` and `just cargo-journey-terminal`), rust-analyzer, `just miri`,
+`just sanitize`, `just fuzz-smoke` and `just doctest`, the nightlies, and
+the release and phone builds, which move later. CI's Linux gate runs
+through Buck2 on the build host ([CI](CI.md#the-linux-gate)).
 
 Each crate describes itself twice, so the two stay in step by hand:
 
@@ -211,6 +213,13 @@ minutes) are skipped, which `just test` names at the end. When the host
 answers again it switches back. Each switch restarts NativeLink, which
 interrupts any build another tree has running at that moment.
 
+A Linux machine sends its actions to the NativeLink on its own loopback,
+as the build host's trees do, or to the one `AMUX_NATIVELINK` names
+(`grpc://<host>:50051`): that is how CI's Linux gate reaches the build
+host over the tailnet. `scripts/nativelink.py serve DIR` runs a NativeLink
+with its own worker and no remote in the foreground, for a Linux machine
+that has neither (a fork's pull request in CI).
+
 ### Repository checks
 
 The repository's own checks are Buck2 tests too, so `just premerge` gets a
@@ -228,7 +237,7 @@ and the terminal journeys are `//crates/testnet:terminal-journeys`.
 ```sh
 just checks                    # the repository's and the JavaScript's checks
 just test //:docs-check        # one of them
-just docs-check                # the same script, run in the checkout as CI runs it
+just docs-check                # the same: the recipes of the checks' names run their tests
 ```
 
 A check is sent to the Linux worker when one is in reach, so a Mac and the
@@ -319,7 +328,7 @@ The recipes a build or change usually needs:
 | `just parity` | Fails when a crate's `BUCK` and `Cargo.toml` disagree |
 | `just shipping-check` | Fails when a test-only crate or test feature reaches the desktop binary or the extension's WebAssembly as they ship |
 | `just buckify` | Regenerates `third-party/rust/BUCK` after a dependency changes |
-| `just cargo-test`, `just cargo-test-crate`, `just cargo-lint` | The same under Cargo and nextest, as CI runs them |
+| `just cargo-test` | The workspace tests under Cargo and nextest, as CI's macOS and Windows jobs run them |
 | `just fmt`, `just fmt-check` | Format, or check formatting, with the pinned nightly |
 | `just protobuf` | Regenerates the committed protobuf output |
 | `just codegen-check` | Fails if the committed protobuf output is stale |
@@ -362,8 +371,8 @@ Buck2's output with protoc 31.1 from protobuf's releases, so it runs again
 only when a schema changes. `just protobuf` copies the result into
 `crates/wire/src/generated`; `just codegen-check` fails if the committed
 files differ from it. Under Cargo, `cargo run -p xtask -- codegen` writes the
-same files with the protoc the `protoc-bin-vendored` crate carries, which is
-what CI checks (`just cargo-codegen-check`). `just proto-compat`
+same files with the protoc the `protoc-bin-vendored` crate carries.
+`just proto-compat`
 lints the schemas with buf, and fails when they no longer read what the latest
 release wrote: a field removed without reserving its number, a number reused
 or retyped, a name changed; [the wire](WIRE.md#compatibility) has the rules.

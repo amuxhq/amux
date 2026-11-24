@@ -50,6 +50,12 @@ SCRIPTS = [
 
 def main(patterns: list[str]) -> int:
     started = time.monotonic()
+    # What the check targets read from outside the checkout is written now,
+    # before any Buck2 command starts, so `just test` below, which writes it
+    # too, finds nothing left to change. Buck2's daemon runs two commands at
+    # once only while they see the same files: a write after clippy's build
+    # has started holds the tests until that build ends.
+    subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "build/checks/inputs.py")], cwd=ROOT, check=True, stdin=subprocess.DEVNULL)
     logs = Path(tempfile.mkdtemp(prefix="premerge-"))
     running: dict[str, tuple[subprocess.Popen, Path, float]] = {}
     for name in SCRIPTS:

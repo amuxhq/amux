@@ -34,10 +34,10 @@ use std::process::Command;
 use release::{Manifest, Release};
 
 use crate::release::{
-    WORKFLOW, file_seed, gh, git, keychain_path, keychain_seed, publish, repository_root, run,
-    tagged_commit, trusted_keys,
+    WORKFLOW, file_seed, gh, git, kept_seed, publish, repository_root, run, tagged_commit,
+    trusted_keys,
 };
-use crate::signing;
+use crate::{credentials, signing};
 
 const SPEC: &str = "apps/apple/version.bzl";
 const SETTING: &str = "MAC_VERSION = ";
@@ -49,10 +49,11 @@ const PLATFORM: &str = "//build/platforms:macos-app-shipping-release";
 /// The Mac app's entry in its feed; the app looks itself up by it.
 pub const TARGET: &str = "mac-app";
 const BUNDLE: &str = "Amux.app";
-/// Where the App Store Connect key's identifiers live, as the iPhone
-/// release reads them; the accounts are `key-id` and `issuer-id`.
-const CONNECT_SERVICE: &str = "amux-appstoreconnect";
-const CONNECT_KEYS: &str = ".appstoreconnect/private_keys";
+/// The App Store Connect key's credentials, named as the iPhone release
+/// names them.
+const CONNECT_KEY_ID: &str = "appstoreconnect/key-id";
+const CONNECT_ISSUER: &str = "appstoreconnect/issuer-id";
+const CONNECT_PRIVATE_KEY: &str = "appstoreconnect/private-key";
 
 pub fn main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -145,9 +146,11 @@ fn cut(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
             )
             .into());
         }
-        if !keychain_path().exists() {
+        if !credentials::configured() {
             return Err(
-                "this Mac has no release keychain, so the release could not be deployed".into(),
+                "this machine has no credential command to hold the release key, so \
+                        the release could not be deployed (docs/RELEASE.md)"
+                    .into(),
             );
         }
         if git(
@@ -332,55 +335,32 @@ fn copy_bundle(from: &Path, to: &Path) -> Result<(), Box<dyn std::error::Error>>
     )
 }
 
-/// The App Store Connect key notarization signs in with.
+/// The App Store Connect key notarization signs in with: its identifiers,
+/// with the private key fetched only while notarytool runs.
 struct ConnectKey {
     id: String,
     issuer: String,
-    file: PathBuf,
 }
 
 fn connect_key() -> Result<ConnectKey, Box<dyn std::error::Error>> {
-    let read = |account: &str| -> Result<String, Box<dyn std::error::Error>> {
-        let found = Command::new("security")
-            .args([
-                "find-generic-password",
-                "-s",
-                CONNECT_SERVICE,
-                "-a",
-                account,
-                "-w",
-            ])
-            .output()?;
-        if !found.status.success() {
-            return Err(format!(
-                "the login keychain has no {CONNECT_SERVICE} item for {account}; docs/RELEASE.md, \
-                 or --no-notarize"
-            )
-            .into());
-        }
-        Ok(String::from_utf8(found.stdout)?.trim().to_owned())
-    };
-    let id = read("key-id")?;
-    let issuer = read("issuer-id")?;
-    let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
-    let file = Path::new(&home)
-        .join(CONNECT_KEYS)
-        .join(format!("AuthKey_{id}.p8"));
-    if !file.is_file() {
-        return Err(format!("the App Store Connect key {} is missing", file.display()).into());
-    }
-    Ok(ConnectKey { id, issuer, file })
+    let id = credentials::read(CONNECT_KEY_ID)?.trim().to_owned();
+    let issuer = credentials::read(CONNECT_ISSUER)?.trim().to_owned();
+    // Read now, and dropped, so a missing key stops the cut before the build
+    // rather than after it.
+    credentials::read(CONNECT_PRIVATE_KEY)?;
+    Ok(ConnectKey { id, issuer })
 }
 
 /// Has Apple notarize `file`, waiting up to two hours: a team's first
 /// submissions can take that long.
 fn notarize_file(file: &Path, key: &ConnectKey) -> Result<(), Box<dyn std::error::Error>> {
     println!("notarizing {} (this can take a while)", file.display());
+    let private = credentials::file(CONNECT_PRIVATE_KEY, &format!("AuthKey_{}.p8", key.id))?;
     let submitted = Command::new("xcrun")
         .args(["notarytool", "submit"])
         .arg(file)
         .args(["--key"])
-        .arg(&key.file)
+        .arg(private.path())
         .args([
             "--key-id",
             &key.id,
@@ -493,7 +473,7 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
     };
     let seed = match &key_file {
         Some(path) => file_seed(path)?,
-        None => keychain_seed()?,
+        None => kept_seed()?,
     };
     let repository = gh(&[
         "repo",

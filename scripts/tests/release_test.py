@@ -305,10 +305,10 @@ class TheSigningFile(unittest.TestCase):
             self.assertEqual("", recipe.team())
 
     def test_without_it_the_run_says_which_piece_is_missing(self):
-        # The keychain and the installed profiles are this Mac's, and Linux
-        # has neither to ask.
+        # The credential command and the installed profiles are this Mac's,
+        # and Linux has neither to ask.
         with checkout(), \
-                unittest.mock.patch.object(recipe, "keychain", lambda _: ""), \
+                unittest.mock.patch.object(recipe, "connect", lambda _: ""), \
                 unittest.mock.patch.object(recipe, "installed_profiles", lambda: []):
             checks, facts = recipe.inputs()
             team = [check for check in checks if check.what == "a Team ID"][0]
@@ -406,8 +406,8 @@ class TheLastStep(unittest.TestCase):
         self.assertIn("validate(exported, facts)", source)
 
     def test_validation_is_authenticated_by_the_key_and_nothing_else(self):
-        # No Apple Account, no password, no 2FA: the two identifiers come
-        # from the keychain and altool finds the .p8 itself.
+        # No Apple Account, no password, no 2FA: the two identifiers and the
+        # .p8 come from the credential command.
         source = (SCRIPTS / "release.py").read_text()
         self.assertIn('"--api-key", facts["key"]', source)
         self.assertIn('"--api-issuer", facts["issuer"]', source)
@@ -442,8 +442,7 @@ class TheOrderOfARelease(unittest.TestCase):
             package = Path(directory) / "Amux.ipa"
             package.write_bytes(b"")
             facts = {"clean": True, "tree": "", "team": "ABCDE12345",
-                     "key": "KEY", "issuer": "ISSUER",
-                     "key_path": Path(directory) / "AuthKey_KEY.p8"}
+                     "key": "KEY", "issuer": "ISSUER"}
             patches = {
                 "inputs": lambda: ([recipe.Check("a clean tree", True, "clean")],
                                    facts),

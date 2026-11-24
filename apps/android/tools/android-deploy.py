@@ -26,7 +26,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent))
-from googleplay import PACKAGE_NAME, PlayPublisher, Refusal, key_file_path  # noqa: E402
+from googleplay import PACKAGE_NAME, PlayPublisher, Refusal  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TAG_RE = re.compile(r"^android-v(\d+\.\d+\.\d+)-b(\d+)$")
@@ -261,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     try:
-        publisher = PlayPublisher(key_file_path(), package_name=PACKAGE_NAME)
+        publisher = PlayPublisher(package_name=PACKAGE_NAME)
         if args.command == "status":
             status(publisher)
         else:

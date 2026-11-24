@@ -109,16 +109,13 @@ def credentials(who: str) -> Check:
     if not who:
         return Check("the account's password", False,
                      "no address to look one up for")
-    if qa_cloud.keychain_holds(who):
+    if qa_cloud.holds_password(who):
         return Check("the account's password", True,
-                     f"in this Mac's login keychain under service "
-                     f"{qa_cloud.KEYCHAIN_SERVICE}")
+                     f"{qa_cloud.CREDENTIAL}/<address>, from the credential command")
     return Check(
         "the account's password", False,
-        f"the login keychain has none for {masked(who)} under service "
-        f"{qa_cloud.KEYCHAIN_SERVICE}. Add one with: security "
-        f'add-generic-password -s {qa_cloud.KEYCHAIN_SERVICE} -a "$'
-        f'{ADDRESS_VARIABLE}" -w')
+        f"the credential command has no {qa_cloud.CREDENTIAL}/<address> for "
+        f"{masked(who)} (docs/CLOUD.md)")
 
 
 def devices() -> list[dict]:

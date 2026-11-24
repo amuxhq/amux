@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Google Play Android Publisher API v3 client using a GCP service account.
 
-Authenticates with a service account JSON key (by default
-`~/.googleplay/service-account.json`, matching the Chrome Web Store setup in
-`scripts/browser_release.py`) via RS256 JWT signed by `openssl`, using only
-the Python standard library.
+Authenticates with a service account JSON key (the credential
+`googleplay/service-account`, scripts/credentials.py; `AMUX_GOOGLEPLAY_KEY_FILE`
+names a file instead) via RS256 JWT signed by `openssl`, using only the Python
+standard library.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
@@ -22,8 +23,11 @@ import urllib.parse
 import urllib.request
 from typing import Callable, Iterator
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+import credentials  # noqa: E402
+
 PACKAGE_NAME = "sh.amux.android"
-DEFAULT_KEY_FILE = Path.home() / ".googleplay" / "service-account.json"
+SERVICE_ACCOUNT = "googleplay/service-account"
 SCOPE = "https://www.googleapis.com/auth/androidpublisher"
 API = "https://androidpublisher.googleapis.com/androidpublisher/v3"
 UPLOAD_API = "https://androidpublisher.googleapis.com/upload/androidpublisher/v3"
@@ -34,9 +38,24 @@ class Refusal(Exception):
     """Something a Play release or deploy must not do, saying why."""
 
 
-def key_file_path() -> Path:
+def key_file_path() -> Path | None:
+    """The file `AMUX_GOOGLEPLAY_KEY_FILE` names, or None to ask the
+    credential command."""
     override = os.environ.get("AMUX_GOOGLEPLAY_KEY_FILE", "").strip()
-    return Path(override).expanduser() if override else DEFAULT_KEY_FILE
+    return Path(override).expanduser() if override else None
+
+
+def service_account() -> dict:
+    """The service account, from the file the environment names or else from
+    the credential command."""
+    key_file = key_file_path()
+    if key_file is not None:
+        return load_service_account(key_file)
+    try:
+        text = credentials.read(SERVICE_ACCOUNT)
+    except credentials.Missing as missing:
+        raise Refusal(f"{missing} (docs/RELEASE.md, the Android app's setup)") from None
+    return parse_service_account(text, SERVICE_ACCOUNT)
 
 
 def b64url(data: bytes) -> str:
@@ -94,19 +113,28 @@ def load_service_account(key_file: Path) -> dict:
             "(docs/RELEASE.md, the Android app's setup)"
         )
     try:
-        account = json.loads(key_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        text = key_file.read_text(encoding="utf-8")
+    except OSError as error:
         raise Refusal(f"could not read service account key {key_file}: {error}") from None
+    return parse_service_account(text, str(key_file))
+
+
+def parse_service_account(text: str, where: str) -> dict:
+    """A GCP service account JSON key, validated; `where` names its source."""
+    try:
+        account = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise Refusal(f"could not read service account key {where}: {error}") from None
     if not isinstance(account, dict):
-        raise Refusal(f"service account key {key_file} is not a JSON object")
+        raise Refusal(f"service account key {where} is not a JSON object")
     if account.get("type") != "service_account":
         raise Refusal(
-            f"service account key {key_file} has type {account.get('type')!r}, "
+            f"service account key {where} has type {account.get('type')!r}, "
             "expected 'service_account'"
         )
     for field in ("client_email", "private_key"):
         if not account.get(field):
-            raise Refusal(f"service account key {key_file} is missing {field!r}")
+            raise Refusal(f"service account key {where} is missing {field!r}")
     return account
 
 
@@ -129,7 +157,7 @@ class PlayPublisher:
 
     def __init__(
         self,
-        key_file: Path | None = None,
+        account: dict | None = None,
         *,
         package_name: str = PACKAGE_NAME,
         token: str | None = None,
@@ -141,7 +169,7 @@ class PlayPublisher:
         if token is not None:
             self.token = token
         else:
-            account = load_service_account(key_file or key_file_path())
+            account = account or service_account()
             token_uri = account.get("token_uri", DEFAULT_TOKEN_URI)
             body = urllib.parse.urlencode(
                 {

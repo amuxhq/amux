@@ -1,10 +1,9 @@
 """The App Store Connect API calls the iPhone app's release tools make.
 
-A token signed with the release Mac's App Store Connect key, whose
-identifiers live in the login keychain under `amux-appstoreconnect` (accounts
-`key-id` and `issuer-id`) and whose private key is under
-~/.appstoreconnect/private_keys (docs/RELEASE.md); and a small client whose
-network the tests replace.
+A token signed with the operator's App Store Connect key, whose identifiers
+and private key come from the operator's credential command
+(scripts/credentials.py, docs/RELEASE.md); and a small client whose network
+the tests replace.
 """
 
 from __future__ import annotations
@@ -13,14 +12,17 @@ from pathlib import Path
 import base64
 import json
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+import credentials  # noqa: E402
+
 API = "https://api.appstoreconnect.apple.com"
 BUNDLE = "sh.amux.app"
-KEYCHAIN_SERVICE = "amux-appstoreconnect"
-KEY_DIRECTORY = Path.home() / ".appstoreconnect/private_keys"
+CONNECT = "appstoreconnect"
 
 
 class Refusal(Exception):
@@ -61,12 +63,6 @@ def token(key_id: str, issuer: str, private_key: Path, now: int) -> str:
         raise Refusal("openssl could not sign with the App Store Connect key: "
                       + signed.stderr.decode(errors="replace").strip())
     return f"{header}.{claims}.{b64(raw_signature(signed.stdout))}"
-
-
-def keychain(account: str) -> str:
-    found = subprocess.run(["security", "find-generic-password", "-s", KEYCHAIN_SERVICE,
-                            "-a", account, "-w"], capture_output=True, text=True, timeout=60)
-    return found.stdout.strip() if found.returncode == 0 else ""
 
 
 def send(method: str, url: str, headers: dict, body: bytes | None) -> tuple[int, bytes]:
@@ -122,12 +118,11 @@ def app(connect: Connect) -> str:
 
 
 def signed_in() -> Connect:
-    """A client signed in with this Mac's App Store Connect key."""
-    key_id, issuer = keychain("key-id"), keychain("issuer-id")
-    if not (key_id and issuer):
-        raise Refusal(f"the login keychain has no App Store Connect key under {KEYCHAIN_SERVICE}; "
-                      "docs/RELEASE.md has the one-time setup")
-    private = KEY_DIRECTORY / f"AuthKey_{key_id}.p8"
-    if not private.exists():
-        raise Refusal(f"no key file in {KEY_DIRECTORY} for the keychain's key id")
-    return Connect(token(key_id, issuer, private, int(time.time())))
+    """A client signed in with the operator's App Store Connect key."""
+    try:
+        key_id = credentials.read(f"{CONNECT}/key-id").strip()
+        issuer = credentials.read(f"{CONNECT}/issuer-id").strip()
+        with credentials.file(f"{CONNECT}/private-key", "AuthKey.p8") as private:
+            return Connect(token(key_id, issuer, private, int(time.time())))
+    except credentials.Missing as missing:
+        raise Refusal(f"{missing}; docs/RELEASE.md has the one-time setup") from None

@@ -70,14 +70,9 @@ takes seconds shares a job.
 | Address sanitizer, Thread sanitizer | `ubuntu-latest` | `just sanitize address` and `just sanitize thread`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race. After the gate, when the push changed one of the crates whose tests they run |
 | Apple apps | `macos-26`, its actions on a worker of its own | `just ios simulator golden`, then through Buck2 every target under `apps/apple` built, the shipping app for a phone built too, and every Apple test run: the package suites and the hosted app suite on the simulator, the Mac app's tests on the runner ([The macOS jobs](#the-macos-jobs)) |
 | macOS tests | `macos-26`, its actions on a worker of its own | `just test //crates/...` through Buck2: every workspace test that isn't Linux-only, the terminal journeys and the system suites among them |
-| Test | `windows-latest` | `scripts/no-update-flags.sh`, `just cargo-test -- --profile ci --exclude models` (the whole suite; Windows compiles out the slow Unix suites) |
 
-The test job runs nextest's `ci` profile, which does not stop at the first
-failure, so a platform reports every failing test; the job's log holds each
-failing test's output. Its matrix does not fail fast either: a
-failure on one operating system does not cancel the others. The Windows
-runner compiles and runs every test binary; suites that need Unix processes,
-PTYs or sockets are compiled out there. Among them are the tests that host
+On Windows, suites that need Unix processes, PTYs or sockets are compiled
+out. Among them are the tests that host
 terminal Claude: the agent's terminal cases (in its `attach`, `dump`,
 `providers`, `tools` and `lifecycle` suites), provider-fakes' `pty` suite,
 the terminal modules of its `conformance` and `scripted` suites, and the
@@ -177,7 +172,7 @@ or slow test.
   platform's measured clean run — one where no failing test waits out its own
   timeout — times 1.5, rounded up to the hundred.
 - **The job guard** (`timeout-minutes`) bounds the honest total of a job:
-  setup, cache restore, every step. The test job's is 30 minutes.
+  setup, cache restore, every step. The Windows job's is 60 minutes.
 
 What the Cargo jobs' bounds were sized from, on a warm cache, under `cargo
 test`, before the tests ran under nextest (on the Mac the same selection

@@ -113,9 +113,10 @@ test-crate CRATE:
 goldens *ARGS:
     {{bounded}} 1800 scripts/py build/goldens.py "$@"
 
-# CI's Windows test job still runs Cargo and nextest through this twin of
-# `test`, with nextest's flags (.github/workflows/ci.yml).
-# Run workspace tests under cargo-nextest, as CI's Windows jobs do.
+# CI's Windows job runs Cargo and nextest through this twin of `test`, with
+# nextest's flags, when it has no build host to build for it (a fork's pull
+# request; .github/workflows/ci.yml).
+# Run workspace tests under cargo-nextest, as CI's Windows job does without the build host.
 cargo-test *ARGS: nextest
     if [ "${1-}" = -- ]; then shift; fi; scripts/workspace-test.sh "$@"
 

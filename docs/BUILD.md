@@ -75,11 +75,12 @@ bufbuild/buf/buf`. Its Buck2 test, `//:proto-compat`, brings its own.
 [Buck2](https://buck2.build) builds and tests the workspace for every
 `just` recipe a person or agent types. Cargo still builds the same crates
 from the same `Cargo.toml` files for what Buck2 doesn't do: CI's Windows
-test job (through `just cargo-test`), rust-analyzer, `just miri`,
-`just sanitize`, `just fuzz-smoke` and `just doctest`, the nightlies, and
-the command-line release builds, which move later. The Apple apps build
-with Buck2 ([the iPhone app](IOS.md#builds)). CI's Linux gate runs
-through Buck2 on the build host ([CI](CI.md#the-linux-gate)).
+job when it has no build host, a fork's pull request (through `just
+cargo-test`), rust-analyzer, `just miri`, `just sanitize`, `just
+fuzz-smoke` and `just doctest`, and the nightlies. The Apple apps build
+with Buck2 ([the iPhone app](IOS.md#builds)), and so do the command-line
+release binaries ([Release](RELEASE.md)). CI's Linux gate and Windows job
+run through Buck2 on the build host ([CI](CI.md#the-linux-gate)).
 
 Each crate describes itself twice, so the two stay in step by hand:
 

@@ -231,9 +231,6 @@ jobs:
     name: Windows
     runs-on: windows-latest
     timeout-minutes: 60
-    # While it is new beside the Cargo leg of the test job, which it is to
-    # replace, a failure here doesn't fail the run.
-    continue-on-error: true
     env:
       REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && inputs.without-build-host != true }}
     defaults:
@@ -318,55 +315,19 @@ jobs:
           path: ${{ runner.temp }}/test-results
           key: windows-test-results-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
       # Without the build host: what the Windows tests ran under before
-      # Buck2, on the runner's own four cores.
+      # Buck2, on the runner's own four cores. A fork's run reads the Rust
+      # cache main's runs saved; a run by hand on main without the build
+      # host is what saves it.
       - if: env.REMOTE != 'true'
         uses: ./.github/actions/setup-rust
         with:
           shared-key: test
-          save-if: "false"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           nextest: "true"
           sccache: "true"
       - name: Run the workspace tests under Cargo
         if: env.REMOTE != 'true'
         run: just cargo-test -- --profile ci --exclude models
-
-  # Windows still tests under Cargo and nextest until its own Buck2 job
-  # replaces this; Linux is the Linux gate's, macOS the macOS job's.
-  test:
-    name: Test (${{ matrix.label }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        # Windows compiles out the slow Unix/PTY/system suites, so its full
-        # run fits in one job.
-        include:
-          - os: windows-latest
-            label: "windows-latest"
-            partition: ""
-            save-cache: "true"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Refuse fixture update flags
-        shell: bash
-        run: scripts/no-update-flags.sh
-      - uses: ./.github/actions/setup-rust
-        with:
-          shared-key: test
-          save-if: ${{ matrix.save-cache }}
-          nextest: "true"
-          sccache: "true"
-      - name: Run workspace tests
-        # The ci profile reports every failing test, not only the first: a
-        # platform that stops early hides the failures behind it until the
-        # next run. The protocol models run in the Linux gate, on the build
-        # host.
-        run: just cargo-test -- --profile ci --exclude models ${{ matrix.partition }}
-      - name: Say what sccache fetched and compiled
-        if: always()
-        shell: bash
-        run: sccache --show-stats
 
   # The Apple apps and the workspace's tests on macOS, through Buck2
   # (docs/CI.md, "The macOS jobs"). A NativeLink on the runner, in front of

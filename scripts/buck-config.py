@@ -47,7 +47,11 @@ ROOT = Path(__file__).resolve().parents[1]
 # Windows can't start a shell script, and there this is that one already.
 PY = [sys.executable] if os.name == "nt" else [str(ROOT / "scripts/py")]
 OUT = ROOT / ".buckconfig.local"
-NATIVELINK = Path.home() / "Library/Caches/amux/nativelink"
+# scripts/nativelink.py's CACHE.
+NATIVELINK = (
+    Path(os.environ.get("SystemDrive", "C:") + "\\") / "amux/nativelink" if os.name == "nt"
+    else Path.home() / "Library/Caches/amux/nativelink"
+)
 WORKER_CORES = NATIVELINK / "cores"
 # What scripts/nativelink.py was installed with (its remote), and the last
 # answer from that remote, shared by every tree on the machine.

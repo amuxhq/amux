@@ -5,6 +5,9 @@ TARGETS = {
     "macos": ["prelude//os:macos", "prelude//cpu:arm64"],
     "linux": ["prelude//os:linux", "prelude//cpu:x86_64"],
     "windows": ["prelude//os:windows", "prelude//cpu:x86_64"],
+    # Windows on Arm, which a Windows VM on an Apple Silicon Mac is: its
+    # tests run natively there rather than as x64 under emulation.
+    "windows-arm64": ["prelude//os:windows", "prelude//cpu:arm64"],
     "ios": ["prelude//os:iphoneos", "prelude//cpu:arm64", "root//build/constraints:device"],
     "ios-sim": ["prelude//os:iphoneos", "prelude//cpu:arm64", "root//build/constraints:simulator"],
     "android-arm64": ["prelude//os:android", "prelude//cpu:arm64"],
@@ -36,10 +39,13 @@ EXEC_LIKE_TARGET = select({
 
 # For the binaries a test starts (build/rust.bzl's amux_binaries): built
 # for the machine the test runs on, which for a Windows test is Windows
-# though it is built on Linux.
+# though it is built on Linux, and of the test's own architecture.
 EXEC_RUNS_TARGET = select({
     "DEFAULT": EXEC_LIKE_TARGET,
-    "prelude//os:windows": ["prelude//os:windows"],
+    "prelude//os:windows": select({
+        "DEFAULT": ["prelude//os:windows", "prelude//cpu:x86_64"],
+        "prelude//cpu:arm64": ["prelude//os:windows", "prelude//cpu:arm64"],
+    }),
 })
 
 def host_target() -> str:
@@ -168,7 +174,10 @@ execution_platforms = rule(
 RUST_TARGET_TRIPLE = select({
     "prelude//os:macos": "aarch64-apple-darwin",
     "prelude//os:linux": "x86_64-unknown-linux-gnu",
-    "prelude//os:windows": "x86_64-pc-windows-msvc",
+    "prelude//os:windows": select({
+        "DEFAULT": "x86_64-pc-windows-msvc",
+        "prelude//cpu:arm64": "aarch64-pc-windows-msvc",
+    }),
     "prelude//os:iphoneos": select({
         "DEFAULT": "aarch64-apple-ios",
         "root//build/constraints:simulator": "aarch64-apple-ios-sim",

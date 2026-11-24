@@ -98,6 +98,21 @@ execution_platform(
     windows = True,
 )
 
+# A Windows on Arm worker (a Windows development VM on an Apple Silicon Mac;
+# docs/BUILD.md, "A Windows development machine"), for the Arm64 tests. Its
+# worker says so (`cpu`, scripts/nativelink.py); an x64 test asks for no
+# `cpu` and may run there too, under emulation.
+execution_platform(
+    name = "exec-windows-arm64",
+    constraints = ["prelude//os:windows", "prelude//cpu:arm64"] + TOOL_CONSTRAINTS,
+    properties = {
+        "OSFamily": "windows",
+        "cpu": "arm64",
+        "cpu_count": "1",
+    },
+    windows = True,
+)
+
 # A Mac prefers its own worker and sends what only Linux can run to the
 # build host's; the build host has no macOS worker to send anything to.
 # With no Linux worker in reach (`amux.linux = false`, which
@@ -116,5 +131,5 @@ _HOST = "macos" if host_info().os.is_macos else ("windows" if host_info().os.is_
 
 execution_platforms(
     name = "execution",
-    platforms = [":exec-" + _HOST] if _LOCAL else (([":exec-macos"] + ([":exec-linux"] if _LINUX else [])) if host_info().os.is_macos else [":exec-linux"]) + [":exec-windows"],
+    platforms = [":exec-" + _HOST] if _LOCAL else (([":exec-macos"] + ([":exec-linux"] if _LINUX else [])) if host_info().os.is_macos else [":exec-linux"]) + [":exec-windows", ":exec-windows-arm64"],
 )

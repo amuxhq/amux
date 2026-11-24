@@ -22,9 +22,11 @@ action to (docs/BUILD.md, "The build cache").
         at URL (build/nativelink/windows.json5); the tests' results go in
         --results, which the job keeps between runs. It listens on a port
         the system picks, written to DIR/port.
-    nativelink.py macos DIR --remote URL [--results DIR] [--cores N]
-        The same on CI's macOS runner, with a worker that runs the Mac's
-        actions (build/nativelink/macos.json5).
+    nativelink.py macos DIR [--cas-gib N] [--cores N]
+        Run one in the foreground on CI's macOS runner, with a worker that
+        runs the Mac's tests and its cache in DIR/cas and DIR/ac, which the
+        job keeps between runs; no remote (build/nativelink/macos.json5).
+        The CAS holds at most N GiB.
 
 `--cores` is how many cores the worker offers (default: the machine's
 count less three), so builds never take the whole laptop. `--background`
@@ -412,23 +414,19 @@ def uninstall() -> None:
     print(f"nativelink: stopped; the cache under {CACHE} is kept")
 
 
-def macos(cache: Path, remote: str, results: Path | None, cores: int) -> None:
+def macos(cache: Path, cas_gib: int, cores: int) -> None:
     """Runs CI's macOS NativeLink in the foreground."""
     if sys.platform != "darwin":
         sys.exit("nativelink: `macos` is for CI's macOS runner")
     cache.mkdir(parents=True, exist_ok=True)
-    results = results or cache / "ac"
-    results.mkdir(parents=True, exist_ok=True)
     (CACHE).mkdir(parents=True, exist_ok=True)
     # The cores the worker offers, for scripts/buck-config.py, as `render`
     # writes them on a developer's Mac.
     (CACHE / "cores").write_text(f"{cores}\n")
     config = cache / "config.json5"
     config.write_text(fill((ROOT / "build/nativelink/macos.json5").read_text(), {
-        "remote": remote,
         "cache": str(cache),
-        "results": str(results),
-        "cas_bytes": str(40 * GIB),
+        "cas_bytes": str(cas_gib * GIB),
         "ac_bytes": str(GIB),
         "cores": str(cores),
         "memory_kb": str(memory_bytes() * 3 // 4 // 1024),
@@ -445,7 +443,8 @@ def main() -> None:
     parser.add_argument("--background", action="store_true")
     parser.add_argument("--remote", help="a Linux build host's NativeLink, grpc://HOST:PORT, or `none`")
     parser.add_argument("--workers", help="HOST:PORT on this Mac where the remote's worker registers")
-    parser.add_argument("--results", type=Path, help="windows, macos: where the results are kept")
+    parser.add_argument("--results", type=Path, help="windows: where the results are kept")
+    parser.add_argument("--cas-gib", type=int, default=6, help="macos: the most the CAS holds, in GiB")
     args = parser.parse_args()
     if args.command == "windows":
         if args.directory is None or args.remote is None:
@@ -453,9 +452,9 @@ def main() -> None:
         windows(args.directory, args.remote, args.results, args.cores or os.cpu_count() or 4)
         return
     if args.command == "macos":
-        if args.directory is None or args.remote is None:
-            parser.error("macos needs the directory its cache goes in and --remote")
-        macos(args.directory, args.remote, args.results, args.cores or os.cpu_count() or 3)
+        if args.directory is None:
+            parser.error("macos needs the directory its cache goes in")
+        macos(args.directory, args.cas_gib, args.cores or os.cpu_count() or 3)
         return
     if args.command == "serve":
         if args.directory is None:

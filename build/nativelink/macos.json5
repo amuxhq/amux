@@ -1,30 +1,18 @@
 // NativeLink on CI's macOS runners (docs/CI.md, "The macOS jobs"): the
-// action cache Buck2 reads and writes, a CAS in front of the build host's,
-// and a worker that runs the tests. scripts/nativelink.py `macos` fills in
-// the {{...}} values and runs it.
+// cache Buck2 reads and writes, and a worker that runs the tests.
+// scripts/nativelink.py `macos` fills in the {{...}} values and runs it.
 //
-// Buck2 runs the build actions itself (AMUX_BUILD_HERE, scripts/buck-config.py):
-// on this worker each action's inputs were staged from the build host's CAS
-// across the internet, which cost more than the compiling did. Tests still
-// run here, so their results are cached. Outputs go to the build host's CAS
-// as well as this machine's, and the action cache is this machine's
-// (LOCAL_AC): the build host's can't be written from here, so the results
-// are kept in GitHub's cache between runs, as the Windows job keeps its
-// tests'. A result whose outputs the build host has evicted is reported
-// missing and the action runs again.
+// Buck2 runs the build actions itself (AMUX_BUILD_HERE, scripts/buck-config.py)
+// and the worker runs the tests, so their results are cached too. Both
+// stores are on the runner's disk, and the job keeps them in GitHub's cache
+// between runs. The build host isn't used: it can't run a Mac's actions,
+// and it is ~100 ms from GitHub's runners, so staging an action's inputs
+// from its CAS cost ~4 s an action and uploading a 190 MB test binary to
+// it five minutes. The CAS's size is capped so every job's store fits in
+// GitHub's 10 GB for the repository; past it the least recently used
+// blobs go, and an action whose outputs went runs again.
 {
   stores: [
-    {
-      name: "REMOTE_CAS",
-      grpc: {
-        instance_name: "main",
-        endpoints: [{ address: "{{remote}}" }],
-        store_type: "cas",
-        connections_per_endpoint: 4,
-        max_concurrent_requests: 64,
-        retry: { max_retries: 6, delay: 0.25, jitter: 0.5 },
-      },
-    },
     {
       name: "LOCAL_CAS",
       filesystem: {
@@ -34,35 +22,29 @@
       },
     },
     {
-      // Uploads go to both; reads fill the local layer from the build
-      // host. The worker uses the same, so a test's outputs reach the
-      // build host too.
+      // The worker's store must be a fast_slow one; nothing is behind it.
       name: "CAS",
       fast_slow: {
         fast: { ref_store: { name: "LOCAL_CAS" } },
-        slow: { ref_store: { name: "REMOTE_CAS" } },
+        slow: { noop: {} },
       },
     },
     {
       // The results of every action, the ones Buck2 ran and uploaded and
-      // the tests this worker ran, kept between runs. One whose outputs the
-      // build host has evicted is reported missing, and the action runs.
+      // the tests the worker ran. One whose outputs the CAS has evicted is
+      // reported missing, and the action runs.
       name: "LOCAL_AC",
       completeness_checking: {
         backend: {
           filesystem: {
-            content_path: "{{results}}",
+            content_path: "{{cache}}/ac",
             temp_path: "{{cache}}/ac-tmp",
             eviction_policy: { max_bytes: {{ac_bytes}} },
           },
         },
-        cas_store: { ref_store: { name: "CAS" } },
+        cas_store: { ref_store: { name: "LOCAL_CAS" } },
       },
     },
-    // No layer of the build host's action cache: nothing writes a macOS
-    // result there (its own worker is Linux, and neither a Mac nor a
-    // runner writes it), so every lookup in it was a miss that cost a
-    // round trip across the internet.
   ],
   schedulers: [
     {

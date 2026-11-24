@@ -16,12 +16,15 @@ _PROTOC = {
     "osx-aarch_64": "4aeea0a34b0992847b03a8489a8dbedf3746de01109b74cc2ce9b6888a901ed9",
 }
 
+#
+# remote_file's unzip is the prelude's own Python one: http_archive calls
+# an `unzip` command, which a Linux worker doesn't have.
 [
-    http_archive(
+    remote_file(
         name = "protoc-" + platform,
-        urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v31.1/protoc-31.1-{}.zip".format(platform)],
+        url = "https://github.com/protocolbuffers/protobuf/releases/download/v31.1/protoc-31.1-{}.zip".format(platform),
         sha256 = sha256,
-        type = "zip",
+        type = "exploded_zip",
     )
     for platform, sha256 in _PROTOC.items()
 ]

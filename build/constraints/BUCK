@@ -80,3 +80,14 @@ constraint_setting(
     )
     for mode in ["dev", "models", "release", "phone-dev", "wasm", "full-debug"]
 ]
+
+# Whether a Linux worker is in reach (scripts/buck-config.py writes
+# `amux.linux`). Targets that run only on Linux workers (`nova_only` in
+# build/rust.bzl) are compatible only with it, so with nova unreachable a
+# pattern such as //crates/... skips them, and says so, rather than trying
+# to run them on the Mac.
+config_setting(
+    name = "linux-workers",
+    values = {"amux.linux": "true"},
+    visibility = ["PUBLIC"],
+)

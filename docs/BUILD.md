@@ -47,8 +47,10 @@ On a machine with [Nix](https://nixos.org/download/) and flakes enabled,
 the Android SDK:
 the toolchain `rust-toolchain.toml` pins, the formatting nightly, `just`,
 `tmux`, Python, `git`, `gitleaks`, JDK 21 and `cargo-ndk`, the dependency checkers `just deny` and
-`just shear` run and, on Linux, a C compiler. `nix develop -c just test`
-runs one recipe in it. [`nix/toolchain.nix`](../nix/toolchain.nix) is the
+`just shear` run, the pinned `buck2`, `reindeer` and `nativelink`
+(`build/tools.json`) and, on Linux, a C compiler. `nix develop -c just test`
+runs one recipe in it; on Linux, where there is no rustup, that is how
+Buck2 finds the pinned Rust. [`nix/toolchain.nix`](../nix/toolchain.nix) is the
 list, and `flake.lock` pins every tool in it, so two machines on the same
 revision get the same tools. `nix profile install .#toolchain` installs the
 same list onto the PATH of every shell, for a machine that should always have
@@ -166,6 +168,40 @@ the tests that read what changed.
 Build output is under `buck-out/`, which holds only what was asked for:
 everything else stays in the cache until something needs it. `scripts/buck2
 clean` empties it without losing the cache.
+
+### Linux builds and the build host
+
+Linux targets build and run on a Linux worker: a build host's NativeLink
+(nova), or the one on a Linux machine itself. Their toolchain is
+`packages.actions` in [`flake.nix`](../flake.nix), the same list as the dev
+shell less the build tools, and an action on the Linux worker realizes it
+(`//:nix-linux`, [`build/toolchains/nix.bzl`](../build/toolchains/nix.bzl)):
+every Linux compile, link and test calls its tools by that store path, so a
+change to the flake changes every Linux key, and a branch that changes the
+toolchain gets it built on the worker from whichever machine sent it. A Mac
+needs no Nix for this.
+
+A Mac sends its Linux actions to the build host through its own
+NativeLink, once set up with the host's address and the Mac's address on
+the tailnet, where the host's worker registers:
+
+```sh
+scripts/nativelink.py install --remote grpc://<host>:50051 --workers <this Mac's tailnet address>:50062
+```
+
+The build host's own setup names both. The Mac's cache then sits in front
+of the host's: what Buck2 uploads reaches the host too, and a result the
+host already has is a hit on the Mac, so a branch tested on the host is
+cache hits for the same configuration on the Mac and the other way round.
+macOS results stay on the Mac.
+
+When the host doesn't answer (or the tailnet is down), `scripts/buck2`
+says so, restarts NativeLink without it and turns Linux off for the tree:
+Linux actions fail at once rather than wait, and tests marked `nova_only`
+(the model checks' integration target, which takes every core for ten
+minutes) are skipped, which `just test` names at the end. When the host
+answers again it switches back. Each switch restarts NativeLink, which
+interrupts any build another tree has running at that moment.
 
 ## Profiles
 

@@ -1,5 +1,6 @@
 # Files outside the crates that the crates' builds and tests read.
 load("//build:rust.bzl", "amux_files")
+load("@toolchains//:nix.bzl", "nix_toolchain")
 
 # Compiled in with include_str! by a crate's code or tests; each is one
 # file, named by its path in the checkout in the crate's `include`.
@@ -75,5 +76,17 @@ amux_files(
 export_file(
     name = "proto",
     src = "proto",
+    visibility = ["PUBLIC"],
+)
+
+# The Linux toolchain every Linux action runs with (build/toolchains/nix.bzl):
+# realized on the Linux worker from these files, so a branch that changes
+# them is checked with the toolchain it brings, from any machine.
+nix_toolchain(
+    name = "nix-linux",
+    srcs = ["flake.lock", "flake.nix", "nix/build-tools.nix", "nix/toolchain.nix", "rust-toolchain.toml"],
+    output = "packages.x86_64-linux.actions",
+    exec_compatible_with = ["prelude//os:linux"],
+    target_compatible_with = ["prelude//os:linux"],
     visibility = ["PUBLIC"],
 )

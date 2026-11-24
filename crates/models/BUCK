@@ -44,4 +44,7 @@ amux_rust_test(
     rustc_flags = OPTIMISED,
     timeouts = TIMEOUTS,
     whole_worker = True,
+    # Ten minutes on every core of a worker: on a laptop it holds up every
+    # other tree's actions for that long.
+    nova_only = True,
 )

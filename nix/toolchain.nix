@@ -2,7 +2,11 @@
 # and so does `packages.toolchain`, which installs it as a profile -- on a
 # machine where the tools should be on every shell's PATH, not only inside
 # `nix develop`. A machine definition can install the same list.
-{ pkgs }:
+#
+# `buildTools = false` leaves out buck2, reindeer and nativelink: that is the
+# list Buck2's Linux actions run with (flake.nix's `packages.actions`), and
+# a new buck2 or NativeLink shouldn't change the key of every Linux action.
+{ pkgs, buildTools ? true }:
 let
   # The stable toolchain, read from rust-toolchain.toml so that rustup users and
   # this list cannot disagree about the version, components or targets.
@@ -22,6 +26,8 @@ let
   cargoNightly = pkgs.writeShellScriptBin "cargo-nightly" ''
     PATH=${nightly}/bin:$PATH exec cargo "$@"
   '';
+
+  pinned = import ./build-tools.nix { inherit pkgs; };
 in
 [
   rust
@@ -44,3 +50,5 @@ in
 # bundled. Linux only. On macOS the iPhone bridge needs Apple's own toolchain
 # from Xcode, and Nix's compiler and SDK variables get in its way.
 ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.stdenv.cc ]
+# build/tools.json's buck2, reindeer and nativelink.
+++ pkgs.lib.optionals buildTools (builtins.attrValues pinned.tools)

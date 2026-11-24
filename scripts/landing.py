@@ -123,8 +123,15 @@ def land_once(
         step("running just miri: the merge changes what app-ffi is built from")
         gate.check("miri", gate.miri, tree)
     step("pushing to main")
-    pushed = subprocess.run(["git", "push", "--quiet", "origin", "HEAD:main"], cwd=tree)
+    pushed = subprocess.run(["git", "push", "--quiet", "origin", "HEAD:main"], cwd=tree, text=True, capture_output=True)
     if pushed.returncode != 0:
+        # Someone landing first moves main, and the landing starts again
+        # from the fetch. A refusal that leaves main where it was (a
+        # protected branch, a key without write access) would only be
+        # refused again, so it stops the landing and says why.
+        git("fetch", "--quiet", "origin", "main", cwd=tree)
+        if git("rev-parse", "origin/main", cwd=tree, capture=True) == base:
+            raise Stopped(f"the push to main was refused: {pushed.stderr.strip() or pushed.stdout.strip()}")
         return None
     return git("rev-parse", "HEAD", cwd=tree, capture=True)
 

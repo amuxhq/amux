@@ -69,10 +69,11 @@ check:
 # Every test runs in a process of its own (build/test-runner.py), and a
 # passing result is cached in NativeLink, so only tests whose inputs changed
 # run. Target patterns narrow the run (`just test //crates/node:`); the live
-# provider lanes are left out (`just live`).
+# provider lanes are left out (`just live`). With no Linux worker in reach,
+# the `nova-only` tests are skipped, and the run ends by naming them.
 # Run the workspace's tests through Buck2.
 test *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --exclude live -- --timeout 3600
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
 
 # Run tests for one named workspace crate.
 test-crate CRATE:

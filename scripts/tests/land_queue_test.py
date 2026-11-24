@@ -165,6 +165,21 @@ class LandingTest(Repos):
         raced = git(other, "rev-parse", "HEAD")
         self.assertEqual(git(self.origin, "rev-parse", f"{landed}^1"), raced)
 
+    def test_a_push_refused_with_main_unmoved_stops_at_once_saying_why(self):
+        commit(self.dev, "a", "1\n", "One")
+        self.request("r1")
+        before = self.main()
+        # Standing in for a protected branch: the origin refuses every push.
+        hook = self.origin / "hooks" / "pre-receive"
+        hook.write_text("#!/bin/sh\necho main is protected >&2\nexit 1\n")
+        hook.chmod(0o755)
+
+        first = self.land("r1")
+
+        self.assertTrue(first.startswith("STOPPED the push to main was refused"), first)
+        self.assertIn("main is protected", self.result("r1"))
+        self.assertEqual(self.main(), before)
+
     def test_a_request_without_a_message_is_refused(self):
         before = self.main()
         commit(self.dev, "a", "1\n", "One")

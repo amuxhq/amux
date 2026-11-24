@@ -1,7 +1,9 @@
 """The C/C++ toolchain: the prelude's system toolchain, copied so that links
 run remotely. The prelude's version pins every link and archive to Buck2's
 local executor, whose results are never cached. Everything else is as the
-prelude has it at the pinned buck2 version (build/tools.json).
+prelude has it at the pinned buck2 version (build/tools.json), except that
+Linux targets call the Linux toolchain's compiler, linker and binary tools
+(nix.bzl) by store path instead of the ones named here.
 """
 
 # Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -36,6 +38,7 @@ load("@prelude//decls:common.bzl", "buck")
 load("@prelude//linking:link_info.bzl", "LinkOrdering", "LinkStyle")
 load("@prelude//linking:lto.bzl", "LtoMode")
 load("@prelude//os_lookup:defs.bzl", "Os", "OsLookup")
+load(":nix.bzl", "NixToolchainInfo", "nix_tool")
 
 
 def _legacy_equivalent_cxx_tools_info_windows(ctx: AnalysisContext, default_toolchain: CxxToolsInfo) -> CxxToolsInfo:
@@ -94,9 +97,15 @@ def _cxx_tools_info_toolchain_impl(ctx: AnalysisContext):
 def _cxx_toolchain_from_cxx_tools_info(ctx: AnalysisContext, cxx_tools_info: CxxToolsInfo, target_name = "x86_64"):
     os = ctx.attrs._target_os_type[OsLookup].os
     archiver_supports_argfiles = os != Os("macos")
+    nix = getattr(ctx.attrs, "nix", None)
+
+    def tool(named, nix_path):
+        return nix_tool(nix, nix_path) if nix else _run_info(named)
+
     # (Only through a compiler driver: a linker named outright, as wasm-ld
-    # is, takes no driver flags.)
-    additional_linker_flags = ["-fuse-ld=lld"] if os == Os("linux") and not getattr(ctx.attrs, "linker_type", None) and cxx_tools_info.linker != "g++" and cxx_tools_info.cxx_compiler != "g++" else []
+    # is, takes no driver flags. The Linux toolchain's driver is GCC's,
+    # which links with its own binutils.)
+    additional_linker_flags = ["-fuse-ld=lld"] if os == Os("linux") and not nix and not getattr(ctx.attrs, "linker_type", None) and cxx_tools_info.linker != "g++" and cxx_tools_info.cxx_compiler != "g++" else []
 
     # A target whose linker isn't the host's (wasm-ld for WebAssembly) says
     # which kind it is.
@@ -145,10 +154,10 @@ def _cxx_toolchain_from_cxx_tools_info(ctx: AnalysisContext, cxx_tools_info: Cxx
         CxxToolchainInfo(
             internal_tools = ctx.attrs.internal_tools[CxxInternalTools],
             linker_info = LinkerInfo(
-                linker = _run_info(cxx_tools_info.linker),
+                linker = tool(cxx_tools_info.linker, "bin/c++"),
                 linker_flags = additional_linker_flags + ctx.attrs.link_flags,
                 post_linker_flags = ctx.attrs.post_link_flags,
-                archiver = _run_info(cxx_tools_info.archiver),
+                archiver = tool(cxx_tools_info.archiver, "bin/ar"),
                 archiver_type = cxx_tools_info.archiver_type,
                 archiver_supports_argfiles = archiver_supports_argfiles,
                 generate_linker_maps = False,
@@ -179,15 +188,15 @@ def _cxx_toolchain_from_cxx_tools_info(ctx: AnalysisContext, cxx_tools_info: Cxx
             ),
             bolt_enabled = False,
             binary_utilities_info = BinaryUtilitiesInfo(
-                nm = RunInfo(args = ["nm"]),
-                objcopy = RunInfo(args = ["objcopy"]),
-                objdump = RunInfo(args = ["objdump"]),
-                ranlib = RunInfo(args = ["ranlib"]),
-                strip = RunInfo(args = ["strip"]),
+                nm = tool("nm", "bin/nm"),
+                objcopy = tool("objcopy", "bin/objcopy"),
+                objdump = tool("objdump", "bin/objdump"),
+                ranlib = tool("ranlib", "bin/ranlib"),
+                strip = tool("strip", "bin/strip"),
                 dwp = None,
             ),
             cxx_compiler_info = CxxCompilerInfo(
-                compiler = _run_info(cxx_tools_info.cxx_compiler),
+                compiler = tool(cxx_tools_info.cxx_compiler, "bin/c++"),
                 preprocessor_flags = [],
                 compiler_flags = ctx.attrs.cxx_flags,
                 compiler_type = cxx_tools_info.compiler_type,
@@ -195,19 +204,19 @@ def _cxx_toolchain_from_cxx_tools_info(ctx: AnalysisContext, cxx_tools_info: Cxx
                 supports_content_based_paths = ctx.attrs.supports_content_based_paths,
             ),
             c_compiler_info = CCompilerInfo(
-                compiler = _run_info(cxx_tools_info.compiler),
+                compiler = tool(cxx_tools_info.compiler, "bin/cc"),
                 preprocessor_flags = [],
                 compiler_flags = ctx.attrs.c_flags,
                 compiler_type = cxx_tools_info.compiler_type,
                 supports_content_based_paths = ctx.attrs.supports_content_based_paths,
             ),
             as_compiler_info = CCompilerInfo(
-                compiler = _run_info(cxx_tools_info.compiler),
+                compiler = tool(cxx_tools_info.compiler, "bin/cc"),
                 compiler_type = cxx_tools_info.compiler_type,
                 supports_content_based_paths = ctx.attrs.supports_content_based_paths,
             ),
             asm_compiler_info = CCompilerInfo(
-                compiler = _run_info(cxx_tools_info.asm_compiler),
+                compiler = tool(cxx_tools_info.asm_compiler, "bin/cc"),
                 compiler_type = cxx_tools_info.asm_compiler_type,
             ),
             cvtres_compiler_info = CvtresCompilerInfo(
@@ -252,6 +261,9 @@ amux_cxx_toolchain = rule(
         "link_ordering": attrs.option(attrs.enum(LinkOrdering.values()), default = None),
         "link_style": attrs.string(default = "shared"),
         "linker": attrs.option(attrs.string(), default = None),
+        # The Linux toolchain, for Linux targets; otherwise the tools named
+        # by the attributes above.
+        "nix": attrs.option(attrs.exec_dep(providers = [NixToolchainInfo]), default = None),
         "linker_type": attrs.option(attrs.enum(LinkerType.values()), default = None),
         "post_link_flags": attrs.list(attrs.arg(), default = []),
         "rc_compiler": attrs.option(attrs.string(), default = None),

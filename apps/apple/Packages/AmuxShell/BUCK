@@ -1,0 +1,30 @@
+load("//build:rust.bzl", "amux_files")
+load("//apps/apple:defs.bzl", "package_library", "package_tests")
+
+# The shell is the only place that navigates. Screens are functions of state
+# and say what happened; where that leads is decided here.
+package_library(
+    name = "AmuxShell",
+    package = "AmuxShell",
+    srcs = glob(["Sources/AmuxShell/**/*.swift"]),
+    deps = [
+        "//apps/apple/Packages/AmuxCore:AmuxCore",
+        "//apps/apple/Packages/AmuxCore:AmuxWords",
+        "//apps/apple/Packages/AmuxDesign:AmuxDesign",
+        "//apps/apple/Packages/AmuxFeatures:AmuxFeatures",
+    ],
+)
+
+package_tests(
+    name = "AmuxShellTests",
+    package = "AmuxShell",
+    srcs = glob(["Tests/AmuxShellTests/**/*.swift"]),
+    deps = [":AmuxShell"],
+)
+
+# The Swift sources at their paths in the checkout, for the repository
+# checks that read them (the root BUCK's client-kind-check).
+amux_files(
+    name = "swift",
+    srcs = glob(["**/*.swift"]),
+)

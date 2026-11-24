@@ -35,6 +35,23 @@ target_platform(
     visibility = ["PUBLIC"],
 )
 
+# The iPhone app as the performance suite measures it, for the simulator
+# and for a phone: the development bridge under an optimised Swift build
+# (build/constraints:measured).
+[
+    target_platform(
+        name = "{}-app-shipping-measured".format(target),
+        constraints = TARGETS[target] + [
+            "root//build/constraints:app",
+            "root//build/constraints:shipping",
+            "root//build/constraints:phone-dev",
+            "root//build/constraints:measured",
+        ],
+        visibility = ["PUBLIC"],
+    )
+    for target in ["ios", "ios-sim"]
+]
+
 # Build scripts, proc macros and code generators run on an execution
 # platform, so they are built as tools: a development build, with test
 # features on.

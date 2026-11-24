@@ -62,6 +62,18 @@ _LINUX_WHOLE_WORKER = read_root_config("amux", "linux_worker_cores", "8")
 # four.
 _WINDOWS_WHOLE_WORKER = "4"
 
+# C for a phone or the simulator (a crate's C, such as ring's) is compiled for
+# that target against its SDK: /usr/bin/clang would otherwise build it for
+# this Mac. scripts/buck-config.py writes where the selected Xcode keeps each
+# SDK, so an Xcode upgrade changes these actions' keys too.
+_IOS_C_FLAGS = select({
+    "DEFAULT": [],
+    "prelude//os:iphoneos": select({
+        "DEFAULT": ["-target", "arm64-apple-ios26.0", "-isysroot", read_root_config("apple", "iphoneos_sdk", "")],
+        "root//build/constraints:simulator": ["-target", "arm64-apple-ios26.0-simulator", "-isysroot", read_root_config("apple", "iphonesimulator_sdk", "")],
+    }),
+})
+
 # Xcode's clang through /usr/bin, which finds the selected Xcode and its SDK.
 # The Xcode version is in every Mac action's platform properties
 # (build/platforms/BUCK), so an Xcode upgrade changes their keys.
@@ -73,9 +85,10 @@ amux_cxx_toolchain(
     archiver_type = select({"DEFAULT": None, "prelude//os:windows": "windows_clang"}),
     # The C runtime as a DLL, as Rust's own Windows code and the `cc`
     # crate's builds link it: clang-cl alone would pick the static one, and
-    # one binary would then carry both.
-    c_flags = select({"DEFAULT": [], "prelude//os:windows": ["/MD"]}),
-    cxx_flags = select({"DEFAULT": [], "prelude//os:windows": ["/MD"]}),
+    # one binary would then carry both. A phone's or the simulator's C is
+    # compiled for it (_IOS_C_FLAGS).
+    c_flags = _IOS_C_FLAGS + select({"DEFAULT": [], "prelude//os:windows": ["/MD"]}),
+    cxx_flags = _IOS_C_FLAGS + select({"DEFAULT": [], "prelude//os:windows": ["/MD"]}),
     cxx_compiler = "/usr/bin/clang++",
     # WebAssembly links with the lld the pinned Rust ships, as Cargo's wasm32
     # builds do; rustc tells it which flavour.

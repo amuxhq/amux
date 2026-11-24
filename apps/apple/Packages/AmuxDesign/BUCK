@@ -1,0 +1,24 @@
+load("//build:rust.bzl", "amux_files")
+load("//apps/apple:defs.bzl", "copied", "package_library", "package_tests")
+
+package_library(
+    name = "AmuxDesign",
+    package = "AmuxDesign",
+    srcs = glob(["Sources/AmuxDesign/**/*.swift"]),
+    resources = copied("Sources/AmuxDesign/Resources", "Fonts"),
+)
+
+package_tests(
+    name = "AmuxDesignTests",
+    package = "AmuxDesign",
+    srcs = glob(["Tests/AmuxDesignTests/**/*.swift"]),
+    resources = {"TokenTable.txt": "Tests/AmuxDesignTests/TokenTable.txt"},
+    deps = [":AmuxDesign"],
+)
+
+# The Swift sources at their paths in the checkout, for the repository
+# checks that read them (the root BUCK's client-kind-check).
+amux_files(
+    name = "swift",
+    srcs = glob(["**/*.swift"]),
+)

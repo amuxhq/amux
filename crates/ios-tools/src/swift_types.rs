@@ -122,12 +122,18 @@ pub fn definitions() -> Map<String, Value> {
     generator.take_definitions(true)
 }
 
-/// `swift-types [--check]`, run from anywhere in the repository.
+/// `swift-types [--check | --values PATH]`, run from anywhere in the repository.
 pub fn main(args: &[String]) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let check = match args {
         [] => false,
         [flag] if flag == "--check" => true,
-        _ => return Err("usage: ios-tools swift-types [--check]".into()),
+        // Values.swift alone, at PATH: the Buck2 build's own copy
+        // (apps/apple/Packages/AmuxCore/BUCK).
+        [flag, path] if flag == "--values" => {
+            std::fs::write(path, generate(&definitions())?)?;
+            return Ok(());
+        }
+        _ => return Err("usage: ios-tools swift-types [--check | --values PATH]".into()),
     };
     let definitions = definitions();
     let files = [

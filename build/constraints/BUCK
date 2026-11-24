@@ -106,3 +106,19 @@ constraint_value(
     constraint_setting = ":builder",
     visibility = ["PUBLIC"],
 )
+
+# The iPhone app's optimised build with its driving tools compiled in, which
+# the performance suite measures (docs/IOS.md, "Builds"): the Swift is
+# compiled as a release is, the bridge is the development one (`phone-dev`,
+# with the driving tools). Only the Apple rules read it (build/apple.bzl);
+# the bridge they link is configured without it.
+constraint_setting(
+    name = "apple-build",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "measured",
+    constraint_setting = ":apple-build",
+    visibility = ["PUBLIC"],
+)

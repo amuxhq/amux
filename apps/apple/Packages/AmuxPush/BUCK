@@ -1,0 +1,46 @@
+load("//build:rust.bzl", "amux_files")
+load("//apps/apple:defs.bzl", "copied", "package_library", "package_tests")
+
+# What opening a push takes and nothing else. The notification extension
+# links this, and it has a few megabytes to live in, so nothing here may
+# reach the Rust bridge or the app's other packages.
+package_library(
+    name = "AmuxPush",
+    package = "AmuxPush",
+    srcs = glob(["Sources/AmuxPush/**/*.swift"]),
+)
+
+package_tests(
+    name = "AmuxPushTests",
+    package = "AmuxPush",
+    srcs = glob(["Tests/AmuxPushTests/**/*.swift"]),
+    resources = copied("Tests/AmuxPushTests", "Fixtures"),
+    deps = [":AmuxPush"],
+)
+
+# The Swift sources at their paths in the checkout, for the repository
+# checks that read them (the root BUCK's client-kind-check).
+amux_files(
+    name = "swift",
+    srcs = glob(["**/*.swift"]),
+)
+
+# The sealed pushes the daemon wrote, which the Android push module's and
+# node's tests open too.
+export_file(
+    name = "sealed-pushes.json",
+    src = "Tests/AmuxPushTests/Fixtures/sealed-pushes.json",
+    visibility = ["PUBLIC"],
+)
+
+amux_files(
+    name = "sealed-pushes",
+    srcs = ["Tests/AmuxPushTests/Fixtures/sealed-pushes.json"],
+)
+
+# The committed push mirror, which ios-tools' tests hold to the Rust
+# definitions.
+amux_files(
+    name = "mirrors",
+    srcs = ["Sources/AmuxPush/Said.swift"],
+)

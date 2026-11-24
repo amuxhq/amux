@@ -146,13 +146,28 @@ final class ScratchDaemon {
     let home: URL
     let config: URL
 
+    /// The checkout the tests read: the one their runner names
+    /// (AMUX_SOURCE_ROOT, as build/apple/xctest.py sets it), else the one
+    /// this file was compiled from.
     static var repository: URL {
-        URL(filePath: #filePath).deletingLastPathComponent()
+        if let given = ProcessInfo.processInfo.environment["AMUX_SOURCE_ROOT"] {
+            return URL(filePath: given)
+        }
+        return URL(filePath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
     }
 
-    static var amux: URL { repository.appending(path: "target/debug/amux") }
+    /// The checkout's amux and fakes: the directory the runner names
+    /// (TESTNET_BINARIES, as the Rust tests find theirs), else Cargo's.
+    static var binaries: URL {
+        if let given = ProcessInfo.processInfo.environment["TESTNET_BINARIES"] {
+            return URL(filePath: given)
+        }
+        return repository.appending(path: "target/debug")
+    }
+
+    static var amux: URL { binaries.appending(path: "amux") }
 
     static func directory() throws -> URL {
         let dir = URL(filePath: NSTemporaryDirectory())
@@ -163,7 +178,7 @@ final class ScratchDaemon {
 
     /// The fake ACP agent the checkout builds, which a test configures as
     /// the agents a person adds.
-    static var fakeAcp: URL { repository.appending(path: "target/debug/fake-acp") }
+    static var fakeAcp: URL { binaries.appending(path: "fake-acp") }
 
     /// A daemon whose config ends with `extra`.
     init(extra: String = "") throws {

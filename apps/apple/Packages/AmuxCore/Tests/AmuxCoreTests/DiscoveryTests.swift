@@ -23,8 +23,13 @@ final class DiscoveryTests: XCTestCase {
         // The Mac writes this record and its own tests pin the same file, so a
         // spelling the Mac's parser tolerates and Foundation's does not fails
         // here instead of hiding every Mac from every phone.
+        // The checkout the test was given (AMUX_SOURCE_ROOT, as its runner
+        // sets it), else the one this file was compiled from.
         var root = URL(fileURLWithPath: #filePath)
         for _ in 0..<7 { root.deleteLastPathComponent() }
+        if let given = ProcessInfo.processInfo.environment["AMUX_SOURCE_ROOT"] {
+            root = URL(fileURLWithPath: given)
+        }
         let url = root.appendingPathComponent("crates/node/tests/fixtures/discovery/advertisement.json")
         let fixture = try JSONDecoder().decode(AdvertisedRecord.self, from: Data(contentsOf: url))
 

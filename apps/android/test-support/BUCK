@@ -37,5 +37,5 @@ amux_android_library(
 # bundles it for the iPhone and the Mac keeps it.
 resource_jar(
     name = "markdown-fixtures",
-    srcs = {"markdown-fixtures.json": "//:markdown-fixtures.json"},
+    srcs = {"markdown-fixtures.json": "//apps/apple/Packages/AmuxCore:markdown-fixtures.json"},
 )

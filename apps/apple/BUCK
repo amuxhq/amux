@@ -1,0 +1,357 @@
+load("//apps/apple:defs.bzl", "MAC", "SIMULATOR", "copied", "ios_versions")
+load("//apps/apple:version.bzl", "MAC_VERSION")
+load("//build:apple.bzl", "apple_binary", "apple_bundle", "apple_xctest", "swift_library")
+load("//build:rust.bzl", "amux_files")
+
+# The iPhone app (docs/IOS.md, "Builds"). Built for the simulator's
+# development configuration unless a platform is named:
+#
+#   //build/platforms:ios-sim-app-shipping-phone-dev   Debug, the simulator
+#   //build/platforms:ios-sim-app-shipping-measured    Measured, the simulator
+#   //build/platforms:ios-sim-app-shipping-release     Release, the simulator
+#   //build/platforms:ios-app-shipping-...             the same for a phone
+#
+# Debug and Measured compile the driving door and everything that opens a
+# screen without a host into the app; Release compiles none of it, so a door
+# symbol or a fixture can't reach a shipped binary by way of a stray
+# reference outside a conditional. `just ios scope-audit` checks the built
+# binary.
+
+_PACKAGES = "//apps/apple/Packages/"
+
+_DRIVEN = select({
+    "DEFAULT": True,
+    "root//build/constraints:release": False,
+})
+
+# The door's sources, and the fixtures, scripted cloud and door wire types
+# compiled into a driven build rather than linked as a package, so a release
+# leaves them out entirely.
+_DRIVING_SOURCES = glob(["Amux/Debug/*.swift"], exclude = ["Amux/Debug/Previews.swift"]) + [
+    _PACKAGES + "AmuxCore:MarkdownFixtures.swift",
+]
+
+swift_library(
+    name = "Amux-module",
+    module_name = "Amux",
+    srcs = glob(["Amux/Sources/*.swift"]) + select({
+        "DEFAULT": _DRIVING_SOURCES,
+        "root//build/constraints:release": [],
+    }),
+    src_dirs = select({
+        "DEFAULT": [_PACKAGES + "AmuxTestSupport:sources"],
+        "root//build/constraints:release": [],
+    }),
+    conditions = select({
+        "DEFAULT": ["AMUX_DEBUG_TOOLS"],
+        "root//build/constraints:release": [],
+    }),
+    deps = [
+        _PACKAGES + "AmuxCore:AmuxCore",
+        _PACKAGES + "AmuxCore:AmuxWords",
+        _PACKAGES + "AmuxDesign:AmuxDesign",
+        _PACKAGES + "AmuxFeatures:AmuxFeatures",
+        _PACKAGES + "AmuxPush:AmuxPush",
+        _PACKAGES + "AmuxShell:AmuxShell",
+    ],
+    default_target_platform = SIMULATOR,
+)
+
+apple_binary(
+    name = "Amux-binary",
+    product_name = "Amux",
+    deps = [":Amux-module"],
+    entitlements = "Amux/Amux.entitlements",
+    # The bridge's static library marks thousands of Rust symbols global,
+    # and the linker treats every exported symbol as live, so it could
+    # neither drop their export table nor dead-strip the code behind them:
+    # measured at 3.8 MB of a 14.8 MB binary. An app exports nothing anyone
+    # calls. Release only, because the app-hosted tests link against a
+    # driven app's symbols.
+    linker_flags = select({
+        "DEFAULT": [],
+        "root//build/constraints:release": ["-Xlinker", "-no_exported_symbols"],
+    }),
+    default_target_platform = SIMULATOR,
+)
+
+_APP_RESOURCES = {
+    "InfoPlist.xcstrings": "Amux/Resources/InfoPlist.xcstrings",
+    "Localizable.xcstrings": "Amux/Resources/Localizable.xcstrings",
+    "PrivacyInfo.xcprivacy": "Amux/Resources/PrivacyInfo.xcprivacy",
+} | copied("Amux", "Assets.xcassets")
+
+# What only a driven build carries: the picture a report fixture is frozen
+# on (a report screen is a photograph of another screen, so a declared
+# report state has to carry one), the door's copy, and the prose the Rust
+# parser read for the catalogue's rows.
+_DRIVING_RESOURCES = {
+    "DebugCopy.xcstrings": _PACKAGES + "AmuxTestSupport:DebugCopy.xcstrings",
+    "frozen-frame.png": _PACKAGES + "AmuxTestSupport:frozen-frame.png",
+    "markdown-fixtures.json": _PACKAGES + "AmuxCore:markdown-fixtures.json",
+}
+
+
+apple_bundle(
+    name = "Amux",
+    product_name = "Amux",
+    identifier = "sh.amux.app",
+    binary = ":Amux-binary",
+    info_plist = "Amux/Info.plist",
+    values = ios_versions(),
+    resources = select({
+        "DEFAULT": _APP_RESOURCES | _DRIVING_RESOURCES,
+        "root//build/constraints:release": _APP_RESOURCES,
+    }),
+    # One 1024x1024 image; the catalog compiler derives every size iOS and
+    # the App Store ask for. The artwork is the one already published on
+    # the App Store, copied into this repository byte for byte.
+    app_icon = "AppIcon",
+    plugins = [":AmuxNotifications"],
+    default_target_platform = SIMULATOR,
+    visibility = ["PUBLIC"],
+)
+
+# Opens a push on its way to the screen and writes what it says over the
+# plain alert. iOS gives it a few megabytes, so it links AmuxPush alone and
+# never the Rust bridge; `just ios scope-audit` checks the built binary.
+swift_library(
+    name = "AmuxNotifications-module",
+    module_name = "AmuxNotifications",
+    srcs = glob(["AmuxNotifications/*.swift"]),
+    deps = [_PACKAGES + "AmuxPush:AmuxPush"],
+    application_extension = True,
+    default_target_platform = SIMULATOR,
+)
+
+apple_binary(
+    name = "AmuxNotifications-binary",
+    product_name = "AmuxNotifications",
+    kind = "extension",
+    deps = [":AmuxNotifications-module"],
+    entitlements = "AmuxNotifications/AmuxNotifications.entitlements",
+    default_target_platform = SIMULATOR,
+)
+
+apple_bundle(
+    name = "AmuxNotifications",
+    product_name = "AmuxNotifications",
+    extension = "appex",
+    identifier = "sh.amux.app.notifications",
+    binary = ":AmuxNotifications-binary",
+    info_plist = "AmuxNotifications/Info.plist",
+    values = ios_versions(),
+    default_target_platform = SIMULATOR,
+)
+
+# Tests that need the app's own window and UIKit run hosted by the app: the
+# bundle is loaded into a driven app that carries it (`AmuxAppTests-host`).
+swift_library(
+    name = "AmuxAppTests-module",
+    module_name = "AmuxAppTests",
+    srcs = glob(["AmuxAppTests/*.swift"]),
+    deps = [":Amux-module"],
+    xctest = True,
+    default_target_platform = SIMULATOR,
+)
+
+apple_binary(
+    name = "AmuxAppTests-binary",
+    product_name = "AmuxAppTests",
+    kind = "bundle",
+    deps = [":AmuxAppTests-module"],
+    bundle_loader = ":Amux-binary",
+    xctest = True,
+    default_target_platform = SIMULATOR,
+)
+
+apple_bundle(
+    name = "AmuxAppTests-bundle",
+    product_name = "AmuxAppTests",
+    extension = "xctest",
+    identifier = "sh.amux.AmuxAppTests",
+    binary = ":AmuxAppTests-binary",
+    info = {
+        "CFBundleDevelopmentRegion": "en",
+        "CFBundleExecutable": "AmuxAppTests",
+        "CFBundleIdentifier": "sh.amux.AmuxAppTests",
+        "CFBundleInfoDictionaryVersion": "6.0",
+        "CFBundleName": "AmuxAppTests",
+        "CFBundlePackageType": "BNDL",
+    },
+    default_target_platform = SIMULATOR,
+)
+
+apple_bundle(
+    name = "AmuxAppTests-host",
+    product_name = "Amux",
+    identifier = "sh.amux.app",
+    binary = ":Amux-binary",
+    info_plist = "Amux/Info.plist",
+    values = ios_versions(),
+    resources = _APP_RESOURCES | _DRIVING_RESOURCES,
+    app_icon = "AppIcon",
+    plugins = [":AmuxNotifications", ":AmuxAppTests-bundle"],
+    default_target_platform = SIMULATOR,
+)
+
+apple_xctest(
+    name = "AmuxAppTests",
+    bundle = ":AmuxAppTests-bundle",
+    host = ":AmuxAppTests-host",
+    labels = ["simulator"],
+    default_target_platform = SIMULATOR,
+)
+
+# Read by ios-tools' tests, which hold the verification list to the recipes.
+export_file(
+    name = "justfile",
+    mode = "reference",
+    visibility = ["PUBLIC"],
+)
+
+# The apps' Swift sources at their paths in the checkout, for the root
+# BUCK's client-kind-check (each package has its own).
+amux_files(
+    name = "swift",
+    srcs = glob(["**/*.swift"]),
+)
+
+# The Mac app (docs/MAC.md). Built for this Mac's development configuration
+# unless a platform is named: //build/platforms:macos-app-shipping-release is
+# what `just mac release` signs with Developer ID.
+_MAC_PACKAGES = [
+    _PACKAGES + "AmuxCore:AmuxCore",
+    _PACKAGES + "AmuxCore:AmuxValues",
+    _PACKAGES + "AmuxCore:AmuxWords",
+    _PACKAGES + "AmuxMacScreens:AmuxMacScreens",
+]
+
+swift_library(
+    name = "AmuxMac-module",
+    module_name = "Amux",
+    srcs = glob(["Mac/Sources/*.swift"]),
+    deps = _MAC_PACKAGES,
+    default_target_platform = MAC,
+)
+
+apple_binary(
+    name = "AmuxMac-binary",
+    product_name = "Amux",
+    deps = [":AmuxMac-module"],
+    default_target_platform = MAC,
+)
+
+apple_bundle(
+    name = "AmuxMac",
+    product_name = "Amux",
+    identifier = "sh.amux.desktop",
+    binary = ":AmuxMac-binary",
+    info_plist = "Mac/Info.plist",
+    values = {
+        "MARKETING_VERSION": read_root_config("apple", "mac_version", MAC_VERSION),
+        "CURRENT_PROJECT_VERSION": read_root_config("apple", "mac_version", MAC_VERSION),
+    },
+    resources = copied("Mac", "Assets.xcassets"),
+    app_icon = "AppIcon",
+    default_target_platform = MAC,
+    visibility = ["PUBLIC"],
+)
+
+# The app's screens by name, drawn from values. It links the screens and the
+# values and not the bridge, so it builds quickly and cannot reach anyone's
+# amux (docs/MAC.md).
+swift_library(
+    name = "AmuxMacStorybook-module",
+    module_name = "AmuxStorybook",
+    srcs = glob(["Mac/Storybook/*.swift"]),
+    deps = [
+        _PACKAGES + "AmuxMacScreens:AmuxMacScreens",
+        _PACKAGES + "AmuxMacScreens:AmuxMacStories",
+    ],
+    default_target_platform = MAC,
+)
+
+apple_binary(
+    name = "AmuxMacStorybook-binary",
+    product_name = "AmuxStorybook",
+    deps = [":AmuxMacStorybook-module"],
+    default_target_platform = MAC,
+)
+
+apple_bundle(
+    name = "AmuxMacStorybook",
+    product_name = "AmuxStorybook",
+    identifier = "sh.amux.desktop.storybook",
+    binary = ":AmuxMacStorybook-binary",
+    info = {
+        "CFBundleDevelopmentRegion": "en",
+        "CFBundleExecutable": "AmuxStorybook",
+        "CFBundleIdentifier": "sh.amux.desktop.storybook",
+        "CFBundleInfoDictionaryVersion": "6.0",
+        "CFBundleName": "AmuxStorybook",
+        "CFBundlePackageType": "APPL",
+        "CFBundleShortVersionString": "1.0",
+        "CFBundleVersion": "1",
+        "NSPrincipalClass": "NSApplication",
+    },
+    # The app's icon, so the screens that draw it show it here too.
+    resources = copied("Mac", "Assets.xcassets"),
+    app_icon = "AppIcon",
+    default_target_platform = MAC,
+    visibility = ["PUBLIC"],
+)
+
+# The app's screens and model, compiled without its entry point into a test
+# bundle that runs in the test runner rather than in the app: the screens are
+# drawn into windows that are never put on screen, so a run shows nothing on
+# the desktop and needs nobody's input (docs/MAC.md). It starts the
+# checkout's amux and fake ACP agent (TESTNET_BINARIES).
+swift_library(
+    name = "AmuxMacTests-module",
+    module_name = "AmuxMacTests",
+    srcs = glob(["Mac/Sources/*.swift", "Mac/Tests/*.swift"], exclude = ["Mac/Sources/AmuxMacApp.swift"]) + [
+        # The rule code's colours are held to, shared with the iPhone's tests
+        # so both apps check the same thing.
+        _PACKAGES + "AmuxFeatures:CodeContrast.swift",
+    ],
+    deps = _MAC_PACKAGES + [_PACKAGES + "AmuxMacScreens:AmuxMacStories"],
+    xctest = True,
+    default_target_platform = MAC,
+)
+
+apple_binary(
+    name = "AmuxMacTests-binary",
+    product_name = "AmuxMacTests",
+    kind = "bundle",
+    deps = [":AmuxMacTests-module"],
+    xctest = True,
+    default_target_platform = MAC,
+)
+
+apple_bundle(
+    name = "AmuxMacTests-bundle",
+    product_name = "AmuxMacTests",
+    extension = "xctest",
+    identifier = "sh.amux.desktop.tests",
+    binary = ":AmuxMacTests-binary",
+    info = {
+        "CFBundleDevelopmentRegion": "en",
+        "CFBundleExecutable": "AmuxMacTests",
+        "CFBundleIdentifier": "sh.amux.desktop.tests",
+        "CFBundleInfoDictionaryVersion": "6.0",
+        "CFBundleName": "AmuxMacTests",
+        "CFBundlePackageType": "BNDL",
+    },
+    default_target_platform = MAC,
+)
+
+apple_xctest(
+    name = "AmuxMacTests",
+    bundle = ":AmuxMacTests-bundle",
+    srcs = ["//:tests/stories.json"],
+    env = {"TESTNET_BINARIES": "$(location //crates/provider-fakes:binaries)"},
+    deps = ["//crates/provider-fakes:binaries"],
+    labels = ["mac"],
+    default_target_platform = MAC,
+)

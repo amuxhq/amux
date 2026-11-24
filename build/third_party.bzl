@@ -24,6 +24,7 @@ on NativeLink in a sandbox holding only its declared inputs, with no local
 fallback (build/platforms), so they are absent from every compile alike.
 """
 
+load("@prelude//rust:cargo_buildscript.bzl", "buildscript_run")
 load("@prelude//rust:cargo_package.bzl", "cargo")
 load("//build/platforms:defs.bzl", "EXEC_LIKE_TARGET", "MODES", "TARGETS")
 load("@prelude//rust:link_info.bzl", "RustProcMacroPlugin")
@@ -132,3 +133,20 @@ def third_party_http_archive(**kwargs):
 
 def third_party_git_fetch(**kwargs):
     native.git_fetch(exec_compatible_with = EXEC_LIKE_TARGET, **kwargs)
+
+# A crate's build script run (reindeer.toml, `buildscript_genrule`). The
+# prelude hands a build script the C toolchain's tools as CC, CXX, AR and
+# LD shims. In a Windows release build, which uses MSVC
+# (build/constraints:local-windows-build), those are blanked, so cc-rs
+# finds MSVC's tools itself, as it does under Cargo: through the shims, its
+# archive step left no library behind.
+_MSVC_OWN = {"AR": "", "CC": "", "CXX": "", "LD": ""}
+
+def third_party_buildscript_run(env = {}, **kwargs):
+    buildscript_run(
+        env = select({
+            "DEFAULT": env,
+            "root//build/constraints:local-windows-build": env | _MSVC_OWN,
+        }),
+        **kwargs
+    )

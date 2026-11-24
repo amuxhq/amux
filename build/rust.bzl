@@ -33,7 +33,7 @@ output names each test that failed.
 load("@prelude//decls:re_test_common.bzl", "re_test_common")
 load("@prelude//rust:sources.bzl", "RustSources", "RustSourcesTSet")
 load("@prelude//tests:re_utils.bzl", "get_re_executors_from_props")
-load("//build/platforms:defs.bzl", "EXEC_RUNS_TARGET", "host_platform")
+load("//build/platforms:defs.bzl", "EXEC_RUNS_TARGET", "MODES", "TARGETS", "host_platform")
 load("@toolchains//:nix.bzl", "NixToolchainInfo")
 
 # Cargo.toml's [profile.dev.package.*]: crates the model checker runs
@@ -97,17 +97,55 @@ def _binaries_impl(ctx: AnalysisContext) -> list[Provider]:
     tree = (ctx.actions.copied_dir if ctx.attrs._windows else ctx.actions.symlinked_dir)("binaries", binaries)
     return [DefaultInfo(default_output = tree)]
 
+_PLATFORMS = "root//build/platforms:"
+
+# The binaries a test starts are a development build of the desktop
+# product with test features, for the system the test runs on. That is
+# exactly the configuration of a desktop test (`macos-cli-testing-dev`), so
+# they take that configuration's name, and a crate both a test and the
+# binaries link compiles once. As execution dependencies they had the
+# execution platform's (`exec-macos`), whose constraints are the same but
+# whose output paths are not, so the whole workspace compiled twice for
+# every test run, three times with the phone bridge's `app` tests.
+_TEST_BINARIES_PLATFORM = {
+    _PLATFORMS + "{}-{}-{}-{}".format(target, product, purpose, mode): _PLATFORMS + "{}-cli-testing-dev".format(target)
+    for target in TARGETS
+    for product in ["cli", "app"]
+    for purpose in ["shipping", "testing"]
+    for mode in MODES
+}
+
+def _test_binaries_platform_impl(platform: PlatformInfo, refs: struct) -> PlatformInfo:
+    constraints = dict(platform.configuration.constraints)
+    for value in [refs.cli[ConstraintValueInfo], refs.testing[ConstraintValueInfo], refs.dev[ConstraintValueInfo]]:
+        constraints[value.setting.label] = value
+    if constraints == platform.configuration.constraints:
+        return platform
+    return PlatformInfo(
+        label = _TEST_BINARIES_PLATFORM.get(platform.label, platform.label + "-cli-testing-dev"),
+        configuration = ConfigurationInfo(constraints = constraints, values = platform.configuration.values),
+    )
+
+_test_binaries_platform = transition(
+    impl = _test_binaries_platform_impl,
+    refs = {
+        "cli": "root//build/constraints:cli",
+        "dev": "root//build/constraints:dev",
+        "testing": TESTING,
+    },
+)
+
 # The binaries the integration suites start, in one directory, as
 # scripts/test-binaries.sh builds them for nextest: provider-fakes'
 # `binaries` module finds them through TESTNET_BINARIES. They are built for
-# the machine the tests run on, as the desktop product with test features,
+# the system the test runs on, as the desktop product with test features,
 # whatever the test itself builds as (the phone bridge's tests are "app"):
 # for a Linux test, Linux, and for a Windows test, Windows, wherever the
 # build was started.
 _amux_binaries = rule(
     impl = _binaries_impl,
     attrs = {
-        "binaries": attrs.dict(key = attrs.string(), value = attrs.exec_dep(), sorted = False),
+        "binaries": attrs.dict(key = attrs.string(), value = attrs.transition_dep(cfg = _test_binaries_platform), sorted = False),
         "_windows": attrs.bool(default = select({"DEFAULT": False, "prelude//os:windows": True})),
     },
 )

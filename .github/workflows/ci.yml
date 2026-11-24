@@ -314,8 +314,9 @@ jobs:
             key: iphone
             run: >-
               just ios simulator golden &&
-              scripts/buck2 test --build-default-info --exclude mac
+              scripts/buck2 test --build-default-info
               $(scripts/buck2 uquery "//apps/apple/... - attrregexfilter(default_target_platform, macos, //apps/apple/...)")
+              --exclude mac
           # The Mac app, its storybook and screens built, and its tests run
           # on the runner, the same way.
           - name: Mac app

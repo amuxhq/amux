@@ -1,4 +1,5 @@
 load("//build:rust.bzl", "amux_rust_binary", "amux_rust_library", "amux_rust_test")
+load("//build:checks.bzl", "amux_check")
 
 DEPS = [
     "//crates/source-tree:source-tree",
@@ -82,4 +83,31 @@ amux_rust_test(
     include = {"//:qa/FINDING.md": "qa/FINDING.md"},
     resources = ["//crates/interpret:fixtures", "//:environments", "//:journeys"],
     binaries = True,
+)
+
+# Every terminal journey (`just journey terminal all`): the built binaries
+# on the fake providers in tmux, each story's screens held to its goldens.
+# A test of this machine's build, as the crates' tests are, so a Mac runs
+# the macOS journeys and nova the Linux ones; cached until a binary, a
+# story or a golden changes.
+amux_check(
+    name = "terminal-journeys",
+    command = [
+        "sh",
+        "-c",
+        "TESTNET_BINARIES=$PWD/$TESTNET_BINARIES AMUX_SOURCE_ROOT=$PWD exec \"$1\" journey terminal all",
+        "sh",
+        "$(location :testnet-bin)",
+    ],
+    # The crate's own files only so that its directory, which the journeys
+    # find the checkout from, is there.
+    deps = [":files", "//:journeys", "//crates/provider-fakes:binaries"],
+    env = {"TESTNET_BINARIES": "$(location //crates/provider-fakes:binaries)"},
+    labels = ["journey"],
+    host = True,
+    # The stories run half the machine's cores at once, each a set of
+    # daemons in tmux on a clock; beside other tests they miss their waits,
+    # as they did beside the models on nova. They had the machine to
+    # themselves when premerge ran them after the tests.
+    remote_execution = "whole-worker",
 )

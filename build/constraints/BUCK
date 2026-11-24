@@ -91,3 +91,18 @@ config_setting(
     values = {"amux.linux": "true"},
     visibility = ["PUBLIC"],
 )
+
+# Built by the Linux toolchain on a Linux worker, wherever the build starts,
+# for a target that isn't Linux itself: browser-core's WebAssembly as the
+# JavaScript's Linux targets take it (js/BUCK). A Linux action can't read
+# what a Mac's worker built, which stays in the Mac's cache.
+constraint_setting(
+    name = "builder",
+    visibility = ["PUBLIC"],
+)
+
+constraint_value(
+    name = "on-linux",
+    constraint_setting = ":builder",
+    visibility = ["PUBLIC"],
+)

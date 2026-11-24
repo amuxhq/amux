@@ -30,3 +30,12 @@ amux_rust_test(
     features = FEATURES,
     rustc_flags = OPTIMISED,
 )
+
+# The migrations, which the store check (//:store-check) compares with the
+# newest release's.
+export_file(
+    name = "src/schema.rs",
+    src = "src/schema.rs",
+    mode = "reference",
+    visibility = ["PUBLIC"],
+)

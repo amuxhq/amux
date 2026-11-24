@@ -175,6 +175,7 @@ cargo-test-crate` (`brew install cargo-nextest`). There a setup script
 ```sh
 just test                                  # every workspace test whose inputs changed
 just test //crates/node:integration        # one test target
+just checks                                # the repository's and the browser extension's checks
 just suite many-daemon-protocol-spec       # one suite of tests/catalog.toml
 scripts/buck2 run //crates/node:integration -- ^link_stories::relaunch   # some of a target's tests, by name
 just test-crate interpret                  # one crate
@@ -184,6 +185,7 @@ just test-tui                              # terminal presentation and goldens
 just offline-test                          # workspace tests with isolated config and no network (Linux, sudo)
 just journey terminal reach-host           # one terminal journey
 just journey terminal all                  # every terminal story, one line each, keeps going after a failure
+just test //crates/testnet:terminal-journeys   # the same as a cached test, as `just premerge` runs them
 just journey system survive-daemon         # the built binaries' system journey
 just ios unit                              # phone package and app-hosted unit suites
 just ios journey                           # the shared stories on the phone; `-- <story>` for one

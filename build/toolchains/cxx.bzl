@@ -154,7 +154,7 @@ def _cxx_toolchain_from_cxx_tools_info(ctx: AnalysisContext, cxx_tools_info: Cxx
         CxxToolchainInfo(
             internal_tools = ctx.attrs.internal_tools[CxxInternalTools],
             linker_info = LinkerInfo(
-                linker = tool(cxx_tools_info.linker, "bin/c++"),
+                linker = tool(cxx_tools_info.linker, getattr(ctx.attrs, "nix_linker", None) or "bin/c++"),
                 linker_flags = additional_linker_flags + ctx.attrs.link_flags,
                 post_linker_flags = ctx.attrs.post_link_flags,
                 archiver = tool(cxx_tools_info.archiver, "bin/ar"),
@@ -264,6 +264,8 @@ amux_cxx_toolchain = rule(
         # The Linux toolchain, for Linux targets; otherwise the tools named
         # by the attributes above.
         "nix": attrs.option(attrs.exec_dep(providers = [NixToolchainInfo]), default = None),
+        # The linker within the Linux toolchain, by its path there.
+        "nix_linker": attrs.option(attrs.string(), default = None),
         "linker_type": attrs.option(attrs.enum(LinkerType.values()), default = None),
         "post_link_flags": attrs.list(attrs.arg(), default = []),
         "rc_compiler": attrs.option(attrs.string(), default = None),

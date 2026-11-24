@@ -68,12 +68,22 @@ check:
 
 # Every test runs in a process of its own (build/test-runner.py), and a
 # passing result is cached in NativeLink, so only tests whose inputs changed
-# run. Target patterns narrow the run (`just test //crates/node:`); the live
-# provider lanes are left out (`just live`). With no Linux worker in reach,
-# the `nova-only` tests are skipped, and the run ends by naming them.
+# run. Target patterns narrow the run (`just test //crates/node:`, `just test
+# //: //js:` for the repository's and the JavaScript's checks, which read
+# what build/checks/inputs.py writes first); the live provider lanes are left
+# out (`just live`). With no Linux worker in reach, the `nova-only` tests are
+# skipped, and the run ends by naming them.
 # Run the workspace's tests through Buck2.
 test *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; scripts/py build/checks/inputs.py; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
+
+# The repository's checks (the root BUCK file) and the JavaScript's (js/BUCK)
+# as Buck2 tests, each over exactly the files it reads, so only those whose
+# files changed run; `just premerge` runs them with every other test. The
+# recipes of the same names run each script in the checkout instead.
+# Run the repository's and the JavaScript's checks through Buck2.
+checks:
+    {{just_executable()}} test //: //js:
 
 # Run tests for one named workspace crate.
 test-crate CRATE:
@@ -313,6 +323,12 @@ sanitize KIND *CRATES:
 cores-check:
     {{bounded}} 120 scripts/py scripts/cores-check.py
 
+# The tokio half of `cores-check`, which reads Cargo's whole graph and so
+# stays a script; `//:cores-check` checks the sources.
+[private]
+cores-graph-check:
+    {{bounded}} 120 scripts/py scripts/cores-check.py --graph
+
 # Enforce production and test-infrastructure dependency boundaries.
 dependency-policy:
     {{bounded}} 60 scripts/py scripts/check-dependency-policy.py
@@ -396,22 +412,21 @@ client-kind-check:
 no-update-flags:
     scripts/no-update-flags.sh
 
-# The checks a change passes before it reaches main: the repository's
-# checks, clippy over every crate, every crate's tests through Buck2 (only
-# those whose inputs changed run; the rest come from NativeLink's cache, in
-# this tree or any other), the phone apps' lints and script tests, the
-# terminal journeys, and the browser extension's checks when js/ changed.
-# The other platforms' builds and the Apple app's tests stay with
-# `just ios verify` and CI (docs/CI.md, "`just premerge`").
+# The checks a change passes before it reaches main: clippy over every
+# crate, and through Buck2 every crate's tests and the terminal journeys,
+# the repository's checks and the browser extension's (only those whose
+# inputs changed run; the rest come from NativeLink's cache, in this tree or
+# any other); as scripts, the checks that read the whole workspace's graph
+# or the git checkout, and the phone apps' lints and script tests. The other
+# platforms' builds and the Apple app's tests stay with `just ios verify`
+# and CI (docs/CI.md, "`just premerge`").
 # Run the checks a change passes before it reaches main.
-premerge: no-update-flags fmt-check codegen-check proto-compat store-check dependency-policy deny shear cores-check typed-provider-check client-kind-check docs-check tests-check script-tests parity shipping-check lint
-    {{just_executable()}} test
+premerge: no-update-flags fmt-check dependency-policy deny shear cores-graph-check tests-check script-tests parity shipping-check lint
+    {{just_executable()}} test //crates/... //: //js:
     {{just_executable()}} ios lint
     {{just_executable()}} ios script-tests
     {{just_executable()}} android lint
     {{just_executable()}} android script-tests
-    {{just_executable()}} journey terminal all
-    if git diff --quiet "$(git merge-base HEAD origin/main)" -- js; then echo "js: unchanged since main"; else {{just_executable()}} browser check; fi
 
 # `just land "What the branch does"` merges this tree's HEAD onto a fresh
 # origin/main, runs `just premerge` (and `just miri` when the phone's C ABI

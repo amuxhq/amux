@@ -14,6 +14,7 @@ load("@root//build/platforms:defs.bzl", "RUST_TARGET_TRIPLE")
 _NIX = select({
     "DEFAULT": None,
     "prelude//os:linux": "root//:nix-linux",
+    "root//build/constraints:on-linux": "root//:nix-linux",
 })
 
 # The cores a Linux test that uses every core asks for. It has to be the
@@ -42,6 +43,8 @@ amux_cxx_toolchain(
     }),
     linker_type = select({"DEFAULT": None, "prelude//os:none": "wasm"}),
     nix = _NIX,
+    # The same for WebAssembly under the Linux toolchain: its Rust's lld.
+    nix_linker = select({"DEFAULT": "bin/c++", "prelude//os:none": "lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"}),
     visibility = ["PUBLIC"],
 )
 

@@ -22,6 +22,19 @@ load(":defs.bzl", "MODES", "TARGETS", "execution_platform", "execution_platforms
     for mode in MODES
 ]
 
+# The extension's WebAssembly as it ships, built on a Linux worker for the
+# JavaScript's Linux targets (build/constraints:on-linux).
+target_platform(
+    name = "wasm-app-shipping-wasm-on-linux",
+    constraints = TARGETS["wasm"] + [
+        "root//build/constraints:app",
+        "root//build/constraints:shipping",
+        "root//build/constraints:wasm",
+        "root//build/constraints:on-linux",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 # Build scripts, proc macros and code generators run on an execution
 # platform, so they are built as tools: a development build, with test
 # features on.

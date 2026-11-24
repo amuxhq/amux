@@ -18,10 +18,18 @@
   crate name of a tool amux runs: the docs describe amux in its own words,
   and a tool's name belongs in the comment of the recipe that runs it. A
   recipe invoked by name (`just miri`) is not a mention.
+
+    docs-check.py [--tracked LISTING]
+
+`--tracked` names a file listing the checkout's files, one path a line,
+which links are resolved against instead of the filesystem: how the check
+runs as a Buck2 test (build/checks.bzl), where only docs/ and the files
+whose content it reads are present.
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -34,6 +42,30 @@ ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 FIGURES = DOCS / "figures"
 VOCABULARY = FIGURES / "vocabulary" / "manifest.json"
+
+# With --tracked, the checkout's files and the directories holding them, by
+# their paths in it.
+TRACKED: set[str] | None = None
+TRACKED_DIRS: set[str] = set()
+
+
+def exists(path: Path, directory: bool = True) -> bool:
+    """Whether the checkout has `path` (a file, or a directory unless
+    `directory` is false)."""
+    if TRACKED is None or not path.is_relative_to(ROOT):
+        return path.exists() if directory else path.is_file()
+    relative = path.relative_to(ROOT).as_posix()
+    return relative in TRACKED or (directory and (relative in TRACKED_DIRS or relative == "."))
+
+
+def readable(path: Path, where: str, errors: list[str]) -> bool:
+    """Whether a file whose content the check reads is present; under
+    --tracked one outside docs/ is present only when the check's target
+    declares it."""
+    if path.is_file():
+        return True
+    errors.append(f"{where}: {path.relative_to(ROOT)} is tracked but not an input of the docs check; add it to //:docs-check's srcs")
+    return False
 
 # The systems and tools the design drew on, and the crate names of the tools
 # amux runs, matched as whole words in any case.
@@ -123,7 +155,7 @@ def check_links(pages: list[Path], errors: list[str]) -> set[Path]:
                 continue
             path_part, _, fragment = target.partition("#")
             resolved = (page.parent / unquote(path_part)).resolve() if path_part else page
-            if not resolved.exists():
+            if not exists(resolved):
                 errors.append(f"{where}:{number}: {target} does not resolve")
                 continue
             if not resolved.is_relative_to(ROOT) or resolved.is_relative_to(ROOT / "notes") or resolved.is_relative_to(ROOT / "target"):
@@ -131,6 +163,8 @@ def check_links(pages: list[Path], errors: list[str]) -> set[Path]:
                 continue
             referenced.add(resolved)
             if fragment and resolved.suffix == ".md":
+                if not readable(resolved, f"{where}:{number}", errors):
+                    continue
                 known = anchor_cache.setdefault(resolved, anchors(resolved))
                 if fragment not in known:
                     errors.append(f"{where}:{number}: {target} names no heading in {resolved.relative_to(ROOT)}")
@@ -214,8 +248,10 @@ def check_sources(pages: list[Path], errors: list[str]) -> None:
             end = next((i for i in range(number + 1, len(lines)) if FENCE.match(lines[i])), None)
             if end is None:
                 errors.append(f"{where}: the fenced block never closes")
-            elif not source.is_file():
+            elif not exists(source, directory=False):
                 errors.append(f"{where}: {marker.group(1)} does not exist")
+            elif not readable(source, where, errors):
+                pass
             elif lines[number + 1:end] != source.read_text(encoding="utf-8").splitlines():
                 errors.append(f"{where}: the block differs from {marker.group(1)}; copy the file in again")
 
@@ -230,6 +266,15 @@ def check_vendor_names(errors: list[str]) -> None:
 
 
 def main() -> int:
+    global TRACKED
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--tracked", type=Path, help="a listing of the checkout's files to resolve links against")
+    arguments = parser.parse_args()
+    if arguments.tracked:
+        TRACKED = set(arguments.tracked.read_text(encoding="utf-8").splitlines())
+        for path in TRACKED:
+            parts = path.split("/")[:-1]
+            TRACKED_DIRS.update("/".join(parts[:end]) for end in range(1, len(parts) + 1))
     errors: list[str] = []
     pages = sorted(DOCS.rglob("*.md"))
     referenced = check_links(pages, errors)

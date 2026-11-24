@@ -316,9 +316,14 @@ takes about half as long. The debug tools are in both. Release builds are
 unchanged.
 
 The iPhone app job makes the golden simulator first (`just ios simulator
-golden`), which the phone's suites lease: on a runner, with no `wt`, a test
-takes `amux-iphone-1` under a lock ([the iPhone app](IOS.md#builds)). It
-then builds every target under `apps/apple` but the Mac app's and runs the
+golden`), before NativeLink starts, and the worker hands every test that
+device's udid (`AMUX_SIMULATOR_UDID`, `scripts/nativelink.py`), outside the
+action's key; the tests take it in turns, under a lock ([the iPhone
+app](IOS.md#builds)). A test that looked the device up itself asked
+CoreSimulator while the runner compiled on all three cores, and `simctl
+list` took over three minutes; xcodebuild, handed the udid, can still give
+up on finding the device then, and is asked again when it does. It then
+builds every target under `apps/apple` but the Mac app's and runs the
 phone's suites; the Mac app job builds the Mac app, its storybook and
 screens and runs the Mac app's tests. Each is one `buck2 test
 --build-default-info` over its targets, so a suite starts as soon as what

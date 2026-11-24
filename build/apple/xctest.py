@@ -11,9 +11,19 @@ A simulator comes from wt's `iphone` pool, the one every recipe that drives
 a simulator leases from, so a test never takes a device another tree is
 using: `--pool-tree` names a tree whose .wt.toml defines the pool (the
 checkout every tree of this Mac belongs to), and the lease is taken with
-`wt with iphone` there. Without one (CI, which has no wt) the test uses the
-first pinned device's name and holds a lock file on it, so two tests on one
-runner take turns.
+`wt with iphone` there. CI has no wt: its iPhone job makes and boots the
+golden simulator before anything builds, and its NativeLink worker hands
+every test that device's udid in AMUX_SIMULATOR_UDID, outside the action's
+key (scripts/nativelink.py). Without either, as in a bare checkout, the test
+looks up the first pinned device by name. Both hold a lock file on the
+device, so two tests on one machine take turns.
+
+Asking CoreSimulator anything is slow on a runner compiling on every core:
+`simctl list` has taken over three minutes there, and xcodebuild has given
+up on finding a device it was handed by udid. So a test handed its device
+asks CoreSimulator nothing itself, and xcodebuild is run again when it gave
+up on finding the device before running anything, since that says nothing
+about the tests.
 
 The verdict is xcodebuild's exit status and the result bundle's own count:
 a run that executed no test fails, since a bundle whose tests were never
@@ -34,10 +44,16 @@ import tempfile
 
 POOL = "iphone"
 LEASE = "WT_LEASE_IPHONE"
+# The udid of the device CI's iPhone job prepared (.github/workflows/ci.yml).
+PREPARED = "AMUX_SIMULATOR_UDID"
 # What ios_simulators.py calls the first golden device outside a worktree.
 FALLBACK_DEVICE = "amux-iphone-1"
 RUNTIME = "com.apple.CoreSimulator.SimRuntime.iOS-26-5"
 TIMEOUT = 1500
+# What xcodebuild says when it gave up waiting for CoreSimulator to list the
+# destination, and how many times it is asked in all.
+NOT_FOUND = "Unable to find a device matching the provided destination"
+ATTEMPTS = 3
 
 
 def home() -> str:
@@ -138,20 +154,28 @@ def run_tests(arguments, destination: str) -> int:
     scratch = Path(tempfile.mkdtemp(prefix="amux-xctest-", dir="/tmp"))
     try:
         plan = xctestrun(arguments, scratch)
-        result = scratch / "result.xcresult"
-        log = scratch / "xcodebuild.log"
-        command = ["xcodebuild", "test-without-building", "-xctestrun", str(plan),
-                   "-destination", destination, "-resultBundlePath", str(result)]
         environment = os.environ | {"HOME": home(), "TMPDIR": str(scratch)}
-        with log.open("w") as sink:
-            try:
-                status = subprocess.run(command, stdout=sink, stderr=subprocess.STDOUT,
-                                        stdin=subprocess.DEVNULL, env=environment,
-                                        timeout=TIMEOUT).returncode
-            except subprocess.TimeoutExpired:
-                status = None
-        counts = summary(result)
-        total = counts.get("totalTestCount", 0)
+        for attempt in range(1, ATTEMPTS + 1):
+            # xcodebuild refuses a result bundle path that exists.
+            result = scratch / f"result-{attempt}.xcresult"
+            log = scratch / f"xcodebuild-{attempt}.log"
+            command = ["xcodebuild", "test-without-building", "-xctestrun", str(plan),
+                       "-destination", destination, "-resultBundlePath", str(result)]
+            with log.open("w") as sink:
+                try:
+                    status = subprocess.run(command, stdout=sink, stderr=subprocess.STDOUT,
+                                            stdin=subprocess.DEVNULL, env=environment,
+                                            timeout=TIMEOUT).returncode
+                except subprocess.TimeoutExpired:
+                    status = None
+            counts = summary(result)
+            total = counts.get("totalTestCount", 0)
+            if (status not in (0, None) and total == 0 and attempt < ATTEMPTS
+                    and NOT_FOUND in log.read_text(errors="replace")):
+                print(f"{arguments.name}: xcodebuild didn't find {destination}; asking again",
+                      flush=True)
+                continue
+            break
         passed = status == 0 and counts.get("result") == "Passed" and total > 0
         if passed:
             print(f"{arguments.name}: {counts.get('passedTests', total)} passed, "
@@ -171,7 +195,20 @@ def run_tests(arguments, destination: str) -> int:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def on_device(udid: str, arguments, boot: bool) -> int:
+    with open(f"/tmp/amux-simulator-{udid}.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if boot:
+            subprocess.run(["xcrun", "simctl", "bootstatus", udid, "-b"], check=True,
+                           capture_output=True, timeout=900)
+        return run_tests(arguments, f"id={udid}")
+
+
 def on_simulator(arguments) -> int:
+    prepared = os.environ.get(PREPARED)
+    if prepared:
+        # Made, booted and pinned by the job before anything built.
+        return on_device(prepared, arguments, boot=False)
     leased = os.environ.get(LEASE)
     if leased:
         return run_tests(arguments, f"id={udid_of(leased)}")
@@ -184,12 +221,7 @@ def on_simulator(arguments) -> int:
              "--cwd", str(Path.cwd()), *sys.argv[1:]],
             cwd=arguments.pool_tree, env=os.environ | {"HOME": home()},
         ).returncode
-    udid = udid_of(FALLBACK_DEVICE)
-    with open(f"/tmp/amux-simulator-{FALLBACK_DEVICE}.lock", "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        subprocess.run(["xcrun", "simctl", "bootstatus", udid, "-b"], check=True,
-                       capture_output=True, timeout=900)
-        return run_tests(arguments, f"id={udid}")
+    return on_device(udid_of(FALLBACK_DEVICE), arguments, boot=True)
 
 
 def main() -> None:

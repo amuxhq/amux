@@ -616,7 +616,10 @@ The unit suites are Buck2 tests: `build/apple/xctest.py` writes the
 test-without-building`. A suite that needs the simulator leases one from
 `wt`'s `iphone` pool inside its own action, so two trees never drive one
 device, and a passing result is cached like any other: a second tree's run
-of the same inputs is a hit.
+of the same inputs is a hit. On CI, which has no `wt`, the job makes the
+golden simulator before anything builds and every suite runs on it, by the
+udid the runner's NativeLink worker hands it ([The macOS
+jobs](CI.md#the-macos-jobs)).
 
 Recipes name a kind of device, never a device. `golden` is an iPhone 17 Pro
 on iOS 26.5 at 3×, the device every budget and baseline is pinned to;

@@ -105,6 +105,14 @@ config_setting(
     visibility = ["PUBLIC"],
 )
 
+# A release build on Windows, with MSVC's tools (build/third_party.bzl).
+config_setting(
+    name = "local-windows-build",
+    constraint_values = ["prelude//os/constraints:os[windows]"],
+    root_values = {"amux.local": "true"},
+    visibility = ["PUBLIC"],
+)
+
 # Built by the Linux toolchain on a Linux worker, wherever the build starts,
 # for a target that isn't Linux itself: browser-core's WebAssembly as the
 # JavaScript's Linux targets take it (js/BUCK). A Linux action can't read

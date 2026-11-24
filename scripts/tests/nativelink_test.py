@@ -106,5 +106,19 @@ class ConfigTest(unittest.TestCase):
         self.assertIn('bytestream: [{ instance_name: "main", cas_store: "LOCAL_ONLY_CAS" }]', workers)
 
 
+@unittest.skipUnless(sys.platform == "darwin", "taskpolicy is macOS's")
+class BackgroundTest(unittest.TestCase):
+    def test_the_background_entrypoint_is_one_program_that_runs_its_arguments(self):
+        cache = Path(tempfile.mkdtemp(prefix="nativelink-background-"))
+        self.addCleanup(subprocess.run, ["rm", "-rf", str(cache)])
+        original = nativelink.CACHE
+        nativelink.CACHE = cache
+        self.addCleanup(setattr, nativelink, "CACHE", original)
+        entrypoint = nativelink.background_entrypoint()
+        self.assertNotIn(" ", entrypoint)
+        ran = subprocess.run([entrypoint, "/bin/sh", "-c", "echo ran"], capture_output=True, text=True, timeout=30)
+        self.assertEqual((ran.returncode, ran.stdout), (0, "ran\n"), ran.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -109,6 +109,17 @@ def tool_bin() -> Path:
     return bin
 
 
+def background_entrypoint() -> str:
+    """A script that runs its arguments at macOS background priority, for
+    `--background`: NativeLink runs an entrypoint as one program, its name
+    taken whole, so `taskpolicy -b` has to be a program of its own."""
+    script = CACHE / "bin" / "background"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text('#!/bin/sh\nexec /usr/sbin/taskpolicy -b "$@"\n')
+    script.chmod(0o755)
+    return str(script)
+
+
 def remote_stores(url: str) -> str:
     # A full build uploads thousands of blobs at once. Unbounded, they
     # arrive as more concurrent streams than the remote's HTTP/2 server
@@ -258,7 +269,7 @@ def render(cores: int, background: bool, remote: dict) -> None:
         "cores": str(cores),
         # Three quarters of the machine's memory, in KiB.
         "memory_kb": str(memory_bytes() * 3 // 4 // 1024),
-        "entrypoint": 'entrypoint: "/usr/sbin/taskpolicy -b",' if background else "",
+        "entrypoint": f'entrypoint: "{background_entrypoint()}",' if background else "",
     }
     template = fill(TEMPLATE.read_text(), values)
     local = {"remote_stores": LOCAL_ONLY_STORES, "worker_slow": "{ noop: {} }", "remote_workers": ""}

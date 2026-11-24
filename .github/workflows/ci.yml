@@ -430,6 +430,22 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
           ping: ${{ env.BUILD_HOST }}
+      # The tailscale action points the whole of a macOS runner's DNS at
+      # MagicDNS, which cannot answer public names there: github.com stopped
+      # resolving and the NativeLink download failed. Give the system resolver
+      # back to the runner's own servers and send only the tailnet's domain to
+      # MagicDNS, the split Tailscale's own macOS client sets up.
+      - name: Resolve only the tailnet's names through MagicDNS
+        if: env.REMOTE == 'true'
+        run: |
+          sudo networksetup -setdnsservers Ethernet Empty
+          sudo networksetup -setsearchdomains Ethernet Empty
+          sudo mkdir -p /etc/resolver
+          echo "nameserver 100.100.100.100" | sudo tee "/etc/resolver/${BUILD_HOST#*.}" > /dev/null
+          sudo dscacheutil -flushcache
+          sudo killall -HUP mDNSResponder
+          scripts/py -c 'import socket, sys; [print(name, socket.gethostbyname(name)) for name in sys.argv[1:]]' \
+            github.com "$BUILD_HOST"
       - name: Restore the results of earlier runs
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

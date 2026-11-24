@@ -83,6 +83,15 @@ amux_rust_test(
     include = {"//:qa/FINDING.md": "qa/FINDING.md"},
     resources = ["//crates/interpret:fixtures", "//:environments", "//:journeys"],
     binaries = True,
+    # Eight cases at a time (Windows keeps its two). This is the workspace's
+    # longest test target, some 180 link stories that each spend most of
+    # their time waiting on the net, and it builds last, above node and
+    # testnet: at four it ran alone for minutes at the end of every run
+    # after a change to a crate below it.
+    timeouts = {"threads": select({
+        "DEFAULT": 8,
+        "prelude//os:windows": 2,
+    })},
     runs = {
         # The stories that also run on the simulated net (`modes` in
         # tests/catalog.toml), there: every core in one process, walked by

@@ -60,6 +60,11 @@ amux_files(
 )
 
 amux_files(
+    name = "day",
+    srcs = glob(["checks/inputs/day"]),
+)
+
+amux_files(
     name = "store-baseline",
     srcs = glob(["checks/inputs/store-baseline/*"]),
 )
@@ -67,6 +72,12 @@ amux_files(
 amux_files(
     name = "proto-baseline",
     srcs = glob(["checks/inputs/proto-baseline/**"]),
+)
+
+# The deny check's script and what it reads.
+amux_files(
+    name = "deny",
+    srcs = ["checks/deny.sh"] + glob(["checks/inputs/deny/**"], exclude = ["checks/inputs/deny/key", "checks/inputs/deny/index-refreshed"]),
 )
 
 # buf for the protocol check on a Mac's own worker, when no Linux worker is
@@ -94,4 +105,11 @@ http_archive(
     sha256 = "bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057",
     strip_prefix = "node-v24.21.0-darwin-arm64",
     visibility = ["PUBLIC"],
+)
+
+# NativeLink's configurations, which scripts/nativelink.py fills in and its
+# tests read (the root BUCK's script tests).
+amux_files(
+    name = "nativelink",
+    srcs = glob(["nativelink/**"]),
 )

@@ -3,7 +3,7 @@ load(
     "//build:android.bzl",
     "LINUX_EXEC",
     "LINUX_WORKERS",
-    "NOVA_ONLY",
+    "LINUX_ONLY",
     "PLATFORM",
     "amux_android_library",
     "amux_apk",
@@ -13,6 +13,7 @@ load(
     "robolectric_capture",
     "script_test",
 )
+load("//build:rust.bzl", "amux_files")
 
 # The app: what every build carries (src/main), and what only a debug build
 # (src/debug: the door, the storybook activity, test-support) or a release
@@ -20,6 +21,13 @@ load(
 # its own sources, as Gradle's variants do.
 
 APP_ID = "sh.amux.android"
+
+# The version numbers, at their path in the checkout, for the release
+# script's tests (apps/android/tools/BUCK).
+amux_files(
+    name = "version",
+    srcs = ["version.bzl"],
+)
 
 APP_VERSION_CODE = read_config("amux", "android_version_code", str(VERSION_CODE))
 
@@ -233,7 +241,7 @@ android_instrumentation_apk(
     deps = [":release-smoke-test-lib"],
     default_target_platform = PLATFORM,
     target_compatible_with = LINUX_WORKERS,
-    labels = NOVA_ONLY,
+    labels = LINUX_ONLY,
 )
 
 # The Play bundle. It is unsigned: `just android release` signs it with the

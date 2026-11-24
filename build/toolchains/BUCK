@@ -81,8 +81,8 @@ _WINDOWS_TOOLS = {
 
 # The cores a Linux test that uses every core asks for. It has to be the
 # same wherever the test is sent from, or the same test would have two
-# keys, and no more than nova's worker offers any scheduler it registers
-# with; it is a minimum, so a bigger worker still takes it.
+# keys, and no more than the build host's worker offers any scheduler it
+# registers with; it is a minimum, so a bigger worker still takes it.
 _LINUX_WHOLE_WORKER = read_root_config("amux", "linux_worker_cores", "8")
 
 # The slots the Windows CI job's worker offers, six on the runner's four
@@ -313,7 +313,7 @@ zip_file_toolchain(
 # and Android toolchains, with the JDK and Android SDK from the Android Nix
 # toolchain (android.bzl). Their actions run only on a Linux worker:
 # `exec_compatible_with` on a toolchain carries to every target that uses
-# it, so a Mac sends Android work to nova whatever it builds for.
+# it, so a Mac sends Android work to the build host whatever it builds for.
 _LINUX_EXEC = ["prelude//os:linux"]
 
 _ANDROID_BUILD_TOOLS = "sdk/build-tools/36.0.0"

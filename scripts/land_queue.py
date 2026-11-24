@@ -5,9 +5,10 @@
     land_queue.py serve --once --inbox DIR --tree DIR
     land_queue.py check --inbox DIR --tree DIR
 
-On nova it runs as the `land` account (scripts/nova/land-queue, started by
-the land-queue service). Requests arrive in the inbox, a bare repository
-`just land` pushes to:
+It runs on a landing host, as an account that may push to the repository,
+started by a service the host configures with its inbox and tree
+(docs/BUILD.md). Requests arrive in the inbox, a bare repository `just
+land` pushes to:
 
     refs/queue/<id>     a tag naming the commit to land; its message is the
                         merge commit's
@@ -21,11 +22,11 @@ a result is the next one. Each is landed in --tree, a clone of the amux
 repository whose `origin` the queue may push to, by scripts/landing.py's
 steps. Results older than KEEP_DAYS go, with their request and log.
 
-The queue runs its code from main (the service's run-from-main keeps its
-checkout there). With --self-update, when main's copy of the queue's own
-code changes, it checks the new code starts (`check`) before moving to it,
-so a landing that breaks the queue leaves the old queue running to land the
-fix.
+The queue runs its code from main (the service brings its checkout there
+when it starts the queue). With --self-update, when main's copy of the
+queue's own code changes, it checks the new code starts (`check`) before
+moving to it, so a landing that breaks the queue leaves the old queue
+running to land the fix.
 
 Between landings, every TRIM_SECONDS, it trims the tree's buck-out (`trim`).
 
@@ -58,7 +59,7 @@ TRIM_SECONDS = 6 * 3600
 # older comes back from the cache when a landing needs it again.
 TRIM_AGE = "1d"
 # The queue's own code: what --self-update watches on main.
-OWN_CODE = ("scripts/land_queue.py", "scripts/landing.py", "scripts/nova/land-queue")
+OWN_CODE = ("scripts/land_queue.py", "scripts/landing.py")
 
 
 def say(what: str) -> None:

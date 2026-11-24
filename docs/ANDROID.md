@@ -306,15 +306,16 @@ the shell is replaced by `StoreFailureScreen` with a single **Relaunch** action.
 
 ## Building
 
-Buck2 builds and tests the app, on a Linux worker (nova), from any machine:
-every Android target is `nova-only`, and no Android action runs on a Mac.
+Buck2 builds and tests the app, on a Linux worker (the build host's), from
+any machine: every Android target is `linux-only`, and no Android action
+runs on a Mac.
 The SDK (platform 36, build-tools 36.0.0, NDK 28.2), the JDK and Google's
 SDK licence come from Nix (`nix/android.nix`), the Kotlin compiler and its
 Compose and serialization plugins from the Buck2 prelude's Kotlin 2.3.21,
 R8 from Google's Maven repository; `build/toolchains` puts them together
 and `build/android.bzl` has the module macros. With no Linux worker in reach
 the Android targets are skipped. A Mac needs its own Android SDK only for
-the device recipes, which install what nova built from the cache.
+the device recipes, which install what the build host built from the cache.
 
 ```sh
 just android check         # the JNI bridge for Android, shipping and driving
@@ -420,9 +421,9 @@ when it is missing or was made from anything else, since the goldens are
 geometry on that screen. It disables window/transition/animator scales for
 deterministic settling and dismisses the keyguard. No `wt` pool leases the
 emulator: one run at a time holds it through the journey's scratch lock.
-`just android journey` fetches the debug APK Buck2 built on nova and builds
-the Rust test tools (`testnet`, `amux`, `provider-fakes`) for the Mac, and
-runs `testnet journey android` (the APK named in `AMUX_ANDROID_APK`), which serves
+`just android journey` fetches the debug APK Buck2 built on the build host
+and builds the Rust test tools (`testnet`, `amux`, `provider-fakes`) for
+the Mac, and runs `testnet journey android` (the APK named in `AMUX_ANDROID_APK`), which serves
 `journeys/topologies/phone-*.json` and drives the app through `DoorServer`.
 
 The stories are the iPhone's own: `phone_stories.rs` tells each shared story

@@ -263,6 +263,27 @@ amux_files(
     srcs = glob(["**/*.swift"]),
 )
 
+# What the repository's checks read besides the Swift: the phone's string
+# catalogue (the strings lint, apps/apple/Tools/BUCK), and what the release
+# scripts' tests hold those scripts to (the root BUCK's script tests).
+amux_files(
+    name = "copy",
+    srcs = ["Amux/Resources/Localizable.xcstrings"],
+)
+
+amux_files(
+    name = "release-files",
+    srcs = [
+        "Amux/Amux.entitlements",
+        "Amux/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+        "Amux/Info.plist",
+        "AmuxNotifications/AmuxNotifications.entitlements",
+        "BUCK",
+        "defs.bzl",
+        "version.bzl",
+    ],
+)
+
 # The Mac app (docs/MAC.md). Built for this Mac's development configuration
 # unless a platform is named: //build/platforms:macos-app-shipping-release is
 # what `just mac release` signs with Developer ID.

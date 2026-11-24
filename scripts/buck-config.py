@@ -14,11 +14,12 @@ count is newer than it, so the file follows the pins without anyone
 remembering to.
 
 It also says where actions go. A Mac whose NativeLink is set up with a
-remote (`scripts/nativelink.py install --remote ...`, normally nova) sends
-Linux actions to the remote's worker through its own NativeLink, whose
-cache is a local layer over the remote's. When the remote doesn't answer,
-NativeLink is restarted without it and the tree turns Linux off
-(`amux.linux = false`: no Linux execution platform, and `nova_only` tests
+remote (`scripts/nativelink.py install --remote ...`, normally the build
+host) sends Linux actions to the remote's worker through its own
+NativeLink, whose cache is a local layer over the remote's. When the
+remote doesn't answer, NativeLink is restarted without it and the tree
+turns Linux off
+(`amux.linux = false`: no Linux execution platform, and `linux_only` tests
 skipped), and back when it answers again. Buck2's daemon remembers what it
 uploaded to the cache it was talking to, so a switch also restarts this
 tree's daemon.
@@ -339,19 +340,19 @@ def linux(mode: str) -> bool:
 
 
 def skipped(patterns: list[str]) -> None:
-    """With no Linux worker in reach, name the `nova-only` targets among
+    """With no Linux worker in reach, name the `linux-only` targets among
     `patterns` that a run therefore skipped."""
     if linux(mode()):
         return
     buck2 = run(*PY, str(ROOT / "scripts/buck-tools.py"), "path", "buck2")
     query = subprocess.run(
-        [buck2, "uquery", f"attrfilter(labels, nova-only, set({' '.join(patterns)}))"],
+        [buck2, "uquery", f"attrfilter(labels, linux-only, set({' '.join(patterns)}))"],
         cwd=ROOT, capture_output=True, text=True,
     )
     targets = query.stdout.split()
     if targets:
         why = f"{remote()} is out of reach" if remote() else "no Linux worker is set up (scripts/nativelink.py install --remote)"
-        print(f"skipped, since {why}: {' '.join(targets)} (nova-only: they run only on a Linux worker)", file=sys.stderr)
+        print(f"skipped, since {why}: {' '.join(targets)} (linux-only: they run only on a Linux worker)", file=sys.stderr)
 
 
 def main() -> None:
@@ -374,7 +375,7 @@ def main() -> None:
         subprocess.run([buck2, "kill"], cwd=ROOT, capture_output=True)
         print(f"buck-config: actions now go {DESCRIBE[now.split(' ')[0]]}; restarted this tree's Buck2 daemon", file=sys.stderr)
     if now == "local":
-        print(f"buck-config: {remote()} is out of reach: Linux actions are off and nova-only tests are skipped", file=sys.stderr)
+        print(f"buck-config: {remote()} is out of reach: Linux actions are off and linux-only tests are skipped", file=sys.stderr)
 
 
 DESCRIBE = {

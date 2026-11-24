@@ -2,6 +2,7 @@
 # testing"): the npm packages, the checks and tests, and the extension built
 # around browser-core's WebAssembly. `just browser check` runs the checks,
 # `just browser test` everything.
+load("//build:checks.bzl", "amux_check")
 load("//build:js.bzl", "js_action", "js_check")
 
 # What npm installs from: the lockfile and the workspaces' manifests.
@@ -50,6 +51,17 @@ js_action(
     deps = ["//build:js.py"],
     env = _NODE,
     visibility = ["PUBLIC"],
+)
+
+# Known vulnerabilities in what the extension ships, from the npm registry,
+# asked once a day (build/js.py audit), and again when the lockfile changes.
+amux_check(
+    name = "audit",
+    command = ["python3", "build/js.py", "audit", "build/checks/inputs/day"],
+    srcs = _MANIFESTS,
+    deps = ["//build:js.py", "//build:day"],
+    env = _NODE,
+    labels = ["js"],
 )
 
 # Biome's format and lint, as `npm run check` starts.
@@ -108,5 +120,5 @@ js_check(
         "AMUX_EXTENSION": "$(location :dist-dev)",
         "TESTNET_BINARIES": "$(location //crates/provider-fakes:binaries)",
     },
-    nova_only = True,
+    linux_only = True,
 )

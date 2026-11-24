@@ -32,12 +32,13 @@ test:
     {{bounded}} 1800 {{just}} test //js:
 
 # Known vulnerabilities in what the extension ships (its runtime
-# dependencies, bundled into it), not in the tools that build it. Asks the
-# npm registry, so it is no Buck2 test: an advisory appears without any file
-# changing. CI's Linux job runs it on every push.
+# dependencies, bundled into it), not in the tools that build it: the Buck2
+# check //js:audit, which `just premerge` runs. It asks the npm registry, whose
+# answer changes without any file changing, so its result is kept for the
+# day (UTC) and asked again the next, or when the lockfile changes.
 # Audit the extension's shipped dependencies.
 audit:
-    {{bounded}} 120 sh -c 'cd js && npm audit --omit=dev --audit-level=moderate'
+    {{bounded}} 300 {{just}} test //js:audit
 
 # Biome's format and lint, the types, and the unit tests, without building,
 # as Buck2 tests (js/BUCK); `just premerge` runs them with every other test.

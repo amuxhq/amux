@@ -210,6 +210,16 @@ host already has is a hit on the Mac, so a branch tested on the host is
 cache hits for the same configuration on the Mac and the other way round.
 macOS results stay on the Mac.
 
+That split has a cost a long-lived Buck2 daemon meets. Buck2 takes a
+remote output to stay in the cache for three hours after it last heard of
+it, and asks the cache again near the end of that. The Mac's cache answers
+from the host's layer alone, where the outputs the Mac's own worker built
+never go, so Buck2 is told they are gone, and the next action that needs
+one fails ("an artifact that has expired in the RE CAS") until the daemon
+is restarted (`scripts/buck2 kill`); a new daemon asks the action cache
+afresh. `just land --local` restarts its tree's daemon once it has been up
+two hours.
+
 When the host doesn't answer (or the tailnet is down), `scripts/buck2`
 says so, restarts NativeLink without it and turns Linux off for the tree:
 Linux actions fail at once rather than wait, and tests marked `nova_only`

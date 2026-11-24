@@ -27,9 +27,9 @@ files are not searched.
 
 The Apple apps' Swift is searched the same way: a `Kind` case written as
 `.claudePty`, `.claudeSdk`, `.codex` or `.acp`, and a provider id written out
-as a string. Their generated values
-(`Values.swift`), tests, stories and debug catalogue are not searched: the
-first is the Rust's own definitions, and the rest build fixtures of every kind.
+as a string. Their tests, stories and debug catalogue are not searched: they
+build fixtures of every kind. (The generated values are a build output, never
+in the tree.)
 """
 
 from __future__ import annotations
@@ -53,10 +53,8 @@ CRATES = [
 
 # The Apple apps, whose Swift is searched too.
 SWIFT = "apps/apple"
-# What of the apps' Swift is not searched: the values generated from the
-# Rust, and what builds fixtures of every kind for tests, stories and the
-# debug catalogue.
-SWIFT_SKIPPED_FILES = {"Values.swift"}
+# What of the apps' Swift is not searched: what builds fixtures of every kind
+# for tests, stories and the debug catalogue.
 SWIFT_SKIPPED_DIRS = {
     "Tests", "AmuxAppTests", "AmuxUITests", "AmuxTestSupport", "AmuxMacStories",
     "Storybook", "Debug", ".build",
@@ -197,8 +195,7 @@ def swift_sources(root: Path) -> list[Path]:
     return [
         path
         for path in sorted(apps.rglob("*.swift"))
-        if path.name not in SWIFT_SKIPPED_FILES
-        and not any(part in SWIFT_SKIPPED_DIRS for part in path.relative_to(apps).parts)
+        if not any(part in SWIFT_SKIPPED_DIRS for part in path.relative_to(apps).parts)
     ]
 
 

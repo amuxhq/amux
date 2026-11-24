@@ -115,8 +115,8 @@ class TheSigningFile(unittest.TestCase):
         # version of the listing already on the App Store. A local file that
         # could change it would sign a different app, and its subscriptions
         # would not exist.
-        spec = (SCRIPTS.parent / "apps/apple/project.yml").read_text()
-        self.assertIn(f"PRODUCT_BUNDLE_IDENTIFIER: {recipe.BUNDLE_ID}", spec)
+        spec = (SCRIPTS.parent / "apps/apple/BUCK").read_text()
+        self.assertIn(f'identifier = "{recipe.BUNDLE_ID}"', spec)
         self.assertNotIn("PRODUCT_BUNDLE_IDENTIFIER", recipe.REQUIRED_SETTINGS)
 
     def test_the_repository_ignores_the_signing_file(self):

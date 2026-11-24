@@ -18,6 +18,7 @@ bounded := "scripts/bounded"
 # The interpreter these scripts are written to, chosen rather than assumed;
 # scripts/py explains why and picks it.
 python := "scripts/py"
+buck2 := "scripts/buck2"
 
 # List the iPhone app's recipes.
 default:
@@ -41,22 +42,6 @@ tools:
 lint:
     {{bounded}} 300 sh -c 'sh apps/apple/Tools/feature-lint.sh && sh apps/apple/Tools/test-waits-lint.sh && apps/apple/Tools/strings-lint.sh'
     {{bounded}} 300 cargo run --locked -p ios-tools -- swift-types --check
-
-# The bridge slice a development build links: the simulator, with the
-# driving tools, under the `phone-dev` profile (release without LTO), and with
-# `--device` the same for a plugged-in phone. Repackages only when
-# the library or its generated header changed; runs no cargo at all when no
-# Rust input changed, so a Swift-only edit pays nothing here.
-# Build the bridge slice a development build links.
-rust *ARGS:
-    {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-rust.py "$@"
-
-# Every shipping slice under the `release` profile, assembled
-# into the XCFramework the app packages ship with, then linked from Swift and
-# run on the pinned simulator to prove it loads. What the release recipes use.
-# Build every shipping bridge slice into the XCFramework and prove it links.
-package:
-    {{bounded}} 2400 {{python}} -B apps/apple/Tools/ios-package.py
 
 # Prove the bridge graph carries no provider, agent host or test
 # infrastructure onto the phone. The driving tools are the one deliberate
@@ -83,24 +68,29 @@ graph-check:
 simulator *NAMES:
     scripts/with iphone iphone-small -- {{bounded}} 3600 {{python}} -B apps/apple/Tools/ios_simulators.py {{NAMES}}
 
-# Generates apps/apple/Amux.xcodeproj from apps/apple/project.yml, then builds the app for
-# the golden simulator. The bridge is an input, so `rust` runs first.
-# Generate the Xcode project and build the debug app.
-build: rust
-    {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-build.py
+# Buck2 builds the app (apps/apple/BUCK), bridge and all, and it is copied
+# to target/ios/Debug-iphonesimulator/Amux.app, where every recipe that
+# installs it looks. `--configuration measured` builds the optimised app,
+# `--device` builds for a phone and signs it for development.
+# Build the debug app.
+build *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 3600 {{python}} -B apps/apple/Tools/ios-build.py "$@"
 
-# The app and every suite `unit` runs, built once for any simulator, so it
-# can then run with `--skip-build`.
+# The app and every iPhone test target, built without running any.
 # Build the app and every unit suite once.
-test-build: rust
-    {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-build.py --tests
+test-build:
+    {{bounded}} 3600 {{python}} -B apps/apple/Tools/ios-build.py --tests
 
-# The package and app-hosted unit suites. Arguments are xcodebuild's, and a
-# `-only-testing:` selector picks suites; `--skip-build` runs what the last
-# build left behind.
-# Run the package and app-hosted unit suites on the golden simulator.
-unit *ARGS: rust
-    if [ "${1-}" = -- ]; then shift; fi; scripts/with iphone -- {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-unit.py "$@"
+# The package suites and the app-hosted suite, as Buck2 tests: each leases a
+# simulator from wt's pool inside its own action, and a passing result is
+# cached, so a second tree's run of the same inputs is a hit. Arguments are
+# Buck2's (a target names one suite: `just ios unit
+# //apps/apple/Packages/AmuxCore:AmuxCoreTests`).
+# Run the package and app-hosted unit suites on a leased simulator.
+unit *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; \
+    if [ $# -eq 0 ]; then set -- //apps/apple/Packages/AmuxCore:AmuxCoreTests //apps/apple/Packages/AmuxDesign:AmuxDesignTests //apps/apple/Packages/AmuxFeatures:AmuxFeaturesTests //apps/apple/Packages/AmuxPush:AmuxPushTests //apps/apple/Packages/AmuxShell:AmuxShellTests //apps/apple/Packages/AmuxTestSupport:AmuxTestSupportTests //apps/apple:AmuxAppTests; fi; \
+    {{bounded}} 3600 {{buck2}} test "$@"
 
 # The app driven the way a person drives it, against a real relay and real
 # daemons started from a committed topology. No arguments runs every journey
@@ -113,7 +103,7 @@ journey *ARGS: build tools
 # name VoiceOver can read and at least 44 pt to hit. A UI test, because that is
 # the only accessibility client an app cannot be for itself.
 # Audit every drawn state for VoiceOver names and 44 pt targets.
-accessibility: build tools
+accessibility: test-build tools
     scripts/with iphone -- {{bounded}} 2400 target/debug/testnet journey accessibility
 
 # The optimised app on the enrolled Mac's simulator against the served
@@ -129,8 +119,7 @@ accessibility: build tools
 perf *ARGS: tools
     if [ "${1-}" = -- ]; then shift; fi; \
     device=; for argument in "$@"; do [ "$argument" = --device ] && device=--device; done; \
-    {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-rust.py $device && \
-    {{bounded}} 2400 {{python}} -B apps/apple/Tools/ios-build.py --configuration Measured $device && \
+    {{bounded}} 3600 {{python}} -B apps/apple/Tools/ios-build.py --configuration measured $device && \
     if [ -n "$device" ]; then {{bounded}} 3600 target/debug/testnet journey perf "$@"; \
     else scripts/with iphone -- {{bounded}} 3600 target/debug/testnet journey perf "$@"; fi
 
@@ -144,27 +133,27 @@ perf *ARGS: tools
 profile GROUP TEMPLATE="Time Profiler": tools
     mkdir -p target/ios/traces; \
     trace="target/ios/traces/$1-$(printf %s "$2" | tr ' A-Z' '-a-z')-$(date +%Y%m%d-%H%M%S).trace"; \
-    {{bounded}} 1800 {{python}} -B apps/apple/Tools/ios-rust.py --device && \
-    {{bounded}} 2400 {{python}} -B apps/apple/Tools/ios-build.py --configuration Measured --device && \
+    {{bounded}} 3600 {{python}} -B apps/apple/Tools/ios-build.py --configuration measured --device && \
     {{bounded}} 3600 target/debug/testnet journey perf --device --only "$1" \
         --trace "$trace" --template "$2" --during "$1"
 
-# Inspect the release bundle for excluded platforms and debug-only surfaces.
-# Release links the shipping library, so the package is its input.
+# Builds the shipping app for the simulator with Buck2 and inspects it for
+# excluded platforms and debug-only surfaces; `--app PATH` audits an app
+# already built, as a release does the one it signed.
 # Inspect the release bundle for debug surfaces and excluded platforms.
-scope-audit: package
-    {{bounded}} 1200 {{python}} -B apps/apple/Tools/ios-scope-audit.py
+scope-audit *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 3600 {{python}} -B apps/apple/Tools/ios-scope-audit.py "$@"
 
 # Everything a change to the app is held to, in dependency order, stopping at
 # the first failure: formatting, lint and tests of the Rust workspace, then
-# the phone's lint, bridge, build, smokes, units, journeys, accessibility,
-# measured run and shipped-scope audit.
+# the phone's lint, graphs, build, units, journeys, accessibility, measured
+# run and shipped-scope audit.
 # Run everything a change to the app is held to, in order.
 verify:
     {{bounded}} 12600 cargo run --locked -q -p ios-tools -- verify
 
-# The half of verification that building the app can settle: graphs, bridge,
-# app, packaged framework, unit suites and the shipped-scope audit. Nothing
+# The half of verification that building the app can settle: lints, graphs,
+# the app and every suite built, and the unit suites run. Nothing
 # here drives a running app against served machines, which is what keeps it
 # quick enough to gate a push.
 # Run the half of verification a build can settle.
@@ -195,15 +184,16 @@ measured:
 script-tests:
     {{bounded}} 120 {{python}} -m unittest discover -s apps/apple/Tools/tests -p '*_test.py' -t apps/apple/Tools/tests
 
-# Version, tag, archive, export, validate and upload the iPhone app, then push
-# the tag and main (--no-upload and --no-push stop short). --preflight reports
-# its inputs and stops; --rehearse archives and exports the would-be release without writing
-# the tree or cutting a tag. The scope audit runs first, so no archive is ever
-# produced from a bundle carrying a debug surface or an excluded platform.
+# Version, build, sign, audit, validate and upload the iPhone app, then
+# commit and tag the numbers and push both (--no-upload and --no-push stop
+# short). --preflight reports its inputs and stops; --rehearse builds, signs
+# and validates the would-be release without writing the tree or cutting a
+# tag. The scope audit runs on the signed bundle before Apple sees it, so
+# nothing carrying a debug surface or an excluded platform is ever uploaded.
 # docs/RELEASE.md holds the contract, including the one-time App Store Connect
 # setup behind it.
-# Version, tag, archive, export and upload the app, then push the tag.
-release *ARGS: package scope-audit
+# Version, build, sign and upload the app, then push the tag.
+release *ARGS:
     if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 8100 {{python}} -B scripts/release.py "$@"
 
 # `just ios deploy 1.0.34` submits the version's released build for review,

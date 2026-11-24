@@ -38,8 +38,6 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).parent))
-sys.path.insert(1, str(Path(__file__).resolve().parents[1] / "apps/apple/Tools"))
-import ios_project
 import qa_cloud
 from qa_cloud import BASE, fail, masked
 
@@ -53,13 +51,15 @@ OTHER_ACCOUNT_VARIABLE = "AMUX_QA_EMAIL"
 # and a committed one would build somebody else's app.
 SIGNING_FILE = Path("apps/apple/Signing.local.xcconfig")
 REQUIRED_SETTINGS = ("DEVELOPMENT_TEAM",)
-# The app's identity, committed in apps/apple/project.yml because it is the same
+# The app's identity, committed in apps/apple/BUCK because it is the same
 # everywhere: this build is the next version of the listing already on the
 # App Store, and the subscriptions belong to that listing. A local override
 # would sign a different app and find no products; the test beside this
 # recipe checks the two spellings still agree.
 BUNDLE_ID = "sh.amux.app"
-DERIVED_DATA = Path("target/ios/DeviceDerivedData")
+# What `ios-build.py --device` writes: the app Buck2 built for a phone,
+# signed for development under the signing file's Team ID.
+APPLICATION = Path("target/ios/Debug-iphoneos/Amux.app")
 PRODUCTS = ("amux_pro_monthly", "amux_pro_yearly")
 # How long the watch waits for a purchase the person is making by hand.
 DEFAULT_MINUTES = 10
@@ -270,22 +270,10 @@ def build_and_install(phone: dict, settings: dict[str, str]) -> None:
     """A development-signed build on the phone. Never a simulator: a simulator
     has no sandbox to buy in."""
     identifier = phone["identifier"]
-    ios_project.generate()
     print("building a development-signed build for the phone", flush=True)
-    subprocess.run([
-        "xcodebuild", "build",
-        "-project", "apps/apple/Amux.xcodeproj",
-        "-scheme", "Amux",
-        "-configuration", "Debug",
-        "-destination", f"id={identifier}",
-        "-derivedDataPath", str(DERIVED_DATA),
-        "-allowProvisioningUpdates",
-        "-quiet",
-        "CODE_SIGNING_ALLOWED=YES",
-        "CODE_SIGN_STYLE=Automatic",
-        f"DEVELOPMENT_TEAM={settings['DEVELOPMENT_TEAM']}",
-    ], check=True, timeout=2400)
-    application = DERIVED_DATA / "Build/Products/Debug-iphoneos/Amux.app"
+    subprocess.run([sys.executable, "-B", "apps/apple/Tools/ios-build.py", "--device"],
+                   check=True, timeout=3600)
+    application = APPLICATION
     if not application.is_dir():
         fail(f"{application} was not produced")
     print("installing it on the phone", flush=True)

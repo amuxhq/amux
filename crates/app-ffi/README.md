@@ -11,11 +11,13 @@ build's `OUT_DIR` as `amux_app.h`.
 ## Values
 
 Everything crosses as JSON. The Swift mirrors of every value are generated
-from the Rust definitions into
-`apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift`:
+from the Rust definitions: the app's `Values.swift` by the Apple build
+(`ios-tools swift-types --values`, in apps/apple/Packages/AmuxCore/BUCK),
+and the push values the notification extension reads into the committed
+`apps/apple/Packages/AmuxPush/Sources/AmuxPush/Said.swift`:
 
 ```sh
-cargo run -p ios-tools -- swift-types          # regenerate
+cargo run -p ios-tools -- swift-types          # regenerate Said.swift
 cargo run -p ios-tools -- swift-types --check  # fail when the committed file differs
 ```
 
@@ -309,6 +311,6 @@ sign-in with pairing through the relay, and one profile per account: binding
 by id with adoption, a second account's own profile,
 sign-out and signing back in, delete, and the trusting-profile lookup.
 
-`just ios rust` builds the simulator slice with `debug-tools` and packages it
-as `target/ios/AmuxAppDebugTools.xcframework`; `just ios package` builds every
-shipping slice into `target/ios/AmuxApp.xcframework`.
+The Apple build links the library straight into each app for the platform
+it is built for: the simulator's development build with `debug-tools`, the
+phone's and the Mac's release builds without (`just ios build`, docs/IOS.md).

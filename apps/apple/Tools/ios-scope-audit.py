@@ -1,19 +1,33 @@
 #!/usr/bin/env python3
-"""Build Release and inspect the iPhone app's shipped scope."""
+"""Inspect the iPhone app's shipped scope.
+
+    ios-scope-audit.py [--app PATH]
+
+With no app named, Buck2 builds the shipping app for the simulator and that
+is audited (`just ios scope-audit`); a release names the app it has just
+signed for the App Store, so what is audited is what is uploaded.
+"""
 
 from pathlib import Path
+import argparse
 import json
 import plistlib
 import re
 import struct
 import subprocess
+import tempfile
 import tomllib
 
-import ios_project
-
 OUTPUT = Path("target/ios/scope-audit")
-DERIVED = Path("target/ios/DerivedData")
-APP = DERIVED / "Build/Products/Release-iphonesimulator/Amux.app"
+TARGET = "//apps/apple:Amux"
+SIMULATOR_PLATFORM = "//build/platforms:ios-sim-app-shipping-release"
+DEVICE_PLATFORM = "//build/platforms:ios-app-shipping-release"
+# The platforms a binary of this app may be built for, as `vtool` names them
+# from its LC_BUILD_VERSION: a phone and its simulator. Mac Catalyst, visionOS
+# and the rest are other platforms, so a binary built for any of them names
+# it here, whatever the bundle's Info.plist claims.
+BUILD_PLATFORMS = {"IOS", "IOSSIMULATOR"}
+SUPPORTED_PLATFORMS = {"iPhoneOS", "iPhoneSimulator"}
 # Reporting a problem ships: the report store, its bundle, its screens, the
 # freeze that photographs the window and the dump the report carries are in
 # every build. What stays out is what only driving needs: the door and the
@@ -50,8 +64,10 @@ EXTENSION = "PlugIns/AmuxNotifications.appex"
 EXTENSION_POINT = "com.apple.usernotifications.service"
 BRIDGE_SYMBOL = "amux_runtime_"
 # Where the app keeps push keys and the extension reads them. Named as the
-# entitlements files spell it, since the team's prefix is not committed.
+# entitlements files spell it, since the team's prefix is not committed; a
+# signed bundle carries it with the prefix filled in.
 PUSH_KEY_GROUP = "$(AppIdentifierPrefix)sh.amux.push"
+PUSH_KEY_SUFFIX = ".sh.amux.push"
 LOCAL_NETWORK_PURPOSE = ("amux finds computers on your network so this phone can "
                          "pair and connect to them directly.")
 # Resources that only the driving and capture tools need. Code that reads them
@@ -141,8 +157,14 @@ def resource_violations(bundle: Path) -> list[str]:
     return failures
 
 
-def bundle_violations(info: dict, entitlements: dict, settings: dict,
+def holds_push_group(grants: dict) -> bool:
+    return any(group == PUSH_KEY_GROUP or group.endswith(PUSH_KEY_SUFFIX)
+               for group in grants.get("keychain-access-groups", []))
+
+
+def bundle_violations(info: dict, entitlements: dict, platforms: set[str],
                       bundle: Path) -> list[str]:
+    """`platforms` are the ones the executable was built for (BUILD_PLATFORMS)."""
     failures = icon_violations(info, bundle) + resource_violations(bundle)
     # Required: without it the app asks for a token and never gets one, and
     # nothing but the notifications that don't arrive says so.
@@ -163,14 +185,14 @@ def bundle_violations(info: dict, entitlements: dict, settings: dict,
                         "explanation in Info.plist")
     if info.get("UIDeviceFamily") != [1]:
         failures.append("bundle device family must be iPhone only")
-    if settings.get("TARGETED_DEVICE_FAMILY") != "1":
-        failures.append("build device family must be iPhone only")
-    for flag in ("SUPPORTS_MACCATALYST", "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD",
-                 "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD"):
-        if settings.get(flag) != "NO":
-            failures.append(f"destination not disabled: {flag}")
-    if set(settings.get("SUPPORTED_PLATFORMS", "").split()) - {"iphoneos", "iphonesimulator"}:
-        failures.append("non-iPhone platform in supported destinations")
+    if not platforms:
+        failures.append("the executable names no platform it was built for")
+    elif platforms - BUILD_PLATFORMS:
+        failures.append(f"executable built for {' '.join(sorted(platforms - BUILD_PLATFORMS))}, "
+                        "not only an iPhone")
+    if set(info.get("CFBundleSupportedPlatforms", [])) - SUPPORTED_PLATFORMS:
+        failures.append("non-iPhone platform in supported destinations: "
+                        f"{info.get('CFBundleSupportedPlatforms')}")
     return failures
 
 
@@ -190,7 +212,7 @@ def extension_violations(app_info: dict, app_grants: dict, info: dict, grants: d
     if BRIDGE_SYMBOL in symbols:
         failures.append("the extension links the Rust bridge")
     for name, held in (("app", app_grants), ("extension", grants)):
-        if PUSH_KEY_GROUP not in held.get("keychain-access-groups", []):
+        if not holds_push_group(held):
             failures.append(f"the {name} lacks the push key group {PUSH_KEY_GROUP}")
     if info.get("AmuxPushKeychainGroup") != app_info.get("AmuxPushKeychainGroup"):
         failures.append("the app and the extension name different push key groups")
@@ -216,7 +238,19 @@ def inspect_binary(binary: Path) -> tuple[str, str]:
     return symbols, strings
 
 
-def entitlements(bundle: Path) -> dict:
+def linkage_violations(libraries: str) -> list[str]:
+    """Refuse an app that loads SQLite from the system: the bridge carries
+    its own, which is the one its store was written with."""
+    return (["the app loads SQLite dynamically instead of carrying the bridge's"]
+            if "libsqlite3" in libraries.lower() else [])
+
+
+def platforms(binary: Path) -> set[str]:
+    shown = run(["xcrun", "vtool", "-show-build", str(binary)]).stdout.decode(errors="replace")
+    return set(re.findall(r"^\s*platform\s+(\S+)", shown, re.M))
+
+
+def signed_entitlements(bundle: Path) -> dict:
     result = run(["codesign", "-d", "--entitlements", ":-", str(bundle)], check=False)
     if result.returncode:
         if b"not signed at all" in result.stderr:
@@ -225,19 +259,40 @@ def entitlements(bundle: Path) -> dict:
     return plistlib.loads(result.stdout) if result.stdout.strip() else {}
 
 
-def granted(bundle: Path, settings: dict) -> dict:
-    """What a bundle is signed with, and what its target's Release signing says.
+def embedded_entitlements(binary: Path) -> dict:
+    """The entitlements a simulator build carries in its `__TEXT,__entitlements`
+    section, which is where the simulator reads them from: its ad hoc
+    signature carries none (build/apple.bzl says why)."""
+    with tempfile.TemporaryDirectory() as directory:
+        out = Path(directory) / "entitlements.plist"
+        found = run(["xcrun", "segedit", str(binary), "-extract", "__TEXT", "__entitlements",
+                     str(out)], check=False)
+        if found.returncode or not out.is_file() or not out.read_bytes().strip(b"\0"):
+            return {}
+        return plistlib.loads(out.read_bytes().rstrip(b"\0"))
 
-    Simulator builds may be unsigned, so the signing input is read too, or an
-    entitlement could be missing behind disabled simulator signing."""
-    grants = entitlements(bundle)
-    declared = settings.get("CODE_SIGN_ENTITLEMENTS", "")
-    if declared:
-        path = Path(declared)
-        if not path.is_absolute():
-            path = Path(settings["SRCROOT"]) / path
-        grants |= plistlib.loads(path.read_bytes())
-    return grants
+
+def granted(bundle: Path, executable: str) -> dict:
+    """What a bundle is entitled to: its signature's grants, or for a
+    simulator build the ones its executable embeds."""
+    return signed_entitlements(bundle) or embedded_entitlements(bundle / executable)
+
+
+def built_app() -> Path:
+    """The shipping app for the simulator, as Buck2 builds it."""
+    built = run(["scripts/buck2", "build", TARGET, "--target-platforms", SIMULATOR_PLATFORM,
+                 "--show-full-simple-output"], timeout=3600)
+    return Path(built.stdout.decode().strip().splitlines()[-1])
+
+
+def dependency_graph(platform: str) -> list[dict]:
+    """Every target the app is built from, as Buck2 resolves it for the
+    platform it was built for: where a cloud or React Native package would
+    have to come in."""
+    listed = run(["scripts/buck2", "cquery", f"deps({TARGET})", "--target-platforms", platform],
+                 timeout=600)
+    labels = {line.split(" (")[0].strip() for line in listed.stdout.decode().splitlines()}
+    return [{"name": label, "dependencies": []} for label in sorted(labels) if label]
 
 
 def detector_probe() -> None:
@@ -260,40 +315,33 @@ def detector_probe() -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--app", help="the app to audit, instead of building the simulator's")
+    arguments = parser.parse_args()
     OUTPUT.mkdir(parents=True, exist_ok=True)
     report = OUTPUT / "audit.txt"
     report.write_text("Release scope audit started; no verdict yet.\n")
-    ios_project.generate()
-    args = ["xcodebuild", "-project", "apps/apple/Amux.xcodeproj", "-scheme", "Amux",
-            "-configuration", "Release", "-destination", "generic/platform=iOS Simulator",
-            "-derivedDataPath", str(DERIVED), "ARCHS=arm64", "ONLY_ACTIVE_ARCH=YES"]
-    built = run([*args, "build", "-quiet"], timeout=900)
-    (OUTPUT / "build.txt").write_bytes(built.stdout + built.stderr)
-    settings_rows = json.loads(run([*args, "-showBuildSettings", "-json"]).stdout)
-    settings = next(row["buildSettings"] for row in settings_rows if row["target"] == "Amux")
-    (OUTPUT / "build-settings.json").write_text(json.dumps(settings, indent=2))
-    info = plistlib.loads((APP / "Info.plist").read_bytes())
-    grants = granted(APP, settings)
+    app = Path(arguments.app) if arguments.app else built_app()
+    info = plistlib.loads((app / "Info.plist").read_bytes())
+    executable = app / info["CFBundleExecutable"]
+    grants = granted(app, info["CFBundleExecutable"])
     (OUTPUT / "entitlements.json").write_text(json.dumps(grants, indent=2))
-    failures = bundle_violations(info, grants, settings, APP)
-    appex = APP / EXTENSION
+    built_for = platforms(executable)
+    failures = bundle_violations(info, grants, built_for, app)
+    appex = app / EXTENSION
     if appex.is_dir():
-        # By target, not by the scheme above: a scheme lists its own targets,
-        # and the extension is only a dependency of the app.
-        extension_settings = json.loads(run([
-            "xcodebuild", "-project", "apps/apple/Amux.xcodeproj", "-target", "AmuxNotifications",
-            "-configuration", "Release", "-showBuildSettings", "-json"]).stdout)[0]["buildSettings"]
         extension_info = plistlib.loads((appex / "Info.plist").read_bytes())
         failures += extension_violations(
-            info, grants, extension_info, granted(appex, extension_settings),
+            info, grants, extension_info, granted(appex, extension_info["CFBundleExecutable"]),
             inspect_binary(appex / extension_info["CFBundleExecutable"])[0])
     else:
         failures.append(f"no extension at {EXTENSION}")
-    symbols, strings = inspect_binary(APP / info["CFBundleExecutable"])
+    symbols, strings = inspect_binary(executable)
     (OUTPUT / "symbols.txt").write_text(symbols)
+    failures += linkage_violations(run(["xcrun", "otool", "-L", str(executable)]).stdout.decode())
     # Include compiled localization resources: a row may no longer be a literal
     # in the executable after it moves into the string catalogue.
-    for resource in APP.rglob("*.strings"):
+    for resource in app.rglob("*.strings"):
         table = plistlib.loads(resource.read_bytes())
         strings += "\n" + "\n".join(str(value) for value in table.values())
     (OUTPUT / "strings.txt").write_text(strings)
@@ -303,30 +351,25 @@ def main() -> None:
     failures += reporting_violations(symbols, strings)
     if not any(copy in strings for copy in ("need you", "needs you")):
         failures.append("in-app attention copy is absent")
-    graphs = []
-    for package in sorted(Path("apps/apple/Packages").glob("*/Package.swift")):
-        graphs.append(json.loads(run([
-            "swift", "package", "--package-path", str(package.parent),
-            "--scratch-path", str((OUTPUT / "SwiftPM" / package.parent.name).resolve()),
-            "show-dependencies", "--format", "json"]).stdout))
+    graphs = dependency_graph(DEVICE_PLATFORM if "IOS" in built_for else SIMULATOR_PLATFORM)
     rust_packages = tomllib.loads(Path("Cargo.lock").read_text())["package"]
     rust_graph = [{"name": package["name"], "url": package.get("source", ""),
                    "dependencies": [{"name": dependency} for dependency in package.get("dependencies", [])]}
                   for package in rust_packages]
     (OUTPUT / "package-graph.json").write_text(json.dumps(
-        {"swift": graphs, "rust": rust_graph}, indent=2))
+        {"buck": graphs, "rust": rust_graph}, indent=2))
     failures += graph_violations(graphs + rust_graph)
     detector_probe()
-    lines = [f"Release app: {APP}",
+    lines = [f"Release app: {app}",
              "Inspected: Info.plist, the app icon, bundle resources, entitlements, the notification extension,",
-             "build destinations, executable symbols,",
-             "compiled strings and the complete Swift package and locked Rust dependency graphs.",
+             f"the platforms the executable was built for ({' '.join(sorted(built_for))}), executable symbols,",
+             "compiled strings, every Buck2 target the app is built from and the locked Rust dependency graph.",
              "Detector rejected a compiler-built test executable carrying a debug export."]
     if failures:
         lines += ["FAIL: " + failure for failure in failures]
     else:
         lines += [f"PASS: icon {info['CFBundleIconName']} named at the top level of Info.plist "
-                  f"and a {'x'.join(map(str, png_size(APP / 'AppIcon60x60@2x.png')))} iPhone icon in the bundle.",
+                  f"and a {'x'.join(map(str, png_size(app / 'AppIcon60x60@2x.png')))} iPhone icon in the bundle.",
                   "PASS: no frozen-frame or test-support resource in the bundle.",
                   f"PASS: Bonjour limited to {' '.join(BONJOUR_SERVICES)} behind the agreed explanation "
                   "and no legacy browser; iPhone destinations only;",
@@ -334,8 +377,11 @@ def main() -> None:
                   "PASS: in-app attention copy, Contact Support and Report a Problem remain;",
                   "the report screen, its freeze and the record snapshot ship.",
                   "PASS: the notification extension is embedded, shares the push key group and the",
-                  "app's numbers, and carries none of the Rust bridge."]
-    lines += ["Limit: simulator Release bundle inspection; distribution signing is checked before release."]
+                  "app's numbers, and carries none of the Rust bridge.",
+                  "PASS: SQLite is the bridge's own, linked in, not the system's."]
+    signed = bool(signed_entitlements(app))
+    lines += ["Limit: " + ("the signed bundle, as uploaded." if signed else
+                           "simulator Release bundle inspection; distribution signing is checked before release.")]
     report.write_text("\n".join(lines) + "\n")
     print(report.read_text(), end="", flush=True)
     if failures:

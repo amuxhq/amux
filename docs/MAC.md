@@ -370,18 +370,14 @@ package, drawn from values and reporting through actions; the app's models in
 ## Building and running
 
 ```sh
-just mac build   # the bridge's Mac slice, the checkout's amux, the app
+just mac build   # the checkout's amux, and the app with the bridge for this Mac
 just mac run     # build, start this checkout's daemon, run the app on it
 ```
 
-`just mac rust` adds the `macos-arm64` slice to the `AmuxApp.xcframework` the
-Swift packages link (`apps/apple/Tools/ios-rust.py --mac`). The iPhone app's
-force-loaded driving library never carries it, and a later iPhone build that
-rebuilds the bridge drops it again, which the next Mac build puts back.
-
-The project is generated from `apps/apple/Mac/project.yml` into
-`apps/apple/Mac/AmuxMac.xcodeproj`, apart from the iPhone app's, so neither
-app's recipes build or check the other. The app is built for Apple silicon,
+Buck2 builds the app (`AmuxMac` in `apps/apple/BUCK`, with the iPhone
+app's rules; [the iPhone app](IOS.md#builds) says how they work), linking
+the bridge built for this Mac, and `just mac build` copies it to
+`target/mac/Debug/Amux.app`. There is no Xcode project. The app is built for Apple silicon,
 macOS 26, with the hardened runtime and without the sandbox: it reaches amux's
 sockets under `~/.amux` and installs amux into `~/.amux/bin`. Development
 builds are signed ad hoc and carry the checkout's debug `amux`; release
@@ -394,7 +390,8 @@ just mac test    # the app's tests, with no window on screen
 `just mac test` compiles the app's sources without its entry point: one test
 walks setting up against a scratch daemon of its own (reading the pairing QR
 code back as the daemon's link) and checks it writes no login item, and one
-holds the storybook to its list.
+holds the storybook to its list. It is a Buck2 test, which builds the amux
+and fake provider binaries the walk starts, and a passing run is cached.
 
 `AMUX_CONFIG` names the installation the app attaches to, as it does for every
 amux command, so in a worktree `just mac run` attaches to that tree's daemon.
@@ -480,14 +477,15 @@ just mac deploy 0.0.2               # sign the stable Mac feed and publish it, w
 just mac deploy 0.0.2 --channel preview
 ```
 
-The app versions on its own: `MARKETING_VERSION` in `project.yml`, which is
-also its build number, and tags `mac-v<version>`. A release builds on the
-release Mac, since the signature is made with its Developer ID certificate:
-the bridge's Mac slice under the `release` profile without the driving tools
-(`apps/apple/Tools/ios-package.py --mac`), built to trust the release keys
-the Release workflow names, then the Release app, signed ad hoc by Xcode and
-then with Developer ID by `codesign` under the hardened runtime. That one
-signed app is packed two ways:
+The app versions on its own: `MAC_VERSION` in `apps/apple/version.bzl`,
+which is also its build number, and tags `mac-v<version>`. A release builds
+on the release Mac, since the signature is made with its Developer ID
+certificate: Buck2 builds the Release app
+(`//build/platforms:macos-app-shipping-release`) with the shipping bridge
+built to trust the release keys the Release workflow names
+(`-c amux.release_public_keys`), signed ad hoc, and the release signs a copy
+with Developer ID by `codesign` under the hardened runtime. That one signed
+app is packed two ways:
 
 - `Amux-<version>.zip`: the update, which an installed app downloads
   itself. Nothing marks that download for Gatekeeper.

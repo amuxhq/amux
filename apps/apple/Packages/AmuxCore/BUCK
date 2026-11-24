@@ -113,10 +113,7 @@ export_file(
 
 amux_files(
     name = "mirrors",
-    srcs = [
-        "Sources/AmuxFixtures/Fixtures/markdown-fixtures.json",
-        "Sources/AmuxValues/Values.swift",
-    ],
+    srcs = ["Sources/AmuxFixtures/Fixtures/markdown-fixtures.json"],
 )
 
 # Compiled into a driven build of the app itself (apps/apple/BUCK), which

@@ -241,66 +241,6 @@
         }
       }
     },
-    "App" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "App"
-          }
-        }
-      }
-    },
-    "App · chat open" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "App · chat open"
-          }
-        }
-      }
-    },
-    "App · new agent" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "App · new agent"
-          }
-        }
-      }
-    },
-    "App · review open" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "App · review open"
-          }
-        }
-      }
-    },
-    "App · settings open" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "App · settings open"
-          }
-        }
-      }
-    },
     "Asks" : {
       "comment" : "Debug component gallery family heading.",
       "extractionState" : "manual",
@@ -369,18 +309,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Chat"
-          }
-        }
-      }
-    },
-    "Chat states" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Chat states"
           }
         }
       }
@@ -513,18 +441,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Collapse the pairing failures onto one message"
-          }
-        }
-      }
-    },
-    "Component Catalog" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Component Catalog"
           }
         }
       }
@@ -853,18 +769,6 @@
         }
       }
     },
-    "Foundation" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Foundation"
-          }
-        }
-      }
-    },
     "Frontier agentic coding model." : {
       "comment" : "English app copy. Used in apps/apple/Amux/Debug/ComponentCatalog.swift.",
       "extractionState" : "manual",
@@ -921,18 +825,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Here is the screen and the log."
-          }
-        }
-      }
-    },
-    "Host · confirm revoke" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Host · confirm revoke"
           }
         }
       }
@@ -1833,18 +1725,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Why does this fail? "
-          }
-        }
-      }
-    },
-    "Working marks" : {
-      "comment" : "English app copy. Used in apps/apple/Amux/Debug/Stories.swift.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Working marks"
           }
         }
       }

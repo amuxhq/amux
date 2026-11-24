@@ -1,6 +1,6 @@
 load("//apps/apple:defs.bzl", "MAC", "SIMULATOR", "copied", "ios_versions")
 load("//apps/apple:version.bzl", "MAC_VERSION")
-load("//build:apple.bzl", "apple_binary", "apple_bundle", "apple_xctest", "swift_library")
+load("//build:apple.bzl", "apple_binary", "apple_bundle", "apple_ui_tests", "apple_xctest", "swift_library")
 load("//build:rust.bzl", "amux_files")
 
 # The iPhone app (docs/IOS.md, "Builds"). Built for the simulator's
@@ -27,7 +27,7 @@ _DRIVEN = select({
 # The door's sources, and the fixtures, scripted cloud and door wire types
 # compiled into a driven build rather than linked as a package, so a release
 # leaves them out entirely.
-_DRIVING_SOURCES = glob(["Amux/Debug/*.swift"], exclude = ["Amux/Debug/Previews.swift"]) + [
+_DRIVING_SOURCES = glob(["Amux/Debug/*.swift"]) + [
     _PACKAGES + "AmuxCore:MarkdownFixtures.swift",
 ]
 
@@ -200,6 +200,52 @@ apple_xctest(
     bundle = ":AmuxAppTests-bundle",
     host = ":AmuxAppTests-host",
     labels = ["simulator"],
+    default_target_platform = SIMULATOR,
+)
+
+# The accessibility audit: a UI test, because XCUITest is the only
+# accessibility client an app cannot be for itself. It drives the app from a
+# runner of its own and only reads the app the journey launched, so it links
+# nothing of the app's; `testnet journey accessibility` runs the directory
+# this makes beside the journey that walks the pages.
+swift_library(
+    name = "AmuxUITests-module",
+    module_name = "AmuxUITests",
+    srcs = glob(["AmuxUITests/*.swift"]),
+    xctest = True,
+    default_target_platform = SIMULATOR,
+)
+
+apple_binary(
+    name = "AmuxUITests-binary",
+    product_name = "AmuxUITests",
+    kind = "bundle",
+    deps = [":AmuxUITests-module"],
+    xctest = True,
+    default_target_platform = SIMULATOR,
+)
+
+apple_bundle(
+    name = "AmuxUITests-bundle",
+    product_name = "AmuxUITests",
+    extension = "xctest",
+    identifier = "sh.amux.AmuxUITests",
+    binary = ":AmuxUITests-binary",
+    info = {
+        "CFBundleDevelopmentRegion": "en",
+        "CFBundleExecutable": "AmuxUITests",
+        "CFBundleIdentifier": "sh.amux.AmuxUITests",
+        "CFBundleInfoDictionaryVersion": "6.0",
+        "CFBundleName": "AmuxUITests",
+        "CFBundlePackageType": "BNDL",
+    },
+    default_target_platform = SIMULATOR,
+)
+
+apple_ui_tests(
+    name = "AmuxUITests",
+    bundle = ":AmuxUITests-bundle",
+    target_identifier = "sh.amux.app",
     default_target_platform = SIMULATOR,
 )
 

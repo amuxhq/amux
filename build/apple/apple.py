@@ -162,6 +162,14 @@ def link(arguments: argparse.Namespace, rest: list[str]) -> None:
         ]
     run(["xcrun", "--sdk", arguments.sdk, "swiftc", "-sdk", sdk_path(arguments.sdk), *flags],
         timeout=1800)
+    if arguments.dsym:
+        # The debug information out of the objects into a dSYM, as Xcode's
+        # Release does, while the objects are still here to read; then the
+        # binary sheds its map of them, which named only this action's
+        # directory.
+        output = flags[flags.index("-o") + 1]
+        run(["xcrun", "dsymutil", output, "-o", arguments.dsym], timeout=1800)
+        run(["xcrun", "strip", "-S", output], timeout=300)
 
 
 def substitute(text: str, values: dict[str, str]) -> str:
@@ -332,6 +340,75 @@ def bundle(arguments: argparse.Namespace) -> None:
         sign(out, "-", spec.get("entitlements"))
 
 
+# What a UI test runner carries of the platform's test frameworks, as Xcode
+# embeds them: the runner is launched on its own, by the system, so it finds
+# them in its own Frameworks rather than through DYLD_FRAMEWORK_PATH.
+RUNNER_FRAMEWORKS = ("XCTest", "XCTestCore", "XCUIAutomation", "XCTAutomationSupport",
+                     "XCUnit", "XCTestSupport", "Testing")
+RUNNER_LIBRARIES = ("libXCTestSwiftSupport.dylib",)
+
+
+def ui_runner(arguments: argparse.Namespace) -> None:
+    """A UI test bundle's runner and the .xctestrun that runs it.
+
+    A UI test runs in an app of its own that drives the app under test from
+    outside, as XCUITest must. Xcode makes that app from the platform's
+    XCTRunner.app, renamed to the test target and carrying the bundle in
+    PlugIns; this does the same. The .xctestrun names everything relative to
+    itself (__TESTROOT__), so the directory runs from wherever it is copied:
+    `xcodebuild test-without-building -xctestrun DIR/NAME.xctestrun`."""
+    out = Path(arguments.out)
+    out.mkdir(parents=True)
+    platform = Path(platform_path(arguments.sdk))
+    developer = platform / "Developer"
+    runner = out / f"{arguments.name}-Runner.app"
+    copy(developer / "Library/Xcode/Agents/XCTRunner.app", runner)
+    info_path = runner / "Info.plist"
+    info = plistlib.loads(info_path.read_bytes())
+    info = {key: substitute(value, {"WRAPPEDPRODUCTNAME": f"{arguments.name}-Runner",
+                                    "WRAPPEDPRODUCTBUNDLEIDENTIFIER": arguments.identifier,
+                                    "TESTPRODUCTNAME": arguments.name})
+            if isinstance(value, str) else value for key, value in info.items()}
+    info["CFBundleIdentifier"] = arguments.identifier
+    info["CFBundleName"] = info["CFBundleExecutable"] = f"{arguments.name}-Runner"
+    info_path.write_bytes(plistlib.dumps(info))
+    (runner / "XCTRunner").rename(runner / info["CFBundleExecutable"])
+    tests = runner / "PlugIns" / Path(arguments.tests).name
+    copy(Path(arguments.tests), tests)
+    frameworks = runner / "Frameworks"
+    for name in RUNNER_FRAMEWORKS:
+        found = developer / "Library/Frameworks" / f"{name}.framework"
+        if not found.is_dir():
+            found = developer / "Library/PrivateFrameworks" / f"{name}.framework"
+        if found.is_dir():
+            copy(found, frameworks / found.name)
+    for name in RUNNER_LIBRARIES:
+        if (developer / "usr/lib" / name).is_file():
+            copy(developer / "usr/lib" / name, frameworks / name)
+    for nested in sorted(frameworks.iterdir()):
+        sign(nested, "-", None)
+    sign(tests, "-", None)
+    sign(runner, "-", None)
+    environment = {
+        "DYLD_FRAMEWORK_PATH": "__PLATFORMS__/" + platform.name + "/Developer/Library/Frameworks",
+        "DYLD_LIBRARY_PATH": "__PLATFORMS__/" + platform.name + "/Developer/usr/lib",
+    }
+    plan = {
+        arguments.name: {
+            "TestHostPath": f"__TESTROOT__/{runner.name}",
+            "TestHostBundleIdentifier": arguments.identifier,
+            "TestBundlePath": f"__TESTHOST__/PlugIns/{tests.name}",
+            "IsUITestBundle": True,
+            "IsXCTRunnerHostedTestBundle": True,
+            "UITargetAppBundleIdentifier": arguments.target_identifier,
+            "TestingEnvironmentVariables": environment,
+            "EnvironmentVariables": {},
+        },
+        "__xctestrun_metadata__": {"FormatVersion": 1},
+    }
+    (out / f"{arguments.name}.xctestrun").write_bytes(plistlib.dumps(plan))
+
+
 def main() -> None:
     argv = sys.argv[1:]
     rest = []
@@ -366,6 +443,7 @@ def main() -> None:
     command.add_argument("--sdk", required=True)
     command.add_argument("--xctest", action="store_true")
     command.add_argument("--entitlements")
+    command.add_argument("--dsym")
 
     command = commands.add_parser("entitlements")
     command.add_argument("--src", required=True)
@@ -385,6 +463,14 @@ def main() -> None:
     command.add_argument("--spec", required=True)
     command.add_argument("--out", required=True)
 
+    command = commands.add_parser("ui-runner")
+    command.add_argument("--sdk", required=True)
+    command.add_argument("--name", required=True)
+    command.add_argument("--tests", required=True)
+    command.add_argument("--identifier", required=True)
+    command.add_argument("--target-identifier", required=True)
+    command.add_argument("--out", required=True)
+
     arguments = parser.parse_args(argv)
     if arguments.command == "swiftc":
         swiftc(arguments, rest)
@@ -400,6 +486,8 @@ def main() -> None:
         resource_bundle(arguments)
     elif arguments.command == "bundle":
         bundle(arguments)
+    elif arguments.command == "ui-runner":
+        ui_runner(arguments)
 
 
 if __name__ == "__main__":

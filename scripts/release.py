@@ -31,6 +31,7 @@ file this repository tracks.
 from pathlib import Path
 import argparse
 import datetime
+import json
 import plistlib
 import re
 import shutil
@@ -417,15 +418,26 @@ def build_app(version: str, build_number: int) -> Path:
     has written the same numbers into the tree already, so the two agree."""
     print(f"building {version} ({build_number})", flush=True)
     built = subprocess.run([
-        "scripts/buck2", "build", TARGET, "--target-platforms", PLATFORM,
+        "scripts/buck2", "build", TARGET, f"{TARGET}[dsyms]", "--target-platforms", PLATFORM,
         "-c", f"apple.marketing_version={version}",
         "-c", f"apple.build_number={build_number}",
-        "--show-full-simple-output",
+        "--show-full-json-output",
     ], check=True, timeout=3600, stdout=subprocess.PIPE, text=True)
-    app = Path(built.stdout.strip().splitlines()[-1])
+    app, symbols = outputs(built.stdout)
     if not (app / "Info.plist").is_file():
         raise Refusal(f"Buck2 named {app} as the app, and it has no Info.plist")
-    return app
+    return app, symbols
+
+
+def outputs(listing: str) -> tuple[Path, Path]:
+    """The app and the directory of its dSYMs, out of Buck2's
+    `--show-full-json-output`."""
+    named = json.loads(listing)
+    app = next((Path(path) for label, path in named.items() if not label.endswith("[dsyms]") and path), None)
+    symbols = next((Path(path) for label, path in named.items() if label.endswith("[dsyms]") and path), None)
+    if app is None or symbols is None:
+        raise Refusal(f"Buck2 named no app or no dSYMs: {listing}")
+    return app, symbols
 
 
 def revision() -> str:
@@ -433,17 +445,18 @@ def revision() -> str:
                           capture_output=True, text=True, timeout=60).stdout.strip()
 
 
-def sign(app: Path, version: str, build_number: int, facts: dict) -> Path:
+def sign(app: Path, symbols: Path, version: str, build_number: int, facts: dict) -> Path:
     """The app signed for the App Store, and packaged as the .ipa uploaded.
 
     Every bundle is signed inside out with the distribution certificate and
-    the profile it ships under, as an export used to sign an archive."""
+    the profile it ships under, as an export used to sign an archive, and
+    the .ipa carries the symbols of each, so crash reports are readable."""
     destination = RELEASE_DIRECTORY / tag_name(version, build_number)
     print("signing for the App Store", flush=True)
     package = destination / "Amux.ipa"
     command = [sys.executable, "-B", str(SIGN), str(app), str(destination),
                "--identity", DISTRIBUTION, "--team", facts["team"],
-               "--revision", revision(), "--ipa", str(package)]
+               "--revision", revision(), "--ipa", str(package), "--symbols", str(symbols)]
     for bundle, name in sorted(wanted_profiles().items()):
         command += ["--profile", f"{bundle}={name}"]
     for bundle, path in sorted(ENTITLEMENTS.items()):
@@ -619,9 +632,9 @@ def main() -> int:
         write_numbers(version, build)
     try:
         step = "build"
-        app = build_app(version, build)
+        app, symbols = build_app(version, build)
         step = "sign"
-        exported = sign(app, version, build, facts)
+        exported = sign(app, symbols, version, build, facts)
         written = exported.parent / "ReleaseNotes.txt"
         written.write_text(message + "\n")
         print(f"signed {exported}")

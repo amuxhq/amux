@@ -14,12 +14,16 @@ embedded and the entitlements that profile allows.
         --profile sh.amux.app.notifications="amux Notifications App Store" \\
         --entitlements sh.amux.app=apps/apple/Amux/Amux.entitlements \\
         --entitlements sh.amux.app.notifications=apps/apple/AmuxNotifications/AmuxNotifications.entitlements \\
-        [--revision SHA] [--ipa OUT.ipa]
+        [--revision SHA] [--ipa OUT.ipa [--symbols DIR]]
 
 The entitlements a bundle is signed with are what its source file asks for,
 with the team's prefix filled in, under the profile's values for the keys a
 profile decides: the push environment (production for the App Store), the
 application identifier and team, and whether a debugger may attach.
+
+`--symbols` packs the symbols of each dSYM in DIR into the .ipa beside the app, as
+Xcode's export does with `uploadSymbols`, so App Store Connect can
+symbolicate the build's crash reports.
 """
 
 from pathlib import Path
@@ -123,6 +127,7 @@ def main() -> None:
     parser.add_argument("--entitlements", action="append", default=[], help="BUNDLE_ID=FILE")
     parser.add_argument("--revision", help="the commit, stamped into the app's Info.plist")
     parser.add_argument("--ipa", help="also package the signed app as this .ipa")
+    parser.add_argument("--symbols", help="a directory of dSYMs whose symbols the .ipa carries")
     arguments = parser.parse_args()
 
     wanted_profiles = dict(pair.split("=", 1) for pair in arguments.profile)
@@ -163,16 +168,25 @@ def main() -> None:
     print(f"signed {app} as {arguments.identity} ({arguments.team})")
 
     if arguments.ipa:
-        payload = out / "Payload"
-        payload.mkdir()
+        # The .ipa's root holds Payload/ with the app, and Symbols/ when
+        # there are any.
+        staging = out / "ipa"
+        payload = staging / "Payload"
+        payload.mkdir(parents=True)
         shutil.move(str(app), payload / app.name)
+        dsyms = sorted(Path(arguments.symbols).glob("*.dSYM")) if arguments.symbols else []
+        if dsyms:
+            symbols = staging / "Symbols"
+            symbols.mkdir()
+            for dsym in dsyms:
+                run(["xcrun", "symbols", "-noTextInSOD", "-noDaemon", "-arch", "all",
+                     "-symbolsPackageDir", str(symbols), str(dsym)], timeout=600)
         ipa = Path(arguments.ipa)
         ipa.unlink(missing_ok=True)
-        run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(payload), str(ipa)],
-            timeout=600)
+        run(["ditto", "-c", "-k", "--sequesterRsrc", str(staging), str(ipa)], timeout=600)
         shutil.move(str(payload / app.name), app)
-        payload.rmdir()
-        print(f"packaged {ipa}")
+        shutil.rmtree(staging)
+        print(f"packaged {ipa}" + (f" with the symbols of {len(dsyms)} binaries" if dsyms else ""))
 
 
 if __name__ == "__main__":

@@ -540,7 +540,7 @@ pub(crate) fn golden_device() -> Result<(String, String), String> {
 
 /// The debug app built for the simulator.
 pub(crate) fn debug_app() -> PathBuf {
-    root().join("target/ios/DerivedData/Build/Products/Debug-iphonesimulator/Amux.app")
+    root().join("target/ios/Debug-iphonesimulator/Amux.app")
 }
 
 fn free_port() -> Result<u16, String> {

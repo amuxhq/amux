@@ -1059,9 +1059,25 @@ substituted = ["cloud account", "providers"]
 time = "real"
 capabilities = ["macOS", "Xcode 26.6", "iOS 26.5 golden simulator"]
 lane = "fast"
-evidence = "target/ios/DerivedData"
+evidence = "buck-out/v2/test (each suite's xcodebuild log on failure)"
 update = ""
 swift = ["AmuxAppTests", "AmuxCoreTests", "AmuxDesignTests", "AmuxFeaturesTests", "AmuxPushTests", "AmuxShellTests", "AmuxTestSupportTests"]
+
+[[suite]]
+name = "mac-unit-tests"
+contract = "The Mac app walks setting up through its own model against a scratch daemon, drives an ACP agent, keeps review choices and drags, and holds its screens to the shared storybook list."
+paths = ["apps/apple/Mac/Tests"]
+recipe = "just mac test"
+boundary = "Store, effects, bridge"
+oracle = "XCTest assertions over the Mac app's model, a scratch daemon's answers and the story list."
+real = ["built Mac app modules", "Rust bridge", "amux daemon", "fake ACP agent"]
+substituted = ["providers", "cloud account"]
+time = "real"
+capabilities = ["macOS", "Xcode 26.6"]
+lane = "fast"
+evidence = "buck-out/v2/test (xcodebuild's log on failure)"
+update = ""
+swift = ["AmuxMacTests"]
 
 [[suite]]
 name = "phone-journeys"

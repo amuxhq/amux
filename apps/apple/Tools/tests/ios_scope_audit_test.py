@@ -202,6 +202,12 @@ class ScopeAuditTests(unittest.TestCase):
         self.assertIn("excluded resource in the bundle: frozen-frame.png",
                       audit.bundle_violations(info, SHIPPED_GRANTS, settings, bundle))
 
+    def test_sqlite_is_linked_in_not_loaded(self):
+        self.assertEqual(audit.linkage_violations(
+            "Amux:\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)\n"), [])
+        self.assertTrue(audit.linkage_violations(
+            "Amux:\n\t/usr/lib/libsqlite3.dylib (compatibility version 9.0.0)\n"))
+
     def test_transitive_cloud_and_legacy_dependencies_are_rejected(self):
         clean = {"name": "AmuxTestSupport", "dependencies": [{"name": "AmuxCore"}]}
         self.assertEqual(audit.graph_violations([clean]), [])

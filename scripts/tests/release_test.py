@@ -200,6 +200,7 @@ class InterruptedRelease(unittest.TestCase):
                             commit = stack.enter_context(unittest.mock.patch.object(recipe, "commit_and_tag"))
                             steps = {name: stack.enter_context(unittest.mock.patch.object(recipe, name))
                                      for name in names}
+                            steps["build_app"].return_value = (Path(directory) / "Amux.app", Path(directory) / "dSYMs")
                             steps["sign"].return_value = Path(directory) / "amux.ipa"
                             steps[step].side_effect = failure
                             error = stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
@@ -243,6 +244,20 @@ class TheRehearsal(unittest.TestCase):
         source = (SCRIPTS / "release.py").read_text()
         self.assertIn("changed = tree_changes(facts[\"tree\"], tree())", source)
         self.assertIn("rehearsal changed the tree, which it must not", source)
+
+
+class TheBuild(unittest.TestCase):
+    def test_the_app_and_its_symbols_are_told_apart(self):
+        app, symbols = recipe.outputs(
+            '{"root//apps/apple:Amux[dsyms]": "/b/dSYMs", "root//apps/apple:Amux": "/b/Amux.app"}')
+        self.assertEqual(Path("/b/Amux.app"), app)
+        self.assertEqual(Path("/b/dSYMs"), symbols)
+
+    def test_no_symbols_is_a_refusal(self):
+        # A release whose crash reports nobody could read is refused, not
+        # uploaded without them.
+        with self.assertRaises(recipe.Refusal):
+            recipe.outputs('{"root//apps/apple:Amux": "/b/Amux.app", "root//apps/apple:Amux[dsyms]": ""}')
 
 
 class TheTag(unittest.TestCase):
@@ -435,7 +450,7 @@ class TheOrderOfARelease(unittest.TestCase):
                 "notes": lambda *_: "amux 1.0.32",
                 "tree": lambda: "",
                 "write_numbers": step("write_numbers"),
-                "build_app": step("build_app", Path(directory) / "Amux.app"),
+                "build_app": step("build_app", (Path(directory) / "Amux.app", Path(directory) / "dSYMs")),
                 "sign": step("sign", package),
                 "audit": step("audit"),
                 "validate": step("validate"),

@@ -50,6 +50,9 @@ AppleModuleInfo = provider(fields = [
 
 AppleBinaryInfo = provider(fields = [
     "executable",
+    # Its debug information gathered by dsymutil, for an optimised build
+    # (None for a debug one, whose objects keep it).
+    "dsym",
     # The entitlements it was linked with, settings filled in.
     "entitlements",
     # What it linked, so a test bundle loaded into it links none of it again.
@@ -57,13 +60,14 @@ AppleBinaryInfo = provider(fields = [
     "resource_bundles",
 ])
 
-AppleBundleInfo = provider(fields = ["bundle", "name", "identifier", "binary"])
+# `dsyms`: the debug information of its executable and its plugins', for an
+# optimised build.
+AppleBundleInfo = provider(fields = ["bundle", "name", "identifier", "binary", "dsyms"])
 
 # Only a Mac can build or run any of this.
 MACOS_EXEC = ["prelude//os:macos"]
 
-# Where everything here is deployed: iOS 26 and macOS 26 (as in Package.swift
-# before these rules).
+# Where everything here is deployed: iOS 26 and macOS 26.
 MINIMUM = "26.0"
 
 _SDK = select({
@@ -134,7 +138,10 @@ def _search_paths(info):
 def _swift_build_flags(build, testable):
     if build == "debug":
         return ["-Onone", "-g"] + (["-enable-testing"] if testable else [])
-    return ["-O"]
+    # Debug information for an optimised build too, as Xcode's Release
+    # writes it: the link gathers it into a dSYM (apple_binary), so a crash
+    # report from a shipped build can be symbolicated.
+    return ["-O", "-g"]
 
 # SwiftPM's resource accessor, for a target compiled here: the target's
 # resources travel in `<Package>_<Target>.bundle`, which an app carries at its
@@ -394,6 +401,7 @@ def _apple_binary_impl(ctx: AnalysisContext) -> list[Provider]:
     # libraries again: the app carries them.
     link_args = [] if loader else deps.link_args.values()
     out = ctx.actions.declare_output(ctx.attrs.product_name)
+    dsym = ctx.actions.declare_output(ctx.attrs.product_name + ".dSYM", dir = True) if ctx.attrs._build != "debug" else None
     grants = None
     if ctx.attrs.entitlements:
         grants = ctx.actions.declare_output("entitlements.plist")
@@ -433,6 +441,7 @@ def _apple_binary_impl(ctx: AnalysisContext) -> list[Provider]:
             ctx.attrs._sdk,
             ["--xctest"] if ctx.attrs.xctest else [],
             ["--entitlements", simulator_grants] if simulator_grants else [],
+            ["--dsym", dsym.as_output()] if dsym else [],
             "--",
             "-target",
             ctx.attrs._target,
@@ -455,6 +464,7 @@ def _apple_binary_impl(ctx: AnalysisContext) -> list[Provider]:
     )
     info = AppleBinaryInfo(
         executable = out,
+        dsym = dsym,
         entitlements = grants,
         linked = objects + archives + force_load + bundles + list(linked.keys()),
         resource_bundles = bundles,
@@ -517,9 +527,18 @@ def _apple_bundle_impl(ctx: AnalysisContext) -> list[Provider]:
         category = "bundle",
         identifier = product,
     )
+    dsyms = ([binary.dsym] if binary and binary.dsym else []) + [
+        d
+        for p in ctx.attrs.plugins
+        for d in p[AppleBundleInfo].dsyms
+    ]
+    # `[dsyms]`: what a release uploads beside the app so its crash reports
+    # can be symbolicated (build/apple/sign.py). One directory, since Buck2
+    # names only a single output to the command that asked for it.
+    gathered = ctx.actions.copied_dir("dSYMs", {d.basename: d for d in dsyms})
     return [
-        DefaultInfo(default_output = out),
-        AppleBundleInfo(bundle = out, name = product, identifier = ctx.attrs.identifier, binary = binary),
+        DefaultInfo(default_output = out, sub_targets = {"dsyms": [DefaultInfo(default_output = gathered)]}),
+        AppleBundleInfo(bundle = out, name = product, identifier = ctx.attrs.identifier, binary = binary, dsyms = dsyms),
     ]
 
 _apple_bundle = rule(
@@ -607,3 +626,43 @@ _apple_xctest = rule(
 
 def apple_xctest(name, labels = [], **kwargs):
     _apple_xctest(name = name, labels = ["apple"] + labels, exec_compatible_with = MACOS_EXEC, **kwargs)
+
+def _apple_ui_tests_impl(ctx: AnalysisContext) -> list[Provider]:
+    tests = ctx.attrs.bundle[AppleBundleInfo]
+    out = ctx.actions.declare_output(tests.name, dir = True)
+    ctx.actions.run(
+        cmd_args(
+            "python3",
+            ctx.attrs._tool,
+            "ui-runner",
+            "--sdk",
+            ctx.attrs._sdk,
+            "--name",
+            tests.name,
+            "--tests",
+            tests.bundle,
+            "--identifier",
+            tests.identifier + ".xctrunner",
+            "--target-identifier",
+            ctx.attrs.target_identifier,
+            "--out",
+            out.as_output(),
+        ),
+        category = "ui_runner",
+    )
+    return [DefaultInfo(default_output = out)]
+
+_apple_ui_tests = rule(
+    impl = _apple_ui_tests_impl,
+    attrs = {
+        "bundle": attrs.dep(providers = [AppleBundleInfo]),
+        # The app the tests drive, which the caller installs and launches.
+        "target_identifier": attrs.string(),
+    } | _PLATFORM_ATTRS,
+)
+
+def apple_ui_tests(name, **kwargs):
+    """A UI test bundle with its runner app and an .xctestrun naming both,
+    in one directory, for a recipe that runs the tests beside a driver of
+    its own (`testnet journey accessibility`) rather than as a Buck2 test."""
+    _apple_ui_tests(name = name, exec_compatible_with = MACOS_EXEC, **kwargs)

@@ -238,6 +238,13 @@ def inspect_binary(binary: Path) -> tuple[str, str]:
     return symbols, strings
 
 
+def linkage_violations(libraries: str) -> list[str]:
+    """Refuse an app that loads SQLite from the system: the bridge carries
+    its own, which is the one its store was written with."""
+    return (["the app loads SQLite dynamically instead of carrying the bridge's"]
+            if "libsqlite3" in libraries.lower() else [])
+
+
 def platforms(binary: Path) -> set[str]:
     shown = run(["xcrun", "vtool", "-show-build", str(binary)]).stdout.decode(errors="replace")
     return set(re.findall(r"^\s*platform\s+(\S+)", shown, re.M))
@@ -331,6 +338,7 @@ def main() -> None:
         failures.append(f"no extension at {EXTENSION}")
     symbols, strings = inspect_binary(executable)
     (OUTPUT / "symbols.txt").write_text(symbols)
+    failures += linkage_violations(run(["xcrun", "otool", "-L", str(executable)]).stdout.decode())
     # Include compiled localization resources: a row may no longer be a literal
     # in the executable after it moves into the string catalogue.
     for resource in app.rglob("*.strings"):
@@ -369,7 +377,8 @@ def main() -> None:
                   "PASS: in-app attention copy, Contact Support and Report a Problem remain;",
                   "the report screen, its freeze and the record snapshot ship.",
                   "PASS: the notification extension is embedded, shares the push key group and the",
-                  "app's numbers, and carries none of the Rust bridge."]
+                  "app's numbers, and carries none of the Rust bridge.",
+                  "PASS: SQLite is the bridge's own, linked in, not the system's."]
     signed = bool(signed_entitlements(app))
     lines += ["Limit: " + ("the signed bundle, as uploaded." if signed else
                            "simulator Release bundle inspection; distribution signing is checked before release.")]

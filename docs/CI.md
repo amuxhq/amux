@@ -5,8 +5,9 @@
 CI is GitHub Actions. On Linux it runs the gate every landing passes, `just
 premerge`, through Buck2 on the build host's cache, so what a landing or a
 premerge already tested comes back as cache hits rather than running again.
-macOS and Windows still build and test under Cargo until jobs of their own
-on Buck2 replace them. Every job runs `just` recipes — the same recipes a
+On macOS two jobs build the Apple apps and run the workspace's tests through
+Buck2 the same way, on a worker of the runner's own in front of the build
+host's cache. Windows still tests under Cargo beside its Buck2 job. Every job runs `just` recipes — the same recipes a
 developer runs locally, so a job's log names the command to reproduce it.
 [Build](BUILD.md) describes the recipes; [Testing](TESTING.md) describes
 the suites they run.
@@ -15,8 +16,7 @@ the suites they run.
 
 | Workflow | File | When | What |
 | --- | --- | --- | --- |
-| CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main`; by hand | The Linux gate on the build host's cache, the Cargo checks the push reaches, and the macOS and Windows tests |
-| iOS gate | [`ios.yml`](../.github/workflows/ios.yml) | Pushes to `main` and pull requests into `main` that touch the phone's paths, and by hand | `just ios gate` on Xcode 26.6 |
+| CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main`; by hand | The Linux gate on the build host's cache, the Cargo checks the push reaches, the Apple apps and the macOS tests, and the Windows tests |
 | iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | By hand | The phone's store suite on the simulator, journeys and the accessibility audit |
 | Release | [`release.yml`](../.github/workflows/release.yml) | A pushed `v*` tag | The `amux` release binaries; see [Release](RELEASE.md) |
 
@@ -47,11 +47,11 @@ reach a shipped binary.
 Every job runs on every push. The Linux gate needs nothing to tell it what
 a change can reach: Buck2 reruns only the tests and checks whose inputs
 changed, and takes the rest from the cache. The Cargo checks after it run
-only when the push changed what they check. The macOS and Windows jobs run
-whole until they move to Buck2.
+only when the push changed what they check. The macOS jobs, through Buck2
+too, rerun only what changed; the Windows Cargo job runs whole.
 
-A newer push to a branch stops the run of the push before it, in CI and in
-the iOS gate, so a burst of pushes does not queue for runners. The Cargo
+A newer push to a branch stops the run of the push before it, so a burst of
+pushes does not queue for runners. The Cargo
 checks therefore compare a push with the last push whose run finished,
 passing or failing, rather than the one before it, whose changes may never
 have been judged; a run started by hand, or a push with no such commit to
@@ -66,9 +66,9 @@ takes seconds shares a job.
 | Linux gate | `ubuntu-latest`, its actions on the build host | `just premerge` through Buck2 on the build host's cache, `just browser audit`, `just doctest` ([The Linux gate](#the-linux-gate)) |
 | Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why. After the gate, when the push changed what app-ffi is built from |
 | Address sanitizer, Thread sanitizer | `ubuntu-latest` | `just sanitize address` and `just sanitize thread`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race. After the gate, when the push changed one of the crates whose tests they run |
-| Test | `macos-latest` (2 halves), `windows-latest` (1 job) | `scripts/no-update-flags.sh`, `just cargo-test -- --profile ci --exclude models` (partitioned `count:N/2` on macOS; whole suite on Windows, which compiles out the slow Unix suites) |
-| Terminal journeys | `macos-latest` | `tmux` from Homebrew, then `just cargo-journey-terminal all`: every terminal story in the manifest, on Cargo's build |
-| iOS target check | `macos-latest` | `just mobile-check` |
+| Apple apps | `macos-26`, its actions on a worker of its own | `just ios simulator golden`, then through Buck2 every target under `apps/apple` built, the shipping app for a phone built too, and every Apple test run: the package suites and the hosted app suite on the simulator, the Mac app's tests on the runner ([The macOS jobs](#the-macos-jobs)) |
+| macOS tests | `macos-26`, its actions on a worker of its own | `just test //crates/...` through Buck2: every workspace test that isn't Linux-only, the terminal journeys and the system suites among them |
+| Test | `windows-latest` | `scripts/no-update-flags.sh`, `just cargo-test -- --profile ci --exclude models` (the whole suite; Windows compiles out the slow Unix suites) |
 
 The test job runs nextest's `ci` profile, which does not stop at the first
 failure, so a platform reports every failing test; the job's log holds each
@@ -83,10 +83,7 @@ terminal client's `served` suite, whose hosts run terminal Claude. Windows does 
 terminal Claude in this build (see
 [Windows, as a stated cost](ARCHITECTURE.md#windows-as-a-stated-cost)), so
 the Windows job runs the agent's test of that refusal instead, and every
-headless Claude and Codex test as everywhere. On macOS the same run is the
-system lane as well: the built `amux` binary's suites (`process`,
-`supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor` suite
-and the `survive-daemon` system journey are ordinary test suites.
+headless Claude and Codex test as everywhere.
 
 The terminal journeys are `reach-host`,
 `conversation-decision-claude-pty`, `conversation-decision-claude-sdk`,
@@ -212,8 +209,9 @@ every state of the real cores within their bounds. At their CI bounds they
 are one Buck2 test, `//crates/models:integration`, in the Linux gate: it
 needs the whole of a worker for about eleven minutes, so it carries the
 `nova-only` label and runs on the build host from any machine, rerunning
-only when what the models are built from changed. The macOS and Windows
-Cargo jobs leave them out (`--exclude models`).
+only when what the models are built from changed. The macOS tests job
+skips them with the other `nova-only` tests, and the Windows Cargo job
+leaves them out (`--exclude models`).
 
 Their nightly bounds explore further than a push can wait for: each
 model's ignored nightly test, one after another, in the build host's
@@ -258,60 +256,45 @@ kind and what failed, and its log is on the build host. Run one anywhere
 with `scripts/nightly.py KIND` (`--nix` inside `nix develop`). A release
 builds the shipping binary on all three platforms itself.
 
-### The iOS gate
+### The macOS jobs
 
-The iOS gate is its own workflow so that it runs only when a push or pull
-request touches a path that reaches the phone: `apps/apple`, the three
-`app-*` crates, `ios-tools`, the Cargo manifests, the toolchain pin, the
-shared runner scripts the gate's recipes call (`scripts/bounded`, `py`,
-`no-update-flags.sh`, `sqlite_linkage.py`), the `setup-just` and `setup-rust`
-actions or `ios.yml` itself. The phone's
-own scripts live in `apps/apple/Tools` and its Rust tools in `ios-tools`, so
-they need no entry of their own; anything shared stays in `scripts/` or
-`xtask` and leaves the gate alone. The root justfile is not on the list: the
-gate reaches it only through `mod ios`, and a workspace test in `ios-tools`
-fails on Linux when a root recipe the phone's verification names is renamed
-or removed. The rest of the bridge's
-Rust graph needs no entry: everything it hands Swift crosses as the
-generated mirrors in `apps/apple/Packages/AmuxCore/Sources/AmuxValues`,
-which a workspace test holds to the Rust definitions, so a change to their
-shape cannot land without touching the app. The iOS target check still
-compiles the bridge's graph on every push.
+Two jobs run what only a Mac can, side by side since they share little: the
+Apple apps build the bridge for the phone, the simulator and the Mac, the
+tests build the workspace for this Mac. Each selects Xcode 26.6, installs
+the pinned Rust toolchain with both ARM iOS targets and tmux, joins the
+tailnet and starts a NativeLink on the runner (`scripts/nativelink.py
+macos`, `build/nativelink/macos.json5`) whose worker runs every action.
+Its CAS writes through to the build host's, and its action cache is the
+runner's own, read before the build host's: the build host's can't be
+written from here, so the results are kept in GitHub's cache between runs,
+as the Windows job keeps its tests'. A push therefore rebuilds and reruns
+only what its change reaches. A fork's pull request, with no tailnet, runs
+on the runner's NativeLink alone (`nativelink.py run --remote none`).
 
-The iOS gate job selects Xcode 26.6, asserts that the iOS 26.5 simulator
-runtime and the iPhone 17 Pro device type are available, installs XcodeGen,
-the stable toolchain with both ARM iOS targets, and runs `just ios gate`: the
-half of the phone's verification that building the app can settle.
-
-`just ios gate` runs, in order,
-`just ios` `lint`, `script-tests`, `graph-check`, `rust`, `simulator golden`,
-`test-build` and `unit --skip-build`. A
-failing `rust`, `simulator golden` or `test-build` ends it, since the stages
-after them run what they made; any other stage failing lets the rest run,
-and the gate fails at its end naming every stage that did, so one red run
-says everything a change left behind. The
-simulator boots while `test-build` compiles the app and every unit suite
-once, for any simulator, and the gate waits for both before the suites run
-what was built. `mobile-check` is left to the iOS target check, which runs it
-on every push. The bridge is restored from the Actions cache when one was
-built from the same Rust sources: `ios-rust.py --fingerprint` hashes every
-file cargo would read, the cache is keyed by it, and `just ios rust` skips
-cargo when the fingerprint matches what it last built, which is five minutes
-of the gate on a push that changed no Rust. What Xcode compiled is kept the
-same way, by content (its compilation cache, which `ios-build.py` turns on
-when `AMUX_XCODE_CACHE` is set): the build of the app and suites took 9 min
-46 s with the cache empty and 6 min 42 s with it full. That cache is saved
-once a week, since each copy is some 400 MB of the repository's cache
-allowance, and a week-old copy still holds most files. The gate compares no picture
-([the iPhone app](IOS.md#no-picture-is-compared) says why).
+The Apple apps job makes the golden simulator first (`just ios simulator
+golden`), which the phone's suites lease: on a runner, with no `wt`, a test
+takes `amux-iphone-1` under a lock ([the iPhone app](IOS.md#builds)). It
+then builds every target under `apps/apple`, the Release app for a phone
+too, which holds the device graph to compiling, and runs every Apple test.
+The macOS tests job runs `just test //crates/...`: on macOS that is the
+system lane as well, since the built `amux` binary's suites (`process`,
+`supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor`
+suite, the `survive-daemon` system journey and the terminal journeys are
+ordinary Buck2 tests. The `nova-only` tests are the Linux gate's and are
+skipped.
 
 `just ios verify` is the whole sequence a developer runs before pushing a
-phone change: the workspace's `fmt-check`, `lint` and `test` (which runs the spec suites), then the
-gate, then the captures (`test-store-ios`, `ios journey`,
-`ios accessibility`), then the
-shipping stages (`ios package`, `ios scope-audit`). It refuses to start if
-any stage names a recipe the justfiles no longer declare. `just ios captures`
-and `just ios shipping` run those halves alone.
+phone change: the workspace's `fmt-check`, `lint` and `test` (which runs
+the spec suites), then `just ios gate` (lint, script tests, graph check,
+simulator, one build of the app and every suite, the unit suites), then
+the captures (`test-store-ios`, `ios journey`, `ios accessibility`), then
+the shipping stage (`ios scope-audit`). A failing `simulator golden` or
+`test-build` ends it, since the stages after them run what they made; any
+other stage failing lets the rest run, and the run fails at its end naming
+every stage that did. It refuses to start if any stage names a recipe the
+justfiles no longer declare. `just ios gate`, `just ios captures` and `just
+ios shipping` run those parts alone. Nothing compares a picture
+([the iPhone app](IOS.md#no-picture-is-compared) says why).
 
 ### Android
 
@@ -326,8 +309,9 @@ ran Gradle and `cargo-ndk` on a runner, went with Gradle.
 Run by hand, the workflow boots the golden simulator on `macos-26` and runs
 `just ios captures`: the store suite on the simulator, journeys and the
 accessibility sweep. Nothing it runs uses the small simulator, which took
-seven minutes to boot. It restores the iOS gate's Rust, bridge and Xcode
-compilation caches read-only and never saves its own. It uploads the journey
+seven minutes to boot. It starts the same NativeLink as the macOS jobs and
+restores the Apple apps job's results read-only, so the app it already
+built is a hit, and never saves its own. It uploads the journey
 evidence and the audit's record.
 [The iPhone app](IOS.md) explains what those compare.
 
@@ -355,10 +339,10 @@ journey or baseline that does not exist.
 
 | Lane | What it holds | Where it runs |
 | --- | --- | --- |
-| `fast` | Offline, credential-free tests with no wall-time settling: unit tests, spec suites, adapter replays, store and effect integration, renderer goldens | `just test` in the Linux gate, and `just cargo-test` on macOS and Windows, on every push |
-| `system` | Real processes and transports with bounded deadlines: the built `amux` binary and its supervisor, the store on iOS | The desktop suites in the Linux gate and the macOS test job on every push; `test-store-ios` in `just ios captures` |
-| `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests`, `ios script-tests`, `ios lint`, `android script-tests` and `android lint` in `just premerge`, so in the Linux gate on every push, and the iPhone's in its own gate; `ios scope-audit` before every app release |
-| `journey` | Complete client stories through the shared manifest, and the phone's accessibility sweep | The terminal journeys in the Linux gate and the macOS journeys job, and the system journey inside `just test`, on every push; phone journeys and the accessibility sweep in iOS captures run by hand |
+| `fast` | Offline, credential-free tests with no wall-time settling: unit tests, spec suites, adapter replays, store and effect integration, renderer goldens | `just test` in the Linux gate and the macOS tests job, and `just cargo-test` on Windows, on every push; the Apple suites in the Apple apps job |
+| `system` | Real processes and transports with bounded deadlines: the built `amux` binary and its supervisor, the store on iOS | The desktop suites in the Linux gate and the macOS tests job on every push; `test-store-ios` in `just ios captures` |
+| `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests`, `ios script-tests`, `ios lint`, `android script-tests` and `android lint` in `just premerge`, so in the Linux gate on every push; `ios scope-audit` on every app release's signed bundle |
+| `journey` | Complete client stories through the shared manifest, and the phone's accessibility sweep | The terminal journeys in the Linux gate and the macOS tests job, and the system journey inside `just test`, on every push; phone journeys and the accessibility sweep in iOS captures run by hand |
 | `qualification` | Real providers, real cloud accounts and measured performance | Never on an ordinary push: `just live`, `just perf` and the `just ios qa-*` recipes by hand, on machines that have the credentials or hardware; `just ios perf` by hand on the enrolled Mac, last in `just ios verify` |
 
 [Testing](TESTING.md) defines the lanes and boundaries fully.
@@ -380,11 +364,13 @@ document reruns a handful of tests, and premerge takes a minute or two; a
 change to a crate most of the workspace depends on, such as `wire`, reruns
 most of the suite, about a quarter of an hour on a laptop.
 
-It leaves out what needs more than the machine: the phone's unit suites
-need a simulator and a build of the app (`just ios gate`). The models at
-their CI bounds are `nova-only`: they run on the build host from any
-machine, and are skipped, and named, when it is out of reach. Windows and
-the macOS Cargo jobs run only in CI; the sanitizers run at landing on
+It leaves out the Apple apps: any change to a core crate rebuilds the
+bridge for three platforms and reruns the simulator suites, which is not a
+load every premerge on a laptop should carry. Whoever changes Apple code
+runs `just ios verify` and `just mac test`, on the same cache, and CI's
+Apple apps job runs them after every push. The models at their CI bounds
+are `nova-only`: they run on the build host from any machine, and are
+skipped, and named, when it is out of reach. Windows runs only in CI; the sanitizers run at landing on
 Linux and in CI ([The Linux gate](#the-linux-gate)), and the release
 build in the nightly.
 

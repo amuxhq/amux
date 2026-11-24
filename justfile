@@ -113,10 +113,9 @@ test-crate CRATE:
 goldens *ARGS:
     {{bounded}} 1800 scripts/py build/goldens.py "$@"
 
-# CI's macOS and Windows runners have no Buck2 yet, so they run Cargo and
-# nextest through this twin of `test`, with nextest's flags
-# (.github/workflows/ci.yml).
-# Run workspace tests under cargo-nextest, as CI's macOS and Windows jobs do.
+# CI's Windows test job still runs Cargo and nextest through this twin of
+# `test`, with nextest's flags (.github/workflows/ci.yml).
+# Run workspace tests under cargo-nextest, as CI's Windows jobs do.
 cargo-test *ARGS: nextest
     if [ "${1-}" = -- ]; then shift; fi; scripts/workspace-test.sh "$@"
 
@@ -285,12 +284,6 @@ journey CLIENT NAME *ARGS:
         exit 2
         ;;
     esac
-
-# CI's twin of `just journey terminal`, building with Cargo.
-# Run terminal journeys on Cargo's build, as CI does.
-cargo-journey-terminal NAME:
-    {{bounded}} 900 cargo build --locked --workspace --bin amux --bin fake-claude-pty --bin fake-claude-sdk --bin fake-codex --bin fake-acp --bin testnet
-    if [ "{{NAME}}" = all ]; then {{bounded}} 3000 target/debug/testnet journey terminal all; else {{bounded}} 600 target/debug/testnet journey terminal "{{NAME}}"; fi
 
 # The world comes up in ~/.local/state/amux-env/<tree>/NAME with the
 # clients its file declares and is held, with the simulator when it has a

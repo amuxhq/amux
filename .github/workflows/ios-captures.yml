@@ -11,6 +11,9 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # The build host whose cache the runner's NativeLink fronts (ci.yml's
+  # macOS jobs say why).
+  BUILD_HOST: nova.tail656fe8.ts.net
 
 jobs:
   captures:
@@ -19,6 +22,8 @@ jobs:
     # The capture suites drive the app on the golden device through served
     # networks. Leave room for the uploads.
     timeout-minutes: 270
+    env:
+      REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode 26.6
@@ -29,42 +34,48 @@ jobs:
         run: |
           xcrun simctl list runtimes --json | jq -e '.runtimes[] | select(.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-26-5" and .isAvailable == true)'
           xcrun simctl list devicetypes --json | jq -e '.devicetypes[] | select(.identifier == "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro")'
-      # The gate's cache: this job builds the same bridge and tools, and a
-      # cache of its own was evicted between the green runs that saved it.
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      # The journeys' tools still build with Cargo (`just ios tools`).
       - uses: ./.github/actions/setup-rust
         with:
           targets: aarch64-apple-ios-sim
-          shared-key: ios-gate
-          save-if: "false"
-      - name: Install build tools
-        run: brew install xcodegen
-      # Reuse the bridge and Xcode compilation cache the iOS gate already saved,
-      # read-only so manual capture runs never bloat the cache budget.
-      - name: Fingerprint the bridge's inputs
-        id: bridge
-        run: echo "fingerprint=$(scripts/py -B apps/apple/Tools/ios-rust.py --fingerprint)" >> "$GITHUB_OUTPUT"
-      - name: Restore the bridge built from these sources
+          shared-key: ios-captures
+      - name: Install tmux
+        run: brew install tmux
+      - name: Join the tailnet
+        if: env.REMOTE == 'true'
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ env.BUILD_HOST }}
+      # The Apple apps job's results, read-only, so the app and the UI tests
+      # it already built are hits.
+      - name: Restore the Apple apps job's results
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            target/ios/AmuxAppDebugTools.xcframework
-            target/ios/AmuxApp.xcframework
-            target/ios/AmuxApp.xcframework.stand-in
-            target/ios/rust-stamp.json
-            target/ios/framework.sha256
-          key: ios-bridge-xcode-26.6-${{ hashFiles('.github/workflows/ios.yml') }}-${{ steps.bridge.outputs.fingerprint }}
-      - name: Restore what Xcode compiled before
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: target/ios/xcode-cache
-          key: ios-xcode-cache-26.6-
-          restore-keys: ios-xcode-cache-26.6-
+          path: ${{ runner.temp }}/results
+          key: macos-apple-results-${{ github.sha }}-
+          restore-keys: macos-apple-results-
+      - name: Start a NativeLink on the runner
+        run: |
+          if [ "$REMOTE" = true ]; then
+            nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --remote "grpc://$BUILD_HOST:50051" \
+              --results "$RUNNER_TEMP/results" > "$RUNNER_TEMP/nativelink.log" 2>&1 &
+          else
+            nohup scripts/py scripts/nativelink.py run --remote none > "$RUNNER_TEMP/nativelink.log" 2>&1 &
+          fi
+          for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/nativelink.log"; exit 1
       # Every suite here drives the golden device; the small one is not used.
       - name: Boot the golden simulator
         run: just ios simulator golden
       - name: Run the capture suites
         env:
-          AMUX_XCODE_CACHE: "1"
+          AMUX_NATIVELINK: grpc://127.0.0.1:50051
         run: just ios captures
       - name: Upload journeys and the audit
         if: always()

@@ -33,9 +33,9 @@ every command goes through `just ios <recipe>` (`just --list ios`).
 | `apps/apple/Amux` | The app target: entry point, `Composition` (which assembles every store and service), report capture, and under `Debug/` the door server and the component catalogue |
 | `apps/apple/AmuxNotifications` | The notification service extension: opens a push on its way to the screen and writes what it says over the plain alert |
 
-`AmuxCore` links the bridge as the binary target `AmuxApp`, an XCFramework
-under `target/ios/` that the bridge recipes build (see
-[building the bridge](EMBEDDED.md)).
+`AmuxCore` links the bridge as the module `AmuxApp`: the bridge's static
+library for the platform being built and its generated header, both Buck2
+outputs (see [building the bridge](EMBEDDED.md)).
 
 `apps/apple/Tools/feature-lint.sh`, run by `just ios lint`, holds
 `AmuxFeatures` to three rules: no UIKit outside a registered leaf, no
@@ -565,28 +565,58 @@ reports are read with [the debugging guide](DEBUGGING.md).
 ## Building
 
 Use an Apple silicon Mac with Xcode 26.6 (17F113), the iOS 26.5 simulator
-runtime, XcodeGen 2.46 or newer, Rust with the `aarch64-apple-ios` and
-`aarch64-apple-ios-sim` targets, and `just`.
+runtime, Rust with the `aarch64-apple-ios` and `aarch64-apple-ios-sim`
+targets, and `just`.
 
 ```sh
 just ios simulator     # create and boot the pinned simulators
-just ios build         # bridge, Xcode project, debug app
+just ios build         # the debug app, bridge and all
 just ios unit          # package and app-hosted unit suites
 just ios lint          # feature rules and the copy inventory
 ```
 
-`just ios build` builds the bridge first (`just ios rust`), generates
-`apps/apple/Amux.xcodeproj` from `apps/apple/project.yml`, and builds the app
-for the golden simulator into
-`target/ios/DerivedData/Build/Products/Debug-iphonesimulator/Amux.app`. The
-generated project is committed: change `project.yml` and commit both.
+### Builds
 
-There are two configurations. `Debug` compiles the driving tools in
-(`AMUX_DEBUG_TOOLS`) and links the bridge built with them. `Release` excludes
-`Amux/Debug/` and `AmuxTestSupport` from the target and links the shipping
-bridge. `just ios scope-audit` opens a
-built Release bundle and refuses one that carries a debug surface or an
-excluded platform; there is no Mac, Catalyst or iPad target.
+Buck2 builds the app, like the rest of the workspace
+([building](BUILD.md)): every package, the app, its notification extension
+and every test bundle is a target in `apps/apple/BUCK` and the packages'
+own `BUCK` files, built by the rules in `build/apple.bzl` through this Mac's
+NativeLink worker, so a change rebuilds only what it reaches and another
+tree's build of the same inputs is a cache hit. There is no Xcode project
+and no `Package.swift`. To debug, attach Xcode to the running app (Debug →
+Attach to Process); Instruments runs through `xcrun xctrace`, as `just ios
+profile` does.
+
+`just ios build` builds the app for the golden simulator and copies it to
+`target/ios/Debug-iphonesimulator/Amux.app`, where every recipe that installs
+it looks. `--configuration measured` builds the optimised app the
+performance suite drives (`target/ios/Measured-iphonesimulator`), and
+`--device` builds for the phone plugged into this Mac and signs it for
+development under the Team ID in `apps/apple/Signing.local.xcconfig`. A
+target platform picks the configuration:
+
+| Platform | Configuration |
+| --- | --- |
+| `//build/platforms:ios-sim-app-shipping-phone-dev` | Debug, the default: the driving tools compiled in (`AMUX_DEBUG_TOOLS`) and the bridge built with them |
+| `//build/platforms:ios-sim-app-shipping-measured` | Measured: optimised Swift, the same bridge |
+| `//build/platforms:ios-sim-app-shipping-release` | Release: no `Amux/Debug/`, no `AmuxTestSupport`, the shipping bridge |
+| `//build/platforms:ios-app-shipping-...` | The same three for a phone |
+
+A build for a phone comes out of Buck2 unsigned, since a signature names a
+certificate in this Mac's keychain, which no build can declare as an input;
+`build/apple/sign.py` signs it, inside out, with an installed profile. The
+generated Swift mirrors of the bridge's values (`AmuxValues`) are a build
+output too, written from the Rust definitions on every build that needs
+them. `just ios scope-audit` opens a built Release bundle and refuses one
+that carries a debug surface or an excluded platform; there is no Mac,
+Catalyst or iPad target.
+
+The unit suites are Buck2 tests: `build/apple/xctest.py` writes the
+`.xctestrun` Xcode would have written for the bundle and runs `xcodebuild
+test-without-building`. A suite that needs the simulator leases one from
+`wt`'s `iphone` pool inside its own action, so two trees never drive one
+device, and a passing result is cached like any other: a second tree's run
+of the same inputs is a hit.
 
 Recipes name a kind of device, never a device. `golden` is an iPhone 17 Pro
 on iOS 26.5 at 3×, the device every budget and baseline is pinned to;
@@ -756,9 +786,9 @@ prose are judged on their name only and listed in the record, which lands in
 
 | Recipe | Runs |
 | --- | --- |
-| `just ios gate` | Lint, script tests, bridge graph check, bridge, simulator, one build of the app and every unit suite, then the unit suites. What CI runs on every push that touches the phone's paths ([CI](CI.md)). |
+| `just ios gate` | Lint, script tests, bridge graph check, simulator, one build of the app and every suite, then the unit suites. CI's Apple apps job runs the same suites on every push ([CI](CI.md)). |
 | `just ios captures` | The store suite on the simulator, journeys and the accessibility audit. On demand in CI. |
-| `just ios shipping` | The shipping XCFramework and the Release scope audit. `just ios release` depends on both. |
+| `just ios shipping` | The Release scope audit. `just ios release` audits the bundle it signs the same way. |
 | `just ios measured` | The phone measured on this Mac: `just ios perf`, on an enrolled Mac only ([Performance](PERFORMANCE.md)). |
 | `just ios verify` | The workspace's format, lint, tests and specs, then all four of the above. A failing build stage ends it; any other failure lets the rest run and is named at the end ([CI](CI.md)). |
 
@@ -811,7 +841,8 @@ The App Store enforces three rules that a simulator build never shows:
   outright; the dark and tinted icons keep theirs.
 - **A 120×120 iPhone icon in the bundle.** The catalogue compiler writes
   `AppIcon60x60@2x.png`; an upload without it fails with code 90022.
-- **A top-level `CFBundleIconName`.** `apps/apple/project.yml` declares it.
+- **A top-level `CFBundleIconName`.** The bundle rule writes it
+  (`build/apple/apple.py`).
   The compiler writes its own copy nested inside `CFBundleIcons`, which is not
   where Apple looks; without the declared one an upload fails with code 90713.
 

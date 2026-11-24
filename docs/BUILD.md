@@ -26,7 +26,7 @@ Other tools a full checkout uses:
 - [`just`](https://github.com/casey/just) runs every task.
 - Python 3.11 or newer runs the repository scripts. `scripts/py` finds one
   even when `python3` on the PATH is the macOS system 3.9.
-- Xcode and XcodeGen build the iPhone app (see [the iPhone app](IOS.md)).
+- Buck2 builds the Apple apps with Xcode's compilers and SDKs (see [the iPhone app](IOS.md#builds)).
 - Buck2 builds the Android app on a Linux worker with its own SDK, NDK and JDK (see [the Android app](ANDROID.md), `just --list android`); a Mac needs the Android SDK's emulator and platform tools only to run what nova built.
 - `tmux` drives the terminal journeys.
 - Node 24 or newer, with npm, builds the browser extension under `js/`
@@ -74,11 +74,11 @@ bufbuild/buf/buf`. Its Buck2 test, `//:proto-compat`, brings its own.
 
 [Buck2](https://buck2.build) builds and tests the workspace for every
 `just` recipe a person or agent types. Cargo still builds the same crates
-from the same `Cargo.toml` files for what Buck2 doesn't do: CI's macOS
-and Windows jobs (whose runners have no Buck2 yet, through `just
-cargo-test` and `just cargo-journey-terminal`), rust-analyzer, `just miri`,
+from the same `Cargo.toml` files for what Buck2 doesn't do: CI's Windows
+test job (through `just cargo-test`), rust-analyzer, `just miri`,
 `just sanitize`, `just fuzz-smoke` and `just doctest`, the nightlies, and
-the release and phone builds, which move later. CI's Linux gate runs
+the command-line release builds, which move later. The Apple apps build
+with Buck2 ([the iPhone app](IOS.md#builds)). CI's Linux gate runs
 through Buck2 on the build host ([CI](CI.md#the-linux-gate)).
 
 Each crate describes itself twice, so the two stay in step by hand:
@@ -407,9 +407,11 @@ release wrote: a field removed without reserving its number, a number reused
 or retyped, a name changed; [the wire](WIRE.md#compatibility) has the rules.
 
 **Swift and Kotlin value types.** The Swift mirrors of the view values the
-iPhone app reads (`apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift`)
-and the Kotlin mirrors the Android app reads
-(`Values.kt`, which the Android build generates, and the committed
+Apple apps read (`Values.swift`, which the Apple build generates with
+`ios-tools swift-types --values`, and the committed
+`apps/apple/Packages/AmuxPush/Sources/AmuxPush/Said.swift`) and the Kotlin
+mirrors the Android app reads (`Values.kt`, which the Android build
+generates, and the committed
 `apps/android/push/src/main/kotlin/sh/amux/push/Said.kt`) are generated from
 the same Rust definitions by `cargo run -p ios-tools -- swift-types` and
 `cargo run -p ios-tools -- kotlin-types`. Unit tests in the `ios-tools` crate,

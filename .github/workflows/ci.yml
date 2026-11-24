@@ -280,8 +280,8 @@ jobs:
         if: env.REMOTE != 'true'
         run: just cargo-test -- --profile ci --exclude models
 
-  # macOS and Windows still test under Cargo and nextest until their own
-  # Buck2 jobs replace these; Linux is the Linux gate's.
+  # Windows still tests under Cargo and nextest until its own Buck2 job
+  # replaces this; Linux is the Linux gate's, macOS the macOS job's.
   test:
     name: Test (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
@@ -289,18 +289,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS splits the suite into two halves side by side. Windows
-        # compiles out the slow Unix/PTY/system suites, so its full run fits
-        # in one job without paying a second workspace compile.
+        # Windows compiles out the slow Unix/PTY/system suites, so its full
+        # run fits in one job.
         include:
-          - os: macos-latest
-            label: "macos-latest, 1 of 2"
-            partition: "--partition count:1/2"
-            save-cache: "true"
-          - os: macos-latest
-            label: "macos-latest, 2 of 2"
-            partition: "--partition count:2/2"
-            save-cache: "false"
           - os: windows-latest
             label: "windows-latest"
             partition: ""
@@ -310,76 +301,125 @@ jobs:
       - name: Refuse fixture update flags
         shell: bash
         run: scripts/no-update-flags.sh
-      # Named, because the terminal journeys restore this cache read-only.
-      # Only shard 1 saves per OS to avoid concurrent cache writes.
       - uses: ./.github/actions/setup-rust
         with:
           shared-key: test
           save-if: ${{ matrix.save-cache }}
           nextest: "true"
           sccache: "true"
-      # testnet's ctl test drives the terminal client in tmux.
-      - name: Install tmux on macOS
-        if: runner.os == 'macOS'
-        run: brew install tmux
       - name: Run workspace tests
         # The ci profile reports every failing test, not only the first: a
         # platform that stops early hides the failures behind it until the
-        # next run.
-        # This is the fast lane and, on macOS, the system lane too: the built
-        # amux binary's process, attach, overlap and supervise_cli suites,
-        # node's supervisor suite and the survive-daemon system journey are
-        # ordinary test suites, compiled out on Windows. The protocol models
-        # run in the Linux gate, on the build host.
+        # next run. The protocol models run in the Linux gate, on the build
+        # host.
         run: just cargo-test -- --profile ci --exclude models ${{ matrix.partition }}
       - name: Say what sccache fetched and compiled
         if: always()
         shell: bash
         run: sccache --show-stats
 
-  # Linux's are a Buck2 test in the Linux gate.
-  terminal-journeys:
-    name: Terminal journeys (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+  # The Apple apps and the workspace's tests on macOS, through Buck2
+  # (docs/CI.md, "The macOS jobs"). A NativeLink on the runner, in front of
+  # the build host's cache, runs every action on a macOS worker of its own;
+  # the results are kept in GitHub's cache, since the build host's can't be
+  # written from here, so an action whose inputs haven't changed is a hit.
+  # Two jobs side by side, since they share little: the apps build the
+  # bridge for the phone, the simulator and the Mac, the tests the workspace
+  # for this Mac. A fork's pull request, with no tailnet, runs on the
+  # runner's NativeLink alone.
+  macos:
+    name: ${{ matrix.name }}
+    runs-on: macos-26
+    timeout-minutes: 180
+    env:
+      REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && inputs.without-build-host != true }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest]
+        include:
+          # The phone's suites lease the golden simulator, which the first
+          # step makes; then everything under apps/apple builds, the
+          # shipping app for a phone too (the device graph), and its tests
+          # run: the package suites and the hosted app suite on the
+          # simulator, the Mac's tests on the runner.
+          - name: Apple apps
+            key: apple
+            run: just ios simulator golden && scripts/buck2 build //apps/apple/... && scripts/buck2 build //apps/apple:Amux --target-platforms //build/platforms:ios-app-shipping-release && scripts/buck2 test //apps/apple/...
+          # Every workspace test that isn't Linux-only, the terminal
+          # journeys among them: the macOS half of what the Linux gate runs.
+          - name: macOS tests
+            key: tests
+            run: just test //crates/...
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Shares the test job's cache read-only (`just cargo-journey-terminal` uses
-      # --workspace feature unification so it reuses those rlibs directly).
-      - uses: ./.github/actions/setup-rust
+      - name: Refuse fixture update flags
+        run: scripts/no-update-flags.sh
+      - name: Select Xcode 26.6
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+          xcodebuild -version | grep -Fx 'Xcode 26.6'
+      - name: Assert simulator runtime and device type
+        if: matrix.key == 'apple'
+        run: |
+          xcrun simctl list runtimes --json | jq -e '.runtimes[] | select(.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-26-5" and .isAvailable == true)'
+          xcrun simctl list devicetypes --json | jq -e '.devicetypes[] | select(.identifier == "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro")'
+      # Python 3.14 unpacks the pinned Buck2 and NativeLink
+      # (scripts/buck-tools.py).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          shared-key: test
-          save-if: "false"
-      - name: Install tmux
-        run: brew install tmux
-      - name: Run terminal journeys
-        # Every terminal story in the manifest, one after another; a failure
-        # does not stop the rest, and the job fails if any story did.
-        run: just cargo-journey-terminal all
-      - name: Upload the terminal journeys' results
-        if: always()
-        # The upload has waited on a failing artifact service for twenty
-        # minutes after the journeys were done.
-        timeout-minutes: 5
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: terminal-journeys-${{ matrix.os }}
-          path: target/journeys
-          if-no-files-found: warn
-          retention-days: 7
-
-  ios:
-    name: iOS target check
-    runs-on: macos-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          python-version: "3.14"
+      # The pinned toolchain Buck2's Rust rules call by path, with the
+      # phone's targets; Buck2 keeps its own outputs, so no Cargo cache.
       - uses: ./.github/actions/setup-rust
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
-      - name: Check iOS device and simulator graphs
-        run: just mobile-check
+          cache: "false"
+      # The harness drives terminal sessions in tmux.
+      - name: Install tmux
+        run: brew install tmux
+      - name: Join the tailnet
+        if: env.REMOTE == 'true'
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ env.BUILD_HOST }}
+      - name: Restore the results of earlier runs
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/results
+          key: macos-${{ matrix.key }}-results-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            macos-${{ matrix.key }}-results-${{ github.sha }}-
+            macos-${{ matrix.key }}-results-
+      - name: Start a NativeLink on the runner
+        run: |
+          if [ "$REMOTE" = true ]; then
+            nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --remote "grpc://$BUILD_HOST:50051" \
+              --results "$RUNNER_TEMP/results" > "$RUNNER_TEMP/nativelink.log" 2>&1 &
+          else
+            nohup scripts/py scripts/nativelink.py run --remote none > "$RUNNER_TEMP/nativelink.log" 2>&1 &
+          fi
+          for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/nativelink.log"; exit 1
+      - name: Run ${{ matrix.name }}
+        env:
+          AMUX_NATIVELINK: grpc://127.0.0.1:50051
+        run: ${{ matrix.run }}
+      - name: Say what Buck2 ran and what came from the cache
+        if: always()
+        run: |
+          for log in buck-out/v2/log/*_build_*.pb.zst buck-out/v2/log/*_test_*.pb.zst; do
+            [ -e "$log" ] || continue
+            scripts/buck2 log summary "$log" | grep -E '^Showing|^- (Local|Remote|Cached|Other) actions' || true
+          done
+      - name: Show NativeLink's log
+        if: failure()
+        run: tail -n 300 "$RUNNER_TEMP/nativelink.log" || true
+      - name: Keep the results
+        if: always() && env.REMOTE == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/results
+          key: macos-${{ matrix.key }}-results-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}

@@ -111,28 +111,15 @@ def cargo_inventory() -> tuple[
 
 
 def swift_inventory() -> set[str]:
+    """Every XCTest bundle the Apple build declares: each package's suite
+    (`package_tests`) and each test bundle in the apps' BUCK file."""
     targets: set[str] = set()
-    for manifest in sorted((ROOT / "apps" / "apple" / "Packages").glob("*/Package.swift")):
-        text = manifest.read_text()
-        targets.update(
-            re.findall(r"\.testTarget\s*\(\s*name:\s*\"([^\"]+)\"", text, re.DOTALL)
-        )
-
-    project = (ROOT / "apps" / "apple" / "project.yml").read_text().splitlines()
-    in_targets = False
-    current: str | None = None
-    for line in project:
-        if line == "targets:":
-            in_targets = True
-            continue
-        if in_targets and line == "schemes:":
-            break
-        match = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
-        if in_targets and match:
-            current = match.group(1)
-            continue
-        if current and re.match(r"^    type: bundle\.(?:unit-test|ui-testing)\s*$", line):
-            targets.add(current)
+    for build in sorted((ROOT / "apps" / "apple").rglob("BUCK")):
+        text = build.read_text()
+        targets.update(re.findall(r"package_tests\(\s*name\s*=\s*\"([^\"]+)\"", text))
+        for call in re.findall(r"apple_bundle\((.*?)\n\)", text, re.DOTALL):
+            if re.search(r'extension\s*=\s*"xctest"', call):
+                targets.update(re.findall(r'product_name\s*=\s*"([^"]+)"', call))
     return targets
 
 

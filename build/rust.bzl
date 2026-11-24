@@ -139,7 +139,7 @@ _test_binaries_platform = transition(
 # scripts/test-binaries.sh builds them for nextest: provider-fakes'
 # `binaries` module finds them through TESTNET_BINARIES. They are built for
 # the system the test runs on, as the desktop product with test features,
-# whatever the test itself builds as (the phone bridge's tests are "app"):
+# whatever the test itself builds as:
 # for a Linux test, Linux, and for a Windows test, Windows, wherever the
 # build was started.
 _amux_binaries = rule(
@@ -362,7 +362,8 @@ def amux_rust_library(
     defaults to everything under src/; `test_srcs` adds this package's files
     the unit tests include at compile time, `test_env` what they compile
     with and `test_run_env` what they run with. `product` is the
-    configuration the unit tests build in: "app" for the client bridges.
+    configuration the library builds in by default: "app" for the client
+    bridges. Its unit tests build as the desktop product.
     `tool = True` for a test harness's or build tool's library, which
     builds with test features on, as its binaries do.
     """
@@ -394,7 +395,11 @@ def amux_rust_library(
             env = _env(crate, version, env | test_env),
             run_env = test_run_env | (_BINARIES_ENV if binaries else {}),
             labels = [],
-            product = product,
+            # As the desktop product, whatever the library ships as: the
+            # app product differs only in settings' clap, and testing the
+            # client bridges as the app compiled their whole dependency
+            # graph a second time (95 crates, 992 s of a cold macOS run).
+            product = "cli",
             timeouts = test_timeouts,
             whole_worker = test_whole_worker,
             srcs_filegroup = _tree("unit.test", files + test_srcs, include | test_include),

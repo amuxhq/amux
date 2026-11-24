@@ -377,14 +377,22 @@ jobs:
             run: >-
               scripts/buck2 test --build-default-info
               $(scripts/buck2 uquery "attrregexfilter(default_target_platform, macos, //apps/apple/...)")
-          # Every workspace test that isn't Linux-only, the terminal
-          # journeys among them: the macOS half of what the Linux gate runs.
+          # Every workspace test that isn't Linux-only but the terminal
+          # journeys: the macOS half of what the Linux gate runs.
           - name: macOS tests
             key: tests
             # Every test binary of the workspace: a cold run's outputs are
             # 9.5 GB on disk, 1.9 GB compressed.
             cas_gib: 12
-            run: just test //crates/...
+            run: just test //crates/... --exclude journey
+          # The terminal journeys, which take the whole worker and miss
+          # their waits beside compiles, so in the tests job they ran last,
+          # after everything else had built: 642 s of a cold run's 28
+          # minutes. Before Buck2 they were a job of their own too.
+          - name: macOS journeys
+            key: journeys
+            cas_gib: 8
+            run: just test //crates/testnet:terminal-journeys
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Refuse fixture update flags

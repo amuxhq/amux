@@ -5,8 +5,8 @@
 CI is GitHub Actions. On Linux it runs the gate every landing passes, `just
 premerge`, through Buck2 on the build host's cache, so what a landing or a
 premerge already tested comes back as cache hits rather than running again.
-On macOS three jobs build the iPhone app, build the Mac app, and run the
-workspace's tests through Buck2, on the runner itself, with a cache of
+On macOS four jobs build the iPhone app, build the Mac app, run the
+workspace's tests and run the terminal journeys through Buck2, on the runner itself, with a cache of
 their own kept between runs. Windows still tests under Cargo beside its Buck2 job. Every job runs `just` recipes — the same recipes a
 developer runs locally, so a job's log names the command to reproduce it.
 [Build](BUILD.md) describes the recipes; [Testing](TESTING.md) describes
@@ -53,7 +53,7 @@ takes the place of one still waiting; a job that has started is never
 stopped, so the macOS jobs always keep their store. The newer commit holds
 every change of the ones it skipped, so a burst of landings is judged once,
 at its end, rather than queuing an hour of runs: the organisation has five
-macOS runners and a run takes three. A newer push to a pull request's
+macOS runners and a run takes four. A newer push to a pull request's
 branch stops the run of the push before it, which it supersedes.
 
 An organisation on GitHub's free plan runs 20 jobs at once and the rest
@@ -68,7 +68,8 @@ takes seconds shares a job.
 | Windows | `windows-latest`, its builds on the build host | `just check-windows` on the build host, then `just test-windows` on a Windows worker of the runner's own ([The Windows job](#the-windows-job)); without the build host, `just cargo-test` |
 | iPhone app | `macos-26`, building in Buck2 and testing on a worker of its own | `just ios simulator golden`, then through Buck2 every target under `apps/apple` but the Mac app's built, and the package suites and the hosted app suite run on the simulator ([The macOS jobs](#the-macos-jobs)) |
 | Mac app | `macos-26`, the same | The Mac app, its storybook and screens built, and the Mac app's tests run on the runner |
-| macOS tests | `macos-26`, the same | `just test //crates/...` through Buck2: every workspace test that isn't Linux-only, the terminal journeys and the system suites among them |
+| macOS tests | `macos-26`, the same | `just test //crates/... --exclude journey` through Buck2: every workspace test that isn't Linux-only, the system suites among them |
+| macOS journeys | `macos-26`, the same | `just test //crates/testnet:terminal-journeys`: the terminal journeys, which take the whole worker |
 
 On Windows, suites that need Unix processes, PTYs or sockets are compiled
 out. Among them are the tests that host
@@ -276,10 +277,12 @@ release builds the shipping binary on all three platforms itself.
 
 ### The macOS jobs
 
-Three jobs run what only a Mac can, side by side, one for each Rust graph
-a cold run compiles: the iPhone app builds the bridge for the simulator,
-the Mac app the bridge for the Mac, and the tests the workspace for this
-Mac. Each selects Xcode 26.6, installs the pinned Rust toolchain with both
+Four jobs run what only a Mac can, side by side: the iPhone app builds the
+bridge for the simulator, the Mac app the bridge for the Mac, the tests the
+workspace for this Mac, and the journeys the part of it the terminal
+journeys start. The journeys take the whole worker and miss their waits
+beside compiles, so in the tests job they ran last, after everything else
+had built. Each selects Xcode 26.6, installs the pinned Rust toolchain with both
 ARM iOS targets and tmux, restores its store and starts a NativeLink on
 the runner (`scripts/nativelink.py macos`, `build/nativelink/macos.json5`).
 Buck2 runs every build action itself (`AMUX_BUILD_HERE=1`,
@@ -290,7 +293,7 @@ disk, and the job keeps it in GitHub's cache between runs
 (`macos-<job>-store-*`), restoring the newest any run of that job kept.
 A push therefore rebuilds and reruns only what its change reaches. Each
 job's CAS holds at most 6 GiB, the tests job's 12 (the matrix's `cas_gib`;
-compressed, a store is about a fifth of that), so the three stores and the
+compressed, a store is about a fifth of that), so the four stores and the
 other jobs' caches fit in the 10 GB GitHub keeps for the repository; past
 the cap the least recently used outputs go, and an action whose outputs
 went runs again. After saving, a job deletes its older stores
@@ -325,11 +328,10 @@ since it may still be writing to it. Buck2's event logs and NativeLink's
 log are kept as the run's `buck2-logs-*` artifacts for a week (`scripts/buck2
 log what-ran`, `log critical-path`). A run started by hand with `cold` set
 starts the macOS jobs with no kept store, to time them from nothing.
-The macOS tests job runs `just test //crates/...`: on macOS that is the
+The macOS tests job runs `just test //crates/...` but the journeys: on macOS that is the
 system lane as well, since the built `amux` binary's suites (`process`,
 `supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor`
-suite, the `survive-daemon` system journey and the terminal journeys are
-ordinary Buck2 tests. The `nova-only` tests are the Linux gate's and are
+suite and the `survive-daemon` system journey are ordinary Buck2 tests. The `nova-only` tests are the Linux gate's and are
 skipped.
 
 `just ios verify` is the whole sequence a developer runs before pushing a

@@ -931,6 +931,10 @@ async fn steps_over_their_budget_dump_again_after_the_interval_counting_the_rest
         agent.append(&support::synthetic::item(&format!("before-{n}"), "hello"));
         runtime.ingest(agent.id).await.unwrap();
     }
+    // A dump is stamped when it is written, not when it is admitted, so the
+    // first must be on disk before the clock moves: written after, it would
+    // share the second's time and the two would sort by their reasons.
+    slow_dumps(&install, "Nudge", 1).await;
     // Past the interval, the next over-budget Nudge dumps and names the rest;
     // keeping the clock at t0 + INTERVAL_MS ensures at most one more dump.
     clock.advance(INTERVAL_MS as i64);

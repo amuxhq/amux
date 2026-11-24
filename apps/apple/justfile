@@ -218,7 +218,7 @@ screenshots *ARGS:
 # same way the phone does, and reports what that account is entitled to and
 # whether the relay will issue it a credential. Evidence a person runs by
 # hand, never a test and never in CI: it reaches the production account
-# service and needs a password out of this Mac's login keychain. Deliberately
+# service and needs a password from the credential command. Deliberately
 # absent from the verification list in crates/ios-tools/src/ios_verify.rs.
 # Sign a QA account into the real amux.sh from this Mac (by hand only).
 qa-cloud-signin:

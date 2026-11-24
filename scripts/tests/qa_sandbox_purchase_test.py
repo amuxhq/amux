@@ -146,7 +146,7 @@ class TheReport(unittest.TestCase):
     def test_a_missing_fact_is_named_in_the_summary(self):
         satisfied, page = self.read([
             recipe.Check("a connected phone", False, "none here"),
-            recipe.Check("the account's password", True, "in the keychain")])
+            recipe.Check("the account's password", True, "from the credential command")])
         self.assertFalse(satisfied)
         self.assertIn("MISSING", page)
         self.assertIn("a connected phone", page.splitlines()[-1])
@@ -167,9 +167,9 @@ class TheTransactionFileMode(unittest.TestCase):
     def test_it_asks_for_no_phone_and_no_signing(self):
         # A transaction captured on a phone has already been bought; demanding
         # the phone again would refuse a run that can honestly succeed.
-        # The keychain is this Mac's, and Linux has none to ask.
+        # The credential command is this Mac's, and Linux has none to ask.
         with checkout(**{recipe.ADDRESS_VARIABLE: "device@example.test"}), \
-                mock.patch.object(recipe.qa_cloud, "keychain_holds", lambda _: False):
+                mock.patch.object(recipe.qa_cloud, "holds_password", lambda _: False):
             _, phone, settings, checks = recipe.preflight(
                 confirmed=False, for_transaction_file=True)
             self.assertIsNone(phone)

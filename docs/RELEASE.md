@@ -22,6 +22,39 @@ An extension version can meet an `amux` of any version, and needs nothing of
 it beyond `amux.v1` and the bridge
 ([Browser extension](BROWSER.md#how-it-connects)).
 
+## Credentials
+
+The keys and passwords the recipes sign in with come from a command the
+operator names once per machine:
+
+```sh
+git config amux.credentials <command>
+```
+
+Asked for one credential by name, `<command> <name>` prints its value and
+exits 0, or exits non-zero when it holds none. Where the values are kept is
+the operator's choice; a password manager's CLI behind a small script is
+typical. A recipe reads a credential at the moment it uses it and never
+prints it. A tool that needs one as a file gets it in a directory only the
+operator can read, removed when the tool is done
+(`scripts/credentials.py`, `crates/xtask/src/credentials.rs`).
+
+| Name | What it is | Used by |
+| --- | --- | --- |
+| `appstoreconnect/key-id` | The App Store Connect API key's Key ID | `just ios`, `just mac release` |
+| `appstoreconnect/issuer-id` | The team's Issuer ID | `just ios`, `just mac release` |
+| `appstoreconnect/private-key` | The key's `.p8` file | `just ios`, `just mac release` |
+| `googleplay/upload-keystore` | The Android upload keystore (`.jks`) | `just android release` |
+| `googleplay/key-alias` | Its key alias | `just android release` |
+| `googleplay/store-password` | Its store password | `just android release` |
+| `googleplay/key-password` | Its key password | `just android release` |
+| `googleplay/service-account` | The Google Play service account's JSON key | `just android` |
+| `chromewebstore/service-account` | The Chrome Web Store service account's JSON key | `just browser` |
+| `amuxcloud-qa/<address>` | A QA account's password ([CLOUD](CLOUD.md)) | the QA recipes |
+
+The release key that signs the `amux` binary's manifests is not one of
+these; [The release key](#the-release-key) says where it lives.
+
 ## The iPhone app
 
 The app ships from this repository, built by Buck2 on the release Mac and
@@ -289,12 +322,11 @@ Validate:
 
 ```
 xcrun altool --validate-app -f target/ios/release/<tag>/Amux.ipa -t ios \
-  --api-key <key id> --api-issuer <issuer id>
+  --api-key <key id> --api-issuer <issuer id> --p8-file-path <the .p8>
 ```
 
-`altool` finds the private key itself: `~/.appstoreconnect/private_keys` is
-one of the directories it searches for `AuthKey_<key id>.p8`, so only the two
-identifiers are passed.
+The recipe writes the `.p8` from the credential command to a private
+directory for the length of the call ([Credentials](#credentials)).
 
 Validation asks Apple to check the binary exactly as an upload would — the
 signature, the entitlements, the icons, the Info.plist, the deployment
@@ -503,40 +535,21 @@ Mac that cuts releases.
   `AuthKey_<key id>.p8` name, by Apple's convention) and the **Issuer ID**
   (one per team, above the list).
 
-**2. Put the key where the tools already look.**
+**2. Give the key to the credential command.** Store the `.p8`, the Key ID
+and the Issuer ID where the command answers `appstoreconnect/private-key`,
+`appstoreconnect/key-id` and `appstoreconnect/issuer-id`
+([Credentials](#credentials)), then delete the download. Never copy it into
+this repository. Check with `just ios release --preflight`.
 
-```
-mkdir -p ~/.appstoreconnect/private_keys
-mv ~/Downloads/AuthKey_<key id>.p8 ~/.appstoreconnect/private_keys/
-chmod 600 ~/.appstoreconnect/private_keys/AuthKey_<key id>.p8
-```
-
-That directory is one of the paths `altool` and `notarytool`
-search by convention, so nothing has to be configured to find it. Never copy
-it into this repository.
-
-**3. Put the three identifiers in the login keychain.** The key id, the
-issuer id and the Team ID, under the service `amux-appstoreconnect` — the
-same place the QA account passwords are kept, and never committed:
-
-```
-security add-generic-password -s amux-appstoreconnect -a key-id    -w <key id>
-security add-generic-password -s amux-appstoreconnect -a issuer-id -w <issuer id>
-security add-generic-password -s amux-appstoreconnect -a team-id   -w <Team ID>
-```
-
-Read one back with
-`security find-generic-password -s amux-appstoreconnect -a key-id -w`. The
-Team ID is on developer.apple.com under **Membership details** — and see the
-warning in [Signing](#signing) before copying one out of a certificate name,
-because the string in an identity's parentheses is not always it.
+**3. Find the Team ID.** It is on developer.apple.com under **Membership
+details** — and see the warning in [Signing](#signing) before copying one out
+of a certificate name, because the string in an identity's parentheses is not
+always it.
 
 **4. Write the local signing file.**
 
 ```
-printf 'DEVELOPMENT_TEAM = %s\n' \
-  "$(security find-generic-password -s amux-appstoreconnect -a team-id -w)" \
-  > apps/apple/Signing.local.xcconfig
+printf 'DEVELOPMENT_TEAM = %s\n' '<Team ID>' > apps/apple/Signing.local.xcconfig
 ```
 
 `.gitignore` already covers it. Confirm with
@@ -643,34 +656,26 @@ None of these credentials are ever committed. Keep the upload keystore backed
 up safely outside this repository — Google Play App Signing uses it to verify
 every upload, and losing it requires a Play Console key reset.
 
-**1. Generate the upload keystore and store its credentials in Keychain.**
+**1. Generate the upload keystore and give it to the credential command.**
 
 ```sh
-mkdir -p ~/.googleplay
-chmod 700 ~/.googleplay
-
 keytool -genkeypair -v \
   -storetype PKCS12 \
-  -keystore ~/.googleplay/upload-keystore.jks \
+  -keystore upload-keystore.jks \
   -alias amux-upload \
   -keyalg RSA -keysize 4096 -validity 10000 \
   -dname "CN=amux, O=amux, C=US"
-chmod 600 ~/.googleplay/upload-keystore.jks
 ```
 
-Save the alias and passwords in this Mac's login keychain under
-`amux-googleplay` (for PKCS12 keystores, store password and key password are
-the same):
+Store the keystore, the alias (`amux-upload`) and the password where the
+credential command answers `googleplay/upload-keystore`, `googleplay/key-alias`,
+`googleplay/store-password` and `googleplay/key-password`
+([Credentials](#credentials)); for a PKCS12 keystore the store password and
+the key password are the same. Then delete `upload-keystore.jks`.
 
-```sh
-security add-generic-password -s amux-googleplay -a key-alias      -w amux-upload
-security add-generic-password -s amux-googleplay -a store-password -w '<your keystore password>'
-security add-generic-password -s amux-googleplay -a key-password   -w '<your keystore password>'
-```
-
-*(For non-macOS hosts or CI, `AMUX_ANDROID_KEYSTORE`, `AMUX_ANDROID_KEY_ALIAS`,
+*(On a machine without a credential command, `AMUX_ANDROID_KEYSTORE`, `AMUX_ANDROID_KEY_ALIAS`,
 `AMUX_ANDROID_STORE_PASSWORD`, `AMUX_ANDROID_KEY_PASSWORD`, and
-`AMUX_GOOGLEPLAY_KEY_FILE` override the defaults.)*
+`AMUX_GOOGLEPLAY_KEY_FILE` override the credential command.)*
 
 **2. Create the Google Cloud service account.**
 
@@ -680,13 +685,9 @@ security add-generic-password -s amux-googleplay -a key-password   -w '<your key
    → Library**.
 2. Under **IAM & Admin → Service Accounts**, create a service account (e.g.
    `amux-play-release`). It needs no GCP IAM roles.
-3. On its **Keys** tab, **Add key → Create new key → JSON**, and move the
-   download into place:
-
-   ```sh
-   mv ~/Downloads/<project>-<id>.json ~/.googleplay/service-account.json
-   chmod 600 ~/.googleplay/service-account.json
-   ```
+3. On its **Keys** tab, **Add key → Create new key → JSON**. Store the
+   download where the credential command answers
+   `googleplay/service-account`, then delete it.
 
 **3. Link the service account in Google Play Console.**
 
@@ -704,7 +705,7 @@ security add-generic-password -s amux-googleplay -a key-password   -w '<your key
 **4. Check it.**
 
 ```sh
-just android release --preflight   # verifies keystore, keychain, tools and JSON key
+just android release --preflight   # verifies keystore, its passwords, tools and JSON key
 just android release --rehearse    # audits, builds, signs and verifies a real .aab
 just android status                # reads live tracks once the app & service account are linked
 ```
@@ -771,13 +772,9 @@ that the API needs a service account:
    Accounts**](https://console.cloud.google.com/iam-admin/serviceaccounts),
    create a service account. It needs no roles.
 3. On the account's **Keys** tab, **Add key → Create new key → JSON**.
-   Store the download where the recipes look, and never in this repository:
-
-   ```sh
-   mkdir -p ~/.chromewebstore
-   mv ~/Downloads/<project>-<id>.json ~/.chromewebstore/service-account.json
-   chmod 600 ~/.chromewebstore/service-account.json
-   ```
+   Store the download where the credential command answers
+   `chromewebstore/service-account` ([Credentials](#credentials)), then
+   delete it. Never put it in this repository.
 
 4. In the developer dashboard's **Account** page, add the service account's
    email (`<name>@<project>.iam.gserviceaccount.com`). A publisher can have
@@ -1002,10 +999,10 @@ from a local server
 
 ### The release key
 
-The private key is a 32-byte seed that exists in one place: a keychain of
-its own on the Mac that cuts releases, `amux-release.keychain`, as the
-generic password item with service `amux-release-key`. It is never in this
-repository, never on GitHub and never on amux.sh. That is the point of
+The private key is a 32-byte seed, written as 64 hex digits, that the
+operator's credential command holds as `amux/release-key`
+([Credentials](#credentials)). It is never in this repository, never on
+GitHub and never on amux.sh. That is the point of
 signing at all: the machines that install a release verify it against a key
 compiled into the binary they already run, so the server that hands out
 manifests cannot make them install something else. A compromised amux.sh can
@@ -1014,14 +1011,13 @@ after a deploy can tag and build what it likes and re-upload any asset, and
 none of it reaches a machine either: a manifest needs the key, and a swapped
 asset fails the hash the key signed.
 
-The keychain has a password of its own, not the login password, and locks
-again a minute after use and when the Mac sleeps. Its item names no
-application allowed to read it, so every read, the release tool's own
-included, asks for that password: a process running as the operator, such
-as a dependency's build script during `just amux deploy`, cannot take the seed
-without a prompt. A deploy asks twice: once to unlock the keychain, once to
-let `security` read the item. Answer the second with **Allow**, never
-**Always Allow**, which would add `security` to the item's readers for good.
+Unlike the other credentials, this one must make the command ask for the
+operator on every read, not once per session: a process running as the
+operator, such as a dependency's build script during `just amux deploy`, can
+run the command too, and must not get the seed without a prompt someone
+answers. A store that unlocks for a while after one prompt does not meet
+that; a key held by the machine's secure hardware that asks for each
+decryption does.
 
 What the key does not vouch for is the build itself. The binaries are
 built by the Release workflow on GitHub's runners, and each build job
@@ -1036,17 +1032,14 @@ its own binary. That is kept deliberately; the alternative is building
 every target on the release Mac. The build job restores no Rust cache, so
 the CI jobs that save caches on `main` cannot reach it that way.
 
-`just amux release-key generate` makes a seed from the system's randomness,
-makes the keychain when there is none (asking for its new password), stores
-the seed and prints the public half; it refuses when an item is already
-there, so a key is rotated deliberately by deleting the old item first
-(`security delete-generic-password -s amux-release-key amux-release.keychain`).
-A deploy names the keychain key's public half when the workflow does not list
-it.
+`just amux release-key generate --file PATH` makes a seed from the system's
+randomness in a new file only its owner can read, and prints the public
+half; it refuses a path that exists. Move the seed into the credential
+command as `amux/release-key` and delete the file. A deploy names the kept
+key's public half when the workflow does not list it.
 
-**The backup key.** A second seed, made once by `just amux release-key generate
---file PATH`, which writes it to a new file only its owner can read and prints its
-public half. It does not stay on the Mac: it is moved somewhere offline and
+**The backup key.** A second seed, made the same way. It does not stay on
+the Mac: it is moved somewhere offline and
 the file deleted. Its public half is listed in
 `AMUX_RELEASE_PUBLIC_KEYS` beside the release key's, so every binary trusts
 it already. If the release key leaks or the Mac is lost, the backup signs the

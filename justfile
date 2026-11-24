@@ -76,22 +76,25 @@ check-windows:
 # The workspace's tests for Windows, as CI's Windows job runs them after
 # `just check-windows` (docs/CI.md, "The Windows job"): only a Windows
 # worker runs them, which only that job has. Left out, as before Buck2: the
-# protocol models (nova-only), the simulated stories and the live lanes.
+# protocol models (the nightly's), the simulated stories, the nova-only
+# tests and the live lanes.
 # Run the workspace's tests for Windows on a Windows worker.
 test-windows *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --target-platforms root//build/platforms:windows-cli-testing-dev --exclude live --exclude simulated --exclude nova-only --exclude journey -- --timeout 3600
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --target-platforms root//build/platforms:windows-cli-testing-dev --exclude live --exclude nightly --exclude simulated --exclude nova-only --exclude journey -- --timeout 3600
 
 # Every test runs in a process of its own (build/test-runner.py), and a
 # passing result is cached in NativeLink, so only tests whose inputs changed
 # run. Target patterns narrow the run (`just test //crates/node:`, `just test
 # //: //js:` for the repository's and the JavaScript's checks, which read
 # what build/checks/inputs.py writes first); the live provider lanes are left
-# out (`just live`). With no Linux worker in reach, the `nova-only` tests are
+# out (`just live`), and so are the `nightly` tests, the protocol models,
+# which the nightly workflow runs (`just models-nightly`), unless a target
+# names them. With no Linux worker in reach, the `nova-only` tests are
 # skipped, and the run ends by naming them. The Android app's tests are among
 # them (every Android target is nova-only).
 # Run the workspace's and the Android app's tests through Buck2.
 test *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live --exclude nightly -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
 
 # The repository's checks (the root BUCK file) and the JavaScript's (js/BUCK)
 # as Buck2 tests, each over exactly the files it reads, so only those whose
@@ -225,7 +228,7 @@ mobile-check:
 # Run workspace tests with isolated user configuration and no external network,
 # on Linux, through sudo. The workspace test script bounds its own compile and
 # run phases. The protocol models are pure computation that would take most of
-# the run's bound, and run in their own CI job, as they do for the test jobs.
+# the run's bound, and run in nightly jobs of their own.
 offline-test: nextest
     scripts/offline-check.sh scripts/workspace-test.sh --lib --tests --exclude models
 
@@ -305,7 +308,8 @@ fuzz-smoke *ARGS:
 # Run the phone's C ABI tests under the pinned nightly's Miri, which checks
 # every pointer handed across the boundary, read and freed again. Tests that
 # start an installation or a tokio runtime are ignored under Miri, each with
-# its reason. Needs the nightly's miri and rust-src components.
+# its reason. Needs the nightly's miri and rust-src components. The nightly
+# workflow runs it.
 miri *ARGS:
     {{bounded}} 1500 {{nightly_cargo}} miri test --locked -p app-ffi "$@"
 
@@ -314,6 +318,7 @@ miri *ARGS:
 # sanitize thread`, Linux only), with the standard library rebuilt under it;
 # crate names after the kind narrow the run. scripts/sanitize.py says which
 # suites run and what goes unchecked. Needs the nightly's rust-src component.
+# The nightly workflow runs both.
 sanitize KIND *CRATES:
     {{bounded}} 2400 scripts/py scripts/sanitize.py --cargo "{{nightly_cargo}}" "$@"
 
@@ -367,15 +372,14 @@ tests-check:
 script-tests:
     {{bounded}} 120 scripts/py -m unittest discover -s scripts/tests -p '*_test.py' -t scripts/tests
 
-# Check the protocol models at their nightly bounds: each model's ignored
-# test, one after another, every core each. Model names, the modules of the
-# models' integration tests (`just models-nightly family`), narrow it to
-# those models. The bound
-# leaves the nightly job, one model each on a four-core runner, a quarter of an
-# hour of its six for the build; the single daemon's peer alone took two hours
-# on the twelve-core Mac.
+# Check the protocol models: each model's tests at its CI bounds and at its
+# nightly bounds (the ignored ones), one after another, every core each.
+# Model names, the modules of the models' integration tests (`just
+# models-nightly family`), narrow it to those models. The bound leaves the
+# nightly job, one model each on a four-core runner, a quarter of an hour of
+# its six for the build.
 models-nightly *MODELS: nextest
-    if [ "${1-}" = -- ]; then shift; fi; models='[a-z_]+'; [ $# -eq 0 ] || models=$(echo "$*" | tr ' ' '|'); {{bounded}} 20700 cargo nextest run --locked --cargo-profile models -p models --profile nightly --run-ignored only --no-capture -E "binary_id(models::integration) & test(/^($models)::/)"
+    if [ "${1-}" = -- ]; then shift; fi; models='[a-z_]+'; [ $# -eq 0 ] || models=$(echo "$*" | tr ' ' '|'); {{bounded}} 20700 cargo nextest run --locked --cargo-profile models -p models --profile nightly --run-ignored all --no-capture -E "binary_id(models::integration) & test(/^($models)::/)"
 
 # Walk the testnet's simulated stories by seed: every suite tests/catalog.toml
 # declares a simulated mode for, under TESTNET_MODE=simulated, a few seeds per
@@ -455,11 +459,11 @@ premerge-half HALF:
     esac
 
 # `just land "What the branch does"` merges this tree's HEAD onto a fresh
-# origin/main, runs `just premerge` (and `just miri` when the phone's C ABI
-# changed) on the merge and pushes it. With `git config amux.landInbox` set
-# it goes through nova's landing queue, one landing at a time from every
-# machine; `--local`, or no inbox, lands from a worktree of this machine's
-# own. Nothing in this tree is touched (scripts/land.py).
+# origin/main, runs `just premerge` on the merge and pushes it. With `git
+# config amux.landInbox` set it goes through nova's landing queue, one
+# landing at a time from every machine; `--local`, or no inbox, lands from
+# a worktree of this machine's own. Nothing in this tree is touched
+# (scripts/land.py).
 # Land this branch on main.
 land *ARGS:
     scripts/py -B scripts/land.py "$@"

@@ -376,7 +376,7 @@ The recipes a build or change usually needs:
 | `just android release-smoke` | Run the launch smoke test on the minified Release APK on an emulator or phone |
 | `just android verify` | Run the full ordered Android verification sequence (lint, graph check, script tests, unit with the accessibility audit, storybook, scope audit, release launch, journeys) |
 | `just premerge` | Every check and test before a change reaches main; see [CI](CI.md) |
-| `just land "<message>"` | Merges this tree's HEAD onto main, runs the checks on the merge and pushes it |
+| `just land "<message>"` | Merges this tree's HEAD onto main, runs `just premerge` on the merge and pushes it |
 
 [Testing](TESTING.md) covers the test recipes (`suite`, `test-tui`,
 `spec`, `journey`, `live`, `perf`, `tests-list`) in detail.
@@ -448,4 +448,7 @@ test task. [`.wt.toml`](../.wt.toml) holds the tree's side:
   from every machine, oldest first, and writes each landing's whole log
   beside its result. `just land --local`, or no inbox set, lands from a
   worktree of this machine's own under `~/.cache/amux/land`, one landing at
-  a time per machine; that is the way to land while nova is down.
+  a time per machine; that is the way to land while nova is down. Either
+  way the landing runs `just premerge` and nothing else: the protocol
+  models, the C ABI's pointer checks and the sanitizers run in the nightly
+  ([CI](CI.md#nightlies)).

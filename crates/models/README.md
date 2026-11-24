@@ -422,20 +422,24 @@ stop and held by nothing, has stopped) is judged where the world rests;
 that a running member finds its workspace started is judged whenever the
 backend has nothing left to do, since a running member can always sleep and
 the world never rests with one. The
-wt tree this host makes is checked in CI in two worlds whose union is the
-whole: one without a pin or another host's hold, and one with every holder
-but no failures, edits or restarts. The whole world is checked nightly. The
+wt tree this host makes is checked at the CI bounds in two worlds whose
+union is the whole: one without a pin or another host's hold, and one with
+every holder but no failures, edits or restarts. The whole world is checked
+at the nightly bounds. The
 properties are in `src/workspaces.rs`.
 
 ## Bounds
 
 A model explores real stores, so a state costs a store transaction or two
-rather than a few instructions. The models run at their CI bounds as one
-test target on eight cores of the Linux build host, in every premerge and
-landing, and its CI bounds are sized to keep that to about ten minutes;
-bounds that would not fit move to the model's nightly test, which the build
-host runs every night (docs/CI.md, "Nightlies") and anyone can run through
-`just models-nightly`.
+rather than a few instructions, and a check runs for minutes or hours. That
+is longer than a change should wait on for faults this rare, so no premerge
+or landing runs the models: `just test` leaves their test target out (its
+`nightly` label), and the nightly workflow runs every model, each in a job
+of its own on a four-core GitHub runner, at both its bounds (docs/CI.md,
+"Nightlies"). The CI bounds are the small ones, about ten minutes for all
+the models together on eight cores, for checking a change to a model or the
+code under it by hand; the nightly bounds explore more keys, faults and
+steps, and each model's must finish well inside its job's six hours.
 Every run prints how many states it explored and how long it took. The
 verdict does not depend on the number of threads, only which of several
 counterexamples is printed.
@@ -443,7 +447,7 @@ counterexamples is printed.
 A walk is reproducible: one seed walks one schedule on every run, and
 another seed walks another (the switch's `one_seed_walks_one_schedule`).
 
-Run the models with `just test-crate models`, one with
+Run the models at their CI bounds with `just test-crate models`, one with
 `just suite protocol-models <model>::` (each model is a module of the
-crate's integration test binary), and the nightly bounds with
-`just models-nightly`.
+crate's integration test binary), and both bounds, as the nightly does,
+with `just models-nightly [model..]`.

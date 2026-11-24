@@ -63,11 +63,14 @@ path that ends. A failure prints a path to the state that broke it.
 ```sh
 just test-crate models                     # every machine at its CI bounds
 just suite protocol-models family::        # one machine
-just models-nightly [machine..]            # the larger nightly bounds, one machine after another
+just models-nightly [machine..]            # both bounds, as the nightly runs them, one machine after another
 ```
 
-Each machine's CI bounds are sized to finish within its CI job's time guard on a four-core runner, and its
-nightly bounds explore more keys, faults and steps. The Model boundary owns rules; the other boundaries own what the cores do not
+A checker's search finds faults rarer than a change should wait on, so the machines are the `nightly` lane: no push,
+landing or `just premerge` runs them, and the Nightly workflow checks each machine at both its bounds in a job of its
+own on a four-core runner ([CI](CI.md#nightlies)). The CI bounds are the small ones, for checking a change to a machine
+or the code under it by hand; the nightly bounds explore more keys, faults and steps, and must finish well inside a
+hosted job's six hours. The Model boundary owns rules; the other boundaries own what the cores do not
 decide: a driver's sockets and deadlines, a real process, a provider's bytes, what a screen draws. A test that
 restates a rule a property holds is a second copy of the rule, so it goes.
 
@@ -106,6 +109,7 @@ A lane says when and where a suite runs.
 | journey | Clients driving complete stories against a served network. | Terminal journeys on every push (Linux and macOS); iPhone journeys and accessibility audit in `just ios captures`, and Android emulator journeys and Robolectric Compose semantics, bounds, touch-target, heading and contrast accessibility audit via `just android journey` and `just android accessibility` |
 | tool | The repository's own machinery: scripts, source policy, CI command surface, the iOS and Android release scope audits. | Beside the fast lane (`just ios scope-audit`, `just android scope-audit`) |
 | qualification | Live providers, measured performance, production cloud and purchases. | Only on request, on enrolled machines; results are `pass`, `fail`, `unavailable` or `not_run` |
+| nightly | Searches for faults rarer than a change should wait on: the protocol models. | The Nightly workflow every night on `main`, never on a push; `just test` leaves out their targets (the `nightly` label) unless named |
 
 Nothing in an ordinary push inherits credentials, spending or hardware. The live lane is the `live` feature of the
 qualification crate, and its targets carry the `live` label; `just test` never selects them. `just premerge` refuses to
@@ -131,7 +135,7 @@ whose stories run in both modes say so in the catalogue's `modes`.
 just sim                         # every simulated story, a few seeds each
 just sim --seeds 300 <name>      # 300 seeds of each story whose test name contains <name>
 just sim --seed 17 <name>        # exactly the failing seed, as a failure prints it
-just sim --seeds 2000            # thousands of seeds per story, as the models nightly walks them
+just sim --seeds 2000            # thousands of seeds per story, as the nightly walks them
 ```
 
 Under `cargo nextest run` the same switch is the environment: `TESTNET_MODE=simulated`, with `TESTNET_SEEDS=N` or
@@ -236,8 +240,8 @@ sanitizer on a data race. The C itself is not instrumented, so a race inside SQL
 it does not. The app-ffi tests `just miri` leaves out (an installation, a tokio runtime) run here. The thread sanitizer runs
 on Linux only; [`scripts/sanitize.py`](../scripts/sanitize.py) says what it got wrong on macOS, and
 [`scripts/sanitize-thread.supp`](../scripts/sanitize-thread.supp) lists the reports it makes that are not races.
-A landing on Linux runs both when the merge changes one of those crates, and CI runs them after a push that did; the
-build host's nightly runs them over every change beneath those crates too ([CI](CI.md#nightlies)).
+They run every night in the Nightly workflow, as `just miri` does, and not on a push or a landing
+([CI](CI.md#nightlies)).
 
 `just tests-list` gives the focused recipe for every suite. Recipes carry outer timeouts; a timeout that fires is a
 hang to diagnose, not a limit to raise. On macOS a freshly built test binary can stall before its first

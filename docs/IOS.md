@@ -786,7 +786,7 @@ prose are judged on their name only and listed in the record, which lands in
 
 | Recipe | Runs |
 | --- | --- |
-| `just ios gate` | Lint, script tests, bridge graph check, simulator, one build of the app and every suite, then the unit suites. CI's Apple apps job runs the same suites on every push ([CI](CI.md)). |
+| `just ios gate` | Lint, script tests, bridge graph check, simulator, one build of the app and every suite, then the unit suites. CI's iPhone app job runs the same suites on every push ([CI](CI.md)). |
 | `just ios captures` | The store suite on the simulator, journeys and the accessibility audit. On demand in CI. |
 | `just ios shipping` | The Release scope audit. `just ios release` audits the bundle it signs the same way. |
 | `just ios measured` | The phone measured on this Mac: `just ios perf`, on an enrolled Mac only ([Performance](PERFORMANCE.md)). |

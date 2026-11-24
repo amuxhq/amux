@@ -341,35 +341,45 @@ jobs:
         run: just cargo-test -- --profile ci --exclude models
 
   # The Apple apps and the workspace's tests on macOS, through Buck2
-  # (docs/CI.md, "The macOS jobs"). A NativeLink on the runner, in front of
-  # the build host's cache, runs every action on a macOS worker of its own;
-  # the results are kept in GitHub's cache, since the build host's can't be
-  # written from here, so an action whose inputs haven't changed is a hit.
-  # Two jobs side by side, since they share little: the apps build the
-  # bridge for the phone, the simulator and the Mac, the tests the workspace
-  # for this Mac. A fork's pull request, with no tailnet, runs on the
-  # runner's NativeLink alone.
+  # (docs/CI.md, "The macOS jobs"). Buck2 runs each build action itself
+  # (AMUX_BUILD_HERE) and a NativeLink on the runner runs the tests, in front
+  # of the build host's CAS; the results are kept in GitHub's cache, since
+  # the build host's can't be written from here, so an action whose inputs
+  # haven't changed is a hit. Three jobs side by side, one per Rust graph a
+  # cold run compiles: the iPhone app's bridge for the simulator, the Mac
+  # app's bridge for the Mac, and the workspace's tests for this Mac. A
+  # fork's pull request, with no tailnet, runs on the runner alone.
   macos:
     name: ${{ matrix.name }}
     runs-on: macos-26
     timeout-minutes: 100
     env:
       REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && inputs.without-build-host != true }}
+      AMUX_BUILD_HERE: "1"
     strategy:
       fail-fast: false
       matrix:
         include:
           # The phone's suites lease the golden simulator, which the first
-          # step makes; then everything under apps/apple builds and its
-          # tests run: the package suites and the hosted app suite on the
-          # simulator, the Mac's tests on the runner. The phone's shipping
-          # build is left to `just ios release` on the Mac: its bridge is a
-          # fat-LTO link of the whole Rust graph for one more target, the
-          # heaviest build in the job on this runner's three cores, and it
-          # reruns on every Rust change.
-          - name: Apple apps
-            key: apple
-            run: just ios simulator golden && scripts/buck2 build //apps/apple/... && scripts/buck2 test //apps/apple/...
+          # step makes; then everything under apps/apple but the Mac app
+          # builds, and the package suites and the hosted app suite run on
+          # the simulator. Outputs aren't fetched: nothing here reads them.
+          # The phone's shipping build is left to `just ios release` on the
+          # Mac: its bridge is a fat-LTO link of the whole Rust graph for one
+          # more target, and it reruns on every Rust change.
+          - name: iPhone app
+            key: iphone
+            run: >-
+              just ios simulator golden &&
+              scripts/buck2 build --materializations=none $(scripts/buck2 uquery "//apps/apple/... - attrregexfilter(default_target_platform, macos, //apps/apple/...)") &&
+              scripts/buck2 test //apps/apple/... --exclude mac
+          # The Mac app, its storybook and screens, and its tests on the
+          # runner.
+          - name: Mac app
+            key: mac
+            run: >-
+              scripts/buck2 build --materializations=none $(scripts/buck2 uquery "attrregexfilter(default_target_platform, macos, //apps/apple/...)") &&
+              scripts/buck2 test //apps/apple:AmuxMacTests
           # Every workspace test that isn't Linux-only, the terminal
           # journeys among them: the macOS half of what the Linux gate runs.
           - name: macOS tests
@@ -384,7 +394,7 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version | grep -Fx 'Xcode 26.6'
       - name: Assert simulator runtime and device type
-        if: matrix.key == 'apple'
+        if: matrix.key == 'iphone'
         run: |
           xcrun simctl list runtimes --json | jq -e '.runtimes[] | select(.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-26-5" and .isAvailable == true)'
           xcrun simctl list devicetypes --json | jq -e '.devicetypes[] | select(.identifier == "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro")'
@@ -426,6 +436,8 @@ jobs:
           sudo killall -HUP mDNSResponder
           scripts/py -c 'import socket, sys; [print(name, socket.gethostbyname(name)) for name in sys.argv[1:]]' \
             github.com "$BUILD_HOST"
+      # The two app jobs were one, "Apple apps", whose results either can
+      # start from; they name the same actions.
       - name: Restore the results of earlier runs
         if: inputs.cold != true
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -435,6 +447,7 @@ jobs:
           restore-keys: |
             macos-${{ matrix.key }}-results-${{ github.sha }}-
             macos-${{ matrix.key }}-results-
+            macos-apple-results-
       - name: Start a NativeLink on the runner
         run: |
           if [ "$REMOTE" = true ]; then

@@ -24,6 +24,9 @@ jobs:
     timeout-minutes: 270
     env:
       REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' }}
+      # Build actions in Buck2 itself, tests on the runner's worker, as in
+      # CI's macOS jobs (docs/CI.md, "The macOS jobs").
+      AMUX_BUILD_HERE: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode 26.6
@@ -68,14 +71,14 @@ jobs:
           sudo killall -HUP mDNSResponder
           scripts/py -c 'import socket, sys; [print(name, socket.gethostbyname(name)) for name in sys.argv[1:]]' \
             github.com "$BUILD_HOST"
-      # The Apple apps job's results, read-only, so the app and the UI tests
+      # The iPhone app job's results, read-only, so the app and the UI tests
       # it already built are hits.
-      - name: Restore the Apple apps job's results
+      - name: Restore the iPhone app job's results
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/results
-          key: macos-apple-results-${{ github.sha }}-
-          restore-keys: macos-apple-results-
+          key: macos-iphone-results-${{ github.sha }}-
+          restore-keys: macos-iphone-results-
       - name: Start a NativeLink on the runner
         run: |
           if [ "$REMOTE" = true ]; then

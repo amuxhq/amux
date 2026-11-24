@@ -86,6 +86,29 @@ target_platform = rule(
 
 def _execution_platform_impl(ctx):
     configuration = _merged_configuration(ctx.attrs.constraints)
+    if ctx.attrs.build_here:
+        # CI's macOS runners (scripts/buck-config.py's builds_here): Buck2
+        # runs the action itself, after looking it up in the cache, and
+        # uploads what it made. Through the runner's worker, each action's
+        # inputs were staged from the build host's CAS across the internet,
+        # a round trip per directory level and per batch of files: about 4 s
+        # an action against well under a second of compiling, so the
+        # three-core runner sat idle most of a cold run. Tests still run on
+        # the worker (their executor is the test toolchain's), so their
+        # results are cached as before.
+        return [DefaultInfo(), ExecutionPlatformInfo(
+            label = ctx.label.raw_target(),
+            configuration = configuration,
+            executor_config = CommandExecutorConfig(
+                local_enabled = True,
+                remote_enabled = False,
+                remote_cache_enabled = True,
+                allow_cache_uploads = True,
+                remote_execution_properties = ctx.attrs.properties,
+                remote_execution_use_case = "buck2-default",
+                remote_output_paths = "output_paths",
+            ),
+        )]
     platform = ExecutionPlatformInfo(
         label = ctx.label.raw_target(),
         configuration = configuration,
@@ -114,6 +137,7 @@ def _execution_platform_impl(ctx):
 execution_platform = rule(
     impl = _execution_platform_impl,
     attrs = {
+        "build_here": attrs.bool(default = False),
         "constraints": attrs.list(attrs.dep(providers = [ConfigurationInfo])),
         "properties": attrs.dict(attrs.string(), attrs.string()),
         "windows": attrs.bool(default = False),

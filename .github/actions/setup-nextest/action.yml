@@ -3,7 +3,8 @@
 # releases. nextest publishes no checksum file, so the sums are those of the
 # archives as downloaded when the version was pinned. To move to another
 # release, change the version here, in .config/nextest.toml's
-# `nextest-version`, and the sums together.
+# `nextest-version`, in build/tools.json (the Nix dev shell's), and the sums
+# together.
 name: Set up cargo-nextest
 description: Install the pinned cargo-nextest release from its download URL, checked against its SHA-256.
 runs:

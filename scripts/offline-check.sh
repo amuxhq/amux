@@ -5,8 +5,12 @@
 # which holds nothing but a loopback interface, rather than under a rule
 # filter: a filter such as macOS's sandbox also refuses setuid programs and
 # misreads loopback addresses, so tests failed there for reasons that had
-# nothing to do with the network. Creating the namespace takes root, so the
-# command runs through sudo and then drops back to the calling user.
+# nothing to do with the network. Where the kernel lets an unprivileged user
+# make a user namespace (Debian does; Ubuntu's AppArmor doesn't), the
+# network namespace is made in one that maps the calling user to itself, so
+# it runs as that user without root, as a nightly service account must.
+# Otherwise creating it takes root: the command runs through sudo and then
+# drops back to the calling user.
 
 set -eu
 
@@ -56,15 +60,9 @@ printf '%s\n' \
     "AMUX_OFFLINE=1"
 
 run_offline() {
-    # sudo keeps the caller's environment but resets PATH, which env sets
-    # again once the command runs as the caller.
-    sudo --preserve-env unshare --net -- /bin/sh -c '
-        ip link set lo up
-        user=$1 group=$2
-        shift 2
-        exec setpriv --reuid="$user" --regid="$group" --init-groups -- "$@"
-    ' sh "$(id -u)" "$(id -g)" \
-        /usr/bin/env \
+    # What the command runs with: the caller's toolchains, and homes of its
+    # own. env sets them as the command starts, after whatever ran first.
+    set -- /usr/bin/env \
         HOME="$offline_home" \
         USER="$(id -un)" \
         LOGNAME="$(id -un)" \
@@ -76,6 +74,26 @@ run_offline() {
         CARGO_NET_OFFLINE=true \
         AMUX_OFFLINE=1 \
         "$@"
+    if unshare --user --map-current-user --net --keep-caps -- true 2>/dev/null; then
+        # Bringing loopback up takes the namespace's network capability,
+        # which --keep-caps carries past exec for a user that isn't root.
+        # The command then runs with none: with them it could write a file
+        # its mode forbids, and the tests that make a write fail that way
+        # would wait for a failure that never came.
+        unshare --user --map-current-user --net --keep-caps -- /bin/sh -c '
+            ip link set lo up
+            exec setpriv --inh-caps=-all --ambient-caps=-all -- "$@"
+        ' sh "$@"
+        return
+    fi
+    # sudo keeps the caller's environment but resets PATH, which env sets
+    # again once the command runs as the caller.
+    sudo --preserve-env unshare --net -- /bin/sh -c '
+        ip link set lo up
+        user=$1 group=$2
+        shift 2
+        exec setpriv --reuid="$user" --regid="$group" --init-groups -- "$@"
+    ' sh "$(id -u)" "$(id -g)" "$@"
 }
 
 if run_offline nc -z -w 1 1.1.1.1 443 >/dev/null 2>&1; then

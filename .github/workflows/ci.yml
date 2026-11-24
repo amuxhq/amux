@@ -284,20 +284,22 @@ jobs:
 
   # The Apple apps and the workspace's tests on macOS, through Buck2
   # (docs/CI.md, "The macOS jobs"). Buck2 runs each build action itself
-  # (AMUX_BUILD_HERE) and a NativeLink on the runner runs the tests, in front
-  # of the build host's CAS; the results are kept in GitHub's cache, since
-  # the build host's can't be written from here, so an action whose inputs
-  # haven't changed is a hit. Three jobs side by side, one per Rust graph a
+  # (AMUX_BUILD_HERE) and a NativeLink on the runner runs the tests; its
+  # store, every output and result, is kept in GitHub's cache between runs,
+  # so an action whose inputs haven't changed is a hit. The build host isn't
+  # used: it can't run a Mac's actions, and across the ~100 ms between it
+  # and GitHub's runners its CAS cost more than building did. Three jobs side by side, one per Rust graph a
   # cold run compiles: the iPhone app's bridge for the simulator, the Mac
-  # app's bridge for the Mac, and the workspace's tests for this Mac. A
-  # fork's pull request, with no tailnet, runs on the runner alone.
+  # app's bridge for the Mac, and the workspace's tests for this Mac.
   macos:
     name: ${{ matrix.name }}
     runs-on: macos-26
     timeout-minutes: 100
     env:
-      REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && inputs.without-build-host != true }}
       AMUX_BUILD_HERE: "1"
+      # The most each job's CAS holds, so the three jobs' stores and the
+      # other jobs' caches fit in GitHub's 10 GB for the repository.
+      CAS_GIB: "6"
     strategy:
       fail-fast: false
       matrix:
@@ -356,50 +358,25 @@ jobs:
       # The harness drives terminal sessions in tmux.
       - name: Install tmux
         run: brew install tmux
-      - name: Join the tailnet
-        if: env.REMOTE == 'true'
-        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
-          ping: ${{ env.BUILD_HOST }}
-      # The tailscale action points the whole of a macOS runner's DNS at
-      # MagicDNS, which cannot answer public names there: github.com stopped
-      # resolving and the NativeLink download failed. Give the system resolver
-      # back to the runner's own servers and send only the tailnet's domain to
-      # MagicDNS, the split Tailscale's own macOS client sets up.
-      - name: Resolve only the tailnet's names through MagicDNS
-        if: env.REMOTE == 'true'
-        run: |
-          sudo networksetup -setdnsservers Ethernet Empty
-          sudo networksetup -setsearchdomains Ethernet Empty
-          sudo mkdir -p /etc/resolver
-          echo "nameserver 100.100.100.100" | sudo tee "/etc/resolver/${BUILD_HOST#*.}" > /dev/null
-          sudo dscacheutil -flushcache
-          sudo killall -HUP mDNSResponder
-          scripts/py -c 'import socket, sys; [print(name, socket.gethostbyname(name)) for name in sys.argv[1:]]' \
-            github.com "$BUILD_HOST"
-      # The two app jobs were one, "Apple apps", whose results either can
-      # start from; they name the same actions.
-      - name: Restore the results of earlier runs
+      # The newest store any run of this job kept. A run started with
+      # `cold` starts from nothing, to time a cold build.
+      - name: Restore the store of earlier runs
         if: inputs.cold != true
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/results
-          key: macos-${{ matrix.key }}-results-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/nativelink/cas
+            ${{ runner.temp }}/nativelink/cas.exec
+            ${{ runner.temp }}/nativelink/ac
+            ${{ runner.temp }}/nativelink/ac.exec
+          key: macos-${{ matrix.key }}-store-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            macos-${{ matrix.key }}-results-${{ github.sha }}-
-            macos-${{ matrix.key }}-results-
-            macos-apple-results-
+            macos-${{ matrix.key }}-store-${{ github.sha }}-
+            macos-${{ matrix.key }}-store-
       - name: Start a NativeLink on the runner
         run: |
-          if [ "$REMOTE" = true ]; then
-            nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --remote "grpc://$BUILD_HOST:50051" \
-              --results "$RUNNER_TEMP/results" > "$RUNNER_TEMP/nativelink.log" 2>&1 &
-          else
-            nohup scripts/py scripts/nativelink.py run --remote none > "$RUNNER_TEMP/nativelink.log" 2>&1 &
-          fi
+          nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --cas-gib "$CAS_GIB" \
+            > "$RUNNER_TEMP/nativelink.log" 2>&1 &
           for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/nativelink.log"; exit 1
       # Bounded below the job's timeout, so a run that runs out of time
@@ -442,10 +419,15 @@ jobs:
         if: always()
         run: |
           pkill -f "$RUNNER_TEMP/nativelink/config.json5" || true
-          for _ in $(seq 30); do pgrep -f "$RUNNER_TEMP/nativelink/config.json5" > /dev/null || exit 0; sleep 1; done
-      - name: Keep the results
-        if: always() && env.REMOTE == 'true'
+          for _ in $(seq 30); do pgrep -f "$RUNNER_TEMP/nativelink/config.json5" > /dev/null || break; sleep 1; done
+          du -sh "$RUNNER_TEMP"/nativelink/cas* "$RUNNER_TEMP"/nativelink/ac* || true
+      - name: Keep the store
+        if: always()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ runner.temp }}/results
-          key: macos-${{ matrix.key }}-results-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/nativelink/cas
+            ${{ runner.temp }}/nativelink/cas.exec
+            ${{ runner.temp }}/nativelink/ac
+            ${{ runner.temp }}/nativelink/ac.exec
+          key: macos-${{ matrix.key }}-store-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}

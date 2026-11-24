@@ -6,8 +6,8 @@ CI is GitHub Actions. On Linux it runs the gate every landing passes, `just
 premerge`, through Buck2 on the build host's cache, so what a landing or a
 premerge already tested comes back as cache hits rather than running again.
 On macOS three jobs build the iPhone app, build the Mac app, and run the
-workspace's tests through Buck2, on the runner itself in front of the build
-host's cache. Windows still tests under Cargo beside its Buck2 job. Every job runs `just` recipes — the same recipes a
+workspace's tests through Buck2, on the runner itself, with a cache of
+their own kept between runs. Windows still tests under Cargo beside its Buck2 job. Every job runs `just` recipes — the same recipes a
 developer runs locally, so a job's log names the command to reproduce it.
 [Build](BUILD.md) describes the recipes; [Testing](TESTING.md) describes
 the suites they run.
@@ -275,21 +275,25 @@ Three jobs run what only a Mac can, side by side, one for each Rust graph
 a cold run compiles: the iPhone app builds the bridge for the simulator,
 the Mac app the bridge for the Mac, and the tests the workspace for this
 Mac. Each selects Xcode 26.6, installs the pinned Rust toolchain with both
-ARM iOS targets and tmux, joins the tailnet and starts a NativeLink on the
-runner (`scripts/nativelink.py macos`, `build/nativelink/macos.json5`).
+ARM iOS targets and tmux, restores its store and starts a NativeLink on
+the runner (`scripts/nativelink.py macos`, `build/nativelink/macos.json5`).
 Buck2 runs every build action itself (`AMUX_BUILD_HERE=1`,
 `scripts/buck-config.py`), looking it up in the cache first and uploading
 what it made; NativeLink's worker runs the tests, so their results are
-cached too. A worker builds each action's input directory from the CAS, and
-on a runner that CAS is in front of the build host's across the internet:
-staging took about 4 s an action against a fraction of a second of work,
-and a cold run sat idle most of its hour. The CAS writes through to the
-build host's, and the action cache is the runner's own: the build host's
-can't be written from here (and holds no macOS result), so the results are
-kept in GitHub's cache between runs, as the Windows job keeps its tests'.
-A push therefore rebuilds and reruns only what its change reaches. A fork's
-pull request, with no tailnet, runs on the runner alone
-(`nativelink.py run --remote none`).
+cached too. The store, every output and every result, is on the runner's
+disk, and the job keeps it in GitHub's cache between runs
+(`macos-<job>-store-*`), restoring the newest any run of that job kept.
+A push therefore rebuilds and reruns only what its change reaches. Each
+job's CAS holds at most 6 GiB (`CAS_GIB`), so the three stores and the
+other jobs' caches fit in the 10 GB GitHub keeps for the repository; past
+it the least recently used outputs go, and an action whose outputs went
+runs again.
+
+The macOS jobs don't use the build host. It can't run a Mac's actions,
+and it is about 100 ms from GitHub's runners: when the runners' CAS was in
+front of it, staging an action's inputs took about 4 s against a fraction
+of a second of work, and uploading a 190 MB test binary to it took five
+minutes, which the test waited for.
 
 The iPhone app job makes the golden simulator first (`just ios simulator
 golden`), which the phone's suites lease: on a runner, with no `wt`, a test
@@ -306,11 +310,11 @@ the whole Rust graph for one more target, and it reruns on every Rust
 change; `just ios release` builds and audits it on the Mac. The run step is bounded
 at 75 minutes inside a 100-minute job, so a cold run that runs out of time
 still saves what it finished and the next run picks up from there, as a
-cancelled one does: NativeLink is stopped before the results are archived,
-since it may still be writing them. Buck2's event logs and NativeLink's
+cancelled one does: NativeLink is stopped before the store is archived,
+since it may still be writing to it. Buck2's event logs and NativeLink's
 log are kept as the run's `buck2-logs-*` artifacts for a week (`scripts/buck2
 log what-ran`, `log critical-path`). A run started by hand with `cold` set
-starts the macOS jobs with no kept results, to time them from nothing.
+starts the macOS jobs with no kept store, to time them from nothing.
 The macOS tests job runs `just test //crates/...`: on macOS that is the
 system lane as well, since the built `amux` binary's suites (`process`,
 `supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor`
@@ -345,7 +349,7 @@ Run by hand, the workflow boots the golden simulator on `macos-26` and runs
 `just ios captures`: the store suite on the simulator, journeys and the
 accessibility sweep. Nothing it runs uses the small simulator, which took
 seven minutes to boot. It starts the same NativeLink as the macOS jobs and
-restores the iPhone app job's results read-only, so the app it already
+restores the iPhone app job's store read-only, so the app it already
 built is a hit, and never saves its own. It uploads the journey
 evidence and the audit's record.
 [The iPhone app](IOS.md) explains what those compare.

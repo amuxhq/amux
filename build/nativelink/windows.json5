@@ -1,6 +1,7 @@
 // NativeLink on CI's Windows runner (docs/CI.md, "The Windows job"):
 // a worker that runs Windows tests, in front of the build host's cache.
-// scripts/nativelink.py `windows` fills in the {{...}} values and runs it.
+// scripts/nativelink.py `windows` fills in the {{...}} values and runs it,
+// on ports Windows lets it have.
 //
 // Every Windows binary is compiled and linked on the build host's Linux
 // worker first (`just check-windows`, sent straight to the build host).
@@ -105,7 +106,7 @@
     {
       local: {
         name: "windows-",
-        worker_api_endpoint: { uri: "grpc://127.0.0.1:50061" },
+        worker_api_endpoint: { uri: "grpc://127.0.0.1:{{worker_port}}" },
         cas_fast_slow_store: "CAS",
         upload_action_result: { ac_store: "LOCAL_AC" },
         work_directory: "{{cache}}/work",
@@ -127,7 +128,7 @@
   servers: [
     {
       name: "clients",
-      listener: { http: { socket_address: "127.0.0.1:50051" } },
+      listener: { http: { socket_address: "127.0.0.1:{{port}}" } },
       services: {
         cas: [{ instance_name: "main", cas_store: "CAS" }],
         ac: [{ instance_name: "main", ac_store: "AC" }],
@@ -138,7 +139,7 @@
     },
     {
       name: "workers",
-      listener: { http: { socket_address: "127.0.0.1:50061" } },
+      listener: { http: { socket_address: "127.0.0.1:{{worker_port}}" } },
       services: {
         worker_api: { scheduler: "SCHEDULER" },
         health: {},

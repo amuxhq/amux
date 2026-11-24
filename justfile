@@ -66,6 +66,13 @@ build:
 check:
     {{bounded}} 3600 {{buck2}} build //crates/...
 
+# Compile and link every workspace library, binary and test for Windows,
+# on a Linux worker with the Windows toolchain (nix/windows.nix), from any
+# machine; nothing comes back but the result. CI's Windows job runs its
+# tests from these builds.
+check-windows:
+    {{bounded}} 3600 {{buck2}} build //crates/... --target-platforms root//build/platforms:windows-cli-testing-dev --materializations none
+
 # Every test runs in a process of its own (build/test-runner.py), and a
 # passing result is cached in NativeLink, so only tests whose inputs changed
 # run. Target patterns narrow the run (`just test //crates/node:`, `just test

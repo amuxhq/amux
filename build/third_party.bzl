@@ -57,6 +57,7 @@ _THIRD_PARTY_PLATFORM = {
 _THIRD_PARTY_PLATFORM.update({
     _PLATFORMS + "exec-macos": _PLATFORMS + "macos-cli-shipping-dev",
     _PLATFORMS + "exec-linux": _PLATFORMS + "linux-cli-shipping-dev",
+    _PLATFORMS + "exec-windows": _PLATFORMS + "windows-cli-shipping-dev",
 })
 
 def _third_party_platform_impl(platform: PlatformInfo, refs: struct) -> PlatformInfo:

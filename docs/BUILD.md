@@ -12,7 +12,7 @@
 | --- | --- |
 | `aarch64-apple-ios`, `aarch64-apple-ios-sim`, `x86_64-apple-ios` | The iPhone app's Rust bridge and `just mobile-check` |
 | `aarch64-linux-android`, `x86_64-linux-android` | The Android app's Rust bridge and `just android check` |
-| `x86_64-pc-windows-msvc` | The Windows release build and the [Windows cross-check](CI.md) |
+| `x86_64-pc-windows-msvc` | The Windows release build and the Windows builds on a Linux worker ([Windows builds](#windows-builds)) |
 | `x86_64-unknown-linux-gnu` | The Linux release build |
 | `wasm32-unknown-unknown` | The browser extension's WebAssembly, `browser-core` ([Browser extension](BROWSER.md)) |
 
@@ -219,6 +219,35 @@ as the build host's trees do, or to the one `AMUX_NATIVELINK` names
 host over the tailnet. `scripts/nativelink.py serve DIR` runs a NativeLink
 with its own worker and no remote in the foreground, for a Linux machine
 that has neither (a fork's pull request in CI).
+
+### Windows builds
+
+Everything built for `x86_64-pc-windows-msvc` compiles and links on a
+Linux worker, from any machine: Rust's own Windows target, LLVM's
+MSVC-compatible C compiler and linker (`clang-cl`, `lld-link`,
+`llvm-lib`), and Microsoft's C runtime and Windows SDK, which nixpkgs
+fetches with `xwin` from the Visual Studio release it pins, under
+Microsoft's licence. They are `packages.x86_64-linux.windows` in
+[`flake.nix`](../flake.nix) ([`nix/windows.nix`](../nix/windows.nix)),
+realized on the worker like the Linux toolchain (`//:nix-windows`), and
+apart from it, so an SDK update changes only Windows keys. A Windows
+machine only runs what it is given: the binaries a Windows test starts are
+built for Windows (`amux_binaries` in [`build/rust.bzl`](../build/rust.bzl)),
+and the test runs on a Windows worker (`exec-windows`), which only CI's
+Windows job has.
+
+```sh
+just check-windows    # every library, binary and test, for Windows
+```
+
+builds the whole workspace for `windows-cli-testing-dev` and downloads
+nothing. It needs a Linux worker in reach. A crate's C, which reindeer's
+fixups compile for Windows, is compiled against the C runtime as a DLL
+(`/MD`), as Rust's own Windows code and the `cc` crate's builds link it;
+`windows-targets` links the Windows API with `raw-dylib`
+(`third-party/rust/fixups/windows-targets`), since the import library its
+companion crate carries is found through a search path a build script
+gives Cargo, which reaches no dependent's link under Buck2.
 
 ### Repository checks
 

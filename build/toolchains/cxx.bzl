@@ -3,7 +3,8 @@ run remotely. The prelude's version pins every link and archive to Buck2's
 local executor, whose results are never cached. Everything else is as the
 prelude has it at the pinned buck2 version (build/tools.json), except that
 Linux targets call the Linux toolchain's compiler, linker and binary tools
-(nix.bzl) by store path instead of the ones named here.
+(nix.bzl) by store path instead of the ones named here, and Windows
+targets the Windows toolchain's.
 """
 
 # Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -53,7 +54,7 @@ def _legacy_equivalent_cxx_tools_info_windows(ctx: AnalysisContext, default_tool
         if ctx.attrs.cvtres_compiler == None or ctx.attrs.cvtres_compiler == "cvtres.exe"
         else ctx.attrs.cvtres_compiler,
         archiver = default_toolchain.archiver if ctx.attrs.archiver == None else ctx.attrs.archiver,
-        archiver_type = default_toolchain.archiver_type,
+        archiver_type = ctx.attrs.archiver_type or default_toolchain.archiver_type,
         linker = default_toolchain.linker if ctx.attrs.linker == None or ctx.attrs.linker == "link.exe" else ctx.attrs.linker,
         linker_type = default_toolchain.linker_type,
     )
@@ -250,6 +251,9 @@ amux_cxx_toolchain = rule(
     impl = _system_cxx_toolchain_impl,
     attrs = {
         "archiver": attrs.option(attrs.string(), default = None),
+        # The archiver's kind where the target's isn't the host's: LLVM's
+        # lib.exe for Windows ("windows_clang").
+        "archiver_type": attrs.option(attrs.string(), default = None),
         "c_flags": attrs.list(attrs.arg(), default = []),
         "compiler": attrs.option(attrs.string(), default = None),
         "compiler_type": attrs.option(attrs.string(), default = None),  # One of the supported C++ compiler types.

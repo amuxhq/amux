@@ -65,6 +65,20 @@ execution_platform(
     },
 )
 
+# The Windows CI job's own worker, which runs Windows tests and nothing
+# else: everything built for Windows is compiled and linked on Linux
+# (nix/windows.nix). Only the binaries a Windows test starts are configured
+# for it (build/rust.bzl's amux_binaries), and the test itself asks for it
+# by its profile (build/toolchains/BUCK), so no compile is ever sent here.
+execution_platform(
+    name = "exec-windows",
+    constraints = ["prelude//os:windows", "prelude//cpu:x86_64"] + TOOL_CONSTRAINTS,
+    properties = {
+        "OSFamily": "windows",
+        "cpu_count": "1",
+    },
+)
+
 # A Mac prefers its own worker and sends what only Linux can run to nova's;
 # nova has no macOS worker to send anything to. With no Linux worker in
 # reach (`amux.linux = false`, which scripts/buck-config.py writes when nova
@@ -74,5 +88,5 @@ _LINUX = read_root_config("amux", "linux", "true") == "true"
 
 execution_platforms(
     name = "execution",
-    platforms = ([":exec-macos"] + ([":exec-linux"] if _LINUX else [])) if host_info().os.is_macos else [":exec-linux"],
+    platforms = (([":exec-macos"] + ([":exec-linux"] if _LINUX else [])) if host_info().os.is_macos else [":exec-linux"]) + [":exec-windows"],
 )

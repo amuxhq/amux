@@ -19,19 +19,48 @@ load(":android.bzl", "android_file", "android_sdk", "android_tool", "android_too
 # Linux targets build with the Linux toolchain (nix.bzl), which also sends
 # their actions to a Linux worker; everything else with the tools below.
 # Android's Rust builds on Linux too, with the Linux toolchain's rustc (it
-# carries the Android standard libraries) and the NDK's compilers.
+# carries the Android standard libraries) and the NDK's compilers. So does
+# Windows: its genrules with the Linux toolchain, its compiles and links
+# with the Windows one (_NIX_COMPILE).
 _NIX = select({
     "DEFAULT": None,
     "prelude//os:linux": "root//:nix-linux",
     "root//build/constraints:on-linux": "root//:nix-linux",
     "prelude//os:android": "root//:nix-linux",
+    "prelude//os:windows": "root//:nix-linux",
 })
+
+_NIX_COMPILE = select({
+    "DEFAULT": _NIX,
+    "prelude//os:windows": "root//:nix-windows",
+})
+
+# The Windows toolchain's tools (nix/windows.nix) where the C toolchain
+# looks for GCC's names: LLVM's MSVC-compatible ones, which take cl.exe's,
+# link.exe's and lib.exe's arguments. The compiler is declared as cl.exe
+# ("windows"), not clang-cl: for clang-cl the prelude passes
+# `-Xclang -fdebug-compilation-dir -Xclang <dir>` one argument per line of
+# a response file, and clang-cl then finds -Xclang with no value.
+_WINDOWS_TOOLS = {
+    "bin/ar": "bin/llvm-lib",
+    "bin/c++": "bin/clang-cl",
+    "bin/cc": "bin/clang-cl",
+    "bin/nm": "bin/llvm-nm",
+    "bin/objcopy": "bin/llvm-objcopy",
+    "bin/objdump": "bin/llvm-objdump",
+    "bin/ranlib": "bin/llvm-ranlib",
+    "bin/strip": "bin/llvm-strip",
+}
 
 # The cores a Linux test that uses every core asks for. It has to be the
 # same wherever the test is sent from, or the same test would have two
 # keys, and no more than nova's worker offers any scheduler it registers
 # with; it is a minimum, so a bigger worker still takes it.
 _LINUX_WHOLE_WORKER = read_root_config("amux", "linux_worker_cores", "8")
+
+# The cores the Windows CI job's worker offers: GitHub's Windows runner has
+# four.
+_WINDOWS_WHOLE_WORKER = "4"
 
 # Xcode's clang through /usr/bin, which finds the selected Xcode and its SDK.
 # The Xcode version is in every Mac action's platform properties
@@ -40,7 +69,13 @@ amux_cxx_toolchain(
     name = "cxx",
     archiver = "/usr/bin/ar",
     compiler = "/usr/bin/clang",
-    compiler_type = select({"DEFAULT": "clang", "prelude//os:linux": "gcc"}),
+    compiler_type = select({"DEFAULT": "clang", "prelude//os:linux": "gcc", "prelude//os:windows": "windows"}),
+    archiver_type = select({"DEFAULT": None, "prelude//os:windows": "windows_clang"}),
+    # The C runtime as a DLL, as Rust's own Windows code and the `cc`
+    # crate's builds link it: clang-cl alone would pick the static one, and
+    # one binary would then carry both.
+    c_flags = select({"DEFAULT": [], "prelude//os:windows": ["/MD"]}),
+    cxx_flags = select({"DEFAULT": [], "prelude//os:windows": ["/MD"]}),
     cxx_compiler = "/usr/bin/clang++",
     # WebAssembly links with the lld the pinned Rust ships, as Cargo's wasm32
     # builds do; rustc tells it which flavour.
@@ -51,15 +86,20 @@ amux_cxx_toolchain(
             "aarch64-apple-darwin" if host_info().os.is_macos else "x86_64-unknown-linux-gnu",
         ),
     }),
-    linker_type = select({"DEFAULT": None, "prelude//os:none": "wasm"}),
+    linker_type = select({"DEFAULT": None, "prelude//os:none": "wasm", "prelude//os:windows": "windows"}),
     # The same for WebAssembly under the Linux toolchain: its Rust's lld.
-    nix_linker = select({"DEFAULT": "bin/c++", "prelude//os:none": "lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"}),
+    nix_linker = select({
+        "DEFAULT": "bin/c++",
+        "prelude//os:none": "lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld",
+        "prelude//os:windows": "bin/lld-link",
+    }),
     nix = select({
-        "DEFAULT": _NIX,
+        "DEFAULT": _NIX_COMPILE,
         "prelude//os:android": "root//:nix-android",
     }),
     nix_paths = select({
         "DEFAULT": {},
+        "prelude//os:windows": _WINDOWS_TOOLS,
         "prelude//os:android": select({
             "prelude//cpu:arm64": ndk_tools("aarch64-linux-android"),
             "prelude//cpu:x86_64": ndk_tools("x86_64-linux-android"),
@@ -115,7 +155,7 @@ amux_rust_toolchain(
     clippy_toml = "root//:clippy.toml",
     deny_lints = ["clippy::await_holding_lock", "clippy::dbg_macro", "clippy::todo"],
     toolchain_dir = read_root_config("rust", "toolchain_dir"),
-    nix = _NIX,
+    nix = _NIX_COMPILE,
     visibility = ["PUBLIC"],
 )
 
@@ -175,6 +215,20 @@ remote_test_execution_toolchain(
             },
             "whole-worker": {
                 "capabilities": {"OSFamily": "linux", "cpu_count": _LINUX_WHOLE_WORKER},
+                "use_case": "buck2-default",
+            },
+        },
+        # On the Windows CI job's own worker (build/platforms/BUCK), the
+        # only place a Windows test can run. Its worker offers
+        # _WINDOWS_WHOLE_WORKER cores, which a test that uses every core
+        # asks for wherever it is sent from, as on Linux.
+        "prelude//os:windows": {
+            "default": {
+                "capabilities": {"OSFamily": "windows", "cpu_count": "1"},
+                "use_case": "buck2-default",
+            },
+            "whole-worker": {
+                "capabilities": {"OSFamily": "windows", "cpu_count": _WINDOWS_WHOLE_WORKER},
                 "use_case": "buck2-default",
             },
         },

@@ -33,7 +33,7 @@ output names each test that failed.
 load("@prelude//decls:re_test_common.bzl", "re_test_common")
 load("@prelude//rust:sources.bzl", "RustSources", "RustSourcesTSet")
 load("@prelude//tests:re_utils.bzl", "get_re_executors_from_props")
-load("//build/platforms:defs.bzl", "EXEC_LIKE_TARGET", "host_platform")
+load("//build/platforms:defs.bzl", "EXEC_RUNS_TARGET", "host_platform")
 load("@toolchains//:nix.bzl", "NixToolchainInfo")
 
 # Cargo.toml's [profile.dev.package.*]: crates the model checker runs
@@ -94,14 +94,15 @@ def _binaries_impl(ctx: AnalysisContext) -> list[Provider]:
 # `binaries` module finds them through TESTNET_BINARIES. They are built for
 # the machine the tests run on, as the desktop product with test features,
 # whatever the test itself builds as (the phone bridge's tests are "app"):
-# for a Linux test, Linux, wherever the build was started.
+# for a Linux test, Linux, and for a Windows test, Windows, wherever the
+# build was started.
 _amux_binaries = rule(
     impl = _binaries_impl,
     attrs = {"binaries": attrs.dict(key = attrs.string(), value = attrs.exec_dep(), sorted = False)},
 )
 
 def amux_binaries(**kwargs):
-    _amux_binaries(exec_compatible_with = EXEC_LIKE_TARGET, **kwargs)
+    _amux_binaries(exec_compatible_with = EXEC_RUNS_TARGET, **kwargs)
 
 # The binaries in that directory (//crates/provider-fakes:binaries), by the
 # name provider_fakes::binaries finds each under.

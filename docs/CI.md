@@ -383,62 +383,9 @@ The checks, in the order it runs them:
 
 ## Checking Windows from a Mac
 
-The Windows test job compiles every workspace target for
-`x86_64-pc-windows-msvc`, and a Windows-only compile error otherwise shows up
-only there. Type-checking for Windows from a Mac needs no Windows toolchain,
-but it does need help: `ring`, `libsqlite3-sys` and `zstd-sys` compile C in their build
-scripts, and there is no MSVC compiler to run. Type-checking Rust needs no
-real object code, so two stub tools that create the files they are asked for
-are enough. There is no recipe for this; set it up once:
-
-```sh
-mkdir -p /tmp/winstub
-
-cat > /tmp/winstub/cc <<'EOF'
-#!/bin/sh
-# Stand-in C compiler: create the object file named by -o or -Fo.
-out=""
-prev=""
-for a in "$@"; do
-  case "$prev" in -o) out="$a";; esac
-  case "$a" in -Fo*) out="${a#-Fo}";; esac
-  prev="$a"
-done
-[ -n "$out" ] && : > "$out"
-exit 0
-EOF
-
-cat > /tmp/winstub/ar <<'EOF'
-#!/bin/sh
-# Stand-in archiver: create the library named by -out:.
-for a in "$@"; do
-  case "$a" in -out:*) : > "${a#-out:}";; esac
-done
-exit 0
-EOF
-
-chmod +x /tmp/winstub/cc /tmp/winstub/ar
-```
-
-Then check one crate:
-
-```sh
-CC_x86_64_pc_windows_msvc=/tmp/winstub/cc \
-CXX_x86_64_pc_windows_msvc=/tmp/winstub/cc \
-AR_x86_64_pc_windows_msvc=/tmp/winstub/ar \
-cargo check --locked -p <crate> --all-targets --target x86_64-pc-windows-msvc
-```
-
-or the whole workspace, as the Windows test job compiles it:
-
-```sh
-CC_x86_64_pc_windows_msvc=/tmp/winstub/cc \
-CXX_x86_64_pc_windows_msvc=/tmp/winstub/cc \
-AR_x86_64_pc_windows_msvc=/tmp/winstub/ar \
-cargo check --locked --workspace --all-targets \
-  --target x86_64-pc-windows-msvc --keep-going
-```
-
-`--keep-going` reports every crate's errors instead of stopping at the first.
-The target is already installed by `rust-toolchain.toml`. This finds compile
-errors only; Windows runtime behaviour still needs the Windows runner.
+`just check-windows` compiles and links every workspace target for
+`x86_64-pc-windows-msvc` on the build host's Linux worker, with the Windows
+toolchain the Windows job's binaries are built with ([Windows
+builds](BUILD.md#windows-builds)): a Windows-only compile or link error
+shows up there before CI. It finds build errors only; Windows runtime
+behaviour still needs a Windows machine, which the Windows job's runner is.

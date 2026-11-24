@@ -308,6 +308,13 @@ front of it, staging an action's inputs took about 4 s against a fraction
 of a second of work, and uploading a 190 MB test binary to it took five
 minutes, which the test waited for.
 
+Both app jobs build in `dev`, the bridge unoptimised (`--target-platforms
+…-app-shipping-dev`, which `bridge()` in `apps/apple/defs.bzl` follows),
+where a developer's builds use `phone-dev`: the bridge's Rust then shares
+the development workspace's third-party graph, and a cold build of it
+takes about half as long. The debug tools are in both. Release builds are
+unchanged.
+
 The iPhone app job makes the golden simulator first (`just ios simulator
 golden`), which the phone's suites lease: on a runner, with no `wt`, a test
 takes `amux-iphone-1` under a lock ([the iPhone app](IOS.md#builds)). It

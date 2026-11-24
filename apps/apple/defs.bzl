@@ -22,6 +22,10 @@ def bridge(what):
         "prelude//os:macos": select({
             "DEFAULT": (what, "//build/platforms:macos-app-shipping-phone-dev"),
             "root//build/constraints:release": (what, "//build/platforms:macos-app-shipping-release"),
+            # CI's Mac app job (--target-platforms macos-app-shipping-dev):
+            # the bridge unoptimised, so its Rust is one graph with the
+            # development workspace the app's tests start.
+            "root//build/constraints:dev": (what, "//build/platforms:macos-app-shipping-dev"),
         }),
         "prelude//os:iphoneos": select({
             "DEFAULT": select({
@@ -31,6 +35,7 @@ def bridge(what):
             "root//build/constraints:simulator": select({
                 "DEFAULT": (what, "//build/platforms:ios-sim-app-shipping-phone-dev"),
                 "root//build/constraints:release": (what, "//build/platforms:ios-sim-app-shipping-release"),
+                "root//build/constraints:dev": (what, "//build/platforms:ios-sim-app-shipping-dev"),
             }),
         }),
     })

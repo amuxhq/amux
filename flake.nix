@@ -23,6 +23,12 @@
           name = "amux-toolchain";
           paths = import ./nix/toolchain.nix { inherit pkgs; };
         };
+        # What Buck2's Linux actions run with: build/toolchains/nix.bzl
+        # realizes it on the worker and calls every tool by its store path.
+        actions = pkgs.buildEnv {
+          name = "amux-actions";
+          paths = import ./nix/toolchain.nix { inherit pkgs; buildTools = false; };
+        };
       });
 
       devShells = forAllSystems (pkgs: {

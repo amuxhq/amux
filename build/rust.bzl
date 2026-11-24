@@ -33,7 +33,8 @@ output names each test that failed.
 load("@prelude//decls:re_test_common.bzl", "re_test_common")
 load("@prelude//rust:sources.bzl", "RustSources", "RustSourcesTSet")
 load("@prelude//tests:re_utils.bzl", "get_re_executors_from_props")
-load("//build/platforms:defs.bzl", "host_platform")
+load("//build/platforms:defs.bzl", "EXEC_LIKE_TARGET", "host_platform")
+load("@toolchains//:nix.bzl", "NixToolchainInfo")
 
 # Cargo.toml's [profile.dev.package.*]: crates the model checker runs
 # through, optimised in every build (`rustc_flags = OPTIMISED`).
@@ -92,11 +93,15 @@ def _binaries_impl(ctx: AnalysisContext) -> list[Provider]:
 # scripts/test-binaries.sh builds them for nextest: provider-fakes'
 # `binaries` module finds them through TESTNET_BINARIES. They are built for
 # the machine the tests run on, as the desktop product with test features,
-# whatever the test itself builds as (the phone bridge's tests are "app").
-amux_binaries = rule(
+# whatever the test itself builds as (the phone bridge's tests are "app"):
+# for a Linux test, Linux, wherever the build was started.
+_amux_binaries = rule(
     impl = _binaries_impl,
     attrs = {"binaries": attrs.dict(key = attrs.string(), value = attrs.exec_dep(), sorted = False)},
 )
+
+def amux_binaries(**kwargs):
+    _amux_binaries(exec_compatible_with = EXEC_LIKE_TARGET, **kwargs)
 
 # The binaries in that directory (//crates/provider-fakes:binaries), by the
 # name provider_fakes::binaries finds each under.
@@ -116,8 +121,14 @@ _BINARIES_ENV = {"TESTNET_BINARIES": "$(location //crates/provider-fakes:binarie
 def _test_impl(ctx: AnalysisContext) -> list[Provider]:
     # A test with a `main` of its own (Cargo's `harness = false`) is a
     # program, run as it is.
-    command = cmd_args(ctx.attrs.binary[RunInfo]) if not ctx.attrs.harness else cmd_args(
-        "python3",
+    #
+    # A Linux test runs under the Linux toolchain (build/toolchains/nix.bzl):
+    # its Python runs the runner, and its bin directory is first on the
+    # PATH the test and what it starts (tmux, git) see.
+    nix = ctx.attrs._nix[NixToolchainInfo].run if ctx.attrs._nix else None
+    command = cmd_args(nix or [], "--" if nix else [], ctx.attrs.binary[RunInfo]) if not ctx.attrs.harness else cmd_args(
+        nix or [],
+        "bin/python3" if nix else "python3",
         ctx.attrs._runner,
         "--threads",
         str(ctx.attrs.threads),
@@ -169,6 +180,10 @@ _amux_test = rule(
         "terminate_after": attrs.int(default = 3),
         "threads": attrs.int(default = 4),
         "_runner": attrs.source(default = "root//build:test-runner.py"),
+        "_nix": attrs.option(attrs.exec_dep(providers = [NixToolchainInfo]), default = select({
+            "DEFAULT": None,
+            "prelude//os:linux": "root//:nix-linux",
+        })),
     } | re_test_common.test_args(),
 )
 

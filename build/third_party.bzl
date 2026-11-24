@@ -23,6 +23,7 @@ fallback (build/platforms), so they are absent from every compile alike.
 """
 
 load("@prelude//rust:cargo_package.bzl", "cargo")
+load("//build/platforms:defs.bzl", "EXEC_LIKE_TARGET")
 load("@prelude//rust:link_info.bzl", "RustProcMacroPlugin")
 load("@prelude//rust:sources.bzl", "RustSources")
 
@@ -52,3 +53,13 @@ def third_party_rust_library(name, visibility = None, **kwargs):
     else:
         cargo.rust_library(name = name + "@library", **kwargs)
         _without_sources(name = name, actual = ":" + name + "@library", visibility = visibility)
+
+# A crate's download and unpacking (reindeer.toml, `http_archive` and
+# `git_fetch`) run where the crate's compile does: on a Linux worker for a
+# Linux target (build/platforms/defs.bzl, EXEC_LIKE_TARGET), so the
+# unpacked sources have one key whichever machine started the build.
+def third_party_http_archive(**kwargs):
+    native.http_archive(exec_compatible_with = EXEC_LIKE_TARGET, **kwargs)
+
+def third_party_git_fetch(**kwargs):
+    native.git_fetch(exec_compatible_with = EXEC_LIKE_TARGET, **kwargs)

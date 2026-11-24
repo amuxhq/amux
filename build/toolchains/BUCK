@@ -1,13 +1,26 @@
 # Toolchains (docs/BUILD.md). Each language's toolchain is added here when
 # the build first needs it.
 load(":cxx.bzl", "amux_cxx_toolchain")
-load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
 load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain", "remote_python_toolchain")
 load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
 load("@prelude//tests:test_toolchain.bzl", "noop_test_toolchain")
 load("@prelude//toolchains:zip_file.bzl", "zip_file_toolchain")
+load(":genrule.bzl", "amux_genrule_toolchain")
 load(":rust.bzl", "amux_rust_toolchain")
 load("@root//build/platforms:defs.bzl", "RUST_TARGET_TRIPLE")
+
+# Linux targets build with the Linux toolchain (nix.bzl), which also sends
+# their actions to a Linux worker; everything else with the tools below.
+_NIX = select({
+    "DEFAULT": None,
+    "prelude//os:linux": "root//:nix-linux",
+})
+
+# The cores a Linux test that uses every core asks for. It has to be the
+# same wherever the test is sent from, or the same test would have two
+# keys, and no more than nova's worker offers any scheduler it registers
+# with; it is a minimum, so a bigger worker still takes it.
+_LINUX_WHOLE_WORKER = read_root_config("amux", "linux_worker_cores", "8")
 
 # Xcode's clang through /usr/bin, which finds the selected Xcode and its SDK.
 # The Xcode version is in every Mac action's platform properties
@@ -16,7 +29,7 @@ amux_cxx_toolchain(
     name = "cxx",
     archiver = "/usr/bin/ar",
     compiler = "/usr/bin/clang",
-    compiler_type = "clang",
+    compiler_type = select({"DEFAULT": "clang", "prelude//os:linux": "gcc"}),
     cxx_compiler = "/usr/bin/clang++",
     # WebAssembly links with the lld the pinned Rust ships, as Cargo's wasm32
     # builds do; rustc tells it which flavour.
@@ -28,6 +41,7 @@ amux_cxx_toolchain(
         ),
     }),
     linker_type = select({"DEFAULT": None, "prelude//os:none": "wasm"}),
+    nix = _NIX,
     visibility = ["PUBLIC"],
 )
 
@@ -78,11 +92,13 @@ amux_rust_toolchain(
     clippy_toml = "root//:clippy.toml",
     deny_lints = ["clippy::await_holding_lock", "clippy::dbg_macro", "clippy::todo"],
     toolchain_dir = read_root_config("rust", "toolchain_dir"),
+    nix = _NIX,
     visibility = ["PUBLIC"],
 )
 
-system_genrule_toolchain(
+amux_genrule_toolchain(
     name = "genrule",
+    nix = _NIX,
     visibility = ["PUBLIC"],
 )
 
@@ -106,26 +122,40 @@ remote_test_execution_toolchain(
     default_profile = "default",
     # One action per test target; the target's own runner isolates cases.
     default_run_as_bundle = True,
-    profiles = {
-        "default": {
-            "capabilities": {
-                "OSFamily": "macos",
-                "cpu_count": "1",
-                "xcode": read_root_config("apple", "xcode", ""),
+    # A Linux test runs on a Linux worker, the rest on the Mac's.
+    profiles = select({
+        "DEFAULT": {
+            "default": {
+                "capabilities": {
+                    "OSFamily": "macos",
+                    "cpu_count": "1",
+                    "xcode": read_root_config("apple", "xcode", ""),
+                },
+                "use_case": "buck2-default",
             },
-            "use_case": "buck2-default",
-        },
-        # A test that uses every core, as nextest's `threads-required =
-        # "num-cpus"`: it reserves the whole worker, so nothing runs beside it.
-        "whole-worker": {
-            "capabilities": {
-                "OSFamily": "macos",
-                "cpu_count": read_root_config("amux", "worker_cores", "1"),
-                "xcode": read_root_config("apple", "xcode", ""),
+            # A test that uses every core, as nextest's `threads-required =
+            # "num-cpus"`: it reserves the whole worker, so nothing runs
+            # beside it.
+            "whole-worker": {
+                "capabilities": {
+                    "OSFamily": "macos",
+                    "cpu_count": read_root_config("amux", "worker_cores", "1"),
+                    "xcode": read_root_config("apple", "xcode", ""),
+                },
+                "use_case": "buck2-default",
             },
-            "use_case": "buck2-default",
         },
-    },
+        "prelude//os:linux": {
+            "default": {
+                "capabilities": {"OSFamily": "linux", "cpu_count": "1"},
+                "use_case": "buck2-default",
+            },
+            "whole-worker": {
+                "capabilities": {"OSFamily": "linux", "cpu_count": _LINUX_WHOLE_WORKER},
+                "use_case": "buck2-default",
+            },
+        },
+    }),
     visibility = ["PUBLIC"],
 )
 
@@ -138,3 +168,13 @@ zip_file_toolchain(
     name = "zip_file",
     visibility = ["PUBLIC"],
 )
+
+# The Linux toolchain's scripts (nix.bzl).
+[
+    export_file(
+        name = name,
+        src = name,
+        visibility = ["PUBLIC"],
+    )
+    for name in ["nix-realize.sh", "nix-run.sh"]
+]

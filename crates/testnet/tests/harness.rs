@@ -962,6 +962,28 @@ async fn a_supervised_host_takes_a_published_release_and_rolls_back_a_broken_one
     })
     .await
     .unwrap();
+    // Putting prev back only starts its daemon: the crash below needs one
+    // serving, and the binary on disk says nothing of the process.
+    until("0.0.2's daemon to serve again", || async {
+        let mut door = net
+            .front_door("box")
+            .await
+            .map_err(|error| error.to_string())?;
+        let serving = door
+            .get_installation(wire::GetInstallationRequest {})
+            .await
+            .map_err(|error| error.to_string())?
+            .into_inner()
+            .installation
+            .map(|installation| installation.version)
+            .unwrap_or_default();
+        serving
+            .ends_with("0.0.2")
+            .then_some(())
+            .ok_or_else(|| format!("serving {serving:?}"))
+    })
+    .await
+    .unwrap();
 
     // A crash under a supervisor is followed by a start it makes itself.
     net.kill_daemon("box").await.unwrap();

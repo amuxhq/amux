@@ -94,6 +94,7 @@ execution_platform(
         "OSFamily": "windows",
         "cpu_count": "1",
     },
+    windows = True,
 )
 
 # A Mac prefers its own worker and sends what only Linux can run to nova's;
@@ -103,7 +104,15 @@ execution_platform(
 # action fails at once rather than waiting for a worker that isn't coming.
 _LINUX = read_root_config("amux", "linux", "true") == "true"
 
+# A release build (build/constraints:local-build) runs every action on this
+# machine (`buck2 build --local-only`), so this machine's platform is its
+# only one: a Windows release's build scripts and proc macros are Windows
+# programs.
+_LOCAL = read_root_config("amux", "local", "false") == "true"
+
+_HOST = "macos" if host_info().os.is_macos else ("windows" if host_info().os.is_windows else "linux")
+
 execution_platforms(
     name = "execution",
-    platforms = (([":exec-macos"] + ([":exec-linux"] if _LINUX else [])) if host_info().os.is_macos else [":exec-linux"]) + [":exec-windows"],
+    platforms = [":exec-" + _HOST] if _LOCAL else (([":exec-macos"] + ([":exec-linux"] if _LINUX else [])) if host_info().os.is_macos else [":exec-linux"]) + [":exec-windows"],
 )

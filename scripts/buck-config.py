@@ -170,7 +170,11 @@ def mode() -> str:
     `remote`: Linux actions go to the remote's worker; `local`: a remote is
     set up but doesn't answer, or the address its worker registers at isn't
     this machine's (the tailnet is down); `solo`: none is set up. Only
-    `remote` and `linux` run Linux actions."""
+    `remote` and `linux` run Linux actions. `local-build`, whatever the
+    machine (AMUX_LOCAL_BUILD=1, scripts/release-build.py): a release build,
+    every action here with this machine's own toolchains."""
+    if os.environ.get("AMUX_LOCAL_BUILD") == "1":
+        return "local-build"
     if platform.system() != "Darwin":
         # The endpoint is part of the mode, so a change rewrites the file
         # and restarts the daemon, which reads endpoints only as it starts.
@@ -238,7 +242,7 @@ def write(mode: str) -> None:
     # A Windows machine builds nothing itself: Windows targets compile on a
     # Linux worker with the Windows toolchain (nix/windows.nix), so no
     # action names a compiler of its own.
-    toolchain_dir = "" if platform.system() == "Windows" else sysroot(channel)
+    toolchain_dir = "" if platform.system() == "Windows" and mode != "local-build" else sysroot(channel)
     lines = [
         "# Written by scripts/buck-config.py; not committed. It is rewritten",
         "# when the pinned toolchains change, or where actions go does.",
@@ -253,6 +257,7 @@ def write(mode: str) -> None:
         "[amux]",
         f"  worker_cores = {worker_cores()}",
         f"  linux = {'true' if linux(mode) else 'false'}",
+        f"  local = {'true' if mode == 'local-build' else 'false'}",
     ]
     if mode.startswith("linux "):
         endpoint = mode.removeprefix("linux ")
@@ -335,6 +340,7 @@ DESCRIBE = {
     "remote": "to this Mac's worker, and Linux ones to the remote's",
     "local": "to this Mac's worker only (the remote doesn't answer)",
     "solo": "to this Mac's worker only",
+    "local-build": "nowhere but here, with this machine's own toolchains (a release build)",
 }
 
 

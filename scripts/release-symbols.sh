@@ -29,8 +29,8 @@ case "$target" in
         (cd "$out" && objcopy --strip-all --add-gnu-debuglink="$asset.debug" "$asset")
         ;;
     *-apple-darwin)
-        # The dSYM was written at link time (split-debuginfo=packed in
-        # .cargo/config.toml), before anything was stripped.
+        # The dSYM was written at link time (-Csplit-debuginfo=packed,
+        # scripts/release-build.py), before anything was stripped.
         [ -d "$built/amux.dSYM" ] || {
             echo "release-symbols: $built/amux.dSYM is missing" >&2
             exit 1
@@ -40,8 +40,8 @@ case "$target" in
         # Stripping invalidates the linker's ad hoc signature, and an arm64
         # Mac will not run an unsigned binary.
         codesign --force --sign - "$out/$asset"
-        # target/<profile>/amux.dSYM links to a hashed bundle in deps; copy
-        # its contents so the archive holds the bundle under the asset's name.
+        # Copy the bundle's contents so the archive holds it under the
+        # asset's name.
         cp -R "$built/amux.dSYM/" "$out/$asset.dSYM"
         (cd "$out" && ditto -c -k --norsrc --noextattr --keepParent "$asset.dSYM" "$asset.dSYM.zip" && rm -r "$asset.dSYM")
         ;;

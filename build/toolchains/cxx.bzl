@@ -81,7 +81,7 @@ def _system_cxx_toolchain_impl(ctx: AnalysisContext):
 
     os = ctx.attrs._target_os_type[OsLookup].os.value
     arch_name = ctx.attrs._target_os_type[OsLookup].cpu
-    cxx_tools_info = ctx.attrs._cxx_tools_info[CxxToolsInfo]
+    cxx_tools_info = (ctx.attrs.tools or ctx.attrs._cxx_tools_info)[CxxToolsInfo]
     cxx_tools_info = (
         _legacy_equivalent_cxx_tools_info_windows(ctx, cxx_tools_info)
         if os == "windows"
@@ -111,7 +111,7 @@ def _cxx_toolchain_from_cxx_tools_info(ctx: AnalysisContext, cxx_tools_info: Cxx
     # (Only through a compiler driver: a linker named outright, as wasm-ld
     # is, takes no driver flags. The Linux toolchain's driver is GCC's,
     # which links with its own binutils.)
-    additional_linker_flags = ["-fuse-ld=lld"] if os == Os("linux") and not nix and not getattr(ctx.attrs, "linker_type", None) and cxx_tools_info.linker != "g++" and cxx_tools_info.cxx_compiler != "g++" else []
+    additional_linker_flags = ["-fuse-ld=lld"] if os == Os("linux") and not nix and not getattr(ctx.attrs, "linker_type", None) and cxx_tools_info.linker not in ("g++", "c++") and cxx_tools_info.cxx_compiler not in ("g++", "c++") else []
 
     # A target whose linker isn't the host's (wasm-ld for WebAssembly) says
     # which kind it is.
@@ -296,6 +296,9 @@ amux_cxx_toolchain = rule(
             providers = [CxxToolsInfo],
             default = "prelude//toolchains/cxx/clang:path_clang_tools",
         ),
+        # Tools found on this machine in place of those defaults: MSVC's,
+        # for a release build on Windows.
+        "tools": attrs.option(attrs.exec_dep(providers = [CxxToolsInfo]), default = None),
         "_target_os_type": buck.target_os_type_arg(),
     },
     is_toolchain_rule = True,

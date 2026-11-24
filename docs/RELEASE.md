@@ -862,12 +862,27 @@ experiments only into preview builds, behind a Cargo feature, was rejected:
 one version would exist as two binaries, and promoting preview to stable
 would ship a build preview never ran.
 
-`just release-check` builds the shipping binary under the `release` profile —
-`cargo build --release -p amux --bins`,
-whole-program optimised (fat LTO, one codegen unit) with line tables — and
-runs [`scripts/release-policy-check.sh`](../scripts/release-policy-check.sh)
-on it, which fails if its SQLite linkage breaks policy
-(`scripts/sqlite_linkage.py`).
+`just release-check` builds the shipping binary in the release
+configuration — whole-program optimised (fat LTO, one codegen unit) with
+line tables, as Cargo's `release` profile is — and runs
+[`scripts/release-policy-check.sh`](../scripts/release-policy-check.sh) on
+it, which fails if its SQLite linkage breaks policy
+(`scripts/sqlite_linkage.py`). Buck2 builds it
+([`scripts/release-build.py`](../scripts/release-build.py)) from scratch on
+the machine it runs on: every action there (`--local-only`), nothing read
+from or written to a build cache (`--no-remote-cache`), and the machine's
+own toolchains — rustup's pinned Rust, and Xcode's, GCC's or MSVC's C tools
+— not the Nix ones the build host's workers use, whose Linux binaries need
+Nix's C library. So a release binary depends on nothing a cache or a
+build host holds: what is attested is what that runner built from the
+tagged source. The binary goes where Cargo's release build left it,
+`target/<triple>/release/amux` (`.exe` and `.pdb` on Windows), and on macOS
+rustc's own `amux.dSYM` beside it, for the symbol split below.
+
+The workflow can also be run by hand (`gh workflow run release.yml --ref
+<branch>`): that builds, checks and splits the three binaries at the
+branch's head and keeps none of them: it attests nothing, uploads nothing
+and publishes no release. Only a pushed tag releases.
 
 The pushed tag starts the Release workflow
 ([`.github/workflows/release.yml`](../.github/workflows/release.yml)). It

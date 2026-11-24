@@ -26,8 +26,12 @@ EXEC_LIKE_TARGET = select({
     "prelude//os:linux": ["prelude//os:linux"],
     # Android builds only on a Linux worker (docs/ANDROID.md).
     "prelude//os:android": ["prelude//os:linux"],
-    # So does Windows (nix/windows.nix): only its tests run on Windows.
-    "prelude//os:windows": ["prelude//os:linux"],
+    # So does Windows (nix/windows.nix): only its tests run on Windows;
+    # but a release build of Windows is built on Windows.
+    "prelude//os:windows": select({
+        "DEFAULT": ["prelude//os:linux"],
+        "root//build/constraints:local-build": [],
+    }),
 })
 
 # For the binaries a test starts (build/rust.bzl's amux_binaries): built
@@ -98,6 +102,9 @@ def _execution_platform_impl(ctx):
             remote_execution_properties = ctx.attrs.properties,
             remote_execution_use_case = "buck2-default",
             remote_output_paths = "output_paths",
+            # A Windows action names its paths as Windows does; it runs on
+            # Windows, on CI's Windows worker or in a release build there.
+            use_windows_path_separators = ctx.attrs.windows,
         ),
     )
     return [DefaultInfo(), platform]
@@ -109,6 +116,7 @@ execution_platform = rule(
     attrs = {
         "constraints": attrs.list(attrs.dep(providers = [ConfigurationInfo])),
         "properties": attrs.dict(attrs.string(), attrs.string()),
+        "windows": attrs.bool(default = False),
     },
     is_configuration_rule = True,
 )

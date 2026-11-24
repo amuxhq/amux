@@ -13,7 +13,9 @@ action to (docs/BUILD.md, "The build cache").
     nativelink.py serve DIR [--cores N]
         Run one in the foreground with its cache in DIR and no remote, on a
         Linux machine that has no build host in reach (a CI runner without
-        the tailnet): what the build host's NativeLink would do, here.
+        the tailnet): what the build host's NativeLink would do, here. Its
+        worker offers N cores (default: all of them); Buck2 is told the same
+        through AMUX_LINUX_WORKER_CORES (scripts/buck-config.py).
     nativelink.py windows DIR --remote URL [--results DIR] [--cores N]
         Run one in the foreground on CI's Windows runner, with a worker
         that runs Windows tests and its cache in front of the build host's
@@ -230,12 +232,6 @@ def render(cores: int, background: bool, remote: dict) -> None:
     START.write_text(start_script(remote))
 
 
-# A Linux test that uses every core asks for this many, whatever the machine
-# (build/toolchains/BUCK, `amux.linux_worker_cores`), so a worker offering
-# fewer would never be given it.
-LINUX_WHOLE_WORKER = 8
-
-
 def serve(cache: Path, cores: int) -> None:
     """Runs a NativeLink with no remote in the foreground, its cache and
     work directories under `cache`, on a Linux machine."""
@@ -253,7 +249,12 @@ def serve(cache: Path, cores: int) -> None:
         "cache": str(cache),
         "cas_bytes": str(40 * GIB),
         "ac_bytes": str(4 * GIB),
-        "cores": str(max(cores, LINUX_WHOLE_WORKER)),
+        # The machine's real cores, not the build host's: a test that
+        # takes the whole worker (build/toolchains/BUCK) then asks for these,
+        # as AMUX_LINUX_WORKER_CORES tells Buck2, and runs alone on them. A
+        # worker claiming more would run it beside others on cores it hasn't
+        # got, and the tests that measure time fail.
+        "cores": str(cores),
         "memory_kb": str(memory * 3 // 4 // 1024),
         "entrypoint": "",
     } | {"remote_stores": LOCAL_ONLY_STORES, "worker_slow": "{ noop: {} }", "remote_workers": ""}))

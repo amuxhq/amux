@@ -165,6 +165,21 @@ def linux_endpoint() -> str | None:
     return os.environ.get("AMUX_NATIVELINK") or None
 
 
+def linux_worker_cores() -> str:
+    cores = os.environ.get("AMUX_LINUX_WORKER_CORES", "")
+    return cores if cores.isdigit() else ""
+
+
+def written_linux_worker_cores() -> str:
+    try:
+        for line in OUT.read_text().splitlines():
+            if line.strip().startswith("linux_worker_cores = "):
+                return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return ""
+
+
 def mode() -> str:
     """`linux`: a Linux machine, whose actions all run on Linux. On a Mac,
     `remote`: Linux actions go to the remote's worker; `local`: a remote is
@@ -259,6 +274,12 @@ def write(mode: str) -> None:
         f"  linux = {'true' if linux(mode) else 'false'}",
         f"  local = {'true' if mode == 'local-build' else 'false'}",
     ]
+    if linux_worker_cores():
+        # The cores a whole-worker Linux test asks for, when this machine's
+        # own worker, not the build host's, runs them (a fork's CI run,
+        # scripts/nativelink.py serve). Those tests' keys then differ from
+        # the build host's, which nothing here shares a cache with.
+        lines.append(f"  linux_worker_cores = {linux_worker_cores()}")
     if mode.startswith("linux "):
         endpoint = mode.removeprefix("linux ")
         lines += ["[buck2_re_client]"] + [
@@ -324,7 +345,7 @@ def main() -> None:
     running, since = serving()
     if now in ("remote", "local") and running is not None and running != now and time.time() - since > 60:
         restart_nativelink(now)
-    if now != was or stale():
+    if now != was or stale() or written_linux_worker_cores() != linux_worker_cores():
         write(now)
     if was is not None and now != was:
         # The running daemon still holds the old endpoints.

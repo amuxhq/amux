@@ -96,10 +96,12 @@ config_setting(
 # action on this machine, with this machine's own toolchains, rustup's Rust
 # and the system's C compiler, and nothing from a cache, so what ships is
 # built from scratch where it is built. Nix's Linux toolchain would link a
-# binary that runs only where Nix's C library is.
+# binary that runs only where Nix's C library is. The root cell's value:
+# `values` reads the cell of the target being configured, and the
+# toolchains cell, which selects on this, has none.
 config_setting(
     name = "local-build",
-    values = {"amux.local": "true"},
+    root_values = {"amux.local": "true"},
     visibility = ["PUBLIC"],
 )
 

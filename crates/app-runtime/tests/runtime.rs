@@ -379,6 +379,10 @@ async fn older_rows_arrive_below_the_oldest_the_host_holds() {
         .agent_act(&worker(&net), &AgentAct::Close)
         .await
         .unwrap();
+    // The fleet's state takes the exit before the fleet drops the session,
+    // and it says it changed once it has done both: read between the two,
+    // the state says exited while the session is still held. So the wait is
+    // for both, and a session that never goes fails it.
     let mut changed = runtime.fleet().changed();
     tokio::time::timeout(PATIENCE, async {
         loop {
@@ -387,15 +391,14 @@ async fn older_rows_arrive_below_the_oldest_the_host_holds() {
                 .state()
                 .agent(&worker(&net))
                 .is_some_and(|agent| agent.lifecycle() == wire::Lifecycle::Exited);
-            if exited {
+            if exited && runtime.fleet().session(&worker(&net)).is_none() {
                 return;
             }
             changed.changed().await.unwrap();
         }
     })
     .await
-    .expect("the worker exits");
-    assert!(runtime.fleet().session(&worker(&net)).is_none());
+    .expect("the worker exits and its session goes with it");
     let chat = opened(&runtime, &worker(&net), 50).await;
     until(&mut host, &chat, "the exit", |chat| chat.frame().caught_up).await;
     let everything = chat.keys();

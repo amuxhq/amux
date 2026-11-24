@@ -1,5 +1,5 @@
 {
-  "//": "Pinned build tools, fetched by scripts/buck-tools.py into ~/.cache/amux/tools, and in the Nix dev shell (nix/build-tools.nix). Bump a version and its digests together; the digests are GitHub's own SHA-256 for each release asset. cargo-nextest is the release .config/nextest.toml requires, which .github/actions/setup-nextest installs for CI's Cargo test legs too: move the three together.",
+  "//": "Pinned build tools, fetched by scripts/buck-tools.py into ~/.cache/amux/tools, and in the Nix dev shell (nix/build-tools.nix). Bump a version and its digests together; the digests are GitHub's own SHA-256 for each release asset. cargo-nextest is the release .config/nextest.toml requires, which .github/actions/setup-nextest installs for CI's Cargo test legs too: move the three together. An asset may name a version of its own, where a host's build comes later than the others' (NativeLink's first Windows build is 1.9.0); the protocol between versions is the same.",
   "buck2": {
     "version": "2026-11-15",
     "assets": {
@@ -10,6 +10,10 @@
       "x86_64-unknown-linux-gnu": {
         "url": "https://github.com/facebook/buck2/releases/download/2026-11-15/buck2-x86_64-unknown-linux-gnu.zst",
         "sha256": "51d209f834c3509bc83024bf4ede62cd907135e7b289b29ed69d763dcde67b04"
+      },
+      "x86_64-pc-windows-msvc": {
+        "url": "https://github.com/facebook/buck2/releases/download/2026-11-15/buck2-x86_64-pc-windows-msvc.exe.zst",
+        "sha256": "1122e1a4384a2b737fe3f3700ca03a0212fb3bb5b40e3989aef56ad6cd59f273"
       }
     }
   },
@@ -38,6 +42,12 @@
         "url": "https://github.com/TraceMachina/nativelink/releases/download/v1.8.7/nativelink-1.8.7-x86_64-unknown-linux-musl.tar.gz",
         "sha256": "7986f657408b96e99705dd64d0f90f63a2e0c0c98e11edbd4c310a0ec3ae9b55",
         "member": "nativelink"
+      },
+      "x86_64-pc-windows-msvc": {
+        "version": "1.9.0",
+        "url": "https://github.com/TraceMachina/nativelink/releases/download/v1.9.0/nativelink-1.9.0-x86_64-pc-windows-msvc.zip",
+        "sha256": "fb5195ac324a668dd2cd47d3e15ad15b87d6e158e67471a13b616414fd38448d",
+        "member": "nativelink.exe"
       }
     }
   },

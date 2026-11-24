@@ -14,6 +14,11 @@ action to (docs/BUILD.md, "The build cache").
         Run one in the foreground with its cache in DIR and no remote, on a
         Linux machine that has no build host in reach (a CI runner without
         the tailnet): what the build host's NativeLink would do, here.
+    nativelink.py windows DIR --remote URL [--results DIR] [--cores N]
+        Run one in the foreground on CI's Windows runner, with a worker
+        that runs Windows tests and its cache in front of the build host's
+        at URL (build/nativelink/windows.json5); the tests' results go in
+        --results, which the job keeps between runs.
 
 `--cores` is how many cores the worker offers (default: the machine's
 count less three), so builds never take the whole laptop. `--background`
@@ -42,6 +47,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
+# The repository's Python (scripts/py picks one), for its other scripts;
+# Windows can't start a shell script, and there this is that one already.
+PY = [sys.executable] if os.name == "nt" else [str(ROOT / "scripts/py")]
 TEMPLATE = ROOT / "build/nativelink/mac.json5"
 LABEL = "sh.amux.nativelink"
 CACHE = Path.home() / "Library/Caches/amux/nativelink"
@@ -64,7 +72,7 @@ GIB = 1024**3
 
 def binary() -> str:
     return subprocess.check_output(
-        [str(ROOT / "scripts/py"), str(ROOT / "scripts/buck-tools.py"), "path", "nativelink"],
+        [*PY, str(ROOT / "scripts/buck-tools.py"), "path", "nativelink"],
         text=True,
     ).strip()
 
@@ -249,6 +257,48 @@ def serve(cache: Path, cores: int) -> None:
     os.execv(binary(), [binary(), str(config)])
 
 
+# What a Windows process needs from the system to start and work, which the
+# worker otherwise doesn't pass on (build/nativelink/windows.json5), and the
+# runner's PATH, which has its Python and git.
+WINDOWS_ENVIRONMENT = [
+    "PATH", "PATHEXT", "SystemRoot", "SystemDrive", "windir", "ComSpec", "OS",
+    "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "ProgramData", "ProgramFiles",
+    "ProgramFiles(x86)", "ProgramW6432", "CommonProgramFiles", "APPDATA", "LOCALAPPDATA",
+    "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "USERNAME", "COMPUTERNAME", "TEMP", "TMP",
+]
+
+# Every Windows test asks for the whole worker (build/toolchains/BUCK).
+WINDOWS_WHOLE_WORKER = 4
+
+
+def windows(cache: Path, remote: str, results: Path | None, cores: int) -> None:
+    """Runs CI's Windows NativeLink in the foreground."""
+    if sys.platform != "win32":
+        sys.exit("nativelink: `windows` is for CI's Windows runner")
+    cache.mkdir(parents=True, exist_ok=True)
+    results = results or cache / "ac"
+    results.mkdir(parents=True, exist_ok=True)
+    environment = "\n".join(
+        f"          {json.dumps(key)}: {{ value: {json.dumps(os.environ[key])} }},"
+        for key in WINDOWS_ENVIRONMENT
+        if key in os.environ
+    )
+    config = cache / "config.json5"
+    config.write_text(fill((ROOT / "build/nativelink/windows.json5").read_text(), {
+        "remote": remote,
+        "cache": cache.as_posix(),
+        "results": results.as_posix(),
+        "cas_bytes": str(40 * GIB),
+        "ac_bytes": str(GIB),
+        "cores": str(max(cores, WINDOWS_WHOLE_WORKER)),
+        # Windows has no sysconf; the runner has 16 GB, three quarters of it.
+        "memory_kb": str(12 * 1024 * 1024),
+        "environment": environment,
+    }))
+    nativelink = binary()
+    sys.exit(subprocess.call([nativelink, str(config)]))
+
+
 def start_script(remote: dict) -> str:
     if not remote:
         return f"""#!/bin/sh
@@ -344,13 +394,19 @@ def uninstall() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["install", "uninstall", "status", "run", "serve"])
+    parser.add_argument("command", choices=["install", "uninstall", "status", "run", "serve", "windows"])
     parser.add_argument("directory", nargs="?", type=Path, help="serve: where its cache and work directories go")
     parser.add_argument("--cores", type=int, default=None)
     parser.add_argument("--background", action="store_true")
     parser.add_argument("--remote", help="a Linux build host's NativeLink, grpc://HOST:PORT, or `none`")
     parser.add_argument("--workers", help="HOST:PORT on this Mac where the remote's worker registers")
+    parser.add_argument("--results", type=Path, help="windows: where the tests' results are kept")
     args = parser.parse_args()
+    if args.command == "windows":
+        if args.directory is None or args.remote is None:
+            parser.error("windows needs the directory its cache goes in and --remote")
+        windows(args.directory, args.remote, args.results, args.cores or os.cpu_count() or 4)
+        return
     if args.command == "serve":
         if args.directory is None:
             parser.error("serve needs the directory its cache goes in")

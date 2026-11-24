@@ -176,6 +176,110 @@ jobs:
         if: env.COVERED == 'true'
         run: nix develop --command ${{ matrix.run }}
 
+  # The workspace's tests on Windows (docs/CI.md, "The Windows job"). The
+  # build host's Linux worker compiles and links every Windows binary; then
+  # a NativeLink on this runner, in front of the build host's cache, runs
+  # the tests on a Windows worker of its own, so the runner compiles
+  # nothing and a test whose inputs haven't changed is a cache hit. A
+  # fork's pull request, with no tailnet, tests under Cargo on the runner.
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 60
+    # While it is new beside the Cargo leg of the test job, which it is to
+    # replace, a failure here doesn't fail the run.
+    continue-on-error: true
+    env:
+      REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && inputs.without-build-host != true }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Refuse fixture update flags
+        run: scripts/no-update-flags.sh
+      # Python 3.14 unpacks the pinned Buck2 (scripts/buck-tools.py: the
+      # runner has no zstd). Windows' Python installers make only `python`,
+      # and `python3` is a stub that offers the Microsoft Store; Buck2 runs
+      # one helper here by that name (it fetches the git dependencies, which
+      # runs locally).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - name: Name the runner's Python python3 too
+        run: |
+          dir=$(dirname "$(command -v python)")
+          [ -e "$dir/python3.exe" ] || cp "$dir/python.exe" "$dir/python3.exe"
+          python3 --version
+      - if: env.REMOTE == 'true'
+        uses: ./.github/actions/setup-just
+      - name: Join the tailnet
+        if: env.REMOTE == 'true'
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ env.BUILD_HOST }}
+      - name: Build every Windows binary on the build host
+        if: env.REMOTE == 'true'
+        run: AMUX_NATIVELINK="grpc://$BUILD_HOST:50051" just check-windows
+      # The tests' results from earlier runs: the build host's cache can't
+      # be written from here, so they are kept in GitHub's (the NativeLink
+      # config, build/nativelink/windows.json5, says why that is enough).
+      - name: Restore the Windows tests' results
+        if: env.REMOTE == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/test-results
+          key: windows-test-results-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            windows-test-results-${{ github.sha }}-
+            windows-test-results-
+      # One step, so the NativeLink it starts in the background is still
+      # running while the tests do.
+      - name: Run the tests on a Windows worker
+        if: env.REMOTE == 'true'
+        run: |
+          scripts/py scripts/nativelink.py windows "$RUNNER_TEMP/nativelink" --remote "grpc://$BUILD_HOST:50051" \
+            --results "$RUNNER_TEMP/test-results" > "$RUNNER_TEMP/nativelink.log" 2>&1 &
+          scripts/py -c 'import socket, sys, time
+          for _ in range(60):
+              try:
+                  socket.create_connection(("127.0.0.1", 50051), 1).close(); sys.exit(0)
+              except OSError:
+                  time.sleep(1)
+          sys.exit("nativelink did not start")' || { cat "$RUNNER_TEMP/nativelink.log"; exit 1; }
+          AMUX_NATIVELINK=grpc://127.0.0.1:50051 just test-windows
+      - name: Say what Buck2 ran and what came from the cache
+        if: always() && env.REMOTE == 'true'
+        run: |
+          for log in buck-out/v2/log/*_build_*.pb.zst buck-out/v2/log/*_test_*.pb.zst; do
+            [ -e "$log" ] || continue
+            scripts/buck2 log summary "$log" | grep -E '^Showing|^- (Local|Remote|Cached|Other) actions' || true
+          done
+      - name: Show NativeLink's log
+        if: failure() && env.REMOTE == 'true'
+        run: tail -n 300 "$RUNNER_TEMP/nativelink.log" || true
+      - name: Keep the Windows tests' results
+        if: always() && env.REMOTE == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/test-results
+          key: windows-test-results-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      # Without the build host: what the Windows tests ran under before
+      # Buck2, on the runner's own four cores.
+      - if: env.REMOTE != 'true'
+        uses: ./.github/actions/setup-rust
+        with:
+          shared-key: test
+          save-if: "false"
+          nextest: "true"
+          sccache: "true"
+      - name: Run the workspace tests under Cargo
+        if: env.REMOTE != 'true'
+        run: just cargo-test -- --profile ci --exclude models
+
   # macOS and Windows still test under Cargo and nextest until their own
   # Buck2 jobs replace these; Linux is the Linux gate's.
   test:

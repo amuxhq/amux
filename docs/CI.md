@@ -119,6 +119,36 @@ push changed what they check ([`scripts/landing.py`](../scripts/landing.py)
 `covers`): they rebuild the standard library under their checks, which
 Buck2's Rust rules can't.
 
+### The Windows job
+
+The Windows job tests the workspace on `windows-latest` without compiling
+anything there. It joins the tailnet as the Linux gate does and runs `just
+check-windows` against the build host, whose Linux worker compiles and
+links every Windows binary with the Windows toolchain ([Windows
+builds](BUILD.md#windows-builds)); a commit already built that way is cache
+hits. Then it starts a NativeLink of its own
+([`build/nativelink/windows.json5`](../build/nativelink/windows.json5),
+`scripts/nativelink.py windows`) in front of the build host's cache, with a
+worker that offers `OSFamily=windows`, and runs `just test-windows`: every
+compile and link is a hit in the build host's cache, and each test binary
+runs on that worker, which fetches it from the build host. A test runs
+through a worker rather than Buck2 itself because only a result from a
+worker is recorded, so a test whose inputs haven't changed since a run that
+passed it is not run again.
+
+The build host's action cache can't be written from CI, so the tests'
+results go into the runner's own, which the job keeps in GitHub's cache
+between runs (`windows-test-results-*`); what each test printed goes to the
+build host's cache too, so a kept result still finds it. Each test binary
+takes the whole worker and runs four of its tests at a time, as nextest did
+on the runner's four cores. Left out, as under Cargo: the protocol models,
+the simulated stories and the terminal journeys.
+
+A fork's pull request has no tailnet, so its Windows job tests under Cargo
+on the runner instead (`just cargo-test -- --profile ci --exclude models`),
+as every Windows run did before; so does a run by hand with
+`without-build-host`.
+
 ### Bounds
 
 Three kinds of bound stop a run, and none is ever raised to hide a failing

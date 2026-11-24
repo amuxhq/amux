@@ -73,6 +73,14 @@ check:
 check-windows:
     {{bounded}} 3600 {{buck2}} build //crates/... --target-platforms root//build/platforms:windows-cli-testing-dev --materializations none
 
+# The workspace's tests for Windows, as CI's Windows job runs them after
+# `just check-windows` (docs/CI.md, "The Windows job"): only a Windows
+# worker runs them, which only that job has. Left out, as before Buck2: the
+# protocol models (nova-only), the simulated stories and the live lanes.
+# Run the workspace's tests for Windows on a Windows worker.
+test-windows *ARGS:
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --target-platforms root//build/platforms:windows-cli-testing-dev --exclude live --exclude simulated --exclude nova-only --exclude journey -- --timeout 3600
+
 # Every test runs in a process of its own (build/test-runner.py), and a
 # passing result is cached in NativeLink, so only tests whose inputs changed
 # run. Target patterns narrow the run (`just test //crates/node:`, `just test

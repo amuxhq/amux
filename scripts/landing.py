@@ -66,17 +66,18 @@ class Gate:
             raise Stopped(f"{what} failed (`{' '.join(argv)}` exited {status})")
 
 
-def miri_covers(tree: Path, base: str) -> bool:
+def miri_covers(tree: Path, base: str, wrap: Callable[[Sequence[str], Path], Sequence[str]] = lambda argv, tree: argv) -> bool:
     """Whether the merge changes what `just miri` builds: a file of a crate
     app-ffi or its tests link, as Buck2's configured graph has it, or what
-    Cargo resolves the build from."""
+    Cargo resolves the build from. The query runs wrapped as the gate's
+    commands are, since Buck2 needs the same toolchain."""
     changed = git("diff", "--name-only", base, "HEAD", cwd=tree, capture=True).splitlines()
     if not changed:
         return False
     if CARGO_INPUTS & set(changed):
         return True
     graph = subprocess.run(
-        [str(tree / "scripts/buck2"), "cquery", "deps(set(//crates/app-ffi:app-ffi //crates/app-ffi:unit-binary), 100000, target_deps())"],
+        list(wrap([str(tree / "scripts/buck2"), "cquery", "deps(set(//crates/app-ffi:app-ffi //crates/app-ffi:unit-binary), 100000, target_deps())"], tree)),
         cwd=tree,
         check=True,
         text=True,
@@ -113,7 +114,7 @@ def land_once(tree: Path, commit: str, message: str, gate: Gate, step: Callable[
         raise Stopped(f"the branch doesn't merge onto main: {detail}")
     step("running the gate (just premerge)")
     gate.check("the gate", gate.premerge, tree)
-    if gate.miri is not None and miri_covers(tree, base):
+    if gate.miri is not None and miri_covers(tree, base, gate.wrap):
         step("running just miri: the merge changes what app-ffi is built from")
         gate.check("miri", gate.miri, tree)
     step("pushing to main")

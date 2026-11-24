@@ -197,8 +197,16 @@ def mode() -> str:
         return f"linux {endpoint}" if endpoint else "linux"
     url = remote()
     if url is None:
-        return "solo"
+        return "solo builds-here" if builds_here() else "solo"
     return "remote" if workers_address_is_ours() and answers(url) else "local"
+
+
+def builds_here() -> bool:
+    """Whether the Mac's build actions run in Buck2 itself rather than on
+    NativeLink's worker (AMUX_BUILD_HERE=1, CI's macOS runners; docs/CI.md,
+    "The macOS jobs"). Their results are still read from and written to
+    the cache; tests still run on the worker."""
+    return os.environ.get("AMUX_BUILD_HERE") == "1"
 
 
 def serving() -> tuple[str | None, float]:
@@ -273,6 +281,7 @@ def write(mode: str) -> None:
         f"  worker_cores = {worker_cores()}",
         f"  linux = {'true' if linux(mode) else 'false'}",
         f"  local = {'true' if mode == 'local-build' else 'false'}",
+        f"  build_here = {'true' if mode.endswith(' builds-here') else 'false'}",
     ]
     if mode == "local-build" and platform.system() == "Linux":
         # A release build's C tools (build/toolchains/BUCK), by full path:
@@ -293,6 +302,10 @@ def write(mode: str) -> None:
         lines += ["[buck2_re_client]"] + [
             f"  {key} = {endpoint}" for key in ("engine_address", "action_cache_address", "cas_address")
         ]
+    if mode.endswith(" builds-here"):
+        # The prelude leaves most actions' cache upload to this default, and
+        # an action Buck2 runs itself is otherwise never kept.
+        lines += ["[buck2]", "  default_allow_cache_upload = true"]
     host = {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}[platform.system()]
     lines += [
         # A target that doesn't name its own platform is a development
@@ -368,7 +381,7 @@ DESCRIBE = {
     "linux": "to this machine's NativeLink, or the one AMUX_NATIVELINK names",
     "remote": "to this Mac's worker, and Linux ones to the remote's",
     "local": "to this Mac's worker only (the remote doesn't answer)",
-    "solo": "to this Mac's worker only",
+    "solo": "to this Mac's worker only (build actions in Buck2 itself with AMUX_BUILD_HERE=1)",
     "local-build": "nowhere but here, with this machine's own toolchains (a release build)",
 }
 

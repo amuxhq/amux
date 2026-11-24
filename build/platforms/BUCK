@@ -64,6 +64,7 @@ TOOL_CONSTRAINTS = [
 execution_platform(
     name = "exec-macos",
     constraints = ["prelude//os:macos", "prelude//cpu:arm64"] + TOOL_CONSTRAINTS,
+    build_here = read_root_config("amux", "build_here", "false") == "true",
     properties = {
         "OSFamily": "macos",
         "cpu_count": "1",

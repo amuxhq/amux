@@ -24,6 +24,7 @@ instead of from git, which is how the check runs as a Buck2 test, with no
 history (build/checks/inputs.py writes DIR).
 """
 
+import contextlib
 from pathlib import Path
 import re
 import sqlite3
@@ -73,24 +74,24 @@ def edits(old, new):
 def tables(entries):
     """Each table's columns, name to (type, not null, default), once the
     migrations have run in order."""
-    database = sqlite3.connect(":memory:")
-    for index, sql in enumerate(entries):
-        try:
-            database.executescript(sql)
-        except sqlite3.Error as error:
-            raise SystemExit(f"migration {index + 1} does not run: {error}")
-    names = database.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-    ).fetchall()
-    return {
-        table: {
-            column: (kind, bool(required), default)
-            for _, column, kind, required, default, _ in database.execute(
-                f"SELECT * FROM pragma_table_info('{table}')"
-            )
+    with contextlib.closing(sqlite3.connect(":memory:")) as database:
+        for index, sql in enumerate(entries):
+            try:
+                database.executescript(sql)
+            except sqlite3.Error as error:
+                raise SystemExit(f"migration {index + 1} does not run: {error}")
+        names = database.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        return {
+            table: {
+                column: (kind, bool(required), default)
+                for _, column, kind, required, default, _ in database.execute(
+                    f"SELECT * FROM pragma_table_info('{table}')"
+                )
+            }
+            for (table,) in names
         }
-        for (table,) in names
-    }
 
 
 def losses(old, new):

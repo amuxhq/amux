@@ -56,11 +56,11 @@ mod android 'apps/android/justfile'
 # The browser extension's recipes: `just browser build`, `just browser test`, ... (`just --list browser`).
 mod browser 'js/extension/justfile'
 
-# The tree's own amux, at .wt/bin/amux, where wt's `amux` finds it
-# (.wt.toml); the path holds whatever Buck2 configuration built it.
+# The tree's own amux, at .wt/build/amux, which wt's `amux` wrapper in
+# .wt/bin runs (.wt.toml); the path holds whatever Buck2 configuration built it.
 # Build the desktop product binary.
 build:
-    mkdir -p .wt/bin && {{bounded}} 900 {{buck2}} build //crates/amux:amux --out .wt/bin/amux
+    mkdir -p .wt/build && {{bounded}} 900 {{buck2}} build //crates/amux:amux --out .wt/build/amux
 
 # Check every workspace library and binary, and build every test.
 check:

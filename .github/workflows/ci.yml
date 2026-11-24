@@ -20,10 +20,11 @@ permissions:
   contents: read
 
 # A newer push to a pull request's branch stops the run of the one before
-# it, which the newer one supersedes. A push to main is a landed commit, and
-# this run is its verdict, so it runs to the end: stopped, the commit would
-# have none, and with two agents landing the macOS jobs were stopped before
-# they ever finished. A run started by hand is apart from both.
+# it, which the newer one supersedes. On main a job that has started runs to
+# the end, and a newer push takes the place of a job still waiting (each
+# job's own concurrency): CI on main judges the newest commit, which holds
+# every change of the ones it skipped. A run started by hand is apart from
+# both.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: true
@@ -38,6 +39,11 @@ env:
 jobs:
   linux:
     name: Linux gate
+    # One running and one waiting per job on main: a newer push takes the
+    # place of a waiting one (the workflow's concurrency says why).
+    concurrency:
+      group: linux-${{ github.event_name }}-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     # Measured: with the build host in reach, a landed commit is the time to
     # set up Nix and premerge's cache hits. Without it (a fork's pull
@@ -118,6 +124,11 @@ jobs:
   # they run beside it.
   doctest:
     name: Documentation tests
+    # One running and one waiting per job on main: a newer push takes the
+    # place of a waiting one (the workflow's concurrency says why).
+    concurrency:
+      group: doctest-${{ github.event_name }}-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -177,6 +188,11 @@ jobs:
   # fork's pull request, with no tailnet, tests under Cargo on the runner.
   windows:
     name: Windows
+    # One running and one waiting per job on main: a newer push takes the
+    # place of a waiting one (the workflow's concurrency says why).
+    concurrency:
+      group: windows-${{ github.event_name }}-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: windows-latest
     timeout-minutes: 60
     env:
@@ -308,13 +324,10 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: macos-26
     timeout-minutes: 100
-    # The organisation has five macOS runners and a run takes three, so a
-    # burst of landings queued nine macOS jobs, each behind the last. Each
-    # macOS job of main's runs waits for the one running before it, which
-    # finishes and keeps its store, and a newer push takes the place of one
-    # still waiting: the newer commit holds every change the skipped one
-    # did, so its verdict covers both. A job never stops part way, so no
-    # finished work is lost.
+    # One running and one waiting, as every job here: the organisation has
+    # five macOS runners and a run takes three, so a burst of landings had
+    # queued nine macOS jobs, each behind the last. A running job finishes
+    # and keeps its store.
     concurrency:
       group: macos-${{ matrix.key }}-${{ github.event_name }}-${{ github.ref }}
       cancel-in-progress: false

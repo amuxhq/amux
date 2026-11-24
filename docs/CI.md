@@ -16,12 +16,10 @@ the suites they run.
 
 | Workflow | File | When | What |
 | --- | --- | --- | --- |
-| CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main`; by hand | The Linux gate on the build host's cache, the Cargo checks the push reaches, the Apple apps and the macOS tests, and the Windows tests |
+| CI | [`ci.yml`](../.github/workflows/ci.yml) | Pushes to `main`; pull requests into `main`; by hand | The Linux gate on the build host's cache, the Apple apps and the macOS tests, and the Windows tests |
+| Nightly | [`nightly.yml`](../.github/workflows/nightly.yml) | Every night at 01:00 UTC; by hand | The protocol models, the C ABI's pointer checks, the sanitizers, the release build, the offline tests and the simulated stories under 2000 seeds ([Nightlies](#nightlies)) |
 | iOS captures | [`ios-captures.yml`](../.github/workflows/ios-captures.yml) | By hand | The phone's store suite on the simulator, journeys and the accessibility audit |
 | Release | [`release.yml`](../.github/workflows/release.yml) | A pushed `v*` tag | The `amux` release binaries; see [Release](RELEASE.md) |
-
-The nightlies are not workflows: the build host runs them on timers
-([Nightlies](#nightlies)).
 
 Every workflow sets `CARGO_INCREMENTAL=0`, and every job has a
 `timeout-minutes` bound.
@@ -32,8 +30,8 @@ version changes both, from the upstream tag dereferenced to its commit. A
 tag can be moved to other code, and a commit cannot. `dtolnay/rust-toolchain`
 publishes branches rather than releases: the jobs on the repository's
 toolchain pin the commit of its `1.98.0` branch, so a toolchain bump in
-`rust-toolchain.toml` moves that pin too, and the nightly jobs pin a commit
-of `master` and name their toolchain.
+`rust-toolchain.toml` moves that pin too, and a job on the pinned nightly
+pins a commit of `master` and names its toolchain.
 
 Every workflow's token may only read the repository unless a job asks for
 more: the Release workflow's build jobs may sign attestations and its release
@@ -46,19 +44,14 @@ reach a shipped binary.
 
 Every job runs on every push. The Linux gate needs nothing to tell it what
 a change can reach: Buck2 reruns only the tests and checks whose inputs
-changed, and takes the rest from the cache. The Cargo checks after it run
-only when the push changed what they check. The macOS jobs, through Buck2
+changed, and takes the rest from the cache. The macOS jobs, through Buck2
 too, rerun only what changed; the Windows Cargo job runs whole.
 
 A push to `main` is a landed commit, and its run is that commit's verdict,
 so a later push doesn't stop it: every commit on `main` is judged whole,
 and the macOS jobs, which keep their results between runs, are never cut
 off before they keep them. A newer push to a pull request's branch does
-stop the run of the push before it, which it supersedes. The Cargo
-checks compare a push with the last push whose run finished,
-passing or failing, rather than the one before it, whose changes may not
-have been judged yet; a run started by hand, or a push with no such commit to
-compare with, runs them all.
+stop the run of the push before it, which it supersedes.
 
 An organisation on GitHub's free plan runs 20 jobs at once and the rest
 wait, so the run has as few jobs as keep each under ten minutes: work that
@@ -69,8 +62,6 @@ takes seconds shares a job.
 | Linux gate | `ubuntu-latest`, its actions on the build host | `just premerge` through Buck2 on the build host's cache, `just browser audit`, `just doctest` ([The Linux gate](#the-linux-gate)) |
 | Linux gate, Android app | `ubuntu-latest` | Only without the build host (a fork's pull request): `just premerge-half android`, the Android app's half of the gate, while the Linux gate runs `just premerge-half workspace`; with the build host it does nothing |
 | Windows | `windows-latest`, its builds on the build host | `just check-windows` on the build host, then `just test-windows` on a Windows worker of the runner's own ([The Windows job](#the-windows-job)); without the build host, `just cargo-test` |
-| Pointer checks over the C ABI | `ubuntu-latest` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why. After the gate, when the push changed what app-ffi is built from |
-| Address sanitizer, Thread sanitizer | `ubuntu-latest` | `just sanitize address` and `just sanitize thread`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race. After the gate, when the push changed one of the crates whose tests they run |
 | iPhone app | `macos-26`, building in Buck2 and testing on a worker of its own | `just ios simulator golden`, then through Buck2 every target under `apps/apple` but the Mac app's built, and the package suites and the hosted app suite run on the simulator ([The macOS jobs](#the-macos-jobs)) |
 | Mac app | `macos-26`, the same | The Mac app, its storybook and screens built, and the Mac app's tests run on the runner |
 | macOS tests | `macos-26`, the same | `just test //crates/...` through Buck2: every workspace test that isn't Linux-only, the terminal journeys and the system suites among them |
@@ -120,10 +111,9 @@ same, to check that path.
 The job then audits the dependencies the browser extension ships (`just
 browser audit`) and runs the documentation tests under Cargo (`just
 doctest`). The C ABI's pointer checks (`just miri`) and the sanitizers run
-under Cargo too, after the gate, in jobs of their own and only when the
-push changed what they check ([`scripts/landing.py`](../scripts/landing.py)
-`covers`): they rebuild the standard library under their checks, which
-Buck2's Rust rules can't.
+under Cargo too, since they rebuild the standard library under their checks,
+which Buck2's Rust rules can't, but in the nightly rather than on a push
+([Nightlies](#nightlies)).
 
 ### The Windows job
 
@@ -214,20 +204,15 @@ them on cargo's lock.
 ### Protocol models
 
 The protocol models ([`crates/models`](../crates/models/README.md)) explore
-every state of the real cores within their bounds. At their CI bounds they
-are one Buck2 test, `//crates/models:integration`, in the Linux gate: it
-needs the whole of a worker for about eleven minutes, so it carries the
-`nova-only` label and runs on the build host from any machine, rerunning
-only when what the models are built from changed. The macOS tests job
-skips them with the other `nova-only` tests, and the Windows Cargo job
-leaves them out (`--exclude models`).
-
-Their nightly bounds explore further than a push can wait for: each
-model's ignored nightly test, one after another, in the build host's
-`models` nightly ([Nightlies](#nightlies)); `just models-nightly` runs the
-same tests anywhere, and model names narrow it. The slowest model at its
-nightly bounds, the single daemon's peer, took two hours on the Mac's 12
-threads.
+every state of the real cores within their bounds. They look for faults
+rarer than a change should wait on, and take minutes at their small CI
+bounds and hours at their nightly ones, so no push, landing or premerge
+runs them: their Buck2 test, `//crates/models:integration`, carries the
+`nightly` label, which `just test` and `just test-windows` leave out
+unless a target names it, and the Windows Cargo job leaves them out too
+(`--exclude models`). The nightly workflow checks each model at both its
+bounds ([Nightlies](#nightlies)); `just models-nightly` runs the same tests
+anywhere, and model names narrow it.
 
 ### Simulated stories
 
@@ -238,8 +223,8 @@ in `//crates/testnet:simulated`, the same test binary under
 `TESTNET_MODE=simulated` with its filters naming those suites, every core
 in one process, a few seeds per story. `just tests-check` fails when the
 filters and the catalogue disagree. A failing seed is printed with the
-`just sim --seed N <story>` that reruns it under Cargo. The `models`
-nightly walks 2000 seeds per story the same way (`scripts/sim.py --seeds
+`just sim --seed N <story>` that reruns it under Cargo. The nightly walks
+2000 seeds per story the same way (`scripts/sim.py --seeds
 2000`, under a bound of its own). A story walks its seeds inside one test,
 so a walk of many seeds runs under nextest's `seeds` profile, which ends a
 story after half an hour rather than three minutes. On the Mac the slowest
@@ -248,22 +233,39 @@ beside it.
 
 ### Nightlies
 
-What no push or landing waits for runs every night on the build host, from
-a checkout of `main` it keeps for each, under systemd timers the build
-host's own configuration defines. Each runs
-[`scripts/nightly.py`](../scripts/nightly.py) with its kind, every step
-inside the checkout's `nix develop`:
+What no push or landing waits for runs every night on `main`, at 01:00 UTC,
+in the Nightly workflow on GitHub's hosted runners: the protocol models,
+the C ABI's pointer checks, the sanitizers, the release build, the offline
+tests and the simulated stories under thousands of seeds. They look for
+faults rarer than a change should wait on, and the models alone run for
+hours. Each job runs
+[`scripts/nightly.py`](../scripts/nightly.py) with its kind, inside the
+repository's `nix develop` but for the release build, which uses rustup's
+pinned Rust and the system's C compiler as a release does:
 
-| Kind | Starts | Runs |
+| Job | Kind | Runs |
 | --- | --- | --- |
-| `models` | 22:00 | `just models-nightly`, every protocol model at its nightly bounds (about three and a half hours on the build host), then every simulated story under 2000 seeds |
-| `nightly` | 02:00 | `just release-check`, the shipping binary under the release profile and the release dependency policy, on Linux; then both sanitizers over every crate whose tests they run, where a landing runs them only when one of those crates itself changed |
-| `offline` | 03:00 | `just offline-test`, the workspace tests with no network but loopback, after fetching the crates |
+| Model (one per model) | `models <model>` | `just models-nightly <model>`: the model's tests at its CI bounds and at its nightly bounds, every core of a four-core runner |
+| Pointer checks over the C ABI | `pointers` | `just miri`: the phone's C ABI tests under the pinned nightly's interpreter, which fails on any undefined behaviour in a pointer handed across the boundary, read or freed; the tests that start an installation or a tokio runtime are ignored there, each saying why |
+| Address sanitizer, Thread sanitizer | `address`, `thread` | `just sanitize address` and `just sanitize thread`: the tests that reach unsafe code and C, built on the pinned nightly with the standard library under the sanitizer; `address` fails on an out-of-bounds access, a use after free or a double free, `thread` on a data race |
+| Offline tests | `offline` | `just offline-test`, the workspace tests with no network but loopback, after fetching the crates |
+| Simulated stories, 2000 seeds | `seeds` | `scripts/sim.py --seeds 2000`, every simulated story under 2000 seeds |
+| Release build | `release` | `just release-check`, the shipping binary under the release profile and the release dependency policy, on Linux |
 
-Every step runs whichever failed before it; the run's last line names the
-kind and what failed, and its log is on the build host. Run one anywhere
-with `scripts/nightly.py KIND` (`--nix` inside `nix develop`). A release
-builds the shipping binary on all three platforms itself.
+The models run one job each, the list read from the modules of their
+integration tests, because all of them one after another take longer than a
+hosted job's six hours on four cores; the checker explores depth first,
+which holds the path it is on rather than a whole frontier, so each fits the
+runner's 16 GB. Each job under Cargo keeps its dependencies' builds in
+GitHub's cache between nights (the models' jobs share one, as do the
+offline tests and the seeds), so a night compiles only amux's own crates.
+
+Every job runs to its end whatever the others do, and every step of a kind
+runs whichever failed before it; the job's last line names the kind and
+what failed. A scheduled run that fails is mailed by GitHub. Run one
+anywhere with `scripts/nightly.py KIND`, inside `nix develop` as the job
+does, or start the workflow by hand (`gh workflow run nightly.yml`). A
+release builds the shipping binary on all three platforms itself.
 
 ### The macOS jobs
 
@@ -372,6 +374,7 @@ journey or baseline that does not exist.
 | `tool` | The repository's own machinery: script contracts, source and dependency policy, the CI tooling, the shipping scope audit | The Rust side in `just test`; `just script-tests`, `ios script-tests`, `ios lint`, `android script-tests` and `android lint` in `just premerge`, so in the Linux gate on every push; `ios scope-audit` on every app release's signed bundle |
 | `journey` | Complete client stories through the shared manifest, and the phone's accessibility sweep | The terminal journeys in the Linux gate and the macOS tests job, and the system journey inside `just test`, on every push; phone journeys and the accessibility sweep in iOS captures run by hand |
 | `qualification` | Real providers, real cloud accounts and measured performance | Never on an ordinary push: `just live`, `just perf` and the `just ios qa-*` recipes by hand, on machines that have the credentials or hardware; `just ios perf` by hand on the enrolled Mac, last in `just ios verify` |
+| `nightly` | Searches for faults rarer than a change should wait on: the protocol models | The Nightly workflow, every night on `main` ([Nightlies](#nightlies)); never on a push, a landing or `just premerge` |
 
 [Testing](TESTING.md) defines the lanes and boundaries fully.
 
@@ -396,11 +399,10 @@ It leaves out the Apple apps: any change to a core crate rebuilds the
 bridge for three platforms and reruns the simulator suites, which is not a
 load every premerge on a laptop should carry. Whoever changes Apple code
 runs `just ios verify` and `just mac test`, on the same cache, and CI's
-iPhone app and Mac app jobs run them after every push. The models at their CI bounds
-are `nova-only`: they run on the build host from any machine, and are
-skipped, and named, when it is out of reach. Windows runs only in CI; the sanitizers run at landing on
-Linux and in CI ([The Linux gate](#the-linux-gate)), and the release
-build in the nightly.
+iPhone app and Mac app jobs run them after every push. It leaves out the
+protocol models, the C ABI's pointer checks, the sanitizers and the
+release build too, which run in the nightly ([Nightlies](#nightlies)), and
+Windows, which runs only in CI.
 
 The checks, in the order it runs them:
 

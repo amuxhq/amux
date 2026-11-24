@@ -46,8 +46,9 @@ fail-fast = false
 [profile.seeds]
 slow-timeout = { period = "300s", terminate-after = 6 }
 
-# `just models-nightly`: the models' ignored tests at their nightly bounds,
-# which run for hours; the workflow's job guard bounds them.
+# `just models-nightly`: the models' tests at their CI bounds and their
+# ignored ones at their nightly bounds, which run for hours; the recipe's
+# bound and the nightly workflow's job guard bound them.
 [profile.nightly]
 
 [[profile.nightly.overrides]]

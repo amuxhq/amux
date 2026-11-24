@@ -32,7 +32,7 @@ BOUNDARIES = {
     "Model",
 }
 TIMES = {"driven", "real", "none"}
-LANES = {"fast", "system", "journey", "qualification", "tool"}
+LANES = {"fast", "system", "journey", "qualification", "tool", "nightly"}
 # The nets a testnet story runs on: production daemons on loopback, or every
 # core in one process walked by seed (`just sim` runs the simulated ones).
 MODES = {"real", "simulated"}

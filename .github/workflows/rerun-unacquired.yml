@@ -1,0 +1,62 @@
+# Runs CI's jobs again when GitHub never gave them a runner.
+#
+# GitHub's macOS arm64 runners are sometimes short: a job waits about 15
+# minutes, then ends cancelled with "The job was not acquired by Runner of
+# type hosted even after multiple attempts", having run no step. Nothing in
+# the change was judged by such a job, so it is asked for again, once.
+#
+# Only when every job that didn't pass is one of those: a job that ran and
+# failed is the change's to fix, and a job a newer push replaced is covered
+# by the newer run. Only for the branch's newest run, since CI on main
+# judges the newest commit and a newer run covers this one. And only after
+# the first attempt, so a long shortage costs one retry, not a loop.
+name: Re-run jobs that never got a runner
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  actions: write
+
+jobs:
+  rerun:
+    if: github.event.workflow_run.run_attempt == 1 && github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask again for the jobs GitHub never started
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.event.workflow_run.id }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          newest=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?branch=$BRANCH&event=$EVENT&per_page=1" \
+            --jq '.workflow_runs[0].id')
+          if [ "$newest" != "$RUN" ]; then
+            echo "run $RUN is not $BRANCH's newest CI run ($newest is): leaving it"
+            exit 0
+          fi
+          unacquired=0
+          other=0
+          while IFS=$'\t' read -r id conclusion steps; do
+            case "$conclusion" in success | skipped | neutral) continue ;; esac
+            if [ "$conclusion" = "cancelled" ] && [ "$steps" = "0" ] \
+              && gh api "repos/$REPO/check-runs/$id/annotations" --jq '.[].message' \
+                | grep -q 'not acquired by Runner'; then
+              unacquired=$((unacquired + 1))
+            else
+              other=$((other + 1))
+            fi
+          done < <(gh api "repos/$REPO/actions/runs/$RUN/jobs?per_page=100" --paginate \
+            --jq '.jobs[] | [.id, .conclusion, (.steps | length)] | @tsv')
+          if [ "$unacquired" -eq 0 ] || [ "$other" -gt 0 ]; then
+            echo "run $RUN: $unacquired job(s) never got a runner, $other other(s) didn't pass: leaving it"
+            exit 0
+          fi
+          echo "run $RUN: $unacquired job(s) never got a runner: asking again"
+          gh run rerun "$RUN" --failed --repo "$REPO"

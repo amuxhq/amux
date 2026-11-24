@@ -15,7 +15,7 @@ so the Linux configuration costs nothing and the Robolectric tests, which
 run on the Linux JVM, share every library build with the app. Only the
 Rust bridge is built for Android (`amux_jni_library`).
 
-Every target here is `nova-only`: Android builds and tests only on a Linux
+Every target here is `linux-only`: Android builds and tests only on a Linux
 worker, so with none in reach they are skipped and named, never built on
 the Mac.
 """
@@ -30,8 +30,8 @@ load("@prelude//java:java_toolchain.bzl", "JavaToolchainInfo")
 PLATFORM = "root//build/platforms:linux-app-shipping-dev"
 
 # Labels and compatibility for a target that runs only on a Linux worker
-# (build/rust.bzl's `nova_only`).
-NOVA_ONLY = ["nova-only"]
+# (build/rust.bzl's `linux_only`).
+LINUX_ONLY = ["linux-only"]
 LINUX_WORKERS = ["root//build/constraints:linux-workers"]
 
 # For a target whose rule has no toolchain to send it to Linux (a genrule,
@@ -75,7 +75,7 @@ def _common():
     return dict(
         default_target_platform = PLATFORM,
         target_compatible_with = LINUX_WORKERS,
-        labels = NOVA_ONLY,
+        labels = LINUX_ONLY,
     )
 
 def _sources():
@@ -323,7 +323,7 @@ def amux_jni_library(name, configuration, abi = None, visibility = ["PUBLIC"]):
             native_libs = ":" + lib,
             default_target_platform = PLATFORM,
             target_compatible_with = LINUX_WORKERS,
-            labels = NOVA_ONLY,
+            labels = LINUX_ONLY,
             visibility = visibility,
         )
 
@@ -505,7 +505,7 @@ def script_test(name, script, args = [], resources = [], shell = False, visibili
         args = args,
         resources = resources,
         shell = shell,
-        labels = NOVA_ONLY,
+        labels = LINUX_ONLY,
         default_target_platform = PLATFORM,
         target_compatible_with = LINUX_WORKERS,
         exec_compatible_with = LINUX_EXEC,

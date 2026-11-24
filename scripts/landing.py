@@ -1,5 +1,6 @@
 """Landing a commit on main: what `just land` on a Mac (scripts/land.py
---local) and the landing queue on nova (scripts/land_queue.py) both do.
+--local) and the landing queue on a landing host (scripts/land_queue.py)
+both do.
 
 In a tree of its own, never the caller's:
 
@@ -54,8 +55,8 @@ class Gate:
 
     run: Callable[[Sequence[str], Path], int]
     premerge: Sequence[str] = ("just", "premerge")
-    # Wraps each command, as nova runs them inside the merge's own Nix
-    # toolchain (`nix develop <tree> --command ...`).
+    # Wraps each command, as the landing queue runs them inside the merge's
+    # own Nix toolchain (`nix develop <tree> --command ...`).
     wrap: Callable[[Sequence[str], Path], Sequence[str]] = field(default=lambda argv, tree: argv)
 
     def check(self, what: str, argv: Sequence[str], tree: Path) -> None:

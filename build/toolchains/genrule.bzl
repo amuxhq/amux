@@ -5,7 +5,7 @@ The toolchain gives genrules nothing they call. The dependency is there so
 a Linux target's genrule runs on a Linux worker, as its compiles do: Buck2
 otherwise sends an action to the first execution platform it fits, which on
 a Mac is the Mac's, and the same Linux target would then have one key when
-built on nova and another when built from a Mac.
+built on the build host and another when built from a Mac.
 """
 
 load("@prelude//:genrule_toolchain.bzl", "GenruleToolchainInfo")

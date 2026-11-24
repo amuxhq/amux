@@ -8,17 +8,18 @@ The caller's HEAD is landed, with MESSAGE as its merge commit's message;
 the tree must have no uncommitted changes. Nothing in the caller's tree is
 touched: not its HEAD, its branch or whatever is running in it.
 
-Through the queue (scripts/land_queue.py, on nova): HEAD is pushed to the
-queue's inbox as refs/queue/<id>, carried by a tag holding the message, and
-this waits for the queue's verdict at refs/results/<id>. The inbox is this
-machine's `git config amux.landInbox` (an SSH URL, or a path on nova
-itself); without it the landing happens here. The queue lands one request
-at a time, oldest first, wherever it was sent from.
+Through the queue (scripts/land_queue.py, on a landing host): HEAD is pushed
+to the queue's inbox as refs/queue/<id>, carried by a tag holding the
+message, and this waits for the queue's verdict at refs/results/<id>. The
+inbox is this machine's `git config amux.landInbox` (an SSH URL, or a path
+on the landing host itself); without it the landing happens here. The
+queue lands one request at a time, oldest first, wherever it was sent
+from.
 
 Here (--local): one landing at a time on this machine, under a lock in
 ~/.cache/amux/land, in a worktree of its own there whose Buck2 daemon stays
-warm from one landing to the next. This is the way to land while nova is
-down.
+warm from one landing to the next. This is the way to land while the landing
+host is down.
 
 Either way the steps are scripts/landing.py's, and it prints `LANDED <sha>`
 at the end, or what stopped it. A merge conflict or a failing check is

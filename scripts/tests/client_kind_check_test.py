@@ -26,14 +26,16 @@ class ClientKindCheckTest(unittest.TestCase):
     """The check over a copy of the client crates' sources, planted with each
     way of deciding by kind or provider name."""
 
+    # Copied with copyfile, not copy: the tests rewrite the copies, and a
+    # Buck2 check's inputs, whose permissions copy would keep, are read-only.
     def setUp(self):
         self.room = tempfile.TemporaryDirectory()
         self.root = Path(self.room.name)
         for crate in kinds.CRATES:
-            shutil.copytree(ROOT / crate / "src", self.root / crate / "src")
+            shutil.copytree(ROOT / crate / "src", self.root / crate / "src", copy_function=shutil.copyfile)
         built_ins = self.root / kinds.BUILT_INS
         built_ins.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(ROOT / kinds.BUILT_INS, built_ins)
+        shutil.copyfile(ROOT / kinds.BUILT_INS, built_ins)
         # The apps' Swift alone, in its folders.
         apps = ROOT / kinds.SWIFT
         for source in apps.rglob("*.swift"):
@@ -41,7 +43,7 @@ class ClientKindCheckTest(unittest.TestCase):
                 continue
             copy = self.root / source.relative_to(ROOT)
             copy.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(source, copy)
+            shutil.copyfile(source, copy)
 
     def tearDown(self):
         self.room.cleanup()

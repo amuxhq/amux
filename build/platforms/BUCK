@@ -98,11 +98,12 @@ execution_platform(
     windows = True,
 )
 
-# A Mac prefers its own worker and sends what only Linux can run to nova's;
-# nova has no macOS worker to send anything to. With no Linux worker in
-# reach (`amux.linux = false`, which scripts/buck-config.py writes when nova
-# is unreachable or none is set up), there is no Linux platform, so a Linux
-# action fails at once rather than waiting for a worker that isn't coming.
+# A Mac prefers its own worker and sends what only Linux can run to the
+# build host's; the build host has no macOS worker to send anything to.
+# With no Linux worker in reach (`amux.linux = false`, which
+# scripts/buck-config.py writes when the build host is unreachable or none
+# is set up), there is no Linux platform, so a Linux action fails at once
+# rather than waiting for a worker that isn't coming.
 _LINUX = read_root_config("amux", "linux", "true") == "true"
 
 # A release build (build/constraints:local-build) runs every action on this

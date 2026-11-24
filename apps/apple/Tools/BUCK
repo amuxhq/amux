@@ -1,0 +1,57 @@
+# The Apple apps' writing lints and the unit tests of their recipe scripts,
+# as repository checks (build/checks.bzl): each over the files it reads, so
+# `just premerge` gets it from the cache until one of them changes. The
+# Swift mirror of the push values is held to its Rust by ios-tools' own unit
+# tests.
+load("//build:checks.bzl", "amux_check", "amux_script_tests")
+
+_PACKAGES = "//apps/apple/Packages/"
+
+_SWIFT = ["//apps/apple:swift"] + [_PACKAGES + package + ":swift" for package in [
+    "AmuxCore",
+    "AmuxDesign",
+    "AmuxFeatures",
+    "AmuxMacScreens",
+    "AmuxPush",
+    "AmuxShell",
+    "AmuxTestSupport",
+]]
+
+# What the screens package may import and draw.
+amux_check(
+    name = "feature-lint",
+    command = ["sh", "apps/apple/Tools/feature-lint.sh"],
+    srcs = ["feature-lint.sh"],
+    deps = [_PACKAGES + "AmuxFeatures:swift"],
+    labels = ["ios-lint"],
+)
+
+# No test waits a counted number of yields.
+amux_check(
+    name = "test-waits-lint",
+    command = ["sh", "apps/apple/Tools/test-waits-lint.sh"],
+    srcs = ["test-waits-lint.sh"],
+    deps = _SWIFT,
+    labels = ["ios-lint"],
+)
+
+# The strings' house rules, after the lint's own tests.
+amux_check(
+    name = "strings-lint",
+    command = [
+        "sh",
+        "-c",
+        "python3 -B apps/apple/Tools/strings_lint_test.py && python3 -B apps/apple/Tools/strings_lint.py",
+    ],
+    srcs = ["noncopy.json", "strings_lint.py", "strings_lint_test.py"],
+    deps = _SWIFT + ["//apps/apple:copy", _PACKAGES + "AmuxTestSupport:copy"],
+    labels = ["ios-lint"],
+)
+
+# The recipe scripts' unit tests, one check per file (`:ios-script-tests-ios_deploy`).
+amux_script_tests(
+    prefix = "ios-script-tests",
+    tests = glob(["tests/*_test.py"]),
+    srcs = glob(["*.py", "tests/*.py"]),
+    deps = ["//:app-script-helpers"],
+)

@@ -25,6 +25,8 @@ class TypedProviderCheckTest(unittest.TestCase):
     """The check over a copy of the checked sources, planted with each way of
     going around the types."""
 
+    # Copied with copyfile, not copy: the tests rewrite the copies, and a
+    # Buck2 check's inputs, whose permissions copy would keep, are read-only.
     def setUp(self):
         self.room = tempfile.TemporaryDirectory()
         self.root = Path(self.room.name)
@@ -32,9 +34,9 @@ class TypedProviderCheckTest(unittest.TestCase):
             target = self.root / source
             target.parent.mkdir(parents=True, exist_ok=True)
             if (ROOT / source).is_dir():
-                shutil.copytree(ROOT / source, target)
+                shutil.copytree(ROOT / source, target, copy_function=shutil.copyfile)
             else:
-                shutil.copy(ROOT / source, target)
+                shutil.copyfile(ROOT / source, target)
 
     def tearDown(self):
         self.room.cleanup()

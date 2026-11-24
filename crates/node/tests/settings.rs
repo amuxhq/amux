@@ -414,6 +414,8 @@ async fn an_agent_may_not_pin_a_folder() {
             host,
             agent,
             name: "coder".into(),
+            incarnation: 1,
+            level: wire::PermissionLevel::Auto,
         };
         let refused = wire::host_service_client(served_as(&desk_runtime, served, calling))
             .pin_folder(wire::PinFolderRequest {

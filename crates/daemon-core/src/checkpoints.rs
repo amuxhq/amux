@@ -352,6 +352,7 @@ mod tests {
         Input::ClientCall {
             call: CallId(u64::from(agent.0[0])),
             request: ClientRequest::CreateAgent(Box::new(Create {
+                parent_incarnation: 0,
                 agent,
                 cwd: "/src".into(),
                 given: None,

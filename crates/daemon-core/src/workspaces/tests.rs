@@ -86,6 +86,7 @@ fn planned(path: &str, name: &str) -> Planned {
 
 fn create(agent: AgentId, name: Option<&str>, new_workspace: bool, cwd: &str) -> ClientRequest {
     ClientRequest::CreateAgent(Box::new(Create {
+        parent_incarnation: 0,
         agent,
         cwd: cwd.into(),
         given: name.map(str::to_owned),

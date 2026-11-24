@@ -163,6 +163,12 @@ pub struct AgentRow {
     /// inventory row; None while unknown and on a row written before the
     /// store kept it.
     pub settings: Option<wire::AgentSettings>,
+    /// For an agent with a parent, the newest incarnation of the parent the
+    /// agent's host heard from the parent itself: stated on the create, and
+    /// on each message, input or resume the parent sent since. Its reports
+    /// are for this incarnation. An own row's only rises (a write never
+    /// lowers it); a replica's is its origin's. 0 with no parent.
+    pub parent_incarnation: u32,
 }
 
 impl AgentRow {
@@ -216,6 +222,7 @@ impl AgentRow {
             experimental: std::collections::BTreeMap::new(),
             provider: String::new(),
             settings: None,
+            parent_incarnation: 0,
         }
     }
 
@@ -379,10 +386,11 @@ pub struct Delivery {
     pub turn_id: u64,
     /// The parent the child's row names; read from it, never written.
     pub parent: AgentKey,
-    /// The parent's incarnation when the row was written; the receiving
-    /// daemon drops a row for any other. Zero when the parent's row was not
-    /// held then, which incarnations never are: unknown, and stamped by the
-    /// drain once the parent's row is held, never sent as it is.
+    /// The parent incarnation the report is for: the child row's
+    /// [`AgentRow::parent_incarnation`] in the transaction that wrote the
+    /// report, the newest the child heard from its parent itself. The
+    /// parent's daemon drops a report that is not of the parent's current
+    /// run.
     pub parent_incarnation: u32,
     /// What the report says, as the envelope carries it.
     pub end: wire::child_report::End,

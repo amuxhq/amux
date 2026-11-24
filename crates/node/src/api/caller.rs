@@ -37,8 +37,15 @@ pub(crate) enum Caller {
     /// A person, at this machine or at a paired host, on one of their
     /// clients.
     Person { at: At, surface: Surface },
-    /// An agent, of this host or of a paired one, with its name there.
-    Agent { agent: AgentRef, name: String },
+    /// An agent, of this host or of a paired one, with what its own host
+    /// states of it as the call leaves: its name, the incarnation calling
+    /// and its permission level.
+    Agent {
+        agent: AgentRef,
+        name: String,
+        incarnation: u32,
+        level: wire::PermissionLevel,
+    },
 }
 
 /// Where a person is.
@@ -69,11 +76,30 @@ impl Caller {
     }
 
     /// One of `host`'s own agents, which is this host's when it called on
-    /// its tools socket.
-    pub(crate) fn agent_of(host: HostId, agent: AgentId, name: impl Into<String>) -> Self {
+    /// its tools socket, as that host's row states it.
+    pub(crate) fn agent_of(
+        host: HostId,
+        agent: AgentId,
+        name: impl Into<String>,
+        incarnation: u32,
+        level: wire::PermissionLevel,
+    ) -> Self {
         Self::Agent {
             agent: AgentRef { host, agent },
             name: name.into(),
+            incarnation,
+            level,
+        }
+    }
+
+    /// What a calling agent's host stated of it: the incarnation calling
+    /// and its permission level. None for a person.
+    pub(crate) fn stated(&self) -> Option<(u32, wire::PermissionLevel)> {
+        match self {
+            Self::Agent {
+                incarnation, level, ..
+            } => Some((*incarnation, *level)),
+            Self::Person { .. } => None,
         }
     }
 
@@ -88,9 +114,17 @@ impl Caller {
                 at: At::Here,
                 surface,
             } => wire::Caller::person(analytics::Token::as_str(*surface)),
-            Self::Agent { agent, name } if agent.host == own => {
-                wire::Caller::agent(agent.agent.as_bytes().to_vec(), name.clone())
-            }
+            Self::Agent {
+                agent,
+                name,
+                incarnation,
+                level,
+            } if agent.host == own => wire::Caller::agent(
+                agent.agent.as_bytes().to_vec(),
+                name.clone(),
+                *incarnation,
+                *level,
+            ),
             _ => return None,
         };
         Some(caller.to_header())
@@ -120,7 +154,9 @@ impl Caller {
                     host: peer,
                     agent: crate::grpc::agent_id(&agent.agent_id)?,
                 },
+                level: agent.permission_level(),
                 name: agent.name,
+                incarnation: agent.incarnation,
             },
             // A header naming no one does not read (Caller::from_header).
             None => unreachable!("a read caller header names someone"),
@@ -299,7 +335,13 @@ mod tests {
         let here = host(9);
         for caller in [
             Caller::person_here(Surface::Ios),
-            Caller::agent_of(here, AgentId::from_bytes([2; 16]), "coder"),
+            Caller::agent_of(
+                here,
+                AgentId::from_bytes([2; 16]),
+                "coder",
+                1,
+                wire::PermissionLevel::Auto,
+            ),
         ] {
             let header = caller.header(here);
             assert!(header.is_some());
@@ -326,16 +368,17 @@ mod tests {
                 surface: Surface::Ios,
             }
         );
-        let coder = Caller::agent_of(laptop, agent, "coder").header(laptop);
+        let coder =
+            Caller::agent_of(laptop, agent, "coder", 3, wire::PermissionLevel::Ask).header(laptop);
         assert_eq!(
             on_link(laptop, coder.clone()).unwrap(),
-            Caller::agent_of(laptop, agent, "coder")
+            Caller::agent_of(laptop, agent, "coder", 3, wire::PermissionLevel::Ask)
         );
         // The same header on another host's link names that host's agent:
         // nothing in it can name a host.
         assert_eq!(
             on_link(desk, coder).unwrap(),
-            Caller::agent_of(desk, agent, "coder")
+            Caller::agent_of(desk, agent, "coder", 3, wire::PermissionLevel::Ask)
         );
     }
 
@@ -353,13 +396,17 @@ mod tests {
             .header(laptop),
             None
         );
-        assert_eq!(Caller::agent_of(desk, agent, "coder").header(laptop), None);
+        assert_eq!(
+            Caller::agent_of(desk, agent, "coder", 3, wire::PermissionLevel::Ask).header(laptop),
+            None
+        );
     }
 
     #[test]
     fn a_header_that_does_not_read_or_names_a_short_id_is_refused() {
         let peer = host(1);
-        let short = wire::Caller::agent(vec![3; 4], "coder").to_header();
+        let short =
+            wire::Caller::agent(vec![3; 4], "coder", 1, wire::PermissionLevel::Auto).to_header();
         for header in ["not base64!".to_owned(), String::new(), short] {
             let refused = on_link(peer, Some(header.clone()));
             assert_eq!(

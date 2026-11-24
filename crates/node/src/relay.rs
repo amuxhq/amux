@@ -460,7 +460,7 @@ impl ProfileRuntime {
         use crate::api::Caller;
         let from = match caller {
             Caller::Person { .. } => sender::Value::Human(Human {}),
-            Caller::Agent { agent, name } => sender::Value::Agent(AgentSender {
+            Caller::Agent { agent, name, .. } => sender::Value::Agent(AgentSender {
                 agent: Some(AgentRef {
                     host_id: agent.host.as_bytes().to_vec(),
                     agent_id: agent.agent.as_bytes().to_vec(),

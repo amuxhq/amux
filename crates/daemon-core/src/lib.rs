@@ -416,12 +416,17 @@ impl Daemon {
                     .ok()
                     .flatten()
                     .is_some(),
-                deliveries::Removal::Stale => self
-                    .store
-                    .agent(parent)
-                    .ok()
-                    .flatten()
-                    .is_none_or(|row| row.incarnation != *parent_incarnation),
+                // Judged where the parent lives, from its own row: gone,
+                // exited (an exited agent's next life is a new run), or in a
+                // run the report's incarnation is not of.
+                deliveries::Removal::Stale => {
+                    self.store.agent(parent).ok().flatten().is_none_or(|row| {
+                        row.lifecycle == wire::Lifecycle::Exited as i32
+                            || !self
+                                .of_current_run(&row, *parent_incarnation)
+                                .unwrap_or(false)
+                    })
+                }
                 deliveries::Removal::Unpaired => {
                     HostId::from_slice(&parent.host).is_some_and(|host| !self.sources.trusts(host))
                 }

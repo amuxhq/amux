@@ -964,6 +964,7 @@ mod tests {
             Input::ClientCall {
                 call: CallId(13),
                 request: ClientRequest::CreateAgent(Box::new(crate::Create {
+                    parent_incarnation: 0,
                     agent: AgentId([5; 16]),
                     cwd: "/src".into(),
                     given: None,

@@ -903,8 +903,9 @@ async fn a_batch_that_fails_on_a_later_frame_commits_and_broadcasts_none_of_it()
 #[tokio::test(flavor = "multi_thread")]
 async fn the_sweep_ingests_a_finished_childs_journal_before_marking_it_exited() {
     let install = Install::new();
-    let parent = SyntheticAgent::new(&install, "parent", BIG_SEGMENTS);
+    let mut parent = SyntheticAgent::new(&install, "parent", BIG_SEGMENTS);
     parent.register(&install);
+    parent.go_live();
     let mut child = SyntheticAgent::new(&install, "child", BIG_SEGMENTS);
     child.parent = Some(parent.key(&install));
     child.register(&install);
@@ -921,16 +922,30 @@ async fn the_sweep_ingests_a_finished_childs_journal_before_marking_it_exited() 
             .exited
             .contains(&child.id)
     );
-    // The parent has exited too, so the outbox keeps what the sweep wrote.
-    let deliveries: Vec<_> = runtime
-        .read_store(|store| store.deliveries().unwrap())
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|row| row.end)
-        .collect();
+    // The parent is handed what the sweep wrote to the outbox: the turn's
+    // report, and no failed one.
+    let reports = || {
+        parent
+            .inputs()
+            .into_iter()
+            .filter_map(|handed| match handed {
+                Handed::Message(envelope) => match envelope.body {
+                    Some(wire::envelope::Body::Report(report)) => report.end,
+                    _ => None,
+                },
+                Handed::Input(_) => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    until("the parent to be handed the child's report", || async {
+        (!reports().is_empty())
+            .then_some(())
+            .ok_or_else(|| "nothing handed yet".to_owned())
+    })
+    .await
+    .unwrap();
     assert_eq!(
-        deliveries,
+        reports(),
         vec![wire::child_report::End::TurnEnded(wire::TurnEnded {
             text: "the tests pass".to_owned(),
             outcome: wire::TurnOutcome::Completed as i32,

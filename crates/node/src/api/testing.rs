@@ -40,11 +40,15 @@ pub enum Calling {
     PersonHere(analytics::Client),
     /// A person at a paired host, on that client.
     PersonAt(HostId, analytics::Client),
-    /// An agent of `host`, which is this host's own on a tools socket.
+    /// An agent of `host`, which is this host's own on a tools socket, as
+    /// its host states it: its name, the incarnation calling and its
+    /// permission level.
     Agent {
         host: HostId,
         agent: AgentId,
         name: String,
+        incarnation: u32,
+        level: wire::PermissionLevel,
     },
 }
 
@@ -92,10 +96,18 @@ impl tower::Service<http::Request<Body>> for InMemory {
                     surface,
                 });
             }
-            Calling::Agent { host, agent, name } => {
+            Calling::Agent {
+                host,
+                agent,
+                name,
+                incarnation,
+                level,
+            } => {
                 extensions.insert(Caller::Agent {
                     agent: AgentRef { host, agent },
                     name,
+                    incarnation,
+                    level,
                 });
             }
         }

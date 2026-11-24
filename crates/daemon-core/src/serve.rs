@@ -185,6 +185,11 @@ impl Daemon {
                 Ok(())
             }
             ClientRequest::SendMessage { envelope } => self.send_message(call, *envelope, out),
+            ClientRequest::HeardFromCaller {
+                agent,
+                caller,
+                incarnation,
+            } => self.heard_from_caller(call, agent, caller, incarnation, out),
         };
         self.end_unanswered(call, answered, out);
     }
@@ -602,6 +607,7 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         // rows named it.
         provider: row.provider_id().to_owned(),
         settings: row.settings.clone().map(Box::new),
+        parent_incarnation: row.parent_incarnation,
     }
 }
 

@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import fcntl
+import json
 import os
 import re
 import socket
@@ -44,6 +45,9 @@ from landing import Gate, Stopped, git, land  # noqa: E402
 CHECKOUT = Path(__file__).resolve().parents[1]
 STATE = Path.home() / ".cache/amux/land"
 POLL_SECONDS = 3
+# How long the landing tree's Buck2 daemon serves landings before the next
+# landing restarts it (`fresh_daemon` says why).
+DAEMON_HOURS = 2
 
 
 def step(what: str) -> None:
@@ -62,6 +66,34 @@ def worktree() -> Path:
     return tree
 
 
+def fresh_daemon(tree: Path, now: datetime.datetime | None = None) -> None:
+    """Restarts the tree's Buck2 daemon once it has been up DAEMON_HOURS.
+
+    Buck2 takes a remote output to stay in the cache for three hours after
+    it last heard of it, and asks the cache again within the last 45
+    minutes of that. On a Mac the cache answers that question from the
+    build host's layer only, while what this Mac's own worker built lives
+    only in its local layer, so the answer for those outputs is that they
+    are gone. A daemon that has served landings for longer then fails the
+    next action that needs one ("an artifact that has expired in the RE
+    CAS"), and only a new daemon, which asks the action cache afresh,
+    recovers. Restarting at two hours costs the landing that does it its
+    warm daemon, about a minute, rather than every landing."""
+    buck2 = tree / "scripts" / "buck2"
+    if not buck2.exists():
+        return
+    shown = subprocess.run([str(buck2), "status"], cwd=tree, capture_output=True, text=True)
+    try:
+        started = datetime.datetime.fromisoformat(json.loads(shown.stdout)["start_time"].replace("Z", "+00:00"))
+    except (ValueError, KeyError, TypeError):
+        return  # no daemon running, or a status this can't read
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    if now - started < datetime.timedelta(hours=DAEMON_HOURS):
+        return
+    step(f"restarting the landing tree's Buck2 daemon, up since {started.astimezone():%H:%M}")
+    subprocess.run([str(buck2), "kill"], cwd=tree, capture_output=True)
+
+
 def land_here(commit: str, message: str) -> int:
     STATE.mkdir(parents=True, exist_ok=True)
     with open(STATE / "lock", "w") as lock:
@@ -72,7 +104,9 @@ def land_here(commit: str, message: str) -> int:
             fcntl.flock(lock, fcntl.LOCK_EX)
         gate = Gate(run=lambda argv, cwd: subprocess.run(list(argv), cwd=cwd).returncode)
         try:
-            landed = land(worktree(), commit, message, gate, step)
+            tree = worktree()
+            fresh_daemon(tree)
+            landed = land(tree, commit, message, gate, step)
         except Stopped as stopped:
             print(f"land: stopped: {stopped}", file=sys.stderr)
             return 1

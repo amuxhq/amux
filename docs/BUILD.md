@@ -349,7 +349,18 @@ each run in the checkout with its output kept and printed when it fails:
 | `lint` | Clippy is Buck2 actions, cached like the tests, but a build of each target's clippy output, which `buck2 test` doesn't build, so it is a `buck2 build` beside the test run |
 
 `no-update-flags`, which refuses fixture-regeneration variables in the
-environment, runs first, before anything starts.
+environment, runs first, before anything starts, and then
+`build/checks/inputs.py`: Buck2's daemon runs the test run and clippy's
+build at once only while both see the same files, so what the check
+targets read is written before either starts.
+
+At the end, [`build/checks/timing.py`](../build/checks/timing.py) says
+where the test run's time went: how many compiles, links and tests ran
+rather than came from the cache, the worker time each kind took and the
+longest of each, how many actions the worker ran at once, and the critical
+path. A landing's log carries the same lines from the build host.
+`scripts/py build/checks/timing.py <event log>` says it for any Buck2
+command's log in `buck-out/v2/log`.
 
 ## Profiles
 

@@ -345,7 +345,7 @@ The recipes a build or change usually needs:
 
 | Recipe | What it runs |
 | --- | --- |
-| `just build` | The desktop binary, at `.wt/bin/amux` |
+| `just build` | The desktop binary, at `.wt/build/amux` |
 | `just check` | Builds every workspace library, binary and test |
 | `just full-debug` | The desktop binary under the `full-debug` profile |
 | `just release-check` | The shipping binary under `release`, then the release policy check (see [Release](RELEASE.md)) |
@@ -430,7 +430,8 @@ test task. [`.wt.toml`](../.wt.toml) holds the tree's side:
   It copies no build output: what another tree built is already in the
   cache. A tree that uses Cargo (the phone apps, `just miri`) builds its
   own `target/`.
-- `amux` inside a tree is a wrapper that runs that tree's `.wt/bin/amux`.
+- `amux` inside a tree is a wrapper, `.wt/bin/amux`, that runs that tree's
+  `.wt/build/amux`.
   Until the tree's first build has succeeded it refuses and says why.
 - Each tree gets its own amux installation under `.wt/amux/`:
   `AMUX_CONFIG` names its installation file and `AMUX_LOG` its daemon log.

@@ -6,9 +6,11 @@
 # cache hits.
 
 # `amux` inside a tree is the tree's own build, never the installed one:
-# what `just build` puts at .wt/bin/amux.
+# what `just build` puts at .wt/build/amux. The binary must stay out of
+# .wt/bin: wt writes the `amux` wrapper there, and a wrapper written over
+# the binary would run itself forever.
 [bin]
-amux = ".wt/bin/amux"
+amux = ".wt/build/amux"
 
 [env]
 AMUX_CONFIG = "{{root}}/.wt/amux/config.toml"

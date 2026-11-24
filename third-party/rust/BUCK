@@ -11,9 +11,9 @@ third_party_git_fetch(
 )
 
 third_party_git_fetch(
-    name = "wt-dcdccc5f660353bd.git",
+    name = "wt-39935cb5cbe2ad19.git",
     repo = "https://github.com/jordanwebster/wt",
-    rev = "39cc0541b128ddc89e70177bc7b96e725a3bde67",
+    rev = "14d79e36e777107625af6365d425efd814ba4e55",
     visibility = [],
 )
 
@@ -23462,14 +23462,14 @@ alias(
 
 third_party_rust_library(
     name = "wt-0.6",
-    srcs = [":wt-dcdccc5f660353bd.git"],
+    srcs = [":wt-39935cb5cbe2ad19.git"],
     crate = "wt",
-    crate_root = "wt-dcdccc5f660353bd/src/lib.rs",
+    crate_root = "wt-39935cb5cbe2ad19/src/lib.rs",
     edition = "2024",
     env = {
         "CARGO_BIN_NAME": "wt",
         "CARGO_CRATE_NAME": "wt",
-        "CARGO_MANIFEST_DIR": "wt-dcdccc5f660353bd",
+        "CARGO_MANIFEST_DIR": "wt-39935cb5cbe2ad19",
         "CARGO_PKG_AUTHORS": "",
         "CARGO_PKG_DESCRIPTION": "Parameterised Git worktrees with lifecycle hooks and leases",
         "CARGO_PKG_HOMEPAGE": "",
@@ -23477,10 +23477,10 @@ third_party_rust_library(
         "CARGO_PKG_README": "README.md",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_RUST_VERSION": "",
-        "CARGO_PKG_VERSION": "0.6.2",
+        "CARGO_PKG_VERSION": "0.6.3",
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "6",
-        "CARGO_PKG_VERSION_PATCH": "2",
+        "CARGO_PKG_VERSION_PATCH": "3",
         "CARGO_PKG_VERSION_PRE": "",
     },
     visibility = [],

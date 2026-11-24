@@ -97,8 +97,11 @@ def _cxx_tools_info_toolchain_impl(ctx: AnalysisContext):
 
 def _cxx_toolchain_from_cxx_tools_info(ctx: AnalysisContext, cxx_tools_info: CxxToolsInfo, target_name = "x86_64"):
     os = ctx.attrs._target_os_type[OsLookup].os
-    archiver_supports_argfiles = os != Os("macos")
     nix = getattr(ctx.attrs, "nix", None)
+
+    # Xcode's ar takes no @argfile, whatever it archives for (this Mac, a
+    # phone or the simulator); the Linux toolchain's GNU ar does.
+    archiver_supports_argfiles = bool(nix) or os == Os("windows")
 
     nix_paths = getattr(ctx.attrs, "nix_paths", None) or {}
 
@@ -213,13 +216,17 @@ def _cxx_toolchain_from_cxx_tools_info(ctx: AnalysisContext, cxx_tools_info: Cxx
                 compiler_type = cxx_tools_info.compiler_type,
                 supports_content_based_paths = ctx.attrs.supports_content_based_paths,
             ),
+            # Assembly takes the C flags too: they are what says which
+            # target a phone's or the simulator's objects are for.
             as_compiler_info = CCompilerInfo(
                 compiler = tool(cxx_tools_info.compiler, "bin/cc"),
+                compiler_flags = ctx.attrs.c_flags,
                 compiler_type = cxx_tools_info.compiler_type,
                 supports_content_based_paths = ctx.attrs.supports_content_based_paths,
             ),
             asm_compiler_info = CCompilerInfo(
                 compiler = tool(cxx_tools_info.asm_compiler, "bin/cc"),
+                compiler_flags = ctx.attrs.c_flags,
                 compiler_type = cxx_tools_info.asm_compiler_type,
             ),
             cvtres_compiler_info = CvtresCompilerInfo(

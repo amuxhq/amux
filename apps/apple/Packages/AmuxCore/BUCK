@@ -1,0 +1,128 @@
+load("//build:rust.bzl", "amux_files")
+load("//apps/apple:defs.bzl", "bridge", "copied", "package_library", "package_tests")
+load("//build:apple.bzl", "MACOS_EXEC", "c_module", "header_module")
+
+# The Rust bridge (crates/app-ffi) as the Swift module `AmuxApp`: its static
+# library and generated header, built for the platform the app is (the
+# simulator, a phone or this Mac) in the bridge's own mode: `phone-dev`, with
+# the driving tools, for every build but a release (docs/IOS.md, "Builds").
+# Debug and measured builds link it whole, so a test bundle loaded into the
+# app finds every symbol it names.
+_BRIDGE = "//crates/app-ffi:app-ffi"
+
+_HEADER = "//crates/app-ffi:header"
+
+header_module(
+    name = "AmuxApp",
+    module_name = "AmuxApp",
+    library = bridge(_BRIDGE),
+    archive = bridge(_BRIDGE + "[staticlib]"),
+    header = bridge(_HEADER),
+    header_name = "amux_app.h",
+    force_load = select({
+        "DEFAULT": True,
+        "root//build/constraints:release": False,
+    }),
+    default_target_platform = "root//build/platforms:ios-sim-app-shipping-phone-dev",
+    visibility = ["PUBLIC"],
+)
+
+# The only code in this app that runs before `main()`. It exists in C
+# because nothing written in Swift can: see LaunchClock.h.
+c_module(
+    name = "LaunchClock",
+    module_name = "LaunchClock",
+    srcs = ["Sources/LaunchClock/LaunchClock.c"],
+    headers = ["Sources/LaunchClock/include/LaunchClock.h"],
+    default_target_platform = "root//build/platforms:ios-sim-app-shipping-phone-dev",
+)
+
+# The values the Rust bridge hands over, generated from their Rust
+# definitions (crates/ios-tools' swift_types.rs), so they can't drift.
+genrule(
+    name = "Values.swift",
+    out = "Values.swift",
+    cmd = "$(exe //crates/ios-tools:ios-tools-bin) swift-types --values $OUT",
+    default_target_platform = "root//build/platforms:ios-sim-app-shipping-phone-dev",
+    exec_compatible_with = MACOS_EXEC,
+)
+
+package_library(
+    name = "AmuxValues",
+    package = "AmuxCore",
+    srcs = [":Values.swift"],
+    deps = ["//apps/apple/Packages/AmuxPush:AmuxPush"],
+)
+
+# How every Apple client words those values, so the phone and the Mac say
+# the same things. Like the values, it never links the bridge, so the Mac's
+# storybook can draw with it.
+package_library(
+    name = "AmuxWords",
+    package = "AmuxCore",
+    srcs = glob(["Sources/AmuxWords/**/*.swift"]),
+    deps = [":AmuxValues", "//apps/apple/Packages/AmuxPush:AmuxPush"],
+)
+
+# Prose parsed by the Rust parser for screens drawn without the bridge: the
+# storybooks, the catalogue and the client tests.
+package_library(
+    name = "AmuxFixtures",
+    package = "AmuxCore",
+    srcs = glob(["Sources/AmuxFixtures/**/*.swift"]),
+    resources = copied("Sources/AmuxFixtures", "Fixtures"),
+    deps = [":AmuxValues"],
+)
+
+package_library(
+    name = "AmuxCore",
+    package = "AmuxCore",
+    srcs = glob(["Sources/AmuxCore/**/*.swift"]),
+    deps = [
+        ":AmuxApp",
+        ":AmuxValues",
+        ":AmuxWords",
+        ":LaunchClock",
+        "//apps/apple/Packages/AmuxPush:AmuxPush",
+    ],
+)
+
+package_tests(
+    name = "AmuxCoreTests",
+    package = "AmuxCore",
+    srcs = glob(["Tests/AmuxCoreTests/**/*.swift"]),
+    deps = [":AmuxCore", ":AmuxWords", ":AmuxFixtures"],
+    # The record a Mac advertises, which the phone's parser is held to.
+    test_srcs = ["//crates/node:tests/fixtures/discovery/advertisement.json"],
+)
+
+# The Swift sources at their paths in the checkout, for the repository
+# checks that read them (the root BUCK's client-kind-check).
+amux_files(
+    name = "swift",
+    srcs = glob(["**/*.swift"]),
+)
+
+# The parsed prose the storybooks draw, on the Android test-support module's
+# classpath; and as the mirror ios-tools' tests hold to the Rust parser.
+export_file(
+    name = "markdown-fixtures.json",
+    src = "Sources/AmuxFixtures/Fixtures/markdown-fixtures.json",
+    visibility = ["PUBLIC"],
+)
+
+amux_files(
+    name = "mirrors",
+    srcs = [
+        "Sources/AmuxFixtures/Fixtures/markdown-fixtures.json",
+        "Sources/AmuxValues/Values.swift",
+    ],
+)
+
+# Compiled into a driven build of the app itself (apps/apple/BUCK), which
+# reads the fixtures from its own resources.
+export_file(
+    name = "MarkdownFixtures.swift",
+    src = "Sources/AmuxFixtures/MarkdownFixtures.swift",
+    visibility = ["PUBLIC"],
+)

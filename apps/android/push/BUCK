@@ -12,7 +12,7 @@ amux_jvm_library(
 
 resource_jar(
     name = "sealed-pushes",
-    srcs = {"sealed-pushes.json": "//:sealed-pushes.json"},
+    srcs = {"sealed-pushes.json": "//apps/apple/Packages/AmuxPush:sealed-pushes.json"},
 )
 
 # Said.kt, which ios-tools' tests hold to the Rust definitions.

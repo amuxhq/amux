@@ -59,6 +59,49 @@ SERVING = NATIVELINK / "serving"
 INPUTS = [ROOT / "rust-toolchain.toml", ROOT / "build/tools.json", ROOT / "flake.lock", ROOT / "nix/toolchain.nix", Path(__file__), WORKER_CORES]
 
 
+def main_checkout() -> Path | None:
+    """The checkout every worktree of this one belongs to."""
+    try:
+        common = run("git", "-C", str(ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir")
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return Path(common).parent
+
+
+def simulator_pool_tree() -> str:
+    """Where an Apple test leases its simulator from (build/apple/xctest.py):
+    the main checkout, whose .wt.toml defines wt's `iphone` pool, so every
+    tree of this Mac names the same one and a test passed in one is a hit in
+    the others. None without wt, as on CI."""
+    main = main_checkout()
+    if main is None or shutil.which("wt") is None and not (Path.home() / ".cargo/bin/wt").exists():
+        return ""
+    config = main / ".wt.toml"
+    if not config.is_file() or "[pool.iphone]" not in config.read_text():
+        return ""
+    return str(main)
+
+
+def signing_file() -> Path | None:
+    """The untracked file holding the team this Mac signs as
+    (docs/RELEASE.md): this tree's, else the main checkout's."""
+    for root in (ROOT, main_checkout()):
+        if root is not None and (root / "apps/apple/Signing.local.xcconfig").is_file():
+            return root / "apps/apple/Signing.local.xcconfig"
+    return None
+
+
+def team() -> str:
+    path = signing_file()
+    if path is None:
+        return ""
+    for line in path.read_text().splitlines():
+        name, _, value = line.partition("=")
+        if name.strip() == "DEVELOPMENT_TEAM":
+            return value.strip()
+    return ""
+
+
 def run(*args: str, env: dict | None = None) -> str:
     return subprocess.check_output(args, text=True, env=env).strip()
 
@@ -186,7 +229,8 @@ def stale() -> bool:
     if not OUT.exists():
         return True
     written = OUT.stat().st_mtime
-    return any(path.exists() and path.stat().st_mtime > written for path in INPUTS)
+    inputs = INPUTS + [path for path in [signing_file()] if path]
+    return any(path.exists() and path.stat().st_mtime > written for path in inputs)
 
 
 def write(mode: str) -> None:
@@ -230,6 +274,14 @@ def write(mode: str) -> None:
         lines += [
             "[apple]",
             f"  xcode = {version}",
+            # The team an Apple build names in its entitlements, and the
+            # simulator pool its tests lease from (build/apple.bzl).
+            f"  team = {team()}",
+            # Where the selected Xcode keeps the phone's SDKs, for C built
+            # for them (build/toolchains/BUCK).
+            f"  iphoneos_sdk = {run('xcrun', '--sdk', 'iphoneos', '--show-sdk-path')}",
+            f"  iphonesimulator_sdk = {run('xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path')}",
+            f"  simulator_pool_tree = {simulator_pool_tree()}",
         ]
     OUT.write_text("\n".join(lines) + "\n")
 

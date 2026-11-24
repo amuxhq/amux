@@ -1,0 +1,45 @@
+load("//build:rust.bzl", "amux_files")
+load("//apps/apple:defs.bzl", "package_library", "package_tests")
+
+# The door, the scripted cloud and the fixtures the debug app compiles into
+# itself (apps/apple/BUCK), and their tests. The picture a report fixture is
+# frozen on is an app resource, not this package's.
+package_library(
+    name = "AmuxTestSupport",
+    package = "AmuxTestSupport",
+    srcs = glob(["Sources/AmuxTestSupport/**/*.swift"]),
+    deps = [
+        "//apps/apple/Packages/AmuxCore:AmuxCore",
+        "//apps/apple/Packages/AmuxDesign:AmuxDesign",
+        "//apps/apple/Packages/AmuxFeatures:AmuxFeatures",
+    ],
+)
+
+package_tests(
+    name = "AmuxTestSupportTests",
+    package = "AmuxTestSupport",
+    srcs = glob(["Tests/AmuxTestSupportTests/**/*.swift"]),
+    deps = [":AmuxTestSupport"],
+)
+
+filegroup(
+    name = "sources",
+    srcs = glob(["Sources/AmuxTestSupport/*.swift"]),
+    visibility = ["PUBLIC"],
+)
+
+[
+    export_file(
+        name = name,
+        src = "Sources/AmuxTestSupport/Resources/" + name,
+        visibility = ["PUBLIC"],
+    )
+    for name in ["DebugCopy.xcstrings", "frozen-frame.png"]
+]
+
+# The Swift sources at their paths in the checkout, for the repository
+# checks that read them (the root BUCK's client-kind-check).
+amux_files(
+    name = "swift",
+    srcs = glob(["**/*.swift"]),
+)

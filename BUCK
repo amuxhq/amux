@@ -12,7 +12,6 @@ load("@toolchains//:nix.bzl", "nix_toolchain")
         visibility = ["PUBLIC"],
     )
     for path in [
-        "apps/apple/justfile",
         "clippy.toml",
         "journeys/manifest.json",
         "justfile",
@@ -40,38 +39,6 @@ amux_files(
 amux_files(
     name = "guide",
     srcs = glob(["docs/guide/**"]),
-)
-
-# The parsed prose the storybooks draw, on the Android test-support
-# module's classpath.
-export_file(
-    name = "markdown-fixtures.json",
-    src = "apps/apple/Packages/AmuxCore/Sources/AmuxFixtures/Fixtures/markdown-fixtures.json",
-    visibility = ["PUBLIC"],
-)
-
-# The same file on the Android push module's test classpath.
-export_file(
-    name = "sealed-pushes.json",
-    src = "apps/apple/Packages/AmuxPush/Tests/AmuxPushTests/Fixtures/sealed-pushes.json",
-    visibility = ["PUBLIC"],
-)
-
-amux_files(
-    name = "sealed-pushes",
-    srcs = ["apps/apple/Packages/AmuxPush/Tests/AmuxPushTests/Fixtures/sealed-pushes.json"],
-)
-
-# The phone apps' committed mirrors of the view values and fixtures, which
-# ios-tools' tests hold to the Rust definitions (the Android app's are in
-# its packages: //apps/android/push:mirrors).
-amux_files(
-    name = "mirrors",
-    srcs = [
-        "apps/apple/Packages/AmuxCore/Sources/AmuxFixtures/Fixtures/markdown-fixtures.json",
-        "apps/apple/Packages/AmuxCore/Sources/AmuxValues/Values.swift",
-        "apps/apple/Packages/AmuxPush/Sources/AmuxPush/Said.swift",
-    ],
 )
 
 # The budgets page, which testnet's perf tests hold to the runner's budgets.
@@ -173,11 +140,16 @@ amux_check(
 amux_check(
     name = "client-kind-check",
     command = ["python3", "scripts/client-kind-check.py"],
-    srcs = glob(
-        ["apps/apple/**/*.swift"],
-        exclude = ["apps/apple/**/.build/**"],
-    ) + ["scripts/client-kind-check.py"],
+    srcs = ["scripts/client-kind-check.py"],
     deps = [
+        "//apps/apple:swift",
+        "//apps/apple/Packages/AmuxCore:swift",
+        "//apps/apple/Packages/AmuxDesign:swift",
+        "//apps/apple/Packages/AmuxFeatures:swift",
+        "//apps/apple/Packages/AmuxMacScreens:swift",
+        "//apps/apple/Packages/AmuxPush:swift",
+        "//apps/apple/Packages/AmuxShell:swift",
+        "//apps/apple/Packages/AmuxTestSupport:swift",
         "//crates/app-runtime:files",
         "//crates/browser-core:files",
         "//crates/tui:files",

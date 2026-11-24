@@ -138,8 +138,10 @@ The build host's action cache can't be written from CI, so the tests'
 results go into the runner's own, which the job keeps in GitHub's cache
 between runs (`windows-test-results-*`); what each test printed goes to the
 build host's cache too, so a kept result still finds it. Each test binary
-takes the whole worker and runs four of its tests at a time, as nextest did
-on the runner's four cores. Left out, as under Cargo: the protocol models,
+takes one of the worker's four cores and runs two of its tests at a time,
+so four binaries run at once and one's download from the build host
+overlaps the others' running. The job keeps Buck2's and NativeLink's logs
+as its `buck2-logs-windows` artifact. Left out, as under Cargo: the protocol models,
 the simulated stories and the terminal journeys.
 
 A fork's pull request has no tailnet, so its Windows job tests under Cargo

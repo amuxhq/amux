@@ -256,6 +256,19 @@ jobs:
       - name: Show NativeLink's log
         if: failure() && env.REMOTE == 'true'
         run: tail -n 300 "$RUNNER_TEMP/nativelink.log" || true
+      # Buck2's event logs and NativeLink's, which has when the worker
+      # fetched each test's inputs and when it ran it.
+      - name: Keep Buck2's and NativeLink's logs
+        if: always() && env.REMOTE == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: buck2-logs-windows
+          path: |
+            buck-out/v2/log/*_build_*.pb.zst
+            buck-out/v2/log/*_test_*.pb.zst
+            ${{ runner.temp }}/nativelink.log
+          retention-days: 7
+          if-no-files-found: ignore
       # NativeLink is still running and may still be writing the results;
       # the cache's archiver fails on a file that changes under it.
       - name: Stop NativeLink

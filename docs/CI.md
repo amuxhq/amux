@@ -289,10 +289,15 @@ cached too. The store, every output and every result, is on the runner's
 disk, and the job keeps it in GitHub's cache between runs
 (`macos-<job>-store-*`), restoring the newest any run of that job kept.
 A push therefore rebuilds and reruns only what its change reaches. Each
-job's CAS holds at most 6 GiB (`CAS_GIB`), so the three stores and the
+job's CAS holds at most 6 GiB, the tests job's 12 (the matrix's `cas_gib`;
+compressed, a store is about a fifth of that), so the three stores and the
 other jobs' caches fit in the 10 GB GitHub keeps for the repository; past
-it the least recently used outputs go, and an action whose outputs went
-runs again.
+the cap the least recently used outputs go, and an action whose outputs
+went runs again. After saving, a job deletes its older stores
+(`scripts/ci_cache.py`), and the documentation tests job its older Rust
+caches: GitHub evicts the least recently used entry past 10 GB, and an
+older store, just read by the run that restored it, could otherwise
+outlive another job's newer cache.
 
 The macOS jobs don't use the build host. It can't run a Mac's actions,
 and it is about 100 ms from GitHub's runners: when the runners' CAS was in

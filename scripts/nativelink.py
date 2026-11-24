@@ -416,6 +416,24 @@ def uninstall() -> None:
     print(f"nativelink: stopped; the cache under {CACHE} is kept")
 
 
+# What the macOS job hands every test from its own environment, when it is
+# set there: facts about the runner a test needs, which belong in no action's
+# key. AMUX_SIMULATOR_UDID names the simulator the iPhone job made and booted
+# before starting NativeLink (build/apple/xctest.py): in a test's command it
+# would differ on every runner and make every kept result a miss.
+FORWARDED = ["AMUX_SIMULATOR_UDID"]
+
+
+def forwarded() -> str:
+    """The FORWARDED variables this process has, as entries of a worker's
+    `additional_environment`."""
+    return "\n          ".join(
+        f"{json.dumps(key)}: {{ value: {json.dumps(os.environ[key])} }},"
+        for key in FORWARDED
+        if os.environ.get(key)
+    )
+
+
 def macos(cache: Path, cas_gib: int, cores: int) -> None:
     """Runs CI's macOS NativeLink in the foreground."""
     if sys.platform != "darwin":
@@ -433,6 +451,7 @@ def macos(cache: Path, cas_gib: int, cores: int) -> None:
         "cores": str(cores),
         "memory_kb": str(memory_bytes() * 3 // 4 // 1024),
         "path": f"{tool_bin()}:/usr/bin:/bin:/usr/sbin:/sbin",
+        "forwarded": forwarded(),
     }))
     sys.exit(subprocess.call([binary(), str(config)]))
 

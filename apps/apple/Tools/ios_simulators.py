@@ -343,6 +343,15 @@ def main() -> None:
         pin(udid)
         clean(udid)
         return
+    # The udid alone of the device a kind means, which must exist: what CI's
+    # iPhone job hands every test once it has made the device.
+    if arguments[:1] == ["udid"]:
+        kind = arguments[1]
+        device = find(device_name(kind))
+        if device is None:
+            raise SystemExit(f"no {kind} simulator yet; `just ios simulator {kind}` makes it")
+        print(device["udid"])
+        return
     # Named kinds, or both: create and boot the devices they mean. Booting one
     # takes minutes, and the suites that need only the golden device should
     # not wait for the small one.

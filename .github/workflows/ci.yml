@@ -357,14 +357,15 @@ jobs:
           # first-party compiles against 3,274; Mac app 937 s against
           # 1,177 s in all). A developer's builds keep phone-dev.
           #
-          # The phone's suites lease the golden simulator, which the first
-          # step makes; then everything under apps/apple but the Mac app
-          # builds, and the package suites and the hosted app suite run on
-          # the simulator, in one Buck2 command, so a suite starts as soon
-          # as what it needs is built rather than after everything is. The
-          # phone's shipping build is left to `just ios release` on the Mac:
-          # its bridge is a fat-LTO link of the whole Rust graph for one
-          # more target, and it reruns on every Rust change.
+          # The phone's suites run on the golden simulator, which a step
+          # before NativeLink starts makes; then everything under apps/apple
+          # but the Mac app builds, and the package suites and the hosted
+          # app suite run on the simulator, in one Buck2 command, so a suite
+          # starts as soon as what it needs is built rather than after
+          # everything is. The phone's shipping build is left to `just ios
+          # release` on the Mac: its bridge is a fat-LTO link of the whole
+          # Rust graph for one more target, and it reruns on every Rust
+          # change.
           - name: iPhone app
             key: iphone
             # The most the job's CAS holds, so the three jobs' stores and
@@ -372,7 +373,6 @@ jobs:
             # repository; compressed, a store is about a fifth of this.
             cas_gib: 6
             run: >-
-              just ios simulator golden &&
               scripts/buck2 test --build-default-info --target-platforms root//build/platforms:ios-sim-app-shipping-dev
               $(scripts/buck2 uquery "attrregexfilter(default_target_platform, ios-sim, //apps/apple/...)")
               --exclude mac
@@ -446,6 +446,16 @@ jobs:
             macos-${{ matrix.key }}-store-${{ github.sha }}-
             macos-${{ matrix.key }}-store-
             ${{ matrix.fallback || format('macos-{0}-store-', matrix.key) }}
+      # Made before NativeLink starts, so its worker can hand every test the
+      # device's udid (AMUX_SIMULATOR_UDID, scripts/nativelink.py): a test
+      # that looked it up itself asked CoreSimulator while the runner
+      # compiled on every core, and `simctl list` took over three minutes.
+      - name: Make the golden simulator
+        if: matrix.key == 'iphone'
+        run: |
+          just ios simulator golden
+          udid=$(scripts/py apps/apple/Tools/ios_simulators.py udid golden)
+          echo "AMUX_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
       - name: Start a NativeLink on the runner
         run: |
           nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --cas-gib "${{ matrix.cas_gib }}" \

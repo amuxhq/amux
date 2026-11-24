@@ -71,8 +71,11 @@
         max_action_timeout_s: 3600,
         // Only a modern python3, tmux and the operating system's own tools
         // are on PATH, as on a developer's Mac (build/nativelink/mac.json5).
+        // What follows PATH is what the job hands every test about this
+        // runner (scripts/nativelink.py's FORWARDED), outside any action's key.
         additional_environment: {
           PATH: { value: "{{path}}" },
+          {{forwarded}}
         },
         platform_properties: {
           OSFamily: { values: ["macos"] },

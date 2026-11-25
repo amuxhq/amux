@@ -14,6 +14,7 @@ tests) before the linker runs.
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -21,7 +22,8 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-BUCK2 = str(ROOT / "scripts/buck2")
+# scripts/buck2 is a shell script, which Windows can't start itself.
+BUCK2 = (["sh"] if os.name == "nt" else []) + [str(ROOT / "scripts/buck2")]
 LOGS = ROOT / "buck-out/v2/log"
 
 
@@ -62,7 +64,7 @@ def ran(details: dict) -> dict | None:
 
 
 def collect(log: Path) -> list[tuple[str, str, dict]]:
-    shown = subprocess.Popen([BUCK2, "log", "show", str(log)], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    shown = subprocess.Popen([*BUCK2, "log", "show", str(log)], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     runs = []
     for line in shown.stdout:
         if '"SpanEnd"' not in line or ('"ActionExecution"' not in line and '"TestRun"' not in line):
@@ -105,7 +107,7 @@ def concurrency(runs: list[tuple[str, str, dict]]) -> tuple[int, float, float]:
 
 
 def critical_path(log: Path) -> list[str]:
-    shown = subprocess.run([BUCK2, "log", "critical-path", str(log)], cwd=ROOT, capture_output=True, text=True)
+    shown = subprocess.run([*BUCK2, "log", "critical-path", str(log)], cwd=ROOT, capture_output=True, text=True)
     steps = []
     for line in shown.stdout.splitlines():
         # start, total, [waiting,] user, potential, kind, label, (configuration), category, identifier..., execution kind

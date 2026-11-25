@@ -200,7 +200,8 @@ def trim(tree: Path, wrap: Wrap | None) -> None:
     to the next one: landing matters more than the disk it will need later."""
     if not (tree / "buck-out").is_dir():
         return
-    argv: Sequence[str] = ["scripts/buck2", "clean", "--stale", TRIM_AGE]
+    # scripts/buck2 is a shell script, which Windows can't start itself.
+    argv: Sequence[str] = [*(["sh"] if os.name == "nt" else []), "scripts/buck2", "clean", "--stale", TRIM_AGE]
     if wrap is not None:
         argv = wrap(argv, tree)
     say(f"trimming buck-out: outputs unused for {TRIM_AGE} go")

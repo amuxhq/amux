@@ -35,11 +35,14 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# The repository's sh scripts, which Windows can't start itself.
+SH = ["sh"] if os.name == "nt" else []
 
 # Each kind's steps: a name and the command, run from the checkout.
 KINDS: dict[str, list[tuple[str, list[str]]]] = {
@@ -49,7 +52,7 @@ KINDS: dict[str, list[tuple[str, list[str]]]] = {
     "seeds": [
         # The walk builds the workspace's tests first, which a cold cache
         # compiles from nothing, so the bound holds both.
-        ("the simulated stories under 2000 seeds", ["scripts/bounded", "5400", "scripts/py", "scripts/sim.py", "--seeds", "2000"]),
+        ("the simulated stories under 2000 seeds", [*SH, "scripts/bounded", "5400", "scripts/py", "scripts/sim.py", "--seeds", "2000"]),
     ],
     "pointers": [
         ("the C ABI's pointer checks", ["just", "miri"]),

@@ -296,14 +296,21 @@ pub async fn shutdown_leaving_no_agent(net: Net) {
             let dir = net.agent_dir(&agent.name).unwrap();
             match agent_dir::lock_holder(&dir).unwrap() {
                 agent_dir::Holder::Process(process) => process,
-                other => panic!("{}'s agent process, named by its lock: {other:?}", agent.name),
+                other => panic!(
+                    "{}'s agent process, named by its lock: {other:?}",
+                    agent.name
+                ),
             }
         })
         .collect();
     assert!(!agents.is_empty(), "the net ran agents");
     net.shutdown().await.unwrap();
     for agent in &agents {
-        assert!(!agent.alive(), "agent process {} outlived the net", agent.pid());
+        assert!(
+            !agent.alive(),
+            "agent process {} outlived the net",
+            agent.pid()
+        );
     }
 }
 

@@ -11,8 +11,6 @@
 //! they hold the markers in sequence with the rows they cover. The stories
 //! that hold on either net are in `replication_stories`.
 
-#![cfg(unix)]
-
 use std::sync::Arc;
 use std::time::Duration;
 

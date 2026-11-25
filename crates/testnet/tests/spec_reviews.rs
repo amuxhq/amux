@@ -8,8 +8,6 @@
 //! refused wherever they call from, a copy of another host's agent is not
 //! found, and a host without the experiment does not offer it.
 
-#![cfg(unix)]
-
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

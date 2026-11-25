@@ -6,8 +6,6 @@
 //! 127.0.0.1, discovery is the net's scripted bus, and the relay is the
 //! topology's, beside a stand-in cloud.
 
-#![cfg(unix)]
-
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;

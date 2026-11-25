@@ -10,8 +10,6 @@
 //! child's finished and failed messages over the peer link, exactly once,
 //! to the incarnation that was waiting for them.
 
-#![cfg(unix)]
-
 use std::sync::Arc;
 
 use client::RpcError;

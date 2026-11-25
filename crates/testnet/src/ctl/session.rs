@@ -85,8 +85,8 @@ impl Folder {
         Ok(Self { dir, cwd })
     }
 
-    /// A session in `dir`, run from there.
-    #[cfg(all(test, unix))]
+    /// A session in `dir`, run from there, for the paste test's tmux.
+    #[cfg(all(test, not(windows)))] // out of scope on Windows: the TUI (the terminal client in tmux)
     pub(crate) fn at(dir: &Path) -> Self {
         Self {
             dir: dir.to_path_buf(),

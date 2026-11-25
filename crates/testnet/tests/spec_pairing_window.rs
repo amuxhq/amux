@@ -4,8 +4,6 @@
 //! saying while it is open, and its status as a stream that says when a
 //! joiner is confirming and whom it paired.
 
-#![cfg(unix)]
-
 use support::*;
 use testnet::{Net, PATIENCE, Topology};
 use wire::{Empty, StartPairingRequest, begin_pair_request, start_pairing_request};

@@ -7,13 +7,10 @@
 //! worktree otherwise, and the laptop's replica carries the workspace.
 //! Without it a new workspace is the plain worktree it always was.
 
-#![cfg(unix)]
-
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use node::Launch;
-use prost::Message as _;
 use testnet::{HostDecl, Net, NetOptions, PATIENCE, Topology, until};
 use wire::experimental::{AgentWorkspace, WorkspaceKind};
 use wire::inventory_event;
@@ -231,8 +228,11 @@ async fn a_host_without_the_experiment_keeps_a_replicas_workspace_for_its_client
     net.shutdown().await.unwrap();
 }
 
+#[cfg(not(windows))] // out of scope on Windows: the wt workspace backend
 #[tokio::test(flavor = "multi_thread")]
 async fn a_new_wt_tree_from_another_host_runs_its_agent_and_starts_the_tree() {
+    use prost::Message as _;
+
     let homes = tempfile::tempdir().unwrap();
     let net = Net::start_with(topology(true), options(true, homes.path().to_owned()))
         .await

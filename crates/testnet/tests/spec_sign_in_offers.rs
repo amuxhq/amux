@@ -5,8 +5,6 @@
 //! stand-in account service binds to the peer's host id; dismissing ends
 //! the offer. A peer already signed in is offered nothing.
 
-#![cfg(unix)]
-
 use std::time::Duration;
 
 use support::*;

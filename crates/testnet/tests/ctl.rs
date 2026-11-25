@@ -3,8 +3,6 @@
 //! client as a picture, keeps a capture of it all, and shuts down leaving
 //! the evidence behind.
 
-#![cfg(unix)]
-
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -47,6 +45,7 @@ impl Drop for Down<'_> {
     }
 }
 
+#[cfg(not(windows))] // out of scope on Windows: the TUI (the terminal client in tmux)
 #[test]
 fn a_session_grows_a_net_drives_it_and_keeps_the_evidence() {
     let folder = tempfile::tempdir().expect("a folder");
@@ -391,8 +390,20 @@ fn a_finding_that_skips_the_template_is_refused_with_what_it_lacks() {
     );
 }
 
+/// Set in a re-run of this test binary that stands in for the process that
+/// took a crashed serve's pid: it waits to be killed.
+const STRANGER: &str = "TESTNET_CTL_STRANGER";
+
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `ctl up` with its output piped never returns: the testnet serve it starts holds the pipe open"
+)]
 fn down_never_kills_a_process_that_took_a_crashed_nets_pid() {
+    if std::env::var_os(STRANGER).is_some() {
+        std::thread::sleep(std::time::Duration::from_secs(120));
+        return;
+    }
     let folder = tempfile::tempdir().expect("a folder");
     let folder = folder.path();
     ctl(folder, &["up"]);
@@ -401,16 +412,21 @@ fn down_never_kills_a_process_that_took_a_crashed_nets_pid() {
     let mut record: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&record_path).expect("net.json"))
             .expect("its record");
-    let serve = record["pid"].as_u64().expect("serve's pid").to_string();
+    let serve = record["pid"].as_u64().expect("serve's pid") as u32;
     // Serve crashes, and another process now has the pid net.json names.
-    assert!(
-        Command::new("kill")
-            .args(["-KILL", &serve])
-            .status()
-            .expect("kill runs")
-            .success()
-    );
-    let mut stranger = Command::new("sleep").arg("120").spawn().expect("sleep");
+    os::process::ProcessRef::open(serve)
+        .expect("serve runs")
+        .kill()
+        .expect("serve is killed");
+    let mut stranger = Command::new(std::env::current_exe().expect("this test binary"))
+        .args([
+            "ctl::down_never_kills_a_process_that_took_a_crashed_nets_pid",
+            "--exact",
+        ])
+        .env(STRANGER, "1")
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .expect("a stranger");
     record["pid"] = stranger.id().into();
     std::fs::write(&record_path, record.to_string()).expect("net.json rewritten");
 

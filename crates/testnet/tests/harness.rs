@@ -4,8 +4,6 @@
 //! when their predicate is stuck, the block invariant catches a broken
 //! replica, and the door serves a topology to a real client.
 
-#![cfg(unix)]
-
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::net::{SocketAddr, TcpStream};
 use std::process::{Command, Stdio};
@@ -1104,6 +1102,7 @@ async fn a_changed_tier_reaches_a_process_host_and_the_plan_read_at_once() {
 
 /// Two in-process hosts with no LAN between them, for links a test makes
 /// by hand.
+#[cfg(not(windows))] // out of scope on Windows: SSH with a Windows machine at the far end
 fn bare_host(name: &str) -> HostDecl {
     HostDecl {
         name: name.to_owned(),
@@ -1126,6 +1125,7 @@ async fn until_route(net: &Net, near: &str, far: &str, via: node::harness::LiveR
     .unwrap();
 }
 
+#[cfg(not(windows))] // out of scope on Windows: SSH with a Windows machine at the far end
 #[tokio::test(flavor = "multi_thread")]
 async fn the_ssh_stand_in_carries_a_link_into_the_far_hosts_link_socket() {
     let mut net = Net::start_with(Topology::new(), testnet::NetOptions::default())

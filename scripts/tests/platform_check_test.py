@@ -488,6 +488,15 @@ class PlatformCheckTest(unittest.TestCase):
         )
         self.assertEqual(self.counted(), {"crates/pty-host/src/lib.rs": [5]})
 
+    def test_a_homes_per_os_test_file_may_test_that_os_but_a_shared_one_may_not(self):
+        source = """            use std::os::windows::io::AsRawHandle;
+            #[test]
+            fn the_handle_is_not_inheritable() { let _ = libc::getpid; }
+            """
+        self.write("crates/os/src/fs/windows_tests.rs", source)
+        self.write("crates/os/src/fs/tests.rs", source)
+        self.assertEqual(self.counted(), {"crates/os/src/fs/tests.rs": [1, 3]})
+
     def test_a_nested_ignore_on_windows_counts_even_in_a_homes_per_os_file(self):
         self.write(
             "crates/os/src/process/unix.rs",

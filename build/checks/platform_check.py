@@ -474,9 +474,14 @@ def is_home(path: str) -> bool:
 
 
 def per_os(path: str) -> bool:
-    """A home's file for one OS (`process/unix.rs`, `windows/mod.rs`), whose
-    tests may test its own code where only that OS has it."""
-    return any(part.removesuffix(".rs") in OS_WORDS for part in path[len(crate_dir(path)) :].split("/"))
+    """A home's file for one OS (`process/unix.rs`, `windows/mod.rs`, or the
+    tests beside one, `fs/windows_tests.rs`), whose tests may test its own
+    code where only that OS has it."""
+    def one_os(part: str) -> bool:
+        stem = part.removesuffix(".rs")
+        return stem in OS_WORDS or stem.removesuffix("_tests") in OS_WORDS
+
+    return any(one_os(part) for part in path[len(crate_dir(path)) :].split("/"))
 
 
 def crate_dir(path: str) -> str:

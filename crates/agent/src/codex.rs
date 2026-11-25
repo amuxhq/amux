@@ -327,8 +327,54 @@ mod socket {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use tokio::process::Command;
+
+    use super::{Connection, Listen, spawn_server};
+
+    const WAIT: Duration = Duration::from_secs(10);
+
+    /// Lines both ways over the server's stdio, the transport on every OS
+    /// and the only one on Windows: a line ending in CRLF reads without it.
+    /// The server is the OS's own shell: it echoes the line it reads with a
+    /// CRLF, then writes `two` (cmd ends that with a CRLF too), and exits.
+    #[tokio::test]
+    async fn stdio_is_one_message_per_line() {
+        os::testing::require_test_runner("this test starts a shell");
+        // `spawn_server` appends `app-server --listen stdio://`: sh takes
+        // them as its positional parameters, cmd as the `rem`'s words.
+        let (shell, args) = if cfg!(windows) {
+            (
+                "cmd",
+                ["/v:on", "/c", "set /p line=& echo !line!& echo two& rem"],
+            )
+        } else {
+            (
+                "/bin/sh",
+                ["-c", r#"read line; printf '%s\r\n' "$line"; printf 'two\n'"#, "sh"],
+            )
+        };
+        let mut command = Command::new(shell);
+        command.args(args);
+        let mut child = spawn_server(command, &Listen::Stdio).unwrap();
+        let (mut sender, mut receiver) = Connection::connect(&Listen::Stdio, &mut child, WAIT)
+            .await
+            .unwrap()
+            .into_split();
+        sender.send(b"one").await.unwrap();
+        assert_eq!(receiver.next().await.unwrap().unwrap(), b"one");
+        assert_eq!(receiver.next().await.unwrap().unwrap(), b"two");
+        assert!(receiver.next().await.is_none());
+    }
+}
+
+// out of scope on Windows: raw attach, which Codex's app-server socket is
+// for; a Windows host speaks to Codex over stdio.
+#[cfg(all(test, unix))]
+mod socket_tests {
     use std::time::Duration;
 
     use futures_util::{SinkExt, StreamExt};
@@ -433,23 +479,5 @@ mod tests {
             Ok(_) => panic!("nothing listens"),
         }
         assert!(started.elapsed() < WAIT, "not left to time out");
-    }
-
-    #[tokio::test]
-    async fn stdio_is_one_message_per_line() {
-        let mut command = Command::new("/bin/sh");
-        command.args([
-            "-c",
-            r#"read line; printf '%s\r\n' "$line"; printf 'two\n'"#,
-        ]);
-        let mut child = spawn_server(command, &Listen::Stdio).unwrap();
-        let (mut sender, mut receiver) = Connection::connect(&Listen::Stdio, &mut child, WAIT)
-            .await
-            .unwrap()
-            .into_split();
-        sender.send(b"one").await.unwrap();
-        assert_eq!(receiver.next().await.unwrap().unwrap(), b"one");
-        assert_eq!(receiver.next().await.unwrap().unwrap(), b"two");
-        assert!(receiver.next().await.is_none());
     }
 }

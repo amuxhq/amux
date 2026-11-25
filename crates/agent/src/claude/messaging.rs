@@ -52,6 +52,7 @@ impl MessagingSocket {
     }
 }
 
+// out of scope on Windows: terminal Claude, whose messaging socket this is.
 #[cfg(all(test, unix))]
 mod tests {
     use tokio::io::AsyncBufReadExt;

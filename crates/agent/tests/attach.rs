@@ -1,9 +1,11 @@
 //! Raw attach on pty.sock, against the fake providers: terminal Claude's
 //! one terminal read from its files by two clients at once, and Codex's
 //! views, one `codex resume` per connection on the agent's one thread.
-//! Unix only: Windows hosts neither, terminal Claude by choice (see
+//! Windows hosts neither, terminal Claude by choice (see
 //! docs/ARCHITECTURE.md, "Windows, as a stated cost") and Codex's own app
 //! because it attaches only on macOS and Linux.
+
+// out of scope on Windows: raw attach.
 #![cfg(unix)]
 
 use std::time::Duration;

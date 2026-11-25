@@ -77,6 +77,8 @@ async fn a_codex_agent_handshakes_runs_a_turn_and_resumes_its_thread() {
 /// Codex's server listens on a socket in the agent's private folder with
 /// the agent as one of its clients: another client is served there while
 /// the agent works, and the agent's stop finishes the server for everyone.
+// out of scope on Windows: raw attach, the other client Codex's shared
+// socket serves; a Windows host speaks to Codex over stdio.
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_codex_agent_is_one_client_of_a_server_on_its_private_socket() {
@@ -148,11 +150,12 @@ async fn a_codex_agent_is_one_client_of_a_server_on_its_private_socket() {
 /// an incarnation that cannot keep it ends rather than run a thread nobody
 /// can find again. A read-only session file stands in for the full disk; a
 /// resume keeps the thread it was given, so the new thread is a `/clear`'s.
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_codex_thread_that_cannot_be_kept_ends_the_incarnation() {
-    use std::os::unix::fs::PermissionsExt as _;
-
+    if let Some(why) = provider_fakes::faults::unenforced() {
+        eprintln!("skipped: {why}");
+        return;
+    }
     let agent = Agent::start(Setup {
         kind: Kind::Codex,
         steps: vec![
@@ -174,13 +177,13 @@ async fn a_codex_thread_that_cannot_be_kept_ends_the_incarnation() {
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 
     let session = agent.dir.join(agent::PRIVATE).join("provider-session");
-    std::fs::set_permissions(&session, std::fs::Permissions::from_mode(0o400)).unwrap();
+    let read_only = provider_fakes::faults::read_only(&session).unwrap();
     agent.resume();
     let mut daemon = agent.dial().await;
     agent.ready().await;
     assert_eq!(daemon.prompt(b"p2", "/clear").await, Verdict::Accepted);
     let cause = agent.exit().await;
-    std::fs::set_permissions(&session, std::fs::Permissions::from_mode(0o600)).unwrap();
+    drop(read_only);
     match cause {
         ExitCause::WriteFailed(why) => assert!(
             why.contains("provider-session"),
@@ -395,7 +398,7 @@ async fn a_restart_from_the_checkpoint_re_emits_open_items_and_carries_keys_on()
 /// Terminal Claude: the prompt is pasted into the terminal;
 /// hooks arrive through the hook command on private/hooks.sock and the
 /// transcript is followed from the path the session start names.
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
@@ -426,6 +429,7 @@ fn a_terminal_claude_agent_types_its_prompt_and_hears_its_hooks() {
     });
 }
 
+// out of scope on Windows: terminal Claude, the prompt's one reader.
 #[cfg(unix)]
 const PTY_PROMPT: &str = "Use the Bash tool to run exactly: printf denied > denied.txt. Then stop.";
 
@@ -558,7 +562,7 @@ async fn a_message_mid_turn_is_consumed_before_a_one_shot_child_exits(
     }
 }
 
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
@@ -568,7 +572,7 @@ fn terminal_claude_takes_an_agent_message_on_its_messaging_socket() {
     );
 }
 
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
@@ -743,7 +747,7 @@ async fn codex_replays_transport_loss_mid_turn() {
 /// Yes, don't ask again / Yes, and switch to auto mode / No. The ask offers
 /// the switch, and choosing it allows the call and puts Claude in auto
 /// mode.
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
@@ -819,7 +823,7 @@ fn terminal_claude_switches_to_auto_mode_from_the_permission_menu() {
 /// / Yes, and switch to auto mode / No. A deny with a note is the hook's
 /// decision: the call is refused with the note as the reason Claude reads,
 /// the turn goes on and the session stays in manual mode.
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
@@ -897,7 +901,7 @@ fn terminal_claude_denies_on_the_menu_that_offers_auto_mode() {
 
 /// A question of several skipped in terminal Claude's form: the hook's
 /// answers leave it out, and so do Claude's.
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
@@ -968,7 +972,7 @@ fn terminal_claude_leaves_a_skipped_question_out_of_its_answers() {
 /// The question reaches the daemon before Claude counts as ready, a prompt
 /// sent meanwhile waits instead of being typed into the dialog, and
 /// trusting the folder starts the session, which takes the prompt.
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
@@ -1012,7 +1016,7 @@ fn terminal_claude_asks_to_trust_its_folder_before_taking_a_prompt() {
 }
 
 /// Answering the trust question with Exit ends Claude, as its own No does.
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
@@ -1040,7 +1044,7 @@ fn terminal_claude_exits_when_its_folder_is_not_trusted() {
 /// wrote no transcript for it and would refuse to resume it: the next
 /// incarnation starts the session under the same id instead, and takes a
 /// prompt.
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
@@ -1256,7 +1260,7 @@ async fn a_headless_session_that_began_is_resumed() {
 }
 
 /// Terminal Claude dies while its permission menu is open.
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
@@ -1308,6 +1312,8 @@ async fn windows_refuses_terminal_claude_and_names_the_platform() {
 /// A Claude older than the hooks amux registers is refused before it
 /// starts, in words that say what to do: it would run without reporting
 /// any event amux follows.
+// out of scope on Windows: terminal Claude, the only kind whose version is
+// probed.
 #[cfg(unix)]
 #[test]
 fn terminal_claude_older_than_its_hooks_is_refused_with_the_version_needed() {
@@ -1336,7 +1342,7 @@ fn terminal_claude_older_than_its_hooks_is_refused_with_the_version_needed() {
 /// snapshot names the permission amux itself requested, at once, as the
 /// composer's edge shows it. (A cycle made in Claude's own view shows only
 /// with Claude's next permission-mode row; amux reads no screen.)
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
@@ -1460,6 +1466,7 @@ async fn a_headless_agent_under_a_managed_mcp_config_runs_and_says_its_tools_are
     under_managed_mcp(Kind::ClaudeSdk).await;
 }
 
+// out of scope on Windows: terminal Claude.
 #[cfg(unix)]
 #[test]
 fn a_terminal_agent_under_a_managed_mcp_config_runs_and_says_its_tools_are_off() {

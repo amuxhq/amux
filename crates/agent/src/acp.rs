@@ -558,16 +558,18 @@ mod tests {
     /// space, a `#` that would start a fragment, and a `%` itself.
     #[test]
     fn a_files_url_is_percent_encoded() {
-        #[cfg(not(windows))]
-        assert_eq!(
-            super::file_uri(Path::new("/tmp/a b#c%d/notes.txt")).as_deref(),
-            Some("file:///tmp/a%20b%23c%25d/notes.txt")
-        );
-        #[cfg(windows)]
-        assert_eq!(
-            super::file_uri(Path::new(r"C:\Users\a b#c%d\notes.txt")).as_deref(),
-            Some("file:///C:/Users/a%20b%23c%25d/notes.txt")
-        );
+        let (path, url) = if cfg!(windows) {
+            (
+                r"C:\Users\a b#c%d\notes.txt",
+                "file:///C:/Users/a%20b%23c%25d/notes.txt",
+            )
+        } else {
+            (
+                "/tmp/a b#c%d/notes.txt",
+                "file:///tmp/a%20b%23c%25d/notes.txt",
+            )
+        };
+        assert_eq!(super::file_uri(Path::new(path)).as_deref(), Some(url));
     }
 
     /// An agent answering in another version of ACP than amux's is told

@@ -61,6 +61,8 @@ mod tests {
         assert!(parse("not a version").is_err());
     }
 
+    // out of scope on Windows: terminal Claude, the only kind whose version
+    // is probed.
     #[cfg(unix)]
     #[tokio::test]
     async fn probe_reports_process_output_and_failures() {

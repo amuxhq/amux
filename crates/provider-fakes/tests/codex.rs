@@ -478,6 +478,8 @@ async fn account_and_session_facts_play_in_recorded_shapes() {
 }
 
 /// fake-codex on a Unix socket, as several clients see it.
+// out of scope on Windows: raw attach, which Codex's app-server socket is
+// for; a Windows host speaks to Codex over stdio.
 #[cfg(unix)]
 mod socket {
     use std::time::Duration;

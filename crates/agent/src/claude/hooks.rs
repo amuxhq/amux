@@ -146,6 +146,7 @@ fn forward(_stdin: &[u8], _socket: &Path) -> Result<Vec<u8>, std::io::Error> {
     ))
 }
 
+// out of scope on Windows: terminal Claude, whose hooks these carry.
 #[cfg(all(test, unix))]
 mod tests {
     use claude_protocol::hooks::{self, Payload};

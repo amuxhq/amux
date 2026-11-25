@@ -72,7 +72,7 @@
               "type": "mcpToolCall",
               "id": "st1",
               "server": "amux",
-              "tool": "status",
+              "tool": "set_working_on",
               "status": "inProgress",
               "arguments": {
                 "working_on": "Splitting the parser"
@@ -98,7 +98,7 @@
               "type": "mcpToolCall",
               "id": "st1",
               "server": "amux",
-              "tool": "status",
+              "tool": "set_working_on",
               "status": "completed",
               "arguments": {
                 "working_on": "Splitting the parser"
@@ -131,7 +131,7 @@
               "type": "mcpToolCall",
               "id": "sn1",
               "server": "amux",
-              "tool": "send",
+              "tool": "message_agent",
               "status": "inProgress",
               "arguments": {
                 "to": "reviewer",
@@ -160,7 +160,7 @@
               "type": "mcpToolCall",
               "id": "sn1",
               "server": "amux",
-              "tool": "send",
+              "tool": "message_agent",
               "status": "completed",
               "arguments": {
                 "to": "reviewer",
@@ -198,7 +198,7 @@
               "type": "mcpToolCall",
               "id": "sn2",
               "server": "amux",
-              "tool": "send",
+              "tool": "message_agent",
               "status": "inProgress",
               "arguments": {
                 "to": "ghost",
@@ -226,7 +226,7 @@
               "type": "mcpToolCall",
               "id": "sn2",
               "server": "amux",
-              "tool": "send",
+              "tool": "message_agent",
               "status": "failed",
               "arguments": {
                 "to": "ghost",

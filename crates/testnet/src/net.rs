@@ -30,9 +30,8 @@ use uuid::Uuid;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    AgentRef, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, Input, PromptInput, WithdrawQueued, claude_pty_input, claude_sdk_input,
-    codex_input, create_agent_request,
+    AgentRef, ClaudePtyInput, ClaudeSdkInput, CodexInput, CreateAgentRequest, Input, PromptInput,
+    WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input,
 };
 
 use crate::binaries::Binaries;
@@ -1083,12 +1082,11 @@ impl Net {
             agent_id: id.as_bytes().to_vec(),
             name: Some(decl.name.clone()),
             cwd,
-            agent: Some(create_config(&decl, provider)),
             initial_prompt: decl
                 .prompt
                 .as_deref()
                 .map(|text| submission(b"testnet-first", text)),
-            ..wire::CreateAgentRequest::default()
+            ..create_config(&decl, provider)
         };
         let person = self.person(&decl.host).await?;
         let launching = self.launching(&host, Some((decl.kind, &script, provider)))?;
@@ -1299,6 +1297,7 @@ impl Net {
             .join("scripts")
             .join(format!("{name}.json"));
         let submission = text.map(|text| wire::PromptSubmission {
+            continued: false,
             input_id: Uuid::new_v4().as_bytes().to_vec(),
             prompt: Some(PromptInput {
                 text: text.to_owned(),
@@ -1542,8 +1541,7 @@ impl Net {
                 .as_deref()
                 .map(|text| submission(b"testnet-first", text)),
             cwd,
-            agent: Some(create_config(&decl, provider)),
-            ..CreateAgentRequest::default()
+            ..create_config(&decl, provider)
         };
         providers::choose(&self.choices(), id, provider, decl.kind, &script)?;
         let asked = self.agent_dir(parent)?;
@@ -2473,9 +2471,8 @@ impl Net {
                 agent_id: Uuid::new_v4().as_bytes().to_vec(),
                 name: Some(name.to_owned()),
                 cwd: work,
-                agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
-                    ClaudeCreateConfig::default(),
-                )),
+                provider: "claude".into(),
+                kind: wire::Kind::ClaudeSdk as i32,
                 ..wire::CreateAgentRequest::default()
             })
             .await?)
@@ -2791,18 +2788,14 @@ impl Net {
             self.admin(a)
                 .await?
                 .unpair(wire::UnpairRequest {
-                    peer: Some(wire::HostRef {
-                        of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
-                    }),
+                    host_id: peer.as_bytes().to_vec(),
                 })
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?;
             return Ok(self.ack(format!("{a} no longer trusts {b}")));
         }
         self.edge(a)?
-            .unpair(wire::HostRef {
-                of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
-            })
+            .unpair(peer.as_bytes())
             .await
             .map_err(|error| NetError::Host {
                 host: a.to_owned(),
@@ -3967,6 +3960,7 @@ pub async fn local_channel(
 /// A first prompt for a create or a resume.
 pub fn submission(id: &[u8], text: &str) -> wire::PromptSubmission {
     wire::PromptSubmission {
+        continued: false,
         input_id: id.to_vec(),
         prompt: Some(PromptInput {
             text: text.to_owned(),
@@ -4211,9 +4205,8 @@ fn forward_events<T: Send + 'static>(
     (incoming, reader)
 }
 
-/// A kind and its settings as a person's create asks for them.
-fn create_config(decl: &AgentDecl, provider: Provider) -> create_agent_request::Agent {
-    use create_agent_request::Agent;
+/// The program, kind and settings a person's create asks for.
+fn create_config(decl: &AgentDecl, provider: Provider) -> CreateAgentRequest {
     // A real Claude starts asking, as a person's own default on a real
     // host has it: left unset, Claude would take the operator's own
     // default permission mode from outside the agent's settings.
@@ -4230,20 +4223,21 @@ fn create_config(decl: &AgentDecl, provider: Provider) -> create_agent_request::
             FakeKind::ClaudePty | FakeKind::ClaudeSdk => SMALL_CLAUDE.to_owned(),
         })
     });
-    let claude = ClaudeCreateConfig {
-        permission: permission.clone(),
-        model: model.clone(),
-        ..ClaudeCreateConfig::default()
+    let (program, kind, mode) = match decl.kind {
+        FakeKind::Codex => (wire::agents::CODEX, wire::Kind::Codex, decl.mode.clone()),
+        FakeKind::ClaudePty => (wire::agents::CLAUDE, wire::Kind::ClaudePty, None),
+        FakeKind::ClaudeSdk => (wire::agents::CLAUDE, wire::Kind::ClaudeSdk, None),
     };
-    match decl.kind {
-        FakeKind::Codex => Agent::Codex(CodexCreateConfig {
-            permission,
+    CreateAgentRequest {
+        provider: program.to_owned(),
+        kind: kind as i32,
+        settings: Some(wire::AgentSettings {
             model,
-            mode: decl.mode.clone(),
-            ..CodexCreateConfig::default()
+            permission,
+            mode,
+            ..wire::AgentSettings::default()
         }),
-        FakeKind::ClaudePty => Agent::ClaudePty(claude),
-        FakeKind::ClaudeSdk => Agent::ClaudeSdk(claude),
+        ..CreateAgentRequest::default()
     }
 }
 

@@ -32,11 +32,8 @@ impl ProfileRuntime {
             generation: self.generation(),
             providers: self.offers().on_host(&self.launch()),
             standing: Some(wire::host_entry::Standing::Trusted(wire::Trusted {
-                reach: Some(wire::trusted::Reach::Online(
-                    wire::RouteKind::Unspecified as i32,
-                )),
+                reach: Some(wire::trusted::Reach::Here(wire::Here {})),
                 current: true,
-                same_network: false,
             })),
             folders: self.folders(),
             push_key: self
@@ -48,6 +45,7 @@ impl ProfileRuntime {
                     suite: wire::PushSuite::HpkeX25519Chacha20 as i32,
                     public_key,
                 }),
+            experimental: Default::default(),
         }
     }
 

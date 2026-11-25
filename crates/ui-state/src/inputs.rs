@@ -3,12 +3,12 @@
 
 use wire::{Attachment, Input, Rejected, SendInputResponse};
 
-pub use crate::model::{InputId, InputState, Refusal};
+pub use crate::model::{InputId, InputState, Refusal, RefusalReason};
 
 /// Why an input was refused, from its `Rejected` reply.
 pub fn refusal(rejected: &Rejected) -> Refusal {
     Refusal {
-        reason: rejected.refusal(),
+        reason: rejected.refusal().into(),
         detail: rejected.detail.clone(),
     }
 }
@@ -19,6 +19,11 @@ pub enum InputOutcome {
     Reply(SendInputResponse),
     /// The transport failed before a reply.
     Lost,
+    /// The input never left: the agent's host could not be reached, for
+    /// the reason `detail` says when it is not just that.
+    NotSent {
+        detail: Option<String>,
+    },
 }
 
 /// What an input asked for, as far as the model needs it.
@@ -109,9 +114,13 @@ impl InputWhat {
                 Some(acp::Of::Withdraw(w)) => withdraw(w),
                 Some(acp::Of::SendNow(n)) => send_now(n),
                 Some(acp::Of::Interrupt(_)) => InputWhat::Interrupt,
-                Some(acp::Of::Mode(_) | acp::Of::Model(_) | acp::Of::Effort(_)) | None => {
-                    InputWhat::Other
-                }
+                Some(
+                    acp::Of::Mode(_)
+                    | acp::Of::Permission(_)
+                    | acp::Of::Model(_)
+                    | acp::Of::Effort(_),
+                )
+                | None => InputWhat::Other,
             },
             None => InputWhat::Other,
         }
@@ -200,7 +209,7 @@ mod tests {
         assert_eq!(
             refusal(&rejected),
             Refusal {
-                reason: wire::Refusal::Unspecified,
+                reason: RefusalReason::Unspecified,
                 detail: Some("rate limited".into()),
             }
         );

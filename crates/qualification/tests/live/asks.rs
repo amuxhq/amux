@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use ui_state::{ItemBody, OpenAsk};
 use wire::{
-    ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexAnswer, CodexCreateConfig, CodexInput, Kind,
+    AgentSettings, ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexAnswer, CodexInput, Kind,
     Phase, claude_answer, claude_pty_input, claude_sdk_input, codex_answer, codex_input,
 };
 
@@ -128,13 +128,17 @@ impl Install {
             return Ok(self.question_answer(wire::QuestionAnswer { answers }));
         }
         match ask {
-            OpenAsk::Claude(ask) if matches!(ask.body, Some(wire::ask::Body::Permission(_))) => Ok(
-                Answer::Claude(claude_answer::Of::Permission(wire::PermissionAnswer {
-                    of: Some(wire::permission_answer::Of::Allow(wire::PermissionAllow {
-                        scope: None,
-                    })),
-                })),
-            ),
+            OpenAsk::Claude(ask)
+                if matches!(ask.body, Some(wire::claude_ask::Body::Permission(_))) =>
+            {
+                Ok(Answer::Claude(claude_answer::Of::Permission(
+                    wire::PermissionAnswer {
+                        of: Some(wire::permission_answer::Of::Allow(wire::PermissionAllow {
+                            scope: None,
+                        })),
+                    },
+                )))
+            }
             OpenAsk::Codex(_) if !is_plan(ask) => Ok(Answer::Approve),
             _ => Err(format!(
                 "an unexpected ask opened: {}",
@@ -168,9 +172,9 @@ impl Install {
             Kind::Codex => {
                 self.create_codex(
                     scenario,
-                    CodexCreateConfig {
+                    AgentSettings {
                         mode: Some("plan".into()),
-                        ..CodexCreateConfig::default()
+                        ..AgentSettings::default()
                     },
                 )
                 .await
@@ -363,7 +367,7 @@ impl Install {
 pub(super) fn questions(ask: &OpenAsk) -> Option<Vec<wire::Question>> {
     match ask {
         OpenAsk::Claude(ask) => match &ask.body {
-            Some(wire::ask::Body::Question(question)) if !question.provider_dialog => {
+            Some(wire::claude_ask::Body::Question(question)) if !question.provider_dialog => {
                 Some(question.questions.clone())
             }
             _ => None,
@@ -379,7 +383,7 @@ pub(super) fn questions(ask: &OpenAsk) -> Option<Vec<wire::Question>> {
 
 fn is_plan(ask: &OpenAsk) -> bool {
     match ask {
-        OpenAsk::Claude(ask) => matches!(ask.body, Some(wire::ask::Body::Plan(_))),
+        OpenAsk::Claude(ask) => matches!(ask.body, Some(wire::claude_ask::Body::Plan(_))),
         OpenAsk::Codex(ask) => matches!(ask.body, Some(wire::codex_ask::Body::Plan(_))),
         // An ACP plan is a progress list, never an ask.
         OpenAsk::Acp(_) => false,

@@ -307,7 +307,7 @@ impl ::prost::Name for ClientReloading {
 pub struct ClientSent {
     #[prost(bytes = "vec", tag = "1")]
     pub input_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(oneof = "client_sent::Outcome", tags = "2, 3")]
+    #[prost(oneof = "client_sent::Outcome", tags = "2, 3, 4")]
     pub outcome: ::core::option::Option<client_sent::Outcome>,
 }
 /// Nested message and enum types in `ClientSent`.
@@ -319,6 +319,10 @@ pub mod client_sent {
         /// The transport failed before a reply.
         #[prost(message, tag = "3")]
         Lost(super::ClientLost),
+        /// The input never left for the agent's host, which could not be
+        /// reached.
+        #[prost(message, tag = "4")]
+        NotSent(super::ClientNotSent),
     }
 }
 impl ::prost::Name for ClientSent {
@@ -341,6 +345,22 @@ impl ::prost::Name for ClientLost {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.dump.ClientLost".into()
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ClientNotSent {
+    /// Why, in the client's own words: a lapsed relay plan says so.
+    #[prost(string, optional, tag = "1")]
+    pub detail: ::core::option::Option<::prost::alloc::string::String>,
+}
+impl ::prost::Name for ClientNotSent {
+    const NAME: &'static str = "ClientNotSent";
+    const PACKAGE: &'static str = "amux.dump";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.dump.ClientNotSent".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.dump.ClientNotSent".into()
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -380,6 +400,9 @@ pub enum ClientInputState {
     Settled = 2,
     Rejected = 3,
     Uncertain = 4,
+    /// Never left this client: the agent's host could not be reached. Its
+    /// Rejected carries only the detail.
+    NotSent = 5,
 }
 impl ClientInputState {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -393,6 +416,7 @@ impl ClientInputState {
             Self::Settled => "CLIENT_INPUT_STATE_SETTLED",
             Self::Rejected => "CLIENT_INPUT_STATE_REJECTED",
             Self::Uncertain => "CLIENT_INPUT_STATE_UNCERTAIN",
+            Self::NotSent => "CLIENT_INPUT_STATE_NOT_SENT",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -403,6 +427,7 @@ impl ClientInputState {
             "CLIENT_INPUT_STATE_SETTLED" => Some(Self::Settled),
             "CLIENT_INPUT_STATE_REJECTED" => Some(Self::Rejected),
             "CLIENT_INPUT_STATE_UNCERTAIN" => Some(Self::Uncertain),
+            "CLIENT_INPUT_STATE_NOT_SENT" => Some(Self::NotSent),
             _ => None,
         }
     }

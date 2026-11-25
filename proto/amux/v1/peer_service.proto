@@ -20,7 +20,7 @@ import "amux/v1/session.proto";
 //
 // Each of a node's local reads has its feed here: the inventory from
 // FollowAgents, a conversation from FollowSession, older pages from
-// ListItems and files from GetBlob. FollowAgents and FollowSession are the
+// FetchItems and files from FetchBlob. FollowAgents and FollowSession are the
 // only calls that may go out on a link before its handshake finishes.
 
 service PeerService {
@@ -31,10 +31,10 @@ service PeerService {
   // caller's copy holds.
   rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
   // Older items of one of this host's conversations, a page at a time.
-  rpc ListItems(PeerServiceListItemsRequest) returns (PeerServiceListItemsResponse);
+  rpc FetchItems(FetchItemsRequest) returns (FetchItemsResponse);
   // A file in one of this host's agents' directories; never one this host
   // holds as a copy of another's.
-  rpc GetBlob(PeerServiceGetBlobRequest) returns (PeerServiceGetBlobResponse);
+  rpc FetchBlob(FetchBlobRequest) returns (FetchBlobResponse);
   // A child's report to its parent here. The child is one of the calling
   // host's agents: that host is whoever the link authenticated. A report is
   // for one incarnation of its parent, dropped when the parent has exited or
@@ -62,7 +62,7 @@ message FollowSessionResponse {
   SessionEvent event = 1;
 }
 
-message PeerServiceListItemsRequest {
+message FetchItemsRequest {
   bytes agent_id = 1;
   // Items before this order; absent, the newest.
   optional uint64 before_order = 2;
@@ -70,19 +70,19 @@ message PeerServiceListItemsRequest {
 }
 
 // By order, newest first; exhausted means no older history exists.
-message PeerServiceListItemsResponse {
+message FetchItemsResponse {
   repeated Item items = 1;
   bool exhausted = 2;
 }
 
-message PeerServiceGetBlobRequest {
+message FetchBlobRequest {
   bytes agent_id = 1;
   // The SHA-256 a BlobRef names.
   bytes hash = 2;
 }
 
 // The file's bytes alone; the caller checks them against the hash.
-message PeerServiceGetBlobResponse {
+message FetchBlobResponse {
   bytes bytes = 1;
 }
 

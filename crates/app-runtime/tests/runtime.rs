@@ -1102,7 +1102,7 @@ async fn an_agent_the_host_offers_by_id_starts_and_is_named_as_the_host_names_it
     };
     let sent = chat.send(&picture).await;
     let cannot = Refusal {
-        reason: wire::Refusal::Unsupported,
+        reason: ui_state::RefusalReason::Unsupported,
         detail: Some("Fake ACP Agent can’t take images".into()),
     };
     assert_eq!(sent.state, InputState::Rejected(cannot.clone()));

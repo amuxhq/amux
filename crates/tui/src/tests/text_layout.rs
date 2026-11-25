@@ -226,7 +226,7 @@ fn a_long_edit_path_keeps_the_files_name() {
 #[test]
 fn a_codex_rule_for_a_long_command_reads_whole() {
     let script = format!("echo {} > long.txt && touch END_MARK", "a".repeat(170));
-    let answer = |decision: wire::Decision| {
+    let answer = |decision: wire::CodexDecision| {
         ui_view::Answer::Codex(wire::CodexAnswer {
             of: Some(wire::codex_answer::Of::Approve(decision as i32)),
             ..Default::default()
@@ -251,14 +251,17 @@ fn a_codex_rule_for_a_long_command_reads_whole() {
             description: String::new(),
         },
         choices: vec![
-            choice(ui_view::ChoiceOutcome::AllowOnce, wire::Decision::Approve),
+            choice(
+                ui_view::ChoiceOutcome::AllowOnce,
+                wire::CodexDecision::Approve,
+            ),
             choice(
                 ui_view::ChoiceOutcome::AllowSimilar {
                     prefix: vec![script.clone()],
                 },
-                wire::Decision::ApproveSimilar,
+                wire::CodexDecision::ApproveSimilar,
             ),
-            choice(ui_view::ChoiceOutcome::Deny, wire::Decision::Deny),
+            choice(ui_view::ChoiceOutcome::Deny, wire::CodexDecision::Deny),
         ],
         question_note: false,
         question_skip: false,
@@ -320,10 +323,10 @@ fn a_long_commands_choices_stay_on_a_short_screen() {
         ..Default::default()
     };
     let body = wire::ClaudeSnapshot {
-        asks: vec![wire::Ask {
+        asks: vec![wire::ClaudeAsk {
             key: "ask-1".into(),
             item_key: "call-1".into(),
-            body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
+            body: Some(wire::claude_ask::Body::Permission(wire::ClaudePermissionAsk {
                 tool_name: "Bash".into(),
                 input: Some(interpret::tool_input("Bash", "", &input, "")),
                 scopes: vec![
@@ -507,7 +510,7 @@ fn an_idle_rows_background_jobs_are_counted_on_it() {
     else {
         unreachable!()
     };
-    agent.background_jobs = 1;
+    agent.status_mut().background_jobs = 1;
     inventory(&mut fleet, wire::inventory_event::Of::Agent(agent.clone()));
     let mut view = crate::home::Home::default();
     let screen = fleet_screen_at(&mut view, &fleet, 80, 24);
@@ -515,7 +518,7 @@ fn an_idle_rows_background_jobs_are_counted_on_it() {
         screen.contains("1 background job"),
         "the row does not count its background job:\n{screen}"
     );
-    agent.background_jobs = 2;
+    agent.status_mut().background_jobs = 2;
     inventory(&mut fleet, wire::inventory_event::Of::Agent(agent));
     let screen = fleet_screen_at(&mut view, &fleet, 80, 24);
     assert!(screen.contains("2 background jobs"), "{screen}");
@@ -525,10 +528,10 @@ fn an_idle_rows_background_jobs_are_counted_on_it() {
 /// Something else, as an agent asks it.
 fn toppings() -> SessionState {
     let body = wire::ClaudeSnapshot {
-        asks: vec![wire::Ask {
+        asks: vec![wire::ClaudeAsk {
             key: "q-1".into(),
             item_key: "call-q".into(),
-            body: Some(wire::ask::Body::Question(wire::QuestionAsk {
+            body: Some(wire::claude_ask::Body::Question(wire::QuestionAsk {
                 questions: vec![wire::Question {
                     header: "Toppings".into(),
                     question: "Which toppings do you want on the pizza?".into(),
@@ -606,10 +609,10 @@ fn long_question() -> (SessionState, String) {
         which direction should we take for this decision?"
         .to_owned();
     let body = wire::ClaudeSnapshot {
-        asks: vec![wire::Ask {
+        asks: vec![wire::ClaudeAsk {
             key: "q-1".into(),
             item_key: "call-q".into(),
-            body: Some(wire::ask::Body::Question(wire::QuestionAsk {
+            body: Some(wire::claude_ask::Body::Question(wire::QuestionAsk {
                 questions: vec![wire::Question {
                     header: "Storage".into(),
                     question: question.clone(),
@@ -696,16 +699,22 @@ fn three_file_patch() -> (SessionState, i64) {
                     },
                 )),
                 decisions: vec![
-                    wire::Decision::Approve as i32,
-                    wire::Decision::ApproveSession as i32,
-                    wire::Decision::Deny as i32,
+                    wire::CodexDecision::Approve as i32,
+                    wire::CodexDecision::ApproveSession as i32,
+                    wire::CodexDecision::Deny as i32,
                 ],
             }],
-            model: agent.model.clone(),
             ..Default::default()
         }
         .encode_to_vec(),
-        phase: Phase::NeedsYou as i32,
+        status: Some(Box::new(wire::AgentStatus {
+            phase: Phase::NeedsYou as i32,
+            settings: Some(wire::AgentSettings {
+                model: agent.model.clone(),
+                ..wire::AgentSettings::default()
+            }),
+            ..wire::AgentStatus::default()
+        })),
         revision: agent.revision + 1,
         catalogue: agent.catalogue.clone(),
         ..wire::Snapshot::default()

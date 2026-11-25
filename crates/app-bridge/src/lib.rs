@@ -38,9 +38,8 @@ pub use app_embedded::{EdgeOverrides, EmbeddedRuntime, ProfileId, StartConfig};
 use app_embedded::{PairRequest, Phone, ProfileView, UsageEvent};
 use app_runtime::values::{
     AgentAct, ChatAct, ChatDelta, Draft, FleetDelta, Found, MachineSettings, NewAgent,
-    OnboardingAnswer, OnboardingState, PairingStatusView, PairingWindowView, RepositorySuggestion,
-    ReviewChange, ReviewChoice, ReviewOutcome, SettingsChange, SignInAnswer, SignInOfferOutcome,
-    SignInOfferView,
+    OnboardingAnswer, OnboardingState, PairingStatusView, PairingWindowView, ReviewChange,
+    ReviewChoice, ReviewOutcome, SettingsChange, SignInAnswer, SignInOfferOutcome, SignInOfferView,
 };
 use app_runtime::{AppRuntime, Chat, ReviewSession, Wake};
 pub use client::Surface;
@@ -1292,26 +1291,6 @@ impl AmuxRuntime {
                     .await
                     .map(|settings| MachineSettings::from(&settings)),
             )
-        })
-    }
-
-    /// The folders worth offering as repositories.
-    pub fn suggest_repositories(&self) -> u64 {
-        let installation = self.shared.installation.clone();
-        self.act(async move {
-            Answered::from(installation.suggest_repositories().await.map(|suggested| {
-                suggested
-                    .into_iter()
-                    .map(|entry| RepositorySuggestion {
-                        repository: ui_view::Repository::of_checkout(
-                            entry.checkout.as_ref(),
-                            &entry.path,
-                        ),
-                        path: entry.path,
-                        name: entry.name,
-                    })
-                    .collect::<Vec<_>>()
-            }))
         })
     }
 

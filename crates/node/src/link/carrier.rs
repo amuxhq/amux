@@ -25,10 +25,10 @@ pub struct ControlSink {
 }
 
 pub struct ControlSource {
-    pub(super) rx: mpsc::Receiver<io::Result<wire::Message>>,
+    pub(super) rx: mpsc::Receiver<io::Result<wire::LinkMessage>>,
 }
 
-pub async fn write_message(sink: &mut ControlSink, message: &wire::Message) -> io::Result<()> {
+pub async fn write_message(sink: &mut ControlSink, message: &wire::LinkMessage) -> io::Result<()> {
     let encoded_len = message.encoded_len();
     if encoded_len > wire::MESSAGE_SIZE_LIMIT {
         return Err(io::Error::new(
@@ -58,6 +58,6 @@ pub async fn write_message(sink: &mut ControlSink, message: &wire::Message) -> i
         .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "control stream closed"))?
 }
 
-pub async fn read_message(source: &mut ControlSource) -> io::Result<Option<wire::Message>> {
+pub async fn read_message(source: &mut ControlSource) -> io::Result<Option<wire::LinkMessage>> {
     source.rx.recv().await.transpose()
 }

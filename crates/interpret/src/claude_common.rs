@@ -14,13 +14,13 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    Ask, AskClosed, Attachment, BackgroundJob, Boundary, BoundaryKind, ClaudeGrant, ClaudeItem,
-    ClaudeUsage, ContextMeter, DecisionOutcome, EditInput, Envelope, IncarnationEnd, Limit,
-    NotebookCell, NotebookEditMode, OfferedCommand, OfferedModel, OfferedPermission, PatchHunk,
-    Question, QuestionAsk, QuestionOption, Replacement, ScopeDestination, ShellInput, TaskList,
-    TaskListEntry, TaskListStatus, ToolCall, ToolClass, ToolDecision, ToolInput, ToolServer,
-    ToolServerStatus, ToolState, UsageState, attachment, claude_item, codex_grant, tool_decision,
-    tool_input,
+    AskClosed, Attachment, BackgroundJob, Boundary, BoundaryKind, ClaudeAsk, ClaudeGrant,
+    ClaudeItem, ClaudeToolCall, ClaudeToolInput, ClaudeUsage, ContextMeter, DecisionOutcome,
+    EditInput, Envelope, IncarnationEnd, Limit, NotebookCell, NotebookEditMode, OfferedCommand,
+    OfferedModel, OfferedPermission, PatchHunk, Question, QuestionAsk, QuestionOption, Replacement,
+    ScopeDestination, ShellInput, TaskList, TaskListEntry, TaskListStatus, ToolClass, ToolDecision,
+    ToolServer, ToolServerStatus, ToolState, UsageState, attachment, claude_item,
+    claude_tool_input, codex_grant, tool_decision,
 };
 
 use crate::{
@@ -332,11 +332,11 @@ pub(crate) struct Task {
 /// A golden's words for an exit boundary's cause: its value's name and its
 /// own words, or nothing for a boundary that is not an exit.
 pub(crate) fn describe_cause(boundary: &wire::Boundary) -> String {
-    if boundary.cause == 0 && boundary.cause_detail.is_none() {
+    let Some(exit) = &boundary.exit else {
         return String::new();
-    }
-    let name = wire::ExitCause::try_from(boundary.cause).map_or_else(
-        |_| boundary.cause.to_string(),
+    };
+    let name = wire::ExitCause::try_from(exit.cause).map_or_else(
+        |_| exit.cause.to_string(),
         |cause| {
             cause
                 .as_str_name()
@@ -344,7 +344,7 @@ pub(crate) fn describe_cause(boundary: &wire::Boundary) -> String {
                 .to_owned()
         },
     );
-    match &boundary.cause_detail {
+    match &exit.detail {
         Some(detail) => format!(
             " cause={name} detail={}",
             serde_json::Value::String(detail.clone())
@@ -357,7 +357,7 @@ pub(crate) fn or_dash(text: &str) -> &str {
     if text.is_empty() { "-" } else { text }
 }
 
-pub(crate) fn describe_tool(tool: &ToolCall) -> String {
+pub(crate) fn describe_tool(tool: &ClaudeToolCall) -> String {
     let mut text = format!(
         "{}{} {}",
         if tool.server.is_empty() {
@@ -444,23 +444,23 @@ pub(crate) fn describe_tool(tool: &ToolCall) -> String {
 
 /// A call's input as goldens show it: its arm and subject, or Claude's
 /// JSON for a tool with no arm of its own.
-fn describe_input(input: &ToolInput) -> String {
+fn describe_input(input: &ClaudeToolInput) -> String {
     let arm = match &input.of {
-        Some(tool_input::Of::OtherJson(json)) => {
+        Some(claude_tool_input::Of::OtherJson(json)) => {
             return clip(&String::from_utf8_lossy(json), 60);
         }
-        Some(tool_input::Of::Shell(_)) => "shell",
-        Some(tool_input::Of::Edit(edit)) if edit.write => "write",
-        Some(tool_input::Of::Edit(edit)) => {
+        Some(claude_tool_input::Of::Shell(_)) => "shell",
+        Some(claude_tool_input::Of::Edit(edit)) if edit.write => "write",
+        Some(claude_tool_input::Of::Edit(edit)) => {
             return format!(
                 "edit:{}x{}",
                 clip(&input.subject, 60),
                 edit.replacements.len()
             );
         }
-        Some(tool_input::Of::Subagent(_)) => "subagent",
-        Some(tool_input::Of::TaskList(_)) => "task_list",
-        Some(tool_input::Of::Web(_)) => "web",
+        Some(claude_tool_input::Of::Subagent(_)) => "subagent",
+        Some(claude_tool_input::Of::TaskList(_)) => "task_list",
+        Some(claude_tool_input::Of::Web(_)) => "web",
         None => "none",
     };
     format!("{arm}:{}", clip(&input.subject, 60))
@@ -927,18 +927,18 @@ pub fn file_step(name: &str, server: &str, result: &str) -> FileStep {
 /// Claude's JSON. `old_source` is a notebook cell's text as it stands,
 /// which the host reads when Claude asks to edit it (Claude names only the
 /// cell); a call carries none.
-pub fn tool_input(name: &str, server: &str, input: &Value, old_source: &str) -> ToolInput {
+pub fn tool_input(name: &str, server: &str, input: &Value, old_source: &str) -> ClaudeToolInput {
     let of = if !server.is_empty() {
-        tool_input::Of::OtherJson(input.to_string().into_bytes())
+        claude_tool_input::Of::OtherJson(input.to_string().into_bytes())
     } else {
         match name {
-            SHELL_TOOL => tool_input::Of::Shell(ShellInput {
+            SHELL_TOOL => claude_tool_input::Of::Shell(ShellInput {
                 description: read::<BashInput>(input).description,
             }),
             "Edit" | "MultiEdit" => {
                 let edit = read::<EditCall>(input);
                 let edits = edit.edits.unwrap_or_else(|| vec![edit.one]);
-                tool_input::Of::Edit(EditInput {
+                claude_tool_input::Of::Edit(EditInput {
                     replacements: edits
                         .into_iter()
                         .map(|edit| Replacement {
@@ -949,7 +949,7 @@ pub fn tool_input(name: &str, server: &str, input: &Value, old_source: &str) -> 
                     ..Default::default()
                 })
             }
-            "Write" => tool_input::Of::Edit(EditInput {
+            "Write" => claude_tool_input::Of::Edit(EditInput {
                 replacements: vec![Replacement {
                     old: String::new(),
                     new: read::<WriteCall>(input).content,
@@ -964,7 +964,7 @@ pub fn tool_input(name: &str, server: &str, input: &Value, old_source: &str) -> 
                     "delete" => NotebookEditMode::Delete,
                     _ => NotebookEditMode::Replace,
                 };
-                tool_input::Of::Edit(EditInput {
+                claude_tool_input::Of::Edit(EditInput {
                     replacements: vec![Replacement {
                         old: old_source.to_owned(),
                         new: if mode == NotebookEditMode::Delete {
@@ -981,15 +981,15 @@ pub fn tool_input(name: &str, server: &str, input: &Value, old_source: &str) -> 
                     }),
                 })
             }
-            "Agent" | "Task" => tool_input::Of::Subagent(wire::Empty {}),
+            "Agent" | "Task" => claude_tool_input::Of::Subagent(wire::Empty {}),
             "TodoWrite" | "TaskCreate" | "TaskUpdate" | "TaskList" | "TaskGet" => {
-                tool_input::Of::TaskList(wire::Empty {})
+                claude_tool_input::Of::TaskList(wire::Empty {})
             }
-            "WebFetch" | "WebSearch" => tool_input::Of::Web(wire::Empty {}),
-            _ => tool_input::Of::OtherJson(input.to_string().into_bytes()),
+            "WebFetch" | "WebSearch" => claude_tool_input::Of::Web(wire::Empty {}),
+            _ => claude_tool_input::Of::OtherJson(input.to_string().into_bytes()),
         }
     };
-    ToolInput {
+    ClaudeToolInput {
         subject: subject(input),
         of: Some(of),
     }
@@ -1260,11 +1260,11 @@ pub(crate) fn describe_class(class: i32) -> &'static str {
 }
 
 /// Open asks as goldens show them.
-pub(crate) fn describe_asks(asks: &[Ask]) -> String {
+pub(crate) fn describe_asks(asks: &[ClaudeAsk]) -> String {
     asks.iter()
         .map(|ask| {
             let body = match &ask.body {
-                Some(wire::ask::Body::Permission(permission)) => format!(
+                Some(wire::claude_ask::Body::Permission(permission)) => format!(
                     "permission:{}{}{}{}",
                     permission.tool_name,
                     if permission.server.is_empty() {
@@ -1310,7 +1310,7 @@ pub(crate) fn describe_asks(asks: &[Ask]) -> String {
                     .flatten()
                     .collect::<String>()
                 ),
-                Some(wire::ask::Body::Question(question)) => format!(
+                Some(wire::claude_ask::Body::Question(question)) => format!(
                     "question:{}",
                     question
                         .questions
@@ -1324,19 +1324,19 @@ pub(crate) fn describe_asks(asks: &[Ask]) -> String {
                         .collect::<Vec<_>>()
                         .join(",")
                 ),
-                Some(wire::ask::Body::Plan(plan)) => crate::shared::describe_plan_ask(plan),
-                Some(wire::ask::Body::Form(form)) => format!(
+                Some(wire::claude_ask::Body::Plan(plan)) => crate::shared::describe_plan_ask(plan),
+                Some(wire::claude_ask::Body::Form(form)) => format!(
                     "form:{} {}",
                     form.server,
                     Value::String(form.message.clone())
                 ),
-                Some(wire::ask::Body::Link(link)) => format!(
+                Some(wire::claude_ask::Body::Link(link)) => format!(
                     "link:{} {} {}",
                     link.server,
                     Value::String(link.message.clone()),
                     link.url
                 ),
-                Some(wire::ask::Body::Unanswerable(unanswerable)) => {
+                Some(wire::claude_ask::Body::Unanswerable(unanswerable)) => {
                     format!("unanswerable:{}", unanswerable.reason)
                 }
                 None => "none".into(),
@@ -1616,9 +1616,7 @@ pub(crate) fn boundary_item(key: String, kind: BoundaryKind, exit: IncarnationEn
         key,
         body: item_body(claude_item::Kind::Boundary(Boundary {
             kind: kind as i32,
-            cause: exit.cause,
-            cause_detail: exit.detail,
-            idle: false,
+            exit: (kind == BoundaryKind::Exited).then_some(exit),
         })),
         complete: true,
         ..Default::default()
@@ -1752,7 +1750,7 @@ impl<T> Tool<T> {
 
     /// Emits the call's item, keyed `key`, into the agent's own part, if it
     /// is drawn and changed since the last emission.
-    pub(crate) fn emit(&mut self, shared: &mut Shared<Ask>, emit: &mut Emit, key: &str) {
+    pub(crate) fn emit(&mut self, shared: &mut Shared<ClaudeAsk>, emit: &mut Emit, key: &str) {
         if let Some(draft) = self.draft(key) {
             shared.item(emit, draft);
         }
@@ -1799,7 +1797,7 @@ impl<T> Tool<T> {
             };
             let input = serde_json::from_str(&self.input).unwrap_or(Value::Null);
             draft.attachments = self.attached.clone();
-            item_body(claude_item::Kind::Tool(ToolCall {
+            item_body(claude_item::Kind::Tool(ClaudeToolCall {
                 name: self.name.clone(),
                 input: Some(tool_input(&self.name, &self.server, &input, "")),
                 state: self.state,
@@ -1933,20 +1931,9 @@ pub(crate) fn describe_item(body: &[u8]) -> ItemView {
                 Value::String(switch.reason)
             ),
         ),
-        Some(Kind::Compaction(compaction)) => (
-            "compaction",
-            true,
-            format!(
-                "{}→{}{}",
-                compaction
-                    .tokens_before
-                    .map_or("?".to_owned(), |tokens| tokens.to_string()),
-                compaction
-                    .tokens_after
-                    .map_or("?".to_owned(), |tokens| tokens.to_string()),
-                if compaction.automatic { " auto" } else { "" }
-            ),
-        ),
+        Some(Kind::Compaction(compaction)) => {
+            ("compaction", true, describe_compaction(&compaction))
+        }
     };
     ItemView {
         arm: arm.into(),
@@ -1955,13 +1942,28 @@ pub(crate) fn describe_item(body: &[u8]) -> ItemView {
     }
 }
 
+/// A compaction as the emission goldens print it: the tokens either side,
+/// and who started it.
+pub(crate) fn describe_compaction(compaction: &wire::Compaction) -> String {
+    format!(
+        "{}→{}{}{}",
+        compaction
+            .tokens_before
+            .map_or("?".to_owned(), |tokens| tokens.to_string()),
+        compaction
+            .tokens_after
+            .map_or("?".to_owned(), |tokens| tokens.to_string()),
+        if compaction.automatic { " auto" } else { "" },
+        if compaction.idle { " idle" } else { "" },
+    )
+}
+
 /// A Claude snapshot as the emission goldens print it.
 pub(crate) fn describe_snapshot(body: &[u8]) -> SnapshotView {
     let snapshot = wire::ClaudeSnapshot::decode(body).unwrap_or_default();
     let context = snapshot.context.unwrap_or_default();
     let usage = snapshot.usage.unwrap_or_default();
     let servers = snapshot.servers;
-    let sign_in = snapshot.sign_in.unwrap_or_default();
     SnapshotView {
         asks: snapshot
             .asks
@@ -1969,13 +1971,8 @@ pub(crate) fn describe_snapshot(body: &[u8]) -> SnapshotView {
             .map(|ask| (ask.key.clone(), ask.item_key.clone()))
             .collect(),
         text: format!(
-            "asks=[{}] session={} model={} model_name={} effort={} mode={} context={} tasks={} active=[{}] usage={} servers={} sign_in={} background={}",
+            "asks=[{}] context={} tasks={} active=[{}] usage={} servers={}",
             describe_asks(&snapshot.asks),
-            snapshot.provider_session.as_deref().unwrap_or("?"),
-            snapshot.model.as_deref().unwrap_or("?"),
-            describe_model_name(snapshot.model_name.as_deref()),
-            snapshot.effort.as_deref().unwrap_or("?"),
-            snapshot.permission.as_deref().unwrap_or("?"),
             if context.known {
                 format!(
                     "{}/{}",
@@ -1996,11 +1993,6 @@ pub(crate) fn describe_snapshot(body: &[u8]) -> SnapshotView {
                 .join(","),
             describe_claude_usage(&usage),
             crate::shared::describe_servers(&servers),
-            match wire::SignInState::try_from(sign_in.state).unwrap_or_default() {
-                wire::SignInState::Unspecified => "?".to_owned(),
-                state => format!("{} {}", state.as_str_name(), or_dash(&sign_in.account)),
-            },
-            crate::shared::describe_jobs(snapshot.background_jobs.as_ref())
         ) + &snapshot
             .running_calls
             .iter()
@@ -2087,7 +2079,7 @@ mod tests {
         )
         .of
         {
-            Some(tool_input::Of::Edit(edit)) => edit
+            Some(claude_tool_input::Of::Edit(edit)) => edit
                 .replacements
                 .into_iter()
                 .map(|replacement| (replacement.old, replacement.new))

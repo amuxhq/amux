@@ -779,10 +779,7 @@ async fn a_key_that_does_not_match_the_pinned_one_is_refused() {
         .find(|(host, ..)| *host == desk)
         .unwrap();
     assert_eq!(pinned.2, desk_key, "the refused pairing left the old key");
-    edge(&net, "laptop")
-        .unpair(wire::HostRef::id(desk.as_bytes().to_vec()))
-        .await
-        .unwrap();
+    edge(&net, "laptop").unpair(desk.as_bytes()).await.unwrap();
     join().await.expect("the person confirms the peer");
     until_via(&net, "laptop", "desk", LiveRoute::Direct).await;
     let pinned = edge(&net, "laptop")
@@ -1762,7 +1759,7 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "ListItems with a three-byte agent id",
         peer.peer
-            .list_items(wire::PeerServiceListItemsRequest {
+            .fetch_items(wire::FetchItemsRequest {
                 agent_id: short.clone(),
                 before_order: None,
                 page_size: 10,
@@ -1773,7 +1770,7 @@ async fn malformed_peer_requests_and_handshake_floods_are_refused_and_the_link_c
     answers.push((
         "GetBlob with a malformed hash",
         peer.peer
-            .get_blob(wire::PeerServiceGetBlobRequest {
+            .fetch_blob(wire::FetchBlobRequest {
                 agent_id: worker.clone(),
                 hash: vec![0; 3],
             })
@@ -2088,9 +2085,8 @@ async fn an_agent_created_from_a_paired_device_finishes_the_first_agent_step() {
         .agents()
         .create(wire::CreateAgentRequest {
             cwd: work,
-            agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
-                Default::default(),
-            )),
+            provider: wire::agents::CLAUDE.into(),
+            kind: wire::Kind::ClaudeSdk as i32,
             ..wire::CreateAgentRequest::default()
         })
         .await
@@ -2697,7 +2693,7 @@ async fn a_direct_link_keeps_its_session_through_a_rebind_a_large_transfer_and_a
             .await
             .unwrap()
             .peer
-            .get_blob(wire::PeerServiceGetBlobRequest {
+            .fetch_blob(wire::FetchBlobRequest {
                 agent_id: worker.as_bytes().to_vec(),
                 hash: stored.hash.clone(),
             }),

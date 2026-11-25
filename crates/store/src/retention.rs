@@ -327,7 +327,7 @@ pub(crate) fn sweep_replicas(
             last_used
                 .get(&row.agent)
                 .copied()
-                .or(row.phase_since_ms)
+                .or(Some(row.status.phase_since_ms).filter(|since| *since != 0))
                 .unwrap_or(i64::MIN),
             row.agent.clone(),
         )

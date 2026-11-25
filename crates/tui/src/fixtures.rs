@@ -256,10 +256,16 @@ pub fn family_frames(kind: Kind, name: &str) -> Vec<Family> {
                         agent_id: part.agent_id.clone(),
                         host_id: host.host_id.clone(),
                         kind: kind as i32,
+                        // Run by its parent's provider process, as the
+                        // daemon names it.
+                        provider: host.provider.clone(),
                         name: format!("sub-{}", &hex[..hex.len().min(8)]),
-                        title: Some(start.title.clone()).filter(|title| !title.is_empty()),
                         lifecycle: wire::Lifecycle::Live as i32,
-                        phase: wire::Phase::Working as i32,
+                        status: Some(Box::new(wire::AgentStatus {
+                            phase: wire::Phase::Working as i32,
+                            title: Some(start.title.clone()).filter(|title| !title.is_empty()),
+                            ..wire::AgentStatus::default()
+                        })),
                         incarnation: 1,
                         parent: Some(wire::AgentRef {
                             host_id: host.host_id.clone(),
@@ -288,20 +294,21 @@ pub fn family_frames(kind: Kind, name: &str) -> Vec<Family> {
             let sub = &mut subs[at_sub];
             if part.start.is_some() && sub.row.lifecycle == wire::Lifecycle::Exited as i32 {
                 sub.row.lifecycle = wire::Lifecycle::Live as i32;
-                sub.row.phase = wire::Phase::Working as i32;
-                sub.row.exit_cause = 0;
-                sub.row.exit_detail = None;
+                sub.row.status_mut().phase = wire::Phase::Working as i32;
+                sub.row.exit = None;
             }
             for event in sub.committer.commit_agent(part) {
                 sub.state.update(Msg::Event(event));
             }
             if let Some(snapshot) = &part.snapshot {
-                sub.row.phase = snapshot.phase;
+                sub.row.status_mut().phase = snapshot.phase() as i32;
             }
             if let Some(end) = &part.end {
                 sub.row.lifecycle = wire::Lifecycle::Exited as i32;
-                sub.row.exit_cause = end.cause;
-                sub.row.exit_detail = end.detail.clone();
+                sub.row.exit = Some(wire::IncarnationEnd {
+                    cause: end.cause,
+                    detail: end.detail.clone(),
+                });
             }
             sub.state.update(Msg::Entry(sub.row.clone()));
             fleet.update(listed(&sub.row));

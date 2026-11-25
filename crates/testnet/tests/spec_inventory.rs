@@ -45,9 +45,11 @@ fn host_named<'a>(net: &Net, hosts: &'a [HostEntry], name: &str) -> Option<&'a H
     hosts.iter().find(|host| host.host_id() == id.as_bytes())
 }
 
-/// How a host is listed: trusted and online or , or a candidate.
+/// How a host is listed: trusted and this machine, online or offline, or a
+/// candidate.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Listed {
+    Here,
     Online,
     Offline,
     Candidate,
@@ -56,6 +58,8 @@ enum Listed {
 fn listed(host: &HostEntry) -> Option<Listed> {
     if host.candidate().is_some() {
         Some(Listed::Candidate)
+    } else if host.here() {
+        Some(Listed::Here)
     } else if host.online().is_some() {
         Some(Listed::Online)
     } else {
@@ -101,7 +105,7 @@ async fn a_trusted_host_stays_in_every_snapshot_while_unreachable() {
             |events| {
                 observe::inventory_caught_up(events)
                     && lists_host(&net, events, "desk", Listed::Online)
-                    && lists_host(&net, events, "laptop", Listed::Online)
+                    && lists_host(&net, events, "laptop", Listed::Here)
                     && lists_agent(&net, events, "worker")
             },
             PATIENCE,

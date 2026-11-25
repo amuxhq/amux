@@ -136,9 +136,10 @@ The same network as JSON, as `testnet serve` reads it:
 
 JSON topologies live in `journeys/topologies`; scripts shared between them in `journeys/scripts`.
 
-An in-process host's repository suggestions read the session logs under its own `home` directory, beside its
-`work` and `repositories`, never the home of whoever runs the net; a story writes a Claude Code or Codex log
-there (`home/.claude/projects/<folder>/<session>.jsonl`, each line naming its `cwd`) to have a folder suggested.
+The folders an in-process host's entry lists from session history are read from the session logs under its own
+`home` directory, beside its `work` and `repositories`, never the home of whoever runs the net; a story writes a
+Claude Code or Codex log there (`home/.claude/projects/<folder>/<session>.jsonl`, each line naming its `cwd`) to
+have a folder listed.
 
 ### Scripts
 

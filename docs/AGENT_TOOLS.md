@@ -54,12 +54,6 @@ already; `set_working_on` has the conversation's title to fall back on; and
 ignore the metadata. The names say what each tool reaches and does, since a
 deferred tool is often known by its name alone.
 
-The tools were named `agents`, `hosts`, `send`, `spawn`, `stop`, `status` and
-`attach` before 0.11. An agent that was running when its host upgraded keeps
-the tool list it started with under Claude's old allowlist, so it needs a
-restart to see the new names; the interpreters and views still read calls
-by the old names, which a resumed agent's provider history holds.
-
 Its identity is its agent's directory. The daemon listens on
 `<dir>/tools.sock` for that agent alone, from the agent's start and again
 from the moment a restarted daemon adopts the still-running agent, and the
@@ -88,13 +82,12 @@ Each says which kind it is. Spawn is the only ask today: an `AgentAsk`
 whose `spawn` arm holds the create and whose `host_id` names the host by id,
 the agent's own when empty, answered with the `CreateAgentResponse` or the
 words of the refusal. A later build can add another ask, and an agent
-process from before it refuses it in words. The spawn ask's first number,
-used while the create named its host, stays reserved.
+process from before it refuses it in words.
 The socket carries no gRPC, because an ask has one answer and the tool
 server turns every refusal into words for the model anyway. A tool server
-whose agent process has no such socket (a process started by a build from
-before the socket) answers `this agent's process is not taking
-spawn requests`; it does not go to the daemon in its place.
+whose agent process is not listening on the socket answers `this agent's
+process is not taking spawn requests`; it does not go to the daemon in its
+place.
 
 The tool server never writes the journal: the agent process is its one
 writer, and the interpreter reads amux's own tool calls from the provider's
@@ -148,7 +141,7 @@ any, as `finished`, `stopped` or `provider_exited: exit code 1`), `parent`
 its provider gave the conversation, else absent. It is never a prompt: a
 prompt is the person's or the parent's words, and the fleet listing is read
 by every agent. `model`, `effort` and `permission` are what the agent runs
-with as its provider last reported them (the row's `settings`), the
+with as its provider last reported them (the row's `status.settings`), the
 permission by its level (`read-only`, `ask`, `auto` or `full`) where its
 value has one and by the provider's own value otherwise. `branch` is the git
 branch its folder is on.
@@ -264,10 +257,10 @@ agent a person added, has no levels. Nothing could hold such an agent to a
 level, so a subagent of it is started only by a parent at `full`, which its
 own default cannot exceed, and starts on that default; from any other
 parent the start is refused in words saying why. The interpreters write each value's level into the
-catalogue (`OfferedPermission.level`, and `OfferedMode.level` for an ACP
-agent, whose modes are its permissions), and `wire::levels` holds the table
-the daemon maps with; a built-in ACP agent whose catalogue has not listed its
-modes yet maps onto the modes amux knows it has.
+catalogue (`OfferedPermission.level`; a built-in ACP agent's modes known to
+be permissions are listed among its permissions), and `wire::levels` holds
+the table the daemon maps with; a built-in ACP agent whose catalogue has not
+listed its modes yet maps onto the modes amux knows it has.
 
 `fork` starts the child from a copy of the parent's conversation, with `task`
 as its next prompt. The child's host refuses it for a parent on another host
@@ -348,8 +341,7 @@ only by messaging it.
 Declares what the agent is working on, so people and other agents can find
 the right collaborator; `null` clears it. The tool server only checks the
 argument's type and answers `ok`. The call is a provider fact: the interpreter
-sees the `amux` server's `set_working_on` call (or `status`, its name before
-0.11) in the provider's record and sets `working_on` in its next snapshot,
+sees the `amux` server's `set_working_on` call in the provider's record and sets `working_on` in its next snapshot,
 and the daemon copies it onto the agent's inventory row at commit. Nothing
 else sets or clears it: an idle agent's last declared work is exactly what
 another agent may want to know. An agent that never calls it has no
@@ -376,18 +368,18 @@ blobs and the element syntax.
 ## What the interpreter makes of the calls
 
 The interpreters recognise two of amux's own tools by server and tool name
-(`interpret::is_status_tool`, `interpret::is_send_tool`), each by its name now
-and by its name before 0.11:
+(`interpret::is_status_tool`, `interpret::is_send_tool`):
 
-- `set_working_on` (`status`) becomes `working_on` in the snapshot, as above.
-- `message_agent` (`send`) is drawn as an agent-message item on the sender's
+- `set_working_on` becomes `working_on` in the snapshot, as above.
+- `message_agent` is drawn as an agent-message item on the sender's
   side, on the tool call's own key: the text sent, the recipient as the model
   named it, the context, and a send state that moves from sending to sent
   (with the envelope id) or rejected (with the reason the tool returned).
 
 Every interpreter also writes the agent's settings on its snapshot's envelope
-(`Snapshot.settings`: model, effort, permission and the permission's level),
-which the daemon copies onto the inventory row for `list_agents`. The views
+(`Snapshot.status.settings`: model, effort, permission and the permission's
+level, mode), which the daemon copies onto the inventory row with the rest
+of the status, for `list_agents`. The views
 draw a start or stop of a subagent, by either name, as what it did, and hide
 the listing calls.
 
@@ -713,7 +705,7 @@ to messaging.
 - **Send.** `ResolveAgent` finds a remote agent by its replica row, which
   carries its host's id. `SendMessage` is addressed to that host, which
   makes the envelope as from the calling agent, of this host, brings the
-  message's files from this host with `PeerService.GetBlob`, and runs the
+  message's files from this host with `PeerService.FetchBlob`, and runs the
   recipient's lane as for a local sender. A call that arrived on a link is
   never carried on, so a message reaches no third host through another. A
   message resumes an exited recipient on another host the same way it does

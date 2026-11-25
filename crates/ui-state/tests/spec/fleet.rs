@@ -10,7 +10,7 @@ fn row(host: &str, id: &str, phase: Phase, parent: Option<(&str, &str)>) -> Agen
         kind: wire::Kind::ClaudeSdk as i32,
         name: id.into(),
         lifecycle: Lifecycle::Live as i32,
-        phase: phase as i32,
+        status: wire::AgentStatus::in_phase(phase),
         parent: parent.map(|(host, id)| AgentRef {
             host_id: host.as_bytes().to_vec(),
             agent_id: id.as_bytes().to_vec(),
@@ -159,7 +159,7 @@ fn online(id: &str) -> FleetMsg {
     ev(inventory_event::Of::Host(HostEntry::trusted_host(
         id.as_bytes().to_vec(),
         id,
-        wire::trusted::Reach::Online(wire::RouteKind::Unspecified as i32),
+        wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Unspecified)),
     )))
 }
 

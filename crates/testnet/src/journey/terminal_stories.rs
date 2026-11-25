@@ -2209,11 +2209,16 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
         .cloud_url
         .clone()
         .ok_or("the topology declares no relay")?;
-    // Claude Code ran lately in the desk's repository: setting up offers
-    // it as a repository.
+    // Claude Code ran lately in a repository the desk has not pinned:
+    // setting up offers it. (The desk's own repository is pinned already,
+    // and a pinned folder is not asked about again.)
     let desk = journey.host_dir("desk");
-    let repository = desk.join("repositories").join("amux");
-    let log = desk.join("home/.claude/projects/amux");
+    let repository = desk.join("home/code/app");
+    std::fs::create_dir_all(repository.join(".git")).map_err(|error| error.to_string())?;
+    let repository = repository
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let log = desk.join("home/.claude/projects/app");
     std::fs::create_dir_all(&log).map_err(|error| error.to_string())?;
     std::fs::write(
         log.join("session.jsonl"),
@@ -2343,20 +2348,22 @@ fn first_run(journey: &mut TerminalJourney) -> Proved {
         ));
     }
 
-    // The repository Claude Code ran in, offered and kept, with a folder
-    // of the person's own.
-    let repositories = journey.wait_terms(
+    // The repository Claude Code ran in, offered ticked once the desk has
+    // read where Claude Code ran, and kept, with a folder of the person's
+    // own.
+    journey.wait(
         &pane,
-        &[
-            "These are where Claude Code and Codex ran lately",
-            "+ Add a repository…",
-        ],
+        |frame| {
+            [
+                "These are where Claude Code and Codex ran lately",
+                "+ Add a repository…",
+                "[x] ",
+            ]
+            .iter()
+            .all(|term| frame.contains(term))
+        },
+        "the repository Claude Code ran in, offered ticked",
     )?;
-    if !repositories.contains("[x] ") {
-        return Err(format!(
-            "the repository is not offered ticked:\n{repositories}"
-        ));
-    }
     journey.frame(&pane, "repositories")?;
     let work = desk.join("work").display().to_string();
     journey.keys(&pane, &["Down", "Enter"])?;

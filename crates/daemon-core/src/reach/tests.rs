@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 
 use store::Sqlite;
 use uuid::Uuid;
-use wire::message::Body;
-use wire::{Hello, Message};
+use wire::link_message::Body;
+use wire::{Hello, LinkMessage};
 
 use super::*;
 use crate::host_set::Candidate;
@@ -162,7 +162,7 @@ fn claims(daemon: &mut Daemon, link: u64, hosts: &[HostId]) -> Vec<Output> {
         daemon,
         Input::LinkControl {
             link: LinkId(link),
-            frame: Message {
+            frame: LinkMessage {
                 body: Some(Body::Hello(hello)),
             },
         },
@@ -188,7 +188,7 @@ fn refused(daemon: &mut Daemon, link: u64, host: HostId, reason: ForwardRefusal)
         daemon,
         Input::LinkControl {
             link: LinkId(link),
-            frame: Message {
+            frame: LinkMessage {
                 body: Some(Body::ForwardRefused(wire::ForwardRefused {
                     dst: host.0.to_vec(),
                     reason: reason as i32,
@@ -677,7 +677,7 @@ fn arrived(daemon: &mut Daemon, link: u64, host: HostId) -> Vec<Output> {
         daemon,
         Input::LinkControl {
             link: LinkId(link),
-            frame: Message {
+            frame: LinkMessage {
                 body: Some(Body::NeighborUp(wire::NeighborUp {
                     host: Some(wire::Host {
                         host_id: host.0.to_vec(),

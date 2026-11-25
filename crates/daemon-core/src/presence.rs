@@ -283,8 +283,8 @@ impl Daemon {
 #[cfg(test)]
 mod tests {
     use store::Sqlite;
-    use wire::message::Body;
-    use wire::{Hello, Message, NeighborDown, NeighborUp};
+    use wire::link_message::Body;
+    use wire::{Hello, LinkMessage, NeighborDown, NeighborUp};
 
     use super::*;
     use crate::payload::CarrierKind;
@@ -348,7 +348,7 @@ mod tests {
             daemon,
             Input::LinkControl {
                 link: LinkId(link),
-                frame: Message { body: Some(body) },
+                frame: LinkMessage { body: Some(body) },
             },
         )
     }
@@ -496,10 +496,7 @@ mod tests {
         assert_eq!(view(&daemon, RELAY).presence, Presence::Offline);
 
         let relay = wire::Host {
-            capabilities: Some(wire::Capabilities {
-                cloud_relay: true,
-                ..Default::default()
-            }),
+            capabilities: Some(wire::HostCapabilities { cloud_relay: true }),
             ..host(HostId([8; 16]))
         };
         up(&mut daemon, 2, LAPTOP, CarrierKind::Direct);
@@ -759,7 +756,7 @@ mod tests {
         assert_eq!(daemon.route_kind(DESK), wire::RouteKind::Ssh);
         assert_eq!(
             daemon.reads(DESK),
-            wire::trusted::Reach::Online(wire::RouteKind::Ssh as i32)
+            wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Ssh))
         );
         down(&mut daemon, 1);
         assert_eq!(daemon.route_kind(DESK), wire::RouteKind::Unspecified);
@@ -782,12 +779,12 @@ mod tests {
         carried(&mut daemon, CarrierKind::Forwarded);
         assert_eq!(
             daemon.reads(DESK),
-            wire::trusted::Reach::Online(wire::RouteKind::Relay as i32)
+            wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Relay))
         );
         carried(&mut daemon, CarrierKind::Direct);
         assert_eq!(
             daemon.reads(DESK),
-            wire::trusted::Reach::Online(wire::RouteKind::Direct as i32)
+            wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Direct))
         );
     }
 
@@ -810,7 +807,10 @@ mod tests {
         );
         assert_eq!(
             daemon.reads(DESK),
-            wire::trusted::Reach::Online(wire::RouteKind::Direct as i32)
+            wire::trusted::Reach::Online(wire::Online {
+                route: wire::RouteKind::Direct as i32,
+                same_network: true,
+            })
         );
         assert!(daemon.same_network(DESK), "a link up on the LAN");
         let carried = |daemon: &mut Daemon, kind, lan| {

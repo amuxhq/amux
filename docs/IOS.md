@@ -330,7 +330,7 @@ window closes and another opens. A machine found with no window open says
 "Open amux on laptop to pair" and has no button.
 
 The Devices tab is one list of paired machines, reachable first, each saying
-how the phone reaches it (a row reads "macOS · Local", "macOS · Direct" or "macOS · Relayed"; Local is the daemon's `same_network` on a direct route); machines found and not yet paired are offered as
+how the phone reaches it (a row reads "macOS · Local", "macOS · Direct" or "macOS · Relayed"; Local is the daemon's `Online.same_network` on a direct route); machines found and not yet paired are offered as
 cards above it. Tapping a host opens its page: how the phone reaches it and,
 when it is away or offline, what that means for its agents; its platform,
 version, providers and addresses; that its last dial failed while it is
@@ -383,7 +383,7 @@ opens each one.
 
 ## Starting an agent
 
-New Agent lists the host's repositories (the folders its amux settings name)
+New Agent lists the host's repositories (the folders its person pinned)
 first, then the folders its agents worked in lately that are not among them,
 then where Claude Code and Codex ran there, all read from the host's entry in
 the inventory, and prefills where an agent worked last. Typing searches them

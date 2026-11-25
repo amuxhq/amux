@@ -6,8 +6,8 @@ use proptest::test_runner::RngSeed;
 use prost::Message;
 use ui_state::{InputOutcome, ItemClass, Msg, Outcome, RunIndex, SessionState, Transcript};
 use wire::{
-    Agent, Ask, CodexAsk, Input, Item, Kind, Lifecycle, Phase, QueuedInput, SendInputResponse,
-    SessionEvent, Snapshot, ToolClass, ToolState, session_event,
+    Agent, ClaudeAsk, CodexAsk, Input, Item, Kind, Lifecycle, Phase, QueuedInput,
+    SendInputResponse, SessionEvent, Snapshot, ToolClass, ToolState, session_event,
 };
 
 pub const KINDS: [Kind; 3] = [Kind::ClaudePty, Kind::ClaudeSdk, Kind::Codex];
@@ -24,20 +24,20 @@ pub fn agent(kind: Kind) -> Agent {
         name: "worker".into(),
         cwd: "/src".into(),
         lifecycle: Lifecycle::Live as i32,
-        phase: Phase::Idle as i32,
+        status: wire::AgentStatus::in_phase(Phase::Idle),
         incarnation: 1,
         ..Agent::default()
     }
 }
 
 pub fn with_phase(mut agent: Agent, phase: Phase) -> Agent {
-    agent.phase = phase as i32;
+    agent.status_mut().phase = phase as i32;
     agent
 }
 
 pub fn exited(mut agent: Agent, cause: wire::ExitCause) -> Agent {
     agent.lifecycle = Lifecycle::Exited as i32;
-    agent.exit_cause = cause as i32;
+    agent.exit = Some(wire::IncarnationEnd::new(cause, None));
     agent
 }
 
@@ -74,15 +74,15 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
             (true, _) => ToolClass::Search,
         }) as i32
     };
-    let tool = |name: &str, state: ToolState, explore: bool, subagent: bool| wire::ToolCall {
+    let tool = |name: &str, state: ToolState, explore: bool, subagent: bool| wire::ClaudeToolCall {
         name: name.into(),
         state: state as i32,
         class: class(name, explore),
-        input: subagent.then(|| wire::ToolInput {
-            of: Some(wire::tool_input::Of::Subagent(wire::Empty {})),
-            ..wire::ToolInput::default()
+        input: subagent.then(|| wire::ClaudeToolInput {
+            of: Some(wire::claude_tool_input::Of::Subagent(wire::Empty {})),
+            ..wire::ClaudeToolInput::default()
         }),
-        ..wire::ToolCall::default()
+        ..wire::ClaudeToolCall::default()
     };
     let retry = |attempt: u32, max: u32| wire::ApiError {
         error_kind: "overloaded".into(),
@@ -94,7 +94,7 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
     match kind {
         Kind::ClaudePty => {
             let kind = match body.clone() {
-                Body::Prompt => pty::Kind::Prompt(wire::Prompt {}),
+                Body::Prompt => pty::Kind::Prompt(wire::Prompt { continued: false }),
                 Body::Text { complete } => pty::Kind::Message(wire::Text { complete }),
                 Body::Thinking { complete } => pty::Kind::Thinking(wire::Thinking { complete }),
                 Body::Tool {
@@ -111,7 +111,7 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
         }
         Kind::ClaudeSdk => {
             let kind = match body.clone() {
-                Body::Prompt => sdk::Kind::Prompt(wire::Prompt {}),
+                Body::Prompt => sdk::Kind::Prompt(wire::Prompt { continued: false }),
                 Body::Text { complete } => sdk::Kind::Message(wire::Text { complete }),
                 Body::Thinking { complete } => sdk::Kind::Thinking(wire::Thinking { complete }),
                 Body::Tool {
@@ -122,7 +122,7 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
                 } => sdk::Kind::Tool(tool(name, state, explore, subagent)),
                 Body::Turn => sdk::Kind::Turn(wire::Turn::default()),
                 Body::Retry { attempt, max } => sdk::Kind::ApiError(retry(attempt, max)),
-                Body::Compacting => sdk::Kind::Status(wire::Status {
+                Body::Compacting => sdk::Kind::Status(wire::ClaudeStatus {
                     status: wire::SdkStatus::Compacting as i32,
                     word: "compacting".into(),
                 }),
@@ -131,7 +131,7 @@ pub fn encode(kind: Kind, body: &Body) -> Vec<u8> {
         }
         Kind::Codex => {
             let kind = match body.clone() {
-                Body::Prompt => codex::Kind::Prompt(wire::Prompt {}),
+                Body::Prompt => codex::Kind::Prompt(wire::Prompt { continued: false }),
                 Body::Text { complete } => codex::Kind::Message(wire::Text { complete }),
                 Body::Thinking { complete } => codex::Kind::Reasoning(wire::Reasoning {
                     complete,
@@ -262,13 +262,15 @@ pub fn ask(kind: Kind, key: &str) -> Vec<u8> {
             ..CodexAsk::default()
         }
         .encode_to_vec(),
-        _ => Ask {
+        _ => ClaudeAsk {
             key: key.into(),
-            body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
-                tool_name: "Bash".into(),
-                ..wire::PermissionAsk::default()
-            })),
-            ..Ask::default()
+            body: Some(wire::claude_ask::Body::Permission(
+                wire::ClaudePermissionAsk {
+                    tool_name: "Bash".into(),
+                    ..wire::ClaudePermissionAsk::default()
+                },
+            )),
+            ..ClaudeAsk::default()
         }
         .encode_to_vec(),
     }
@@ -281,7 +283,7 @@ pub fn snapshot_body(kind: Kind, asks: &[&str]) -> Vec<u8> {
         Kind::ClaudePty => wire::ClaudeSnapshot {
             asks: asks
                 .iter()
-                .map(|key| Ask::decode(&ask(kind, key)[..]).unwrap())
+                .map(|key| ClaudeAsk::decode(&ask(kind, key)[..]).unwrap())
                 .collect(),
             ..Default::default()
         }
@@ -289,7 +291,7 @@ pub fn snapshot_body(kind: Kind, asks: &[&str]) -> Vec<u8> {
         Kind::ClaudeSdk => wire::ClaudeSnapshot {
             asks: asks
                 .iter()
-                .map(|key| Ask::decode(&ask(kind, key)[..]).unwrap())
+                .map(|key| ClaudeAsk::decode(&ask(kind, key)[..]).unwrap())
                 .collect(),
             ..Default::default()
         }
@@ -327,10 +329,21 @@ pub fn snapshot(
             .collect(),
         kind: kind as i32,
         body: snapshot_body(kind, asks),
-        phase: phase as i32,
-        working_on: None,
+        status: wire::AgentStatus::in_phase(phase),
         at_ms: 1_000 * revision as i64,
+        capabilities: Some(Box::new(capabilities(kind))),
         ..Snapshot::default()
+    }
+}
+
+/// What an agent of `kind` can do, as its interpreter says in each
+/// snapshot (an ACP agent here is one that offered nothing at `initialize`).
+pub fn capabilities(kind: Kind) -> wire::AgentCapabilities {
+    match kind {
+        Kind::ClaudePty => wire::AgentCapabilities::claude_pty(),
+        Kind::ClaudeSdk => wire::AgentCapabilities::claude_sdk(),
+        Kind::Codex => wire::AgentCapabilities::codex(),
+        _ => wire::AgentCapabilities::acp(false, false, false),
     }
 }
 
@@ -421,7 +434,7 @@ pub fn answer_input(kind: Kind, id: &[u8], ask_key: &str) -> Input {
             of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
                 ask_key: ask_key.into(),
                 of: Some(wire::codex_answer::Of::Approve(
-                    wire::Decision::Approve as i32,
+                    wire::CodexDecision::Approve as i32,
                 )),
             })),
         }),

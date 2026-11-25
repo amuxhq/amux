@@ -188,13 +188,13 @@ fn a_new_agent_can_be_any_agent_the_host_offers() {
         panic!("{effects:?}");
     };
     assert_eq!(setup.host_kind, Kind::Acp);
-    let Some(wire::create_agent_request::Agent::Acp(config)) =
-        setup.request(b"id".to_vec(), None).agent
-    else {
-        panic!("not an ACP create");
-    };
-    assert_eq!(config.agent, "opencode");
-    assert_eq!(config.mode, None, "no mode picked, so the agent's own");
+    let request = setup.request(b"id".to_vec(), None);
+    assert_eq!(request.provider, "opencode");
+    assert_eq!(
+        request.settings().mode,
+        None,
+        "no mode picked, so the agent's own"
+    );
 
     // Shift+Tab picks a mode, which then goes.
     let mut home = new_home();
@@ -204,16 +204,10 @@ fn a_new_agent_can_be_any_agent_the_host_offers() {
     setup.offer(b"a", "opencode", &[3; 32], &acp_offer());
     home.key(&fleet, key(KeyCode::BackTab));
     let mode = home.open_setup().unwrap().mode.clone();
-    let Some(wire::create_agent_request::Agent::Acp(config)) = home
-        .open_setup()
-        .unwrap()
-        .request(b"id".to_vec(), None)
-        .agent
-    else {
-        panic!("not an ACP create");
-    };
+    let request = home.open_setup().unwrap().request(b"id".to_vec(), None);
+    assert_eq!(request.provider, "opencode");
     assert!(mode.is_some(), "Shift+Tab picked a mode");
-    assert_eq!(config.mode, mode);
+    assert_eq!(request.settings().mode, mode);
 }
 
 /// The form for an agent used in its own terminal lists every agent the
@@ -245,7 +239,8 @@ fn an_image_pasted_for_an_agent_that_takes_none_is_refused_at_once() {
     let (mut state, _) = fixtures::frame_where(Kind::Acp, "opencode-prompt", |_| true);
     // The host says this agent takes no images.
     let mut entry = crate::sessions::host_entry(vec![offered("opencode", "OpenCode", Kind::Acp)]);
-    entry.providers[0].capabilities = Some(wire::AgentCapabilities::acp(true, false, false));
+    entry.providers[0].kinds[0].capabilities =
+        Some(wire::AgentCapabilities::acp(true, false, false));
     state.update(Msg::Host(entry));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     let dir = tempfile::tempdir().unwrap();
@@ -268,7 +263,10 @@ fn a_new_agents_image_is_refused_before_the_agent_is_made() {
     let mut studio = host(b"a", "studio", Reads::Online);
     if let wire::inventory_event::Of::Host(entry) = &mut studio {
         entry.providers.push(wire::ProviderOnHost {
-            capabilities: Some(wire::AgentCapabilities::acp(true, false, false)),
+            kinds: vec![wire::KindOnHost {
+                kind: wire::Kind::Acp as i32,
+                capabilities: Some(wire::AgentCapabilities::acp(true, false, false)),
+            }],
             ..offered("opencode", "OpenCode", Kind::Acp)
         });
     }
@@ -306,14 +304,14 @@ fn a_new_agents_image_is_refused_before_the_agent_is_made() {
     );
 }
 
-/// An ACP agent says how much it may do only through its modes, so what
-/// asks for its permission picks its mode: Ctrl+S p in its chat opens its
-/// modes, and the one picked goes to the agent as its mode.
+/// A built-in ACP agent whose modes say how much it may do lists them as
+/// its permissions: Ctrl+S p in its chat opens them, and the one picked
+/// goes to the agent as its permission.
 #[test]
-fn an_acp_agents_permission_key_picks_its_mode() {
+fn an_acp_agents_permission_key_picks_its_permission() {
     let (state, at) = fixtures::frame_where(Kind::Acp, "agy-prompt", |state| {
         state.phase() == ui_state::PhaseView::Idle
-            && ui_view::settings(state).changeable.mode == ui_view::Changeable::Pick
+            && ui_view::settings(state).changeable.permission == ui_view::Changeable::Pick
     });
     let mut view = ChatView::new(b"agent".to_vec(), at, false);
     view.key(
@@ -324,7 +322,7 @@ fn an_acp_agents_permission_key_picks_its_mode() {
     view.key(&state, key(KeyCode::Char('p')), theme());
     let (buffer, _) = draw(&mut view, &state, at, W, H, theme());
     let screen = text(&buffer);
-    assert!(screen.contains("╭─ Mode"), "{screen}");
+    assert!(screen.contains("╭─ Permission"), "{screen}");
     let plan = screen
         .lines()
         .find_map(|line| {
@@ -337,12 +335,12 @@ fn an_acp_agents_permission_key_picks_its_mode() {
         panic!("{effects:?}");
     };
     let Some(wire::KindInput::Acp(wire::AcpInput {
-        of: Some(wire::acp_input::Of::Mode(mode)),
+        of: Some(wire::acp_input::Of::Permission(permission)),
     })) = input.decode_body()
     else {
-        panic!("not an ACP mode: {input:?}");
+        panic!("not an ACP permission: {input:?}");
     };
-    assert_eq!(mode.value, "plan");
+    assert_eq!(permission.value, "plan");
 }
 
 /// New Agent for an ACP agent: Ctrl+S p opens the agent's modes, which
@@ -472,7 +470,7 @@ fn a_new_agent_with_nothing_to_step_offers_no_shift_tab() {
 #[test]
 fn an_agent_with_no_terminal_is_offered_no_attach() {
     let mut fleet = home_fleet();
-    let mut studio = host(b"a", "studio", Reads::Online);
+    let mut studio = terminal_host();
     if let wire::inventory_event::Of::Host(entry) = &mut studio {
         entry.providers.push(offered("grok", "Grok", Kind::Acp));
     }

@@ -311,8 +311,10 @@ which walks them again or, dismissed, stops offering them.
 
 Settings (⌘,) holds the Mac's name, start at login (on an install with a
 supervisor), keep awake, the repository list, usage counts, automatic reports
-and the account. Every change is applied at once through `UpdateSettings`,
-so `amux config` and the terminal see it as soon as it is made. It is drawn
+and the account. Every change is applied at once, through `UpdateSettings`,
+or for the repository list through `PinFolder`, read back from the
+settings, which list every pin the config holds (a folder since removed
+too), so `amux config` and the terminal see it as soon as it is made. It is drawn
 on the main window's grouped cards, as the host page is, rather than as a
 system form: each setting is a title over a quiet note with its control at
 the right, and a repository is removed from a button on its line under the
@@ -345,7 +347,7 @@ generated values (`AmuxValues`), which build for macOS as well as iOS:
 
 - `Runtime.checkForUpdate(_:)` looks for a newer version of the app itself
   ([Updates](#updates)).
-- The setting-up calls: the installation's settings, repository suggestions, a
+- The setting-up calls: the installation's settings, a
   profile's steps and their answers, a pairing window and its status, and a
   web sign-in link (`crates/app-ffi/README.md`). An attached runtime names
   itself `mac` to the daemon, which counts the app opening and each step as

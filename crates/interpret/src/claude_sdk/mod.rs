@@ -34,7 +34,7 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, Ask, AskClosed, ClaudeAnswer, ClaudeSnapshot, ClaudeUsage, Envelope, Input,
+    AgentSpec, AskClosed, ClaudeAnswer, ClaudeAsk, ClaudeSnapshot, ClaudeUsage, Envelope, Input,
     KindInput, OfferedCommand, OfferedModel, Refusal, SignIn, Step, ToolServer, claude_answer,
     claude_item, claude_sdk_input,
 };
@@ -46,7 +46,7 @@ use crate::claude_common::{
 };
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
-    Shared, SnapshotView, Stepped, ask_item, claude_sdk_input, human, serde_pb, unknown,
+    Shared, SnapshotView, Stepped, ask_item, claude_sdk_input, person, serde_pb, unknown,
 };
 
 /// The interpreter for kind `claude_sdk`.
@@ -116,8 +116,7 @@ struct Sub {
     stop_error: String,
     /// The prompt its latest run's `task_started` drew, until Claude
     /// streams the same text as the subagent's own prompt, which is then not
-    /// drawn again. A checkpoint from before this field existed reads it as
-    /// None.
+    /// drawn again.
     #[serde(default)]
     prompt_drawn: Option<String>,
     conversation: crate::claude_subagent::Conversation,
@@ -184,7 +183,7 @@ struct TaskState {
 /// Everything the Claude SDK interpreter holds; its checkpoint.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct State {
-    shared: Shared<wire::Ask>,
+    shared: Shared<wire::ClaudeAsk>,
     /// A title request is out or has been answered with a title; a prompt
     /// asks only while neither holds.
     title_asked: bool,
@@ -219,8 +218,7 @@ pub struct State {
     /// The message being streamed.
     stream: Option<String>,
     /// The shell calls of the message being streamed whose input is still
-    /// arriving, by block index. A checkpoint from before this field
-    /// existed reads it as empty.
+    /// arriving, by block index.
     #[serde(default)]
     streaming_calls: BTreeMap<u32, StreamingCall>,
     /// Content blocks seen per assistant message, so whole blocks and
@@ -230,8 +228,7 @@ pub struct State {
     asks: BTreeMap<String, AskMeta>,
     /// The subagents Claude's Agent tool started, by Claude's id for each,
     /// while each runs and while a call row still waits on it; nothing of
-    /// one is kept past that. A checkpoint from before they were agents of
-    /// their own has none.
+    /// one is kept past that.
     #[serde(default)]
     subagents: BTreeMap<String, Sub>,
     /// The tasks a subagent's calls started (the shells it runs), by task
@@ -322,6 +319,35 @@ fn write(input: &claude_stream::Input) -> Effect {
     Effect::ProviderWrite(claude_stream::encode(input))
 }
 
+/// Claude commands that open an interactive screen of Claude's own
+/// terminal, or change a setting a client offers directly: typed into a
+/// headless agent they do nothing useful, so its catalogue leaves them out.
+const TERMINAL_ONLY_COMMANDS: &[&str] = &[
+    "agents",
+    "auto-mode-setup",
+    "color",
+    "config",
+    "doctor",
+    "effort",
+    "exit",
+    "heapdump",
+    "hooks",
+    "ide",
+    "keybindings",
+    "login",
+    "logout",
+    "mcp",
+    "memory",
+    "model",
+    "permissions",
+    "plugin",
+    "resume",
+    "statusline",
+    "terminal-setup",
+    "theme",
+    "vim",
+];
+
 /// What Claude offers on a host with no agent running, from its initialize
 /// answer, and what a new agent would start with by Claude's own settings,
 /// from that and `applied`. Never-ask is listed: a new agent can be created
@@ -335,13 +361,21 @@ pub fn host_catalogue(
         models: offered_models(&initialized.models),
         commands: offered_commands(&initialized.commands),
         permissions: permissions(Some(&auto_models(&initialized.models)), true, true),
-        new_agent: Some(wire::NewAgentDefaults {
-            model: applied.and_then(|applied| applied.model.clone()),
-            effort: applied.and_then(|applied| applied.effort.clone()),
-            permission: initialized
+        new_agent: Some({
+            let permission = initialized
                 .current_permission_mode
                 .as_ref()
-                .map(|mode| mode.as_str().to_owned()),
+                .map(|mode| mode.as_str().to_owned());
+            wire::AgentSettings {
+                model: applied.and_then(|applied| applied.model.clone()),
+                effort: applied.and_then(|applied| applied.effort.clone()),
+                permission_level: permission
+                    .as_deref()
+                    .map_or(wire::PermissionLevel::Unspecified, wire::levels::claude)
+                    as i32,
+                permission,
+                mode: None,
+            }
         }),
         ..Default::default()
     }
@@ -350,7 +384,7 @@ pub fn host_catalogue(
 impl State {
     /// The kind-neutral state: the agent process reads the pending
     /// agent-message set and quiescence from here.
-    pub fn shared(&self) -> &Shared<Ask> {
+    pub fn shared(&self) -> &Shared<ClaudeAsk> {
         &self.shared
     }
 
@@ -480,20 +514,33 @@ impl State {
         crate::claude_common::permissions(self.auto_models.as_deref(), self.never_ask, true)
     }
 
+    /// Says on the snapshot's envelope what every kind says the same way.
+    fn report(&mut self) {
+        let model_name = crate::shared::model_name(
+            self.model.as_deref(),
+            self.chosen_model.as_deref(),
+            &self.models,
+            crate::claude_common::tidy_model,
+        );
+        self.shared.report(
+            wire::agents::CLAUDE,
+            crate::shared::Report {
+                model: self.model.as_deref(),
+                effort: self.effort.as_deref(),
+                permission: self.permission_mode.as_deref(),
+                mode: None,
+                model_name,
+                sign_in: self.sign_in.clone(),
+                conversation: self.session.as_deref(),
+            },
+        );
+    }
+
     fn body(&self) -> Vec<u8> {
         ClaudeSnapshot {
             asks: self.shared.asks().open_asks().to_vec(),
             tasks: Some(task_list(&self.tasks)),
             context: Some(context_meter(self.context_tokens, self.context_window)),
-            model: self.model.clone(),
-            model_name: crate::shared::model_name(
-                self.model.as_deref(),
-                self.chosen_model.as_deref(),
-                &self.models,
-                crate::claude_common::tidy_model,
-            ),
-            effort: self.effort.clone(),
-            permission: self.permission_mode.clone(),
             // A subagent is an agent of its own, drawn by its own row.
             active_tasks: self
                 .active_tasks
@@ -511,9 +558,6 @@ impl State {
             } else {
                 self.servers.clone()
             },
-            sign_in: Some(self.sign_in.clone().unwrap_or_else(unknown::sign_in)),
-            background_jobs: Some(self.shared.jobs()),
-            provider_session: self.session.clone(),
             running_calls: Vec::new(),
             switched_away: None,
         }
@@ -600,7 +644,7 @@ impl State {
                     return;
                 }
                 self.dismiss_plan(emit);
-                if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, human()) {
+                if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, person()) {
                     self.submit(emit, entry);
                 }
             }
@@ -647,7 +691,7 @@ impl State {
                     text: entry.text,
                     ..Default::default()
                 };
-                if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, human()) {
+                if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, person()) {
                     self.submit(emit, entry);
                 }
             }
@@ -852,8 +896,10 @@ impl State {
                 key: client_uuid(&entry.input_id),
                 text: entry.text,
                 attachments: entry.attachments,
+                body: item_body(claude_item::Kind::Prompt(
+                    self.shared.prompt(&entry.input_id),
+                )),
                 input_id: entry.input_id,
-                body: item_body(claude_item::Kind::Prompt(wire::Prompt {})),
                 complete: true,
                 ..Default::default()
             },
@@ -873,7 +919,7 @@ impl State {
         let closed = match &parsed {
             Some(claude_answer::Of::Form(form)) => {
                 let schema = match &open.body {
-                    Some(wire::ask::Body::Form(asked)) => asked.schema_json.as_slice(),
+                    Some(wire::claude_ask::Body::Form(asked)) => asked.schema_json.as_slice(),
                     _ => &[],
                 };
                 Some(ask_item::form_sent(form, schema))
@@ -882,7 +928,7 @@ impl State {
             _ => None,
         };
         let asked = match &open.body {
-            Some(wire::ask::Body::Question(asked)) => Some(asked.clone()),
+            Some(wire::claude_ask::Body::Question(asked)) => Some(asked.clone()),
             _ => None,
         };
         let Some((response, decision)) = self.asks.get(&key).and_then(|meta| {
@@ -921,7 +967,7 @@ impl State {
     }
 
     /// The open ask keyed `key` of the agent, or of its subagent `who`.
-    fn open_ask(&self, who: Option<&str>, key: &str) -> Option<Ask> {
+    fn open_ask(&self, who: Option<&str>, key: &str) -> Option<ClaudeAsk> {
         match who {
             None => self.shared.asks().get(key).cloned(),
             Some(child) => self.shared.subagent_asks(child)?.get(key).cloned(),
@@ -936,7 +982,7 @@ impl State {
         who: Option<&str>,
         id: &[u8],
         key: &str,
-    ) -> Option<Ask> {
+    ) -> Option<ClaudeAsk> {
         match who {
             None => self.shared.answer(emit, id, key),
             Some(child) => self.shared.subagent(emit, child).answer(id, key),
@@ -968,7 +1014,7 @@ impl State {
 
     /// Closes an open ask of whichever agent raised it, without letting go
     /// of what answering it needs.
-    fn close_open_ask(&mut self, emit: &mut Emit, key: &str) -> Option<Ask> {
+    fn close_open_ask(&mut self, emit: &mut Emit, key: &str) -> Option<ClaudeAsk> {
         match self.asker(key) {
             None => self.shared.close_ask(key),
             Some(child) => self.shared.subagent(emit, &child).close_ask(key),
@@ -982,12 +1028,12 @@ impl State {
         &mut self,
         emit: &mut Emit,
         who: Option<&str>,
-        ask: &Ask,
+        ask: &ClaudeAsk,
         closed: Option<AskClosed>,
     ) {
         if !matches!(
             ask.body,
-            Some(wire::ask::Body::Form(_) | wire::ask::Body::Link(_))
+            Some(wire::claude_ask::Body::Form(_) | wire::claude_ask::Body::Link(_))
         ) {
             return;
         }
@@ -1031,7 +1077,7 @@ impl State {
     /// An ask of the agent's or of its subagent `who` closed with no
     /// answer. Its own item says so; a call it held that is still in
     /// flight will never run, so it reads cancelled until Claude says more.
-    fn dismissed(&mut self, emit: &mut Emit, who: Option<&str>, ask: &Ask) {
+    fn dismissed(&mut self, emit: &mut Emit, who: Option<&str>, ask: &ClaudeAsk) {
         let meta = self.asks.remove(&ask.key);
         self.emit_ask(emit, who, ask, Some(ask_item::dismissed()));
         let Some(id) = meta.map(|meta| meta.tool_use_id) else {
@@ -1138,8 +1184,8 @@ impl State {
 }
 
 impl TaskState {
-    fn to_wire(&self, id: &str) -> wire::Task {
-        wire::Task {
+    fn to_wire(&self, id: &str) -> wire::ClaudeTask {
+        wire::ClaudeTask {
             task_id: id.to_owned(),
             description: self.description.clone(),
             state: self.state,
@@ -1195,7 +1241,11 @@ impl Interpreter for ClaudeSdk {
             }
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
-            Event::ChildInput { agent_id, input } => state.child_input(&mut emit, &agent_id, input),
+            Event::ChildInput {
+                agent_id,
+                input_id,
+                of,
+            } => state.child_input(&mut emit, &agent_id, input_id, of),
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
             Event::Rename { .. } => state.shared.renamed(),
             Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
@@ -1220,12 +1270,7 @@ impl Interpreter for ClaudeSdk {
         }
         state.forget_ended_subagents();
         state.subagent_snapshots(&mut emit);
-        state.shared.set_settings(
-            wire::agents::CLAUDE,
-            state.model.as_deref(),
-            state.effort.as_deref(),
-            state.permission_mode.as_deref(),
-        );
+        state.report();
         let body = state.body();
         let notice = state.shared.notice(crate::notice::claude_ask);
         state.shared.finish(emit, body, notice)

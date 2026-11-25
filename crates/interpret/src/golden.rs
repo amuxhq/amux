@@ -37,7 +37,9 @@
 //!
 //! A `child_input` is a person's input to one of the agent's provider
 //! subagents, named by the provider's id for it (`child`) and addressed by
-//! the agent id derived from it under the spec's agent. A subagent's part
+//! the agent id derived from it under the spec's agent; one whose body is
+//! `"stop_job": {"key": …}` is the daemon's stop of one of the subagent's
+//! jobs, which names no kind. A subagent's part
 //! of a step prints after the agent's own, each line under `agent
 //! sub-<first eight hex digits of its id>`.
 //!
@@ -618,9 +620,12 @@ fn spec<I: Interpreter>(spec: &FixtureSpec) -> AgentSpec {
         provider: spec.provider.clone(),
         config: (spec.model.is_some() || spec.effort.is_some() || spec.mode.is_some()).then(|| {
             wire::EffectiveConfig {
-                model: spec.model.clone(),
-                effort: spec.effort.clone(),
-                mode: spec.mode.clone(),
+                settings: Some(wire::AgentSettings {
+                    model: spec.model.clone(),
+                    effort: spec.effort.clone(),
+                    mode: spec.mode.clone(),
+                    ..Default::default()
+                }),
                 ..Default::default()
             }
         }),
@@ -632,6 +637,7 @@ fn spec<I: Interpreter>(spec: &FixtureSpec) -> AgentSpec {
             of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
                 input_id: b"initial".to_vec(),
                 prompt: Some(prompt(text)),
+                continued: false,
             })),
         }),
         ..Default::default()
@@ -676,9 +682,14 @@ fn script<I: Interpreter>(fixture: &Path, parsed: &Fixture) -> Result<Vec<Script
         {
             // A recording names a subagent by the provider's id for it.
             let event = match event {
-                Event::ChildInput { agent_id, input } => Event::ChildInput {
+                Event::ChildInput {
+                    agent_id,
+                    input_id,
+                    of,
+                } => Event::ChildInput {
                     agent_id: crate::subagent_id(&host, &String::from_utf8_lossy(&agent_id)),
-                    input,
+                    input_id,
+                    of,
                 },
                 event => event,
             };
@@ -730,9 +741,34 @@ fn scripted<I: Interpreter>(host: &[u8], value: &Value) -> Result<Scripted, Stri
                 .remove("child")
                 .and_then(|child| child.as_str().map(str::to_owned))
                 .ok_or("a child input names its subagent by the provider's id, `child`")?;
+            // A stop is the daemon's, which names no kind; any other input
+            // is a person's, of the agent's kind.
+            let (input_id, of) = match body.get("stop_job") {
+                Some(stop) => {
+                    let id = body
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .ok_or("a child input has a string id")?;
+                    let key = stop
+                        .get("key")
+                        .and_then(Value::as_str)
+                        .ok_or("a child's stop_job names its job's key")?;
+                    (
+                        id.as_bytes().to_vec(),
+                        wire::child_input::Of::StopJob(wire::StopJob {
+                            key: key.to_owned(),
+                        }),
+                    )
+                }
+                None => {
+                    let input = input_of::<I>(&Value::Object(body))?;
+                    (input.input_id.clone(), wire::child_input::Of::Input(input))
+                }
+            };
             Action::Event(Event::ChildInput {
                 agent_id: crate::subagent_id(host, &child),
-                input: input_of::<I>(&Value::Object(body))?,
+                input_id,
+                of,
             })
         }
         "agent_message" => Action::Event(Event::AgentMessage(agent_message(body)?)),
@@ -1228,9 +1264,10 @@ fn codex_answer(ask: &str, answer: &Value) -> Option<CodexAnswer> {
         .map(|action| action as i32)
     };
     let of = if let Some(decision) = answer.get("decision").and_then(Value::as_str) {
-        Of::Approve(
-            wire::Decision::from_str_name(&format!("DECISION_{}", decision.to_uppercase()))? as i32,
-        )
+        Of::Approve(wire::CodexDecision::from_str_name(&format!(
+            "CODEX_DECISION_{}",
+            decision.to_uppercase()
+        ))? as i32)
     } else if answer.get("selected").is_some() {
         Of::Question(question_answer(answer))
     } else if let Some(reply) = answer.get("reply") {
@@ -1422,10 +1459,10 @@ pub fn check_invariants<I: Interpreter>(steps: &[Step], end: &EndRules) -> Vec<S
             match &first.snapshot {
                 None => violations.push("the first frame is not a Snapshot".to_owned()),
                 Some(snapshot) => {
-                    if snapshot.phase != Phase::Starting as i32 {
+                    if snapshot.phase() != Phase::Starting {
                         violations.push(format!(
                             "the first Snapshot's phase is {}, not STARTING",
-                            phase_name(snapshot.phase)
+                            phase_name(snapshot.status().phase)
                         ));
                     }
                     if snapshot.body != I::unknown_snapshot() {
@@ -1799,7 +1836,11 @@ fn check_expectations<I: Interpreter>(frames: &[Frame], script: &[Scripted]) -> 
         };
         let current = snapshot.clone().unwrap_or_default();
         if let Some(phase) = &expect.phase {
-            fail("phase", phase.clone(), phase_name(current.phase).to_owned());
+            fail(
+                "phase",
+                phase.clone(),
+                phase_name(current.status().phase).to_owned(),
+            );
         }
         if let Some(reply) = &expect.reply {
             let replies = frame
@@ -1859,6 +1900,7 @@ fn check_expectations<I: Interpreter>(frames: &[Frame], script: &[Scripted]) -> 
                 "working_on",
                 working_on.to_string(),
                 current
+                    .status()
                     .working_on
                     .as_ref()
                     .map_or(Value::Null, |text| Value::String(text.clone()))
@@ -2008,6 +2050,7 @@ struct Carried<'a> {
     title: Option<&'a str>,
     last_said: Option<&'a str>,
     settings: Option<&'a wire::AgentSettings>,
+    capabilities: Option<&'a wire::AgentCapabilities>,
     /// The agent whose steps these are, when the rendering knows it.
     host: Option<Vec<u8>>,
     /// What each provider subagent's own parts carry, by its agent id.
@@ -2138,8 +2181,9 @@ fn render_part<'a, I: Interpreter>(
     let Some(snapshot) = snapshot else {
         return;
     };
-    if snapshot.git.as_ref() != carried.git {
-        carried.git = snapshot.git.as_ref();
+    let status = snapshot.status();
+    if status.git.as_ref() != carried.git {
+        carried.git = status.git.as_ref();
         let label = carried.git.map_or("git none".to_owned(), git_label);
         let _ = writeln!(out, "{prefix}snapshot {label}");
     }
@@ -2150,56 +2194,132 @@ fn render_part<'a, I: Interpreter>(
             .map_or("-".to_owned(), |hash| short_hash(hash));
         let _ = writeln!(out, "{prefix}snapshot catalogue {label}");
     }
-    if snapshot.title.as_deref() != carried.title {
-        carried.title = snapshot.title.as_deref();
+    if status.title.as_deref() != carried.title {
+        carried.title = status.title.as_deref();
         let _ = writeln!(
             out,
             "{prefix}snapshot title {:?}",
             carried.title.unwrap_or("-")
         );
     }
-    if snapshot.last_said.as_deref() != carried.last_said {
-        carried.last_said = snapshot.last_said.as_deref();
+    if status.last_said.as_deref() != carried.last_said {
+        carried.last_said = status.last_said.as_deref();
         let _ = writeln!(
             out,
             "{prefix}snapshot said {:?}",
             carried.last_said.unwrap_or("-")
         );
     }
-    if snapshot.settings.as_deref() != carried.settings {
-        carried.settings = snapshot.settings.as_deref();
+    if status.settings.as_ref() != carried.settings {
+        carried.settings = status.settings.as_ref();
         let label = carried.settings.map_or("none".to_owned(), |settings| {
             let or_unknown = |value: &Option<String>| value.clone().unwrap_or_else(|| "?".into());
             format!(
-                "model={} effort={} permission={} level={}",
+                "model={} effort={} permission={} level={} mode={}",
                 or_unknown(&settings.model),
                 or_unknown(&settings.effort),
                 or_unknown(&settings.permission),
-                settings.permission_level().word().unwrap_or("?")
+                settings.permission_level().word().unwrap_or("?"),
+                or_unknown(&settings.mode),
             )
         });
         let _ = writeln!(out, "{prefix}snapshot settings {label}");
     }
+    if snapshot.capabilities.as_deref() != carried.capabilities {
+        carried.capabilities = snapshot.capabilities.as_deref();
+        let label = carried
+            .capabilities
+            .map_or("none".to_owned(), describe_capabilities);
+        let _ = writeln!(out, "{prefix}snapshot capabilities {label}");
+    }
     let _ = writeln!(
         out,
-        "{prefix}snapshot {} queue=[{}] working_on={} at={} {}",
-        phase_name(snapshot.phase),
+        "{prefix}snapshot {} queue=[{}] working_on={} at={} conversation={} model_name={} sign_in={} background={} {}",
+        phase_name(status.phase),
         snapshot
             .queue
             .iter()
             .map(queue_label)
             .collect::<Vec<_>>()
             .join(","),
-        snapshot
+        status
             .working_on
             .as_ref()
             .map_or("-".to_owned(), |text| Value::String(text.clone())
                 .to_string()),
         snapshot.at_ms,
+        snapshot.conversation.as_deref().unwrap_or("?"),
+        crate::claude_common::describe_model_name(snapshot.model_name.as_deref()),
+        describe_sign_in(snapshot.sign_in.as_ref()),
+        crate::shared::describe_jobs(snapshot.jobs.as_ref()),
         I::describe_snapshot(&snapshot.body).text
     );
     if let Some(notice) = &snapshot.notice {
         let _ = writeln!(out, "{prefix}notice {}", crate::notice::describe(notice));
+    }
+}
+
+/// What an agent can do, as a golden prints it: each ability it has, then
+/// how each setting is changed.
+fn describe_capabilities(capabilities: &wire::AgentCapabilities) -> String {
+    let abilities = [
+        ("stops_job", capabilities.stops_job),
+        ("switches_back", capabilities.switches_back),
+        ("attachable", capabilities.attachable),
+        ("resumable", capabilities.resumable),
+        ("sends_now", capabilities.sends_now),
+        ("images", capabilities.images),
+        ("files", capabilities.files),
+        (
+            "passes_unknown_commands",
+            capabilities.passes_unknown_commands,
+        ),
+        ("forks", capabilities.forks),
+    ];
+    let mut words: Vec<String> = abilities
+        .iter()
+        .filter(|(_, has)| *has)
+        .map(|(name, _)| (*name).to_owned())
+        .collect();
+    let change = |name: &str, change: Option<&wire::SettingChange>| {
+        let Some(change) = change else {
+            return format!("{name}=-");
+        };
+        let control = change.control();
+        let word = control
+            .as_str_name()
+            .trim_start_matches("SETTING_CONTROL_")
+            .to_ascii_lowercase();
+        match control {
+            wire::SettingControl::Command => format!("{name}={word}:{}", change.command),
+            _ => format!("{name}={word}"),
+        }
+    };
+    words.push(change("model", capabilities.model.as_ref()));
+    words.push(change("effort", capabilities.effort.as_ref()));
+    words.push(change("permission", capabilities.permission.as_ref()));
+    words.push(change("mode", capabilities.mode.as_ref()));
+    words.join(" ")
+}
+
+/// The sign-in as a golden prints it: its state, account and words, or
+/// `?` while unknown.
+fn describe_sign_in(sign_in: Option<&wire::SignIn>) -> String {
+    let Some(sign_in) = sign_in else {
+        return "?".to_owned();
+    };
+    match wire::SignInState::try_from(sign_in.state).unwrap_or_default() {
+        wire::SignInState::Unspecified => "?".to_owned(),
+        state => format!(
+            "{} {}{}",
+            state.as_str_name().trim_start_matches("SIGN_IN_STATE_"),
+            crate::claude_common::or_dash(&sign_in.account),
+            if sign_in.message.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", crate::claude_common::clip(&sign_in.message, 60))
+            }
+        ),
     }
 }
 
@@ -2341,10 +2461,12 @@ fn event_label(event: &Event) -> String {
     match event {
         Event::Fact(fact) => format!("fact {:?} {}", fact.channel, summary(&fact.payload)),
         Event::Input(input) => format!("input {}", display_id(&input.input_id)),
-        Event::ChildInput { agent_id, input } => format!(
+        Event::ChildInput {
+            agent_id, input_id, ..
+        } => format!(
             "child_input {} {}",
             subagent_name(agent_id),
-            display_id(&input.input_id)
+            display_id(input_id)
         ),
         Event::AgentMessage(envelope) => format!("agent_message {}", display_id(&envelope.id)),
         Event::Rename { name } => format!("rename {name:?}"),

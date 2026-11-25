@@ -174,7 +174,8 @@ message TrustSshPeerRequest {
 message TrustSshPeerResponse {}
 
 message UnpairRequest {
-  HostRef peer = 1;
+  // The paired host to forget.
+  bytes host_id = 1;
 }
 
 message UnpairResponse {

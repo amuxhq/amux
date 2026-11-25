@@ -32,7 +32,7 @@ impl CoreLinks {
         &self,
         peer: uuid::Uuid,
         signed_in: bool,
-        out: tokio::sync::mpsc::Sender<wire::Message>,
+        out: tokio::sync::mpsc::Sender<wire::LinkMessage>,
     ) {
         if let Some(edge) = self.0.upgrade().and_then(|runtime| runtime.edge()) {
             edge.sign_in_link_up(peer, signed_in, out);
@@ -40,7 +40,7 @@ impl CoreLinks {
     }
 
     /// A sign-in frame the paired `peer` sent.
-    pub(crate) fn sign_in_frame(&self, peer: uuid::Uuid, body: wire::message::Body) {
+    pub(crate) fn sign_in_frame(&self, peer: uuid::Uuid, body: wire::link_message::Body) {
         if let Some(edge) = self.0.upgrade().and_then(|runtime| runtime.edge()) {
             edge.sign_in_frame(peer, body);
         }

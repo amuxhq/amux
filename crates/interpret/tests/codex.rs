@@ -482,10 +482,10 @@ fn an_approval_offering_one_lifetime_as_a_string_is_read() {
         };
         ask.decisions
             .iter()
-            .map(|decision| wire::Decision::try_from(*decision).unwrap())
+            .map(|decision| wire::CodexDecision::try_from(*decision).unwrap())
             .collect::<Vec<_>>()
     };
-    use wire::Decision::{Abort, Approve, ApproveAlways, ApproveSession, Deny};
+    use wire::CodexDecision::{Abort, Approve, ApproveAlways, ApproveSession, Deny};
     assert_eq!(
         decisions(json!("session")),
         [Approve, ApproveSession, Deny, Abort]
@@ -527,7 +527,7 @@ fn an_mcp_approval_answered_always_persists_it() {
             of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
                 ask_key: key,
                 of: Some(wire::codex_answer::Of::Approve(
-                    wire::Decision::ApproveAlways as i32,
+                    wire::CodexDecision::ApproveAlways as i32,
                 )),
             })),
         },
@@ -580,7 +580,7 @@ fn approval_outside_offered_decisions_is_rejected() {
         })),
     );
     let key = state.shared().asks().open_asks()[0].key.clone();
-    let approve = |id: &[u8], decision: wire::Decision| {
+    let approve = |id: &[u8], decision: wire::CodexDecision| {
         Event::Input(wire::Input::new(
             id.to_vec(),
             wire::CodexInput {
@@ -601,7 +601,10 @@ fn approval_outside_offered_decisions_is_rejected() {
             .collect::<Vec<_>>()
     };
 
-    let refused = Codex::step(&mut state, approve(b"a1", wire::Decision::ApproveSession));
+    let refused = Codex::step(
+        &mut state,
+        approve(b"a1", wire::CodexDecision::ApproveSession),
+    );
     assert_eq!(
         verdicts(&refused.effects),
         [wire::send_input_response::Of::Rejected(wire::Rejected {
@@ -613,7 +616,7 @@ fn approval_outside_offered_decisions_is_rejected() {
     assert!(refused.step.encoded_len() == 0, "the ask stays open");
     assert_eq!(state.shared().asks().open_asks().len(), 1);
 
-    let sent = Codex::step(&mut state, approve(b"a2", wire::Decision::Approve));
+    let sent = Codex::step(&mut state, approve(b"a2", wire::CodexDecision::Approve));
     assert!(matches!(
         verdicts(&sent.effects)[..],
         [wire::send_input_response::Of::Accepted(_)]
@@ -630,11 +633,9 @@ fn approval_outside_offered_decisions_is_rejected() {
 /// a new incarnation from a checkpoint that still listed it starts empty.
 #[test]
 fn the_job_list_empties_when_codex_exits() {
-    use prost::Message as _;
     let jobs = |step: &wire::Step| {
         step.snapshot.as_ref().map(|snapshot| {
-            let body = wire::CodexSnapshot::decode(&snapshot.body[..]).unwrap();
-            let background = body.background_jobs.unwrap_or_default();
+            let background = snapshot.jobs.clone().unwrap_or_default();
             (background.known, background.jobs.len())
         })
     };
@@ -884,7 +885,6 @@ fn a_skills_changed_notice_asks_again_and_rebuilds_the_catalogue() {
 /// sandbox is the auto permission, and plan is the mode.
 #[test]
 fn the_settings_notice_names_the_mode_and_who_answers_approvals() {
-    use prost::Message as _;
     let spec = wire::AgentSpec {
         agent_id: b"agent".to_vec(),
         ..Default::default()
@@ -921,24 +921,22 @@ fn the_settings_notice_names_the_mode_and_who_answers_approvals() {
         .step
         .snapshot
         .expect("the notice moves the snapshot");
-    let snapshot = wire::CodexSnapshot::decode(snapshot.body.as_slice()).unwrap();
-    println!(
-        "permission={:?} mode={:?} approval={:?}",
-        snapshot.permission, snapshot.mode, snapshot.approval_policy,
-    );
-    assert_eq!(snapshot.permission.as_deref(), Some("auto"));
-    assert_eq!(snapshot.mode.as_deref(), Some("plan"));
+    let settings = snapshot.settings();
+    assert_eq!(settings.permission.as_deref(), Some("auto"));
+    assert_eq!(settings.mode.as_deref(), Some("plan"));
 }
 
 /// An agent created in plan mode reads plan from the start, and its first
 /// turn sets it.
 #[test]
 fn a_mode_chosen_at_creation_is_set_by_the_first_turn() {
-    use prost::Message as _;
     let spec = wire::AgentSpec {
         agent_id: b"agent".to_vec(),
         config: Some(wire::EffectiveConfig {
-            mode: Some("plan".into()),
+            settings: Some(wire::AgentSettings {
+                mode: Some("plan".into()),
+                ..Default::default()
+            }),
             ..Default::default()
         }),
         bootstrap: Some(wire::Bootstrap {
@@ -948,6 +946,7 @@ fn a_mode_chosen_at_creation_is_set_by_the_first_turn() {
                     text: "Plan it.".into(),
                     ..Default::default()
                 }),
+                continued: false,
             })),
         }),
         ..Default::default()
@@ -975,8 +974,7 @@ fn a_mode_chosen_at_creation_is_set_by_the_first_turn() {
         .step
         .snapshot
         .expect("the thread moves the snapshot");
-    let snapshot = wire::CodexSnapshot::decode(snapshot.body.as_slice()).unwrap();
-    assert_eq!(snapshot.mode.as_deref(), Some("plan"));
+    assert_eq!(snapshot.settings().mode.as_deref(), Some("plan"));
 }
 
 /// A child's failed report as its daemon hands it over: no text, the cause
@@ -1370,10 +1368,7 @@ fn refused(will_retry: bool) -> Event {
 
 /// The sign-in state the step published, if it published one.
 fn sign_in_of(stepped: &interpret::Stepped) -> Option<wire::SignInState> {
-    use prost::Message as _;
-    let snapshot = stepped.step.snapshot.as_ref()?;
-    let body = wire::CodexSnapshot::decode(snapshot.body.as_slice()).unwrap();
-    body.sign_in.map(|sign_in| sign_in.state())
+    Some(stepped.step.snapshot.as_ref()?.sign_in.as_ref()?.state())
 }
 
 /// A 401 Codex is retrying is no sign-in problem. Giving up on one raises
@@ -1755,6 +1750,8 @@ fn a_prompt_over_codexs_limit_is_refused_before_it_is_sent() {
 struct Driven {
     state: State,
     snapshot: wire::CodexSnapshot,
+    /// The newest snapshot's envelope.
+    envelope: wire::Snapshot,
     items: Vec<wire::Item>,
     /// Each provider subagent's parts, by its agent id.
     subs: std::collections::BTreeMap<Vec<u8>, Sub>,
@@ -1779,13 +1776,12 @@ impl Driven {
             ..Default::default()
         };
         let (state, step) = Codex::initial(&spec);
-        let snapshot = wire::CodexSnapshot::decode(
-            step.snapshot.expect("an initial snapshot").body.as_slice(),
-        )
-        .unwrap();
+        let envelope = step.snapshot.expect("an initial snapshot");
+        let snapshot = wire::CodexSnapshot::decode(envelope.body.as_slice()).unwrap();
         let mut driven = Driven {
             state,
             snapshot,
+            envelope,
             items: Vec::new(),
             subs: Default::default(),
         };
@@ -1800,6 +1796,7 @@ impl Driven {
         let stepped = Codex::step(&mut self.state, event);
         if let Some(snapshot) = &stepped.step.snapshot {
             self.snapshot = wire::CodexSnapshot::decode(snapshot.body.as_slice()).unwrap();
+            self.envelope = snapshot.clone();
         }
         self.items.extend(stepped.step.items.iter().cloned());
         for part in &stepped.step.agents {
@@ -1901,7 +1898,7 @@ fn a_reroute_leaves_the_chosen_model_and_shows_codexs_warning() {
     );
     agent.rpc(json!({"method": "warning", "params": {
         "threadId": "t1", "message": "Your request was routed to fallback. Apply for access at https://example.com"}}));
-    assert_eq!(agent.snapshot.model.as_deref(), Some("m"));
+    assert_eq!(agent.envelope.settings().model.as_deref(), Some("m"));
     assert!(
         agent
             .items
@@ -1953,10 +1950,12 @@ fn resuming() -> Driven {
     };
     let state = std::mem::replace(&mut first.state, Codex::initial(&spec).0);
     let (state, step) = Codex::reincarnate(state, &spec);
-    let snapshot = wire::CodexSnapshot::decode(step.snapshot.unwrap().body.as_slice()).unwrap();
+    let envelope = step.snapshot.unwrap();
+    let snapshot = wire::CodexSnapshot::decode(envelope.body.as_slice()).unwrap();
     Driven {
         state,
         snapshot,
+        envelope,
         items: Vec::new(),
         subs: Default::default(),
     }
@@ -2040,7 +2039,7 @@ fn an_archived_thread_is_unarchived_and_resumed() {
     assert_eq!(resume["params"]["excludeTurns"], true);
     agent.rpc(json!({"id": resume["id"], "result": {
         "thread": {"id": "t1", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}));
-    assert_eq!(agent.snapshot.thread_id.as_deref(), Some("t1"));
+    assert_eq!(agent.envelope.conversation.as_deref(), Some("t1"));
 }
 
 /// A thread whose history is gone cannot be resumed, archived or not: the
@@ -2069,7 +2068,7 @@ fn a_thread_with_no_history_starts_afresh_with_a_notice() {
     );
     agent.rpc(json!({"id": start["id"], "result": {
         "thread": {"id": "t2", "cliVersion": "0.163.0", "turns": []}, "model": "m"}}));
-    assert_eq!(agent.snapshot.thread_id.as_deref(), Some("t2"));
+    assert_eq!(agent.envelope.conversation.as_deref(), Some("t2"));
 }
 
 /// `/clear` moves the agent to a new thread; Codex keeps a thread loaded,
@@ -2263,7 +2262,11 @@ fn child_turn_ends(agent: &mut Driven, status: &str) -> interpret::Stepped {
 fn to_child(thread: &str, id: &[u8], of: wire::codex_input::Of) -> Event {
     Event::ChildInput {
         agent_id: interpret::subagent_id(b"agent", thread),
-        input: wire::Input::new(id.to_vec(), wire::CodexInput { of: Some(of) }),
+        input_id: id.to_vec(),
+        of: wire::child_input::Of::Input(wire::Input::new(
+            id.to_vec(),
+            wire::CodexInput { of: Some(of) },
+        )),
     }
 }
 
@@ -2340,13 +2343,16 @@ fn a_spawn_starts_the_subagent_from_its_call_row_once_its_nickname_is_read() {
     assert_eq!(start.call_key, "spawn-1");
     assert_eq!(start.title, "Lovelace");
     let snapshot = agent.sub("child").snapshot.clone().unwrap();
-    assert_eq!(snapshot.title, None, "the title is the start's alone");
-    let body = agent.sub("child").body.clone().unwrap();
-    let jobs = body.background_jobs.unwrap().jobs;
+    assert_eq!(
+        snapshot.status().title,
+        None,
+        "the title is the start's alone"
+    );
+    let jobs = snapshot.jobs.clone().unwrap().jobs;
     assert_eq!(jobs.len(), 1, "its own job, which its Stop names");
     assert_eq!(jobs[0].key, "child");
     assert_eq!(jobs[0].kind, wire::BackgroundKind::Subagent as i32);
-    assert_eq!(body.model.as_deref(), Some("gpt-6.1-sol"));
+    assert_eq!(snapshot.settings().model.as_deref(), Some("gpt-6.1-sol"));
 }
 
 /// A start held for the nickname holds what the child says meanwhile, and
@@ -2575,6 +2581,7 @@ fn a_childs_items_are_its_own_and_its_turn_end_finishes_it() {
             .snapshot
             .as_ref()
             .unwrap()
+            .status()
             .last_said
             .as_deref(),
         Some("hi")
@@ -2612,18 +2619,18 @@ fn an_interrupted_child_stays_until_the_command_it_left_running_ends() {
     );
     let jobs = agent
         .sub("child")
-        .body
+        .snapshot
         .clone()
         .unwrap()
-        .background_jobs
+        .jobs
         .unwrap()
         .jobs;
     let keys: Vec<&str> = jobs.iter().map(|job| job.key.as_str()).collect();
     assert_eq!(keys, ["child", "4242"]);
     assert!(
         agent
-            .snapshot
-            .background_jobs
+            .envelope
+            .jobs
             .as_ref()
             .is_none_or(|jobs| jobs.jobs.is_empty()),
         "the child's command was listed on the parent"
@@ -2664,8 +2671,8 @@ fn a_childs_command_approval_is_the_subagents_own() {
     assert_eq!(asks.len(), 1);
     assert_eq!(asks[0].item_key, "child-cmd");
     assert_eq!(
-        sub.snapshot.as_ref().unwrap().phase,
-        wire::Phase::NeedsYou as i32
+        sub.snapshot.as_ref().unwrap().phase(),
+        wire::Phase::NeedsYou
     );
     let ended = turn_ends(&mut agent);
     assert!(
@@ -2701,7 +2708,7 @@ fn a_subagents_approval_is_answered_with_codexs_response() {
         wire::codex_input::Of::Answer(wire::CodexAnswer {
             ask_key: ask,
             of: Some(wire::codex_answer::Of::Approve(
-                wire::Decision::Approve as i32,
+                wire::CodexDecision::Approve as i32,
             )),
         }),
     ));
@@ -2719,7 +2726,7 @@ fn a_subagents_approval_is_answered_with_codexs_response() {
         wire::codex_input::Of::Answer(wire::CodexAnswer {
             ask_key: "7".into(),
             of: Some(wire::codex_answer::Of::Approve(
-                wire::Decision::Approve as i32,
+                wire::CodexDecision::Approve as i32,
             )),
         }),
     ));
@@ -2813,32 +2820,29 @@ fn an_mcp_approval_names_its_own_servers_call() {
 }
 
 /// amux's `set_working_on` called on a child's thread is the subagent
-/// saying what it works on, not the agent; so is the tool's name before
-/// 0.11, `status`, which a resumed agent's history holds.
+/// saying what it works on, not the agent.
 #[test]
 fn working_on_from_a_child_lands_on_the_subagent() {
-    for tool in ["set_working_on", "status"] {
-        let mut agent = with_a_child();
-        agent.rpc(
-            json!({"method": "item/started", "params": {"threadId": "child",
-            "turnId": "child-turn", "item": {"type": "mcpToolCall", "id": "st", "server": "amux",
-            "tool": tool, "status": "inProgress",
-            "arguments": {"working_on": "checking the child"}}}}),
-        );
-        assert_eq!(
-            agent
-                .sub("child")
-                .snapshot
-                .as_ref()
-                .unwrap()
-                .working_on
-                .as_deref(),
-            Some("checking the child"),
-            "{tool}"
-        );
-        let host = agent.state.shared().working_on().map(str::to_owned);
-        assert_ne!(host.as_deref(), Some("checking the child"), "{tool}");
-    }
+    let mut agent = with_a_child();
+    agent.rpc(
+        json!({"method": "item/started", "params": {"threadId": "child",
+        "turnId": "child-turn", "item": {"type": "mcpToolCall", "id": "st", "server": "amux",
+        "tool": "set_working_on", "status": "inProgress",
+        "arguments": {"working_on": "checking the child"}}}}),
+    );
+    assert_eq!(
+        agent
+            .sub("child")
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .status()
+            .working_on
+            .as_deref(),
+        Some("checking the child")
+    );
+    let host = agent.state.shared().working_on().map(str::to_owned);
+    assert_ne!(host.as_deref(), Some("checking the child"));
 }
 
 /// The person stops a subagent from its chat in Codex 0.166.0's three
@@ -2870,10 +2874,10 @@ fn a_subagent_stops_in_three_steps() {
     assert_eq!(interrupt["params"]["turnId"], "child-turn");
     let own = &agent
         .sub("child")
-        .body
+        .snapshot
         .as_ref()
         .unwrap()
-        .background_jobs
+        .jobs
         .as_ref()
         .unwrap()
         .jobs[0];
@@ -2983,9 +2987,10 @@ fn a_follow_up_continues_the_subagent_under_its_own_call() {
     assert_eq!(starts.len(), 2, "continued");
     assert_eq!(starts[1].call_key, "follow-1");
     assert_eq!(starts[1].call_agent_id, b"agent");
-    let body = agent.sub("child").body.clone().unwrap();
+    let snapshot = agent.sub("child").snapshot.clone().unwrap();
+    let settings = snapshot.settings();
     assert_eq!(
-        (body.model.as_deref(), body.effort.as_deref()),
+        (settings.model.as_deref(), settings.effort.as_deref()),
         (Some("gpt-6.1-sol"), Some("low")),
         "its model comes back from the read"
     );
@@ -3206,7 +3211,6 @@ fn a_skill_after_a_slash_is_refused_with_its_mention() {
 /// stopping until the command ends, and Codex's error shows on the job.
 #[test]
 fn a_stopped_background_command_reads_stopping_until_it_ends() {
-    use prost::Message as _;
     let verdicts = |effects: &[Effect]| {
         effects
             .iter()
@@ -3221,11 +3225,7 @@ fn a_stopped_background_command_reads_stopping_until_it_ends() {
     let mut step = |state: &mut State, event: Event| {
         let stepped = Codex::step(state, event);
         if let Some(snapshot) = &stepped.step.snapshot {
-            jobs = wire::CodexSnapshot::decode(&snapshot.body[..])
-                .unwrap()
-                .background_jobs
-                .unwrap_or_default()
-                .jobs;
+            jobs = snapshot.jobs.clone().unwrap_or_default().jobs;
         }
         (writes(&stepped.effects), jobs.clone(), stepped)
     };
@@ -3343,6 +3343,7 @@ fn first_prompt_spec() -> wire::AgentSpec {
                     text: "Review the parser.".into(),
                     ..Default::default()
                 }),
+                continued: false,
             })),
         }),
         ..Default::default()
@@ -3514,8 +3515,8 @@ fn a_background_command_completing_after_its_turn_leaves_nothing_held() {
 #[test]
 fn a_command_accepted_for_the_session_is_held() {
     for (decision, held) in [
-        (wire::Decision::ApproveSession, true),
-        (wire::Decision::Approve, false),
+        (wire::CodexDecision::ApproveSession, true),
+        (wire::CodexDecision::Approve, false),
     ] {
         let mut state = idle_codex();
         Codex::step(&mut state, prompt(b"p1", "touch it"));
@@ -3769,22 +3770,21 @@ fn an_idle_thread_is_compacted_inside_the_cache_lifetime() {
             "item": {"id": "c1", "type": "contextCompaction"}}}),
         ),
     );
-    let boundaries: Vec<wire::Boundary> = compacted
+    let compactions: Vec<wire::Compaction> = compacted
         .step
         .items
         .iter()
         .filter_map(|item| {
             use prost::Message as _;
             match wire::CodexItem::decode(item.body.as_slice()).ok()?.kind? {
-                wire::codex_item::Kind::Boundary(boundary) => Some(boundary),
+                wire::codex_item::Kind::Compaction(compaction) => Some(compaction),
                 _ => None,
             }
         })
         .collect();
     assert_eq!(
-        boundaries,
-        [wire::Boundary {
-            kind: wire::BoundaryKind::Compacted as i32,
+        compactions,
+        [wire::Compaction {
             idle: true,
             ..Default::default()
         }]
@@ -3970,10 +3970,10 @@ fn a_refused_interrupt_says_why_and_the_stop_can_be_tried_again() {
     );
     let own = agent
         .sub("child")
-        .body
+        .snapshot
         .as_ref()
         .unwrap()
-        .background_jobs
+        .jobs
         .as_ref()
         .unwrap()
         .jobs[0]
@@ -4116,7 +4116,6 @@ fn a_spawns_late_completion_does_not_start_the_child_again() {
 /// suspension would lose, so such an agent suspends like any other.
 #[test]
 fn implementing_a_plan_moves_the_mode_and_holds_nothing() {
-    use prost::Message as _;
     let script = interpret::fixture_script::<Codex>(&fixtures().join("plans.json")).unwrap();
     let (mut state, _) = Codex::initial(&script.spec);
     let mut mode = None;
@@ -4126,9 +4125,7 @@ fn implementing_a_plan_moves_the_mode_and_holds_nothing() {
         approved |= matches!(&event, Event::Input(input) if input.input_id == b"a1");
         let step = Codex::step(&mut state, event).step;
         if let Some(snapshot) = &step.snapshot {
-            mode = wire::CodexSnapshot::decode(snapshot.body.as_slice())
-                .unwrap()
-                .mode;
+            mode = snapshot.settings().mode.clone();
         }
         if approved && step.turn_end.is_some() {
             break;

@@ -183,7 +183,6 @@ mod authority;
 mod caller_header;
 mod capabilities;
 pub mod codex;
-mod continued;
 mod entry;
 mod error;
 mod host_name;
@@ -194,7 +193,6 @@ mod said;
 pub use amux::v1::*;
 pub use authority::{authority, host_of_authority};
 pub use caller_header::CallerHeaderError;
-pub use continued::{continued_input_id, is_continued_input};
 pub use host_name::{HostName, HostNameError, MAX_HOST_NAME_CHARS};
 /// An error's code, gRPC's own.
 pub use rpc::Code as ErrorCode;
@@ -344,34 +342,160 @@ impl Input {
     }
 }
 
-impl create_agent_request::Agent {
-    /// The kind with its default settings; None for no kind, and for an
-    /// ACP agent, which has no default: which agent it is must be named.
-    pub fn defaults(kind: Kind) -> Option<Self> {
-        match kind {
-            Kind::ClaudePty => Some(Self::ClaudePty(ClaudeCreateConfig::default())),
-            Kind::ClaudeSdk => Some(Self::ClaudeSdk(ClaudeCreateConfig::default())),
-            Kind::Codex => Some(Self::Codex(CodexCreateConfig::default())),
-            Kind::Acp | Kind::Unspecified => None,
+impl CreateAgentRequest {
+    /// A create of the agent program `provider` names, on its own settings.
+    pub fn of(provider: impl Into<String>) -> Self {
+        Self {
+            provider: provider.into(),
+            ..Self::default()
         }
     }
 
-    /// The interpreter this arm creates.
-    pub fn kind(&self) -> Kind {
-        match self {
-            Self::ClaudePty(_) => Kind::ClaudePty,
-            Self::ClaudeSdk(_) => Kind::ClaudeSdk,
-            Self::Codex(_) => Kind::Codex,
-            Self::Acp(_) => Kind::Acp,
-        }
+    /// The same create, run by `kind`.
+    #[must_use]
+    pub fn as_kind(mut self, kind: Kind) -> Self {
+        self.kind = kind as i32;
+        self
     }
 
-    /// The provider id of the program this arm starts: Claude's or Codex's,
-    /// or the ACP agent's it names.
-    pub fn provider_id(&self) -> &str {
-        match self {
-            Self::Acp(acp) => &acp.agent,
-            other => agents::implied_by(other.kind()),
+    /// The same create, starting on `settings`.
+    #[must_use]
+    pub fn with_settings(mut self, settings: AgentSettings) -> Self {
+        self.settings = Some(settings);
+        self
+    }
+
+    /// The settings it asks for; none chosen when absent.
+    pub fn settings(&self) -> &AgentSettings {
+        self.settings
+            .as_ref()
+            .unwrap_or(const { &AgentSettings::NONE })
+    }
+}
+
+impl AgentSettings {
+    /// No setting chosen or known.
+    pub const NONE: Self = Self {
+        model: None,
+        effort: None,
+        permission: None,
+        permission_level: 0,
+        mode: None,
+    };
+
+    /// Whether nothing is chosen or known.
+    pub fn is_none(&self) -> bool {
+        *self == Self::NONE
+    }
+}
+
+impl AgentStatus {
+    /// The status before an agent's first snapshot says anything.
+    pub const NONE: Self = Self {
+        phase: 0,
+        phase_since_ms: 0,
+        working_on: None,
+        git: None,
+        background_jobs: 0,
+        title: None,
+        last_said: None,
+        settings: None,
+    };
+
+    /// A status saying only `phase`, as a snapshot or row holds it.
+    pub fn in_phase(phase: Phase) -> Option<Box<Self>> {
+        Some(Box::new(Self {
+            phase: phase as i32,
+            ..Self::NONE
+        }))
+    }
+
+    /// The settings it reports; none known when absent.
+    pub fn settings(&self) -> &AgentSettings {
+        self.settings
+            .as_ref()
+            .unwrap_or(const { &AgentSettings::NONE })
+    }
+}
+
+impl Agent {
+    /// What the agent's newest snapshot said of it.
+    pub fn status(&self) -> &AgentStatus {
+        self.status
+            .as_deref()
+            .unwrap_or(const { &AgentStatus::NONE })
+    }
+
+    /// The status, to change it.
+    pub fn status_mut(&mut self) -> &mut AgentStatus {
+        self.status.get_or_insert_with(Box::default)
+    }
+
+    pub fn phase(&self) -> Phase {
+        self.status().phase()
+    }
+
+    pub fn working_on(&self) -> Option<&str> {
+        self.status().working_on.as_deref()
+    }
+
+    pub fn title(&self) -> Option<&str> {
+        self.status().title.as_deref()
+    }
+
+    pub fn last_said(&self) -> Option<&str> {
+        self.status().last_said.as_deref()
+    }
+
+    pub fn git(&self) -> Option<&Git> {
+        self.status().git.as_ref()
+    }
+
+    pub fn settings(&self) -> &AgentSettings {
+        self.status().settings()
+    }
+
+    /// Why the newest incarnation ended; unspecified while it runs.
+    pub fn exit_cause(&self) -> ExitCause {
+        self.exit
+            .as_ref()
+            .map_or(ExitCause::Unspecified, IncarnationEnd::cause)
+    }
+
+    /// The exit cause's own words, when it has any.
+    pub fn exit_detail(&self) -> Option<&str> {
+        self.exit.as_ref()?.detail.as_deref()
+    }
+}
+
+impl Snapshot {
+    /// What the snapshot says the row repeats.
+    pub fn status(&self) -> &AgentStatus {
+        self.status
+            .as_deref()
+            .unwrap_or(const { &AgentStatus::NONE })
+    }
+
+    /// The status, to change it.
+    pub fn status_mut(&mut self) -> &mut AgentStatus {
+        self.status.get_or_insert_with(Box::default)
+    }
+
+    pub fn phase(&self) -> Phase {
+        self.status().phase()
+    }
+
+    pub fn settings(&self) -> &AgentSettings {
+        self.status().settings()
+    }
+}
+
+impl IncarnationEnd {
+    /// An end for `cause`, in the cause's own words when it has any.
+    pub fn new(cause: ExitCause, detail: Option<String>) -> Self {
+        Self {
+            cause: cause as i32,
+            detail,
         }
     }
 }
@@ -394,11 +518,12 @@ impl Profile {
     }
 }
 
-impl HostRef {
-    /// A host by its id.
-    pub fn id(host_id: impl Into<Vec<u8>>) -> Self {
+impl Online {
+    /// Online by `route`, not known to be on the same network.
+    pub fn via(route: RouteKind) -> Self {
         Self {
-            of: Some(host_ref::Of::HostId(host_id.into())),
+            route: route as i32,
+            same_network: false,
         }
     }
 }
@@ -419,7 +544,6 @@ impl HostEntry {
             standing: Some(host_entry::Standing::Trusted(Trusted {
                 reach: Some(reach),
                 current: false,
-                same_network: false,
             })),
             ..Self::default()
         }
@@ -475,19 +599,35 @@ impl HostEntry {
         self.trusted()?.reach.as_ref()
     }
 
-    /// The kind of route a trusted host is online over.
+    /// The kind of route a trusted host is online over; none for this
+    /// machine itself, which is reached by no route.
     pub fn online(&self) -> Option<RouteKind> {
         match self.reach()? {
-            trusted::Reach::Online(kind) => Some(RouteKind::try_from(*kind).unwrap_or_default()),
+            trusted::Reach::Online(online) => Some(online.route()),
             _ => None,
         }
+    }
+
+    /// Whether the host is this machine itself.
+    pub fn here(&self) -> bool {
+        matches!(self.reach(), Some(trusted::Reach::Here(_)))
+    }
+
+    /// Whether the host reads reachable: this machine, or online.
+    pub fn reachable(&self) -> bool {
+        matches!(
+            self.reach(),
+            Some(trusted::Reach::Here(_) | trusted::Reach::Online(_))
+        )
     }
 
     /// A trusted host online over a direct path on a network both machines
     /// are on, which a client calls Local.
     pub fn same_network(&self) -> bool {
-        self.online() == Some(RouteKind::Direct)
-            && self.trusted().is_some_and(|trusted| trusted.same_network)
+        matches!(
+            self.reach(),
+            Some(trusted::Reach::Online(online)) if online.same_network
+        )
     }
 
     pub fn away(&self) -> bool {
@@ -534,7 +674,7 @@ impl HostEntry {
     pub fn provider(&self, id: &str) -> Option<&ProviderOnHost> {
         self.providers
             .iter()
-            .find(|provider| provider.provider_id == id)
+            .find(|provider| provider.provider == id)
     }
 }
 
@@ -546,13 +686,32 @@ impl ProviderOnHost {
             .map_or(Kind::Unspecified, ProviderDescriptor::kind)
     }
 
+    /// Whether the provider runs as `kind` on its host.
+    pub fn runs(&self, kind: Kind) -> bool {
+        self.kinds.iter().any(|listed| listed.kind() == kind)
+    }
+
+    /// What an agent of `kind` started on its host now can do; none for a
+    /// kind the provider does not run there.
+    pub fn capabilities_of(&self, kind: Kind) -> Option<&AgentCapabilities> {
+        self.kinds
+            .iter()
+            .find(|listed| listed.kind() == kind)
+            .and_then(|listed| listed.capabilities.as_ref())
+    }
+
+    /// What a new agent of it, of the kind it starts as, can do.
+    pub fn capabilities(&self) -> Option<&AgentCapabilities> {
+        self.capabilities_of(self.kind())
+    }
+
     /// What people call it, else its id.
     pub fn name(&self) -> &str {
         self.descriptor
             .as_ref()
             .map(|descriptor| descriptor.name.as_str())
             .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| agents::name_or_id(&self.provider_id))
+            .unwrap_or_else(|| agents::name_or_id(&self.provider))
     }
 
     /// Whether it is signed in, once the host has asked it.
@@ -621,25 +780,6 @@ pub const STOP_TOOL: &str = "stop_subagent";
 /// amux's tools that list the fleet and the trusted hosts.
 pub const AGENTS_TOOL: &str = "list_agents";
 pub const HOSTS_TOOL: &str = "list_hosts";
-
-/// What releases before 0.11 named the same tools. An agent resumed from
-/// then still has calls by these names in its provider's history, so the
-/// interpreters and views read both.
-pub mod former_tools {
-    pub const STATUS_TOOL: &str = "status";
-    pub const SEND_TOOL: &str = "send";
-    pub const ATTACH_TOOL: &str = "attach";
-    pub const SPAWN_TOOL: &str = "spawn";
-    pub const STOP_TOOL: &str = "stop";
-    pub const AGENTS_TOOL: &str = "agents";
-    pub const HOSTS_TOOL: &str = "hosts";
-}
-
-/// Whether `tool` is amux's tool named `now`, by its name now or by the
-/// name a release before 0.11 gave it, `before`.
-pub fn is_tool(tool: &str, now: &str, before: &str) -> bool {
-    tool == now || tool == before
-}
 
 /// Why a name cannot name an agent. Each client words it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
@@ -758,7 +898,7 @@ mod tests {
         "AgentAnswer",
         "ProviderOffer",
         "Step",
-        "Message",
+        "LinkMessage",
         // Named, not encoded: an ErrorInfo's reason is a value's name.
         "ErrorReason",
         "ClaudeItem",
@@ -879,20 +1019,18 @@ mod tests {
         );
     }
 
-    /// What a build before the `experimental` maps decodes an `Agent` row
-    /// and an `AgentSpec` as: their first fields and nothing at 1000.
+    /// What a build that knows no `experimental` map decodes an `Agent` row
+    /// and an `AgentSpec` as: their first field and nothing at 1000.
     #[derive(Clone, PartialEq, prost::Message)]
     struct Before {
         #[prost(bytes = "vec", tag = "1")]
         agent_id: Vec<u8>,
-        #[prost(string, tag = "4")]
-        name: String,
     }
 
-    /// An `experimental` entry is field 1000 to a build that predates the
-    /// map, so 0.9 hosts and agent processes read a row or a spec carrying
-    /// one as they read it without, and an entry under a version a build
-    /// does not run is only bytes under a key it never asks for.
+    /// An `experimental` entry is only field 1000 to a build that does not
+    /// know the map, so it reads a row or a spec carrying one as it reads it
+    /// without, and an entry under a version a build does not run is only
+    /// bytes under a key it never asks for.
     #[test]
     fn a_build_without_the_experimental_maps_reads_past_them() {
         let workspace = experimental::AgentWorkspace {
@@ -924,7 +1062,6 @@ mod tests {
                 Before::decode(bytes.as_slice()).unwrap(),
                 Before {
                     agent_id: b"agent".to_vec(),
-                    name: "coder".into(),
                 }
             );
         }

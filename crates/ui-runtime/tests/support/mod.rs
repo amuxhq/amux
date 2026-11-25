@@ -659,7 +659,7 @@ pub fn agent(kind: Kind) -> Agent {
         name: "worker".into(),
         cwd: "/src".into(),
         lifecycle: Lifecycle::Live as i32,
-        phase: Phase::Idle as i32,
+        status: wire::AgentStatus::in_phase(Phase::Idle),
         incarnation: 1,
         ..Agent::default()
     }
@@ -667,7 +667,10 @@ pub fn agent(kind: Kind) -> Agent {
 
 pub fn exited(mut agent: Agent) -> Agent {
     agent.lifecycle = Lifecycle::Exited as i32;
-    agent.exit_cause = wire::ExitCause::Finished as i32;
+    agent.exit = Some(wire::IncarnationEnd {
+        cause: wire::ExitCause::Finished as i32,
+        detail: None,
+    });
     agent
 }
 
@@ -687,9 +690,21 @@ pub fn snapshot(kind: Kind, revision: u64, queue: &[&[u8]]) -> SessionEvent {
                 ..QueuedInput::default()
             })
             .collect(),
-        phase: Phase::Working as i32,
+        status: wire::AgentStatus::in_phase(Phase::Working),
+        capabilities: Some(Box::new(capabilities(kind))),
         ..Snapshot::default()
     }))
+}
+
+/// What an agent of `kind` can do, as its interpreter says in each
+/// snapshot (an ACP agent here is one that offered nothing at `initialize`).
+pub fn capabilities(kind: Kind) -> wire::AgentCapabilities {
+    match kind {
+        Kind::ClaudePty => wire::AgentCapabilities::claude_pty(),
+        Kind::ClaudeSdk => wire::AgentCapabilities::claude_sdk(),
+        Kind::Codex => wire::AgentCapabilities::codex(),
+        _ => wire::AgentCapabilities::acp(false, false, false),
+    }
 }
 
 pub fn text_item(kind: Kind, order: u64, revision: u64, text: &str) -> Item {

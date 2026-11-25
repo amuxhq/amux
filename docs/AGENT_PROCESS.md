@@ -497,7 +497,7 @@ version integer, and a frame a reader does not know is ignored.
 | `hello` | agent → daemon | Sent at once on every connection: the agent id |
 | `nudge` | agent → daemon | The journal grew. Sent after every step that wrote bytes; an empty step writes nothing and sends nothing |
 | `input` | daemon → agent | A person's `Input` (a prompt, an answer, an interrupt, a setting, …), its body as the client encoded it |
-| `child_input` | daemon → agent | `ChildInput { agent_id, input }`: a person's `Input` to one of the provider subagents this agent's provider runs: an answer to one of its asks, or a `StopJob { key }` naming a job in the subagent's own snapshot (its own job, keyed by the provider's id for it, stops it). The core hands it to the interpreter as `Event::ChildInput`, through the facts ring like any input, and the interpreter answers the provider for the subagent; the `reply` is keyed by the input id, and a draining or exiting agent refuses it as it refuses its own input. The daemon refuses every other input to a subagent itself |
+| `child_input` | daemon → agent | `ChildInput { agent_id, input_id, of }`: a person's act on one of the provider subagents this agent's provider runs, either an `Input` of the subagent's kind answering one of its asks, or a `StopJob { key }` naming a job in the subagent's own snapshot (its own job, keyed by the provider's id for it, stops it). The daemon sends the job stop as the shared `StopJob` for every kind, so it never builds a kind's input. The core hands it to the interpreter as `Event::ChildInput`, through the facts ring like any input, and the interpreter answers the provider for the subagent; the `reply` is keyed by the input id, and a draining or exiting agent refuses it as it refuses its own input. The daemon refuses every other input to a subagent itself |
 | `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |
 | `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's record for a report, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
@@ -768,8 +768,7 @@ first entry.
   when it is UTF-8, as hex otherwise; terminal Claude's subagent transcript
   rows on a channel of their own, `subagent_transcript`, apart from its main
   transcript's), a person's input, a person's input to one of its provider
-  subagents (`child_input`, the encoded `ChildInput`; a ring from before
-  subagents were agents of their own has none) or an agent message
+  subagents (`child_input`, the encoded `ChildInput`) or an agent message
   as its encoded protobuf in hex, a Codex agent's new name, a tick, the
   provider's exit, the daemon being lost, a stop, the
   process exiting, or the folder's git facts as an encoded `Git` in hex
@@ -983,13 +982,10 @@ of its agent process: each connection carries one `AgentAsk` and its
 is, so a later build can add an ask. A process that reads an ask it does
 not know refuses it in words. A spawn's ask is the `CreateAgentRequest` the
 child's host takes, with the child's agent id the tool server chose, in the
-`spawn` arm (field 2), and that host's id in `host_id` (empty for the agent's
+`spawn` arm, and that host's id in `host_id` (empty for the agent's
 own host): the tool server resolves a host the model named to its id before
 it asks, so a name never reaches the process. The answer is the host's
-`CreateAgentResponse` or the words of a refusal. The arm took a new number
-when the create stopped naming its host, with the old one reserved, so a
-tool server and an agent process built on either side of that change read
-each other's spawn as an ask they do not know and refuse it in words. For
+`CreateAgentResponse` or the words of a refusal. For
 each spawn the process
 ([`spawns.rs`](../crates/agent/src/spawns.rs)) tells its core the child was
 asked for and waits until the core has it; makes the create on `tools.sock`,

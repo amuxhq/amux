@@ -363,7 +363,7 @@ mod tests {
             let mut peer =
                 wire::peer_service_client(served_as(&self.runtime, Served::Profile, calling));
             let refused = peer
-                .get_blob(wire::PeerServiceGetBlobRequest::default())
+                .fetch_blob(wire::FetchBlobRequest::default())
                 .await
                 .unwrap_err();
             (refused.code(), refused.message().to_owned())

@@ -93,7 +93,7 @@ fn carrier_exists(
 ) -> Result<(), String> {
     // Both Claude kinds carry the same item and snapshot messages.
     let (camel, ask) = match kind {
-        "claude_pty" | "claude_sdk" => ("Claude", ".amux.v1.Ask"),
+        "claude_pty" | "claude_sdk" => ("Claude", ".amux.v1.ClaudeAsk"),
         "codex" => ("Codex", ".amux.v1.CodexAsk"),
         "acp" => ("Acp", ".amux.v1.AcpAsk"),
         other => return Err(format!("{other} is not one of KINDS")),
@@ -104,6 +104,7 @@ fn carrier_exists(
     let root = match place {
         "item" => format!(".amux.v1.{camel}Item"),
         "snapshot" => format!(".amux.v1.{camel}Snapshot"),
+        "envelope" => ".amux.v1.Snapshot".to_owned(),
         "ask" => ask.to_owned(),
         other => return Err(format!("{carrier:?}: unknown place {other:?}")),
     };

@@ -91,7 +91,7 @@ pub type SubstrateFor = Arc<dyn Fn(HostId) -> std::io::Result<Arc<dyn Datagrams>
 pub struct EdgeOptions {
     /// What this machine calls itself to its peers.
     pub host_name: String,
-    /// The agent kinds this host runs, as its handshake advertises them.
+    /// The agent kinds this host runs: what a create on it may name.
     pub kinds: Vec<wire::Kind>,
     /// Listen for direct links on the LAN.
     pub lan: Option<LanOptions>,
@@ -328,6 +328,8 @@ pub struct Edge {
     /// again with after a suspension.
     dial: bool,
     listening: bool,
+    /// The agent kinds this host runs.
+    kinds: Vec<wire::Kind>,
     /// The app is suspended: its links are closed and nothing is dialled.
     suspended: tokio::sync::Mutex<bool>,
     /// True while the app is suspended, for the dispatcher, which takes no
@@ -364,10 +366,7 @@ impl Edge {
         let local_host = LiveLocalHost::new(local_host(
             identity.host_id,
             &host_name,
-            Capabilities {
-                cloud_relay: false,
-                kinds: options.kinds.iter().map(|kind| *kind as i32).collect(),
-            },
+            Capabilities { cloud_relay: false },
             signed_in,
         ));
         let links = Arc::new(LinkRegistry::for_core(
@@ -573,6 +572,7 @@ impl Edge {
             interfaces: options.interfaces.clone(),
             dial: options.dial,
             listening: options.lan.is_some(),
+            kinds: options.kinds.clone(),
             suspended: tokio::sync::Mutex::new(false),
             refusing_links,
         });
@@ -634,8 +634,14 @@ impl Edge {
     }
 
     /// What this host's handshake says it can do.
-    pub fn capabilities(&self) -> wire::Capabilities {
+    pub fn capabilities(&self) -> wire::HostCapabilities {
         self.local_host.snapshot().capabilities
+    }
+
+    /// The agent kinds this host runs, from its platform: a phone runs
+    /// none.
+    pub fn kinds(&self) -> &[wire::Kind] {
+        &self.kinds
     }
 
     pub fn dir(&self) -> &Path {

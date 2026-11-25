@@ -364,6 +364,10 @@ async fn client(entrance: &Entrance, authority: Option<String>) -> tonic::client
 async fn who(entrance: &Entrance, authority: Option<String>) -> Result<String, Status> {
     let mut grpc = client(entrance, authority).await;
     let mut request = tonic::Request::new(Vec::new());
+    // The iPhone app names itself, as every client does.
+    request
+        .metadata_mut()
+        .insert(wire::SURFACE_HEADER, "ios".parse().unwrap());
     // A client claiming to be someone: the entry's word replaces it.
     request.metadata_mut().insert_bin(
         wire::CALLER_HEADER,

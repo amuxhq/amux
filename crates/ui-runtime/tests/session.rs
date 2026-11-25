@@ -348,7 +348,7 @@ fn answering(kind: Kind) -> Input {
             of: Some(codex_input::Of::Answer(wire::CodexAnswer {
                 ask_key: "ask-1".into(),
                 of: Some(wire::codex_answer::Of::Approve(
-                    wire::Decision::Approve as i32,
+                    wire::CodexDecision::Approve as i32,
                 )),
             })),
         }),
@@ -530,7 +530,7 @@ async fn a_refused_call_is_a_rejection_never_uncertain() {
     assert_eq!(
         session.state().input_state(&sent.id),
         Some(InputState::Rejected(Refusal {
-            reason: wire::Refusal::Unspecified,
+            reason: ui_state::RefusalReason::Unspecified,
             detail: Some("no such agent".into()),
         }))
     );
@@ -918,10 +918,8 @@ async fn an_input_refused_because_the_host_was_unreachable_is_refused_and_never_
         });
         let (request, reply) = calls.send_input().await;
         let id = request.input.unwrap().input_id;
-        reply
-            .send(Ok(rejected(wire::Refusal::HostUnreachable)))
-            .ok();
-        let refusal = Refusal::of(wire::Refusal::HostUnreachable);
+        reply.send(Err(host_unreachable())).ok();
+        let refusal = Refusal::of(ui_state::RefusalReason::HostUnreachable);
         let error = sending.await.unwrap();
         if act == "answer" {
             assert_eq!(error, Some(InputError::Rejected(refusal.clone())));
@@ -968,21 +966,17 @@ async fn an_input_that_never_left_for_its_host_is_held_for_either_reason() {
         let detail = (why == "lapsed").then(|| error.to_string());
         reply.send(Err(error)).ok();
         let sent = sending.await.unwrap();
-        let held = wire::Rejected {
-            refusal: wire::Refusal::HostUnreachable as i32,
-            detail: detail.clone(),
-        };
         assert_eq!(
             sent.outcome,
-            InputOutcome::Reply(wire::SendInputResponse {
-                of: Some(wire::send_input_response::Of::Rejected(held)),
-            }),
+            InputOutcome::NotSent {
+                detail: detail.clone()
+            },
             "{why}"
         );
         assert_eq!(
             session.state().input_state(&id),
             Some(InputState::Rejected(Refusal {
-                reason: wire::Refusal::HostUnreachable,
+                reason: ui_state::RefusalReason::HostUnreachable,
                 detail,
             })),
             "{why}"
@@ -1079,7 +1073,7 @@ async fn an_attachment_the_agent_does_not_take_is_refused_and_kept_as_a_refused_
     let (_, feed) = calls.subscribe_session().await;
     let mut snapshot = snapshot(Kind::Acp, 1, &[]);
     if let Some(wire::session_event::Of::Snapshot(held)) = &mut snapshot.of {
-        held.capabilities = Some(wire::AgentCapabilities::acp(true, false, false));
+        held.capabilities = Some(Box::new(wire::AgentCapabilities::acp(true, false, false)));
     }
     feed.send(snapshot);
     feed.send(caught_up(1));

@@ -724,7 +724,11 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
             json!({
                 "steps": steps,
                 "dismissed": onboarding.dismissed,
-                "repositories": settings.repositories,
+                // The repositories its config file pins, which PinFolder
+                // writes and no setting carries.
+                "repositories": settings::InstallationConfig::from_file(&net.host(&host)?.config)
+                    .map(|config| config.repositories())
+                    .unwrap_or_default(),
                 "telemetry": settings.telemetry,
                 "auto_reports": settings.auto_reports,
                 "keep_awake": settings.keep_awake,
@@ -893,7 +897,7 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                         "id": Uuid::from_slice(host.host_id()).unwrap_or_default(),
                         "trust": if host.trusted().is_some() { "TRUSTED" } else { "CANDIDATE" },
                         "presence": match host.reach() {
-                            Some(wire::trusted::Reach::Online(_)) | None => "ONLINE",
+                            Some(wire::trusted::Reach::Here(_) | wire::trusted::Reach::Online(_)) | None => "ONLINE",
                             Some(wire::trusted::Reach::Away(_)) => "AWAY",
                             Some(wire::trusted::Reach::Offline(_)) => "OFFLINE",
                         },
@@ -903,7 +907,7 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                         "providers": host
                             .providers
                             .iter()
-                            .map(|offered| offered.provider_id.clone())
+                            .map(|offered| offered.provider.clone())
                             .collect::<Vec<_>>(),
                     })
                 })
@@ -917,19 +921,19 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
                         "host_id": Uuid::from_slice(&agent.host_id).unwrap_or_default(),
                         "lifecycle": agent.lifecycle,
                         "filing": agent.filing,
-                        "phase": agent.phase,
+                        "phase": agent.phase() as i32,
                         "cwd": agent.cwd,
-                        "branch": agent.git.as_ref().and_then(|git| git.branch.clone()),
+                        "branch": agent.git().and_then(|git| git.branch.clone()),
                         "kind": agent.kind().as_str_name().trim_start_matches("KIND_"),
                         "provider": agent.provider,
                         "lifecycle_name": agent.lifecycle().as_str_name().trim_start_matches("LIFECYCLE_"),
                         "phase_name": agent.phase().as_str_name().trim_start_matches("PHASE_"),
-                        "working_on": agent.working_on,
+                        "working_on": agent.working_on(),
                         "incarnation": agent.incarnation,
                         "exit_cause": (agent.lifecycle() == wire::Lifecycle::Exited)
                             .then(|| agent.exit_cause().as_str_name().trim_start_matches("EXIT_CAUSE_").to_owned()),
-                        "exit_detail": agent.exit_detail,
-                        "title": agent.title,
+                        "exit_detail": agent.exit_detail(),
+                        "title": agent.title(),
                         // A provider subagent's own id at its provider,
                         // which a stop of it names.
                         "native_child": agent.native.as_ref().map(|native| native.provider_child_id.clone()),
@@ -1019,18 +1023,9 @@ pub async fn dispatch(net: &mut Net, control: Control) -> Result<Value, NetError
     })
 }
 
-/// The model a snapshot says the agent runs, from its per-kind body.
+/// The model a snapshot says the agent runs.
 fn running_model(snapshot: &wire::Snapshot) -> Option<String> {
-    use prost::Message;
-    let body = snapshot.body.as_slice();
-    match wire::Kind::try_from(snapshot.kind).ok()? {
-        wire::Kind::ClaudeSdk | wire::Kind::ClaudePty => {
-            wire::ClaudeSnapshot::decode(body).ok()?.model
-        }
-        wire::Kind::Codex => wire::CodexSnapshot::decode(body).ok()?.model,
-        wire::Kind::Acp => wire::AcpSnapshot::decode(body).ok()?.model,
-        wire::Kind::Unspecified => None,
-    }
+    snapshot.settings().model.clone()
 }
 
 /// What an item is, as its per-kind body decodes, shortened: enough to

@@ -135,10 +135,7 @@ async fn a_host_resumed_with_a_ticket_for_a_key_no_longer_pinned_is_refused_as_r
     // While the laptop is away the desk pins another key for it, as
     // unpairing it and pairing a reinstalled laptop under the same id
     // would; the laptop still holds the ticket its old key was given.
-    desk_edge
-        .unpair(wire::HostRef::id(laptop_id.as_bytes().to_vec()))
-        .await
-        .unwrap();
+    desk_edge.unpair(laptop_id.as_bytes()).await.unwrap();
     desk_edge
         .trust_ssh_peer(wire::TrustSshPeerRequest {
             peer: Some(wire::PairingIdentity {
@@ -184,13 +181,7 @@ async fn unpairing_a_host_removes_the_tickets_and_tokens_it_gave() {
     let kept = |dir: &str| linked.laptop.profile_dir().join(dir).join(desk.to_string());
     assert!(tickets_beneath(&kept(node::CLIENT_TICKETS_DIR)) > 0);
 
-    linked
-        .laptop_edge
-        .unpair(wire::HostRef {
-            of: Some(wire::host_ref::Of::HostId(desk.as_bytes().to_vec())),
-        })
-        .await
-        .unwrap();
+    linked.laptop_edge.unpair(desk.as_bytes()).await.unwrap();
     assert!(!kept(node::CLIENT_TICKETS_DIR).exists());
     assert!(!kept(node::CLIENT_TOKENS_DIR).exists());
     linked.stop().await;

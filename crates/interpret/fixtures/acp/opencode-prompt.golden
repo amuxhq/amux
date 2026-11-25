@@ -1,43 +1,44 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
-## 1 recorded 0: tick 2418
-snapshot STARTING queue=[] working_on=- at=2418 agent=opencode session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+snapshot capabilities resumable files passes_unknown_commands model=pick effort=pick permission=pick mode=pick
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"agentCapabilitie…
-snapshot STARTING queue=[] working_on=- at=2418 agent=opencode session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=RESUME
+snapshot capabilities resumable images files passes_unknown_commands forks model=pick effort=pick permission=pick mode=pick
+snapshot STARTING queue=[] working_on=- at=2418 conversation=? model_name=? sign_in=? background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 4 recorded 3: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\…
 effect session "ses_e059e8669ffeW1cbsE367IcFWe"
-effect catalogue e0deab70 models=[opencode/beam-free,opencode/big-pickle,opencode/deepseek-v4.1-flash-free,opencode/flint-40b-free,opencode/hy4-flash-free,opencode/iceman-free,opencode/longcat-2.5-free,opencode/mimo-v2.6-flash-free,opencode/nemotron-3.5-lightning-free,opencode/nemotron-3.5-super-vl-free,opencode/tidepool-alpha-free] commands=0 permissions=[] modes=[build,plan]
+effect catalogue bde80815 models=[opencode/beam-free,opencode/big-pickle,opencode/deepseek-v4.1-flash-free,opencode/flint-40b-free,opencode/hy4-flash-free,opencode/iceman-free,opencode/longcat-2.5-free,opencode/mimo-v2.6-flash-free,opencode/nemotron-3.5-lightning-free,opencode/nemotron-3.5-super-vl-free,opencode/tidepool-alpha-free] commands=0 permissions=[build,plan] modes=[]
 item boundary:1 boundary final at=2883 text="" BOUNDARY_KIND_STARTED
-snapshot catalogue e0deab70
-snapshot settings model=opencode/big-pickle effort=? permission=build level=full
-snapshot IDLE queue=[] working_on=- at=2883 agent=opencode session=ses_e059e8669ffeW1cbsE367IcFWe asks=[] model=opencode/big-pickle model_name=OpenCode/Big Pickle effort=? mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot catalogue bde80815
+snapshot settings model=opencode/big-pickle effort=? permission=build level=full mode=?
+snapshot IDLE queue=[] working_on=- at=2883 conversation=ses_e059e8669ffeW1cbsE367IcFWe model_name="OpenCode/Big Pickle" sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 5 recorded 4: input p1-1
 effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"ses_e059e8669ffeW1cbsE367IcFWe\",\"value\":\"opencode/deepseek-v4.1-flash-free\"}}"
 effect reply p1-1 accepted
 ## 9 recorded 8: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
-effect catalogue 062bde3e models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=0 permissions=[] modes=[build,plan]
-snapshot catalogue 062bde3e
-snapshot settings model=opencode/deepseek-v4.1-flash-free effort=low permission=build level=full
-snapshot IDLE queue=[] working_on=- at=2888 agent=opencode session=ses_e059e8669ffeW1cbsE367IcFWe asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+effect catalogue 04154a47 models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=0 permissions=[build,plan] modes=[]
+snapshot catalogue 04154a47
+snapshot settings model=opencode/deepseek-v4.1-flash-free effort=low permission=build level=full mode=?
+snapshot IDLE queue=[] working_on=- at=2888 conversation=ses_e059e8669ffeW1cbsE367IcFWe model_name="OpenCode/DeepSeek V4.1 Flash Free" sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 11 recorded 10: input p1-2
 effect reply p1-2 accepted
 effect write "{\"id\":\"amux-prompt-70312d32\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Reply with exactly the word: pong\",\"type\":\"text\"}],\"sessionId\":\"ses_e059e8669ffeW1cbsE367IcFWe\"}}"
 item prompt:70312d32 prompt final input=p1-2 at=2894 text="Reply with exactly the word: pong"
-snapshot WORKING queue=[] working_on=- at=2894 agent=opencode session=ses_e059e8669ffeW1cbsE367IcFWe asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot WORKING queue=[] working_on=- at=2894 conversation=ses_e059e8669ffeW1cbsE367IcFWe model_name="OpenCode/DeepSeek V4.1 Flash Free" sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 12 recorded 11: fact Rpc method=session/update
-effect catalogue 961445ef models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=23 permissions=[] modes=[build,plan]
-snapshot catalogue 961445ef
-snapshot WORKING queue=[] working_on=- at=2894 agent=opencode session=ses_e059e8669ffeW1cbsE367IcFWe asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+effect catalogue 492e8ce7 models=[opencode/beam-free{low/high/max/default},opencode/big-pickle{low/high/max/default},opencode/deepseek-v4.1-flash-free{low/high/max/default},opencode/flint-40b-free{low/high/max/default},opencode/hy4-flash-free{low/high/max/default},opencode/iceman-free{low/high/max/default},opencode/longcat-2.5-free{low/high/max/default},opencode/mimo-v2.6-flash-free{low/high/max/default},opencode/nemotron-3.5-lightning-free{low/high/max/default},opencode/nemotron-3.5-super-vl-free{low/high/max/default},opencode/tidepool-alpha-free{low/high/max/default}] commands=23 permissions=[build,plan] modes=[]
+snapshot catalogue 492e8ce7
+snapshot WORKING queue=[] working_on=- at=2894 conversation=ses_e059e8669ffeW1cbsE367IcFWe model_name="OpenCode/DeepSeek V4.1 Flash Free" sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 14 recorded 13: fact Rpc method=session/update
 item message:1 message open at=4863 text="pong"
 ## 16 recorded 15: fact Rpc method=session/update
-snapshot WORKING queue=[] working_on=- at=4868 agent=opencode session=ses_e059e8669ffeW1cbsE367IcFWe asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12899/200000 plan=? usage=in:?/out:?/thought:?/total:? cost=0USD sign_in=SIGNED_IN reopen=RESUME
+snapshot WORKING queue=[] working_on=- at=4868 conversation=ses_e059e8669ffeW1cbsE367IcFWe model_name="OpenCode/DeepSeek V4.1 Flash Free" sign_in=SIGNED_IN - background=? asks=[] context=12899/200000 plan=? usage=in:?/out:?/thought:?/total:? cost=0USD
 ## 17 recorded 16: fact Rpc "{\"id\":\"amux-prompt-70312d32\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{},\…
 item message:1 message final at=4863 text="pong"
 item turn:1 turn final at=4868 text="" #1 TURN_OUTCOME_COMPLETED started=2894
 snapshot said "pong"
-snapshot IDLE queue=[] working_on=- at=4868 agent=opencode session=ses_e059e8669ffeW1cbsE367IcFWe asks=[] model=opencode/deepseek-v4.1-flash-free model_name=OpenCode/DeepSeek V4.1 Flash Free effort=low mode=build context=12899/200000 plan=? usage=in:11107/out:4/thought:?/total:12903 cost=0USD sign_in=SIGNED_IN reopen=RESUME
+snapshot IDLE queue=[] working_on=- at=4868 conversation=ses_e059e8669ffeW1cbsE367IcFWe model_name="OpenCode/DeepSeek V4.1 Flash Free" sign_in=SIGNED_IN - background=? asks=[] context=12899/200000 plan=? usage=in:11107/out:4/thought:?/total:12903 cost=0USD
 turn_end 1 last=message:1
 ## 20 recorded 19: provider_exit Some(0)
 item boundary:2 boundary final at=6874 text="" BOUNDARY_KIND_EXITED cause=QUIT
+snapshot IDLE queue=[] working_on=- at=6874 conversation=ses_e059e8669ffeW1cbsE367IcFWe model_name="OpenCode/DeepSeek V4.1 Flash Free" sign_in=SIGNED_IN - background=[] asks=[] context=12899/200000 plan=? usage=in:11107/out:4/thought:?/total:12903 cost=0USD
 incarnation_end QUIT

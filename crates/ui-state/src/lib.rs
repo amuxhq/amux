@@ -26,7 +26,8 @@ pub use fleet::{
     provider_name, shown_name,
 };
 pub use inputs::{
-    InputId, InputOutcome, InputState, InputWhat, Inputs, Refusal, SentInput, refusal,
+    InputId, InputOutcome, InputState, InputWhat, Inputs, Refusal, RefusalReason, SentInput,
+    refusal,
 };
 pub use model::Key;
 pub use session::{

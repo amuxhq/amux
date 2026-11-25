@@ -237,11 +237,10 @@ async fn a_message_is_accepted_once_its_item_commits_and_a_retry_is_deduped() {
         })),
         ..Envelope::default()
     };
-    let sent = runtime
+    runtime
         .send_message(envelope.clone(), Some(sender.id))
         .await
         .unwrap();
-    assert_eq!(sent.envelope_id, b"envelope-1......");
     let key = recipient.key(&install);
     let accepted = runtime
         .read_store(move |store| store.item_by_input(&key, b"envelope-1......").unwrap())

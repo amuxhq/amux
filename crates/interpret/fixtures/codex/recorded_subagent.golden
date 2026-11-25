@@ -1,50 +1,53 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
+snapshot capabilities stops_job attachable resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] approval=? context=? plan=? usage=? servers=[]
 ## 5 recorded 4: fact Rpc "{\"id\":\"agent-thread\",\"result\":{\"activePermissionProfile\":{\"extends\":n…
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1793447805852 text="" BOUNDARY_KIND_STARTED
-snapshot settings model=gpt-6.1-sol effort=? permission=read-only level=read-only
-snapshot IDLE queue=[] working_on=- at=1793447805852 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+snapshot settings model=gpt-6.1-sol effort=? permission=read-only level=read-only mode=?
+snapshot IDLE queue=[] working_on=- at=1793447805852 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1 Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[]
 ## 7 recorded 6: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1793447805852 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447805852 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1 Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING]
 ## 8 recorded 7: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1793447805852 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447805852 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1 Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING]
 ## 10 recorded 9: fact Rpc "{\"id\":\"amux-models-1\",\"result\":{\"data\":[{\"additionalSpeedTiers\":[\"fa…
 effect catalogue 51c4c098 models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low/medium*/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max}] commands=5 permissions=[read-only,default,auto,full-access] modes=[default,plan]
 snapshot catalogue 51c4c098
-snapshot IDLE queue=[] working_on=- at=1793447805854 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447805854 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1-Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING]
 ## 12 recorded 11: fact Rpc "{\"id\":\"amux-skills\",\"result\":{\"data\":[{\"cwd\":\"<MACHINE_PATH>\",\"err…
 effect catalogue 1c206d97 models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low/medium*/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max}] commands=5 skills=11 permissions=[read-only,default,auto,full-access] modes=[default,plan]
 snapshot catalogue 1c206d97
-snapshot IDLE queue=[] working_on=- at=1793447805855 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447805855 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1-Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING]
 ## 14 recorded 13: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1793447805857 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447805857 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1-Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY]
 ## 18 recorded 17: fact Rpc method=deprecationNotice
 effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 21 recorded 20: input 0x93d1dfb3cab64daea690783b6044bdfb
 effect reply 0x93d1dfb3cab64daea690783b6044bdfb accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"93d1dfb3cab64daea690783b6044bdfb\",\"input\":[{\"text\":\"Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: reply with exactly CHILD_DONE. Then wait for it to finish and reply with what it answered.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a191d1-c38c-7c11-823d-8f50b87ef540\"}}"
 item prompt:93d1dfb3cab64daea690783b6044bdfb prompt final input=0x93d1dfb3cab64daea690783b6044bdfb at=1793447805946 text="Call your spawn_agent tool directly, without reading any file or using any skill, to start exactly one agent whose task is: reply with exactly CHILD_DONE. Then wait for it to finish and reply with what it answered."
-snapshot WORKING queue=[] working_on=- at=1793447805946 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793447805946 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1-Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY]
 ## 28 recorded 27: fact Rpc method=account/updated
-snapshot WORKING queue=[] working_on=- at=1793447806057 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1793447806057 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY]
 ## 30 recorded 29: fact Rpc method=mcpServer/startupStatus/updated
-snapshot WORKING queue=[] working_on=- at=1793447806476 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1793447806476 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 37 recorded 36: fact Rpc method=item/started
 effect write "{\"id\":\"amux-read-1\",\"method\":\"thread/read\",\"params\":{\"includeTurns\":false,\"threadId\":\"01a191d1-d044-7700-8114-6e5e81275e41\"}}"
 item call_9d6187c73a944ce5a77bfe0b3bbf065a work open at=1793447809117 text="" collab spawnAgent threads=[01a191d1-d044-7700-8114-6e5e81275e41] prompt="" agents=[sub-8130de30] TOOL_STATE_RUNNING
 ## 41 recorded 40: fact Rpc method=item/completed
 item call_9d6187c73a944ce5a77bfe0b3bbf065a work final at=1793447809117 text="" collab spawnAgent threads=[01a191d1-d044-7700-8114-6e5e81275e41] prompt="" agents=[sub-8130de30] TOOL_STATE_SUCCEEDED ended=1793447809117
 ## 46 recorded 45: fact Rpc method=thread/tokenUsage/updated
-snapshot WORKING queue=[] working_on=- at=1793447809138 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=15364/475000 plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1793447809138 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=15364/475000 plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 47 recorded 46: fact Rpc method=account/rateLimits/updated
-snapshot WORKING queue=[] working_on=- at=1793447809138 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=15364/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1793447809138 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=15364/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 51 recorded 50: fact Rpc method=item/started
 item call_54cac0d815d747589d49f51c46ef389d work open at=1793447810956 text="" collab wait threads=[] prompt="" TOOL_STATE_RUNNING
 ## 52 recorded 51: tick 1793447812465
 agent sub-8130de30 start child=01a191d1-d044-7700-8114-6e5e81275e41 call=host/call_9d6187c73a944ce5a77bfe0b3bbf065a title=""
-agent sub-8130de30 snapshot WORKING queue=[] working_on=- at=1793447812465 asks=[] thread=01a191d1-d044-7700-8114-6e5e81275e41 model=gpt-6.1-sol model_name=? effort=low permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=[-:"subagent"@1793447809117]
+agent sub-8130de30 snapshot settings model=gpt-6.1-sol effort=low permission=? level=? mode=?
+agent sub-8130de30 snapshot capabilities stops_job model=- effort=- permission=- mode=-
+agent sub-8130de30 snapshot WORKING queue=[] working_on=- at=1793447812465 conversation=01a191d1-d044-7700-8114-6e5e81275e41 model_name=? sign_in=? background=[-:"subagent"@1793447809117] asks=[] approval=? context=? plan=? usage=? servers=[]
 ## 53 recorded 52: fact Rpc method=item/started
 agent sub-8130de30 item msg_03ffb5685cc6a742016ae5d784756481919339504e824a8dab message open at=1793447812464 text=""
 ## 55 recorded 54: fact Rpc method=item/agentMessage/delta
@@ -56,14 +59,14 @@ agent sub-8130de30 append msg_03ffb5685cc6a742016ae5d784756481919339504e824a8dab
 ## 60 recorded 59: fact Rpc method=item/completed
 agent sub-8130de30 item msg_03ffb5685cc6a742016ae5d784756481919339504e824a8dab message final at=1793447812464 text="CHILD_DONE"
 agent sub-8130de30 snapshot said "CHILD_DONE"
-agent sub-8130de30 snapshot WORKING queue=[] working_on=- at=1793447812536 asks=[] thread=01a191d1-d044-7700-8114-6e5e81275e41 model=gpt-6.1-sol model_name=? effort=low permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=[-:"subagent"@1793447809117]
+agent sub-8130de30 snapshot WORKING queue=[] working_on=- at=1793447812536 conversation=01a191d1-d044-7700-8114-6e5e81275e41 model_name=? sign_in=? background=[-:"subagent"@1793447809117] asks=[] approval=? context=? plan=? usage=? servers=[]
 ## 67 recorded 66: fact Rpc method=turn/completed
-agent sub-8130de30 snapshot WORKING queue=[] working_on=- at=1793447812562 asks=[] thread=01a191d1-d044-7700-8114-6e5e81275e41 model=gpt-6.1-sol model_name=? effort=low permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=[]
+agent sub-8130de30 snapshot WORKING queue=[] working_on=- at=1793447812562 conversation=01a191d1-d044-7700-8114-6e5e81275e41 model_name=? sign_in=? background=[] asks=[] approval=? context=? plan=? usage=? servers=[]
 agent sub-8130de30 end FINISHED
 ## 70 recorded 69: fact Rpc method=item/completed
 item call_54cac0d815d747589d49f51c46ef389d work final at=1793447810956 text="" collab wait threads=[] prompt="" TOOL_STATE_SUCCEEDED ended=1793447812562
 ## 72 recorded 71: fact Rpc method=thread/tokenUsage/updated
-snapshot WORKING queue=[] working_on=- at=1793447812566 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=15406/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1793447812566 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=15406/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 75 recorded 74: fact Rpc method=item/started
 item msg_0c6b658a6a75b4bf016ae5d785e6c08191987eb5541bc27c1f message open at=1793447813913 text=""
 ## 77 recorded 76: fact Rpc method=item/agentMessage/delta
@@ -75,9 +78,9 @@ append msg_0c6b658a6a75b4bf016ae5d785e6c08191987eb5541bc27c1f "_DONE"
 ## 82 recorded 81: fact Rpc method=item/completed
 item msg_0c6b658a6a75b4bf016ae5d785e6c08191987eb5541bc27c1f message final at=1793447813913 text="CHILD_DONE"
 ## 84 recorded 83: fact Rpc method=thread/tokenUsage/updated
-snapshot WORKING queue=[] working_on=- at=1793447813993 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=15475/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1793447813993 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=15475/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 90 recorded 89: fact Rpc method=turn/completed
 item turn:1 turn final at=1793447813999 text="" #1 TURN_OUTCOME_COMPLETED started=1793447805955
 snapshot said "CHILD_DONE"
-snapshot IDLE queue=[] working_on=- at=1793447813999 asks=[] thread=01a191d1-c38c-7c11-823d-8f50b87ef540 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=15475/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
+snapshot IDLE queue=[] working_on=- at=1793447813999 conversation=01a191d1-c38c-7c11-823d-8f50b87ef540 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=[] asks=[] approval=on-request context=15475/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 turn_end 1 last=msg_0c6b658a6a75b4bf016ae5d785e6c08191987eb5541bc27c1f

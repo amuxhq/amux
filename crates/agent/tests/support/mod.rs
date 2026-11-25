@@ -310,8 +310,11 @@ impl Agent {
                 facts_ring_bytes: setup.ring_bytes,
                 // What the harness runs for hooks and the tool server.
                 install_path: install_path(),
-                model: setup.model.map(str::to_owned),
-                effort: setup.effort.map(str::to_owned),
+                settings: Some(wire::AgentSettings {
+                    model: setup.model.map(str::to_owned),
+                    effort: setup.effort.map(str::to_owned),
+                    ..Default::default()
+                }),
                 ..Default::default()
             }),
             created_at_ms: T0,
@@ -633,6 +636,7 @@ pub fn prompt(kind: Kind, id: &[u8], text: &str) -> Input {
 pub fn bootstrap(id: &[u8], text: &str) -> wire::Bootstrap {
     wire::Bootstrap {
         of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+            continued: false,
             input_id: id.to_vec(),
             prompt: Some(PromptInput {
                 text: text.to_owned(),
@@ -713,7 +717,8 @@ impl Daemon {
         let id = input.input_id.clone();
         let of = ctl_frame::Of::ChildInput(wire::ChildInput {
             agent_id,
-            input: Some(input),
+            input_id: id.clone(),
+            of: Some(wire::child_input::Of::Input(input)),
         });
         self.verdict(id, of).await
     }
@@ -796,7 +801,7 @@ impl Log {
             .iter()
             .rev()
             .filter_map(|step| step.snapshot.as_ref())
-            .find_map(|snapshot| snapshot.git.clone())
+            .find_map(|snapshot| snapshot.status().git.clone())
     }
 
     pub fn turn_ends(&self) -> usize {
@@ -882,15 +887,12 @@ impl Log {
 
     /// What the newest snapshot says the agent is working on.
     pub fn working_on(&self) -> Option<String> {
-        self.snapshot()?.working_on.clone()
+        self.snapshot()?.status().working_on.clone()
     }
 
-    /// The permission the newest terminal Claude snapshot reports.
+    /// The permission the newest snapshot reports.
     pub fn permission(&self) -> Option<String> {
-        let snapshot = self.snapshot()?;
-        wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
-            .ok()?
-            .permission
+        self.snapshot()?.settings().permission.clone()
     }
 
     pub fn phase(&self) -> Option<Phase> {
@@ -902,7 +904,7 @@ impl Log {
         let Some(snapshot) = self.snapshot() else {
             return Vec::new();
         };
-        let keys = |asks: Vec<wire::Ask>| asks.into_iter().map(|ask| ask.key).collect();
+        let keys = |asks: Vec<wire::ClaudeAsk>| asks.into_iter().map(|ask| ask.key).collect();
         match snapshot.kind() {
             Kind::ClaudeSdk | Kind::ClaudePty => keys(
                 ClaudeSnapshot::decode(snapshot.body.as_slice())
@@ -923,6 +925,11 @@ impl Log {
                 .collect(),
             other => panic!("no snapshot reader for {other:?}"),
         }
+    }
+
+    /// The newest snapshot's envelope.
+    pub fn snapshot_envelope(&self) -> wire::Snapshot {
+        self.snapshot().expect("a snapshot").clone()
     }
 
     /// The newest ACP snapshot.
@@ -948,31 +955,17 @@ impl Log {
             .rev()
             .filter(|part| part.agent_id == agent_id)
             .find_map(|part| part.snapshot.as_ref())
-            .and_then(|snapshot| wire::CodexSnapshot::decode(snapshot.body.as_slice()).ok())
-            .and_then(|body| body.background_jobs)
+            .and_then(|snapshot| snapshot.jobs.clone())
             .map(|jobs| jobs.jobs)
             .unwrap_or_default()
     }
 
     /// The background jobs the newest snapshot lists.
     pub fn background_jobs(&self) -> Vec<wire::BackgroundJob> {
-        let Some(snapshot) = self.snapshot() else {
-            return Vec::new();
-        };
-        let jobs = match snapshot.kind() {
-            Kind::ClaudeSdk | Kind::ClaudePty => {
-                ClaudeSnapshot::decode(snapshot.body.as_slice())
-                    .unwrap()
-                    .background_jobs
-            }
-            Kind::Codex => {
-                wire::CodexSnapshot::decode(snapshot.body.as_slice())
-                    .unwrap()
-                    .background_jobs
-            }
-            other => panic!("no snapshot reader for {other:?}"),
-        };
-        jobs.map(|jobs| jobs.jobs).unwrap_or_default()
+        self.snapshot()
+            .and_then(|snapshot| snapshot.jobs.clone())
+            .map(|jobs| jobs.jobs)
+            .unwrap_or_default()
     }
 
     /// The tool servers the newest Claude snapshot reports.
@@ -1028,15 +1021,16 @@ pub fn boundary(item: &wire::Item) -> Option<String> {
         .to_owned();
     // The cause by its name, then its own words: what the agent wrote,
     // not how any client words it.
-    let cause = match wire::ExitCause::try_from(boundary.cause) {
+    let exit = boundary.exit.clone().unwrap_or_default();
+    let cause = match wire::ExitCause::try_from(exit.cause) {
         Ok(wire::ExitCause::Unspecified) => String::new(),
         Ok(cause) => cause
             .as_str_name()
             .trim_start_matches("EXIT_CAUSE_")
             .to_owned(),
-        Err(_) => boundary.cause.to_string(),
+        Err(_) => exit.cause.to_string(),
     };
-    Some(match (cause.is_empty(), &boundary.cause_detail) {
+    Some(match (cause.is_empty(), &exit.detail) {
         (true, _) => kind,
         (false, Some(detail)) => format!("{kind} {cause}: {detail}"),
         (false, None) => format!("{kind} {cause}"),

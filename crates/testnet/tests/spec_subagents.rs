@@ -212,7 +212,7 @@ fn subagents(runtime: &AppRuntime, parent: &[u8]) -> Vec<wire::Agent> {
         })
         .cloned()
         .collect();
-    found.sort_by(|a, b| a.title.cmp(&b.title));
+    found.sort_by(|a, b| a.title().cmp(&b.title()));
     found
 }
 
@@ -441,7 +441,10 @@ async fn four_parallel_subagents(kind: FakeKind) {
                     .ok_or_else(|| format!("{} so far", found.len()))
             })
             .await;
-        let seen: Vec<String> = subs.iter().map(|sub| sub.title().to_owned()).collect();
+        let seen: Vec<String> = subs
+            .iter()
+            .map(|sub| sub.title().unwrap_or_default().to_owned())
+            .collect();
         assert_eq!(seen, titles);
         for sub in &subs {
             assert!(sub.name.starts_with("sub-"), "{}", sub.name);
@@ -454,7 +457,7 @@ async fn four_parallel_subagents(kind: FakeKind) {
             "{}: the lead's fleet row has four subagents under it: {:?}",
             client.name,
             subs.iter()
-                .map(|sub| format!("{} \"{}\"", sub.name, sub.title()))
+                .map(|sub| format!("{} \"{}\"", sub.name, sub.title().unwrap_or_default()))
                 .collect::<Vec<_>>()
         );
     }
@@ -931,7 +934,7 @@ async fn a_one_shot_host_stays_until_its_background_subagent_and_follow_up_turn_
     println!(
         "helper's turn ended on \"The subagent is counting in the background.\"; helper is live, its subagent {} \"{}\" works on",
         counter.name,
-        counter.title()
+        counter.title().unwrap_or_default()
     );
 
     // The subagent finishes; Claude's follow-up turn on its notification

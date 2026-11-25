@@ -305,17 +305,13 @@ impl SessionState {
         self.host.as_ref()
     }
 
-    /// What the agent can do: what its newest snapshot says, else what its
-    /// host says its provider can do (a snapshot an earlier build wrote
-    /// says nothing), else what every agent of its kind can do, else
-    /// nothing beyond what every agent can. The host's word is for a new
-    /// agent of the kind it starts now, so it stands for this one only when
-    /// that is this one's kind: a headless Claude started before the host
-    /// switched to Claude's own terminal cannot switch back.
+    /// What the agent can do: what its newest snapshot says, else, before
+    /// its first, what its host says an agent of its provider and kind can
+    /// do, else nothing beyond what every agent can.
     pub fn capabilities(&self) -> wire::AgentCapabilities {
         self.snapshot
             .as_ref()
-            .and_then(|snapshot| snapshot.capabilities)
+            .and_then(|snapshot| snapshot.capabilities.as_deref().cloned())
             .unwrap_or_else(|| crate::offered_capabilities(self.host.as_ref(), &self.agent))
     }
 
@@ -974,6 +970,12 @@ impl SessionState {
         }
         sent.state = match result {
             InputOutcome::Lost => InputState::Uncertain,
+            // A host that could not be reached never had it: refused like
+            // any other, its words go back to the composer.
+            InputOutcome::NotSent { detail } => InputState::Rejected(crate::Refusal {
+                reason: crate::RefusalReason::HostUnreachable,
+                detail,
+            }),
             InputOutcome::Reply(reply) => match reply.of {
                 // Queued while the queue lists it, or until it first does;
                 // seen listed and gone again before this reply, it already
@@ -989,11 +991,9 @@ impl SessionState {
                     InputWhat::Prompt { .. } if !reflected => InputState::Sent,
                     _ => InputState::Settled,
                 },
-                // A host that could not be reached never had it: refused
-                // like any other, its words go back to the composer.
                 Some(Of::Rejected(rejected)) => {
                     let refusal = crate::refusal(&rejected);
-                    if refusal.reason == wire::Refusal::Exited {
+                    if refusal.reason == crate::RefusalReason::Exited {
                         self.exited_under = Some(incarnation);
                     }
                     InputState::Rejected(refusal)

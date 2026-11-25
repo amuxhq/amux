@@ -38,8 +38,7 @@ pub use phone::Phone;
 use sha2::{Digest, Sha256};
 use wire::installation_service_server::InstallationServiceServer;
 use wire::{
-    BeginPairRequest, Empty, HostRef, StartPairingRequest, begin_pair_request, host_ref,
-    start_pairing_request,
+    BeginPairRequest, Empty, StartPairingRequest, begin_pair_request, start_pairing_request,
 };
 
 /// What a test or a driving build changes about the network edge.
@@ -666,11 +665,7 @@ impl EmbeddedRuntime {
     /// Stops trusting a paired machine, telling it so where it can be
     /// reached.
     pub async fn unpair(&self, profile: ProfileId, host_id: &[u8]) -> Result<(), EmbeddedError> {
-        self.edge(profile)?
-            .unpair(HostRef {
-                of: Some(host_ref::Of::HostId(host_id.to_vec())),
-            })
-            .await?;
+        self.edge(profile)?.unpair(host_id).await?;
         Ok(())
     }
 

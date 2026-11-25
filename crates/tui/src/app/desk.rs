@@ -49,7 +49,6 @@ pub enum DeskEvent {
     SignedIn,
     SignInFailed(String),
     OfferAnswered(Result<bool, String>),
-    Suggested(Vec<wire::Folder>),
     Confirmed(SetupStep),
     ConfirmFailed(String),
     /// A settings change was refused.
@@ -292,11 +291,6 @@ impl App {
                             Vec::new()
                         }
                     };
-                }
-            }
-            DeskEvent::Suggested(suggested) => {
-                if let Some(onboarding) = &mut desk.onboarding {
-                    onboarding.suggestions(suggested);
                 }
             }
             DeskEvent::Confirmed(step) => {
@@ -768,13 +762,28 @@ impl App {
                     self.notice(format!("could not open the link: {error}"), Tone::Warn);
                 }
             }
-            SetupEffect::Suggest => {
+            SetupEffect::Pin { paths, step } => {
+                let host = self.client.host(&self.config.local_host);
+                let confirm = desk
+                    .steps
+                    .as_ref()
+                    .is_some_and(|steps| ui_view::step_open(steps, step));
                 tokio::spawn(async move {
-                    let suggested = installation
-                        .suggest_repositories()
-                        .await
-                        .unwrap_or_default();
-                    send(DeskEvent::Suggested(suggested));
+                    for path in &paths {
+                        if let Err(error) = host.pin_folder(path, true).await {
+                            return send(DeskEvent::ConfirmFailed(error.to_string()));
+                        }
+                    }
+                    if confirm {
+                        let answer = wire::AnswerOnboardingRequest {
+                            profile_id,
+                            answer: Some(Answer::Done(step.id() as i32)),
+                        };
+                        if let Err(error) = installation.answer_onboarding(answer).await {
+                            return send(DeskEvent::ConfirmFailed(error.to_string()));
+                        }
+                    }
+                    send(DeskEvent::Confirmed(step));
                 });
             }
             SetupEffect::Home(agent) => {
@@ -818,6 +827,27 @@ impl App {
         for effect in effects {
             match effect {
                 SettingsEffect::Update(request) => self.update_settings(*request),
+                SettingsEffect::Pin { path, pinned } => {
+                    let host = self.client.host(&self.config.local_host);
+                    let Some(installation) = self
+                        .desk
+                        .as_ref()
+                        .map(|desk| desk.config.installation.clone())
+                    else {
+                        continue;
+                    };
+                    let send = self.desk_send();
+                    tokio::spawn(async move {
+                        if let Err(error) = host.pin_folder(&path, pinned).await {
+                            send(DeskEvent::Refused(format!("not changed: {error}")));
+                            return;
+                        }
+                        // The config now pins it or not; the settings say so.
+                        if let Ok(settings) = installation.get_settings().await {
+                            send(DeskEvent::Settings(settings));
+                        }
+                    });
+                }
                 SettingsEffect::SignIn => self.start_sign_in(),
                 SettingsEffect::CancelSignIn => {
                     if let Some(running) = self.desk.as_mut().and_then(|desk| desk.sign_in.take()) {

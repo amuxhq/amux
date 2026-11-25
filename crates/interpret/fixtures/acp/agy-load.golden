@@ -1,86 +1,87 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
-## 1 recorded 0: tick 62
-snapshot STARTING queue=[] working_on=- at=62 agent=antigravity session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+snapshot capabilities resumable sends_now files passes_unknown_commands model=pick effort=pick permission=pick mode=pick
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"agentCapabilitie…
-snapshot STARTING queue=[] working_on=- at=62 agent=antigravity session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=RESUME
+snapshot capabilities resumable sends_now images files passes_unknown_commands model=pick effort=pick permission=pick mode=pick
+snapshot STARTING queue=[] working_on=- at=62 conversation=? model_name=? sign_in=? background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 4 recorded 3: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"antigrav…
 effect session "08639ea8-1af4-437c-941b-48c69e16aee2"
-effect catalogue 66a844ef models=[gemini-4-neon{low/medium/high/xhigh},gemini-4-argon{low/medium/high/xhigh},gemini-4-hydrogen{low/medium/high/xhigh},gemini-pro-orchestrator-neon{low/medium/high/xhigh},gemini-pro-orchestrator-g1-pro{low/medium/high/xhigh},gemini-3.8-flash{low/medium/high/xhigh},claude-opus-5-5{low/medium/high/xhigh},claude-sonnet-5-5{low/medium/high/xhigh},gpt-oss-120b-medium{low/medium/high/xhigh}] commands=0 permissions=[] modes=[default,accept-edits,auto,plan]
+effect catalogue 4ddf298c models=[gemini-4-neon{low/medium/high/xhigh},gemini-4-argon{low/medium/high/xhigh},gemini-4-hydrogen{low/medium/high/xhigh},gemini-pro-orchestrator-neon{low/medium/high/xhigh},gemini-pro-orchestrator-g1-pro{low/medium/high/xhigh},gemini-3.8-flash{low/medium/high/xhigh},claude-opus-5-5{low/medium/high/xhigh},claude-sonnet-5-5{low/medium/high/xhigh},gpt-oss-120b-medium{low/medium/high/xhigh}] commands=0 permissions=[default,accept-edits,auto,plan] modes=[]
 item boundary:1 boundary final at=1057 text="" BOUNDARY_KIND_STARTED
-snapshot catalogue 66a844ef
-snapshot settings model=gemini-4-neon effort=high permission=default level=ask
-snapshot IDLE queue=[] working_on=- at=1057 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-4-neon model_name=Gemini 4 Neon effort=high mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot catalogue 4ddf298c
+snapshot settings model=gemini-4-neon effort=high permission=default level=ask mode=?
+snapshot IDLE queue=[] working_on=- at=1057 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 4 Neon" sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 5 recorded 4: input p1-1
 effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"08639ea8-1af4-437c-941b-48c69e16aee2\",\"value\":\"gemini-3.8-flash\"}}"
 effect reply p1-1 accepted
 ## 7 recorded 6: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
-effect catalogue 8786080b models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=0 permissions=[] modes=[default,accept-edits,auto,plan]
-snapshot catalogue 8786080b
-snapshot settings model=gemini-3.8-flash effort=high permission=default level=ask
-snapshot IDLE queue=[] working_on=- at=1058 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=high mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+effect catalogue b5330917 models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=0 permissions=[default,accept-edits,auto,plan] modes=[]
+snapshot catalogue b5330917
+snapshot settings model=gemini-3.8-flash effort=high permission=default level=ask mode=?
+snapshot IDLE queue=[] working_on=- at=1058 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 8 recorded 7: input p1-2
 effect write "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"thought_level\",\"sessionId\":\"08639ea8-1af4-437c-941b-48c69e16aee2\",\"value\":\"low\"}}"
 effect reply p1-2 accepted
 ## 11 recorded 10: fact Rpc "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
-snapshot settings model=gemini-3.8-flash effort=low permission=default level=ask
-snapshot IDLE queue=[] working_on=- at=1059 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot settings model=gemini-3.8-flash effort=low permission=default level=ask mode=?
+snapshot IDLE queue=[] working_on=- at=1059 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 12 recorded 11: input p1-3
 effect reply p1-3 accepted
 effect write "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Remember the word kiwi. Reply with exactly the word: ok\",\"type\":\"text\"}],\"sessionId\":\"08639ea8-1af4-437c-941b-48c69e16aee2\"}}"
 item prompt:70312d33 prompt final input=p1-3 at=1059 text="Remember the word kiwi. Reply with exactly the word: ok"
-snapshot WORKING queue=[] working_on=- at=1059 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot WORKING queue=[] working_on=- at=1059 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 15 recorded 14: fact Rpc method=session/update
-effect catalogue 176f53c3 models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=13 permissions=[] modes=[default,accept-edits,auto,plan]
-snapshot catalogue 176f53c3
-snapshot WORKING queue=[] working_on=- at=1064 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+effect catalogue 8a8ff5a7 models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=13 permissions=[default,accept-edits,auto,plan] modes=[]
+snapshot catalogue 8a8ff5a7
+snapshot WORKING queue=[] working_on=- at=1064 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 16 recorded 15: fact Rpc method=session/update
-snapshot WORKING queue=[] working_on=- at=1064 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=0/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot WORKING queue=[] working_on=- at=1064 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=? asks=[] context=0/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 24 recorded 23: fact Rpc method=session/update
 item message:1 message open at=2951 text="ok"
 ## 26 recorded 25: fact Rpc method=session/update
-snapshot WORKING queue=[] working_on=- at=2979 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=8943/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot WORKING queue=[] working_on=- at=2979 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=? asks=[] context=8943/1048576 plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 28 recorded 27: fact Rpc "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"result\":{\"stopReason\"…
 item message:1 message final at=2951 text="ok"
 item turn:1 turn final at=2981 text="" #1 TURN_OUTCOME_COMPLETED started=1059
 snapshot said "ok"
-snapshot IDLE queue=[] working_on=- at=2981 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=8943/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot IDLE queue=[] working_on=- at=2981 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=? asks=[] context=8943/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=?
 turn_end 1 last=message:1
 ## 29 recorded 28: provider_exit Some(0)
 item boundary:2 boundary final at=2981 text="" BOUNDARY_KIND_EXITED cause=QUIT
+snapshot IDLE queue=[] working_on=- at=2981 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=[] asks=[] context=8943/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=?
 incarnation_end QUIT
 ## 30 reincarnate
-snapshot STARTING queue=[] working_on=- at=2981 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=8943/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot STARTING queue=[] working_on=- at=2981 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=[] asks=[] context=8943/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=?
 ## 40 recorded 9: fact Rpc "{\"id\":\"agent-load\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"antigravity…
 effect write "{\"id\":\"amux-apply-model\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"08639ea8-1af4-437c-941b-48c69e16aee2\",\"value\":\"gemini-3.8-flash\"}}"
-effect catalogue dbd91214 models=[gemini-4-neon{low/medium/high/xhigh},gemini-4-argon{low/medium/high/xhigh},gemini-4-hydrogen{low/medium/high/xhigh},gemini-pro-orchestrator-neon{low/medium/high/xhigh},gemini-pro-orchestrator-g1-pro{low/medium/high/xhigh},gemini-3.8-flash{low/medium/high/xhigh},claude-opus-5-5{low/medium/high/xhigh},claude-sonnet-5-5{low/medium/high/xhigh},gpt-oss-120b-medium{low/medium/high/xhigh}] commands=13 permissions=[] modes=[default,accept-edits,auto,plan]
+effect catalogue 88381498 models=[gemini-4-neon{low/medium/high/xhigh},gemini-4-argon{low/medium/high/xhigh},gemini-4-hydrogen{low/medium/high/xhigh},gemini-pro-orchestrator-neon{low/medium/high/xhigh},gemini-pro-orchestrator-g1-pro{low/medium/high/xhigh},gemini-3.8-flash{low/medium/high/xhigh},claude-opus-5-5{low/medium/high/xhigh},claude-sonnet-5-5{low/medium/high/xhigh},gpt-oss-120b-medium{low/medium/high/xhigh}] commands=13 permissions=[default,accept-edits,auto,plan] modes=[]
 item boundary:3 boundary final at=2981 text="" BOUNDARY_KIND_RESUMED
-snapshot catalogue dbd91214
-snapshot settings model=gemini-4-neon effort=high permission=default level=ask
-snapshot STARTING queue=[] working_on=- at=2981 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-4-neon model_name=Gemini 4 Neon effort=high mode=default context=8943/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot catalogue 88381498
+snapshot settings model=gemini-4-neon effort=high permission=default level=ask mode=?
+snapshot STARTING queue=[] working_on=- at=2981 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 4 Neon" sign_in=SIGNED_IN - background=[] asks=[] context=8943/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=?
 ## 44 recorded 13: fact Rpc "{\"id\":\"amux-apply-model\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":…
 effect write "{\"id\":\"amux-apply-thought_level\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"thought_level\",\"sessionId\":\"08639ea8-1af4-437c-941b-48c69e16aee2\",\"value\":\"low\"}}"
-effect catalogue 176f53c3 models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=13 permissions=[] modes=[default,accept-edits,auto,plan]
-snapshot catalogue 176f53c3
-snapshot settings model=gemini-3.8-flash effort=high permission=default level=ask
-snapshot STARTING queue=[] working_on=- at=3175 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=high mode=default context=8943/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=? sign_in=SIGNED_IN reopen=RESUME
+effect catalogue 8a8ff5a7 models=[gemini-4-neon{low/medium/high},gemini-4-argon{low/medium/high},gemini-4-hydrogen{low/medium/high},gemini-pro-orchestrator-neon{low/medium/high},gemini-pro-orchestrator-g1-pro{low/medium/high},gemini-3.8-flash{low/medium/high},claude-opus-5-5{low/medium/high},claude-sonnet-5-5{low/medium/high},gpt-oss-120b-medium{low/medium/high}] commands=13 permissions=[default,accept-edits,auto,plan] modes=[]
+snapshot catalogue 8a8ff5a7
+snapshot settings model=gemini-3.8-flash effort=high permission=default level=ask mode=?
+snapshot STARTING queue=[] working_on=- at=3175 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=[] asks=[] context=8943/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=?
 ## 47 recorded 16: fact Rpc "{\"id\":\"amux-apply-thought_level\",\"jsonrpc\":\"2.0\",\"result\":{\"configOp…
-snapshot settings model=gemini-3.8-flash effort=low permission=default level=ask
-snapshot IDLE queue=[] working_on=- at=3176 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=8943/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot settings model=gemini-3.8-flash effort=low permission=default level=ask mode=?
+snapshot IDLE queue=[] working_on=- at=3176 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=[] asks=[] context=8943/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=?
 ## 48 recorded 17: input p2-1
 effect reply p2-1 accepted
 effect write "{\"id\":\"amux-prompt-70322d31\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Which word did I ask you to remember? Reply with that word only.\",\"type\":\"text\"}],\"sessionId\":\"08639ea8-1af4-437c-941b-48c69e16aee2\"}}"
 item prompt:70322d31 prompt final input=p2-1 at=3176 text="Which word did I ask you to remember? Reply with that word only."
-snapshot WORKING queue=[] working_on=- at=3176 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=8943/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot WORKING queue=[] working_on=- at=3176 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=[] asks=[] context=8943/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=?
 ## 54 recorded 23: fact Rpc method=session/update
 item message:2 message open at=8435 text="kiwi"
 ## 56 recorded 25: fact Rpc method=session/update
-snapshot WORKING queue=[] working_on=- at=8447 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9160/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot WORKING queue=[] working_on=- at=8447 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=[] asks=[] context=9160/1048576 plan=? usage=in:8942/out:1/thought:0/total:8943 cost=?
 ## 58 recorded 27: fact Rpc "{\"id\":\"amux-prompt-70322d31\",\"jsonrpc\":\"2.0\",\"result\":{\"stopReason\"…
 item message:2 message final at=8435 text="kiwi"
 item turn:2 turn final at=8449 text="" #2 TURN_OUTCOME_COMPLETED started=3176
 snapshot said "kiwi"
-snapshot IDLE queue=[] working_on=- at=8449 agent=antigravity session=08639ea8-1af4-437c-941b-48c69e16aee2 asks=[] model=gemini-3.8-flash model_name=Gemini 3.8 Flash effort=low mode=default context=9160/1048576 plan=? usage=in:2257/out:2/thought:0/total:9160 cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot IDLE queue=[] working_on=- at=8449 conversation=08639ea8-1af4-437c-941b-48c69e16aee2 model_name="Gemini 3.8 Flash" sign_in=SIGNED_IN - background=[] asks=[] context=9160/1048576 plan=? usage=in:2257/out:2/thought:0/total:9160 cost=?
 turn_end 2 last=message:2
 ## 61 recorded 30: provider_exit Some(0)
 item boundary:4 boundary final at=10452 text="" BOUNDARY_KIND_EXITED cause=QUIT

@@ -293,9 +293,9 @@ async fn a_daemon_asks_a_paired_one_only_on_the_peer_service() {
     for method in [
         "FollowAgents",
         "FollowSession",
-        "ListItems",
+        "FetchItems",
         "DeliverReport",
-        "GetBlob",
+        "FetchBlob",
     ] {
         let path = format!("/amux.v1.PeerService/{method}");
         assert!(calls.contains(&path), "no {method} in {calls:?}");

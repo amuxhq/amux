@@ -24,7 +24,7 @@ use tokio::net::UnixStream;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 use ui_state::OpenAsk;
-use wire::{CodexCreateConfig, CodexInput, PromptInput, codex_answer, codex_ask, codex_input};
+use wire::{AgentSettings, CodexInput, PromptInput, codex_answer, codex_ask, codex_input};
 
 use super::asks::{Answer, settled};
 use super::{Install, Scenario, TURN, Verdict, expect_outcome};
@@ -276,7 +276,7 @@ impl Install {
     pub(super) async fn child_command(&self) -> Result<Verdict, String> {
         let scenario = Scenario::ChildCommand;
         let (agent, follow) = match self
-            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .ready_agent(scenario, Some(AgentSettings::default()))
             .await?
         {
             Ok(ready) => ready,
@@ -332,9 +332,9 @@ impl Install {
         let (agent, follow) = match self
             .ready_agent(
                 scenario,
-                Some(CodexCreateConfig {
+                Some(AgentSettings {
                     permission: Some("read-only".into()),
-                    ..CodexCreateConfig::default()
+                    ..AgentSettings::default()
                 }),
             )
             .await?
@@ -391,7 +391,7 @@ impl Install {
     pub(super) async fn child_continued(&self) -> Result<Verdict, String> {
         let scenario = Scenario::ChildContinued;
         let (agent, follow) = match self
-            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .ready_agent(scenario, Some(AgentSettings::default()))
             .await?
         {
             Ok(ready) => ready,
@@ -425,7 +425,7 @@ impl Install {
         let scenario = Scenario::ChildResume;
         let name = scenario.agent();
         let (_agent, follow) = match self
-            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .ready_agent(scenario, Some(AgentSettings::default()))
             .await?
         {
             Ok(ready) => ready,
@@ -556,7 +556,7 @@ impl Install {
     /// judged against its own traffic.
     async fn child_work(&self, scenario: Scenario, prompt: &str) -> Result<Verdict, String> {
         let (agent, follow) = match self
-            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .ready_agent(scenario, Some(AgentSettings::default()))
             .await?
         {
             Ok(ready) => ready,
@@ -564,9 +564,11 @@ impl Install {
         };
         self.send(scenario, prompt).await?;
         self.settle(&agent, &follow, "the work to finish", |ask| match ask {
-            OpenAsk::Codex(codex) if matches!(codex.body, Some(codex_ask::Body::McpTool(_))) => Ok(
-                Answer::Codex(codex_answer::Of::Approve(wire::Decision::Approve as i32)),
-            ),
+            OpenAsk::Codex(codex) if matches!(codex.body, Some(codex_ask::Body::McpTool(_))) => {
+                Ok(Answer::Codex(codex_answer::Of::Approve(
+                    wire::CodexDecision::Approve as i32,
+                )))
+            }
             _ => self.by_the_way(ask),
         })
         .await?;
@@ -581,7 +583,7 @@ impl Install {
     pub(super) async fn child_stop(&self) -> Result<Verdict, String> {
         let scenario = Scenario::ChildStop;
         let (agent, follow) = match self
-            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .ready_agent(scenario, Some(AgentSettings::default()))
             .await?
         {
             Ok(ready) => ready,

@@ -193,7 +193,7 @@
             "update": {
               "sessionUpdate": "tool_call",
               "toolCallId": "c1",
-              "title": "amux_attach",
+              "title": "amux_attach_file",
               "kind": "other",
               "status": "completed",
               "rawInput": {

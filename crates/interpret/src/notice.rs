@@ -7,8 +7,8 @@
 
 use wire::{
     AccessWant, AskNotice, BlockedNotice, ChangeWant, Empty, Notice, OtherWant, PlanWant,
-    QuestionWant, RunWant, UsageBlock, UseWant, acp_ask, ask, ask_notice, blocked_notice,
-    codex_ask, notice, tool_input,
+    QuestionWant, RunWant, UsageBlock, UseWant, acp_ask, ask_notice, blocked_notice, claude_ask,
+    claude_tool_input, codex_ask, notice,
 };
 
 /// The most bytes any one string keeps. A push has a few kilobytes for the
@@ -101,13 +101,13 @@ pub(crate) fn plan_title(text: &str) -> String {
 /// Claude's head ask, either kind of Claude. A permission says what it would
 /// run or change where the input is that; any other tool says only its name,
 /// because its arguments are the tool's own and could be anything.
-pub(crate) fn claude_ask(asked: &wire::Ask, more: u32, plan_title: &str) -> Notice {
+pub(crate) fn claude_ask(asked: &wire::ClaudeAsk, more: u32, plan_title: &str) -> Notice {
     let (wants, why) = match &asked.body {
-        Some(ask::Body::Permission(permission)) => {
+        Some(claude_ask::Body::Permission(permission)) => {
             let input = permission.input.as_ref();
             let subject = input.map_or("", |input| input.subject.as_str());
             match input.and_then(|input| input.of.as_ref()) {
-                Some(tool_input::Of::Shell(shell)) => (
+                Some(claude_tool_input::Of::Shell(shell)) => (
                     run(subject),
                     first_said(&[
                         &permission.reason,
@@ -115,7 +115,7 @@ pub(crate) fn claude_ask(asked: &wire::Ask, more: u32, plan_title: &str) -> Noti
                         &shell.description,
                     ]),
                 ),
-                Some(tool_input::Of::Edit(edit)) => (
+                Some(claude_tool_input::Of::Edit(edit)) => (
                     ask_notice::Wants::Change(ChangeWant {
                         path: clip(subject),
                         files: 1,
@@ -130,11 +130,11 @@ pub(crate) fn claude_ask(asked: &wire::Ask, more: u32, plan_title: &str) -> Noti
                 ),
             }
         }
-        Some(ask::Body::Question(asked)) => (question(asked), ""),
-        Some(ask::Body::Plan(_)) => (plan(plan_title), ""),
-        Some(ask::Body::Form(form)) => (from_server(&form.server, &form.message), ""),
-        Some(ask::Body::Link(link)) => (from_server(&link.server, &link.message), ""),
-        Some(ask::Body::Unanswerable(unanswerable)) => (other(&unanswerable.reason), ""),
+        Some(claude_ask::Body::Question(asked)) => (question(asked), ""),
+        Some(claude_ask::Body::Plan(_)) => (plan(plan_title), ""),
+        Some(claude_ask::Body::Form(form)) => (from_server(&form.server, &form.message), ""),
+        Some(claude_ask::Body::Link(link)) => (from_server(&link.server, &link.message), ""),
+        Some(claude_ask::Body::Unanswerable(unanswerable)) => (other(&unanswerable.reason), ""),
         None => (other(""), ""),
     };
     wants_ask(&asked.key, wants, why, more)
@@ -262,7 +262,10 @@ pub(crate) fn describe(notice: &Notice) -> String {
             Some(blocked_notice::Why::Failed(message)) => format!("blocked failed {message:?}"),
             None => "blocked".to_owned(),
         },
-        Some(notice::Of::Died(died)) => format!("died {} {:?}", died.cause, died.detail),
+        Some(notice::Of::Died(died)) => {
+            let ended = died.ended.clone().unwrap_or_default();
+            format!("died {} {:?}", ended.cause, ended.detail)
+        }
         None => "nothing".to_owned(),
     }
 }

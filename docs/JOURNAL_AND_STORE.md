@@ -154,8 +154,8 @@ One ingest step:
    advanced cursor, and arm the checkpoint timer if it is not armed.
 6. Answer each committed record once to every stream open on the agent it
    was filed under, and that agent's inventory row to every inventory stream
-   if a snapshot of it was committed: it carries the row's phase,
-   `working_on`, since-when and git facts. Then apply what the parts said of
+   if a snapshot of it was committed: it carries the snapshot's status,
+   copied whole. Then apply what the parts said of
    each subagent's life: continued, or ended.
 7. At the end of the journal, the first time after each Hello, set the
    agent's CaughtUp marker, and each of its live subagents', and answer
@@ -190,7 +190,7 @@ processes the frames in journal order, inside one transaction:
 | --- | --- |
 | Item | Assigns the agent's next revision. A key the agent already holds keeps its order; a key not held yet takes the next order above the highest committed. Upserts by key. |
 | Append | Appends the text to the held item and assigns it the next revision. The broadcast `Append` carries the item's previous revision as `base_revision`. An append naming a key the store does not hold is skipped and counted. |
-| Snapshot | Assigns the next revision, stores the snapshot on the agent row and copies `phase`, `working_on`, `phase_since_ms`, `git` and `background_jobs` from its envelope onto the row. |
+| Snapshot | Assigns the next revision, stores the snapshot on the agent row and copies its envelope's `status` (an `AgentStatus`) onto the row whole, its title into the row's own `title` column. |
 | Snapshot changing what its `notice` owes the person | Deletes the agent's pending `notifications` rows and, for a notice a top-level agent raised or any agent's ask, inserts one due after the push delay. Another ask is a change; another ask behind the same one is not. |
 | `turn_end` on an agent with a parent | Inserts a `deliveries` row carrying a copy of the turn's last message, the turn's outcome and whether it is the incarnation's `last`, for the parent incarnation the agent's row holds (`parent_incarnation`); a turn end marked last clears `owes_report`. |
 | `incarnation_end` | Copies the cause and its words onto the row as `exit_cause` and `exit_detail`. The row stays live until the daemon marks the agent exited, which keeps this cause, so a daemon that stops in between leaves it for the next one. |
@@ -444,10 +444,12 @@ The schema is the text in
 | --- | --- |
 | `origin_host`, `agent_id` | This host for own rows; the owning host for replicas |
 | `kind` | The agent's `Kind`, as its wire integer |
+| `provider` | The agent program's provider id: `claude`, `codex`, or an ACP agent's |
 | `name`, `cwd` | As the registry holds them; every agent has a name, given or chosen by the daemon |
 | `parent_host`, `parent_id` | A child records its parent as host and id, because families cross hosts |
 | `lifecycle`, `exit_cause`, `exit_detail` | Live or exited, and why: the `ExitCause` as its wire integer, so a cause from a newer host is kept and served as it came, and the cause's own words. Owned by the daemon: commit copies the agent's own cause from its journal's `incarnation_end`, and marking the agent exited records the daemon's own cause only where the row has none. A resume clears both. |
-| `phase`, `working_on`, `phase_since_ms`, `git`, `background_jobs` | Copied from the newest snapshot's envelope at commit, and on a replica row when absorb takes a snapshot from the origin. The snapshot's own `at_ms`, never commit time, orders own rows' retention. A replica row also takes `phase`, `working_on`, `phase_since_ms`, `git` and `background_jobs` from the origin's inventory row, which carries no last activity, so replica retention orders by `phase_since_ms`, which every replica row has |
+| `status` | An encoded `amux.v1.AgentStatus` (phase, since-when, working-on, git facts, background job count, last said, settings), copied from the newest snapshot's envelope at commit, and on a replica row when absorb takes a snapshot from the origin. The snapshot's own `at_ms`, never commit time, orders own rows' retention. A replica row also takes it from the origin's inventory row, which carries no last activity, so replica retention orders by its `phase_since_ms`, which every replica row has. One column for the whole status, so a field the status gains needs no migration |
+| `title` | What a person reads the agent as when it is not the name: the status's title, kept in a column of its own because a rename clears it and the registry sets a provider subagent's |
 | `descendants` | Live agents below this one. An own row's is counted by its daemon whenever a row below it is written or removed, walking into its own agents and taking each replica's count for what lies below it; a replica row takes its origin's count from the inventory row. A registry write leaves it alone |
 | `snapshot` | The newest snapshot, body opaque; it carries its own revision |
 | `ingest_cursor` | Own rows: the journal offset committed through |
@@ -459,10 +461,10 @@ The schema is the text in
 | `owes_report` | Own rows: the incarnation has not yet sent its parent its last report, from its start until a turn end marked `last` (and again should a later turn start). An incarnation that exits still owing one, its turn open or ended idle, tells its parent it failed. |
 | `created_at_ms`, `incarnation` | Creation time and the `spec.<n>` it is running |
 | `parent_incarnation` | For an agent with a parent, the newest incarnation of the parent that has spoken to it, as the caller header of the parent's own calls states it: the create, a message, input or a resume. An own row keeps the larger of the stored and the written value, so no write lowers it; a replica takes its origin's. A child's reports are stamped with it, and its parent's exit is weighed against it. 0 for an agent with no parent |
-| `native` | An encoded `amux.v1.NativeChild` on a provider subagent, the provider's id for it; NULL on an agent amux started, which is every row written before the column existed. Owned by the registry; a replica copies its origin's |
+| `native` | An encoded `amux.v1.NativeChild` on a provider subagent, the provider's id for it; NULL on an agent amux started. Owned by the registry; a replica copies its origin's |
 | `experimental` | What the row says to everyone under each experiment: the wire's `Agent.experimental` map, version to encoded message, which the store never decodes. Held as a message whose one field is that map, so the column holds the entries as the wire encodes them; NULL holds none. A replica's is its origin's, replaced whole by each inventory row whatever this host runs, so a host with an experiment off still stores and serves a peer's entries, and those of versions it has never heard of. An own row's is written by the experiments this host runs (`Sqlite::set_experimental`); a registry write leaves it. See [experiment tables](#experiment-tables) |
 
-Kind, lifecycle, exit cause and phase are stored as their wire integers, so a value from
+Kind, lifecycle and exit cause are stored as their wire integers, and the phase inside the encoded status, so a value from
 a newer peer is stored and served rather than refused.
 
 `items`: one row per item, keyed by `(origin_host, agent_id, key)`.
@@ -539,7 +541,8 @@ Two rules keep every build able to open every store:
   it again, so an edit would reach fresh stores only.
 
 `just store-check`, which CI runs, holds both against the latest release from
-0.9.0 on.
+0.11.0 on. The first migration is the store as 0.11.0 made it, and nothing
+carries a store from an earlier build forward.
 
 To change the schema:
 
@@ -610,8 +613,7 @@ When the daemon opens a profile's store (`Sqlite::open_with`), it creates the
 tables of the experiments it runs and drops every `exp_` table that does not
 belong to one of them at the version this build implements, rows and indexes
 with it. So a new version never reads an old version's rows, switching an
-experiment off frees its space, and a build from before experiments leaves
-the tables alone, as it does any table it does not know. In the same
+experiment off frees its space. In the same
 transaction it clears from its **own** rows every experimental entry of a
 version it does not run, so switching an experiment off, or moving to a
 build at another version, takes back what this host's rows said under it. A

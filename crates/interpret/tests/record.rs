@@ -425,10 +425,13 @@ fn a_record_keeps_a_setting_only_in_the_providers_own_form() {
         incarnation: 1,
         provider_command: format!("/opt/bin/{MARKER}-claude-wrapper"),
         config: Some(wire::EffectiveConfig {
-            model: Some(arn.clone()),
-            permission: Some(format!("{MARKER}Permission")),
-            mode: Some("plan".into()),
-            effort: Some("high".into()),
+            settings: Some(wire::AgentSettings {
+                model: Some(arn.clone()),
+                permission: Some(format!("{MARKER}Permission")),
+                mode: Some("plan".into()),
+                effort: Some("high".into()),
+                ..wire::AgentSettings::default()
+            }),
             ..wire::EffectiveConfig::default()
         }),
         ..AgentSpec::default()

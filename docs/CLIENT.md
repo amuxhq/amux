@@ -23,8 +23,8 @@ Three rules shape the library:
 - **Per-kind knowledge lives in one thin layer.** The model knows an agent's kind (terminal Claude, headless
   Claude, Codex, an ACP agent) only where it decodes a snapshot or item body, or builds the input in a kind's
   arm. Everything above that works on kind-neutral facts; the views read the decoded bodies to produce typed rows
-  and cards. What an agent can do is its `AgentCapabilities` (on its snapshot, else its host's
-  `ProviderOnHost`), and how a provider is named, started and signed in to is that host's `ProviderDescriptor`
+  and cards. What an agent can do is its `AgentCapabilities` (on its snapshot, else what its host's
+  `ProviderOnHost` lists for its kind), and how a provider is named, started and signed in to is that host's `ProviderDescriptor`
   ([the wire](WIRE.md#capabilities)); a client never decides either by matching a kind or a provider id.
   `just client-kind-check` holds the client crates to this: it lists every place in them that still matches a
   kind or a provider's name, each with why, and fails on any other.
@@ -77,8 +77,8 @@ boxed stream of `Result<T, RpcError>`.
 
 The installation has its own, [`client::Installation`](../crates/client/src/installation.rs): the
 `InstallationService` calls (listing, streaming, creating, binding, renaming and deleting profiles, the
-daemon-run sign-in and its answer, the everyday settings, the onboarding steps and their answers, repository
-suggestions and a one-time web sign-in link), over the front door (`<root>/amux.sock`) or called in memory where
+daemon-run sign-in and its answer, the everyday settings, the onboarding steps and their answers, and a
+one-time web sign-in link), over the front door (`<root>/amux.sock`) or called in memory where
 the installation runs in the client's own process, and `open_profile`, which hands back a `Client` of that
 profile's node. A client manages profiles the same way whichever runtime it has.
 
@@ -104,10 +104,12 @@ parts:
 
 - **The entry and host.** The agent's inventory row (lifecycle, phase, incarnation, exit cause and its detail)
   and its host's entry, both fed from the fleet.
-- **`AgentState`**, the newest snapshot decoded. [`body.rs`](../crates/ui-state/src/body.rs) is the thin
-  per-kind layer: `decode_snapshot` reads a `ClaudeSnapshot` (either Claude kind) or a `CodexSnapshot` into one
-  shape (phase, queue, working-on, open asks, model and its display name, effort, mode, sandbox, the
-  catalogue's hash, tasks, context, usage, tool servers, sign-in, background jobs, running calls). The offered
+- **`AgentState`**, the newest snapshot decoded. What every kind says the same way (phase, working-on, the
+  settings, the model's display name, sign-in, background jobs, the catalogue's hash, capabilities) is read from
+  the snapshot's envelope. [`body.rs`](../crates/ui-state/src/body.rs) is the thin per-kind layer:
+  `decode_snapshot` reads a `ClaudeSnapshot` (either Claude kind), a `CodexSnapshot` or an `AcpSnapshot` into one
+  shape for the rest (open asks, tasks, context, usage, tool servers, Codex's approval policy, running calls).
+  The offered
   models and commands come from the catalogue the snapshot names. The driver reads it as a blob, `GetBlob` with the
   agent and the hash the snapshot names, only while a chat shows the session, never for a session held for a
   fleet row, and keeps every catalogue it fetched under the hash it asked for, for the fleet's sessions, so each
@@ -194,7 +196,7 @@ history exists is `open_below`: it may continue below the window.
 
 A call's class, including the verb a look is drawn with, is a per-kind fact the interpreter sets from native
 tool kinds, never a text rule in a view; once it is set, run detection and the rows are kind-independent. So is
-a Claude call's input: the interpreter reads Claude's JSON once into a `ToolInput`, which names what the call is
+a Claude call's input: the interpreter reads Claude's JSON once into a `ClaudeToolInput`, which names what the call is
 about (its file, pattern, address, command line) and has an arm for each tool a view draws its own way (a
 shell command, a file edit or write with its replacements, a subagent, task-list bookkeeping, a web fetch or
 search), with Claude's JSON kept only for any other tool. A finished edit carries the hunks Claude reported. No
@@ -241,9 +243,10 @@ reflected looks the same as never arrived), and agents do not drop a person's in
 
 Nothing is ever sent later on the client's own initiative. While the chat is not current a client sends
 nothing: the words stay in the composer, whose top edge says why, and the daemon-kept draft keeps them as it
-keeps anything typed. A send the daemon refuses with `REFUSAL_HOST_UNREACHABLE` never left either: it is
-`Rejected` like any other refusal, its words go back to the composer, and the composer says the host is away;
-it goes when the person sends it again. A rejection with the refusal `REFUSAL_EXITED`
+keeps anything typed. A send whose host could not be reached never left either: the shared client runtime
+reports it as not sent (`InputOutcome::NotSent`, with the lapse's words when a lapsed plan was why), which the
+model holds as a refusal like any other, its words go back to the composer, and the composer says the host is
+away; it goes when the person sends it again. A rejection with the refusal `REFUSAL_EXITED`
 flips the composer to Resume for that incarnation, so a send that raced the exit keeps its draft.
 
 ### The fleet state
@@ -371,7 +374,7 @@ directly (a name, a path, a count the state holds), but never works out a judgem
 | `chat_rows_for(state, keys, opts)` | Rows for these keys, in order. The phone's call, for the cells an update changed. |
 | `ask_card(state)` | The head ask as an `AskCard`, with its count, or `None`. |
 | `answer_input(card, answer, note)`, `question_answer(card, responses)`, `reply_answer(card, words, responses)` | The input that answers the card in its kind's arm; a question's response carries its picks and its typed "Something else" words together; the person's own words instead of an answer, on a question that takes them or on any ask whose card says `reply_instead`. |
-| `act_input(kind, act)`, `create_config(kind, provider, chosen)` | The input for a prompt, withdraw, send-now, interrupt, job stop or switch-back in the kind's arm (None for an act the kind has no input for), and a new agent's create arm for the kind its host starts the picked provider as. The runtimes and the browser bridge build their inputs here, so no client holds a kind arm of its own. |
+| `act_input(kind, act)`, `create_request(provider, kind, chosen)` | The input for a prompt, withdraw, send-now, interrupt, job stop or switch-back in the kind's arm (None for an act the kind has no input for), and a new agent's create request: the picked provider, the kind its host starts it as, and the chosen settings. The runtimes and the browser bridge build their inputs here, so no client holds a kind arm of its own. |
 | `form_problems(fields, values)`, `form_answer(card, values)` | A tool server's form, checked and encoded once for every client: given one `FormValue` per field (typed text, a toggle, a choice or picks by position), each field's `FieldProblem` (required and empty, not a number or not a whole one, out of the schema's range, too short or long, too few or many picked), or the Submit carrying the JSON object the schema describes. |
 | `composer(state, now_ms)`, `waiting(state)`, `switched_away(state)` | The composer mode, the activity line inside it, and whether terminal Claude's own view is on another conversation (prompts are refused until `Session::switch_back` takes it back); the waiting reason. |
 | `composer_tokens(draft, attachments)`, `segments(text, attachments)` | Text runs and attachment chips at their placeholder positions. |
@@ -383,7 +386,7 @@ directly (a name, a path, a count the state holds), but never works out a judgem
 | `controls(state)` | The `ControlsSummary` beside the composer: the running model by its one name, the effort in force, and the permission and mode only while they are not the agent's normal ones. |
 | `new_agent_settings(catalogue, chosen)`, `new_agent_pick(catalogue, chosen, pick)` | A new agent's settings from its host's catalogue, in the settings view's own choices (what can be set at start, the chosen ones marked, the normal mode in force when none is chosen, a chosen value the host does not list kept); and what is chosen after a pick: another model starts at its default effort and gives up a permission it does not take for the normal one, and picking the normal mode leaves the mode unchosen. |
 | `fleet_view(fleet, local_host, lines, expand, keep)`, `session_line(state, now_ms)` | Home's sections (needs you, live, exited) with each family in its loudest member's section, newest since-when first, whether each starts folded, and every row's second line; the fleet-wide counts of agents that need you and that are working; what one session knows for that line. |
-| `fleet_card(fleet, local_host, agent_id)`, `family_header(fleet, local_host, agent_id)` | One agent's card (name, branch, host and its reach, how it ended, family counts, whether it is a provider subagent, its provider id and the name its host's descriptor gives it, else the name `wire::agents::display_name` knows the id by (Claude, Codex, a built-in ACP agent), else the id, and whether it can be attached in its own terminal, from its host's entry when that entry's kind matches the agent's, else what its kind can do), and a chat's family header with how many of the family need you. |
+| `fleet_card(fleet, local_host, agent_id)`, `family_header(fleet, local_host, agent_id)` | One agent's card (name, branch, host and its reach, how it ended, family counts, whether it is a provider subagent, its provider id and the name its host's descriptor gives it, else the name `wire::agents::display_name` knows the id by (Claude, Codex, a built-in ACP agent), else the id, and whether it can be attached in its own terminal, from what its host's entry says its provider can do when the host starts that provider as the agent's own kind, else not), and a chat's family header with how many of the family need you. |
 | `opened_agent(fleet, agent_id)`, `group_state(fleet, agents)`, `chat_agents(state, fleet)` | The agent a call row opens as its fleet row has it (its key to open, its title else its name, its kind, its `PhaseView`), or None when the fleet does not hold it; what a group's agents come to (`GroupState`: running, needing you, idle, finished, ended, failed, unknown); and every agent a chat's held rows open with each group's state, which the phone is handed when the fleet moves. |
 | `toggle_group(state, member, open)`, `subagent_rows_moved(state, changed)` | Opens or closes the group a call belongs to, in the set that holds open runs; and the calls whose group a change moved without touching them (a call joining, a turn bound, a cut taking the first), for a client holding rows by key. |
 | `reach(fleet, local_host, host)` | How this machine reaches a host: online over a route; away, meaning only that the relay refused it for the account's free plan and upgrading reaches it; or offline, for a reason this machine can name (this machine is signed out, or the host no longer trusts it) or for none. |
@@ -414,8 +417,8 @@ a subagent's own step from history, which collapses under the subagent's row. Th
 are in [CHAT_VOCABULARY.md](CHAT_VOCABULARY.md).
 
 **Calls open their agents.** A call that started or continues an agent names it in `opens`, by its id: Claude's
-Agent call and a SendMessage continuing it (`ToolCall.child_agent_id`), a Codex spawn or follow-up of a child
-thread (`CollabWork.agent_ids`), and amux's own spawn from either (`ToolCall.child_agent_id`,
+Agent call and a SendMessage continuing it (`ClaudeToolCall.child_agent_id`), a Codex spawn or follow-up of a child
+thread (`CollabWork.agent_ids`), and amux's own spawn from either (`ClaudeToolCall.child_agent_id`,
 `McpToolCall.child_agent_id`). Every client opens that agent's chat from the row (a tap on the phone and the Mac,
 the leader's open on the focused row in the terminal), a gesture apart from expanding the row. How the agent
 stands (running, waiting on you, done, stopped) is never the call's: a call can return while its subagent runs
@@ -541,8 +544,9 @@ they open amux's picker; with a value, they set it through the kind's typed inpu
 `settings(state).commands` lists them first, `/model` only with two models to choose between and `/effort` only
 with two efforts, and a provider command of the same name gives way to them (headless Claude lists all three
 itself). `slash(state, text)` says what a typed draft is: `Prompt` (send it as typed; Claude runs its own commands
-from the text), `Pick`, `Set(input)`, `Rename(name)`, `Typed(text)` (terminal Claude takes no model or effort
-input, so the pick is typed as Claude's own `/model <value>`), `Unknown` for a value the agent does not offer, and
+from the text), `Pick`, `Set(input)`, `Rename(name)`, `Typed(text)` (where the agent's capabilities say a setting
+changes by a typed command, as terminal Claude's model and effort do, the pick is typed as that command and the
+value, `/model <value>`), `Unknown` for a value the agent does not offer, and
 `Refused` for a command Codex does not run: Codex runs only the commands amux implements for it, and any other `/…`
 would reach its model as words; for a skill's name `hint` carries the `$name` mention to type. Only a first word of
 a slash and a name is a command, so a path is words. Each `CommandView` says how it is typed: `sigil` is `/` for a
@@ -595,7 +599,7 @@ whatever its host is doing; or that its host no longer trusts this machine (`Hos
 again undoes. A host out of reach otherwise changes nothing in the line: the row says what this machine last held,
 and each client marks the host's reach from the card's `host_reach`. The header's working and needs-you
 counts leave out agents whose host is out of reach, as their rows do. Names reach the row without direction
-controls, so a right-to-left override cannot make one read as something else. How an agent ended is typed from the row's `ExitCause`
+controls, so a right-to-left override cannot make one read as something else. How an agent ended is typed from the row's `exit` (an `IncarnationEnd`: its `ExitCause` and the cause's words)
 (`ui_state::exit_cause`): finished for `FINISHED`; ended for a stop, for `UNSPECIFIED` and for a cause this build
 does not know, since unknown is not failure; failed for every other cause, carrying the cause's words followed by
 its own ("the provider exited: exit code 1"), as on the chat's phase. What an agent is working on is how agents find each

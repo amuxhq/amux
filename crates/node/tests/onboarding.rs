@@ -183,8 +183,8 @@ async fn answers_move_the_steps_and_outlive_a_restart() {
     daemon.shutdown().await.unwrap();
 }
 
-/// The repositories suggested are those Claude Code ran in lately,
-/// read from the home the daemon was given.
+/// The host's entry offers the folders Claude Code ran in lately, read
+/// from the home the daemon was given, which onboarding suggests.
 #[tokio::test(flavor = "multi_thread")]
 async fn suggestions_come_from_the_session_logs_in_the_home() {
     let install = Install::new();
@@ -200,13 +200,25 @@ async fn suggestions_come_from_the_session_logs_in_the_home() {
     let mut options = install.options("boot-1", quiet_launch());
     options.settings.home = Some(home);
     let daemon = node::start(options, None).await.unwrap();
-    let suggested = daemon
-        .front_door()
-        .suggest_repositories(Request::new(wire::SuggestRepositoriesRequest {}))
-        .await
-        .unwrap()
-        .into_inner()
-        .folders;
+    let runtime = runtime(&daemon, &install);
+    let history = || {
+        runtime
+            .host_entry()
+            .folders
+            .into_iter()
+            .filter(|folder| folder.kind() == wire::FolderKind::History)
+            .collect::<Vec<_>>()
+    };
+    until("the entry to offer the folder Claude ran in", || {
+        std::future::ready(if history().is_empty() {
+            Err("none yet".to_owned())
+        } else {
+            Ok(())
+        })
+    })
+    .await
+    .unwrap();
+    let suggested = history();
     assert_eq!(suggested.len(), 1, "{suggested:?}");
     assert_eq!(suggested[0].path, repo.to_str().unwrap());
     assert_eq!(suggested[0].name, "app");

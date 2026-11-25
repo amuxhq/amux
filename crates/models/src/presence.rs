@@ -41,8 +41,8 @@ use daemon_core::{
 };
 use store::Sqlite;
 use uuid::Uuid;
-use wire::message::Body;
-use wire::{Message, NeighborDown, NeighborUp};
+use wire::link_message::Body;
+use wire::{LinkMessage, NeighborDown, NeighborUp};
 
 use crate::{Machine, Property};
 
@@ -931,7 +931,7 @@ fn ended(core: &[u8], outcome: AttemptOutcome) -> Input {
 fn control(via: Via, body: Body) -> Input {
     Input::LinkControl {
         link: via.link(),
-        frame: Message { body: Some(body) },
+        frame: LinkMessage { body: Some(body) },
     }
 }
 

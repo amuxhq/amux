@@ -27,7 +27,7 @@ pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
 /// Every migration, oldest first. A store's `user_version` is how many of
 /// them it has had.
 pub(crate) const MIGRATIONS: &[&str] = &[
-    // 1: the store as amux 0.9.0 made it.
+    // 1: the store as amux 0.11.0 made it.
     r#"
 -- One profile's store: this host's own agents and the replicas it follows.
 -- Enum-valued columns hold the wire integer and are never interpreted by
@@ -37,6 +37,7 @@ CREATE TABLE agents (
   origin_host         BLOB    NOT NULL,  -- the host that runs the agent
   agent_id            BLOB    NOT NULL,  -- the agent's id, unique across hosts
   kind                INTEGER NOT NULL,  -- amux.v1.Kind
+  provider            TEXT    NOT NULL,  -- the provider id: claude, codex, or an ACP agent's
   name                TEXT    NOT NULL,  -- every agent has one: given, or chosen by the daemon
   cwd                 TEXT    NOT NULL,  -- the directory the agent works in
   parent_host         BLOB,              -- the parent's host and id, when it has one
@@ -44,10 +45,8 @@ CREATE TABLE agents (
   lifecycle           INTEGER NOT NULL,  -- amux.v1.Lifecycle
   exit_cause          INTEGER NOT NULL DEFAULT 0, -- amux.v1.ExitCause; 0 while live or unknown
   exit_detail         TEXT,              -- the cause's own words, when it has any
-  phase               INTEGER NOT NULL,  -- amux.v1.Phase, copied from the newest snapshot
-  working_on          TEXT,              -- copied from the newest snapshot
-  phase_since_ms      INTEGER,           -- copied from the newest snapshot
-  git                 BLOB,              -- amux.v1.Git, copied from the newest snapshot
+  status              BLOB    NOT NULL,  -- amux.v1.AgentStatus, copied from the newest snapshot, its title apart
+  title               TEXT,              -- what a person reads the agent as, when it is not the name; a rename clears it
   snapshot            BLOB,              -- amux.v1.Snapshot, body opaque; carries its revision
   ingest_cursor       INTEGER NOT NULL DEFAULT 0, -- own rows: the journal offset committed through
   next_revision       INTEGER NOT NULL DEFAULT 1, -- own rows: the next revision to mint
@@ -58,22 +57,34 @@ CREATE TABLE agents (
   owes_report         INTEGER NOT NULL DEFAULT 0, -- own rows: the incarnation has not sent its parent its last report
   created_at_ms       INTEGER NOT NULL,  -- when the agent was created, on its origin's clock
   incarnation         INTEGER NOT NULL,  -- the agent's spec.<n>, counting resumes from 1
-  background_jobs     INTEGER NOT NULL DEFAULT 0, -- copied from the newest snapshot: jobs the provider runs in the background
+  -- The newest incarnation of the parent the agent's host heard from the
+  -- parent itself, on the create and on each message, input or resume it
+  -- sent since: its reports are for it, and a parent waits only for the
+  -- children it engaged in its current run. An own row's only rises; a
+  -- replica's is its origin's. 0 with no parent.
+  parent_incarnation  INTEGER NOT NULL DEFAULT 0,
   descendants         INTEGER NOT NULL DEFAULT 0, -- live agents below this one: own rows counted here, replicas as their origin counts
   filing              INTEGER NOT NULL DEFAULT 1, -- amux.v1.Filing: how the person filed the agent, apart from its lifecycle
   filed_at_ms         INTEGER NOT NULL DEFAULT 0, -- when the filing last changed, on the origin's clock; pins list in this order
-  title               TEXT,              -- what a person reads the agent as, when it is not the name
-  last_said           TEXT,              -- copied from the newest snapshot: the line a row quotes from the newest reply
   name_given          INTEGER NOT NULL DEFAULT 0, -- a person or a parent chose the name
+  native              BLOB,              -- amux.v1.NativeChild: set on a provider subagent; NULL on an agent amux started
+  -- What the row says to everyone under each experiment, version to encoded
+  -- message, as its origin wrote it: an own row's, written by the
+  -- experiments this host runs, and a replica's, replaced whole from its
+  -- origin's row whatever this host runs. NULL holds none.
+  experimental        BLOB,
   PRIMARY KEY (origin_host, agent_id)
 ) STRICT;
+CREATE INDEX agents_by_parent ON agents (parent_host, parent_id);
+CREATE INDEX agents_by_id ON agents (agent_id);
+CREATE INDEX agents_by_name ON agents (origin_host, name);
 
 -- A child's reports owed to its parent, kept until delivered.
 CREATE TABLE deliveries (
   child_id            BLOB    NOT NULL,  -- the own agent whose turn or incarnation ended
   incarnation         INTEGER NOT NULL,  -- the child's incarnation that ended it
   turn_id             INTEGER NOT NULL,  -- the turn that ended; 0 for an exit report
-  parent_incarnation  INTEGER NOT NULL,  -- the parent's, as the child's row names it; 0 until its row is held, then stamped
+  parent_incarnation  INTEGER NOT NULL,  -- the parent's the report is for: the child row's parent_incarnation when it was written
   exited              INTEGER NOT NULL,  -- 1: the incarnation exited without a turn end; 0: a turn ended
   text                TEXT,              -- turn: the child's last message
   exit_cause          INTEGER,           -- exit: amux.v1.ExitCause, how the incarnation ended
@@ -147,52 +158,5 @@ CREATE TABLE items (
 CREATE UNIQUE INDEX items_by_position ON items (origin_host, agent_id, position);
 CREATE INDEX items_by_revision ON items (origin_host, agent_id, revision);
 CREATE INDEX items_by_input ON items (origin_host, agent_id, input_id) WHERE input_id IS NOT NULL;
-"#,
-    // 2: provider subagents, the agents Claude's Agent tool and Codex's child
-    // threads start inside their parent's provider process. A row says it is
-    // one in `native`. They multiply the rows, so the lookups that walked the
-    // whole table (a family by its parent, an agent by its id alone, a name
-    // on its host) get indexes.
-    r#"
-ALTER TABLE agents ADD COLUMN native BLOB; -- amux.v1.NativeChild: set on a provider subagent; NULL on an agent amux started
-CREATE INDEX agents_by_parent ON agents (parent_host, parent_id);
-CREATE INDEX agents_by_id ON agents (agent_id);
-CREATE INDEX agents_by_name ON agents (origin_host, name);
-"#,
-    // 3: the row's experimental entries, as the wire's Agent.experimental
-    // carries them.
-    r#"
--- What the row says to everyone under each experiment, version to encoded
--- message, as its origin wrote it: an own row's, written by the
--- experiments this host runs, and a replica's, replaced whole from its
--- origin's row whatever this host runs. NULL holds none, as every row
--- written before this column did.
-ALTER TABLE agents ADD COLUMN experimental BLOB;
-"#,
-    // 4: which agent program each agent runs, by its provider id, now that
-    // agents of one kind (ACP's) run different programs.
-    r#"
--- The provider id: claude, codex, or an ACP agent's. NULL on a row written
--- before this column, whose kind names its program (Claude's kinds are
--- claude, Codex's codex), and on a replica its origin sent without one.
-ALTER TABLE agents ADD COLUMN provider TEXT;
-"#,
-    // 5: how each agent runs, so a listing can say it without a snapshot.
-    r#"
--- amux.v1.AgentSettings: the model, effort and permission the agent runs
--- with, copied from the newest snapshot, and for a replica from its
--- inventory row. NULL while unknown, and on every row written before this
--- column.
-ALTER TABLE agents ADD COLUMN settings BLOB;
-"#,
-    // 6: the parent incarnation each child's reports are for, as the child's
-    // host heard it from the parent.
-    r#"
--- The newest incarnation of the parent the agent's host heard from the
--- parent itself, on the create and on each message, input or resume it
--- sent since: its reports are for it, and a parent waits only for the
--- children it engaged in its current run. An own row's only rises; a
--- replica's is its origin's. 0 with no parent.
-ALTER TABLE agents ADD COLUMN parent_incarnation INTEGER NOT NULL DEFAULT 0;
 "#,
 ];

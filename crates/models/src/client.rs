@@ -135,7 +135,7 @@ impl Daemon {
         Snapshot {
             revision: self.newest_snapshot,
             kind: KIND as i32,
-            phase: self.phase as i32,
+            status: wire::AgentStatus::in_phase(self.phase),
             ..Snapshot::default()
         }
     }
@@ -411,7 +411,7 @@ fn agent() -> Agent {
         kind: KIND as i32,
         name: "worker".into(),
         lifecycle: Lifecycle::Live as i32,
-        phase: Phase::Working as i32,
+        status: wire::AgentStatus::in_phase(Phase::Working),
         incarnation: 1,
         ..Agent::default()
     }
@@ -634,7 +634,7 @@ impl Machine for ClientModel {
                     order,
                     revision,
                     "and then this",
-                    claude_item::Kind::Prompt(wire::Prompt {}),
+                    claude_item::Kind::Prompt(wire::Prompt::default()),
                 );
                 item.input_id = INPUT.to_vec();
                 next.daemon.items.push(item.clone());

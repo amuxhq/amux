@@ -213,13 +213,10 @@ impl Daemon {
                 .rev()
                 .find_map(|(_, step)| step.snapshot.as_ref())
                 .filter(|snapshot| snapshot.kind == wire::Kind::Acp as i32)
-                && let Ok(body) = {
-                    use prost::Message as _;
-                    wire::AcpSnapshot::decode(snapshot.body.as_slice())
-                }
-                && let Some(agent) = body.agent
+                && let Some(row) = self.store.agent(&key)?
             {
-                let state = body.sign_in.map(|sign_in| sign_in.state());
+                let agent = row.provider;
+                let state = snapshot.sign_in.as_ref().map(wire::SignIn::state);
                 report.acp_sign_in = state
                     .filter(|state| *state != wire::SignInState::Unspecified)
                     .map(|state| (agent.clone(), state));
@@ -229,7 +226,7 @@ impl Daemon {
                 && let Some(row) = self.store.agent(&key)?
             {
                 report.kind = row.kind;
-                report.provider = row.provider_id().to_owned();
+                report.provider = row.provider;
             }
             if report.turn_ends > 0 {
                 // A turn end may have written an outbox row.
@@ -597,6 +594,7 @@ mod tests {
             agent: AGENT,
             bootstrap: Some(wire::Bootstrap {
                 of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                    continued: false,
                     input_id: b"typed".to_vec(),
                     prompt: Some(wire::PromptInput {
                         text: "carry on".into(),

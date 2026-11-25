@@ -1,36 +1,37 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
+snapshot capabilities stops_job attachable resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] approval=? context=? plan=? usage=? servers=[]
 ## 5 recorded 4: fact Rpc "{\"id\":\"agent-thread\",\"result\":{\"activePermissionProfile\":{\"extends\":n…
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1793447798634 text="" BOUNDARY_KIND_STARTED
-snapshot settings model=gpt-6.1-sol effort=? permission=read-only level=read-only
-snapshot IDLE queue=[] working_on=- at=1793447798634 asks=[] thread=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+snapshot settings model=gpt-6.1-sol effort=? permission=read-only level=read-only mode=?
+snapshot IDLE queue=[] working_on=- at=1793447798634 conversation=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model_name="GPT-6.1 Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[]
 ## 7 recorded 6: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1793447798634 asks=[] thread=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447798634 conversation=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model_name="GPT-6.1 Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING]
 ## 8 recorded 7: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1793447798634 asks=[] thread=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447798634 conversation=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model_name="GPT-6.1 Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING]
 ## 10 recorded 9: fact Rpc "{\"id\":\"amux-models-1\",\"result\":{\"data\":[{\"additionalSpeedTiers\":[\"fa…
 effect catalogue 51c4c098 models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low/medium*/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max}] commands=5 permissions=[read-only,default,auto,full-access] modes=[default,plan]
 snapshot catalogue 51c4c098
-snapshot IDLE queue=[] working_on=- at=1793447798636 asks=[] thread=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447798636 conversation=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model_name="GPT-6.1-Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING]
 ## 12 recorded 11: fact Rpc "{\"id\":\"amux-skills\",\"result\":{\"data\":[{\"cwd\":\"<MACHINE_PATH>\",\"err…
 effect catalogue 1c206d97 models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low/medium*/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max}] commands=5 skills=11 permissions=[read-only,default,auto,full-access] modes=[default,plan]
 snapshot catalogue 1c206d97
-snapshot IDLE queue=[] working_on=- at=1793447798637 asks=[] thread=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447798637 conversation=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model_name="GPT-6.1-Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING]
 ## 17 recorded 16: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1793447798640 asks=[] thread=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447798640 conversation=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model_name="GPT-6.1-Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY]
 ## 19 recorded 18: fact Rpc method=deprecationNotice
 effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 22 recorded 21: input 0x1a103d21cc9f4df28765b36283769981
 effect reply 0x1a103d21cc9f4df28765b36283769981 accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"1a103d21cc9f4df28765b36283769981\",\"input\":[{\"text\":\"Use your web search tool to look up the capital city of Australia, then reply with the city name only.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a191d1-a75b-70e2-98a1-6ad8984f4a56\"}}"
 item prompt:1a103d21cc9f4df28765b36283769981 prompt final input=0x1a103d21cc9f4df28765b36283769981 at=1793447798677 text="Use your web search tool to look up the capital city of Australia, then reply with the city name only."
-snapshot WORKING queue=[] working_on=- at=1793447798677 asks=[] thread=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793447798677 conversation=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model_name="GPT-6.1-Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY]
 ## 30 recorded 29: fact Rpc method=account/updated
-snapshot WORKING queue=[] working_on=- at=1793447798854 asks=[] thread=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1793447798854 conversation=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY]
 ## 32 recorded 31: fact Rpc method=mcpServer/startupStatus/updated
-snapshot WORKING queue=[] working_on=- at=1793447799281 asks=[] thread=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1793447799281 conversation=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 40 recorded 39: fact Rpc method=item/started
 item msg_0376c45f89b1dbae016ae5d77a42708191b0509053b4ff55e2 working_note open at=1793447802264 text=""
 ## 42 recorded 41: fact Rpc method=item/agentMessage/delta
@@ -52,9 +53,9 @@ item exec-dbed62bb-c8a0-4478-88d7-c763627a150f work open at=1793447802742 text="
 ## 53 recorded 52: fact Rpc method=item/completed
 item exec-dbed62bb-c8a0-4478-88d7-c763627a150f work final at=1793447802742 text="" web_search "capital city of Australia" TOOL_STATE_SUCCEEDED web-search ended=1793447804324
 ## 55 recorded 54: fact Rpc method=thread/tokenUsage/updated
-snapshot WORKING queue=[] working_on=- at=1793447804328 asks=[] thread=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=15361/475000 plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1793447804328 conversation=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=15361/475000 plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 56 recorded 55: fact Rpc method=account/rateLimits/updated
-snapshot WORKING queue=[] working_on=- at=1793447804328 asks=[] thread=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=15361/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1793447804328 conversation=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=15361/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 58 recorded 57: fact Rpc method=item/started
 item msg_0376c45f89b1dbae016ae5d77d89f88191bccb309f6fbc69c2 message open at=1793447805556 text=""
 ## 60 recorded 59: fact Rpc method=item/agentMessage/delta
@@ -64,9 +65,9 @@ append msg_0376c45f89b1dbae016ae5d77d89f88191bccb309f6fbc69c2 "berra"
 ## 63 recorded 62: fact Rpc method=item/completed
 item msg_0376c45f89b1dbae016ae5d77d89f88191bccb309f6fbc69c2 message final at=1793447805556 text="Canberra"
 ## 65 recorded 64: fact Rpc method=thread/tokenUsage/updated
-snapshot WORKING queue=[] working_on=- at=1793447805648 asks=[] thread=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=19426/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1793447805648 conversation=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=19426/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 69 recorded 68: fact Rpc method=turn/completed
 item turn:1 turn final at=1793447805650 text="" #1 TURN_OUTCOME_COMPLETED started=1793447798682
 snapshot said "Canberra"
-snapshot IDLE queue=[] working_on=- at=1793447805650 asks=[] thread=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=19426/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
+snapshot IDLE queue=[] working_on=- at=1793447805650 conversation=01a191d1-a75b-70e2-98a1-6ad8984f4a56 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=[] asks=[] approval=on-request context=19426/475000 plan=? usage=ok 7d:3%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 turn_end 1 last=msg_0376c45f89b1dbae016ae5d77d89f88191bccb309f6fbc69c2

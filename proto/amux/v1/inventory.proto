@@ -43,21 +43,23 @@ message HostEntry {
     // Never paired: found by discovery, or announced by a neighbor.
     Candidate candidate = 5;
   }
-  // Retired: the kind a new Claude agent starts as is the Claude provider's
-  // ProviderDescriptor.kind.
-  reserved 6;
-  reserved "claude_kind";
   // Set when this host wants notifications: the key they are sealed to, on
   // the host's own entry in the inventory it serves. A daemon reads it only
   // from that stream, whose handshake proves who sent it, and keeps it with
   // its trust in the host; it is not on `Host`, which neighbors repeat.
-  optional PushKey push_key = 7;
+  optional PushKey push_key = 6;
   // Where this host offers to start an agent, said on its own entry and
   // repeated as it said them: the folders its person pinned, in their
   // order, then the ones its agents started in, newest first, then the ones
   // Claude Code and Codex ran in lately outside amux. Each path once, at
   // most a few dozen. Clients search it themselves.
-  repeated Folder folders = 8;
+  repeated Folder folders = 7;
+  // What experiments say about the host, each entry keyed by an
+  // experiment's version and holding an encoded amux.experimental message.
+  // A build reads only the entries of the versions it implements and
+  // ignores every other key. The map is promised; its entries are not.
+  // Empty outside experiments.
+  map<string, bytes> experimental = 1000;
 }
 
 // A folder a host offers to start an agent in.
@@ -102,29 +104,36 @@ message Trusted {
   // opening a channel to it. A host whose route comes up keeps the reach it
   // had until the first channel attempt on that route concludes.
   oneof reach {
-    // A channel to the host opened on a route still listed, of this kind;
-    // unspecified for this machine itself.
-    RouteKind online = 1;
+    // The host is this machine itself.
+    Here here = 1;
+    // A channel to the host opened on a route still listed.
+    Online online = 2;
     // The relay refused the channel because the account's plan carries no
     // connection between hosts: upgrading reaches this host.
-    Empty away = 2;
+    Away away = 3;
     // Anything else: no route, or a channel that failed for any reason but
     // the plan (no route at the relay, rate limited, revoked,
     // TLS or identity failure, timeout, link gone).
-    Offline offline = 3;
+    Offline offline = 4;
   }
   // Whether this machine's copy of the host's inventory has caught up on a
   // live stream from it: its agents are as the host lists them now, not as
   // they were remembered. Cleared when the host is lost; a client that
   // reads every trusted host current has reconciled with its fleet.
-  bool current = 4;
-  // Online over a direct path on a network both machines are on: a
-  // private, unique-local, link-local or loopback address, as a client says
-  // Local. `online` stays ROUTE_KIND_DIRECT, so a reader without this field
-  // reads the host as direct, which it also is. False for every other route,
-  // for this machine itself, and from builds before it.
-  bool same_network = 5;
+  bool current = 5;
 }
+
+message Here {}
+
+message Online {
+  // The kind of route the channel opened on.
+  RouteKind route = 1;
+  // A direct route over a network both machines are on: a private,
+  // unique-local, link-local or loopback address, as a client says Local.
+  bool same_network = 2;
+}
+
+message Away {}
 
 message Offline {
   // The outcome of the daemon's last failed dial attempt at this host,
@@ -155,10 +164,11 @@ message Candidate {
 // New Agent offers before any agent of the program exists, for programs
 // it has never heard of.
 message ProviderOnHost {
-  // Retired: the provider as an enum of Claude and Codex, which could not
-  // name an agent a person adds.
-  reserved 1;
-  reserved "provider";
+  // The provider's id: "claude", "codex", or an ACP agent's id
+  // ("antigravity", "opencode", "grok", or one a person added in the host's
+  // config). What CreateAgentRequest, GetCatalogueRequest and
+  // Agent.provider name it by.
+  string provider = 1;
   // The hash GetCatalogue answers with for this provider; absent until the
   // host has asked it, which GetCatalogue does.
   optional bytes catalogue = 2;
@@ -167,14 +177,18 @@ message ProviderOnHost {
   bool signed_in = 3;
   // How clients name and start it.
   ProviderDescriptor descriptor = 4;
-  // What an agent of this provider started on this host now can do. A
-  // running agent's own snapshot says what it can, which is what a client
-  // reads for that agent.
-  AgentCapabilities capabilities = 5;
-  // The provider's id: "claude", "codex", or an ACP agent's id
-  // ("antigravity", "opencode", "grok", or one a person added in the host's
-  // config). What GetCatalogueRequest and Agent.provider name it by.
-  string provider_id = 6;
+  // Each kind the provider runs as on this host, the descriptor's `kind`
+  // among them: what CreateAgentRequest.kind may name. Terminal Claude is
+  // not hosted on Windows.
+  repeated KindOnHost kinds = 5;
+}
+
+// One kind a provider runs as on a host.
+message KindOnHost {
+  Kind kind = 1;
+  // What an agent of this kind started on this host now can do: what a
+  // client reads for an agent until its first snapshot says what it can.
+  AgentCapabilities capabilities = 2;
 }
 
 // What a client needs to name a provider and start one of its agents,
@@ -208,76 +222,46 @@ message HostRemoved {
   bytes host_id = 1;
 }
 
-// The inventory row: lifecycle from the daemon; phase, working_on,
-// phase_since_ms, git and background_jobs copied from the snapshot
-// envelope, never a snapshot.
+// The inventory row: lifecycle, filing and family from the daemon, and the
+// status its newest snapshot reports, copied whole, never a snapshot.
 message Agent {
   bytes agent_id = 1;
   bytes host_id = 2;
   Kind kind = 3;
+  // Which agent program it runs, by its provider id ("claude", "codex", or
+  // an ACP agent's, as ProviderOnHost names it). Clients name the agent
+  // with the descriptor its host lists for that id.
+  string provider = 4;
   // Every agent has one: the one it was given, else one the daemon chose.
   // Unique on its host: what agents and commands address it by.
-  string name = 4;
-  string cwd = 5;
-  optional AgentRef parent = 6;
-  int64 created_at_ms = 7;
-  Lifecycle lifecycle = 8;
-  ExitCause exit_cause = 9;
-  // The cause's own words, when it has any.
-  optional string exit_detail = 10;
-  Phase phase = 11;
-  optional string working_on = 12;
-  // The snapshot's phase_since_ms: when the agent entered its phase, on the
-  // clock of the host where it runs.
-  int64 phase_since_ms = 13;
-  uint32 incarnation = 14;
-  // The snapshot's git facts; absent outside a repository.
-  optional Git git = 15;
+  string name = 5;
+  string cwd = 6;
+  optional AgentRef parent = 7;
+  int64 created_at_ms = 8;
+  Lifecycle lifecycle = 9;
+  // How the newest incarnation ended; absent while it runs.
+  optional IncarnationEnd exit = 10;
+  uint32 incarnation = 11;
   // Live agents below this one, on every host the agent's host knows of:
   // what a stop or delete would cut. Best effort; a host out of reach may
   // be undercounted.
-  uint32 descendants = 16;
-  // The snapshot's count of jobs the provider runs in the background.
-  uint32 background_jobs = 17;
+  uint32 descendants = 12;
   // How the person filed the agent, apart from its lifecycle: an exited
   // agent left open reads as an ordinary one, and a closed one is done
   // with.
-  Filing filing = 18;
+  Filing filing = 13;
   // When the filing last changed, on the clock of the agent's host; pins
   // are listed in this order.
-  int64 filed_at_ms = 19;
-  // What a person reads this agent as, in place of the name when present:
-  // the title its provider gave a conversation nobody named, or the one a
-  // person gave inside the provider's own interface. Not unique. Copied from
-  // the snapshot envelope; renaming the agent clears it.
-  optional string title = 20;
-  // The line a fleet row quotes from the newest reply the agent wrote to the
-  // person, its markdown read as words and clipped short. Copied from the
-  // snapshot envelope, so a row says it with no stream open: an agent that
-  // has stopped keeps no stream.
-  optional string last_said = 21;
+  int64 filed_at_ms = 14;
   // Set on a provider subagent: an agent that Claude's Agent tool or a Codex
   // child thread started inside its parent's provider process. It has no
   // process, directory or composer of its own, its parent is always the
   // agent whose process runs it, and it takes no messages. Absent on every
   // agent amux started itself.
-  optional NativeChild native = 22;
-  // Which agent program it runs, by its provider id ("claude", "codex", or
-  // an ACP agent's, as ProviderOnHost names it). Clients name the agent
-  // with the descriptor its host lists for that id. On the row rather than
-  // in a body because the kind no longer says the program: every ACP agent
-  // is one kind, and a fleet list names each agent without decoding it.
-  string provider = 23;
-  // What experiments say about the agent, each entry keyed by an
-  // experiment's version (e.g. "workspaces/1") and holding an encoded
-  // amux.experimental message. A build reads and writes only the entries of
-  // the versions it implements and has on, and ignores every other key.
-  // The map is promised; its entries are not. Empty outside experiments.
-  map<string, bytes> experimental = 1000;
-  // The snapshot's settings: the model, effort and permission the agent
-  // runs with. Absent until its interpreter reports them, and on a row from
-  // an earlier build.
-  optional AgentSettings settings = 24;
+  optional NativeChild native = 15;
+  // What the agent's newest snapshot said of it: its phase, git facts,
+  // title, settings and the rest. Default until its first snapshot.
+  AgentStatus status = 16;
   // For an agent with a parent: the newest incarnation of the parent that
   // the agent's host heard from the parent itself, as the parent's host
   // stated it on the create and on each message, input or resume the
@@ -285,7 +269,13 @@ message Agent {
   // parent waits only for the children it engaged in its current run.
   // Never raised by a person's or another agent's call. 0 for an agent
   // with no parent.
-  uint32 parent_incarnation = 25;
+  uint32 parent_incarnation = 17;
+  // What experiments say about the agent, each entry keyed by an
+  // experiment's version (e.g. "workspaces/1") and holding an encoded
+  // amux.experimental message. A build reads and writes only the entries of
+  // the versions it implements and has on, and ignores every other key.
+  // The map is promised; its entries are not. Empty outside experiments.
+  map<string, bytes> experimental = 1000;
 }
 
 // What marks a provider subagent's row.
@@ -317,14 +307,4 @@ enum Lifecycle {
 message AgentRemoved {
   bytes host_id = 1;
   bytes agent_id = 2;
-}
-
-// A host by id, or as a person names it, resolved against this host and
-// the trusted ones: exact first, then ignoring case. FAILED_PRECONDITION
-// when more than one answers.
-message HostRef {
-  oneof of {
-    bytes host_id = 1;
-    string name = 2;
-  }
 }

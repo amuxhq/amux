@@ -1288,7 +1288,7 @@ impl State {
                     value,
                     apply,
                 }) => self.set_answered(emit, category, value, apply, result),
-                // A request of an earlier process's, or of an earlier build.
+                // A request of an earlier process's.
                 None if id.starts_with("amux-") => {}
                 None => self.log(
                     emit,

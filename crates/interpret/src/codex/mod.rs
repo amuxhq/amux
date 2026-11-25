@@ -59,8 +59,8 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, AskClosed, AskItem, BackgroundJob, CodexAnswer, CodexAsk, CodexGrant, CodexItem,
-    CodexSnapshot, CodexUsage, ContextMeter, Decision, DecisionOutcome, Envelope, FormAction,
+    AgentSpec, AskClosed, AskItem, BackgroundJob, CodexAnswer, CodexAsk, CodexDecision, CodexGrant,
+    CodexItem, CodexSnapshot, CodexUsage, ContextMeter, DecisionOutcome, Envelope, FormAction,
     Input, KindInput, OfferedCommand, OfferedMode, OfferedModel, OfferedPermission, OfferedSkill,
     QueuedInput, Refusal, Rejected, Step, TaskList, TaskListEntry, ToolDecision, ToolServer, Work,
     codex_answer, codex_ask, codex_grant, codex_input, codex_item, tool_decision, work,
@@ -69,7 +69,7 @@ use wire::{
 use crate::claude_common::{clip, describe_tasks, or_dash};
 use crate::{
     Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView, Shared,
-    SnapshotView, Stepped, agent_message_body, agent_message_key, ask_item, codex_input, human,
+    SnapshotView, Stepped, agent_message_body, agent_message_key, ask_item, codex_input, person,
     serde_pb, unknown,
 };
 
@@ -340,11 +340,6 @@ enum Request {
     TitleThread,
     /// The hidden thread's one turn.
     TitleTurn,
-    /// `thread/read` with turns, which earlier builds sent to have a thread
-    /// that had run no turn written to disk. None is sent now (naming the
-    /// thread writes it); the variant stays so a checkpoint written while
-    /// one was pending still opens, and its answer is ignored.
-    Persist,
     /// `skills/list`.
     Skills,
     /// A page of `thread/backgroundTerminals/list`, with the jobs earlier
@@ -481,7 +476,7 @@ fn permission_of(approval: &str, sandbox: &str, reviewer: Option<&str>) -> Optio
 fn new_agent_defaults(
     models: &[codex_protocol::server::Model],
     config: Option<&codex_protocol::server::ResolvedConfig>,
-) -> wire::NewAgentDefaults {
+) -> wire::AgentSettings {
     let model = config.and_then(|config| config.model.clone()).or_else(|| {
         models
             .iter()
@@ -503,10 +498,15 @@ fn new_agent_defaults(
         let sandbox = config.sandbox_mode.as_deref()?;
         permission_of(approval, sandbox, config.approvals_reviewer.as_deref()).map(str::to_owned)
     });
-    wire::NewAgentDefaults {
+    wire::AgentSettings {
         model,
         effort,
+        permission_level: permission
+            .as_deref()
+            .map_or(wire::PermissionLevel::Unspecified, wire::levels::codex)
+            as i32,
         permission,
+        mode: None,
     }
 }
 
@@ -554,8 +554,6 @@ fn offered_modes() -> Vec<OfferedMode> {
             display_name: (*display_name).to_owned(),
             normal: *value == "default",
             settable: true,
-            // Codex's modes say how it works, not what it may do.
-            level: wire::PermissionLevel::Unspecified as i32,
         })
         .collect()
 }
@@ -661,6 +659,9 @@ pub struct State {
     /// turn Codex runs it in completes.
     #[serde(default)]
     idle_compaction: Option<IdleCompaction>,
+    /// A person's `/compact` was sent and its compaction has not arrived.
+    #[serde(default)]
+    compact_asked: bool,
     /// When Codex last reported a request's tokens, which keeps the
     /// thread's cache alive from then.
     #[serde(default)]
@@ -714,7 +715,8 @@ impl State {
         let created_mode = spec
             .config
             .as_ref()
-            .and_then(|config| config.mode.clone())
+            .and_then(|config| config.settings.as_ref())
+            .and_then(|settings| settings.mode.clone())
             .filter(|mode| MODES.iter().any(|(value, _)| value == mode));
         Self {
             shared: Shared::new(spec, KIND),
@@ -769,6 +771,7 @@ impl State {
             cwd: spec.cwd.clone(),
             clears: 0,
             idle_compaction: None,
+            compact_asked: false,
             last_request_ms: None,
             children: BTreeMap::new(),
             ended_children: BTreeSet::new(),
@@ -776,6 +779,33 @@ impl State {
             child_requests: 0,
             speaking: None,
         }
+    }
+
+    /// Says on the snapshot's envelope what every kind says the same way.
+    fn report(&mut self) {
+        let mode = self
+            .collaboration
+            .as_deref()
+            .filter(|mode| MODES.iter().any(|(value, _)| value == mode));
+        self.shared.report(
+            wire::agents::CODEX,
+            crate::shared::Report {
+                model: self.model.as_deref(),
+                effort: self.effort.as_deref(),
+                permission: self.permission_value(),
+                mode,
+                // Codex's models are offered by their ids, so the one
+                // chosen is the one whose value is the id.
+                model_name: crate::shared::model_name(
+                    self.model.as_deref(),
+                    None,
+                    &self.models,
+                    tidy_model,
+                ),
+                sign_in: self.sign_in.clone(),
+                conversation: self.thread_id.as_deref(),
+            },
+        );
     }
 
     fn body(&self) -> Vec<u8> {
@@ -789,32 +819,9 @@ impl State {
                     window_tokens: self.context_window,
                 },
             }),
-            model: self.model.clone(),
-            // Codex's models are offered by their ids, so the one chosen
-            // is the one whose value is the id.
-            model_name: crate::shared::model_name(
-                self.model.as_deref(),
-                None,
-                &self.models,
-                tidy_model,
-            ),
-            permission: self
-                .approval
-                .as_deref()
-                .zip(self.sandbox.as_deref())
-                .and_then(|(approval, sandbox)| {
-                    permission_of(approval, sandbox, self.reviewer.as_deref())
-                })
-                .map(str::to_owned),
-            mode: self
-                .collaboration
-                .clone()
-                .filter(|mode| MODES.iter().any(|(value, _)| value == mode)),
             approval_policy: self.approval.clone(),
             servers: self.servers.clone(),
             usage: Some(self.usage.clone().unwrap_or_else(unknown::codex_usage)),
-            sign_in: Some(self.sign_in.clone().unwrap_or_else(unknown::sign_in)),
-            background_jobs: Some(self.shared.jobs()),
             plan: Some(match &self.plan {
                 None => unknown::task_list(),
                 Some(steps) => TaskList {
@@ -831,8 +838,6 @@ impl State {
                         .collect(),
                 },
             }),
-            effort: self.effort.clone(),
-            thread_id: self.thread_id.clone(),
         }
         .encode_to_vec()
     }
@@ -1170,9 +1175,7 @@ impl State {
             emit,
             wire::Boundary {
                 kind: kind as i32,
-                cause: exit.cause,
-                cause_detail: exit.detail,
-                idle: false,
+                exit: (kind == wire::BoundaryKind::Exited).then_some(exit),
             },
         );
     }
@@ -1318,7 +1321,7 @@ impl State {
                     self.shared.close_ask(&key);
                     self.decide_plan(emit, wire::PlanVerdict::Dismissed, None);
                 }
-                if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, human()) {
+                if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, person()) {
                     self.submit(emit, entry, Vec::new());
                 }
             }
@@ -1392,6 +1395,7 @@ impl State {
             // compaction runs as a turn of its own and reflects nothing.
             Some(Command::Compact) => {
                 self.shared.reflect_prompt();
+                self.compact_asked = true;
                 self.request(
                     emit,
                     ClientRequest::ThreadCompactStart(ThreadIdParams {
@@ -1502,8 +1506,10 @@ impl State {
                 key: prompt_key(&entry.input_id),
                 text: entry.text,
                 attachments: entry.attachments,
+                body: item_body(codex_item::Kind::Prompt(
+                    self.shared.prompt(&entry.input_id),
+                )),
                 input_id: entry.input_id,
-                body: item_body(codex_item::Kind::Prompt(wire::Prompt {})),
                 complete: true,
                 ..Default::default()
             },
@@ -1801,17 +1807,17 @@ impl State {
         };
         self.answer_ask(emit, id, &key);
         self.asks.remove(&key);
-        let decision = Decision::try_from(decision).unwrap_or_default();
+        let decision = CodexDecision::try_from(decision).unwrap_or_default();
         let granted = granted(decision, &response);
         self.respond(emit, &meta.id, Ok(response));
         let outcome = match decision {
-            Decision::Approve
-            | Decision::ApproveSession
-            | Decision::ApproveSimilar
-            | Decision::ApproveNetwork
-            | Decision::ApproveAlways => DecisionOutcome::Allowed,
-            Decision::Deny | Decision::Abort => DecisionOutcome::Denied,
-            Decision::Unspecified => DecisionOutcome::Unknown,
+            CodexDecision::Approve
+            | CodexDecision::ApproveSession
+            | CodexDecision::ApproveSimilar
+            | CodexDecision::ApproveNetwork
+            | CodexDecision::ApproveAlways => DecisionOutcome::Allowed,
+            CodexDecision::Deny | CodexDecision::Abort => DecisionOutcome::Denied,
+            CodexDecision::Unspecified => DecisionOutcome::Unknown,
         };
         self.decide(
             emit,
@@ -1947,7 +1953,7 @@ impl State {
             text: reply.text.clone(),
             ..Default::default()
         };
-        if let Some(entry) = self.shared.admit_prompt(emit, id, prompt, human()) {
+        if let Some(entry) = self.shared.admit_prompt(emit, id, prompt, person()) {
             self.submit(emit, entry, Vec::new());
         }
     }
@@ -1982,7 +1988,7 @@ impl State {
             text,
             ..Default::default()
         };
-        if let Some(entry) = self.shared.admit_prompt(emit, id, prompt, human()) {
+        if let Some(entry) = self.shared.admit_prompt(emit, id, prompt, person()) {
             self.submit(emit, entry, Vec::new());
         }
     }
@@ -2200,7 +2206,11 @@ impl Interpreter for Codex {
             }
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
-            Event::ChildInput { agent_id, input } => state.child_input(&mut emit, &agent_id, input),
+            Event::ChildInput {
+                agent_id,
+                input_id,
+                of,
+            } => state.child_input(&mut emit, &agent_id, input_id, of),
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
             Event::Rename { name } => state.rename(&mut emit, name),
             Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
@@ -2224,13 +2234,7 @@ impl Interpreter for Codex {
             state.submit(&mut emit, entry, Vec::new());
         }
         state.child_snapshots(&mut emit);
-        let permission = state.permission_value();
-        state.shared.set_settings(
-            wire::agents::CODEX,
-            state.model.as_deref(),
-            state.effort.as_deref(),
-            permission,
-        );
+        state.report();
         let body = state.body();
         let notice = state.shared.notice(crate::notice::codex_ask);
         state.shared.finish(emit, body, notice)
@@ -2466,6 +2470,11 @@ fn describe_item(body: &[u8]) -> ItemView {
             ),
         ),
         Some(Kind::Steer(_)) => ("steer", true, String::new()),
+        Some(Kind::Compaction(compaction)) => (
+            "compaction",
+            true,
+            crate::claude_common::describe_compaction(&compaction),
+        ),
         Some(Kind::Boundary(boundary)) => (
             "boundary",
             true,
@@ -2548,7 +2557,7 @@ fn for_session(response: &ClientResponse) -> bool {
 
 /// What an approval allows from now on, read from the answer sent: the
 /// rule it carries, or the session-wide choice.
-fn granted(decision: Decision, response: &ClientResponse) -> Option<CodexGrant> {
+fn granted(decision: CodexDecision, response: &ClientResponse) -> Option<CodexGrant> {
     let of = match response {
         ClientResponse::CommandApproval(answer) => match &answer.decision {
             CommandDecision::AcceptWithExecpolicyAmendment {
@@ -2568,8 +2577,8 @@ fn granted(decision: Decision, response: &ClientResponse) -> Option<CodexGrant> 
         _ => None,
     };
     of.or(match decision {
-        Decision::ApproveSession => Some(codex_grant::Of::Session(wire::Empty {})),
-        Decision::ApproveAlways => Some(codex_grant::Of::Always(wire::Empty {})),
+        CodexDecision::ApproveSession => Some(codex_grant::Of::Session(wire::Empty {})),
+        CodexDecision::ApproveAlways => Some(codex_grant::Of::Always(wire::Empty {})),
         _ => None,
     })
     .map(|of| CodexGrant { of: Some(of) })
@@ -2669,9 +2678,9 @@ fn describe_ask(ask: &CodexAsk) -> String {
         body,
         ask.decisions
             .iter()
-            .map(|decision| Decision::try_from(*decision)
+            .map(|decision| CodexDecision::try_from(*decision)
                 .map_or("?", |decision| decision.as_str_name())
-                .trim_start_matches("DECISION_"))
+                .trim_start_matches("CODEX_DECISION_"))
             .collect::<Vec<_>>()
             .join(",")
     )
@@ -2703,7 +2712,6 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
     let context = snapshot.context.unwrap_or_default();
     let usage = snapshot.usage.unwrap_or_default();
     let servers = snapshot.servers;
-    let sign_in = snapshot.sign_in.unwrap_or_default();
     SnapshotView {
         asks: snapshot
             .asks
@@ -2711,19 +2719,13 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             .map(|ask| (ask.key.clone(), ask.item_key.clone()))
             .collect(),
         text: format!(
-            "asks=[{}] thread={} model={} model_name={} effort={} permission={} mode={} approval={} context={} plan={} usage={} servers={} sign_in={} background={}",
+            "asks=[{}] approval={} context={} plan={} usage={} servers={}",
             snapshot
                 .asks
                 .iter()
                 .map(describe_ask)
                 .collect::<Vec<_>>()
                 .join("; "),
-            snapshot.thread_id.as_deref().unwrap_or("?"),
-            snapshot.model.as_deref().unwrap_or("?"),
-            crate::claude_common::describe_model_name(snapshot.model_name.as_deref()),
-            snapshot.effort.as_deref().unwrap_or("?"),
-            snapshot.permission.as_deref().unwrap_or("custom"),
-            snapshot.mode.as_deref().unwrap_or("?"),
             snapshot.approval_policy.as_deref().unwrap_or("?"),
             if context.known {
                 format!(
@@ -2739,20 +2741,6 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             describe_tasks(&snapshot.plan.unwrap_or_default()),
             describe_codex_usage(&usage),
             crate::shared::describe_servers(&servers),
-            match wire::SignInState::try_from(sign_in.state).unwrap_or_default() {
-                wire::SignInState::Unspecified => "?".to_owned(),
-                state => format!(
-                    "{} {}{}",
-                    state.as_str_name(),
-                    or_dash(&sign_in.account),
-                    if sign_in.message.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" {}", clip(&sign_in.message, 60))
-                    }
-                ),
-            },
-            crate::shared::describe_jobs(snapshot.background_jobs.as_ref())
         ),
     }
 }

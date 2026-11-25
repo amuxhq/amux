@@ -370,20 +370,16 @@ fn answer(request: Request) -> Result<Value, String> {
                     Some(provider) => host.provider(provider),
                     None => host.providers.first(),
                 }?;
-                Some((offered.provider_id.clone(), offered.kind()))
+                Some((offered.provider.clone(), offered.kind()))
             })?;
             let (provider, kind) = offered.ok_or_else(|| match &provider {
                 Some(provider) => format!("this device does not offer {provider}"),
                 None => "this device offers no agent yet".to_owned(),
             })?;
-            let config =
-                ui_view::create_config(kind, &provider, &ui_view::NewAgentChoices::default())
-                    .ok_or("an agent of a kind this build does not know")?;
             encoded(&wire::CreateAgentRequest {
                 agent_id: unhex(&agent)?,
                 cwd,
-                agent: Some(config),
-                ..Default::default()
+                ..ui_view::create_request(&provider, kind, &ui_view::NewAgentChoices::default())
             })
         }
         Request::Element { page } => json!(attachments::element(

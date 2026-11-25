@@ -22,7 +22,6 @@
 //! process; resuming, deleting, killing and pinning it are refused, since
 //! it goes with its host.
 
-use prost::Message as _;
 use store::{AgentKey, AgentRow, Marker, StoreError, SubagentChange};
 use wire::{ExitCause, Lifecycle, NativeStart, Step, ctl_frame};
 
@@ -113,7 +112,7 @@ impl Daemon {
         let names = self.own_names()?;
         let mut row = AgentRow::new(key, host.kind, host.cwd.clone());
         // Run by its host's provider process, so of its host's program.
-        row.provider = host.provider_id().to_owned();
+        row.provider = host.provider.clone();
         // Never a word pair or a name taken from what it is about: those
         // are names a person would choose, and the provider's description
         // is the title.
@@ -126,8 +125,8 @@ impl Daemon {
         });
         row.parent = Some(host.agent.clone());
         let now = self.timers.now_ms as i64;
-        row.phase = wire::Phase::Working as i32;
-        row.phase_since_ms = Some(now);
+        row.status.phase = wire::Phase::Working as i32;
+        row.status.phase_since_ms = now;
         row.created_at_ms = now;
         // Its answer goes back through its parent's provider.
         row.owes_report = false;
@@ -410,9 +409,6 @@ impl Daemon {
             .and_then(|parent| AgentId::from_slice(&parent.agent))
             .filter(|host| self.families.connected(*host))
             .ok_or_else(|| Refusal::Subagent(HOST_AWAY.to_owned()))?;
-        let Some(body) = stop_job_body(row.kind, &job) else {
-            return Err(Refusal::Subagent(NO_STOP.to_owned()));
-        };
         // The core mints no randomness; the input's id only has to tell
         // this stop's verdict from any other input's.
         let minted = self.pending.mint();
@@ -427,11 +423,8 @@ impl Daemon {
             frame: wire::CtlFrame {
                 of: Some(ctl_frame::Of::ChildInput(wire::ChildInput {
                     agent_id: agent.0.to_vec(),
-                    input: Some(wire::Input {
-                        input_id,
-                        kind: row.kind,
-                        body,
-                    }),
+                    input_id,
+                    of: Some(wire::child_input::Of::StopJob(wire::StopJob { key: job })),
                 })),
             },
         });
@@ -468,56 +461,28 @@ impl Daemon {
 
 /// The key of the subagent's own job in its snapshot, when the provider
 /// offers a stop for it: one background job of the subagent kind keyed by
-/// the provider's id for it. Its host's interpreter lists it there exactly
-/// when a stop can reach it, so a close follows what the chat's own Stop
-/// offers.
+/// the provider's id for it, on a snapshot whose capabilities stop one job.
+/// Its host's interpreter lists it there exactly when a stop can reach it,
+/// so a close follows what the chat's own Stop offers.
 pub fn stoppable_job(row: &AgentRow) -> Option<String> {
     let native = row.native.as_ref()?;
     let snapshot = row.snapshot.as_ref()?;
-    let jobs = match wire::Kind::try_from(row.kind).ok()? {
-        wire::Kind::ClaudeSdk | wire::Kind::ClaudePty => {
-            wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
-                .ok()?
-                .background_jobs
-        }
-        wire::Kind::Codex => {
-            wire::CodexSnapshot::decode(snapshot.body.as_slice())
-                .ok()?
-                .background_jobs
-        }
-        // An ACP agent's own subagents are not amux agents: none is a job.
-        wire::Kind::Acp | wire::Kind::Unspecified => None,
-    }?;
-    jobs.jobs
+    if !snapshot
+        .capabilities
+        .as_ref()
+        .is_some_and(|capabilities| capabilities.stops_job)
+    {
+        return None;
+    }
+    snapshot
+        .jobs
+        .as_ref()?
+        .jobs
         .iter()
         .find(|job| {
             job.kind == wire::BackgroundKind::Subagent as i32 && job.key == native.provider_child_id
         })
         .map(|job| job.key.clone())
-}
-
-/// A job stop as the kind's input body carries it; none for a kind that
-/// has no job stop.
-fn stop_job_body(kind: i32, key: &str) -> Option<Vec<u8>> {
-    let stop = wire::StopJob {
-        key: key.to_owned(),
-    };
-    match wire::Kind::try_from(kind).ok()? {
-        wire::Kind::ClaudeSdk => Some(
-            wire::ClaudeSdkInput {
-                of: Some(wire::claude_sdk_input::Of::StopJob(stop)),
-            }
-            .encode_to_vec(),
-        ),
-        wire::Kind::Codex => Some(
-            wire::CodexInput {
-                of: Some(wire::codex_input::Of::StopJob(stop)),
-            }
-            .encode_to_vec(),
-        ),
-        // ACP has no way to stop one job of an agent's.
-        wire::Kind::ClaudePty | wire::Kind::Acp | wire::Kind::Unspecified => None,
-    }
 }
 
 #[cfg(test)]
@@ -757,7 +722,7 @@ mod tests {
         assert_eq!(row.name, "sub-7375622d", "named for its id");
         assert_eq!(row.title.as_deref(), Some("Look at the logs"));
         assert_eq!(row.lifecycle, Lifecycle::Live as i32);
-        assert_eq!(row.phase, wire::Phase::Working as i32);
+        assert_eq!(row.phase(), wire::Phase::Working);
         assert!(!row.owes_report);
         // Orders and revisions count per agent.
         assert_eq!(item_order(&rig, SUB, "s1"), Some((1, 1)));
@@ -911,7 +876,7 @@ mod tests {
         // Working, as a snapshot says: an agent with a parent would owe one.
         let working = wire::Snapshot {
             kind: wire::Kind::ClaudeSdk as i32,
-            phase: wire::Phase::Working as i32,
+            status: wire::AgentStatus::in_phase(wire::Phase::Working),
             ..wire::Snapshot::default()
         };
         rig.host_writes(&[with_parts(vec![AgentStep {
@@ -1152,8 +1117,11 @@ mod tests {
 
     /// The snapshot of a subagent whose provider offers a stop for it.
     fn stoppable() -> wire::Snapshot {
-        let body = wire::ClaudeSnapshot {
-            background_jobs: Some(wire::BackgroundJobs {
+        wire::Snapshot {
+            kind: wire::Kind::ClaudeSdk as i32,
+            status: wire::AgentStatus::in_phase(wire::Phase::Working),
+            capabilities: Some(Box::new(wire::AgentCapabilities::claude_sdk())),
+            jobs: Some(wire::BackgroundJobs {
                 known: true,
                 jobs: vec![wire::BackgroundJob {
                     key: PROVIDER_ID.into(),
@@ -1161,12 +1129,6 @@ mod tests {
                     ..wire::BackgroundJob::default()
                 }],
             }),
-            ..wire::ClaudeSnapshot::default()
-        };
-        wire::Snapshot {
-            kind: wire::Kind::ClaudeSdk as i32,
-            phase: wire::Phase::Working as i32,
-            body: body.encode_to_vec(),
             ..wire::Snapshot::default()
         }
     }
@@ -1206,12 +1168,9 @@ mod tests {
             panic!("one stop to the host: {out:?}");
         };
         assert_eq!(stop.agent_id, SUB.0);
-        let input = stop.input.as_ref().unwrap();
-        assert_eq!(input.kind, wire::Kind::ClaudeSdk as i32);
-        let body = wire::ClaudeSdkInput::decode(input.body.as_slice()).unwrap();
         assert_eq!(
-            body.of,
-            Some(wire::claude_sdk_input::Of::StopJob(wire::StopJob {
+            stop.of,
+            Some(wire::child_input::Of::StopJob(wire::StopJob {
                 key: PROVIDER_ID.into()
             }))
         );
@@ -1400,7 +1359,7 @@ mod tests {
         let mut rig = rig();
         rig.host_writes(&[starts(SUB, &["s1"])]);
         let asking = wire::Snapshot {
-            phase: wire::Phase::NeedsYou as i32,
+            status: wire::AgentStatus::in_phase(wire::Phase::NeedsYou),
             notice: Some(Box::new(wire::Notice {
                 of: Some(wire::notice::Of::Ask(wire::AskNotice {
                     key: "ask-1".into(),

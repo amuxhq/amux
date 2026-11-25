@@ -260,9 +260,8 @@ pub fn create(cwd: &Path, name: &str, first: Option<&str>) -> wire::CreateAgentR
         agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
         name: Some(name.to_owned()),
         cwd: cwd.to_string_lossy().into_owned(),
-        agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
-            wire::ClaudeCreateConfig::default(),
-        )),
+        provider: "claude".into(),
+        kind: wire::Kind::ClaudeSdk as i32,
         initial_prompt: first.map(|text| submission(b"p0", text)),
         ..Default::default()
     }
@@ -517,12 +516,12 @@ async fn an_agent_names_no_raw_permission_for_children_and_files_them_only_close
     for (who, child) in EVERYONE.into_iter().zip(mine) {
         let tag = format!("{who:?}").to_lowercase();
         let never_ask = wire::CreateAgentRequest {
-            agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
-                wire::ClaudeCreateConfig {
-                    permission: Some("bypassPermissions".into()),
-                    ..Default::default()
-                },
-            )),
+            provider: "claude".into(),
+            kind: wire::Kind::ClaudeSdk as i32,
+            settings: Some(wire::AgentSettings {
+                permission: Some("bypassPermissions".into()),
+                ..Default::default()
+            }),
             ..create(&work, &format!("{tag}-bypass"), None)
         };
         let made = host.agents(who).create_agent(never_ask.clone()).await;
@@ -540,13 +539,12 @@ async fn an_agent_names_no_raw_permission_for_children_and_files_them_only_close
         // This host offers no ACP agent, so a create the rule lets through
         // is refused for that instead.
         let acp = |mode: Option<&str>, name: &str| wire::CreateAgentRequest {
-            agent: Some(wire::create_agent_request::Agent::Acp(
-                wire::AcpCreateConfig {
-                    agent: "opencode".into(),
-                    mode: mode.map(str::to_owned),
-                    ..Default::default()
-                },
-            )),
+            provider: "opencode".into(),
+            kind: wire::Kind::Acp as i32,
+            settings: Some(wire::AgentSettings {
+                mode: mode.map(str::to_owned),
+                ..Default::default()
+            }),
             ..create(&work, name, None)
         };
         let moded = host
@@ -769,7 +767,7 @@ async fn a_message_id_is_sixteen_bytes() {
             .send_message(sent.clone())
             .await
             .unwrap_or_else(|status| panic!("{who:?}: {status:?}"));
-        assert_eq!(answer.into_inner().envelope_id, sent.id);
+        answer.into_inner();
     }
     assert_eq!(
         host.synthetic(recipient).inputs().len(),
@@ -827,9 +825,8 @@ async fn the_owner_refuses_a_kind_it_does_not_run() {
     let work = host.install.work.clone();
     for who in EVERYONE {
         let codex = wire::CreateAgentRequest {
-            agent: Some(wire::create_agent_request::Agent::Codex(
-                wire::CodexCreateConfig::default(),
-            )),
+            provider: "codex".into(),
+            kind: wire::Kind::Codex as i32,
             ..create(&work, &format!("{who:?}").to_lowercase(), None)
         };
         let id = uuid::Uuid::from_slice(&codex.agent_id).unwrap();
@@ -844,22 +841,23 @@ async fn the_owner_refuses_a_kind_it_does_not_run() {
     host.stop().await;
 }
 
-/// A create with no kind names no interpreter, and is refused before
+/// A create with no provider names nothing to run, and is refused before
 /// anything is made, whoever asks.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_create_without_a_kind_is_invalid() {
+async fn a_create_without_a_provider_is_invalid() {
     let setup = Setup::new();
     let host = setup.start().await;
     let work = host.install.work.clone();
     for who in EVERYONE {
         let kindless = wire::CreateAgentRequest {
-            agent: None,
+            provider: String::new(),
+            kind: 0,
             ..create(&work, &format!("{who:?}").to_lowercase(), None)
         };
         let id = uuid::Uuid::from_slice(&kindless.agent_id).unwrap();
         let refused = host.agents(who).create_agent(kindless).await.unwrap_err();
         assert_eq!(refused.code(), Code::InvalidArgument, "{who:?}");
-        assert_eq!(refused.message(), "a new agent names its kind");
+        assert_eq!(refused.message(), "a new agent names its provider");
         assert!(host.row(id).await.is_none(), "{who:?}: no agent was made");
     }
     host.stop().await;
@@ -928,9 +926,8 @@ async fn a_subagents_authority_is_settled_against_the_level_its_parents_host_sta
     host.settled().await;
     let work = host.install.work.clone();
     let level = |made: &wire::Agent| {
-        made.settings
-            .as_ref()
-            .map(|settings| (settings.permission.clone(), settings.permission_level()))
+        let settings = made.settings();
+        (!settings.is_none()).then(|| (settings.permission.clone(), settings.permission_level()))
     };
 
     // The paired host's agent, as this host's copy holds it, runs at auto.
@@ -940,14 +937,17 @@ async fn a_subagents_authority_is_settled_against_the_level_its_parents_host_sta
         "/",
     );
     there.name = "caller-there".to_owned();
-    there.settings = Some(wire::AgentSettings {
+    there.status.settings = Some(wire::AgentSettings {
         permission: Some("acceptEdits".into()),
         permission_level: wire::PermissionLevel::Auto as i32,
         ..Default::default()
     });
     host.install.store().put_agent(&there).unwrap();
     let wider = wire::CreateAgentRequest {
-        permission_level: wire::PermissionLevel::Full as i32,
+        settings: Some(wire::AgentSettings {
+            permission_level: wire::PermissionLevel::Full as i32,
+            ..Default::default()
+        }),
         ..create(&work, "wider", None)
     };
     let refused = host
@@ -989,7 +989,10 @@ async fn a_subagents_authority_is_settled_against_the_level_its_parents_host_sta
         Some((Some("plan".into()), wire::PermissionLevel::ReadOnly))
     );
     let ask = wire::CreateAgentRequest {
-        permission_level: wire::PermissionLevel::Ask as i32,
+        settings: Some(wire::AgentSettings {
+            permission_level: wire::PermissionLevel::Ask as i32,
+            ..Default::default()
+        }),
         ..create(&work, "unknown-ask", None)
     };
     let refused = host
@@ -1024,7 +1027,10 @@ async fn a_subagents_authority_is_settled_against_the_level_its_parents_host_sta
             ..create(&work, "person-fork", None)
         },
         wire::CreateAgentRequest {
-            permission_level: wire::PermissionLevel::ReadOnly as i32,
+            settings: Some(wire::AgentSettings {
+                permission_level: wire::PermissionLevel::ReadOnly as i32,
+                ..Default::default()
+            }),
             ..create(&work, "person-level", None)
         },
     ] {

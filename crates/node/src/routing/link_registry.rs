@@ -27,7 +27,7 @@ use crate::routing::types::{LinkId, core_host, host_from_core};
 use crate::routing::{Host, RuntimeInstance, host_to_wire};
 use crate::{HostId, Tier};
 
-pub(crate) type LinkOutputTx = mpsc::Sender<wire::Message>;
+pub(crate) type LinkOutputTx = mpsc::Sender<wire::LinkMessage>;
 
 impl LinkRegistry {
     /// The registry of a host whose own id is `own`: a daemon's links are
@@ -730,7 +730,7 @@ fn send_to(
     state: &LinkRegistryState,
     new: Option<&NewLink<'_>>,
     to: daemon_core::LinkId,
-    message: wire::Message,
+    message: wire::LinkMessage,
 ) {
     match new {
         Some(new) if new.link == to => {
@@ -744,9 +744,9 @@ fn send_to(
     }
 }
 
-fn refresh_credential_message() -> wire::Message {
-    wire::Message {
-        body: Some(wire::message::Body::RefreshCredential(
+fn refresh_credential_message() -> wire::LinkMessage {
+    wire::LinkMessage {
+        body: Some(wire::link_message::Body::RefreshCredential(
             wire::RefreshCredential {},
         )),
     }
@@ -766,7 +766,7 @@ impl LinkRegistryState {
 fn try_send_or_request_close(
     tx: &LinkOutputTx,
     close_tx: &mpsc::Sender<LinkCloseRequest>,
-    message: wire::Message,
+    message: wire::LinkMessage,
 ) {
     match tx.try_send(message) {
         Ok(()) => {}
@@ -778,16 +778,16 @@ fn try_send_or_request_close(
     }
 }
 
-fn link_close_message(reason: wire::LinkCloseReason) -> wire::Message {
-    wire::Message {
-        body: Some(wire::message::Body::LinkClose(wire::LinkClose {
+fn link_close_message(reason: wire::LinkCloseReason) -> wire::LinkMessage {
+    wire::LinkMessage {
+        body: Some(wire::link_message::Body::LinkClose(wire::LinkClose {
             reason: reason as i32,
             error: None,
         })),
     }
 }
 
-fn try_send_or_spawn(tx: LinkOutputTx, message: wire::Message) {
+fn try_send_or_spawn(tx: LinkOutputTx, message: wire::LinkMessage) {
     match tx.try_send(message) {
         Ok(()) => {}
         Err(mpsc::error::TrySendError::Full(message)) => {
@@ -800,17 +800,17 @@ fn try_send_or_spawn(tx: LinkOutputTx, message: wire::Message) {
 }
 
 /// A claim of a direct link to `host`: adjacency is all a link advertises.
-fn neighbor_up_message(host: &Host) -> wire::Message {
-    wire::Message {
-        body: Some(wire::message::Body::NeighborUp(wire::NeighborUp {
+fn neighbor_up_message(host: &Host) -> wire::LinkMessage {
+    wire::LinkMessage {
+        body: Some(wire::link_message::Body::NeighborUp(wire::NeighborUp {
             host: Some(host_to_wire(host)),
         })),
     }
 }
 
-fn neighbor_down_message(host_id: HostId) -> wire::Message {
-    wire::Message {
-        body: Some(wire::message::Body::NeighborDown(wire::NeighborDown {
+fn neighbor_down_message(host_id: HostId) -> wire::LinkMessage {
+    wire::LinkMessage {
+        body: Some(wire::link_message::Body::NeighborDown(wire::NeighborDown {
             host_id: host_id.as_bytes().to_vec(),
         })),
     }
@@ -831,10 +831,7 @@ mod tests {
             id: Uuid::from_u128(id),
             name: format!("host-{id}"),
             version: "test".to_string(),
-            capabilities: Capabilities {
-                cloud_relay: false,
-                kinds: Vec::new(),
-            },
+            capabilities: Capabilities { cloud_relay: false },
             signed_in: Some(true),
         }
     }
@@ -1117,7 +1114,7 @@ mod tests {
     async fn full_outgoing_queue_requests_link_close() {
         let registry = LinkRegistry::new(HostId::nil());
         let (full_tx, _full_rx) = mpsc::channel(1);
-        full_tx.try_send(wire::Message { body: None }).unwrap();
+        full_tx.try_send(wire::LinkMessage { body: None }).unwrap();
         let mut close_rx = register(&registry, link(1, 1), host(1), full_tx).await;
 
         let (new_tx, _new_rx) = mpsc::channel(8);
@@ -1133,7 +1130,7 @@ mod tests {
     async fn link_close_notification_is_best_effort_for_full_link_queues() {
         let registry = LinkRegistry::new(HostId::nil());
         let (tx, _rx) = mpsc::channel(1);
-        tx.try_send(wire::Message { body: None }).unwrap();
+        tx.try_send(wire::LinkMessage { body: None }).unwrap();
         register(&registry, link(1, 1), host(1), tx).await;
 
         tokio::time::timeout(
@@ -1154,8 +1151,8 @@ mod tests {
             .send_link_close_to_all(wire::LinkCloseReason::UserShutdown)
             .await;
 
-        let Some(wire::Message {
-            body: Some(wire::message::Body::LinkClose(close)),
+        let Some(wire::LinkMessage {
+            body: Some(wire::link_message::Body::LinkClose(close)),
         }) = rx.recv().await
         else {
             panic!("expected LinkClose message");

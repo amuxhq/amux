@@ -195,7 +195,7 @@ disk. A removal does not wait for holders: a tree a person holds with
   amux takes also makes a removal wait out a stop hook already running.
 
 Consent is `DeleteAgentRequest.discard_workspace_changes`, a permanent
-`amux.v1` field whose zero value keeps changes, as every build before it did;
+`amux.v1` field whose zero value keeps changes;
 `amux rm --discard-changes` sets it. A delete's consent covers its own agent
 and the members that follow it by [the family rule](PROTOCOL.md#the-family-rule),
 so it counts only when every other member left in the workspace descends

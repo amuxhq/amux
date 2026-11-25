@@ -17,7 +17,7 @@ use tonic::Status;
 use uuid::Uuid;
 use wire::start_pairing_request::Method;
 use wire::{
-    BeginPairRequest, DeviceIdentity, HostRef, PairingIdentity, PairingWindow, RouteKind,
+    BeginPairRequest, DeviceIdentity, PairingIdentity, PairingWindow, RouteKind,
     StartPairingRequest, TrustSshPeerRequest,
 };
 
@@ -100,37 +100,14 @@ pub(crate) fn peer_entry_to_wire(host_id: HostId, entry: &TrustEntry) -> wire::P
     }
 }
 
-fn resolve_peer(store: &TrustStore, peer: HostRef) -> Result<(HostId, TrustEntry), Status> {
-    match peer.of {
-        None => Err(Status::invalid_argument("HostRef.of is required")),
-        Some(wire::host_ref::Of::HostId(bytes)) => {
-            let host = host_from_bytes("HostRef.host_id", &bytes)?;
-            let entry = store
-                .entry(host)
-                .cloned()
-                .ok_or_else(|| Status::not_found(format!("peer {host} is not trusted")))?;
-            Ok((host, entry))
-        }
-        Some(wire::host_ref::Of::Name(name)) => {
-            if name.is_empty() {
-                return Err(Status::invalid_argument("HostRef.name must not be empty"));
-            }
-            let matches = store
-                .entries()
-                .filter(|(_, entry)| entry.name == name)
-                .map(|(host, entry)| (host, entry.clone()))
-                .collect::<Vec<_>>();
-            match matches.as_slice() {
-                [(host, entry)] => Ok((*host, entry.clone())),
-                [] => Err(Status::not_found(format!(
-                    "peer named {name} is not trusted"
-                ))),
-                _ => Err(Status::invalid_argument(format!(
-                    "peer name {name} is ambiguous; use host_id"
-                ))),
-            }
-        }
-    }
+/// The trusted host `host_id` names.
+fn resolve_peer(store: &TrustStore, host_id: &[u8]) -> Result<(HostId, TrustEntry), Status> {
+    let host = host_from_bytes("host_id", host_id)?;
+    let entry = store
+        .entry(host)
+        .cloned()
+        .ok_or_else(|| Status::not_found(format!("peer {host} is not trusted")))?;
+    Ok((host, entry))
 }
 
 impl Edge {
@@ -495,9 +472,7 @@ impl Edge {
             return Err(Status::internal(format!("the core confirmed {answer:?}")));
         };
         let host = Uuid::from_bytes(host.0);
-        self.peer_entry(HostRef {
-            of: Some(wire::host_ref::Of::HostId(host.as_bytes().to_vec())),
-        })
+        self.peer_entry(host.as_bytes())
     }
 
     pub async fn abandon_pair(&self, token: &[u8]) -> Result<(), Status> {
@@ -574,24 +549,24 @@ impl Edge {
             .collect())
     }
 
-    pub fn peer_entry(&self, peer: HostRef) -> Result<wire::Peer, Status> {
+    pub fn peer_entry(&self, host_id: &[u8]) -> Result<wire::Peer, Status> {
         let store = self
             .trust
             .read()
             .map_err(|_| Status::internal("trust store lock is poisoned"))?;
-        let (host, entry) = resolve_peer(&store, peer)?;
+        let (host, entry) = resolve_peer(&store, host_id)?;
         Ok(peer_entry_to_wire(host, &entry))
     }
 
     /// Forgets a paired host: its key leaves the trust store, its links
     /// close with USER_REVOKED, and every connection it holds here ends.
-    pub async fn unpair(&self, peer: HostRef) -> Result<wire::Peer, Status> {
+    pub async fn unpair(&self, host_id: &[u8]) -> Result<wire::Peer, Status> {
         let host = {
             let store = self
                 .trust
                 .read()
                 .map_err(|_| Status::internal("trust store lock is poisoned"))?;
-            resolve_peer(&store, peer)?.0
+            resolve_peer(&store, host_id)?.0
         };
         let removed = match self
             .ask(ClientRequest::ChangeTrust(TrustChange::Remove { host }))

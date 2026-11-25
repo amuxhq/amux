@@ -322,7 +322,7 @@ pub fn inventory_hosts(events: &[InventoryEvent]) -> Vec<wire::HostEntry> {
 
 /// Whether a host's inventory entry says it is trusted and online now.
 pub fn host_online(host: &wire::HostEntry) -> bool {
-    host.trusted().is_some() && host.online().is_some()
+    host.trusted().is_some() && host.reachable()
 }
 
 impl Describe for SessionEvent {
@@ -335,7 +335,7 @@ impl Describe for SessionEvent {
                 "Snapshot revision={} kind={} phase={:?} queue={}",
                 snapshot.revision,
                 snapshot.kind,
-                wire::Phase::try_from(snapshot.phase).unwrap_or(wire::Phase::Starting),
+                snapshot.phase(),
                 snapshot.queue.len()
             ),
             Some(session_event::Of::Item(item)) => format!(
@@ -383,7 +383,7 @@ impl Describe for InventoryEvent {
                 short(&agent.agent_id),
                 short(&agent.host_id),
                 wire::Lifecycle::try_from(agent.lifecycle).unwrap_or_default(),
-                wire::Phase::try_from(agent.phase).unwrap_or(wire::Phase::Starting),
+                agent.phase(),
             ),
             Some(inventory_event::Of::AgentRemoved(removed)) => {
                 format!("AgentRemoved {}", short(&removed.agent_id))

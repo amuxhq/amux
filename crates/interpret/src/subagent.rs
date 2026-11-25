@@ -235,20 +235,24 @@ impl<A: OpenAsk> Subagent<'_, A> {
 
     /// Its snapshot: what its row and chat draw without items. The
     /// interpreter fills the phase (see [`phase`](Self::phase)), the kind's
-    /// body, `background_jobs` and whatever else it knows; the kind, the
-    /// clock and when the phase began are stamped here, and the step carries
-    /// it only when something other than its timestamp changed.
+    /// body, the jobs and whatever else it knows; the kind, the clock and
+    /// when the phase began are stamped here, the sign-in, which its host's
+    /// provider holds, is left unknown, and the step carries it only when
+    /// something other than its timestamp changed.
     pub fn snapshot(&mut self, mut snapshot: Snapshot) {
         self.within_run("a snapshot");
         snapshot.revision = 0;
         snapshot.kind = self.kind;
         snapshot.at_ms = self.now_ms;
+        snapshot.sign_in.get_or_insert_with(crate::unknown::sign_in);
         let now_ms = self.now_ms;
         let native = self.native();
-        snapshot.phase_since_ms = match &native.last_snapshot {
-            Some(last) if last.phase == snapshot.phase => last.phase_since_ms,
+        let phase = snapshot.status().phase;
+        let phase_since_ms = match &native.last_snapshot {
+            Some(last) if last.status().phase == phase => last.status().phase_since_ms,
             _ => now_ms,
         };
+        snapshot.status_mut().phase_since_ms = phase_since_ms;
         let changed = native.last_snapshot.as_ref().is_none_or(|last| {
             Snapshot {
                 at_ms: snapshot.at_ms,

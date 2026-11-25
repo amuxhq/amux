@@ -192,22 +192,16 @@ fn values<T>(listed: &[T], value: impl Fn(&T) -> &str) -> Vec<&str> {
 /// Claude's or Codex's entry on a host whose Claude runs headless, as
 /// [`listed`] reads it.
 fn on_host(provider: &str, asked: &Asked, signed_in: bool) -> ProviderOnHost {
-    let (name, kind, hint, capabilities) = match provider {
+    let (name, kind, hint) = match provider {
         "claude" => (
             "Claude",
             wire::Kind::ClaudeSdk,
             "Run claude and sign in with /login.",
-            wire::AgentCapabilities::claude_sdk(),
         ),
-        _ => (
-            "Codex",
-            wire::Kind::Codex,
-            "Run codex login.",
-            wire::AgentCapabilities::codex(),
-        ),
+        _ => ("Codex", wire::Kind::Codex, "Run codex login."),
     };
     ProviderOnHost {
-        provider_id: provider.to_owned(),
+        provider: provider.to_owned(),
         catalogue: Some(asked.blob.hash.clone()),
         signed_in,
         descriptor: Some(wire::ProviderDescriptor {
@@ -216,7 +210,17 @@ fn on_host(provider: &str, asked: &Asked, signed_in: bool) -> ProviderOnHost {
             sign_in_hint: hint.to_owned(),
             version: String::new(),
         }),
-        capabilities: Some(capabilities),
+        kinds: node::own_kinds(provider)
+            .iter()
+            .map(|kind| wire::KindOnHost {
+                kind: *kind as i32,
+                capabilities: Some(match kind {
+                    wire::Kind::ClaudePty => wire::AgentCapabilities::claude_pty(),
+                    wire::Kind::ClaudeSdk => wire::AgentCapabilities::claude_sdk(),
+                    _ => wire::AgentCapabilities::codex(),
+                }),
+            })
+            .collect(),
     }
 }
 
@@ -504,9 +508,6 @@ async fn a_host_that_cannot_ask_its_provider_says_so() {
 /// catalogue and in the agent's own launch.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_persons_pick_is_what_later_agents_start_with() {
-    use wire::ClaudeCreateConfig;
-    use wire::create_agent_request::Agent;
-
     let host = Host::new(&Script::default());
     let daemon = serving(&host.install, "boot-1", host.launch()).await;
     let runtime = runtime(&daemon, &host.install);
@@ -517,10 +518,12 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
         agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
         name: Some(name.into()),
         cwd: cwd.to_string_lossy().into_owned(),
-        agent: Some(Agent::ClaudeSdk(ClaudeCreateConfig {
+        provider: "claude".into(),
+        kind: wire::Kind::ClaudeSdk as i32,
+        settings: Some(wire::AgentSettings {
             model: model.map(str::to_owned),
             ..Default::default()
-        })),
+        }),
         remember_model,
         ..wire::CreateAgentRequest::default()
     };
@@ -575,7 +578,8 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
         let terminal = runtime
             .spawn(
                 wire::CreateAgentRequest {
-                    agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudePty),
+                    provider: "claude".into(),
+                    kind: wire::Kind::ClaudePty as i32,
                     ..create("fourth", None, false)
                 },
                 None,
@@ -596,7 +600,7 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn terminal_claude_offers_what_its_hosts_claude_offers() {
-    use wire::{Kind, session_event};
+    use wire::session_event;
 
     let host = Host::new(&Script {
         models: vec![model("opus"), model("haiku")],
@@ -613,7 +617,8 @@ async fn terminal_claude_offers_what_its_hosts_claude_offers() {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 name: Some("terminal".into()),
                 cwd: host.install.work.to_string_lossy().into_owned(),
-                agent: wire::create_agent_request::Agent::defaults(Kind::ClaudePty),
+                provider: "claude".into(),
+                kind: wire::Kind::ClaudePty as i32,
                 ..wire::CreateAgentRequest::default()
             },
             None,
@@ -677,7 +682,7 @@ async fn terminal_claude_offers_what_its_hosts_claude_offers() {
 async fn terminal_claude_offers_the_commands_of_the_project_it_runs_in() {
     use std::os::unix::fs::PermissionsExt as _;
 
-    use wire::{Kind, session_event};
+    use wire::session_event;
 
     let host = Host::new(&Script {
         commands: vec![command("review")],
@@ -723,7 +728,8 @@ async fn terminal_claude_offers_the_commands_of_the_project_it_runs_in() {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 name: Some("terminal".into()),
                 cwd: project.to_string_lossy().into_owned(),
-                agent: wire::create_agent_request::Agent::defaults(Kind::ClaudePty),
+                provider: "claude".into(),
+                kind: wire::Kind::ClaudePty as i32,
                 ..wire::CreateAgentRequest::default()
             },
             None,
@@ -955,7 +961,7 @@ async fn an_acp_agents_copy_is_its_initialize_answer_and_what_its_conversations_
     let ids: Vec<&str> = entry
         .providers
         .iter()
-        .map(|p| p.provider_id.as_str())
+        .map(|p| p.provider.as_str())
         .collect();
     assert_eq!(ids, ["claude", "codex", "mine"]);
     let mine = entry.provider("mine").unwrap();
@@ -966,8 +972,8 @@ async fn an_acp_agents_copy_is_its_initialize_answer_and_what_its_conversations_
     assert_eq!(descriptor.kind(), wire::Kind::Acp);
     assert_eq!(descriptor.version, "3.1.4");
     assert_eq!(
-        mine.capabilities,
-        Some(wire::AgentCapabilities::acp(true, true, false)),
+        mine.capabilities(),
+        Some(&wire::AgentCapabilities::acp(true, true, false)),
         "it loads a conversation, takes images and is not known to steer"
     );
 
@@ -989,20 +995,17 @@ async fn an_acp_agents_copy_is_its_initialize_answer_and_what_its_conversations_
     std::fs::write(blobs.join(hex), &bytes).unwrap();
     let mut row = agent.row(&host.install);
     row.kind = wire::Kind::Acp as i32;
+    row.provider = "mine".into();
     row.lifecycle = wire::Lifecycle::Exited as i32;
     row.snapshot = Some(wire::Snapshot {
         kind: wire::Kind::Acp as i32,
         catalogue: Some(hash),
         at_ms: 10,
-        body: wire::AcpSnapshot {
-            agent: Some("mine".into()),
-            sign_in: Some(wire::SignIn {
-                state: wire::SignInState::SignedOut as i32,
-                ..Default::default()
-            }),
+        body: wire::AcpSnapshot::default().encode_to_vec(),
+        sign_in: Some(wire::SignIn {
+            state: wire::SignInState::SignedOut as i32,
             ..Default::default()
-        }
-        .encode_to_vec(),
+        }),
         ..Default::default()
     });
     host.install.store().put_agent(&row).unwrap();
@@ -1075,13 +1078,12 @@ async fn antigravitys_copy_lists_its_models_before_any_conversation() {
     let start = |model: &str| wire::CreateAgentRequest {
         agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
         cwd: cwd.to_string_lossy().into_owned(),
-        agent: Some(wire::create_agent_request::Agent::Acp(
-            wire::AcpCreateConfig {
-                agent: "antigravity".into(),
-                model: Some(model.into()),
-                ..Default::default()
-            },
-        )),
+        provider: "antigravity".into(),
+        kind: wire::Kind::Acp as i32,
+        settings: Some(wire::AgentSettings {
+            model: Some(model.into()),
+            ..Default::default()
+        }),
         ..wire::CreateAgentRequest::default()
     };
     let refused = runtime
@@ -1126,6 +1128,7 @@ async fn a_conversations_new_catalogue_republishes_the_hosts_copy() {
     let mut agent = SyntheticAgent::new(&host.install, "chatter", 1 << 20);
     let mut row = agent.row(&host.install);
     row.kind = wire::Kind::Acp as i32;
+    row.provider = "mine".into();
     host.install.store().put_agent(&row).unwrap();
     agent.go_live();
     let daemon = host
@@ -1153,14 +1156,10 @@ async fn a_conversations_new_catalogue_republishes_the_hosts_copy() {
     agent.append(&wire::Step {
         snapshot: Some(wire::Snapshot {
             kind: wire::Kind::Acp as i32,
-            phase: wire::Phase::Idle as i32,
+            status: wire::AgentStatus::in_phase(wire::Phase::Idle),
             catalogue: Some(hash),
             at_ms: 10,
-            body: wire::AcpSnapshot {
-                agent: Some("mine".into()),
-                ..Default::default()
-            }
-            .encode_to_vec(),
+            body: wire::AcpSnapshot::default().encode_to_vec(),
             ..Default::default()
         }),
         ..Default::default()
@@ -1324,12 +1323,8 @@ async fn an_acp_agents_pick_is_kept_once_the_agent_took_it() {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 name: Some("chat".into()),
                 cwd: cwd.to_string_lossy().into_owned(),
-                agent: Some(wire::create_agent_request::Agent::Acp(
-                    wire::AcpCreateConfig {
-                        agent: "mine".into(),
-                        ..Default::default()
-                    },
-                )),
+                provider: "mine".into(),
+                kind: wire::Kind::Acp as i32,
                 ..wire::CreateAgentRequest::default()
             },
             None,
@@ -1346,9 +1341,9 @@ async fn an_acp_agents_pick_is_kept_once_the_agent_took_it() {
                 .await
                 .unwrap()
                 .ok_or("no row")?;
-            (row.phase == wire::Phase::Idle as i32)
+            (row.phase() == wire::Phase::Idle)
                 .then_some(())
-                .ok_or(format!("phase {}", row.phase))
+                .ok_or(format!("phase {:?}", row.phase()))
         }
     })
     .await
@@ -1494,12 +1489,8 @@ async fn a_signed_out_acp_agent_waits_for_a_sign_in_and_the_entry_follows() {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 name: Some("chat".into()),
                 cwd: cwd.to_string_lossy().into_owned(),
-                agent: Some(wire::create_agent_request::Agent::Acp(
-                    wire::AcpCreateConfig {
-                        agent: "mine".into(),
-                        ..Default::default()
-                    },
-                )),
+                provider: "mine".into(),
+                kind: wire::Kind::Acp as i32,
                 ..wire::CreateAgentRequest::default()
             },
             None,
@@ -1507,8 +1498,7 @@ async fn a_signed_out_acp_agent_waits_for_a_sign_in_and_the_entry_follows() {
         .await
         .expect("the agent starts");
     let key = store::AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
-    let row_holds = |what: &'static str,
-                     holds: fn(&store::AgentRow, &wire::AcpSnapshot) -> bool| {
+    let row_holds = |what: &'static str, holds: fn(&store::AgentRow, &wire::Snapshot) -> bool| {
         let key = key.clone();
         let runtime = runtime.clone();
         async move {
@@ -1521,16 +1511,12 @@ async fn a_signed_out_acp_agent_waits_for_a_sign_in_and_the_entry_follows() {
                         .await
                         .unwrap()
                         .ok_or("no row")?;
-                    let snapshot = row
-                        .snapshot
-                        .as_ref()
-                        .and_then(|snapshot| {
-                            wire::AcpSnapshot::decode(snapshot.body.as_slice()).ok()
-                        })
-                        .unwrap_or_default();
+                    let snapshot = row.snapshot.clone().unwrap_or_default();
                     holds(&row, &snapshot).then_some(()).ok_or(format!(
-                        "phase {} lifecycle {} sign-in {:?}",
-                        row.phase, row.lifecycle, snapshot.sign_in
+                        "phase {:?} lifecycle {} sign-in {:?}",
+                        row.phase(),
+                        row.lifecycle,
+                        snapshot.sign_in
                     ))
                 }
             })
@@ -1538,9 +1524,9 @@ async fn a_signed_out_acp_agent_waits_for_a_sign_in_and_the_entry_follows() {
             .unwrap();
         }
     };
-    let signed_out = |row: &store::AgentRow, snapshot: &wire::AcpSnapshot| {
+    let signed_out = |row: &store::AgentRow, snapshot: &wire::Snapshot| {
         row.lifecycle == wire::Lifecycle::Live as i32
-            && row.phase == wire::Phase::Idle as i32
+            && row.phase() == wire::Phase::Idle
             && snapshot.sign_in.as_ref().map(wire::SignIn::state)
                 == Some(wire::SignInState::SignedOut)
     };
@@ -1592,15 +1578,12 @@ async fn a_signed_out_acp_agent_waits_for_a_sign_in_and_the_entry_follows() {
     // Signed in now: the next prompt opens the session, and both run.
     std::fs::write(&signed_in, "").unwrap();
     prompt("Second question.").await;
-    let answered = |row: &store::AgentRow, snapshot: &wire::AcpSnapshot| {
+    let answered = |row: &store::AgentRow, snapshot: &wire::Snapshot| {
         row.lifecycle == wire::Lifecycle::Live as i32
-            && row.phase == wire::Phase::Idle as i32
+            && row.phase() == wire::Phase::Idle
             && snapshot.sign_in.as_ref().map(wire::SignIn::state)
                 == Some(wire::SignInState::SignedIn)
-            && row
-                .snapshot
-                .as_ref()
-                .is_some_and(|snapshot| snapshot.queue.is_empty())
+            && snapshot.queue.is_empty()
     };
     row_holds("the session open and the queue drained", answered).await;
     let said = {

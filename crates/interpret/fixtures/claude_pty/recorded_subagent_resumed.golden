@@ -1,64 +1,67 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot capabilities switches_back attachable resumable sends_now images files passes_unknown_commands forks model=command:/model effort=command:/effort permission=step mode=-
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue 9d924e4e models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue 9d924e4e
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1794788313295 text="" BOUNDARY_KIND_STARTED
-snapshot settings model=claude-haiku-5-5 effort=? permission=? level=?
-snapshot IDLE queue=[] working_on=- at=1794788313295 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot settings model=claude-haiku-5-5 effort=? permission=? level=? mode=?
+snapshot IDLE queue=[] working_on=- at=1794788313295 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
-snapshot settings model=claude-haiku-5-5 effort=? permission=default level=ask
-snapshot IDLE queue=[] working_on=- at=1794788313887 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot settings model=claude-haiku-5-5 effort=? permission=default level=ask mode=?
+snapshot IDLE queue=[] working_on=- at=1794788313887 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 14 recorded 12: fact Transcript type=user uuid=bf77b8c2-3dd0-4951-b013-0d6921475c13
 item bf77b8c2-3dd0-4951-b013-0d6921475c13 prompt final at=1794788314098 text="Launch the `sleeper` subagent in the background, then reply with exactly LAUNCHED and do nothing else."
-snapshot WORKING queue=[] working_on=- at=1794788314098 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1794788314098 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 43 recorded 41: fact Hook hook_event_name=SubagentStart
 effect follow subagent a5f812a60e6bd85c2
 ## 48 recorded 46: fact Transcript type=assistant uuid=943910c9-050a-4598-9ce7-72f576da51f3
 item toolu_01V3Dp6MG6WdWkE9pFBV3m2S tool final at=1794788315934 text="" Agent TOOL_STATE_RUNNING started=1794788315934 input=subagent:"Run sleeper in background"
-snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask
-snapshot WORKING queue=[] working_on=- at=1794788315821 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36012/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask mode=?
+snapshot WORKING queue=[] working_on=- at=1794788315821 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=? asks=[] context=36012/? tasks=? active=[] usage=? servers=[]
 ## 50 recorded 48: fact Transcript type=user uuid=b3748c4b-06ed-4b83-b830-055c72fa2733
 item toolu_01V3Dp6MG6WdWkE9pFBV3m2S tool final at=1794788315934 text="" Agent TOOL_STATE_RUNNING background started=1794788315934 input=subagent:"Run sleeper in background"
 ## 54 recorded 52: fact Agent type=subagent_meta
 item toolu_01V3Dp6MG6WdWkE9pFBV3m2S tool final at=1794788315934 text="" Agent TOOL_STATE_RUNNING background opens=sub-c11f8550 started=1794788315934 input=subagent:"Run sleeper in background"
 agent sub-c11f8550 start child=a5f812a60e6bd85c2 call=host/toolu_01V3Dp6MG6WdWkE9pFBV3m2S title="Run sleeper in background"
-agent sub-c11f8550 snapshot WORKING queue=[] working_on=- at=1794788315838 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+agent sub-c11f8550 snapshot capabilities model=- effort=- permission=- mode=-
+agent sub-c11f8550 snapshot WORKING queue=[] working_on=- at=1794788315838 conversation=? model_name=? sign_in=? background=[] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 55 recorded 53: fact SubagentTranscript type=user uuid=9b32758b-7f77-44c6-bf15-ae0d85364381
 agent sub-c11f8550 item 9b32758b-7f77-44c6-bf15-ae0d85364381 prompt final at=1794788315968 text="Wait a long time, then report."
 ## 64 recorded 62: fact Hook hook_event_name=MessageDisplay
 item stream:b3b26c9f-f213-482f-97d8-2aae1f659a21 message open at=1794788316818 text="LAUNCHED"
 ## 66 recorded 64: fact Hook hook_event_name=Stop
-snapshot WORKING queue=[] working_on=- at=1794788316822 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36012/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794788316822 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=36012/? tasks=? active=[] usage=? servers=[]
 ## 70 recorded 68: fact Transcript type=assistant uuid=01e3f810-deee-44bd-875f-49d9318013d2
 item stream:b3b26c9f-f213-482f-97d8-2aae1f659a21 message final at=1794788317054 text="LAUNCHED"
-snapshot WORKING queue=[] working_on=- at=1794788316930 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36570/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794788316930 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=36570/? tasks=? active=[] usage=? servers=[]
 ## 72 recorded 70: fact Transcript type=system subtype=turn_duration uuid=ec785af9-3c3a-4c78-98a6-8277de5c35fa
 item turn:1 turn final at=1794788317101 text="" #1 TURN_OUTCOME_COMPLETED started=1794788314079
 snapshot said "LAUNCHED"
-snapshot IDLE queue=[] working_on=- at=1794788316930 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36570/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1794788316930 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=36570/? tasks=? active=[] usage=? servers=[]
 turn_end 1 last=stream:b3b26c9f-f213-482f-97d8-2aae1f659a21
 ## 78 recorded 76: fact SubagentTranscript type=assistant uuid=87304e17-6656-454f-937a-44edc37d9c98
 agent sub-c11f8550 item toolu_01Kks5wRbwYKnL9rRWJsb53y tool final at=1794788317725 text="" Bash TOOL_STATE_RUNNING input=shell:"python3 -c 'import select; select.select([], [], [], 45)'; e…"
-agent sub-c11f8550 snapshot WORKING queue=[] working_on=- at=1794788317579 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+agent sub-c11f8550 snapshot settings model=claude-haiku-5-5 effort=? permission=? level=? mode=?
+agent sub-c11f8550 snapshot WORKING queue=[] working_on=- at=1794788317579 conversation=? model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 87 recorded 85: fact SubagentTranscript type=user uuid=5ff1c805-8aa2-44f3-b90d-524cd2203896
 agent sub-c11f8550 item toolu_01Kks5wRbwYKnL9rRWJsb53y tool final at=1794788317725 text="" Bash TOOL_STATE_FAILED ended=1794788322544 input=shell:"python3 -c 'import select; select.select([], [], [], 45)'; e…" out="Exit code 137"
 ## 89 recorded 87: fact Hook hook_event_name=SessionStart
 item boundary:2 boundary final at=1794788388863 text="" BOUNDARY_KIND_RESUMED
 ## 101 recorded 99: fact Transcript type=user uuid=bf77b8c2-3dd0-4951-b013-0d6921475c13
 item bf77b8c2-3dd0-4951-b013-0d6921475c13 prompt final at=1794788314098 text="Launch the `sleeper` subagent in the background, then reply with exactly LAUNCHED and do nothing else."
-snapshot WORKING queue=[] working_on=- at=1794788445133 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36570/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794788445133 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=36570/? tasks=? active=[] usage=? servers=[]
 ## 141 recorded 139: fact Transcript type=assistant uuid=943910c9-050a-4598-9ce7-72f576da51f3
-snapshot WORKING queue=[] working_on=- at=1794788632592 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36012/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794788632592 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=36012/? tasks=? active=[] usage=? servers=[]
 ## 161 recorded 159: fact Transcript type=assistant uuid=01e3f810-deee-44bd-875f-49d9318013d2
 item 01e3f810-deee-44bd-875f-49d9318013d2 message final at=1794788317054 text="LAUNCHED"
-snapshot WORKING queue=[] working_on=- at=1794788726233 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36570/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794788726233 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=36570/? tasks=? active=[] usage=? servers=[]
 ## 165 recorded 163: fact Transcript type=system subtype=turn_duration uuid=ec785af9-3c3a-4c78-98a6-8277de5c35fa
 item turn:2 turn final at=1794788317101 text="" #2 TURN_OUTCOME_COMPLETED started=1794788314079
-snapshot IDLE queue=[] working_on=- at=1794788744951 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36570/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1794788744951 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=36570/? tasks=? active=[] usage=? servers=[]
 turn_end 2 last=01e3f810-deee-44bd-875f-49d9318013d2
 ## 173 recorded 171: fact SubagentTranscript type=user uuid=9b32758b-7f77-44c6-bf15-ae0d85364381
 agent sub-c11f8550 item 9b32758b-7f77-44c6-bf15-ae0d85364381 prompt final at=1794788315968 text="Wait a long time, then report."
@@ -69,7 +72,7 @@ agent sub-c11f8550 item toolu_01Kks5wRbwYKnL9rRWJsb53y tool final at=17947883177
 ## 183 recorded 181: fact Transcript type=queue-operation
 effect drain subagent a5f812a60e6bd85c2
 item toolu_01V3Dp6MG6WdWkE9pFBV3m2S tool final at=1794788315934 text="" Agent TOOL_STATE_CANCELLED background opens=sub-c11f8550 started=1794788315934 ended=1794789006530 input=subagent:"Run sleeper in background" out="Background agent \"Run sleeper in background\" didn't finish b…"
-snapshot WORKING queue=[] working_on=- at=1794789006530 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36570/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794789006530 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=36570/? tasks=? active=[] usage=? servers=[]
 ## 184 recorded 182: tick 1794789015806
 agent sub-c11f8550 end STOPPED
 ## 193 recorded 191: fact Transcript type=user uuid=d4ebfc1a-57d1-4121-ac45-3513cc884f4d
@@ -78,11 +81,11 @@ item d4ebfc1a-57d1-4121-ac45-3513cc884f4d prompt final at=1794788329513 text="Is
 item stream:3755387b-310b-4fa5-aeb7-357431714223 message open at=1794789252999 text="No, the `sleeper` agent appears to have stopped: its completion notice says it did not finish before the previous session ended."
 ## 205 recorded 203: fact Transcript type=assistant uuid=fc78eaeb-9dff-4f8f-9d90-9d3a94166ee9
 item fc78eaeb-9dff-4f8f-9d90-9d3a94166ee9 thinking final at=1794788331484 text=""
-snapshot WORKING queue=[] working_on=- at=1794789306125 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=37254/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794789306125 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=37254/? tasks=? active=[] usage=? servers=[]
 ## 207 recorded 205: fact Transcript type=assistant uuid=c713fc32-9165-4718-a96e-0875d5a2dea9
 item stream:3755387b-310b-4fa5-aeb7-357431714223 message final at=1794788331629 text="No, the `sleeper` agent appears to have stopped: its completion notice says it did not finish before the previous session ended."
 ## 211 recorded 209: fact Transcript type=system subtype=turn_duration uuid=2cf195bf-3a9c-4483-99c3-8aa951deb685
 item turn:3 turn final at=1794788331668 text="" #3 TURN_OUTCOME_COMPLETED started=1794788329503
 snapshot said "No, the sleeper agent appears to have stopped: its completion notice says it did not finish before the previous session ended."
-snapshot IDLE queue=[] working_on=- at=1794789325759 asks=[] session=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=37254/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1794789325759 conversation=4eaf5bb7-95c7-456a-8256-59bd1bfebc3e model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=37254/? tasks=? active=[] usage=? servers=[]
 turn_end 3 last=stream:3755387b-310b-4fa5-aeb7-357431714223

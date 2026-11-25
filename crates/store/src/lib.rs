@@ -71,8 +71,8 @@ impl AgentKey {
     }
 }
 
-/// The agents row. Kind, lifecycle, exit cause and phase are kept as their
-/// wire integers so a value from a newer peer is stored and served, never
+/// The agents row. Kind, lifecycle and exit cause are kept as their wire
+/// integers so a value from a newer peer is stored and served, never
 /// refused.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AgentRow {
@@ -86,13 +86,10 @@ pub struct AgentRow {
     pub exit_cause: i32,
     /// The exit cause's own words, when it has any.
     pub exit_detail: Option<String>,
-    /// Copied from the snapshot envelope at commit.
-    pub phase: i32,
-    pub working_on: Option<String>,
-    /// Copied from the snapshot envelope at commit: when the phase began.
-    pub phase_since_ms: Option<i64>,
-    /// Copied from the snapshot envelope at commit.
-    pub git: Option<wire::Git>,
+    /// Copied from the snapshot envelope at commit, and for a replica from
+    /// its inventory row: phase, git facts, settings and the rest, all but
+    /// the title, which is kept apart because a rename clears it.
+    pub status: wire::AgentStatus,
     /// The newest snapshot, which carries its own revision.
     pub snapshot: Option<Snapshot>,
     /// Own rows: the journal offset committed through.
@@ -119,10 +116,6 @@ pub struct AgentRow {
     /// one, its turn open or ended without being its last, tells its parent
     /// it failed: every child incarnation ends with exactly one last report.
     pub owes_report: bool,
-    /// Copied from the snapshot envelope at commit, and for a replica from
-    /// its inventory row: how many jobs the provider runs in the
-    /// background.
-    pub background_jobs: u32,
     /// Live agents below this one. An own row's is counted by its daemon
     /// over the rows it holds ([`Sqlite::live_descendants`]); a replica's is
     /// what its origin counted.
@@ -134,16 +127,12 @@ pub struct AgentRow {
     pub filed_at_ms: i64,
     /// Copied from the snapshot envelope at commit; a rename clears it.
     pub title: Option<String>,
-    /// The line a fleet row quotes from the agent's newest reply, copied
-    /// from the snapshot envelope; a replica takes its origin's.
-    pub last_said: Option<String>,
     /// A person or a parent chose the name, so the provider does not title
     /// the agent.
     pub name_given: bool,
     /// Set on a provider subagent, an agent its parent's provider started
     /// inside the parent's own process; None on an agent amux started, and
-    /// on every row written before the column existed. The registry owns
-    /// it; a replica copies its origin's.
+    /// The registry owns it; a replica copies its origin's.
     pub native: Option<wire::NativeChild>,
     /// What the row says to everyone under each experiment, by version
     /// (`workspaces/1`), as the wire's `Agent.experimental` carries it. The
@@ -153,16 +142,9 @@ pub struct AgentRow {
     /// [`Sqlite::set_experimental`], and a registry write leaves it.
     pub experimental: std::collections::BTreeMap<String, Vec<u8>>,
     /// Which agent program the agent runs, by its provider id (`claude`,
-    /// `codex`, an ACP agent's). Empty on a row written before the store
-    /// kept it, and on a replica whose origin did not say, where the kind
-    /// names the program ([`wire::agents::provider_or_implied`]). The
-    /// registry owns it; a replica copies its origin's.
+    /// `codex`, an ACP agent's). The registry owns it; a replica copies its
+    /// origin's.
     pub provider: String,
-    /// How the agent runs: its model, effort and permission. Copied from
-    /// the snapshot envelope at commit, and for a replica from its
-    /// inventory row; None while unknown and on a row written before the
-    /// store kept it.
-    pub settings: Option<wire::AgentSettings>,
     /// For an agent with a parent, the newest incarnation of the parent the
     /// agent's host heard from the parent itself: stated on the create, and
     /// on each message, input or resume the parent sent since. Its reports
@@ -197,10 +179,10 @@ impl AgentRow {
             lifecycle: wire::Lifecycle::Live as i32,
             exit_cause: 0,
             exit_detail: None,
-            phase: wire::Phase::Starting as i32,
-            working_on: None,
-            phase_since_ms: None,
-            git: None,
+            status: wire::AgentStatus {
+                phase: wire::Phase::Starting as i32,
+                ..wire::AgentStatus::default()
+            },
             snapshot: None,
             ingest_cursor: 0,
             next_revision: 1,
@@ -211,28 +193,21 @@ impl AgentRow {
             created_at_ms: 0,
             incarnation: 1,
             owes_report: true,
-            background_jobs: 0,
             descendants: 0,
             filing: wire::Filing::Open as i32,
             filed_at_ms: 0,
             title: None,
-            last_said: None,
             name_given: false,
             native: None,
             experimental: std::collections::BTreeMap::new(),
             provider: String::new(),
-            settings: None,
             parent_incarnation: 0,
         }
     }
 
-    /// The agent's provider id, derived from its kind on a row that names
-    /// none.
-    pub fn provider_id(&self) -> &str {
-        wire::agents::provider_or_implied(
-            &self.provider,
-            wire::Kind::try_from(self.kind).unwrap_or_default(),
-        )
+    /// The agent's phase, as its newest snapshot said it.
+    pub fn phase(&self) -> wire::Phase {
+        self.status.phase()
     }
 }
 

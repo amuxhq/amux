@@ -364,19 +364,15 @@ fn is_ask(notice: &wire::Notice) -> bool {
 }
 
 fn copy_envelope(row: &mut AgentRow, snapshot: &Snapshot) {
-    row.phase = snapshot.phase;
-    row.working_on = snapshot.working_on.clone();
+    let mut status = snapshot.status().clone();
+    let title = status.title.take();
+    row.status = status;
     // A provider subagent's title is the registry's: the provider's
     // description when its row was made, or none once a person renamed it.
     // Its host's interpreter has no say in it, here or on a replica.
     if row.native.is_none() {
-        row.title = snapshot.title.clone();
+        row.title = title;
     }
-    row.last_said = snapshot.last_said.clone();
-    row.settings = snapshot.settings.as_deref().cloned();
-    row.phase_since_ms = Some(snapshot.phase_since_ms);
-    row.git = snapshot.git.clone();
-    row.background_jobs = snapshot.background_jobs;
     row.snapshot = Some(snapshot.clone());
 }
 
@@ -670,9 +666,9 @@ impl Sqlite {
             let Some(mut row) = rows.agent(agent)? else {
                 return Ok(false);
             };
-            row.phase = phase as i32;
-            row.phase_since_ms = Some(since_ms);
-            rows.upsert_agent(&row, &rows::update_of(&["phase", "phase_since_ms"]))?;
+            row.status.phase = phase as i32;
+            row.status.phase_since_ms = since_ms;
+            rows.upsert_agent(&row, &rows::update_of(&["status"]))?;
             Ok(true)
         })
     }
@@ -694,8 +690,8 @@ impl Sqlite {
             let Some(mut row) = rows.agent(agent)? else {
                 return Ok(false);
             };
-            row.git = git;
-            rows.upsert_agent(&row, &rows::update_of(&["git"]))?;
+            row.status.git = git;
+            rows.upsert_agent(&row, &rows::update_of(&["status"]))?;
             Ok(true)
         })
     }
@@ -1115,8 +1111,10 @@ fn commit(
             row.exit_detail = end.detail.clone();
         }
         if let Some(snapshot) = &step.snapshot
-            && (snapshot.phase == wire::Phase::Working as i32
-                || snapshot.phase == wire::Phase::NeedsYou as i32)
+            && matches!(
+                snapshot.phase(),
+                wire::Phase::Working | wire::Phase::NeedsYou
+            )
         {
             row.owes_report = true;
         }
@@ -1306,7 +1304,6 @@ fn absorb(rows: &Rows<'_>, agent: &AgentKey, what: Absorb) -> Result<Absorbed, S
 
 #[cfg(test)]
 mod tests {
-    use rusqlite::params;
 
     use super::*;
 
@@ -1417,44 +1414,6 @@ mod tests {
             )
             .unwrap();
         assert_eq!(tables, 0);
-    }
-
-    /// A row the first release's schema held, as that release wrote it,
-    /// reads as an agent amux started: the column marking a provider
-    /// subagent is NULL on it. The indexes the subagents' rows need are
-    /// made beside it.
-    #[test]
-    fn a_row_from_before_provider_subagents_reads_as_no_subagent() {
-        let mut conn = Connection::open_in_memory().unwrap();
-        migrate(&mut conn, "store", &MIGRATIONS[..1]).unwrap();
-        conn.execute(
-            "INSERT INTO agents (origin_host, agent_id, kind, name, cwd, lifecycle, phase, \
-             created_at_ms, incarnation) VALUES (?1, ?2, 2, 'old', '/', 1, 1, 0, 1)",
-            params![b"own".as_slice(), b"agent".as_slice()],
-        )
-        .unwrap();
-
-        let store = Sqlite::with_connection(conn, "store", b"own".to_vec()).unwrap();
-
-        let key = AgentKey::new(b"own".to_vec(), b"agent".to_vec());
-        let row = store.agent(&key).unwrap().expect("the old row is held");
-        assert_eq!(row.name, "old");
-        assert_eq!(row.native, None);
-        let indexes: Vec<String> = store
-            .connection()
-            .prepare(
-                "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'agents' \
-                 AND sql IS NOT NULL ORDER BY name",
-            )
-            .unwrap()
-            .query_map([], |row| row.get(0))
-            .unwrap()
-            .collect::<Result<_, _>>()
-            .unwrap();
-        assert_eq!(
-            indexes,
-            ["agents_by_id", "agents_by_name", "agents_by_parent"]
-        );
     }
 
     const OWN_HOST: &[u8] = b"own-host";

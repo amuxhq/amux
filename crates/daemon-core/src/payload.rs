@@ -15,7 +15,7 @@ use crate::ids::{AgentId, HostId};
 
 /// A link control frame: the hello, its acknowledgement, a neighbor coming
 /// up or going down.
-pub type LinkFrame = wire::Message;
+pub type LinkFrame = wire::LinkMessage;
 /// Why a link closed, as the link protocol states it.
 pub type LinkCloseReason = wire::LinkCloseReason;
 /// One message of a pairing conversation.

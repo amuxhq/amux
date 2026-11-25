@@ -96,7 +96,7 @@ async fn an_acp_agent_handshakes_and_runs_a_turn() {
     let session = agent.provider_session();
     assert!(!session.is_empty());
     assert_eq!(
-        agent.log().acp().session_id.as_deref(),
+        agent.log().snapshot_envelope().conversation.as_deref(),
         Some(session.as_str())
     );
     assert!(!agent.dir.join(agent::PTY_SOCK).exists());
@@ -506,7 +506,7 @@ async fn a_signed_out_agent_waits_for_a_sign_in() {
     .await;
     let mut daemon = agent.dial().await;
     agent.ready().await;
-    let sign_in = agent.log().acp().sign_in.unwrap_or_default();
+    let sign_in = agent.log().snapshot_envelope().sign_in.unwrap_or_default();
     assert_eq!(sign_in.state(), wire::SignInState::SignedOut);
 
     daemon.prompt(b"p1", "first").await;
@@ -531,7 +531,7 @@ async fn a_signed_out_agent_waits_for_a_sign_in() {
     let prompts = sent(&agent, "session/prompt");
     assert_eq!(prompts[0]["params"]["prompt"][0]["text"], "first");
     assert_eq!(prompts[1]["params"]["prompt"][0]["text"], "second");
-    let sign_in = agent.log().acp().sign_in.unwrap_or_default();
+    let sign_in = agent.log().snapshot_envelope().sign_in.unwrap_or_default();
     assert_eq!(sign_in.state(), wire::SignInState::SignedIn);
     daemon.stop().await;
     assert_eq!(agent.exit().await, ExitCause::Stopped);
@@ -648,7 +648,7 @@ async fn amuxs_own_tools_are_allowed_without_asking() {
         vec![
             Step::ToolServer(ToolServerCall {
                 server: "amux".into(),
-                tool: "status".into(),
+                tool: "set_working_on".into(),
                 input: Some(serde_json::json!({"working_on": "testing"})),
                 ask: Some(Offer::Once),
                 outcome: Outcome {

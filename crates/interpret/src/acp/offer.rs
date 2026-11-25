@@ -7,7 +7,7 @@
 use acp_protocol::agent::InitializeResponse;
 use acp_protocol::update::AvailableCommand;
 use serde::Deserialize;
-use wire::{AcpOffer, AcpReopen, AcpSignInMethod, Catalogue, NewAgentDefaults, OfferedModel};
+use wire::{AcpOffer, AcpReopen, AcpSignInMethod, AgentSettings, Catalogue, OfferedModel};
 
 use super::{ModelListing, Printed, Reopens, quirks};
 
@@ -194,10 +194,10 @@ fn session_less(meta: Meta) -> Catalogue {
             .and_then(|model| model.default_effort.clone())
     });
     Catalogue {
-        new_agent: Some(NewAgentDefaults {
+        new_agent: Some(AgentSettings {
             model: current.filter(|current| models.iter().any(|model| &model.value == current)),
             effort,
-            permission: None,
+            ..AgentSettings::default()
         }),
         models,
         commands: meta
@@ -221,10 +221,10 @@ fn session_less(meta: Meta) -> Catalogue {
 
 /// What agent `agent` offers by what its listing command printed
 /// ([`ModelListing::Command`]): its models, read as the agent prints them
-/// ([`Printed`]), and the modes amux knows the agent has, at their levels,
-/// with none called normal, since which one a session starts in is the
-/// person's own setting. A line that is not a model (a warning the program
-/// printed) is passed over.
+/// ([`Printed`]), and the modes amux knows the agent has, which are its
+/// permissions, at their levels, with none called normal, since which one a
+/// session starts in is the person's own setting. A line that is not a
+/// model (a warning the program printed) is passed over.
 pub fn listed_catalogue(agent: &str, printed: &str) -> Catalogue {
     let models = match quirks(agent).lists_models {
         ModelListing::Command {
@@ -241,19 +241,13 @@ pub fn listed_catalogue(agent: &str, printed: &str) -> Catalogue {
             })
             .collect(),
     };
-    let modes = wire::levels::acp_modes(agent)
+    let permissions = wire::levels::acp_modes(agent)
         .iter()
-        .map(|(value, level)| wire::OfferedMode {
-            value: (*value).to_owned(),
-            display_name: (*value).to_owned(),
-            normal: false,
-            settable: true,
-            level: *level as i32,
-        })
+        .map(|(value, _)| super::offered_permission(agent, value, value, false))
         .collect();
     Catalogue {
         models,
-        modes,
+        permissions,
         ..Default::default()
     }
 }

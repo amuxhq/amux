@@ -136,7 +136,7 @@ impl Install {
         &self,
         scenario: Scenario,
         command: &str,
-        answer: impl Fn(&wire::PermissionAsk) -> Result<wire::permission_answer::Of, String>,
+        answer: impl Fn(&wire::ClaudePermissionAsk) -> Result<wire::permission_answer::Of, String>,
         decided: wire::DecisionOutcome,
     ) -> Result<Verdict, String> {
         let (agent, follow) = match self
@@ -159,7 +159,7 @@ impl Install {
             "the command to be decided and the turn to end",
             |ask| match ask {
                 ui_state::OpenAsk::Claude(claude) => match &claude.body {
-                    Some(wire::ask::Body::Permission(permission)) => {
+                    Some(wire::claude_ask::Body::Permission(permission)) => {
                         asked += 1;
                         Ok(Answer::Claude(claude_answer::Of::Permission(
                             wire::PermissionAnswer {

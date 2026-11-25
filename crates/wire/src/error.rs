@@ -4,13 +4,18 @@
 //! details as Any: a `google.rpc.ErrorInfo` naming one of amux's
 //! [`ErrorReason`]s.
 
-use crate::ErrorReason;
 use crate::rpc::{Code, ErrorInfo, Status};
+use crate::{ErrorReason, Refusal};
 
 /// The domain of every `ErrorInfo` amux writes.
 const DOMAIN: &str = "amux.sh";
 
 const REASON_PREFIX: &str = "ERROR_REASON_";
+
+const REFUSAL_PREFIX: &str = "REFUSAL_";
+
+/// The `ErrorInfo` metadata key naming the refusal of a REFUSED error.
+const REFUSAL_KEY: &str = "refusal";
 
 impl Status {
     pub fn new(code: Code, message: impl Into<String>) -> Status {
@@ -26,7 +31,9 @@ impl Status {
     pub fn because(reason: ErrorReason, message: impl Into<String>) -> Status {
         let code = match reason {
             ErrorReason::Unspecified => Code::Unknown,
-            ErrorReason::HostUnreachable | ErrorReason::VersionMismatch => Code::FailedPrecondition,
+            ErrorReason::HostUnreachable | ErrorReason::VersionMismatch | ErrorReason::Refused => {
+                Code::FailedPrecondition
+            }
             ErrorReason::PaymentRequired => Code::PermissionDenied,
         };
         let info = ErrorInfo {
@@ -38,6 +45,40 @@ impl Status {
             metadata: Default::default(),
         };
         Status::new(code, message).with_detail(&info)
+    }
+
+    /// An agent's refusal of an input or a message, relayed as an error:
+    /// FAILED_PRECONDITION, with an `ErrorInfo` of reason REFUSED naming
+    /// the refusal, so a caller reads which without parsing words.
+    pub fn refused(refusal: Refusal, message: impl Into<String>) -> Status {
+        let info = ErrorInfo {
+            reason: ErrorReason::Refused
+                .as_str_name()
+                .trim_start_matches(REASON_PREFIX)
+                .to_owned(),
+            domain: DOMAIN.to_owned(),
+            metadata: [(
+                REFUSAL_KEY.to_owned(),
+                refusal
+                    .as_str_name()
+                    .trim_start_matches(REFUSAL_PREFIX)
+                    .to_owned(),
+            )]
+            .into(),
+        };
+        Status::new(Code::FailedPrecondition, message).with_detail(&info)
+    }
+
+    /// The refusal a REFUSED error names.
+    pub fn refusal(&self) -> Option<Refusal> {
+        let info = self.detail::<ErrorInfo>()?;
+        if info.domain != DOMAIN || self.reason() != Some(ErrorReason::Refused) {
+            return None;
+        }
+        Refusal::from_str_name(&format!(
+            "{REFUSAL_PREFIX}{}",
+            info.metadata.get(REFUSAL_KEY)?
+        ))
     }
 
     /// The status with `detail` added to its details.
@@ -73,6 +114,15 @@ impl Status {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refusal_rides_as_error_info_naming_it() {
+        let status = Status::refused(Refusal::AgentClosed, "closed");
+        assert_eq!(status.code(), Code::FailedPrecondition);
+        assert_eq!(status.reason(), Some(ErrorReason::Refused));
+        assert_eq!(status.refusal(), Some(Refusal::AgentClosed));
+        assert_eq!(Status::new(Code::FailedPrecondition, "x").refusal(), None);
+    }
 
     #[test]
     fn a_reason_rides_as_error_info_on_its_code() {

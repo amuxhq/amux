@@ -239,8 +239,8 @@ pub enum RegistryError {
     Ending(AgentId),
     #[error("an agent id is 16 bytes, not {0}")]
     BadId(usize),
-    #[error("a new agent names its kind")]
-    NoKind,
+    #[error("a new agent names its provider")]
+    NoProvider,
     #[error("the working directory {0} is not a directory on this host")]
     BadCwd(String),
     #[error(
@@ -343,13 +343,7 @@ fn kind_not_run_words(host: &str, kind: Kind, runs_none: bool) -> String {
         Kind::ClaudePty => "terminal Claude",
         Kind::ClaudeSdk => "headless Claude",
         Kind::Codex => "Codex",
-        // A host that runs Claude and Codex but none of these is one built
-        // before them.
-        Kind::Acp => {
-            return format!(
-                "{host} runs no agents but Claude and Codex; update amux there to run others"
-            );
-        }
+        Kind::Acp => "ACP",
         Kind::Unspecified => "these",
     };
     format!("{host} does not run {kind} agents")
@@ -378,7 +372,7 @@ impl RegistryError {
                 ErrorCode::FailedPrecondition
             }
             Self::BadId(_)
-            | Self::NoKind
+            | Self::NoProvider
             | Self::BadCwd(_)
             | Self::NoFarCwd(_)
             | Self::BadName(_)
@@ -883,6 +877,11 @@ impl ProfileRuntime {
         &self.onboarding
     }
 
+    /// The person's home, where Claude Code's and Codex's history is read.
+    pub(crate) fn home(&self) -> Option<&Path> {
+        self.pins.home()
+    }
+
     pub fn analytics(&self) -> &analytics::Analytics {
         &self.analytics
     }
@@ -1145,15 +1144,16 @@ impl ProfileRuntime {
                 (None, Some(parent))
             }
         };
-        if let Some(agent) = &request.agent
-            && let Some(edge) = self.edge()
-        {
-            self.runs_kind(&edge.capabilities(), &edge.host_name(), agent.kind())?;
+        // What an agent may not name is refused as its own, before whether
+        // this host runs what it named.
+        if matches!(caller, Caller::Agent { .. }) {
+            crate::delegation::only_picks(&request)?;
         }
+        let kind = self.provider_kind(&request.provider, request.kind())?;
         let mut request = request;
         // An ACP agent's model as its session names it, a person's start
         // and an agent's alike.
-        self.name_acp_model(&mut request).await?;
+        self.name_acp_model(kind, &mut request).await?;
         // What an agent asked for its subagent, settled against its own
         // row and this host's offers ([`crate::delegation`]).
         let delegated = match caller {
@@ -1165,23 +1165,38 @@ impl ProfileRuntime {
                 None
             }
         };
-        let Some(agent) = request.agent else {
-            return Err(RegistryError::NoKind);
-        };
-        let kind = agent.kind();
+        if !request.args.is_empty() && kind == Kind::Acp {
+            return Err(RegistryError::ForAgents(
+                "an ACP agent takes no arguments here: its command and arguments are in the \
+                 host's config, under [agents.<id>]",
+            ));
+        }
+        let provider = request.provider.clone();
+        let asked = request.settings().clone();
         // A subagent's model and effort are its parent's picks, never kept
         // as the person's.
         let picked = match delegated {
             Some(_) => None,
-            None => {
-                spec::picked_at_creation(&agent, request.remember_model, request.remember_effort)
-            }
+            None => spec::picked_at_creation(
+                kind,
+                &provider,
+                &asked,
+                request.remember_model,
+                request.remember_effort,
+            ),
         };
         // The host's copy of what the provider offers, which says which
         // efforts a remembered model takes.
-        let offered = self.offers().offered(agent.provider_id());
-        let filled = spec::with_remembered(&agent, &self.launch().new_agent, offered.as_ref());
-        let resolved = spec::resolve(&filled);
+        let offered = self.offers().offered(&provider);
+        let filled = spec::with_remembered(
+            kind,
+            &provider,
+            &asked,
+            &request.args,
+            &self.launch().new_agent,
+            offered.as_ref(),
+        );
+        let resolved = spec::resolve(kind, &provider, &filled, &request.args);
         let bootstrap = request
             .initial_prompt
             .map(spec::prompt_bootstrap)
@@ -1274,12 +1289,12 @@ impl ProfileRuntime {
         // what the start resolved to; the row takes the provider's own
         // word from its first snapshot.
         if let Some((fitted, _)) = delegated
-            && created.settings.is_none()
+            && created.status().settings.is_none()
         {
             let mut settings = fitted.settings;
-            settings.model = filled_model(&filled).or(settings.model);
-            settings.effort = filled_effort(&filled).or(settings.effort);
-            created.settings = Some(Box::new(settings));
+            settings.model = filled.model.clone().or(settings.model);
+            settings.effort = filled.effort.clone().or(settings.effort);
+            created.status_mut().settings = Some(settings);
         }
         Ok(created)
     }
@@ -1405,21 +1420,50 @@ impl ProfileRuntime {
         let _ = answers.next().await;
     }
 
-    /// Refuses a kind `capabilities` do not list, in words naming `host`.
-    fn runs_kind(
-        &self,
-        capabilities: &wire::Capabilities,
-        host: &str,
-        kind: Kind,
-    ) -> Result<(), RegistryError> {
-        if capabilities.kinds.contains(&(kind as i32)) {
-            return Ok(());
+    /// The kind a new agent of `provider` runs as on this host: `asked`,
+    /// else the one this host starts the provider as. Refused for a
+    /// provider this host does not know and for a kind it does not run the
+    /// provider as, in words naming this host.
+    fn provider_kind(&self, provider: &str, asked: Kind) -> Result<Kind, RegistryError> {
+        let host = self
+            .edge()
+            .map_or_else(|| "this device".to_owned(), |edge| edge.host_name());
+        let runs: Vec<Kind> = self
+            .edge()
+            .map_or_else(crate::routing::local_kinds, |edge| edge.kinds().to_vec());
+        if runs.is_empty() {
+            return Err(RegistryError::KindNotRun {
+                host,
+                kind: asked,
+                runs_none: true,
+            });
         }
-        Err(RegistryError::KindNotRun {
-            host: host.to_owned(),
-            kind,
-            runs_none: capabilities.kinds.is_empty(),
-        })
+        if provider.is_empty() {
+            return Err(RegistryError::NoProvider);
+        }
+        let launch = self.launch();
+        // amux's own providers, then the ACP agents the config names, as
+        // the host's entry lists them.
+        let (default, kinds) = match provider {
+            wire::agents::CLAUDE => (launch.claude_kind, crate::offers::own_kinds(provider)),
+            wire::agents::CODEX => (Kind::Codex, crate::offers::own_kinds(provider)),
+            agent if launch.agents.iter().any(|program| program.id == agent) => {
+                (Kind::Acp, &[Kind::Acp][..])
+            }
+            agent => return Err(RegistryError::UnknownAgent(agent.to_owned())),
+        };
+        let kind = match asked {
+            Kind::Unspecified => default,
+            asked => asked,
+        };
+        if !kinds.contains(&kind) || !runs.contains(&kind) {
+            return Err(RegistryError::KindNotRun {
+                host,
+                kind,
+                runs_none: false,
+            });
+        }
+        Ok(kind)
     }
 
     /// Starts an exited agent's next incarnation, its queue seeded by
@@ -1462,13 +1506,13 @@ impl ProfileRuntime {
     }
 
     /// The agent's next spec, from its newest: the current configuration,
-    /// the settings its newest `snapshot` body says it last ran with, and
+    /// the settings its newest `snapshot` says it last ran with, and
     /// `bootstrap` to seed its queue. None when it has no spec.
     pub(crate) fn next_spec(
         &self,
         id: AgentId,
         bootstrap: Option<Bootstrap>,
-        snapshot: Option<&[u8]>,
+        snapshot: Option<&wire::Snapshot>,
     ) -> Result<Option<AgentSpec>, RegistryError> {
         let previous = match spec::newest(&self.agent_dir(id)) {
             Ok(previous) => previous,
@@ -1478,11 +1522,11 @@ impl ProfileRuntime {
         let Some(previous) = previous else {
             return Ok(None);
         };
-        if previous.kind() == Kind::Acp && !acp_reopens(snapshot) {
+        if !reopens(snapshot) {
             return Err(RegistryError::Unresumable(id));
         }
         let latest = last_settings(snapshot, previous.kind());
-        let resolved = spec::carry(&previous, latest);
+        let resolved = spec::carry(&previous, &latest);
         spec::build(
             &self.launch(),
             spec::Incarnation {
@@ -2421,22 +2465,20 @@ pub(crate) fn ms(ms: i64) -> Duration {
     Duration::from_millis(ms.max(0) as u64)
 }
 
-/// Whether an ACP agent's next process may start, as its newest snapshot
-/// `body` says. One with no snapshot or no conversation yet has nothing to
-/// lose and starts its first. One with a conversation starts only when its
-/// program's own `initialize` answer offered to resume or load it: a
-/// snapshot that does not say counts as cannot, so a fresh conversation is
+/// Whether an agent's next process may start, as its newest `snapshot`
+/// says. One with no snapshot or no conversation yet has nothing to lose
+/// and starts its first. One with a conversation starts only when its
+/// capabilities say a new process reopens it, so a fresh conversation is
 /// never started in place of the old one.
-fn acp_reopens(body: Option<&[u8]>) -> bool {
-    use prost::Message as _;
-    let Some(snapshot) = body.and_then(|body| wire::AcpSnapshot::decode(body).ok()) else {
+fn reopens(snapshot: Option<&wire::Snapshot>) -> bool {
+    let Some(snapshot) = snapshot else {
         return true;
     };
-    snapshot.session_id.is_none()
-        || matches!(
-            snapshot.reopen(),
-            wire::AcpReopen::Resume | wire::AcpReopen::Load
-        )
+    snapshot.conversation.as_deref().is_none_or(str::is_empty)
+        || snapshot
+            .capabilities
+            .as_ref()
+            .is_some_and(|capabilities| capabilities.resumable)
 }
 
 /// Refuses what only an agent starting a subagent asks: a person has no
@@ -2449,7 +2491,7 @@ fn person_picks(request: &wire::CreateAgentRequest) -> Result<(), RegistryError>
              leave fork unset",
         ));
     }
-    if request.permission_level() != wire::PermissionLevel::Unspecified {
+    if request.settings().permission_level() != wire::PermissionLevel::Unspecified {
         return Err(RegistryError::ForAgents(
             "permission_level is for an agent starting a subagent; a person names the \
              provider's own permission in the config",
@@ -2458,77 +2500,20 @@ fn person_picks(request: &wire::CreateAgentRequest) -> Result<(), RegistryError>
     Ok(())
 }
 
-/// The model a creation's config names, after the host's remembered picks.
-fn filled_model(agent: &wire::create_agent_request::Agent) -> Option<String> {
-    use wire::create_agent_request::Agent;
-    match agent {
-        Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => claude.model.clone(),
-        Agent::Codex(codex) => codex.model.clone(),
-        Agent::Acp(acp) => acp.model.clone(),
-    }
-}
-
-/// The effort a creation's config names, after the host's remembered picks.
-fn filled_effort(agent: &wire::create_agent_request::Agent) -> Option<String> {
-    use wire::create_agent_request::Agent;
-    match agent {
-        Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => claude.effort.clone(),
-        Agent::Codex(codex) => codex.effort.clone(),
-        Agent::Acp(acp) => acp.effort.clone(),
-    }
-}
-
-/// The provider's id for the conversation an agent's snapshot body says
-/// it runs: Claude's session, Codex's thread, an ACP agent's session.
-pub(crate) fn provider_session(body: &[u8], kind: Kind) -> Option<String> {
-    use prost::Message as _;
-    let session = match kind {
-        Kind::ClaudeSdk | Kind::ClaudePty => {
-            wire::ClaudeSnapshot::decode(body).ok()?.provider_session
-        }
-        Kind::Codex => wire::CodexSnapshot::decode(body).ok()?.thread_id,
-        Kind::Acp => wire::AcpSnapshot::decode(body).ok()?.session_id,
-        Kind::Unspecified => None,
-    };
-    session.filter(|session| !session.is_empty())
-}
-
 /// The model, permission, mode and effort an agent last ran with, as its
-/// newest snapshot's body says them; nothing for a setting it never said.
-fn last_settings(body: Option<&[u8]>, kind: Kind) -> spec::Settings {
-    use prost::Message as _;
-    let Some(body) = body else {
-        return spec::Settings::default();
-    };
-    match kind {
-        Kind::ClaudeSdk | Kind::ClaudePty => wire::ClaudeSnapshot::decode(body)
-            .map(|snapshot| spec::Settings {
-                model: snapshot.model,
-                permission: snapshot.permission,
-                mode: None,
-                effort: snapshot.effort,
-            })
-            .unwrap_or_default(),
-        Kind::Codex => wire::CodexSnapshot::decode(body)
-            .map(|snapshot| spec::Settings {
-                model: snapshot.model,
-                permission: snapshot.permission,
-                mode: snapshot.mode,
-                effort: snapshot.effort,
-            })
-            .unwrap_or_default(),
-        // An ACP agent's permission is its mode, whose default comes from
-        // the agent's own settings and is never carried over.
-        Kind::Acp => wire::AcpSnapshot::decode(body)
-            .map(|snapshot| spec::Settings {
-                model: snapshot.model,
-                permission: None,
-                mode: None,
-                effort: snapshot.effort,
-            })
-            .unwrap_or_default(),
-        Kind::Unspecified => spec::Settings::default(),
+/// newest snapshot says them; nothing for a setting it never said. An ACP
+/// agent's permission and mode default from the agent's own settings and
+/// are never carried over.
+fn last_settings(snapshot: Option<&wire::Snapshot>, kind: Kind) -> wire::AgentSettings {
+    let mut settings = snapshot
+        .map(|snapshot| snapshot.settings().clone())
+        .unwrap_or_default();
+    settings.permission_level = 0;
+    if kind == Kind::Acp {
+        settings.permission = None;
+        settings.mode = None;
     }
+    settings
 }
 
 /// The folder `typed` names on this host. Clients send a folder as the person
@@ -2566,10 +2551,7 @@ fn input_id_of(frame: &CtlFrame) -> Vec<u8> {
     match &frame.of {
         Some(ctl_frame::Of::AgentMessage(envelope)) => envelope.id.clone(),
         Some(ctl_frame::Of::Input(input)) => input.input_id.clone(),
-        Some(ctl_frame::Of::ChildInput(child)) => child
-            .input
-            .as_ref()
-            .map_or_else(Vec::new, |input| input.input_id.clone()),
+        Some(ctl_frame::Of::ChildInput(child)) => child.input_id.clone(),
         _ => Vec::new(),
     }
 }

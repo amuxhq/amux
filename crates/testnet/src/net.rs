@@ -422,8 +422,16 @@ pub struct Net {
 }
 
 impl Net {
-    /// Starts `topology` on a driven clock.
+    /// Starts `topology` on a driven clock: the tests' net.
+    ///
+    /// On Windows, refuses outside Buck's test runner
+    /// ([`os::testing::require_test_runner`]): a test run by hand there
+    /// would open the net's processes' windows on the desktop. The shared
+    /// start ([`Net::start_with`]) leaves that to its callers, so
+    /// `testnet serve` and `testnet ctl up`, which a person drives by hand,
+    /// run anywhere.
     pub async fn start(topology: Topology) -> Result<Self, NetError> {
+        os::testing::require_test_runner("starting a net");
         Self::start_with(topology, NetOptions::default()).await
     }
 
@@ -432,7 +440,11 @@ impl Net {
     /// in order, each returning once its process has said hello. When this
     /// returns the net is ready.
     pub async fn start_with(topology: Topology, options: NetOptions) -> Result<Self, NetError> {
-        os::testing::require_test_runner("starting a net");
+        // Before any host starts a child: on Windows a child otherwise
+        // inherits this process's standard handles, whatever its `Stdio`
+        // says. Every amux `main` does this first, testnet's among them;
+        // a test that starts a net has no `main` of its own.
+        os::process::harden_start();
         topology.check()?;
         crate::link_log::install();
         crate::ssh::install();

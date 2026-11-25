@@ -340,6 +340,19 @@ fewer than the six a Windows test that takes the whole worker asks for
 alone when the build host is out of reach: a Windows machine can't compile
 anything itself, so Linux actions wait for it instead.
 
+Two steps need an elevated shell, because the task runs as you without your
+signing in (an S4U task), which Windows lets only an administrator set up:
+`install` itself, and stopping a running NativeLink, since its
+`nativelink.exe` belongs to that task (`Stop-Process -Name nativelink -Force`
+in an elevated PowerShell). Everything else, the recipes included, runs
+unelevated.
+
+A build that fails with "CAS blob(s) … missing" (or "not found in either
+fast or slow store") after the build host's cache was wiped is a stale Buck2
+daemon: it remembers the blobs it uploaded before the wipe as already there,
+and so never uploads them again. `scripts/buck2 kill` ends it, and the next
+build starts a daemon that knows nothing and uploads what's missing.
+
 On Windows on Arm (a Windows VM on an Apple Silicon Mac), `just
 check-windows` and `just test-windows` build and run Arm64 binaries, natively;
 `AMUX_WINDOWS_PLATFORM=windows` runs the x64 ones instead, under Windows'

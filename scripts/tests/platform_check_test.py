@@ -649,6 +649,28 @@ class PlatformCheckTest(unittest.TestCase):
         )
         self.assertEqual(self.counted(), {"crates/node/src/lib.rs": [7]})
 
+    def test_a_marked_arm_whose_body_is_an_if_else_exempts_all_of_it(self):
+        self.write(
+            "crates/node/src/lib.rs",
+            """\
+            fn g(x: u8) -> u8 {
+                match x {
+                    #[cfg(unix)] // out of scope on Windows: wt
+                    0 => if ready() {
+                        1
+                    } else if later() {
+                        unsafe { libc::getpid() as u8 }
+                    } else {
+                        unsafe { libc::getppid() as u8 }
+                    }
+                    #[cfg(windows)]
+                    _ => 2,
+                }
+            }
+            """,
+        )
+        self.assertEqual(self.counted(), {"crates/node/src/lib.rs": [11]})
+
     def test_a_test_function_in_a_homes_shared_file_is_test_code(self):
         self.write(
             "crates/pty-host/src/lib.rs",

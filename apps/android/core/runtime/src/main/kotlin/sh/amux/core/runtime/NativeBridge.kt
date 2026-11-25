@@ -127,8 +127,6 @@ object NativeBridge {
 
     @JvmStatic external fun runtimeUpdateSettings(handle: Long, changeJson: String): Long
 
-    @JvmStatic external fun runtimeSuggestRepositories(handle: Long): Long
-
     @JvmStatic external fun runtimeWebSignInLink(
         handle: Long,
         profileId: String,

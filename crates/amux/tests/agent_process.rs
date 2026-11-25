@@ -344,15 +344,16 @@ fn boundary(item: &wire::Item) -> Option<String> {
         .to_owned();
     // The cause by its name, then its own words: what the agent wrote,
     // not how any client words it.
-    let cause = match wire::ExitCause::try_from(boundary.cause) {
+    let end = boundary.exit.clone().unwrap_or_default();
+    let cause = match wire::ExitCause::try_from(end.cause) {
         Ok(wire::ExitCause::Unspecified) => String::new(),
         Ok(cause) => cause
             .as_str_name()
             .trim_start_matches("EXIT_CAUSE_")
             .to_owned(),
-        Err(_) => boundary.cause.to_string(),
+        Err(_) => end.cause.to_string(),
     };
-    Some(match (cause.is_empty(), &boundary.cause_detail) {
+    Some(match (cause.is_empty(), &end.detail) {
         (true, _) => kind,
         (false, Some(detail)) => format!("{kind} {cause}: {detail}"),
         (false, None) => format!("{kind} {cause}"),

@@ -14,7 +14,10 @@ import "amux/v1/records.proto";
 
 // A person's prompt as the provider reflected it. Text and attachments are
 // in the envelope.
-message Prompt {}
+message Prompt {
+  // The prompt's submission was a continuation (PromptSubmission.continued).
+  bool continued = 1;
+}
 
 // A prompt delivered into the running turn; the text is the envelope's.
 message Steer {}
@@ -53,7 +56,7 @@ message Thinking {
   bool complete = 1;
 }
 
-message ToolCall {
+message ClaudeToolCall {
   string name = 1;
   ToolState state = 2;
   string outcome_text = 3;
@@ -80,20 +83,20 @@ message ToolCall {
   // When the call began running, after any approval. Its duration is
   // ended_at_ms minus this, else minus the item's at_ms.
   optional int64 started_at_ms = 15;
-  ToolInput input = 16;
+  ClaudeToolInput input = 16;
   // A file edit or write that finished: the hunks Claude says it changed.
   repeated PatchHunk patch = 17;
   // The agent this call started or continues, whose chat the call's row
   // opens: a provider subagent on Claude's Agent call and on a later
   // SendMessage call to the same subagent, or the child amux's own spawn
-  // made. Empty on any other call, and on a call from before amux knew it.
+  // made. Empty on any other call.
   bytes child_agent_id = 18;
 }
 
 // What a Claude call was asked to do, read once by the interpreter from the
 // call's input: an arm for each tool the views draw their own way, and the
 // input as Claude sent it for any other.
-message ToolInput {
+message ClaudeToolInput {
   // What the call names: the file, pattern, address, query, path, command
   // line, description or notebook it is about, else its first string
   // argument. A shell call's subject is its command line, a subagent's what
@@ -261,12 +264,7 @@ message SubagentProgress {
 message Boundary {
   BoundaryKind kind = 1;
   // For EXITED: why, and the cause's own words.
-  ExitCause cause = 2;
-  optional string cause_detail = 3;
-  // For COMPACTED: amux compacted the conversation on its own while the
-  // agent sat idle, before the provider's prompt cache expired. False for a
-  // compaction somebody asked for or the provider started, as before.
-  bool idle = 4;
+  optional IncarnationEnd exit = 2;
 }
 
 enum BoundaryKind {
@@ -330,7 +328,7 @@ message Compaction {
   bool automatic = 3;
   // amux compacted the conversation on its own while the agent sat idle,
   // before the provider's prompt cache expired. False for a compaction
-  // somebody asked for or the provider started, as before.
+  // somebody asked for or the provider started.
   bool idle = 4;
 }
 
@@ -374,25 +372,21 @@ message Unrecognized {
 message Catalogue {
   repeated OfferedModel models = 1;
   repeated OfferedCommand commands = 2;
-  // How much the agent may do without asking.
+  // How much the agent may do without asking. An ACP agent's modes that
+  // are permissions are listed here, not among its modes.
   repeated OfferedPermission permissions = 3;
-  // How it works; empty for Claude.
+  // How it works, apart from how much it may do: Codex's plan, an ACP
+  // agent's other modes. Empty for Claude.
   repeated OfferedMode modes = 4;
   // Codex's skills, which a person mentions as "$name" anywhere in a
   // message; empty for Claude, whose skills are among its commands.
   repeated OfferedSkill skills = 5;
-  // What a new agent on this host starts with when nothing is chosen;
-  // absent from a catalogue an agent wrote about its own session.
-  NewAgentDefaults new_agent = 6;
-}
-
-// A new agent's starting settings, by catalogue values: the host's remembered
-// pick, else what the provider itself would use. An absent value is one
-// neither can name, and the provider decides it when the agent starts.
-message NewAgentDefaults {
-  optional string model = 1;
-  optional string effort = 2;
-  optional string permission = 3;
+  // What a new agent on this host starts with when nothing is chosen: the
+  // host's remembered pick, else what the provider itself would use. An
+  // absent value is one neither can name, and the provider decides it when
+  // the agent starts. Absent from a catalogue an agent wrote about its own
+  // session.
+  AgentSettings new_agent = 6;
 }
 
 // A skill Codex offers this session.
@@ -426,11 +420,6 @@ message OfferedMode {
   string display_name = 2;
   bool normal = 3;
   bool settable = 4;
-  // For an ACP agent, whose modes are its permissions: where the mode sits
-  // on amux's scale, from the built-in agent's known modes. Unspecified
-  // for Codex's modes, which are not permissions, and for a mode of an
-  // agent a person added.
-  PermissionLevel level = 5;
 }
 
 // A model the provider offers this session, as the provider lists it.
@@ -463,14 +452,14 @@ message OfferedCommand {
 }
 
 // An open ask. Opened and closed only by provider facts.
-message Ask {
+message ClaudeAsk {
   // What an answer names.
   string key = 1;
   // The item this ask points at: the tool call it would let run, or, for
   // an ask that is the work, its own AskItem.
   string item_key = 2;
   oneof body {
-    PermissionAsk permission = 3;
+    ClaudePermissionAsk permission = 3;
     QuestionAsk question = 4;
     PlanAsk plan = 5;
     FormAsk form = 6;
@@ -480,9 +469,9 @@ message Ask {
   int64 opened_at_ms = 9;
 }
 
-message PermissionAsk {
+message ClaudePermissionAsk {
   string tool_name = 1;
-  ToolInput input = 2;
+  ClaudeToolInput input = 2;
   // Every scope the provider offered, in order; an answer names one by
   // its position.
   repeated ClaudeGrant scopes = 3;
@@ -699,66 +688,11 @@ enum ToolServerStatus {
   TOOL_SERVER_STATUS_NEEDS_AUTH = 4;
 }
 
-// Session strip: sign-in state; a problem shows as a notice above the
-// composer, which still sends: sending is how to try again.
-message SignIn {
-  SignInState state = 1;
-  string account = 2;
-  string message = 3;
-}
 
-enum SignInState {
-  SIGN_IN_STATE_UNSPECIFIED = 0;
-  SIGN_IN_STATE_SIGNED_IN = 1;
-  SIGN_IN_STATE_SIGNED_OUT = 2;
-  SIGN_IN_STATE_FAILED = 3;
-}
 
-// What the provider runs in the background: commands and tasks that
-// outlive the call that started them. `known` false is the explicit
-// unknown; the list empties when the provider exits, and a new incarnation
-// starts with none.
-message BackgroundJobs {
-  bool known = 1;
-  repeated BackgroundJob jobs = 2;
-}
 
-message BackgroundJob {
-  // The key of the item whose call started the job; empty when the
-  // provider has not said which call it was.
-  string item_key = 1;
-  // The command, or what the provider calls the task.
-  string command = 2;
-  int64 started_at_ms = 3;
-  BackgroundKind kind = 4;
-  // The job's own key, which a stop names: Claude's task id or the
-  // process id Codex lists.
-  string key = 5;
-  // A stop was sent and the provider has not yet said the job ended.
-  bool stopping = 6;
-  // Why the provider refused the last stop, in its words; empty when it
-  // did not.
-  string stop_error = 7;
-}
 
-// Stops one background job by its key; the agent keeps running. Rejected
-// REFUSAL_UNSUPPORTED when no running job has the key.
-message StopJob {
-  string key = 1;
-}
 
-enum BackgroundKind {
-  // The provider has not said what the job is.
-  BACKGROUND_KIND_UNSPECIFIED = 0;
-  // A shell command.
-  BACKGROUND_KIND_SHELL = 1;
-  // A subagent the provider runs itself.
-  BACKGROUND_KIND_SUBAGENT = 2;
-  // A watch the provider keeps on something.
-  BACKGROUND_KIND_MONITOR = 3;
-  // A kind the provider names that amux has no word for.
-  BACKGROUND_KIND_OTHER = 4;
-}
 
 // ---------------------------------------------------------------------------
 // Input pieces shared by the per-kind inputs

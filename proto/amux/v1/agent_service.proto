@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package amux.v1;
 
-import "amux/v1/acp.proto";
-import "amux/v1/claude.proto";
-import "amux/v1/codex.proto";
 import "amux/v1/inventory.proto";
 import "amux/v1/records.proto";
 import "amux/v1/session.proto";
@@ -71,19 +68,37 @@ message CreateAgentRequest {
   // host's agents, its child starts where it works itself; an agent of
   // another host names one.
   string cwd = 3;
-  // Which interpreter, with that kind's settings. The host refuses a kind
-  // it does not run.
-  oneof agent {
-    ClaudeCreateConfig claude_pty = 4;
-    ClaudeCreateConfig claude_sdk = 5;
-    CodexCreateConfig codex = 6;
-    // An agent program that speaks the Agent Client Protocol, named by its
-    // provider id.
-    AcpCreateConfig acp = 11;
-  }
+  // The agent program, by the provider id this host lists it under
+  // (ProviderOnHost.provider). Refused with FAILED_PRECONDITION for one
+  // the host does not list.
+  string provider = 4;
+  // Which of the provider's interpreters runs it, among the ones its
+  // descriptor lists (ProviderDescriptor.kinds): only Claude has two, its
+  // own terminal and headless. Unspecified is the descriptor's own kind.
+  // Refused with FAILED_PRECONDITION for a kind the provider does not run
+  // on this host.
+  Kind kind = 5;
+  // The model, effort, permission and mode to start on, by the values the
+  // provider's catalogue lists; each absent leaves the host's remembered
+  // pick, else the provider's own. A person picks any of them but a
+  // permission level. A calling agent picks only the model and effort, and
+  // its child's permission by level, never wider than its own: the host
+  // maps it onto the widest permission the provider offers at or below
+  // that level, and an unspecified level is the parent's own, or read-only
+  // when the parent's has none. A wider level is refused with
+  // PERMISSION_DENIED, and so is any level but full for a provider whose
+  // permissions have no level, since nothing could hold it there; a
+  // permission or mode from an agent is refused with PERMISSION_DENIED,
+  // and a level from a person with INVALID_ARGUMENT.
+  AgentSettings settings = 6;
+  // Extra arguments for the provider's program, exactly as the person gave
+  // them. A person's only: from an agent, refused with PERMISSION_DENIED.
+  // Refused with INVALID_ARGUMENT for a provider that takes none (an ACP
+  // agent, whose arguments are in the host's config).
+  repeated string args = 7;
   // The first prompt, with attachments: the agent's first turn, written to
   // the provider once it takes input.
-  optional PromptSubmission initial_prompt = 7;
+  optional PromptSubmission initial_prompt = 8;
   // Start the agent in a new workspace of cwd's repository: a wt tree when
   // wt is configured for it, else a git worktree. Either is on a new branch
   // named after the agent, made from whatever cwd has checked out. The
@@ -93,32 +108,21 @@ message CreateAgentRequest {
   // given, unless the host runs the workspaces experiment, which gives a
   // name whose branch or folder is taken the next free suffix, answers as
   // soon as the agent's row is written and makes the workspace after.
-  bool new_workspace = 8;
-  // The agent config's model and effort are a person's picks, so the host
-  // starts its later agents of this kind on them too.
-  bool remember_model = 9;
-  bool remember_effort = 10;
-  // No host: the call's address is the host. No parent: an agent that
-  // calls is the parent, a person's agent has none, and a create is
-  // refused when the calling agent has exited or gone.
-
+  bool new_workspace = 9;
+  // The settings' model and effort are a person's picks, so the host
+  // starts its later agents of this provider on them too.
+  bool remember_model = 10;
+  bool remember_effort = 11;
   // Start the agent from a copy of its parent's conversation, with
   // initial_prompt as its next prompt. Refused with INVALID_ARGUMENT from
   // a person, who has no conversation to copy; refused for a calling agent
   // on a host other than the parent's, of a provider other than the
   // parent's, and for a provider that cannot fork
-  // (AgentCapabilities.forks). False starts a new conversation, as builds
-  // before it did.
+  // (AgentCapabilities.forks).
   bool fork = 12;
-  // For a calling agent only: the subagent's permission by amux's level,
-  // mapped by the host onto the widest permission its provider offers at
-  // or below that level. Unspecified is the parent's own level, or
-  // read-only when the parent's has none. Wider than the parent's is
-  // refused with PERMISSION_DENIED; so is any level but full for a
-  // provider whose permissions have no level, since nothing could hold it
-  // there. Refused with INVALID_ARGUMENT from a person, who picks the
-  // provider's own permission in the config.
-  PermissionLevel permission_level = 13;
+  // No host: the call's address is the host. No parent: an agent that
+  // calls is the parent, a person's agent has none, and a create is
+  // refused when the calling agent has exited or gone.
 }
 
 message CreateAgentResponse {
@@ -225,10 +229,7 @@ message SendMessageRequest {
   MessageBody message = 4;
 }
 
-message SendMessageResponse {
-  // The id the message is stored under, the request's own.
-  bytes envelope_id = 1;
-}
+message SendMessageResponse {}
 
 message PutBlobRequest {
   bytes agent_id = 1;

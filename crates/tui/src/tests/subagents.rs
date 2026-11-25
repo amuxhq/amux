@@ -55,22 +55,19 @@ fn job_snapshot(sub: &crate::fixtures::Sub, stopping: bool, error: &str) -> Msg 
     let key = sub.row.native.as_ref().unwrap().provider_child_id.clone();
     event(session_event::Of::Snapshot(wire::Snapshot {
         revision: 1_000_000,
-        phase: Phase::Working as i32,
-        body: wire::ClaudeSnapshot {
-            background_jobs: Some(wire::BackgroundJobs {
-                known: true,
-                jobs: vec![wire::BackgroundJob {
-                    kind: wire::BackgroundKind::Subagent as i32,
-                    key,
-                    command: "Run sleep then echo RED".into(),
-                    stopping,
-                    stop_error: error.into(),
-                    ..Default::default()
-                }],
-            }),
-            ..Default::default()
-        }
-        .encode_to_vec(),
+        status: wire::AgentStatus::in_phase(Phase::Working),
+        body: wire::ClaudeSnapshot::default().encode_to_vec(),
+        jobs: Some(wire::BackgroundJobs {
+            known: true,
+            jobs: vec![wire::BackgroundJob {
+                kind: wire::BackgroundKind::Subagent as i32,
+                key,
+                command: "Run sleep then echo RED".into(),
+                stopping,
+                stop_error: error.into(),
+                ..Default::default()
+            }],
+        }),
         ..Default::default()
     }))
 }
@@ -104,7 +101,7 @@ fn a_turns_subagents_fold_into_one_row_with_where_they_stand() {
 fn the_activity_line_says_a_subagent_waits_on_you() {
     let mut family = running();
     let mut asking = family.sub(1).row.clone();
-    asking.phase = Phase::NeedsYou as i32;
+    asking.status_mut().phase = Phase::NeedsYou as i32;
     family
         .fleet
         .update(ui_state::FleetMsg::Event(Box::new(wire::InventoryEvent {
@@ -137,7 +134,7 @@ fn home_says_a_parents_subagent_waits_on_you_as_its_chat_does() {
     // The fixture lists the parent as it started; live, it works while it
     // waits on its subagents.
     let mut working = family.state.agent().clone();
-    working.phase = Phase::Working as i32;
+    working.status_mut().phase = Phase::Working as i32;
     inventory(&mut family.fleet, wire::inventory_event::Of::Agent(working));
     let lines = |family: &Family| {
         HashMap::from([(
@@ -152,7 +149,7 @@ fn home_says_a_parents_subagent_waits_on_you_as_its_chat_does() {
     assert!(screen.contains("3 subagents working"), "{screen}");
 
     let mut asking = family.sub(1).row.clone();
-    asking.phase = Phase::NeedsYou as i32;
+    asking.status_mut().phase = Phase::NeedsYou as i32;
     family
         .fleet
         .update(ui_state::FleetMsg::Event(Box::new(wire::InventoryEvent {

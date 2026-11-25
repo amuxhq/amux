@@ -53,13 +53,6 @@ const PINNED: &[(&str, &[&str])] = &[
             r#"pub const STOP_TOOL: &str = "stop_subagent";"#,
             r#"pub const AGENTS_TOOL: &str = "list_agents";"#,
             r#"pub const HOSTS_TOOL: &str = "list_hosts";"#,
-            r#"pub const STATUS_TOOL: &str = "status";"#,
-            r#"pub const SEND_TOOL: &str = "send";"#,
-            r#"pub const ATTACH_TOOL: &str = "attach";"#,
-            r#"pub const SPAWN_TOOL: &str = "spawn";"#,
-            r#"pub const STOP_TOOL: &str = "stop";"#,
-            r#"pub const AGENTS_TOOL: &str = "agents";"#,
-            r#"pub const HOSTS_TOOL: &str = "hosts";"#,
         ],
     ),
 ];

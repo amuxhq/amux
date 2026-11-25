@@ -247,10 +247,15 @@ fn commit_agent(
             agent_id: part.agent_id.clone(),
             host_id: host.host_id.clone(),
             kind: kind as i32,
+            // Run by its parent's provider process, as the daemon names it.
+            provider: host.provider.clone(),
             name: name.clone(),
-            title: Some(start.title.clone()).filter(|title| !title.is_empty()),
             lifecycle: wire::Lifecycle::Live as i32,
-            phase: wire::Phase::Working as i32,
+            status: Some(Box::new(wire::AgentStatus {
+                phase: wire::Phase::Working as i32,
+                title: Some(start.title.clone()).filter(|title| !title.is_empty()),
+                ..wire::AgentStatus::default()
+            })),
             incarnation: 1,
             parent: Some(wire::AgentRef {
                 host_id: host.host_id.clone(),
@@ -284,9 +289,8 @@ fn commit_agent(
     };
     if part.start.is_some() && sub.row.lifecycle == wire::Lifecycle::Exited as i32 {
         sub.row.lifecycle = wire::Lifecycle::Live as i32;
-        sub.row.phase = wire::Phase::Working as i32;
-        sub.row.exit_cause = 0;
-        sub.row.exit_detail = None;
+        sub.row.status_mut().phase = wire::Phase::Working as i32;
+        sub.row.exit = None;
     }
     for event in sub.committer.commit_agent(part) {
         let outcome = sub.state.update(Msg::Event(event));
@@ -296,12 +300,14 @@ fn commit_agent(
         );
     }
     if let Some(snapshot) = &part.snapshot {
-        sub.row.phase = snapshot.phase;
+        sub.row.status_mut().phase = snapshot.phase() as i32;
     }
     if let Some(end) = &part.end {
         sub.row.lifecycle = wire::Lifecycle::Exited as i32;
-        sub.row.exit_cause = end.cause;
-        sub.row.exit_detail = end.detail.clone();
+        sub.row.exit = Some(wire::IncarnationEnd {
+            cause: end.cause,
+            detail: end.detail.clone(),
+        });
     }
     sub.state.update(Msg::Entry(sub.row.clone()));
     fleet.update(listed(&sub.row));
@@ -470,7 +476,7 @@ fn render(kind: Kind, provider: &str, frames: &[Replayed]) -> String {
             out,
             "== agent {} {:?} started by {}/{call_key}",
             sub.row.name,
-            sub.row.title.as_deref().unwrap_or_default(),
+            sub.row.title().unwrap_or_default(),
             if *call_agent == host.agent_id || !subs.contains_key(call_agent) {
                 "host".to_owned()
             } else {
@@ -610,13 +616,20 @@ fn check(
         Ok(frames) => frames,
         Err(error) => return Some(format!("{dir}/{name}: {error}")),
     };
-    // The agent's provider, as the fixture's spec names it: an ACP agent's
-    // id, or none, which reads as the kind implies.
+    // The agent's provider, as the fixture's spec names it, else the one
+    // whose fixtures these are: an ACP fixture always names its agent.
     let fixture: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(fixtures(dir).join(format!("{name}.json"))).unwrap(),
     )
     .unwrap();
-    let provider = fixture["spec"]["provider"].as_str().unwrap_or_default();
+    let own = match kind {
+        Kind::Codex => wire::agents::CODEX,
+        _ => wire::agents::CLAUDE,
+    };
+    let provider = fixture["spec"]["provider"]
+        .as_str()
+        .filter(|provider| !provider.is_empty())
+        .unwrap_or(own);
     let rendered = render(kind, provider, &frames);
     let path = goldens(dir).join(format!("{name}.golden"));
     if std::env::var(UPDATE).as_deref() == Ok("1") {

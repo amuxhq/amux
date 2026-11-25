@@ -26,7 +26,7 @@ pub(super) fn kind_of(
     use acp_item::Kind as Acp;
     let plain = |kind| (kind, None, false);
     match kind {
-        Acp::Prompt(_) if wire::is_continued_input(&held.item.input_id) => plain(continued()),
+        Acp::Prompt(prompt) if prompt.continued => plain(continued()),
         Acp::Prompt(_) => plain(RowKind::Prompt {
             text: chat_text(held, false),
             steered: false,
@@ -57,7 +57,7 @@ pub(super) fn kind_of(
             }
             plain(row)
         }
-        Acp::Boundary(b) => plain(boundary(b, false)),
+        Acp::Boundary(b) => plain(boundary(b)),
         Acp::Unrecognized(u) => plain(unrecognized(u)),
     }
 }
@@ -343,30 +343,26 @@ pub(crate) fn command_of(tool: &wire::AcpTool, input: &Value) -> (String, String
 
 /// The tool of amux's own server a call runs, with the arguments it was
 /// given. ACP gives a call only a title, which agents write as the server's
-/// tool in a few ways (`mcp_amux_spawn`, `Run mcp_amux_spawn`, `amux_spawn`,
-/// `amux__spawn`), or as a tool that runs another by name, whose input
-/// names the tool and holds its arguments.
+/// tool in a few ways (`mcp_amux_start_subagent`, `Run
+/// mcp_amux_start_subagent`, `amux_start_subagent`, `amux__start_subagent`),
+/// or as a tool that runs another by name, whose input names the tool and
+/// holds its arguments.
 fn amux_tool(tool: &wire::AcpTool, input: &Value) -> Option<(&'static str, Value)> {
     let server = wire::AMUX_TOOL_SERVER;
     let named = |name: &str| {
         let name = name.strip_prefix("Run ").unwrap_or(name);
-        // Each by its name now and by the one a release before 0.11 gave
-        // it, which a resumed agent's history still holds.
         [
-            (wire::START_TOOL, wire::former_tools::SPAWN_TOOL),
-            (wire::STOP_TOOL, wire::former_tools::STOP_TOOL),
-            (wire::AGENTS_TOOL, wire::former_tools::AGENTS_TOOL),
-            (wire::HOSTS_TOOL, wire::former_tools::HOSTS_TOOL),
+            wire::START_TOOL,
+            wire::STOP_TOOL,
+            wire::AGENTS_TOOL,
+            wire::HOSTS_TOOL,
         ]
         .into_iter()
-        .find(|(now, before)| {
-            [now, before].into_iter().any(|tool| {
-                name == format!("mcp_{server}_{tool}")
-                    || name == format!("{server}__{tool}")
-                    || name == format!("{server}_{tool}")
-            })
+        .find(|tool| {
+            name == format!("mcp_{server}_{tool}")
+                || name == format!("{server}__{tool}")
+                || name == format!("{server}_{tool}")
         })
-        .map(|(now, _)| now)
     };
     if let Some(found) = named(&tool.title) {
         return Some((found, input.clone()));
@@ -507,9 +503,6 @@ mod tests {
             "Run mcp_amux_start_subagent",
             "amux_start_subagent",
             "amux__start_subagent",
-            // As a release before 0.11 named it.
-            "mcp_amux_spawn",
-            "amux__spawn",
         ] {
             let tool = wire::AcpTool {
                 title: title.into(),
@@ -525,7 +518,8 @@ mod tests {
             title: "use_tool".into(),
             ..Default::default()
         };
-        let input = serde_json::json!({"tool_name": "amux__stop", "tool_input": {"name": "b"}});
+        let input =
+            serde_json::json!({"tool_name": "amux__stop_subagent", "tool_input": {"name": "b"}});
         assert_eq!(
             amux_tool(&runs, &input),
             Some((wire::STOP_TOOL, serde_json::json!({"name": "b"})))

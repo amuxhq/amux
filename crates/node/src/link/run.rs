@@ -175,10 +175,10 @@ impl LinkConnectorAuth {
         }
     }
 
-    async fn refresh(&mut self) -> Result<(wire::Message, crate::Tier), tonic::Status> {
+    async fn refresh(&mut self) -> Result<(wire::LinkMessage, crate::Tier), tonic::Status> {
         let token = self.refresher.refresh_routing_token().await?;
-        let message = wire::Message {
-            body: Some(wire::message::Body::Reauth(wire::Reauth {
+        let message = wire::LinkMessage {
+            body: Some(wire::link_message::Body::Reauth(wire::Reauth {
                 auth_token: token.token.clone(),
             })),
         };
@@ -289,10 +289,10 @@ impl LinkCtx {
     }
 
     /// Hands a control frame from the peer to the core.
-    fn report_frame(&self, link: LinkId, body: wire::message::Body) {
+    fn report_frame(&self, link: LinkId, body: wire::link_message::Body) {
         self.report(daemon_core::Input::LinkControl {
             link: link.core(),
-            frame: wire::Message { body: Some(body) },
+            frame: wire::LinkMessage { body: Some(body) },
         });
     }
 
@@ -438,7 +438,7 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
             tracing::debug!(path = %carrier.path_stats(), "sent Hello");
             let first = read_first(&mut source, "HelloAck").await?;
             tracing::debug!(path = %carrier.path_stats(), "received the first message after Hello");
-            if let Some(wire::message::Body::LinkClose(close)) = first.body.as_ref() {
+            if let Some(wire::link_message::Body::LinkClose(close)) = first.body.as_ref() {
                 let status = link_close_status(close).unwrap_or_else(|| {
                     // The host refused the identity a resumed handshake's
                     // ticket named: it no longer trusts this one.
@@ -449,14 +449,14 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
                 });
                 return Err(status.into());
             }
-            let Some(wire::message::Body::HelloAck(wire::HelloAck {
+            let Some(wire::link_message::Body::HelloAck(wire::HelloAck {
                 accepted: Some(mut accepted),
             })) = first.body
             else {
                 return Err(tonic::Status::invalid_argument("expected hello_ack").into());
             };
             keep_neighbors_in_limits(&mut accepted.neighbors);
-            let frame = wire::message::Body::HelloAck(wire::HelloAck {
+            let frame = wire::link_message::Body::HelloAck(wire::HelloAck {
                 accepted: Some(accepted.clone()),
             });
             let peer =
@@ -496,7 +496,7 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
                 }
             };
         let hello_bytes = prost::Message::encoded_len(&first);
-        let Some(wire::message::Body::Hello(mut hello)) = first.body else {
+        let Some(wire::link_message::Body::Hello(mut hello)) = first.body else {
             write_message(&mut sink, &protocol_error_link_close("expected hello")).await?;
             carrier.close(wire::LinkCloseReason::ProtocolError);
             return Ok(());
@@ -513,7 +513,7 @@ pub async fn run_link(mut ctx: LinkCtx, carrier: Arc<QuicCarrier>) -> Result<(),
         keep_neighbors_in_limits(&mut hello.neighbors);
         // The core records its inputs on the drive, so the credential
         // stays here.
-        peer_frame = wire::message::Body::Hello(wire::Hello {
+        peer_frame = wire::link_message::Body::Hello(wire::Hello {
             auth_token: None,
             ..hello.clone()
         });
@@ -601,9 +601,9 @@ async fn addresses_changed(
     addresses.borrow_and_update().clone()
 }
 
-fn addresses_message(own: &crate::routing::OwnAddresses) -> wire::Message {
-    wire::Message {
-        body: Some(wire::message::Body::Addresses(wire::Addresses {
+fn addresses_message(own: &crate::routing::OwnAddresses) -> wire::LinkMessage {
+    wire::LinkMessage {
+        body: Some(wire::link_message::Body::Addresses(wire::Addresses {
             addrs: own.listed.iter().map(ToString::to_string).collect(),
             public_addr: own.public.map(|addr| addr.to_string()),
         })),
@@ -622,7 +622,7 @@ async fn neighbor_snapshot(ctx: &LinkCtx, carrier: &QuicCarrier) -> Vec<Host> {
 async fn read_first(
     source: &mut super::ControlSource,
     expected: &'static str,
-) -> Result<wire::Message, LinkError> {
+) -> Result<wire::LinkMessage, LinkError> {
     match read_message(source).await? {
         Some(message) => Ok(message),
         None => Err(tonic::Status::unavailable(format!("link closed before {expected}")).into()),
@@ -650,8 +650,8 @@ async fn run_established(
     carrier: Arc<QuicCarrier>,
     mut sink: super::ControlSink,
     mut source: super::ControlSource,
-    held_ack: Option<wire::Message>,
-    peer: (Host, RuntimeInstance, bool, wire::message::Body),
+    held_ack: Option<wire::LinkMessage>,
+    peer: (Host, RuntimeInstance, bool, wire::link_message::Body),
     mut told: Told,
 ) -> Result<(), LinkError> {
     let (peer_host, peer_instance, dialled, peer_frame) = peer;
@@ -883,8 +883,8 @@ async fn run_established(
             _ = observe.tick(), if observing => {
                 match ctx.observed(carrier.as_ref(), acceptor_auth.as_ref()) {
                     Some(seen) if told.observed != Some(seen) => {
-                        let message = wire::Message {
-                            body: Some(wire::message::Body::ObservedAddress(
+                        let message = wire::LinkMessage {
+                            body: Some(wire::link_message::Body::ObservedAddress(
                                 wire::ObservedAddress { addr: seen.to_string() },
                             )),
                         };
@@ -1046,7 +1046,7 @@ async fn last_word(
     source: &mut super::ControlSource,
 ) -> Option<(wire::LinkCloseReason, Option<tonic::Status>)> {
     while let Ok(Some(message)) = read_message(source).await {
-        if let Some(body @ wire::message::Body::LinkClose(_)) = message.body
+        if let Some(body @ wire::link_message::Body::LinkClose(_)) = message.body
             && let ControlAction::Close(reason, status) =
                 handle_control_body(ctx, link, body, None).await
         {
@@ -1081,21 +1081,22 @@ enum ControlAction {
     Close(wire::LinkCloseReason, Option<tonic::Status>),
     /// Boxed: the control message dwarfs every other variant, and this one
     /// is the rare terminal path.
-    ReplyAndClose(Box<wire::Message>, wire::LinkCloseReason),
+    ReplyAndClose(Box<wire::LinkMessage>, wire::LinkCloseReason),
 }
 
 async fn handle_control_body(
     ctx: &LinkCtx,
     link: LinkId,
-    body: wire::message::Body,
+    body: wire::link_message::Body,
     acceptor_auth: Option<&mut LinkAuthSession>,
 ) -> ControlAction {
     match body {
-        body @ (wire::message::Body::NeighborUp(_) | wire::message::Body::NeighborDown(_)) => {
+        body @ (wire::link_message::Body::NeighborUp(_)
+        | wire::link_message::Body::NeighborDown(_)) => {
             // A neighbor announced is held to what a handshake's host is,
             // but the link stays: a later build may widen those limits, and
             // one such host must not cut this one off from all the others.
-            if let wire::message::Body::NeighborUp(up) = &body
+            if let wire::link_message::Body::NeighborUp(up) = &body
                 && let Err(error) = up
                     .host
                     .clone()
@@ -1108,7 +1109,7 @@ async fn handle_control_body(
             ctx.report_frame(link, body);
             ControlAction::Continue
         }
-        wire::message::Body::Reauth(reauth) => {
+        wire::link_message::Body::Reauth(reauth) => {
             let Some(auth) = acceptor_auth else {
                 return ControlAction::ReplyAndClose(
                     Box::new(protocol_error_link_close(
@@ -1150,21 +1151,21 @@ async fn handle_control_body(
                 }
             }
         }
-        wire::message::Body::LinkClose(close) => {
+        wire::link_message::Body::LinkClose(close) => {
             let reason = wire::LinkCloseReason::try_from(close.reason)
                 .unwrap_or(wire::LinkCloseReason::Unspecified);
             ControlAction::Close(reason, link_close_status(&close))
         }
         // The relay saw another link of this account present a paid plan:
         // the core refreshes this link's credential as its timer would.
-        body @ wire::message::Body::RefreshCredential(_) => {
+        body @ wire::link_message::Body::RefreshCredential(_) => {
             ctx.report_frame(link, body);
             ControlAction::Continue
         }
         // The links the forwarder no longer carries go before the core
         // hears why, so it reads the host by the refusal and not by a
         // link that merely went.
-        wire::message::Body::ForwardRefused(refused) => {
+        wire::link_message::Body::ForwardRefused(refused) => {
             if let Ok(host) = HostId::from_slice(&refused.dst) {
                 let reason = wire::ForwardRefusal::try_from(refused.reason)
                     .unwrap_or(wire::ForwardRefusal::Unspecified);
@@ -1173,19 +1174,20 @@ async fn handle_control_body(
                     paths.forward_refused(host, link.core(), reason);
                 }
             }
-            ctx.report_frame(link, wire::message::Body::ForwardRefused(refused));
+            ctx.report_frame(link, wire::link_message::Body::ForwardRefused(refused));
             ControlAction::Continue
         }
         // The core keeps what a peer lists and what the relay sees.
-        body @ (wire::message::Body::Addresses(_) | wire::message::Body::ObservedAddress(_)) => {
+        body @ (wire::link_message::Body::Addresses(_)
+        | wire::link_message::Body::ObservedAddress(_)) => {
             ctx.report_frame(link, body);
             ControlAction::Continue
         }
         // The profile's edge keeps the sign-in offers paired peers make
         // each other: they move accounts, not routes.
-        body @ (wire::message::Body::SignInOffer(_)
-        | wire::message::Body::SignInAnswer(_)
-        | wire::message::Body::SignInTicket(_)) => {
+        body @ (wire::link_message::Body::SignInOffer(_)
+        | wire::link_message::Body::SignInAnswer(_)
+        | wire::link_message::Body::SignInTicket(_)) => {
             if ctx.link_role == LinkRole::Peer
                 && let Some(core) = ctx.links.core()
             {
@@ -1194,7 +1196,7 @@ async fn handle_control_body(
             ControlAction::Continue
         }
         // The handshake is one exchange; a repeat is a protocol error.
-        wire::message::Body::Hello(_) | wire::message::Body::HelloAck(_) => {
+        wire::link_message::Body::Hello(_) | wire::link_message::Body::HelloAck(_) => {
             ControlAction::ReplyAndClose(
                 Box::new(protocol_error_link_close("illegal post-handshake message")),
                 wire::LinkCloseReason::ProtocolError,
@@ -1247,8 +1249,8 @@ pub(crate) async fn relay_opening(
     let mut hello = own_hello(ctx, &neighbors, &crate::routing::OwnAddresses::default());
     hello.auth_token = Some(token.to_owned());
     super::quic::Opening {
-        hello: wire::Message {
-            body: Some(wire::message::Body::Hello(hello)),
+        hello: wire::LinkMessage {
+            body: Some(wire::link_message::Body::Hello(hello)),
         },
         neighbors,
         forwarding,
@@ -1272,14 +1274,14 @@ fn connector_hello(
     ctx: &LinkCtx,
     snapshot: &[Host],
     own: &crate::routing::OwnAddresses,
-) -> wire::Message {
+) -> wire::LinkMessage {
     let mut hello = own_hello(ctx, snapshot, own);
     hello.auth_token = ctx
         .connector_auth
         .as_ref()
         .map(|auth| auth.token.token.clone());
-    wire::Message {
-        body: Some(wire::message::Body::Hello(hello)),
+    wire::LinkMessage {
+        body: Some(wire::link_message::Body::Hello(hello)),
     }
 }
 
@@ -1289,7 +1291,7 @@ fn accepted_hello_ack(
     peer: HostId,
     own: &crate::routing::OwnAddresses,
     observed: Option<std::net::SocketAddr>,
-) -> wire::Message {
+) -> wire::LinkMessage {
     let neighbors = snapshot
         .iter()
         .filter(|host| host.id != peer)
@@ -1297,8 +1299,8 @@ fn accepted_hello_ack(
         .collect::<Vec<_>>();
     let mut hello = own_hello(ctx, &neighbors, own);
     hello.observed_addr = observed.map(|addr| addr.to_string());
-    wire::Message {
-        body: Some(wire::message::Body::HelloAck(wire::HelloAck {
+    wire::LinkMessage {
+        body: Some(wire::link_message::Body::HelloAck(wire::HelloAck {
             accepted: Some(hello),
         })),
     }
@@ -1326,9 +1328,9 @@ fn host_id_collision_error(message: impl Into<String>) -> wire::Error {
     net_error::error(wire::ErrorCode::AlreadyExists, message)
 }
 
-fn auth_expired_link_close() -> wire::Message {
-    wire::Message {
-        body: Some(wire::message::Body::LinkClose(wire::LinkClose {
+fn auth_expired_link_close() -> wire::LinkMessage {
+    wire::LinkMessage {
+        body: Some(wire::link_message::Body::LinkClose(wire::LinkClose {
             reason: wire::LinkCloseReason::AuthExpired as i32,
             error: Some(wire::Error {
                 code: wire::ErrorCode::Unauthenticated as i32,
@@ -1339,9 +1341,9 @@ fn auth_expired_link_close() -> wire::Message {
     }
 }
 
-fn link_close(reason: wire::LinkCloseReason) -> wire::Message {
-    wire::Message {
-        body: Some(wire::message::Body::LinkClose(wire::LinkClose {
+fn link_close(reason: wire::LinkCloseReason) -> wire::LinkMessage {
+    wire::LinkMessage {
+        body: Some(wire::link_message::Body::LinkClose(wire::LinkClose {
             reason: reason as i32,
             error: None,
         })),
@@ -1516,14 +1518,14 @@ fn link_error_status(error: LinkError) -> tonic::Status {
 }
 
 /// A link closed for a message the protocol does not allow.
-fn protocol_error_link_close(message: impl Into<String>) -> wire::Message {
+fn protocol_error_link_close(message: impl Into<String>) -> wire::LinkMessage {
     refused_link_close(protocol_error(message))
 }
 
 /// A link closed for the reason `error` gives: every handshake refusal.
-fn refused_link_close(error: wire::Error) -> wire::Message {
-    wire::Message {
-        body: Some(wire::message::Body::LinkClose(wire::LinkClose {
+fn refused_link_close(error: wire::Error) -> wire::LinkMessage {
+    wire::LinkMessage {
+        body: Some(wire::link_message::Body::LinkClose(wire::LinkClose {
             reason: wire::LinkCloseReason::ProtocolError as i32,
             error: Some(error),
         })),
@@ -1609,8 +1611,8 @@ mod tests {
     async fn send_hello(sink: &mut ControlSink, peer: &Host, auth_token: Option<&str>) {
         write_message(
             sink,
-            &wire::Message {
-                body: Some(wire::message::Body::Hello(hello(peer, auth_token))),
+            &wire::LinkMessage {
+                body: Some(wire::link_message::Body::Hello(hello(peer, auth_token))),
             },
         )
         .await
@@ -1621,7 +1623,7 @@ mod tests {
         let ack = read_message(source).await.unwrap().unwrap();
         assert!(matches!(
             ack.body,
-            Some(wire::message::Body::HelloAck(wire::HelloAck {
+            Some(wire::link_message::Body::HelloAck(wire::HelloAck {
                 accepted: Some(_),
             }))
         ));
@@ -1632,7 +1634,7 @@ mod tests {
         expected: wire::LinkCloseReason,
     ) -> wire::LinkClose {
         let message = read_message(source).await.unwrap().unwrap();
-        let Some(wire::message::Body::LinkClose(close)) = message.body else {
+        let Some(wire::link_message::Body::LinkClose(close)) = message.body else {
             panic!("expected LinkClose, got {message:?}");
         };
         assert_eq!(
@@ -1857,8 +1859,8 @@ mod tests {
         expect_accepted(&mut source).await;
         write_message(
             &mut sink,
-            &wire::Message {
-                body: Some(wire::message::Body::Reauth(wire::Reauth {
+            &wire::LinkMessage {
+                body: Some(wire::link_message::Body::Reauth(wire::Reauth {
                     auth_token: "another-user-token".to_string(),
                 })),
             },
@@ -1932,8 +1934,8 @@ mod tests {
                 continue;
             };
             let neighbors = match frame.body {
-                Some(wire::message::Body::Hello(hello)) => hello.neighbors,
-                Some(wire::message::Body::HelloAck(wire::HelloAck {
+                Some(wire::link_message::Body::Hello(hello)) => hello.neighbors,
+                Some(wire::link_message::Body::HelloAck(wire::HelloAck {
                     accepted: Some(accepted),
                 })) => accepted.neighbors,
                 _ => continue,
@@ -1958,8 +1960,8 @@ mod tests {
 
         write_message(
             &mut sink,
-            &wire::Message {
-                body: Some(wire::message::Body::Hello(wire::Hello {
+            &wire::LinkMessage {
+                body: Some(wire::link_message::Body::Hello(wire::Hello {
                     neighbors,
                     ..hello(&peer, None)
                 })),
@@ -1987,11 +1989,14 @@ mod tests {
         let (neighbors, good) = neighbors_past_this_builds_limits();
 
         let said = read_message(&mut source).await.unwrap().unwrap();
-        assert!(matches!(said.body, Some(wire::message::Body::Hello(_))));
+        assert!(matches!(
+            said.body,
+            Some(wire::link_message::Body::Hello(_))
+        ));
         write_message(
             &mut sink,
-            &wire::Message {
-                body: Some(wire::message::Body::HelloAck(wire::HelloAck {
+            &wire::LinkMessage {
+                body: Some(wire::link_message::Body::HelloAck(wire::HelloAck {
                     accepted: Some(wire::Hello {
                         neighbors,
                         ..hello(&peer, None)
@@ -2067,7 +2072,7 @@ mod tests {
         prost::encoding::encode_key(99, prost::encoding::WireType::LengthDelimited, &mut bytes);
         prost::encoding::encode_varint(0, &mut bytes);
         assert_eq!(
-            wire::Message::decode(bytes.as_slice()).unwrap().body,
+            wire::LinkMessage::decode(bytes.as_slice()).unwrap().body,
             None,
             "this build reads it as a message with no body"
         );
@@ -2096,8 +2101,8 @@ mod tests {
         let next = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 match read_message(&mut source).await.unwrap().unwrap().body {
-                    Some(wire::message::Body::Addresses(addresses)) => return addresses,
-                    Some(wire::message::Body::LinkClose(close)) => {
+                    Some(wire::link_message::Body::Addresses(addresses)) => return addresses,
+                    Some(wire::link_message::Body::LinkClose(close)) => {
                         panic!("the link closed over the unknown message: {close:?}")
                     }
                     _ => {}
@@ -2167,7 +2172,7 @@ mod tests {
             let task = tokio::spawn(run_link(ctx, acceptor_carrier.clone()));
             let (mut sink, mut source) = connector_carrier.control();
             send_hello(&mut sink, &peer, None).await;
-            let Some(wire::message::Body::HelloAck(wire::HelloAck {
+            let Some(wire::link_message::Body::HelloAck(wire::HelloAck {
                 accepted: Some(accepted),
             })) = read_message(&mut source).await.unwrap().unwrap().body
             else {
@@ -2182,7 +2187,7 @@ mod tests {
             local.set_public(public);
             let next = tokio::time::timeout(Duration::from_secs(5), async {
                 loop {
-                    if let Some(wire::message::Body::Addresses(addresses)) =
+                    if let Some(wire::link_message::Body::Addresses(addresses)) =
                         read_message(&mut source).await.unwrap().unwrap().body
                     {
                         return addresses;

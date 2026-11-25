@@ -26,16 +26,6 @@ message Caller {
   }
 }
 
-// A person at the calling host.
-message Person {
-  // The client the person is using: "terminal", "mac", "ios", "android"
-  // or "browser", as the client names itself to its own node. The iPhone
-  // app wrote "phone" before it wrote "ios", and that word still reads as
-  // the iPhone app. A word this build does not know reads as another
-  // client.
-  string surface = 1;
-}
-
 // One of the calling host's own agents, with what its host states about it
 // from its own row as the call leaves: the answering host takes these as
 // the caller's word and does not judge them from its copy of that row.

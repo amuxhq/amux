@@ -36,6 +36,7 @@ fn spec(one_shot: bool, prompt: Option<&str>) -> AgentSpec {
         }),
         bootstrap: prompt.map(|text| Bootstrap {
             of: Some(bootstrap::Of::Prompt(PromptSubmission {
+                continued: false,
                 input_id: b"first".to_vec(),
                 prompt: Some(PromptInput {
                     text: text.to_owned(),
@@ -478,15 +479,17 @@ fn a_draining_agent_refuses_new_input() {
 }
 
 fn child_answer(child: &str, id: &str, ask: &str) -> ctl_frame::Of {
+    let input = interpret::claude_sdk_input(
+        id.as_bytes().to_vec(),
+        &FixtureInput::Answer {
+            ask: ask.to_owned(),
+            answer: json!({"allow": {}}),
+        },
+    );
     ctl_frame::Of::ChildInput(wire::ChildInput {
         agent_id: interpret::subagent_id(b"agent", child),
-        input: interpret::claude_sdk_input(
-            id.as_bytes().to_vec(),
-            &FixtureInput::Answer {
-                ask: ask.to_owned(),
-                answer: json!({"allow": {}}),
-            },
-        ),
+        input_id: id.as_bytes().to_vec(),
+        of: input.map(wire::child_input::Of::Input),
     })
 }
 
@@ -1598,7 +1601,7 @@ mod headless_claude {
             "{out:?}"
         );
         journaled.extend(out);
-        // The snapshot as a golden reads it, where `mode=` is the permission.
+        // The last snapshot says the permission it left plan mode for.
         let last = journaled
             .iter()
             .filter_map(|output| match output {
@@ -1606,9 +1609,12 @@ mod headless_claude {
                 _ => None,
             })
             .next_back()
-            .map(|snapshot| ClaudeSdk::describe_snapshot(&snapshot.body).text)
             .expect("a snapshot");
-        assert!(last.contains(" mode=default "), "{last}");
+        assert_eq!(
+            last.settings().permission.as_deref(),
+            Some("default"),
+            "{last:?}"
+        );
     }
 
     /// Headless Claude starts the subagents its Agent tool asks for in the

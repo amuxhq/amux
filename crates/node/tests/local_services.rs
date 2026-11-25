@@ -375,7 +375,7 @@ async fn a_file_not_fetched_yet_is_asked_of_its_host_checked_and_kept() {
         log.lines()
             .filter(|line| {
                 line.contains("a call to a paired host")
-                    && line.contains("/amux.v1.PeerService/GetBlob")
+                    && line.contains("/amux.v1.PeerService/FetchBlob")
             })
             .count()
     };

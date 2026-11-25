@@ -30,7 +30,7 @@ use std::time::Duration;
 use futures_util::Stream;
 use tokio::sync::{mpsc, oneshot, watch};
 use tonic::Status;
-use wire::message::Body;
+use wire::link_message::Body;
 
 use super::Edge;
 use crate::HostId;
@@ -79,7 +79,7 @@ struct State {
 }
 
 struct PeerLink {
-    out: mpsc::Sender<wire::Message>,
+    out: mpsc::Sender<wire::LinkMessage>,
     signed_in: bool,
 }
 
@@ -94,7 +94,7 @@ impl State {
     /// Sends `body` on one of the peer's open links; false when none is up
     /// or it would not take the frame.
     fn send(&mut self, peer: HostId, body: Body) -> bool {
-        let message = wire::Message { body: Some(body) };
+        let message = wire::LinkMessage { body: Some(body) };
         self.open(peer)
             .any(|link| link.out.try_send(message.clone()).is_ok())
     }
@@ -183,7 +183,7 @@ impl Edge {
         &self,
         peer: HostId,
         signed_in: bool,
-        out: mpsc::Sender<wire::Message>,
+        out: mpsc::Sender<wire::LinkMessage>,
     ) {
         let frame = self.offer_frame();
         let mut state = self.offers().state.lock().unwrap();

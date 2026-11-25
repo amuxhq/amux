@@ -92,6 +92,19 @@ const VERSION_PATIENCE: Duration = Duration::from_secs(10);
 /// own commands: what `amux catalogue` takes and their copies are named.
 pub const OWN: [&str; 2] = [CLAUDE, CODEX];
 
+/// The kinds amux's own provider runs as on this host: Claude in its own
+/// terminal, except on Windows, which hosts no terminal Claude, and
+/// headless; Codex as Codex ([`wire::Kind::hosted_on`] this platform).
+pub fn own_kinds(provider: &str) -> &'static [wire::Kind] {
+    match provider {
+        CLAUDE if !wire::Kind::ClaudePty.hosted_on(wire::Platform::here()) => {
+            &[wire::Kind::ClaudeSdk]
+        }
+        CLAUDE => &[wire::Kind::ClaudePty, wire::Kind::ClaudeSdk],
+        _ => &[wire::Kind::Codex],
+    }
+}
+
 fn own_command<'a>(provider: &str, launch: &'a Launch) -> &'a str {
     if provider == CLAUDE {
         &launch.claude_command
@@ -319,7 +332,7 @@ impl Offers {
                 wire::Kind::Codex
             };
             ProviderOnHost {
-                provider_id: provider.to_owned(),
+                provider: provider.to_owned(),
                 catalogue: held.map(|held| held.offer.blob.hash.clone()),
                 signed_in: held.is_some_and(|held| held.offer.signed_in),
                 descriptor: Some(ProviderDescriptor {
@@ -330,13 +343,23 @@ impl Offers {
                         .map(|held| held.offer.provider_version.clone())
                         .unwrap_or_default(),
                 }),
-                capabilities: AgentCapabilities::of_kind(kind, wire::Platform::here()),
+                kinds: own_kinds(provider)
+                    .iter()
+                    .map(|kind| wire::KindOnHost {
+                        kind: *kind as i32,
+                        capabilities: Some(match kind {
+                            wire::Kind::ClaudePty => AgentCapabilities::claude_pty(),
+                            wire::Kind::ClaudeSdk => AgentCapabilities::claude_sdk(),
+                            _ => AgentCapabilities::codex(wire::Platform::here()),
+                        }),
+                    })
+                    .collect(),
             }
         });
         let agents = launch.agents.iter().filter_map(|program| {
             let held = held.get(&program.id)?;
             Some(ProviderOnHost {
-                provider_id: program.id.clone(),
+                provider: program.id.clone(),
                 catalogue: Some(held.offer.blob.hash.clone()),
                 signed_in: held.offer.signed_in,
                 descriptor: Some(ProviderDescriptor {
@@ -345,14 +368,17 @@ impl Offers {
                     sign_in_hint: agent_sign_in_hint(&program.id, held.offer.acp.as_ref()),
                     version: held.offer.provider_version.clone(),
                 }),
-                // A copy an earlier build asked says nothing of them: it
-                // reads as able to do nothing beyond what every agent can,
-                // until the agent is asked again.
-                capabilities: Some(
-                    held.asked
-                        .capabilities
-                        .unwrap_or_else(|| AgentCapabilities::acp(false, false, false)),
-                ),
+                // An answer that said nothing of them reads as able to do
+                // nothing beyond what every agent can.
+                kinds: vec![wire::KindOnHost {
+                    kind: wire::Kind::Acp as i32,
+                    capabilities: Some(
+                        held.asked
+                            .capabilities
+                            .clone()
+                            .unwrap_or_else(|| AgentCapabilities::acp(false, false, false)),
+                    ),
+                }],
             })
         });
         own.chain(agents).collect()
@@ -369,7 +395,7 @@ impl Offers {
     fn listed(&self, provider: &str, launch: &Launch) -> Option<ProviderOnHost> {
         self.on_host(launch)
             .into_iter()
-            .find(|offered| offered.provider_id == provider)
+            .find(|offered| offered.provider == provider)
     }
 
     /// Forgets an ACP agent's copy, once the host no longer offers it.
@@ -998,17 +1024,17 @@ impl ProfileRuntime {
                 Ok(store
                     .agents()?
                     .into_iter()
-                    .filter(|row| row.agent.host == own && row.kind == wire::Kind::Acp as i32)
+                    .filter(|row| row.agent.host == own && row.provider == wanted)
                     .filter_map(|row| {
                         let snapshot = row.snapshot?;
-                        let body = wire::AcpSnapshot::decode(snapshot.body.as_slice()).ok()?;
-                        (body.agent.as_deref() == Some(wanted.as_str())).then(|| Conversation {
+                        Some(Conversation {
                             agent: row.agent.agent,
                             at_ms: snapshot.at_ms,
                             catalogue: snapshot.catalogue,
-                            sign_in: body
+                            sign_in: snapshot
                                 .sign_in
-                                .map(|sign_in| sign_in.state())
+                                .as_ref()
+                                .map(wire::SignIn::state)
                                 .unwrap_or_default(),
                         })
                     })

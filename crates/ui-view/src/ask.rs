@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ui_state::{InputState, OpenAsk, Refusal, SessionState};
-use wire::{ClaudeAnswer, CodexAnswer, Decision as CodexDecision, ask, claude_answer, codex_ask};
+use wire::{ClaudeAnswer, CodexAnswer, CodexDecision, claude_answer, claude_ask, codex_ask};
 
 use crate::form::{FormField, form_fields};
 use crate::markdown::{InlineRun, Markdown, inline_runs};
@@ -316,16 +316,16 @@ struct Rules {
 }
 
 impl Rules {
-    fn claude(ask: &wire::Ask) -> Self {
+    fn claude(ask: &wire::ClaudeAsk) -> Self {
         Self {
             provider_dialog: matches!(&ask.body,
-                Some(ask::Body::Question(question)) if question.provider_dialog),
+                Some(claude_ask::Body::Question(question)) if question.provider_dialog),
             // Claude takes words instead only of a question, in its
             // answer's own reply.
             reply_instead: false,
             stops_turn: true,
             default_to_no: matches!(&ask.body,
-                Some(ask::Body::Permission(permission)) if permission.default_to_no),
+                Some(claude_ask::Body::Permission(permission)) if permission.default_to_no),
         }
     }
 
@@ -393,12 +393,12 @@ fn permission(of: wire::permission_answer::Of) -> Answer {
 
 fn claude(
     state: &SessionState,
-    ask: &wire::Ask,
+    ask: &wire::ClaudeAsk,
     offered: &[wire::OfferedPermission],
 ) -> (AskBody, Vec<Choice>) {
     use wire::permission_answer::Of as P;
     let (body, mut choices) = match &ask.body {
-        Some(ask::Body::Permission(p)) => {
+        Some(claude_ask::Body::Permission(p)) => {
             let body = permission_body(p);
             let mut choices = vec![choice(
                 ChoiceOutcome::AllowOnce,
@@ -433,14 +433,14 @@ fn claude(
             choices.push(choice(ChoiceOutcome::DenyAndStop, deny(true)));
             (body, choices)
         }
-        Some(ask::Body::Question(q)) => (
+        Some(claude_ask::Body::Question(q)) => (
             AskBody::Question(q.questions.iter().map(question).collect()),
             vec![],
         ),
-        Some(ask::Body::Plan(plan)) => plan_card(state, &ask.item_key, plan, |plan| {
+        Some(claude_ask::Body::Plan(plan)) => plan_card(state, &ask.item_key, plan, |plan| {
             claude_answer(claude_answer::Of::Plan(plan))
         }),
-        Some(ask::Body::Form(form)) => {
+        Some(claude_ask::Body::Form(form)) => {
             let action = |action: wire::FormAction| {
                 claude_answer(claude_answer::Of::Form(wire::FormAnswer {
                     action: action as i32,
@@ -455,7 +455,7 @@ fn claude(
                 ],
             )
         }
-        Some(ask::Body::Link(link)) => {
+        Some(claude_ask::Body::Link(link)) => {
             let action = |action: wire::FormAction| {
                 claude_answer(claude_answer::Of::Link(wire::LinkAnswer {
                     action: action as i32,
@@ -469,7 +469,7 @@ fn claude(
                 ],
             )
         }
-        Some(ask::Body::Unanswerable(u)) => (
+        Some(claude_ask::Body::Unanswerable(u)) => (
             AskBody::Unanswerable {
                 reason: u.reason.clone(),
             },
@@ -488,8 +488,8 @@ fn claude(
     (body, choices)
 }
 
-fn permission_body(p: &wire::PermissionAsk) -> AskBody {
-    use wire::tool_input::Of;
+fn permission_body(p: &wire::ClaudePermissionAsk) -> AskBody {
+    use wire::claude_tool_input::Of;
     let (subject, of) = p.input.as_ref().map_or(("", None), |input| {
         (input.subject.as_str(), input.of.as_ref())
     });
@@ -1359,7 +1359,7 @@ mod tests {
     fn notebook_card(input: serde_json::Value) -> (Vec<(LineKind, String)>, String) {
         // The host's read of the cell rides beside Claude's input.
         let old_source = input["old_source"].as_str().unwrap_or_default();
-        let body = permission_body(&wire::PermissionAsk {
+        let body = permission_body(&wire::ClaudePermissionAsk {
             tool_name: "NotebookEdit".into(),
             input: Some(interpret::tool_input(
                 "NotebookEdit",

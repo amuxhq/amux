@@ -973,7 +973,6 @@ impl World for SimNet {
                 error: format!("no channel to {to}"),
             });
         }
-        let envelope_id = envelope.id.clone();
         let what = format!("{from}'s message to {to}");
         let call = sim.net.client_call(h, models::net::peer_message(envelope));
         let ended = wait(&mut sim, &what, |sim| {
@@ -984,7 +983,7 @@ impl World for SimNet {
         })?;
         sim.net.take_client(h, call);
         match ended {
-            daemon_core::payload::Status::Ok => Ok(wire::SendMessageResponse { envelope_id }),
+            daemon_core::payload::Status::Ok => Ok(wire::SendMessageResponse {}),
             daemon_core::payload::Status::Failed(error) => Err(NetError::Refused(Box::new(
                 node::status(models::net::wire_error(&error)),
             ))),

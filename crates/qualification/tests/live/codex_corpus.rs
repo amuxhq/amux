@@ -17,8 +17,8 @@ use std::path::PathBuf;
 use ui_state::{ItemBody, OpenAsk};
 use wire::codex_item::Kind as Codex;
 use wire::{
-    AgentRef, CodexCreateConfig, CodexInput, Kind, MessageBody, PromptInput, codex_answer,
-    codex_ask, codex_input, work,
+    AgentRef, AgentSettings, CodexInput, Kind, MessageBody, PromptInput, codex_answer, codex_ask,
+    codex_input, work,
 };
 
 use super::asks::{Answer, settled};
@@ -82,7 +82,7 @@ fn decisions(log: &Log) -> Vec<wire::DecisionOutcome> {
         .collect()
 }
 
-fn decide(decision: wire::Decision) -> Answer {
+fn decide(decision: wire::CodexDecision) -> Answer {
     Answer::Codex(codex_answer::Of::Approve(decision as i32))
 }
 
@@ -140,7 +140,7 @@ impl Install {
     async fn codex_work(
         &self,
         scenario: Scenario,
-        config: CodexCreateConfig,
+        config: AgentSettings,
         prompt: &str,
         answer: impl FnMut(&OpenAsk) -> Result<Answer, String>,
         check: impl Fn(&Log) -> Result<(), String>,
@@ -207,15 +207,15 @@ impl Install {
         let effect = self.project(scenario)?.join("denied.txt");
         self.codex_work(
             scenario,
-            CodexCreateConfig {
+            AgentSettings {
                 permission: Some("read-only".into()),
-                ..CodexCreateConfig::default()
+                ..AgentSettings::default()
             },
             "Run exactly this shell command once, with your shell tool, and nothing else: touch \
              denied.txt. The sandbox is read-only, so request escalated permissions for it. If \
              it is refused, do not try anything else; reply with the single word refused.",
             |ask| match ask {
-                OpenAsk::Codex(_) => Ok(decide(wire::Decision::Deny)),
+                OpenAsk::Codex(_) => Ok(decide(wire::CodexDecision::Deny)),
                 _ => self.by_the_way(ask),
             },
             |log| {
@@ -235,7 +235,7 @@ impl Install {
     pub(super) async fn inject_idle(&self) -> Result<Verdict, String> {
         let scenario = Scenario::InjectIdle;
         let (agent, follow) = match self
-            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .ready_agent(scenario, Some(AgentSettings::default()))
             .await?
         {
             Ok(ready) => ready,
@@ -263,7 +263,7 @@ impl Install {
     pub(super) async fn inject_drain(&self) -> Result<Verdict, String> {
         let scenario = Scenario::InjectDrain;
         let (agent, follow) = match self
-            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .ready_agent(scenario, Some(AgentSettings::default()))
             .await?
         {
             Ok(ready) => ready,
@@ -312,7 +312,7 @@ impl Install {
     pub(super) async fn codex_steer_folded(&self) -> Result<Verdict, String> {
         let scenario = Scenario::SteerFolded;
         let (agent, follow) = match self
-            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .ready_agent(scenario, Some(AgentSettings::default()))
             .await?
         {
             Ok(ready) => ready,
@@ -377,7 +377,7 @@ impl Install {
     pub(super) async fn two_assistant_messages(&self) -> Result<Verdict, String> {
         self.codex_work(
             Scenario::TwoAssistantMessages,
-            CodexCreateConfig::default(),
+            AgentSettings::default(),
             "Send two separate assistant messages in this turn: first exactly FIRST_NOTE in \
              commentary, then exactly SECOND_ANSWER as the final answer.",
             |ask| self.by_the_way(ask),
@@ -405,9 +405,9 @@ impl Install {
         let _home = self.configured("model_reasoning_summary = \"detailed\"\n")?;
         self.codex_work(
             Scenario::ReasoningSummary,
-            CodexCreateConfig {
+            AgentSettings {
                 effort: Some("high".into()),
-                ..CodexCreateConfig::default()
+                ..AgentSettings::default()
             },
             "Think carefully about which is larger, 17 * 23 or 19 * 21, then reply with only the \
              larger product.",
@@ -433,7 +433,7 @@ impl Install {
         std::fs::write(project.join("config.txt"), "VALUE=1\n").map_err(|e| e.to_string())?;
         self.codex_work(
             scenario,
-            CodexCreateConfig::default(),
+            AgentSettings::default(),
             "Run these three shell commands separately, one tool call each: `cat config.txt`, \
              `ls`, and `grep -n VALUE config.txt`. Then reply DONE.",
             |ask| self.by_the_way(ask),
@@ -459,7 +459,7 @@ impl Install {
     pub(super) async fn codex_failing_command(&self) -> Result<Verdict, String> {
         self.codex_work(
             Scenario::FailingCommand,
-            CodexCreateConfig::default(),
+            AgentSettings::default(),
             "Run exactly this shell command once: ls does-not-exist. Then tell me whether it \
              failed.",
             |ask| self.by_the_way(ask),
@@ -485,7 +485,7 @@ impl Install {
             .map_err(|error| error.to_string())?;
         self.codex_work(
             scenario,
-            CodexCreateConfig::default(),
+            AgentSettings::default(),
             "Use apply_patch for every change, one patch per step: first create notes.txt \
              containing the line one; then change that line to two; then delete old.txt. Then \
              reply DONE.",
@@ -517,7 +517,7 @@ impl Install {
         std::fs::write(project.join("old.txt"), "old\n").map_err(|error| error.to_string())?;
         self.codex_work(
             scenario,
-            CodexCreateConfig::default(),
+            AgentSettings::default(),
             // A move with no content hunk is refused by some apply_patch
             // builds, so the move changes the line too.
             "Use apply_patch to rename old.txt to moved.txt and change its one line from old \
@@ -547,7 +547,7 @@ impl Install {
         std::fs::write(self.project(scenario)?.join("square.png"), SQUARE_PNG)
             .map_err(|error| error.to_string())?;
         let (agent, follow) = match self
-            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .ready_agent(scenario, Some(AgentSettings::default()))
             .await?
         {
             Ok(ready) => ready,
@@ -595,7 +595,7 @@ impl Install {
     pub(super) async fn codex_review_attachment(&self) -> Result<Verdict, String> {
         let scenario = Scenario::ReviewAttachment;
         let (agent, follow) = match self
-            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .ready_agent(scenario, Some(AgentSettings::default()))
             .await?
         {
             Ok(ready) => ready,
@@ -643,7 +643,7 @@ impl Install {
     pub(super) async fn compaction(&self) -> Result<Verdict, String> {
         let scenario = Scenario::Compaction;
         let (_, follow) = match self
-            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .ready_agent(scenario, Some(AgentSettings::default()))
             .await?
         {
             Ok(ready) => ready,
@@ -671,7 +671,7 @@ impl Install {
     pub(super) async fn turn_error(&self) -> Result<Verdict, String> {
         let scenario = Scenario::TurnError;
         let (agent, follow) = match self
-            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .ready_agent(scenario, Some(AgentSettings::default()))
             .await?
         {
             Ok(ready) => ready,
@@ -714,7 +714,7 @@ impl Install {
              request_max_retries = 2\nstream_max_retries = 2\n",
         )?;
         let agent = self
-            .create_codex(scenario, CodexCreateConfig::default())
+            .create_codex(scenario, AgentSettings::default())
             .await?;
         let follow = self.follow(&agent);
         follow.ready().await?;
@@ -744,7 +744,7 @@ impl Install {
         let scenario = Scenario::SignedOut;
         let _home = self.signed_out_home()?;
         let agent = self
-            .create_codex(scenario, CodexCreateConfig::default())
+            .create_codex(scenario, AgentSettings::default())
             .await?;
         let follow = self.follow(&agent);
         follow.ready().await?;
@@ -770,7 +770,7 @@ impl Install {
         let _home = self.configured("web_search = \"live\"\n")?;
         self.codex_work(
             Scenario::WebSearch,
-            CodexCreateConfig::default(),
+            AgentSettings::default(),
             "Use your web search tool to look up the capital city of Australia, then reply with \
              the city name only.",
             |ask| self.by_the_way(ask),
@@ -791,7 +791,7 @@ impl Install {
     pub(super) async fn subagent(&self) -> Result<Verdict, String> {
         self.codex_work(
             Scenario::Subagent,
-            CodexCreateConfig::default(),
+            AgentSettings::default(),
             "Call your spawn_agent tool directly, without reading any file or using any skill, \
              to start exactly one agent whose task is: reply with exactly CHILD_DONE. Then wait \
              for it to finish and reply with what it answered.",
@@ -816,7 +816,7 @@ impl Install {
         let verdict = self
             .codex_work(
                 scenario,
-                CodexCreateConfig::default(),
+                AgentSettings::default(),
                 "Start the shell command `read LINE; echo GOT $LINE` with a yield time of 1000 \
                  ms, so the call returns while it waits for input. Then write the text hello \
                  followed by a newline to that same running session, read its output, and reply \
@@ -858,7 +858,7 @@ impl Install {
         let verdict = self
             .codex_work(
                 Scenario::ToolServerForm,
-                CodexCreateConfig::default(),
+                AgentSettings::default(),
                 &format!(
                     "Call the {TOOL} tool from the {TOOL_SERVER} tool server twice, one call at \
                      a time: first with word BLUE, then with word LINK. Then reply with what \
@@ -879,7 +879,9 @@ impl Install {
                                 action: wire::FormAction::Cancel as i32,
                             })))
                         }
-                        Some(codex_ask::Body::McpTool(_)) => Ok(decide(wire::Decision::Approve)),
+                        Some(codex_ask::Body::McpTool(_)) => {
+                            Ok(decide(wire::CodexDecision::Approve))
+                        }
                         _ => self.by_the_way(ask),
                     },
                     _ => self.by_the_way(ask),
@@ -914,7 +916,7 @@ impl Install {
         let verdict = self
             .codex_work(
                 Scenario::AccessGrant,
-                CodexCreateConfig::default(),
+                AgentSettings::default(),
                 "Use your request_permissions tool to ask me for network access. Once granted, \
                  run `curl -sI https://example.com` and reply with its status line.",
                 |ask| match ask {
@@ -947,9 +949,9 @@ impl Install {
     pub(super) async fn automatic_review(&self) -> Result<Verdict, String> {
         self.codex_work(
             Scenario::AutomaticReview,
-            CodexCreateConfig {
+            AgentSettings {
                 permission: Some("auto".into()),
-                ..CodexCreateConfig::default()
+                ..AgentSettings::default()
             },
             "Run exactly this shell command once, with your shell tool, and nothing else: curl \
              -sI https://example.com. The sandbox has no network, so request escalated \
@@ -973,9 +975,9 @@ impl Install {
     pub(super) async fn approval_scopes(&self) -> Result<Verdict, String> {
         self.codex_work(
             Scenario::ApprovalScopes,
-            CodexCreateConfig {
+            AgentSettings {
                 permission: Some("read-only".into()),
-                ..CodexCreateConfig::default()
+                ..AgentSettings::default()
             },
             "Do these steps in order, one tool call each: run the shell command `touch \
              first.txt`; then use apply_patch to create notes.txt containing the line one; then \
@@ -986,16 +988,16 @@ impl Install {
                     Some(codex_ask::Body::Command(_))
                         if codex
                             .decisions
-                            .contains(&(wire::Decision::ApproveSimilar as i32)) =>
+                            .contains(&(wire::CodexDecision::ApproveSimilar as i32)) =>
                     {
-                        decide(wire::Decision::ApproveSimilar)
+                        decide(wire::CodexDecision::ApproveSimilar)
                     }
                     Some(codex_ask::Body::FileChange(_))
                         if codex
                             .decisions
-                            .contains(&(wire::Decision::ApproveSession as i32)) =>
+                            .contains(&(wire::CodexDecision::ApproveSession as i32)) =>
                     {
-                        decide(wire::Decision::ApproveSession)
+                        decide(wire::CodexDecision::ApproveSession)
                     }
                     _ => return self.by_the_way(ask),
                 }),

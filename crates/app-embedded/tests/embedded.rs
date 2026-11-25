@@ -552,9 +552,8 @@ async fn a_phone_keeps_the_workspace_a_desks_row_says() {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             name: Some("fix-header".into()),
             cwd: site.to_string_lossy().into_owned(),
-            agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
-                Default::default(),
-            )),
+            provider: wire::agents::CLAUDE.into(),
+            kind: wire::Kind::ClaudeSdk as i32,
             new_workspace: true,
             ..Default::default()
         })

@@ -1,5 +1,7 @@
-# Buck2 configuration (docs/BUILD.md). The prelude is the copy bundled with
-# the pinned buck2 binary (build/tools.json), so bumping buck2 bumps both.
+# Buck2 configuration (docs/BUILD.md). The prelude is the one bundled with
+# the pinned buck2 binary (build/tools.json) plus one patch, taken from a
+# fork (docs/BUILD.md, "The prelude"): bumping buck2 means moving
+# commit_hash below to the fork's branch for the new release.
 [cells]
   root = .
   prelude = prelude
@@ -15,7 +17,13 @@
   buck = none
 
 [external_cells]
-  prelude = bundled
+  prelude = git
+
+[external_cell_prelude]
+  git_origin = https://github.com/amuxhq/buck2-prelude
+  # Branch amux/2026-11-15: the prelude of buck2 2026-11-15 with the
+  # Android toolchain's downloads given a SHA-256 and size.
+  commit_hash = c80faf5f60a834beaee58edb71d4d72f4732c201
 
 # [parser] target_platform_detector_spec is per machine: scripts/buck-config.py
 # writes it into .buckconfig.local with this host's development platform.

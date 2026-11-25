@@ -1655,7 +1655,10 @@ fn fold_tail(events: Vec<Record>, row: &AgentRow) -> (Vec<Item>, wire::Snapshot,
     }
     let snapshot = snapshot.unwrap_or_else(|| wire::Snapshot {
         kind: row.kind,
-        phase: wire::Phase::Starting as i32,
+        status: Some(Box::new(wire::AgentStatus {
+            phase: wire::Phase::Starting as i32,
+            ..wire::AgentStatus::default()
+        })),
         ..wire::Snapshot::default()
     });
     let mut tail: Vec<Item> = items.into_values().collect();
@@ -1700,21 +1703,16 @@ pub fn from_wire(agent: &Agent) -> AgentRow {
         .as_ref()
         .map(|parent| AgentKey::new(parent.host_id.clone(), parent.agent_id.clone()));
     row.lifecycle = agent.lifecycle;
-    row.exit_cause = agent.exit_cause;
-    row.exit_detail = agent.exit_detail.clone();
-    row.phase = agent.phase;
-    row.working_on = agent.working_on.clone();
-    row.phase_since_ms = Some(agent.phase_since_ms);
-    row.git = agent.git.clone();
+    row.exit_cause = agent.exit.as_ref().map_or(0, |exit| exit.cause);
+    row.exit_detail = agent.exit_detail().map(str::to_owned);
+    let mut status = agent.status().clone();
+    row.title = status.title.take();
+    row.status = status;
     row.created_at_ms = agent.created_at_ms;
     row.incarnation = agent.incarnation;
-    row.background_jobs = agent.background_jobs;
     row.descendants = agent.descendants;
     row.filing = agent.filing;
     row.filed_at_ms = agent.filed_at_ms;
-    row.title = agent.title.clone();
-    row.last_said = agent.last_said.clone();
-    row.settings = agent.settings.as_deref().cloned();
     row.parent_incarnation = agent.parent_incarnation;
     row.native = agent.native.clone();
     row.provider = agent.provider.clone();
@@ -2531,8 +2529,10 @@ mod tests {
             kind: wire::Kind::Codex as i32,
             cwd: "/elsewhere".to_owned(),
             lifecycle: wire::Lifecycle::Exited as i32,
-            exit_cause: UNKNOWN,
-            exit_detail: Some("a newer daemon's words".to_owned()),
+            exit: Some(wire::IncarnationEnd {
+                cause: UNKNOWN,
+                detail: Some("a newer daemon's words".to_owned()),
+            }),
             ..Agent::default()
         };
         let row = from_wire(&origin);
@@ -2546,8 +2546,11 @@ mod tests {
         let store = Sqlite::open(&path, b"here".to_vec()).unwrap();
         let listed = crate::serve::to_wire(&store.agent(&key).unwrap().unwrap());
         assert_eq!(
-            (listed.exit_cause, listed.exit_detail.as_deref()),
-            (UNKNOWN, Some("a newer daemon's words")),
+            listed
+                .exit
+                .as_ref()
+                .map(|exit| (exit.cause, exit.detail.as_deref())),
+            Some((UNKNOWN, Some("a newer daemon's words"))),
             "listed with its cause, not unspecified"
         );
     }

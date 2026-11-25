@@ -448,19 +448,19 @@ pub(crate) fn refusal_words(refusal: &Refusal) -> String {
         return detail.clone();
     }
     match refusal.reason {
-        wire::Refusal::Exited => "it had exited",
-        wire::Refusal::AgentClosed => "it was settled",
-        wire::Refusal::Exiting => "it was exiting",
-        wire::Refusal::Draining => "its device is shutting down",
-        wire::Refusal::HostUnreachable => "its device is away",
-        wire::Refusal::Unsupported => "this agent can't take it",
-        wire::Refusal::ClosedAsk => "the ask had already closed",
-        wire::Refusal::NotQueued => "it was no longer queued",
-        wire::Refusal::ConversationElsewhere => {
+        ui_state::RefusalReason::Exited => "it had exited",
+        ui_state::RefusalReason::AgentClosed => "it was settled",
+        ui_state::RefusalReason::Exiting => "it was exiting",
+        ui_state::RefusalReason::Draining => "its device is shutting down",
+        ui_state::RefusalReason::HostUnreachable => "its device is away",
+        ui_state::RefusalReason::Unsupported => "this agent can't take it",
+        ui_state::RefusalReason::ClosedAsk => "the ask had already closed",
+        ui_state::RefusalReason::NotQueued => "it was no longer queued",
+        ui_state::RefusalReason::ConversationElsewhere => {
             "Claude's own view switched to another conversation"
         }
-        wire::Refusal::TooLong => "it is longer than the agent takes",
-        wire::Refusal::Unspecified => "it was refused",
+        ui_state::RefusalReason::TooLong => "it is longer than the agent takes",
+        ui_state::RefusalReason::Unspecified => "it was refused",
     }
     .to_owned()
 }

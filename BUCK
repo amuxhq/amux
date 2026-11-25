@@ -92,6 +92,109 @@ nix_toolchain(
     visibility = ["PUBLIC"],
 )
 
+# The workspace as Cargo reads it (build/cargo.bzl), for the checks that
+# run Cargo: Cargo.toml's members, each crate's manifest and Rust files.
+# A member missing here fails those checks, Cargo naming its manifest.
+load("//build:cargo.bzl", "cargo_output", "cargo_workspace")
+
+_CARGO_PACKAGES = ["//crates/{}:cargo-package".format(name) for name in [
+    "acp-protocol",
+    "agent",
+    "agent-core",
+    "agent-dir",
+    "amux",
+    "analytics",
+    "app-bridge",
+    "app-embedded",
+    "app-ffi",
+    "app-jni",
+    "app-runtime",
+    "attachments",
+    "browser-core",
+    "claude-protocol",
+    "client",
+    "codex-protocol",
+    "core-ring",
+    "daemon-core",
+    "fake-amux",
+    "git-facts",
+    "highlight",
+    "installer",
+    "interpret",
+    "ios-tools",
+    "journal",
+    "log-file",
+    "models",
+    "node",
+    "path-core",
+    "patience",
+    "preview",
+    "provider-fakes",
+    "pty-host",
+    "qualification",
+    "redaction",
+    "relay-core",
+    "release",
+    "replay-support",
+    "settings",
+    "shot",
+    "socket-core",
+    "source-tree",
+    "store",
+    "supervisor-core",
+    "testnet",
+    "tui",
+    "ui-code",
+    "ui-runtime",
+    "ui-state",
+    "ui-view",
+    "wire",
+    "workspace-core",
+    "xtask",
+]] + ["//third-party/rust/dev-only:cargo-package"]
+
+# Every member's manifest, and its Rust files' paths only: enough for
+# Cargo's graph, which changes when a manifest or the lockfile does or a
+# file comes or goes.
+cargo_workspace(
+    name = "cargo-layout",
+    srcs = ["Cargo.lock", "Cargo.toml"],
+    packages = _CARGO_PACKAGES,
+    sources = False,
+)
+
+# The same with every Rust file: what formatting and cargo-shear read.
+cargo_workspace(
+    name = "cargo-sources",
+    srcs = ["Cargo.lock", "Cargo.toml", "rustfmt.toml"],
+    packages = _CARGO_PACKAGES,
+    sources = True,
+)
+
+# Every dependency the lockfile names, for every platform, as a Cargo home:
+# the registry's crates and index entries, and the git dependencies. Fetched
+# again each day as well, since crates.io's index says which releases have
+# been yanked (`deny`).
+cargo_output(
+    name = "cargo-registry",
+    command = ["sh", "$(location //build:checks/cargo.sh)", "fetch", "$(location :cargo-layout)"],
+    deps = [":cargo-layout", "//build:checks/cargo.sh", "//build:day"],
+    out = "cargo-home",
+    directory = True,
+)
+
+# `cargo metadata --no-deps`: each member's targets, features and
+# dependencies as Cargo sees them, with `@ROOT@` for the checkout's root.
+# The dependency policy reads it here, and the parity check and the test
+# catalogue's check, which stay scripts, read it built.
+cargo_output(
+    name = "cargo-metadata",
+    command = ["sh", "$(location //build:checks/cargo.sh)", "metadata", "$(location :cargo-layout)"],
+    deps = [":cargo-layout", "//build:checks/cargo.sh"],
+    out = "cargo-metadata.json",
+    visibility = ["PUBLIC"],
+)
+
 # The repository checks, each a test over exactly the files it reads
 # (build/checks.bzl), so a passing one is cached until those change. `just
 # checks` writes what they read from outside the checkout first
@@ -129,20 +232,22 @@ amux_check(
 )
 
 # Every dependency against deny.toml: no open advisory or yanked release,
-# only the licences and sources it lists. On Cargo's graph and the advisory
-# database as build/checks/inputs.py snapshots them (it says how), so it
-# reruns when the lockfile, a manifest, deny.toml or the day's database
-# changes. cargo-deny is the Linux toolchain's.
+# only the licences and sources it lists. On Cargo's graph over the day's
+# registry, and the advisory database as build/checks/inputs.py snapshots
+# it, so it reruns when the lockfile, a manifest, deny.toml or the day's
+# registry or database changes. cargo-deny is the Linux toolchain's.
 amux_check(
     name = "deny",
-    command = ["sh", "build/checks/deny.sh"],
+    command = [
+        "sh", "$(location //build:checks/cargo.sh)", "run", "$(location :cargo-layout)", "$(location :cargo-registry)",
+        "sh", "build/checks/deny.sh",
+    ],
     srcs = ["deny.toml"],
-    deps = ["//build:deny"],
+    deps = [":cargo-layout", ":cargo-registry", "//build:checks/cargo.sh", "//build:deny"],
     linux_only = True,
 )
 
-# The cores' sources; the tokio half of `just cores-check` reads Cargo's
-# whole graph, so premerge runs it as a script.
+# The cores' sources: no lock, spawn or await.
 amux_check(
     name = "cores-check",
     command = ["python3", "scripts/cores-check.py", "--sources"],
@@ -170,6 +275,49 @@ amux_check(
     name = "platform-check",
     command = ["python3", "build/checks/platform_check.py", "--tracked", "build/checks/inputs/tracked"],
     deps = ["//build:platform-check", "//build:tracked"] + ["//crates/{}:rust-files".format(crate) for crate in _CRATES],
+)
+
+# The cores' dependency graphs, on every target: no tokio. `cargo tree`
+# over the fetched registry, so it reruns when a manifest or the lockfile
+# changes (or the day's registry does), not when a core's code does.
+amux_check(
+    name = "cores-graph-check",
+    command = [
+        "sh", "$(location //build:checks/cargo.sh)", "run", "$(location :cargo-layout)", "$(location :cargo-registry)",
+        "python3", "scripts/cores-check.py", "--graph",
+    ],
+    srcs = ["scripts/cores-check.py"],
+    deps = [":cargo-layout", ":cargo-registry", "//build:checks/cargo.sh"],
+    linux_only = True,
+)
+
+# rustfmt over every member's Rust files, with the dated nightly
+# (nix/toolchain.nix's `cargo-nightly`).
+amux_check(
+    name = "fmt-check",
+    command = ["sh", "$(location //build:checks/cargo.sh)", "run", "$(location :cargo-sources)", "cargo-nightly", "fmt", "--all", "--", "--check"],
+    deps = [":cargo-sources", "//build:checks/cargo.sh"],
+    linux_only = True,
+)
+
+# Which crate may depend on which, from Cargo's metadata.
+amux_check(
+    name = "dependency-policy",
+    command = ["python3", "scripts/check-dependency-policy.py", "--metadata", "$(location :cargo-metadata)"],
+    srcs = ["scripts/check-dependency-policy.py"],
+    deps = [":cargo-metadata"],
+    linux_only = True,
+)
+
+# cargo-shear: no dependency that no crate's code uses.
+amux_check(
+    name = "shear",
+    command = [
+        "sh", "$(location //build:checks/cargo.sh)", "run", "$(location :cargo-sources)", "$(location :cargo-registry)",
+        "cargo", "shear", "--locked", "--deny-warnings",
+    ],
+    deps = [":cargo-sources", ":cargo-registry", "//build:checks/cargo.sh"],
+    linux_only = True,
 )
 
 amux_check(
@@ -251,6 +399,7 @@ amux_script_tests(
         "client_kind_check": {"deps": _CLIENT_KIND_SOURCES},
         "bootstrap_guard": {"deps": ["toolchains//:bootstrap-guard.py"]},
         "check_inputs": {"deps": ["//build:check-inputs"]},
+        "ci_jobs": {"srcs": [".github/workflows/ci.yml"], "deps": ["//build:ci-jobs", "//build:tracked"]},
         "env": {"deps": [":environments"]},
         "icon": {"deps": ["//apps/apple:release-files"]},
         "nativelink": {"deps": ["//build:nativelink"]},
@@ -260,6 +409,7 @@ amux_script_tests(
         "store_check": {"deps": ["//crates/store:src/schema.rs"]},
         "test_runner": {"deps": ["//build:test-runner"]},
         "tests_catalog": {"srcs": ["tests/catalog.toml"], "deps": ["//crates/testnet:suites"]},
+        "timing": {"deps": ["//build:timing"]},
         "typed_provider_check": {"deps": ["//crates/agent:files", "//crates/interpret:files"]},
     },
 )

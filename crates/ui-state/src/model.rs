@@ -212,7 +212,7 @@ pub enum InputState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Refusal {
-    pub reason: wire::Refusal,
+    pub reason: RefusalReason,
     /// The agent's or its provider's own words, when it has any; a client
     /// says them in place of the reason's.
     pub detail: Option<String>,
@@ -220,10 +220,69 @@ pub struct Refusal {
 
 impl Refusal {
     /// A refusal that has no words of its own.
-    pub fn of(reason: wire::Refusal) -> Self {
+    pub fn of(reason: impl Into<RefusalReason>) -> Self {
         Self {
-            reason,
+            reason: reason.into(),
             detail: None,
+        }
+    }
+}
+
+/// Why an input was refused: what the agent or its host answered, as the
+/// wire's refusals say it, or that the input never left this client because
+/// the agent's host could not be reached, which only the client knows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum RefusalReason {
+    #[default]
+    Unspecified,
+    ClosedAsk,
+    NotQueued,
+    Unsupported,
+    Draining,
+    Exiting,
+    Exited,
+    AgentClosed,
+    /// The input never left: the agent's host could not be reached.
+    HostUnreachable,
+    ConversationElsewhere,
+    TooLong,
+}
+
+impl RefusalReason {
+    /// The host's word for this reason; none for one only a client says.
+    pub fn wire(self) -> Option<wire::Refusal> {
+        use wire::Refusal as R;
+        Some(match self {
+            Self::Unspecified => R::Unspecified,
+            Self::ClosedAsk => R::ClosedAsk,
+            Self::NotQueued => R::NotQueued,
+            Self::Unsupported => R::Unsupported,
+            Self::Draining => R::Draining,
+            Self::Exiting => R::Exiting,
+            Self::Exited => R::Exited,
+            Self::AgentClosed => R::AgentClosed,
+            Self::HostUnreachable => return None,
+            Self::ConversationElsewhere => R::ConversationElsewhere,
+            Self::TooLong => R::TooLong,
+        })
+    }
+}
+
+impl From<wire::Refusal> for RefusalReason {
+    fn from(refusal: wire::Refusal) -> Self {
+        use wire::Refusal as R;
+        match refusal {
+            R::Unspecified => Self::Unspecified,
+            R::ClosedAsk => Self::ClosedAsk,
+            R::NotQueued => Self::NotQueued,
+            R::Unsupported => Self::Unsupported,
+            R::Draining => Self::Draining,
+            R::Exiting => Self::Exiting,
+            R::Exited => Self::Exited,
+            R::AgentClosed => Self::AgentClosed,
+            R::ConversationElsewhere => Self::ConversationElsewhere,
+            R::TooLong => Self::TooLong,
         }
     }
 }

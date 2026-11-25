@@ -2,14 +2,13 @@ syntax = "proto3";
 
 package amux.v1;
 
-import "amux/v1/records.proto";
 import "google/rpc/status.proto";
 
 // Host-to-host link control: what crosses a link's control stream, and the
 // host each end announces.
 
 // Host-to-host control envelope exchanged on the link's control stream.
-message Message {
+message LinkMessage {
 
   oneof body {
     Hello hello = 1;
@@ -141,12 +140,9 @@ message SignInTicket {
   }
 }
 
-message Capabilities {
+message HostCapabilities {
   // The host serves as a cloud relay.
   bool cloud_relay = 1;
-  // The agent kinds this host can run, from its platform: terminal Claude
-  // is not hosted on Windows.
-  repeated Kind kinds = 2;
 }
 
 // "The link is closed now, here's why." No grace period: a receiver treats
@@ -172,7 +168,7 @@ message Host {
   bytes host_id = 1;
   string name = 2;
   string version = 3;
-  Capabilities capabilities = 4;
+  HostCapabilities capabilities = 4;
   Platform platform = 5;
   optional bool account_signed_in = 6;
 }

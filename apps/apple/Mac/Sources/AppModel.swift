@@ -475,6 +475,29 @@ final class AppModel {
         }
     }
 
+    /// The folders this Mac's entry offers: its pinned repositories, and
+    /// those Claude Code and Codex ran in lately. Nil before a profile and
+    /// this Mac's entry are on hand.
+    func folders() async -> Directories? {
+        guard let profile, let local = stores?.hosts.local?.hostId, let host = HostId(bytes: local)
+        else { return nil }
+        return try? await profile.directories(on: host, matching: "", limit: 200).get()
+    }
+
+    /// Pins a folder among this Mac's repositories, or unpins it; answers
+    /// why it did not take, or nil once it did. The entry says the change.
+    @discardableResult
+    func pin(_ path: String, pinned: Bool) async -> String? {
+        guard let profile, let local = stores?.hosts.local?.hostId, let host = HostId(bytes: local)
+        else { return "amux isn’t running" }
+        switch await profile.pinFolder(path, on: host, pinned: pinned) {
+        case .success: return nil
+        case .failure(let error):
+            Self.log.error("pin: \(error.description, privacy: .public)")
+            return error.description
+        }
+    }
+
     /// Opens a page of the profile's account service in the browser,
     /// already signed in, so the browser needs no sign-in of its own.
     func openAccountPage(_ path: String, for profile: String) async {

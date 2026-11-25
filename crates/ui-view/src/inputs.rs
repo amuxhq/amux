@@ -4,9 +4,9 @@
 //! caller gives each its id.
 
 use wire::{
-    ClaudePtyInput, ClaudeSdkInput, CodexInput, Interrupt, Kind, KindInput, PromptInput,
-    SendQueuedNow, StopJob, WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input,
-    create_agent_request,
+    ClaudePtyInput, ClaudeSdkInput, CodexInput, CreateAgentRequest, Interrupt, Kind, KindInput,
+    PromptInput, SendQueuedNow, StopJob, WithdrawQueued, claude_pty_input, claude_sdk_input,
+    codex_input,
 };
 
 /// One act, before it is put in a kind's arm.
@@ -69,37 +69,24 @@ pub fn act_input(kind: Kind, act: Act) -> Option<KindInput> {
     Some(of)
 }
 
-/// A new agent's create arm: the kind its host starts its provider as,
-/// with what was chosen for it. Only the kind's own settings go: Claude
-/// takes a permission and no mode, an ACP agent a mode and no permission,
-/// Codex both. None for a kind this build does not know.
-pub fn create_config(
-    kind: Kind,
+/// A new agent's create request: its provider, the kind its host starts
+/// it as, and what was chosen for it. The caller fills in where and what
+/// else.
+pub fn create_request(
     provider: &str,
+    kind: Kind,
     chosen: &crate::NewAgentChoices,
-) -> Option<create_agent_request::Agent> {
-    use create_agent_request::Agent;
-    let claude = || wire::ClaudeCreateConfig {
-        args: Vec::new(),
-        model: chosen.model.clone(),
-        permission: chosen.permission.clone(),
-        effort: chosen.effort.clone(),
-    };
-    Some(match kind {
-        Kind::ClaudePty => Agent::ClaudePty(claude()),
-        Kind::ClaudeSdk => Agent::ClaudeSdk(claude()),
-        Kind::Codex => Agent::Codex(wire::CodexCreateConfig {
+) -> CreateAgentRequest {
+    CreateAgentRequest {
+        provider: provider.to_owned(),
+        kind: kind as i32,
+        settings: Some(wire::AgentSettings {
             model: chosen.model.clone(),
+            effort: chosen.effort.clone(),
             permission: chosen.permission.clone(),
-            mode: chosen.mode.clone(),
-            effort: chosen.effort.clone(),
-        }),
-        Kind::Acp => Agent::Acp(wire::AcpCreateConfig {
-            agent: provider.to_owned(),
-            model: chosen.model.clone(),
-            effort: chosen.effort.clone(),
+            permission_level: 0,
             mode: chosen.mode.clone(),
         }),
-        Kind::Unspecified => return None,
-    })
+        ..CreateAgentRequest::default()
+    }
 }

@@ -71,6 +71,8 @@ final class Setup {
     @ObservationIgnored private var offerCounted: [UInt8]?
 
     private(set) var repositoriesLoaded = false
+    /// This Mac's repositories already pinned when the step opened.
+    private var pinned: Set<String> = []
 
     /// The agents on this Mac when the last step opened: one that is not
     /// among them came from the phone.
@@ -524,15 +526,22 @@ final class Setup {
 
     // MARK: - Repositories
 
+    /// Where Claude Code and Codex ran lately, ticked. A first run's daemon
+    /// finds them only once it has started, so this runs again as this
+    /// Mac's entry moves: a folder already listed keeps its place and the
+    /// person's tick, and the list only grows.
     private func suggest() {
-        guard let runtime = app.runtime else { return }
         Task {
-            let suggested = (try? await runtime.suggestRepositories().get()) ?? []
+            let folders = await app.folders()
             repositoriesLoaded = true
-            // Repositories already chosen stay; they are not asked about again.
-            let chosen = Set(app.settings?.repositories ?? [])
-            choices.repositories = suggested.filter { !chosen.contains($0.path) }
-                .map { SetupRepository(path: $0.path, ticked: true, repository: $0.repository) }
+            // Repositories already pinned stay; they are not asked about again.
+            pinned = Set(folders?.repositories.map(\.path) ?? [])
+            for folder in folders?.history ?? []
+            where !pinned.contains(folder.path)
+                && !choices.repositories.contains(where: { $0.path == folder.path }) {
+                choices.repositories.append(
+                    SetupRepository(path: folder.path, ticked: true, repository: folder.repository))
+            }
         }
     }
 
@@ -546,21 +555,46 @@ final class Setup {
         }
     }
 
-    /// Continue on "Repositories": the ticked folders join those already
-    /// chosen.
+    /// Continue on "Repositories": the ticked folders are pinned beside
+    /// those already pinned.
     func confirmRepositories() {
-        var paths = app.settings?.repositories ?? []
-        for row in choices.repositories where row.ticked && !paths.contains(row.path) {
-            paths.append(row.path)
+        guard let step, !busy else { return }
+        busy = true
+        error = nil
+        let confirming = open(step)
+        let paths = choices.repositories.filter { $0.ticked && !pinned.contains($0.path) }.map(\.path)
+        Task {
+            for path in paths {
+                if let failed = await app.pin(path, pinned: true) {
+                    busy = false
+                    error = failed
+                    return
+                }
+            }
+            if confirming {
+                switch await profile.answerOnboarding(.done(step)) {
+                case .success(let now): state = now
+                case .failure(let failed):
+                    busy = false
+                    error = failed.description
+                    return
+                }
+            }
+            busy = false
+            if self.step == step { advance() }
         }
-        confirm(.with(repositories: paths))
     }
 
     // MARK: - The first agent
 
-    /// An agent new on this Mac while the last step shows is the one the
-    /// phone started: the main window, with it selected.
+    /// Folders found after the repositories step opened join it; and an
+    /// agent new on this Mac while the last step shows is the one the phone
+    /// started: the main window, with it selected.
     func fleetMoved() {
+        if step == .repositories {
+            suggest()
+            return
+        }
         guard step == .first_agent else { return }
         if let new = app.localAgents.first(where: { !agentsBefore.contains($0) }) {
             home(new)

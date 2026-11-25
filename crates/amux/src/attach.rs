@@ -91,7 +91,7 @@ impl Attacher {
         {
             // Resuming fails the same way until its cause is fixed, so the
             // refusal leads with that cause.
-            let why = match agent.exit_detail.as_deref().filter(|why| !why.is_empty()) {
+            let why = match agent.exit_detail().filter(|why| !why.is_empty()) {
                 Some(why) => format!("{name} could not start {why}"),
                 None => format!("{name} could not start"),
             };
@@ -724,10 +724,12 @@ mod tests {
             kind: Kind::ClaudePty as i32,
             name: "pt".into(),
             lifecycle: wire::Lifecycle::Exited as i32,
-            exit_cause: wire::ExitCause::CouldNotStart as i32,
-            exit_detail: Some(
-                "the provider: terminal Claude needs Claude Code 2.1.251 or later".into(),
-            ),
+            exit: Some(wire::IncarnationEnd {
+                cause: wire::ExitCause::CouldNotStart as i32,
+                detail: Some(
+                    "the provider: terminal Claude needs Claude Code 2.1.251 or later".into(),
+                ),
+            }),
             ..Agent::default()
         };
         assert_eq!(

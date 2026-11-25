@@ -136,9 +136,10 @@ The same network as JSON, as `testnet serve` reads it:
 
 JSON topologies live in `journeys/topologies`; scripts shared between them in `journeys/scripts`.
 
-An in-process host's repository suggestions read the session logs under its own `home` directory, beside its
-`work` and `repositories`, never the home of whoever runs the net; a story writes a Claude Code or Codex log
-there (`home/.claude/projects/<folder>/<session>.jsonl`, each line naming its `cwd`) to have a folder suggested.
+The folders an in-process host's entry lists from session history are read from the session logs under its own
+`home` directory, beside its `work` and `repositories`, never the home of whoever runs the net; a story writes a
+Claude Code or Codex log there (`home/.claude/projects/<folder>/<session>.jsonl`, each line naming its `cwd`) to
+have a folder listed.
 
 ### Scripts
 
@@ -345,7 +346,7 @@ path carried a link the way a person reading the log would:
 | Verb | Effect |
 | --- | --- |
 | `link_log(host)` | Every line the host has written, oldest first, across restarts. |
-| `carrying_path(host, peer)` | The path the host's last line for that peer names, or none once that line says the link went down. |
+| `carrying_path(host, peer)` | The path the host's last line for that peer names, or none once none of the running daemon's links to the peer is up. A host can hold several links to one peer at once (a server keeps a killed phone process's link until it times out beside the next process's), and one path carries them all, so an old link going down leaves the path to the live one. Lines a daemon wrote before it was stopped or killed name no link up. |
 
 ### SSH
 
@@ -404,7 +405,7 @@ The harness owns resources, verbs and observations, never scenarios. Scenarios l
 | `turn_ended(name, k)` | Wait until the agent's `k`th turn has ended on its own host; returns the order of the row that ended it. |
 | `input_settled(name, input_id)` | Wait until the input the agent accepted under that id has its reflecting row; returns its order. A rejected input never settles: rejection is the answer `send` and `input` return. |
 | `fence(host, name, order)` | Wait until the host holds the agent's row at that order, on the origin or a replica. After it, what the host holds through that order is what its store reports. |
-| `current(host, name)` | Wait until the host holds what the origin holds: caught up through the origin's newest revision, with the block intact. |
+| `current(host, name)` | Wait until the host holds what the origin holds: caught up through the origin's newest revision, with the block intact. `current_listed(host, agent)` does the same for an agent the net did not declare, such as a provider's subagent, as the fleet lists it. |
 | `send(name, text)`, `input(...)` | Send a prompt, or any input (an answer, a withdrawal, an interrupt), through the agent's own host. |
 | `stop(name)` | Stop the agent on its own host, as a person does; it can be resumed. |
 | `delete(name)` | Delete an agent on its own host, as a person does. Its children follow on their own hosts by the family rule, after the call returns. |

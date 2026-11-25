@@ -11,7 +11,7 @@
 
 use daemon_core::payload::{Answer, PeerFailure, PeerReply, PeerRequest};
 use tonic::{Code, Status};
-use wire::{ErrorCode, PeerServiceGetBlobRequest, PeerServiceListItemsRequest};
+use wire::{ErrorCode, FetchBlobRequest, FetchItemsRequest};
 
 use crate::HostId;
 use crate::blobs::BlobError;
@@ -33,7 +33,7 @@ impl ProfileRuntime {
             match request {
                 PeerRequest::ListItems(request) => client
                     .peer
-                    .list_items(PeerServiceListItemsRequest {
+                    .fetch_items(FetchItemsRequest {
                         agent_id: request.agent_id,
                         before_order: request.before_order,
                         page_size: request.page_size,
@@ -80,12 +80,12 @@ impl ProfileRuntime {
                 return Err(BlobError::Unreached(unreached.error(&self.host_name(host))));
             }
         };
-        let request = PeerServiceGetBlobRequest {
+        let request = FetchBlobRequest {
             agent_id: agent_id.to_vec(),
             hash: hash.to_vec(),
         };
         let failed =
-            match tokio::time::timeout(ANSWER_PATIENCE, client.peer.get_blob(request)).await {
+            match tokio::time::timeout(ANSWER_PATIENCE, client.peer.fetch_blob(request)).await {
                 Ok(Ok(blob)) => return Ok(blob.into_inner().bytes),
                 Ok(Err(status)) => failure(&status),
                 Err(_) => PeerFailure::Uncertain,

@@ -13,9 +13,15 @@ pub fn agent(kind: Kind, phase: Phase) -> wire::Agent {
         agent_id: b"agent".to_vec(),
         host_id: b"host".to_vec(),
         kind: kind as i32,
+        provider: match kind {
+            Kind::ClaudePty | Kind::ClaudeSdk => wire::agents::CLAUDE,
+            Kind::Codex => wire::agents::CODEX,
+            _ => "opencode",
+        }
+        .into(),
         name: "worker".into(),
         lifecycle: wire::Lifecycle::Live as i32,
-        phase: phase as i32,
+        status: wire::AgentStatus::in_phase(phase),
         incarnation: 1,
         ..wire::Agent::default()
     }
@@ -29,4 +35,15 @@ pub fn all_rows(state: &SessionState, tools: ToolRows) -> Vec<Row> {
         .map(|held| held.item.key.clone())
         .collect();
     chat_rows_for(state, &keys, tools)
+}
+
+/// What an agent of `kind` can do, as its interpreter says in every
+/// snapshot (an ACP agent here is one that said nothing at `initialize`).
+pub fn capabilities(kind: Kind) -> wire::AgentCapabilities {
+    match kind {
+        Kind::ClaudePty => wire::AgentCapabilities::claude_pty(),
+        Kind::ClaudeSdk => wire::AgentCapabilities::claude_sdk(),
+        Kind::Codex => wire::AgentCapabilities::codex(wire::Platform::here()),
+        _ => wire::AgentCapabilities::acp(false, false, false),
+    }
 }

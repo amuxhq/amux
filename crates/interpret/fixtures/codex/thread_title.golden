@@ -1,13 +1,14 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=1800000000000 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
+snapshot capabilities stops_job resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
+snapshot STARTING queue=[] working_on=- at=1800000000000 conversation=? model_name=? sign_in=? background=? asks=[] approval=? context=? plan=? usage=? servers=[]
 ## 1 fact {"channel":"rpc","json":{"id":"agent-thread","result":{"approvalPolicy":"on-request","model":"gpt-6-astra","reasoningEffort":"medium","sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.166.0","id":"t1","turns":[]}}}}
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
-snapshot settings model=gpt-6-astra effort=medium permission=default level=ask
-snapshot IDLE queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-6-astra model_name="GPT-6 Astra" effort=medium permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+snapshot settings model=gpt-6-astra effort=medium permission=default level=ask mode=?
+snapshot IDLE queue=[] working_on=- at=1800000000000 conversation=t1 model_name="GPT-6 Astra" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[]
 ## 2 fact {"channel":"rpc","json":{"method":"turn/started","params":{"threadId":"t1","turn":{"id":"turn-1","items":[],"status":"inProgress"}}}}
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-6-astra model_name="GPT-6 Astra" effort=medium permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000000000 conversation=t1 model_name="GPT-6 Astra" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[]
 ## 3 fact {"channel":"rpc","json":{"method":"item/completed","params":{"item":{"content":[{"text":"Please fix the flaky login retry test","type":"text"}],"id":"u1","type":"userMessage"},"threadId":"t1","turnId":"turn-1"}}}
 effect write "{\"id\":\"amux-1\",\"method\":\"config/read\",\"params\":{\"cwd\":\"\",\"includeLayers\":false}}"
 item u1 prompt final at=1800000000000 text="Please fix the flaky login retry test"
@@ -23,13 +24,13 @@ effect write "{\"id\":\"amux-3\",\"method\":\"turn/start\",\"params\":{\"input\"
 effect write "{\"id\":\"amux-unsubscribe-hidden\",\"method\":\"thread/unsubscribe\",\"params\":{\"threadId\":\"hidden\"}}"
 effect write "{\"id\":\"amux-name-1\",\"method\":\"thread/name/set\",\"params\":{\"name\":\"Fix flaky login retry test\",\"threadId\":\"t1\"}}"
 snapshot title "Fix flaky login retry test"
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-6-astra model_name="GPT-6 Astra" effort=medium permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000000000 conversation=t1 model_name="GPT-6 Astra" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[]
 ## 11 fact {"channel":"rpc","json":{"method":"thread/name/updated","params":{"threadId":"t1","threadName":"Fix flaky login retry test"}}}
 ## 12 fact {"channel":"rpc","json":{"method":"thread/name/updated","params":{"threadId":"t1","threadName":"Login retries"}}}
 snapshot title "Login retries"
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-6-astra model_name="GPT-6 Astra" effort=medium permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000000000 conversation=t1 model_name="GPT-6 Astra" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[]
 ## 13 rename {"name":"login-work"}
 effect write "{\"id\":\"amux-name-2\",\"method\":\"thread/name/set\",\"params\":{\"name\":\"login-work\",\"threadId\":\"t1\"}}"
 snapshot title "-"
-snapshot WORKING queue=[] working_on=- at=1800000000000 asks=[] thread=t1 model=gpt-6-astra model_name="GPT-6 Astra" effort=medium permission=default mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1800000000000 conversation=t1 model_name="GPT-6 Astra" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[]
 ## 14 fact {"channel":"rpc","json":{"method":"thread/name/updated","params":{"threadId":"t1","threadName":"login-work"}}}

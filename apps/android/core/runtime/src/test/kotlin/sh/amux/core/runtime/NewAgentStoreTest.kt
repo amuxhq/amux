@@ -96,8 +96,8 @@ class NewAgentStoreTest {
             ),
         ),
         modes = listOf(
-            OfferedMode(value = "default", displayName = "Default", normal = true, settable = true, level = 0),
-            OfferedMode(value = "plan", displayName = "Plan", normal = false, settable = true, level = 0),
+            OfferedMode(value = "default", displayName = "Default", normal = true, settable = true),
+            OfferedMode(value = "plan", displayName = "Plan", normal = false, settable = true),
         ),
         skills = emptyList(),
         newAgent = null,

@@ -55,6 +55,9 @@ pub enum SetupEffect {
         settings: Box<wire::UpdateSettingsRequest>,
         step: Option<SetupStep>,
     },
+    /// Pin these folders among this machine's repositories, then confirm
+    /// the step.
+    Pin { paths: Vec<String>, step: SetupStep },
     /// Rename this machine.
     Rename(String),
     /// Open the pairing window (a fresh one, closing any first) and watch it.
@@ -73,8 +76,6 @@ pub enum SetupEffect {
     OfferPage,
     /// Open a link in the browser.
     OpenUrl(String),
-    /// Ask for the folders worth offering as repositories.
-    Suggest,
     /// Onboarding is over: home, with this agent selected when one is named.
     Home(Option<AgentKey>),
 }
@@ -129,7 +130,8 @@ struct Repositories {
     /// Each folder: its path, as shown, and whether it is ticked.
     rows: Vec<(String, String, bool)>,
     adding: Option<Editor>,
-    loaded: bool,
+    /// The folders already pinned, which are not asked about again.
+    pinned: Vec<String>,
 }
 
 /// The onboarding screen.
@@ -266,9 +268,11 @@ impl Onboarding {
                 effects.extend(self.count_offer());
             }
             SetupStep::Repositories => {
-                if !self.repositories.loaded {
-                    effects.push(SetupEffect::Suggest);
-                }
+                let folders = fleet
+                    .host(&self.local_host)
+                    .map(|entry| entry.folders.clone())
+                    .unwrap_or_default();
+                self.suggestions(folders);
             }
             SetupStep::Improve => self.auto_reports = self.settings.auto_reports,
             SetupStep::FirstAgent => {
@@ -387,9 +391,17 @@ impl Onboarding {
         self.settings = settings;
     }
 
-    /// An agent new on this machine while the last step shows is the one
-    /// the phone started: home, with it selected.
+    /// Folders this machine's entry offers after the repositories step
+    /// opened join it, as the daemon finds them; and an agent new on this
+    /// machine while the last step shows is the one the phone started:
+    /// home, with it selected.
     pub fn fleet_changed(&mut self, fleet: &FleetState) -> Vec<SetupEffect> {
+        if self.step == SetupStep::Repositories {
+            if let Some(entry) = fleet.host(&self.local_host) {
+                self.suggestions(entry.folders.clone());
+            }
+            return Vec::new();
+        }
         if self.step != SetupStep::FirstAgent {
             return Vec::new();
         }
@@ -566,18 +578,33 @@ impl Onboarding {
         effects
     }
 
-    pub fn suggestions(&mut self, suggested: Vec<wire::Folder>) {
-        self.repositories.loaded = true;
-        let mut rows: Vec<(String, String, bool)> = suggested
+    /// The folders this machine's entry offers: those Claude Code and Codex
+    /// ran in lately are suggested, ticked; those already pinned stay and
+    /// are not asked about again. A folder already listed keeps its place
+    /// and its tick, so the list only grows as the entry offers more.
+    pub fn suggestions(&mut self, folders: Vec<wire::Folder>) {
+        let (pinned, others): (Vec<_>, Vec<_>) = folders
             .into_iter()
-            .map(|entry| {
-                let shown = text::tilde(&entry.path);
-                (entry.path, shown, true)
-            })
-            .collect();
-        // Repositories already chosen stay; they are not asked about again.
-        rows.retain(|(path, ..)| !self.settings.repositories.contains(path));
-        self.repositories.rows = rows;
+            .partition(|folder| folder.kind() == wire::FolderKind::Pinned);
+        self.repositories.pinned = pinned.into_iter().map(|folder| folder.path).collect();
+        // A person on "Add a repository" stays there as rows join above it.
+        let on_add = self.step == SetupStep::Repositories
+            && !self.repositories.rows.is_empty()
+            && self.focus == self.repositories.rows.len();
+        for folder in others {
+            let listed = self
+                .repositories
+                .rows
+                .iter()
+                .any(|(path, ..)| *path == folder.path);
+            if folder.kind() == wire::FolderKind::History && !listed {
+                let shown = text::tilde(&folder.path);
+                self.repositories.rows.push((folder.path, shown, true));
+            }
+        }
+        if on_add {
+            self.focus = self.repositories.rows.len();
+        }
     }
 
     /// The step's settings were taken and it is confirmed.
@@ -738,16 +765,19 @@ impl Onboarding {
                     self.repositories.adding = Some(Editor::default());
                     return Vec::new();
                 }
-                let mut paths = self.settings.repositories.clone();
+                let mut paths: Vec<String> = Vec::new();
                 for (path, _, ticked) in &self.repositories.rows {
-                    if *ticked && !paths.contains(path) {
+                    if *ticked && !self.repositories.pinned.contains(path) && !paths.contains(path)
+                    {
                         paths.push(path.clone());
                     }
                 }
-                self.confirm(wire::UpdateSettingsRequest {
-                    repositories: Some(wire::RepositoryList { paths }),
-                    ..Default::default()
-                })
+                self.busy = true;
+                self.error = None;
+                vec![SetupEffect::Pin {
+                    paths,
+                    step: self.step,
+                }]
             }
             SetupStep::Improve => self.confirm(wire::UpdateSettingsRequest {
                 auto_reports: Some(self.auto_reports),
@@ -1229,10 +1259,6 @@ impl Onboarding {
             theme.text(),
         );
         screen.blank();
-        if !self.repositories.loaded {
-            screen.words("Looking for recent repositories…", theme.faint());
-            return None;
-        }
         if self.repositories.rows.is_empty() {
             screen.words("No recent repositories found.", theme.faint());
             screen.blank();

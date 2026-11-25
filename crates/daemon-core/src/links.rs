@@ -21,7 +21,7 @@ use std::net::SocketAddr;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use wire::HelloAck;
-use wire::message::Body;
+use wire::link_message::Body;
 
 use crate::Daemon;
 use crate::ids::{ChannelId, HostId, LinkId, TimerId};
@@ -589,7 +589,7 @@ fn hosts(hosts: &[wire::Host]) -> impl Iterator<Item = HostId> + '_ {
 #[cfg(test)]
 mod tests {
     use store::Sqlite;
-    use wire::{Hello, Message, NeighborDown, NeighborUp};
+    use wire::{Hello, LinkMessage, NeighborDown, NeighborUp};
 
     use super::*;
     use crate::StartOptions;
@@ -659,7 +659,7 @@ mod tests {
     fn a_peers_hello_and_neighbor_frames_say_which_hosts_it_reaches() {
         let mut daemon = daemon();
         up(&mut daemon);
-        let hello = Message {
+        let hello = LinkMessage {
             body: Some(Body::Hello(Hello {
                 neighbors: vec![host([2; 16]), host(OWN), host(PEER.0), host([3; 16])],
                 ..Default::default()
@@ -674,12 +674,12 @@ mod tests {
         );
         assert_eq!(claims(&daemon), vec![HostId([2; 16]), HostId([3; 16])]);
 
-        let neighbor_up = Message {
+        let neighbor_up = LinkMessage {
             body: Some(Body::NeighborUp(NeighborUp {
                 host: Some(host([4; 16])),
             })),
         };
-        let neighbor_down = Message {
+        let neighbor_down = LinkMessage {
             body: Some(Body::NeighborDown(NeighborDown {
                 host_id: vec![2; 16],
             })),
@@ -852,7 +852,7 @@ mod tests {
             daemon,
             Input::LinkControl {
                 link,
-                frame: Message { body: Some(body) },
+                frame: LinkMessage { body: Some(body) },
             },
         )
         .into_iter()
@@ -1015,7 +1015,7 @@ mod tests {
             &mut daemon,
             Input::LinkControl {
                 link: LINK,
-                frame: Message {
+                frame: LinkMessage {
                     body: Some(addresses(&["192.168.1.4:7000"], Some("203.0.113.9:41000"))),
                 },
             },
@@ -1078,7 +1078,7 @@ mod tests {
                 daemon,
                 Input::LinkControl {
                     link: relay_link,
-                    frame: Message { body: Some(body) },
+                    frame: LinkMessage { body: Some(body) },
                 },
             )
         };
@@ -1185,7 +1185,7 @@ mod tests {
         up(&mut daemon);
         let ask = || Input::LinkControl {
             link: LINK,
-            frame: Message {
+            frame: LinkMessage {
                 body: Some(Body::RefreshCredential(wire::RefreshCredential {})),
             },
         };

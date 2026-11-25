@@ -294,7 +294,12 @@ impl ProfileRuntime {
             .into_iter()
             .filter(|row| row.agent.host == host)
             .collect();
-        own.sort_by_key(|row| std::cmp::Reverse(row.phase_since_ms.unwrap_or(row.created_at_ms)));
+        own.sort_by_key(|row| {
+            std::cmp::Reverse(match row.status.phase_since_ms {
+                0 => row.created_at_ms,
+                since => since,
+            })
+        });
         let logs = self.dump_logs(&own, &partial, &mut errors)?;
         let mut room = Room {
             left: REPORT_LIMIT.saturating_sub(logs),
@@ -1015,12 +1020,15 @@ mod tests {
                 ..Default::default()
             }],
             snapshot: Some(wire::Snapshot {
-                working_on: Some("a zebra".to_owned()),
-                git: Some(wire::Git {
-                    branch: Some("main".to_owned()),
-                    base_branch: Some("m".to_owned()),
-                    ..Default::default()
-                }),
+                status: Some(Box::new(wire::AgentStatus {
+                    working_on: Some("a zebra".to_owned()),
+                    git: Some(wire::Git {
+                        branch: Some("main".to_owned()),
+                        base_branch: Some("m".to_owned()),
+                        ..Default::default()
+                    }),
+                    ..wire::AgentStatus::NONE
+                })),
                 ..Default::default()
             }),
             ..Default::default()
@@ -1034,7 +1042,14 @@ mod tests {
             let journal::Frame::Whole(recorded, _) = journal::decode_frame(&frame) else {
                 panic!("the frame decodes");
             };
-            let git = recorded.snapshot.as_ref().unwrap().git.clone().unwrap();
+            let git = recorded
+                .snapshot
+                .as_ref()
+                .unwrap()
+                .status()
+                .git
+                .clone()
+                .unwrap();
             assert_eq!(git.branch.as_ref().map(String::len), Some(4));
             assert_ne!(git.branch.as_deref(), Some("main"));
             assert_eq!(git.base_branch.as_ref().map(String::len), Some(1));

@@ -30,9 +30,8 @@ use uuid::Uuid;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    AgentRef, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, Input, PromptInput, WithdrawQueued, claude_pty_input, claude_sdk_input,
-    codex_input, create_agent_request,
+    AgentRef, ClaudePtyInput, ClaudeSdkInput, CodexInput, CreateAgentRequest, Input, PromptInput,
+    WithdrawQueued, claude_pty_input, claude_sdk_input, codex_input,
 };
 
 use crate::binaries::Binaries;
@@ -304,6 +303,10 @@ struct Host {
     process: Option<ProcessHost>,
     /// A process host's daemon is up as far as the net's verbs know.
     running: bool,
+    /// How many of the host's link log lines its daemons that are gone
+    /// wrote: a link of a run that ended is down, said or not, since a
+    /// crash writes nothing and a clean stop ends its links' tasks.
+    ended_runs_logged: usize,
     /// The host's `claude` and `codex` commands.
     commands: Commands,
 }
@@ -1080,12 +1083,11 @@ impl Net {
             agent_id: id.as_bytes().to_vec(),
             name: Some(decl.name.clone()),
             cwd,
-            agent: Some(create_config(&decl, provider)),
             initial_prompt: decl
                 .prompt
                 .as_deref()
                 .map(|text| submission(b"testnet-first", text)),
-            ..wire::CreateAgentRequest::default()
+            ..create_config(&decl, provider)
         };
         let person = self.person(&decl.host).await?;
         let launching = self.launching(&host, Some((decl.kind, &script, provider)))?;
@@ -1296,6 +1298,7 @@ impl Net {
             .join("scripts")
             .join(format!("{name}.json"));
         let submission = text.map(|text| wire::PromptSubmission {
+            continued: false,
             input_id: Uuid::new_v4().as_bytes().to_vec(),
             prompt: Some(PromptInput {
                 text: text.to_owned(),
@@ -1539,8 +1542,7 @@ impl Net {
                 .as_deref()
                 .map(|text| submission(b"testnet-first", text)),
             cwd,
-            agent: Some(create_config(&decl, provider)),
-            ..CreateAgentRequest::default()
+            ..create_config(&decl, provider)
         };
         providers::choose(&self.choices(), id, provider, decl.kind, &script)?;
         let asked = self.agent_dir(parent)?;
@@ -1963,6 +1965,7 @@ impl Net {
                 others: Arc::default(),
                 process,
                 running: false,
+                ended_runs_logged: 0,
                 commands: Commands {
                     claude: PathBuf::new(),
                     codex: PathBuf::new(),
@@ -2516,9 +2519,8 @@ impl Net {
                 agent_id: Uuid::new_v4().as_bytes().to_vec(),
                 name: Some(name.to_owned()),
                 cwd: work,
-                agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
-                    ClaudeCreateConfig::default(),
-                )),
+                provider: "claude".into(),
+                kind: wire::Kind::ClaudeSdk as i32,
                 ..wire::CreateAgentRequest::default()
             })
             .await?)
@@ -2741,24 +2743,46 @@ impl Net {
     }
 
     /// The path carrying `host`'s link to `peer` now, by `host`'s link log:
-    /// the path its last line for the peer names, or none once that line
-    /// says the link went down.
+    /// the path its last line for the peer names, or none once none of its
+    /// running daemon's links to the peer is up. A host can hold several
+    /// links to one peer, as a server holds the link of a phone's killed
+    /// process until it times out beside the next process's, and one path
+    /// carries them all; the old link going down leaves the new one up.
     pub fn carrying_path(
         &self,
         host: &str,
         peer: &str,
     ) -> Result<Option<node::link_log::PathKind>, NetError> {
+        use node::link_log::LinkTransition;
         let peer = self.host(peer)?.host_id;
-        Ok(self
-            .link_log(host)?
-            .iter()
-            .rev()
-            .find(|event| {
-                event.peer == peer && event.event != node::link_log::LinkTransition::CaughtUp
-            })
-            .and_then(|event| {
-                (event.event != node::link_log::LinkTransition::Down).then_some(event.path)
-            }))
+        let ended = self.hosts[host].ended_runs_logged;
+        let (mut up, mut path) = (0usize, None);
+        for event in self.link_log(host)?.iter().skip(ended) {
+            if event.peer != peer {
+                continue;
+            }
+            match event.event {
+                LinkTransition::Up => {
+                    up += 1;
+                    path = Some(event.path);
+                }
+                LinkTransition::PathChanged => path = Some(event.path),
+                LinkTransition::Down => up = up.saturating_sub(1),
+                LinkTransition::CaughtUp => {}
+            }
+        }
+        Ok(path.filter(|_| up > 0))
+    }
+
+    /// Notes that `host`'s daemon has ended: every line its log holds now
+    /// is of a run that is gone.
+    fn run_ended(&mut self, host: &str) -> Result<(), NetError> {
+        let logged = self.link_log(host)?.len();
+        self.hosts
+            .get_mut(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?
+            .ended_runs_logged = logged;
+        Ok(())
     }
 
     /// What the gate in front of `host`'s LAN listener does to each
@@ -2812,18 +2836,14 @@ impl Net {
             self.admin(a)
                 .await?
                 .unpair(wire::UnpairRequest {
-                    peer: Some(wire::HostRef {
-                        of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
-                    }),
+                    host_id: peer.as_bytes().to_vec(),
                 })
                 .await
                 .map_err(|status| NetError::Refused(Box::new(status)))?;
             return Ok(self.ack(format!("{a} no longer trusts {b}")));
         }
         self.edge(a)?
-            .unpair(wire::HostRef {
-                of: Some(wire::host_ref::Of::HostId(peer.as_bytes().to_vec())),
-            })
+            .unpair(peer.as_bytes())
             .await
             .map_err(|error| NetError::Host {
                 host: a.to_owned(),
@@ -2900,7 +2920,7 @@ impl Net {
             }
         })
         .await?;
-        Ok(())
+        self.run_ended(name)
     }
 
     // --- faults ------------------------------------------------------------
@@ -3186,6 +3206,7 @@ impl Net {
                 host: host.to_owned(),
                 why,
             })?;
+            self.run_ended(host)?;
             let supervised = self.hosts[host].decl.supervised;
             // A supervisor starts its daemon again on its own, as it does
             // after any crash; a bare daemon stays down.
@@ -3217,6 +3238,7 @@ impl Net {
                 host: host.to_owned(),
                 why,
             })?;
+            self.run_ended(host)?;
             self.hosts.get_mut(host).expect("the host").running = false;
             self.withdraw_process(host);
             return Ok(self.ack(format!("{host}'s daemon stopped with amux server stop")));
@@ -3512,13 +3534,19 @@ impl Net {
     /// one contiguous block ending at the origin's newest row, at the
     /// origin's revisions.
     pub async fn assert_block_invariant(&self, host: &str, agent: &str) -> Result<(), NetError> {
-        self.in_process(host, "the block invariant reads both stores and")?;
-        self.in_process(
-            &self.agent(agent)?.host,
-            "the block invariant reads both stores and",
-        )?;
         let agent = self.agent(agent)?.clone();
-        let key = agent.key();
+        self.block_invariant_at(host, &agent.host, &agent.key())
+            .await
+    }
+
+    async fn block_invariant_at(
+        &self,
+        host: &str,
+        origin: &str,
+        key: &AgentKey,
+    ) -> Result<(), NetError> {
+        self.in_process(host, "the block invariant reads both stores and")?;
+        self.in_process(origin, "the block invariant reads both stores and")?;
         let block = |host: String| {
             let key = key.clone();
             async move {
@@ -3532,7 +3560,7 @@ impl Net {
             }
         };
         let replica = block(host.to_owned()).await?;
-        let origin = block(agent.host.clone()).await?;
+        let origin = block(origin.to_owned()).await?;
         invariant::check(&replica, &origin)?;
         Ok(())
     }
@@ -3805,11 +3833,38 @@ impl Net {
     /// on one host's writes.
     pub async fn current(&self, host: &str, agent: &str) -> Result<(), NetError> {
         let at = self.agent(agent)?.clone();
-        let key = at.key();
+        self.current_at(host, &at.host, at.key(), agent).await
+    }
+
+    /// [`Net::current`] for an agent the net did not declare, as a fleet
+    /// lists it: a provider's subagent, which its parent's provider
+    /// starts.
+    pub async fn current_listed(&self, host: &str, agent: &wire::Agent) -> Result<(), NetError> {
+        let origin = self.host_of(&agent.host_id)?;
+        let key = AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
+        self.current_at(host, &origin, key, &agent.name).await
+    }
+
+    /// The name of the host whose id is `host_id`.
+    fn host_of(&self, host_id: &[u8]) -> Result<String, NetError> {
+        self.hosts
+            .values()
+            .find(|host| host.info.host_id.as_bytes() == host_id)
+            .map(|host| host.info.name.clone())
+            .ok_or_else(|| NetError::NoHost(hex(host_id)))
+    }
+
+    async fn current_at(
+        &self,
+        host: &str,
+        origin: &str,
+        key: AgentKey,
+        agent: &str,
+    ) -> Result<(), NetError> {
         let what = format!("{agent}'s replica at {host} to be current");
         observe::until(&what, || async {
             let newest = {
-                let runtime = self.runtime(&at.host).map_err(|error| error.to_string())?;
+                let runtime = self.runtime(origin).map_err(|error| error.to_string())?;
                 let key = key.clone();
                 runtime
                     .read_store(move |store| probes::origin_newest(store, &key))
@@ -3824,7 +3879,7 @@ impl Net {
                     .await
                     .map_err(|error| error.to_string())??;
             }
-            self.assert_block_invariant(host, agent)
+            self.block_invariant_at(host, origin, &key)
                 .await
                 .map_err(|error| error.to_string())
         })
@@ -3989,6 +4044,7 @@ pub async fn local_channel(
 /// A first prompt for a create or a resume.
 pub fn submission(id: &[u8], text: &str) -> wire::PromptSubmission {
     wire::PromptSubmission {
+        continued: false,
         input_id: id.to_vec(),
         prompt: Some(PromptInput {
             text: text.to_owned(),
@@ -4258,9 +4314,8 @@ fn forward_events<T: Send + 'static>(
     (incoming, reader)
 }
 
-/// A kind and its settings as a person's create asks for them.
-fn create_config(decl: &AgentDecl, provider: Provider) -> create_agent_request::Agent {
-    use create_agent_request::Agent;
+/// The program, kind and settings a person's create asks for.
+fn create_config(decl: &AgentDecl, provider: Provider) -> CreateAgentRequest {
     // A real Claude starts asking, as a person's own default on a real
     // host has it: left unset, Claude would take the operator's own
     // default permission mode from outside the agent's settings.
@@ -4277,20 +4332,21 @@ fn create_config(decl: &AgentDecl, provider: Provider) -> create_agent_request::
             FakeKind::ClaudePty | FakeKind::ClaudeSdk => SMALL_CLAUDE.to_owned(),
         })
     });
-    let claude = ClaudeCreateConfig {
-        permission: permission.clone(),
-        model: model.clone(),
-        ..ClaudeCreateConfig::default()
+    let (program, kind, mode) = match decl.kind {
+        FakeKind::Codex => (wire::agents::CODEX, wire::Kind::Codex, decl.mode.clone()),
+        FakeKind::ClaudePty => (wire::agents::CLAUDE, wire::Kind::ClaudePty, None),
+        FakeKind::ClaudeSdk => (wire::agents::CLAUDE, wire::Kind::ClaudeSdk, None),
     };
-    match decl.kind {
-        FakeKind::Codex => Agent::Codex(CodexCreateConfig {
-            permission,
+    CreateAgentRequest {
+        provider: program.to_owned(),
+        kind: kind as i32,
+        settings: Some(wire::AgentSettings {
             model,
-            mode: decl.mode.clone(),
-            ..CodexCreateConfig::default()
+            permission,
+            mode,
+            ..wire::AgentSettings::default()
         }),
-        FakeKind::ClaudePty => Agent::ClaudePty(claude),
-        FakeKind::ClaudeSdk => Agent::ClaudeSdk(claude),
+        ..CreateAgentRequest::default()
     }
 }
 

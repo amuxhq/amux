@@ -135,6 +135,18 @@ def third_party_http_archive(**kwargs):
 def third_party_git_fetch(**kwargs):
     native.git_fetch(exec_compatible_with = EXEC_LIKE_TARGET, **kwargs)
 
+# A crate's C and assembly (reindeer.toml, `cxx_library`, from a crate's
+# fixups: ring's, zstd-sys's, blake3's). Where Buck2 runs actions itself
+# (CI's macOS runners, build/platforms/defs.bzl), it uploads one's result
+# only if the action allows it. A Rust action leaves that to
+# `buck2.default_allow_cache_upload`, which scripts/buck-config.py turns on
+# there; the prelude's C compiles and archives say no unless their library
+# says yes, so they ran again on every run. They say yes where Rust's do.
+_UPLOAD_LOCAL = read_root_config("buck2", "default_allow_cache_upload", "false") == "true"
+
+def third_party_cxx_library(**kwargs):
+    native.cxx_library(allow_cache_upload = _UPLOAD_LOCAL, archive_allow_cache_upload = _UPLOAD_LOCAL, **kwargs)
+
 # A crate's build script run (reindeer.toml, `buildscript_genrule`). The
 # prelude hands a build script the C toolchain's tools as CC, CXX, AR and
 # LD shims. In a Windows release build, which uses MSVC

@@ -518,7 +518,7 @@ impl Install {
                     OpenAsk::Claude(claude)
                         if matches!(
                             claude.body,
-                            Some(wire::ask::Body::Form(_) | wire::ask::Body::Link(_))
+                            Some(wire::claude_ask::Body::Form(_) | wire::claude_ask::Body::Link(_))
                         ) =>
                     {
                         forms += 1;

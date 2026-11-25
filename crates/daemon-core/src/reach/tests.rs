@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 
 use store::Sqlite;
 use uuid::Uuid;
-use wire::message::Body;
-use wire::{Hello, Message};
+use wire::link_message::Body;
+use wire::{Hello, LinkMessage};
 
 use super::*;
 use crate::host_set::Candidate;
@@ -162,7 +162,7 @@ fn claims(daemon: &mut Daemon, link: u64, hosts: &[HostId]) -> Vec<Output> {
         daemon,
         Input::LinkControl {
             link: LinkId(link),
-            frame: Message {
+            frame: LinkMessage {
                 body: Some(Body::Hello(hello)),
             },
         },
@@ -188,7 +188,7 @@ fn refused(daemon: &mut Daemon, link: u64, host: HostId, reason: ForwardRefusal)
         daemon,
         Input::LinkControl {
             link: LinkId(link),
-            frame: Message {
+            frame: LinkMessage {
                 body: Some(Body::ForwardRefused(wire::ForwardRefused {
                     dst: host.0.to_vec(),
                     reason: reason as i32,
@@ -320,6 +320,39 @@ fn a_failed_attempt_is_tried_again_after_a_second_doubling_to_thirty() {
     assert_eq!(
         pauses,
         vec![1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]
+    );
+}
+
+/// A host whose handshake refused this one as no longer trusted is not
+/// dialled again: not when the pause after the refusal ends, nor when the
+/// local network finds it somewhere new. Only something that says it may
+/// have taken the revocation back (a pairing, an answer) lifts the mark.
+#[test]
+fn a_host_that_refused_this_one_as_revoked_is_not_dialled_again() {
+    let mut daemon = daemon(trusting());
+    let (attempt, _) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
+    let out = ended(&mut daemon, DESK, attempt, AttemptOutcome::Revoked);
+    assert!(daemon.revoked_by(DESK));
+    let mut after = out.clone();
+    if let Some(due) = armed(&out, TimerId::Retry(DESK)) {
+        after.extend(step(
+            &mut daemon,
+            Input::Tick {
+                now_ms: due,
+                link_ms: due,
+            },
+        ));
+        after.extend(step(
+            &mut daemon,
+            Input::Timer {
+                id: TimerId::Retry(DESK),
+            },
+        ));
+    }
+    after.extend(found(&mut daemon, DESK, &["10.0.0.2:7000"]));
+    assert!(
+        dials(&after).iter().all(|(host, ..)| *host != DESK),
+        "the desk is dialled again: {after:?}"
     );
 }
 
@@ -644,7 +677,7 @@ fn arrived(daemon: &mut Daemon, link: u64, host: HostId) -> Vec<Output> {
         daemon,
         Input::LinkControl {
             link: LinkId(link),
-            frame: Message {
+            frame: LinkMessage {
                 body: Some(Body::NeighborUp(wire::NeighborUp {
                     host: Some(wire::Host {
                         host_id: host.0.to_vec(),

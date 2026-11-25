@@ -39,8 +39,9 @@ host module, plus the registry that says which programs a host offers.
 
 On the wire an ACP agent is one kind, `KIND_ACP`, with its own envelope (`AcpItem`, `AcpSnapshot`, `AcpInput`,
 `AcpAsk`, `AcpAnswer` in [`acp.proto`](../proto/amux/v1/acp.proto)). Which agent it is travels as a plain string, the
-provider id (`antigravity`, `grok`, `my-agent`), in `AcpCreateConfig.agent`, the spec's `provider` and every
-message that names a provider. Claude and Codex have provider ids too (`claude`, `codex`), so no client keeps a
+provider id (`antigravity`, `grok`, `my-agent`), in `CreateAgentRequest.provider`, the spec's `provider` and
+every message that names a provider; a create names no kind for it, since the host runs every ACP agent as
+`KIND_ACP`. Claude and Codex have provider ids too (`claude`, `codex`), so no client keeps a
 closed list of providers.
 
 amux offers an agent no file-system and no terminal client capabilities, so the agent does its own I/O. It does
@@ -70,8 +71,8 @@ cannot goes in the table, with its recording.
 
 Whether an agent can continue a conversation in a new process is decided by what its own `initialize` says, not
 by its id: `session/resume` where it offers it, else `session/load` (whose replay of the conversation is swallowed
-until the load's answer), else nothing. The answer is kept on the agent's snapshot (`AcpSnapshot.reopen`) and in
-its capabilities (`resumable`), from each process's own `initialize`, since it can change with the agent's version.
+until the load's answer), else nothing. The answer is kept in the agent's capabilities on its snapshot
+(`resumable`), from each process's own `initialize`, since it can change with the agent's version.
 
 An agent that offers neither cannot be resumed at all, and amux never pretends it can:
 
@@ -115,6 +116,9 @@ Agent can offer pickers. For an ACP agent, asking must leave nothing behind in t
   `initialize`'s `_meta`; Antigravity and OpenCode list them only in a session, so the helper runs their own listing
   commands instead, `agy models` (a line per model and effort, `gemini-3.8-flash-low`, read back into the model and
   its efforts) and `opencode models` (a model id per line), and adds the modes amux knows each has (`wire::levels`).
+  The modes amux knows to be permissions are listed among the catalogue's permissions, each at its level on amux's
+  scale, and set with `SetPermission`; the rest, and every mode of an agent a person added, are modes, set with
+  `SetMode`.
 - What the helper cannot list comes from the agent's most recent conversation on that host: each conversation
   publishes its catalogue, and [`node::offers`](../crates/node/src/offers.rs) keeps the newest (`Learned`). For an
   agent a person added that is everything; for the built-ins it is the commands Antigravity and OpenCode say only
@@ -139,16 +143,19 @@ as a `ProviderOnHost` with:
 
 - a `ProviderDescriptor`: the name people see (the built-in's, or the `name` of a person's entry, else its id),
   the kind a new agent starts as, the sign-in hint and the version;
-- `AgentCapabilities`: whether it stops one background job, switches back to an earlier conversation, has a
+- each kind it runs there (`kinds`), with that kind's `AgentCapabilities`: whether it stops one background job, switches back to an earlier conversation, has a
   terminal of its own to attach to, is resumable (and so suspendable), takes a queued prompt into a running turn,
-  takes images, takes files, and passes slash commands it does not list.
+  takes images, takes files, passes slash commands it does not list, forks, and how each of its settings is
+  changed.
 
-For Claude and Codex the capabilities are the kind's ([`wire::capabilities`](../crates/wire/src/capabilities.rs)).
+For Claude and Codex every agent of a kind can do the same, so the interpreter and the host fill the same values
+([`wire::capabilities`](../crates/wire/src/capabilities.rs)).
 For an ACP agent they come from its `initialize` and its quirks (`AgentCapabilities::acp`): send-now only for an
 agent known to fold a prompt into its running turn (Antigravity), images from its prompt capabilities, files always
 (to an agent that takes no embedded contents, a file goes named by its path for it to read), resumable from its
 session capabilities, and never a terminal or a job stop. A running agent's own snapshot carries its capabilities
-too, which is what a client reads for that agent. `just client-kind-check` fails a client crate that decides by
+too, which is what a client reads for that agent; until its first snapshot a client reads the host's.
+`just client-kind-check` fails a client crate that decides by
 kind outside the decode boundary.
 
 Analytics name a built-in by its id and every agent a person added as `custom`, since an id is the person's own

@@ -10,10 +10,9 @@ use futures_util::StreamExt as _;
 use settings::ChatInSetting;
 use uuid::Uuid;
 use wire::{
-    Agent, ClaudeCreateConfig, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput,
-    CreateAgentRequest, DumpRequest, Filing, HostEntry, Input, Kind, Lifecycle, Phase, PromptInput,
-    PromptSubmission, Refusal, claude_pty_input, claude_sdk_input, codex_input,
-    create_agent_request, inventory_event, send_input_response,
+    Agent, ClaudePtyInput, ClaudeSdkInput, CodexInput, CreateAgentRequest, DumpRequest, Filing,
+    HostEntry, Input, Kind, Lifecycle, Phase, PromptInput, PromptSubmission, Refusal,
+    claude_pty_input, claude_sdk_input, codex_input, inventory_event, send_input_response,
 };
 
 type Client = client::Client;
@@ -74,7 +73,7 @@ fn short_id(id: &[u8]) -> String {
 /// The agent a person chose, as the listing says it: its provider id, the
 /// word `amux new` takes, whichever interface it runs for.
 fn agent_word(agent: &Agent) -> &str {
-    match agent.provider_id() {
+    match agent.provider.as_str() {
         "" => "unknown",
         id => id,
     }
@@ -98,11 +97,7 @@ fn exit_words(agent: &Agent) -> Option<String> {
         ExitCause::EndedUnexpectedly => "ended unexpectedly",
         ExitCause::Suspended => "suspended",
     };
-    match agent
-        .exit_detail
-        .as_deref()
-        .filter(|detail| !detail.is_empty())
-    {
+    match agent.exit_detail().filter(|detail| !detail.is_empty()) {
         Some(detail) if words.is_empty() => Some(detail.to_owned()),
         Some(detail) => Some(format!("{words}: {detail}")),
         None => (!words.is_empty()).then(|| words.to_owned()),
@@ -120,14 +115,14 @@ fn state(agent: &Agent) -> String {
             None => "exited".to_owned(),
         };
     }
-    let phase = match Phase::try_from(agent.phase).unwrap_or(Phase::Unspecified) {
+    let phase = match agent.phase() {
         Phase::Unspecified => "unknown",
         Phase::Starting => "starting",
         Phase::Idle => "idle",
         Phase::Working => "working",
         Phase::NeedsYou => "needs you",
     };
-    match agent.working_on.as_deref() {
+    match agent.working_on() {
         Some(text) if !text.is_empty() => format!("{phase}: {text}"),
         _ => phase.to_owned(),
     }
@@ -236,7 +231,7 @@ fn listed_state(agent: &Agent, hosts: &[HostEntry], host_name: &str) -> String {
         Some(host) if live && host.revoked() => {
             format!("{host_name} unpaired this device")
         }
-        Some(host) if live && host.online().is_none() => {
+        Some(host) if live && !host.reachable() => {
             format!("{host_name} is away")
         }
         _ => state(agent),
@@ -298,6 +293,7 @@ async fn published_claude_kind(client: &Client, host: &[u8]) -> Result<Kind> {
 /// A first prompt for a create or a resume.
 fn submission(text: &str) -> PromptSubmission {
     PromptSubmission {
+        continued: false,
         input_id: Uuid::new_v4().as_bytes().to_vec(),
         prompt: Some(PromptInput {
             text: text.to_owned(),
@@ -353,51 +349,44 @@ pub async fn create(client: &Client, host: &[u8], create: Create) -> Result<()> 
     let model = create.model.clone();
     let effort = create.effort.clone();
     let permission = create.permission.clone();
-    let claude = || ClaudeCreateConfig {
-        args: create.args.clone(),
-        model: model.clone(),
-        effort: effort.clone(),
-        permission: permission.clone(),
-    };
     let published = match create.agent {
         CliAgent::Claude if create.interface.is_none() => {
             published_claude_kind(client, host).await?
         }
         _ => Kind::Unspecified,
     };
-    let only_claude_takes_arguments = || {
-        if create.args.is_empty() {
-            Ok(())
-        } else {
-            Err(anyhow!("only Claude takes extra arguments"))
-        }
+    if !create.args.is_empty() && !matches!(create.agent, CliAgent::Claude) {
+        bail!("only Claude takes extra arguments");
+    }
+    let settings = |permission: Option<String>, mode: Option<String>| wire::AgentSettings {
+        model: model.clone(),
+        effort: effort.clone(),
+        permission,
+        permission_level: 0,
+        mode,
     };
-    let config = match &create.agent {
-        CliAgent::Claude => match kind_for(&create.agent, create.interface, published) {
-            Kind::ClaudePty => create_agent_request::Agent::ClaudePty(claude()),
-            _ => create_agent_request::Agent::ClaudeSdk(claude()),
-        },
-        CliAgent::Codex => {
-            only_claude_takes_arguments()?;
-            create_agent_request::Agent::Codex(CodexCreateConfig {
-                model: model.clone(),
-                effort: effort.clone(),
-                permission: permission.clone(),
-                mode: None,
-            })
-        }
+    let (provider, kind, settings) = match &create.agent {
+        CliAgent::Claude => (
+            wire::agents::CLAUDE.to_owned(),
+            match kind_for(&create.agent, create.interface, published) {
+                Kind::ClaudePty => Kind::ClaudePty,
+                _ => Kind::ClaudeSdk,
+            },
+            settings(permission.clone(), None),
+        ),
+        CliAgent::Codex => (
+            wire::agents::CODEX.to_owned(),
+            Kind::Unspecified,
+            settings(permission.clone(), None),
+        ),
         // Another agent's permission is the mode it offers, by its own
         // name for it (`default`, `plan`); the agent's own settings choose
         // one when none is given.
-        CliAgent::Other(id) => {
-            only_claude_takes_arguments()?;
-            create_agent_request::Agent::Acp(wire::AcpCreateConfig {
-                agent: id.clone(),
-                model: model.clone(),
-                effort: effort.clone(),
-                mode: permission.clone(),
-            })
-        }
+        CliAgent::Other(id) => (
+            id.clone(),
+            Kind::Unspecified,
+            settings(None, permission.clone()),
+        ),
     };
     let agent = client
         .host(host)
@@ -407,7 +396,10 @@ pub async fn create(client: &Client, host: &[u8], create: Create) -> Result<()> 
             name: create.name,
             initial_prompt: create.prompt.as_deref().map(submission),
             cwd: cwd.to_string_lossy().into_owned(),
-            agent: Some(config),
+            provider,
+            kind: kind as i32,
+            settings: Some(settings),
+            args: create.args.clone(),
             new_workspace: create.worktree,
             ..CreateAgentRequest::default()
         })
@@ -466,7 +458,6 @@ fn refusal_words(name: &str, refusal: Refusal) -> String {
         Refusal::Exited => {
             format!("{name} has stopped; start it again with `amux resume {name} <text>`")
         }
-        Refusal::HostUnreachable => format!("{name}'s device cannot be reached"),
         Refusal::ConversationElsewhere => format!(
             "Claude's own view switched to another conversation, so {name}'s conversation is \
              not the one on its screen"
@@ -610,8 +601,11 @@ mod tests {
             name: name.into(),
             kind: Kind::Codex as i32,
             lifecycle: Lifecycle::Live as i32,
-            phase: Phase::Working as i32,
-            working_on: Some("Reply with only the word hello.".into()),
+            status: Some(Box::new(wire::AgentStatus {
+                phase: Phase::Working as i32,
+                working_on: Some("Reply with only the word hello.".into()),
+                ..wire::AgentStatus::default()
+            })),
             ..Agent::default()
         };
         let table = ls_table(
@@ -619,9 +613,9 @@ mod tests {
                 host(
                     1,
                     "pdesk",
-                    wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+                    wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Direct)),
                 ),
-                host(2, "plap", wire::trusted::Reach::Away(wire::Empty {})),
+                host(2, "plap", wire::trusted::Reach::Away(wire::Away {})),
             ],
             &[agent(1, 1, "here"), agent(2, 2, "c1")],
         );
@@ -640,8 +634,7 @@ mod tests {
     }
 
     /// The listing names each agent's program as `amux new` takes it: an
-    /// ACP agent by its own id, and an agent a host from before rows named
-    /// their program by what its kind implies.
+    /// ACP agent by its own id.
     #[test]
     fn ls_names_each_agents_program() {
         let agent = |id: u8, name: &str, kind: Kind, provider: &str| Agent {
@@ -651,14 +644,14 @@ mod tests {
             kind: kind as i32,
             provider: provider.into(),
             lifecycle: Lifecycle::Live as i32,
-            phase: Phase::Idle as i32,
+            status: wire::AgentStatus::in_phase(Phase::Idle),
             created_at_ms: i64::from(id),
             ..Agent::default()
         };
         let table = ls_table(
             &[],
             &[
-                agent(1, "old", Kind::ClaudeSdk, ""),
+                agent(1, "cl", Kind::ClaudeSdk, "claude"),
                 agent(2, "open", Kind::Acp, "opencode"),
                 agent(3, "cx", Kind::Codex, "codex"),
             ],

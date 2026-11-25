@@ -48,7 +48,7 @@ fn add(
     let step = Step {
         items,
         snapshot: Some(Snapshot {
-            phase: Phase::Idle as i32,
+            status: wire::AgentStatus::in_phase(Phase::Idle),
             at_ms,
             ..Default::default()
         }),

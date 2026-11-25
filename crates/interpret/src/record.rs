@@ -166,6 +166,7 @@ impl Run {
             .collect();
         let skeleton = self.alias.skeleton();
         // A setting is kept when it reads as one, else aliased.
+        let settings = config.settings.clone().unwrap_or_default();
         let setting = |kind: Chosen, value: &Option<String>| {
             value.as_deref().map(|value| match chosen(kind, value) {
                 true => value.to_owned(),
@@ -177,10 +178,10 @@ impl Run {
                 "kind": spec.kind().as_str_name(),
                 "provider": provider(&skeleton, &spec.provider_command),
                 "version": self.version,
-                "model": setting(Chosen::Model, &config.model),
-                "permission": setting(Chosen::Permission, &config.permission),
-                "mode": setting(Chosen::Mode, &config.mode),
-                "effort": setting(Chosen::Effort, &config.effort),
+                "model": setting(Chosen::Model, &settings.model),
+                "permission": setting(Chosen::Permission, &settings.permission),
+                "mode": setting(Chosen::Mode, &settings.mode),
+                "effort": setting(Chosen::Effort, &settings.effort),
                 "flags": flags,
                 "spec": spec_shape(&self.alias.skeleton(), spec),
             },
@@ -318,8 +319,21 @@ impl Run {
                 })
             }
             Event::Input(input) => person_input::<I>(alias, "input", input),
-            Event::ChildInput { agent_id, input } => {
-                let mut value = person_input::<I>(alias, "child_input", input);
+            Event::ChildInput {
+                agent_id,
+                input_id,
+                of,
+            } => {
+                let mut value = match of {
+                    wire::child_input::Of::Input(input) => {
+                        person_input::<I>(alias, "child_input", input)
+                    }
+                    wire::child_input::Of::StopJob(stop) => json!({
+                        "event": "child_stop_job",
+                        "input_id": alias.id(input_id),
+                        "job": alias.key(&stop.key),
+                    }),
+                };
                 value["agent"] = alias.id(agent_id).into();
                 value
             }
@@ -402,11 +416,11 @@ impl Run {
                 .map(|(ask, item)| (alias.key(ask), alias.key(item)))
                 .collect();
             json!({
-                "phase": snapshot.phase,
+                "phase": snapshot.status().phase,
                 "queue": queue,
                 "asks": asks,
-                "working_on": snapshot.working_on.is_some(),
-                "background_jobs": snapshot.background_jobs,
+                "working_on": snapshot.status().working_on.is_some(),
+                "background_jobs": snapshot.status().background_jobs,
                 "bytes": snapshot.body.len(),
             })
         });
@@ -454,13 +468,13 @@ impl Run {
                         .map(|append| (alias.key(&append.key), append.text.len()))
                         .collect::<Vec<_>>(),
                     "snapshot": part.snapshot.as_ref().map(|snapshot| json!({
-                        "phase": snapshot.phase,
+                        "phase": snapshot.status().phase,
                         "asks": I::describe_snapshot(&snapshot.body)
                             .asks
                             .iter()
                             .map(|(ask, item)| (alias.key(ask), alias.key(item)))
                             .collect::<Vec<_>>(),
-                        "background_jobs": snapshot.background_jobs,
+                        "background_jobs": snapshot.status().background_jobs,
                         "bytes": snapshot.body.len(),
                     })),
                     "end": part.end.as_ref().map(|end| end.cause),

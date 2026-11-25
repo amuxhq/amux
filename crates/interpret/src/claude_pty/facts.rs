@@ -13,7 +13,9 @@ use claude_protocol::transcript::{self, AssistantRow, Attachment, Row, SystemRow
 use serde::Deserialize;
 use serde_json::Value;
 use wire::claude_item::Kind;
-use wire::{Ask, BoundaryKind, DecisionOutcome, PermissionAsk, ToolState, Turn, TurnOutcome};
+use wire::{
+    BoundaryKind, ClaudeAsk, ClaudePermissionAsk, DecisionOutcome, ToolState, Turn, TurnOutcome,
+};
 
 use super::{
     AgentFact, Announced, AskMeta, AskShape, Call, Decision, HeldDisplay, HookRow, PendingMessage,
@@ -590,7 +592,7 @@ impl State {
                         })
                         .collect(),
                 );
-                (wire::ask::Body::Question(question), shape)
+                (wire::claude_ask::Body::Question(question), shape)
             }
             PLAN_TOOL if server.is_empty() => {
                 if let Some(plan) = crate::claude_common::plan_text(input) {
@@ -598,7 +600,7 @@ impl State {
                 }
                 let switch = self.plan_switch();
                 (
-                    wire::ask::Body::Plan(plan_ask(&switch)),
+                    wire::claude_ask::Body::Plan(plan_ask(&switch)),
                     AnswerShape::Plan { switch },
                 )
             }
@@ -614,7 +616,7 @@ impl State {
                     });
                 }
                 (
-                    wire::ask::Body::Permission(PermissionAsk {
+                    wire::claude_ask::Body::Permission(ClaudePermissionAsk {
                         tool_name: tool.clone(),
                         input: Some(tool_input(
                             &tool,
@@ -663,7 +665,7 @@ impl State {
         });
         self.put_ask(
             emit,
-            Ask {
+            ClaudeAsk {
                 key,
                 item_key: String::new(),
                 body: Some(body),
@@ -712,10 +714,10 @@ impl State {
             description: description.to_owned(),
             ..Default::default()
         };
-        let ask = Ask {
+        let ask = ClaudeAsk {
             item_key: ask_item::key(&key),
             key,
-            body: Some(wire::ask::Body::Question(wire::QuestionAsk {
+            body: Some(wire::claude_ask::Body::Question(wire::QuestionAsk {
                 questions: vec![wire::Question {
                     header: "Folder".to_owned(),
                     question: TRUST_QUESTION.to_owned(),
@@ -745,7 +747,7 @@ impl State {
         let message = elicitation.message.clone();
         let (body, shape) = match &elicitation.url {
             Some(url) if elicitation.mode.as_deref() == Some("url") => (
-                wire::ask::Body::Link(wire::LinkAsk {
+                wire::claude_ask::Body::Link(wire::LinkAsk {
                     server,
                     message,
                     url: url.clone(),
@@ -753,7 +755,7 @@ impl State {
                 AnswerShape::Link,
             ),
             _ => (
-                wire::ask::Body::Form(wire::FormAsk {
+                wire::claude_ask::Body::Form(wire::FormAsk {
                     server,
                     message,
                     schema_json: elicitation
@@ -791,7 +793,7 @@ impl State {
                 hook: hook_number(&elicitation.extensions),
                 asked: None,
             });
-            let ask = Ask {
+            let ask = ClaudeAsk {
                 item_key: ask_item::key(&key),
                 key,
                 body: Some(body),
@@ -829,7 +831,7 @@ impl State {
             hook: hook_number(&elicitation.extensions),
             asked: None,
         });
-        let ask = Ask {
+        let ask = ClaudeAsk {
             item_key: if awaits_row {
                 String::new()
             } else {
@@ -1503,8 +1505,8 @@ impl State {
                 key,
                 text,
                 attachments,
+                body: item_body(Kind::Prompt(self.shared.prompt(&input_id))),
                 input_id,
-                body: item_body(Kind::Prompt(wire::Prompt {})),
                 at_ms,
                 complete: true,
             },

@@ -15,9 +15,9 @@ use tonic::metadata::MetadataValue;
 use tonic::transport::Channel;
 use tonic::{Code, Request};
 use wire::{
-    DeliverReportRequest, FollowAgentsRequest, FollowSessionRequest, InventoryEvent,
-    PeerServiceGetBlobRequest, PeerServiceListItemsRequest, Phase, PutBlobRequest,
-    follow_session_request, inventory_event, session_event,
+    DeliverReportRequest, FetchBlobRequest, FetchItemsRequest, FollowAgentsRequest,
+    FollowSessionRequest, InventoryEvent, Phase, PutBlobRequest, follow_session_request,
+    inventory_event, session_event,
 };
 
 use crate::support;
@@ -165,16 +165,16 @@ fn tail(agent: &SyntheticAgent, rows: u32) -> FollowSessionRequest {
     }
 }
 
-fn page(agent: &SyntheticAgent) -> PeerServiceListItemsRequest {
-    PeerServiceListItemsRequest {
+fn page(agent: &SyntheticAgent) -> FetchItemsRequest {
+    FetchItemsRequest {
         agent_id: agent.id.as_bytes().to_vec(),
         before_order: None,
         page_size: 10,
     }
 }
 
-fn blob(agent: &SyntheticAgent, hash: &[u8]) -> PeerServiceGetBlobRequest {
-    PeerServiceGetBlobRequest {
+fn blob(agent: &SyntheticAgent, hash: &[u8]) -> FetchBlobRequest {
+    FetchBlobRequest {
         agent_id: agent.id.as_bytes().to_vec(),
         hash: hash.to_vec(),
     }
@@ -250,8 +250,8 @@ async fn follow_agents_carries_only_the_hosts_own_entry_and_agents() {
                 .await
                 .unwrap();
             match rows.iter().find(|row| row.agent.agent == coder) {
-                Some(row) if row.phase == Phase::Working as i32 => Ok(()),
-                Some(row) => Err(format!("phase {}", row.phase)),
+                Some(row) if row.phase() == Phase::Working => Ok(()),
+                Some(row) => Err(format!("phase {:?}", row.phase())),
                 None => Err("no replica row".to_owned()),
             }
         },
@@ -266,7 +266,7 @@ async fn follow_agents_carries_only_the_hosts_own_entry_and_agents() {
         let notes_working = matches!(
             &event.of,
             Some(inventory_event::Of::Agent(agent))
-                if agent.agent_id == notes && agent.phase == Phase::Working as i32
+                if agent.agent_id == notes && agent.phase() == Phase::Working
         );
         live.push(event);
         if notes_working {
@@ -339,13 +339,13 @@ async fn a_replicas_agent_is_not_found_on_any_read_and_its_file_is_not_given() {
     .await
     .expect("a copy follows from its cursor");
     let items = peer
-        .list_items(page(&pair.notes))
+        .fetch_items(page(&pair.notes))
         .await
         .unwrap()
         .into_inner();
     assert!(items.items.iter().any(|item| item.key == "n1"), "{items:?}");
     let read = peer
-        .get_blob(blob(&pair.notes, &own_blob.hash))
+        .fetch_blob(blob(&pair.notes, &own_blob.hash))
         .await
         .unwrap()
         .into_inner();
@@ -357,10 +357,10 @@ async fn a_replicas_agent_is_not_found_on_any_read_and_its_file_is_not_given() {
             "FollowSession",
             peer.follow_session(tail(&pair.coder, 10)).await.err(),
         ),
-        ("ListItems", peer.list_items(page(&pair.coder)).await.err()),
+        ("ListItems", peer.fetch_items(page(&pair.coder)).await.err()),
         (
             "GetBlob",
-            peer.get_blob(blob(&pair.coder, &desk_blob.hash))
+            peer.fetch_blob(blob(&pair.coder, &desk_blob.hash))
                 .await
                 .err(),
         ),
@@ -421,13 +421,13 @@ async fn the_peer_service_refuses_a_call_carried_for_someone() {
             ),
             (
                 "ListItems",
-                peer.list_items(carried(page(&pair.notes), caller))
+                peer.fetch_items(carried(page(&pair.notes), caller))
                     .await
                     .err(),
             ),
             (
                 "GetBlob",
-                peer.get_blob(carried(blob(&pair.notes, &[0; 32]), caller))
+                peer.fetch_blob(carried(blob(&pair.notes, &[0; 32]), caller))
                     .await
                     .err(),
             ),
@@ -689,7 +689,7 @@ fn reports(agent: &SyntheticAgent) -> Vec<(Vec<u8>, String)> {
                         .and_then(|from| from.value)
                         .and_then(|value| match value {
                             wire::sender::Value::Agent(sender) => sender.agent,
-                            wire::sender::Value::Human(_) => None,
+                            wire::sender::Value::Person(_) => None,
                         })
                         .map(|agent| agent.host_id)
                         .unwrap_or_default();

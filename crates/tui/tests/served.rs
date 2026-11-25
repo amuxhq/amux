@@ -761,19 +761,34 @@ async fn a_chat_on_an_agent_deleted_on_its_far_host_never_offers_to_resume_it() 
         .unwrap();
 }
 
-/// The terminal client on `node`, once its fleet lists `host`.
+/// The terminal client on `node`, once its fleet lists `host` and what it
+/// offers.
 async fn app_seeing(node: client::Client, config: tui::TuiConfig, host: &[u8]) -> tui::App {
     let fleet = ui_runtime::Fleet::connect(node.clone(), client::SystemClock)
         .await
         .unwrap();
     let mut app = tui::App::new(node, fleet, config);
+    // With what it offers: a new agent there takes its kind from the
+    // host's providers, and another host is listed, as trusted, before its
+    // own entry has come over the link to say them.
+    let mut fleet_changed = app.fleet.changed();
     tokio::time::timeout(PATIENCE, async {
-        while app.fleet.state().host(host).is_none() {
-            next_app_event(&mut app).await;
+        while app
+            .fleet
+            .state()
+            .host(host)
+            .is_none_or(|entry| entry.providers.is_empty())
+        {
+            tokio::select! {
+                changed = fleet_changed.changed() => changed.expect("the fleet runs"),
+                event = app.receiver.recv() => {
+                    app.event(event.expect("the client's task answers"));
+                }
+            }
         }
     })
     .await
-    .expect("the fleet lists the host");
+    .expect("the fleet lists the host and its providers");
     app
 }
 

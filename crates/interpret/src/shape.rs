@@ -654,6 +654,7 @@ pub fn acp_input(body: &[u8]) -> InputShape {
         Some(Of::Model(_)) => plain("model"),
         Some(Of::Effort(_)) => plain("effort"),
         Some(Of::Mode(_)) => plain("mode"),
+        Some(Of::Permission(_)) => plain("permission"),
         Some(Of::Withdraw(withdraw)) => targeting("withdraw", &withdraw.queued_input_id),
         Some(Of::SendNow(send)) => targeting("send_now", &send.queued_input_id),
     }

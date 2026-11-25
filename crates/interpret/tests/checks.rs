@@ -119,8 +119,10 @@ fn a_tool_result_for_a_call_never_seen_breaks_its_check() {
 
 #[test]
 fn an_exit_that_leaves_an_item_streaming_breaks_its_check() {
-    let mut shared =
-        interpret::Shared::<wire::Ask>::new(&spec(wire::Kind::ClaudeSdk), wire::Kind::ClaudeSdk);
+    let mut shared = interpret::Shared::<wire::ClaudeAsk>::new(
+        &spec(wire::Kind::ClaudeSdk),
+        wire::Kind::ClaudeSdk,
+    );
     let mut emit = interpret::Emit::default();
     shared.item(
         &mut emit,
@@ -193,11 +195,13 @@ fn an_exit_closes_what_each_kind_was_streaming() {
 
 #[test]
 fn an_answer_accepted_for_a_closed_ask_breaks_its_check() {
-    let mut shared =
-        interpret::Shared::<wire::Ask>::new(&spec(wire::Kind::ClaudeSdk), wire::Kind::ClaudeSdk);
-    shared.open_ask(wire::Ask {
+    let mut shared = interpret::Shared::<wire::ClaudeAsk>::new(
+        &spec(wire::Kind::ClaudeSdk),
+        wire::Kind::ClaudeSdk,
+    );
+    shared.open_ask(wire::ClaudeAsk {
         key: "ask:1".into(),
-        ..wire::Ask::default()
+        ..wire::ClaudeAsk::default()
     });
     let mut emit = interpret::Emit::default();
     shared.close_ask("ask:1");

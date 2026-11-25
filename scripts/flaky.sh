@@ -23,8 +23,13 @@ fi
 target=$1
 test=$2
 count=${3:-50}
+buck2="$(dirname "$0")/buck2"
 
 if [ -n "$load" ]; then
+    # Built before the load starts: the busy loops would otherwise starve
+    # the build and the materializing of its binaries, which once sat for
+    # twenty minutes beside other builds before a single round ran.
+    "$buck2" build "$target"
     cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
     burners=
     i=0
@@ -43,4 +48,4 @@ fi
 
 # Run here rather than in the build's sandbox, so nothing is cached and
 # every round runs.
-AMUX_TEST_REPEAT=$count exec "$(dirname "$0")/buck2" run "$target" -- "$test"
+AMUX_TEST_REPEAT=$count exec "$buck2" run "$target" -- "$test"

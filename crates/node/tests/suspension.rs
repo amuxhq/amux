@@ -178,8 +178,8 @@ async fn with_the_experiment_off_a_suspended_row_is_still_woken_and_closed() {
         .await
         .unwrap();
     assert_eq!(
-        (closed.lifecycle, closed.exit_cause),
-        (Lifecycle::Exited as i32, ExitCause::Stopped as i32)
+        (closed.lifecycle, closed.exit_cause()),
+        (Lifecycle::Exited as i32, ExitCause::Stopped)
     );
     kill_all(&runtime).await;
     drop(runtime);
@@ -484,31 +484,30 @@ async fn a_resume_asked_only_if_suspended_starts_no_stopped_agent() {
 }
 
 /// An ACP agent's row as a restart of the machine left it: live, idle, in
-/// a conversation of the program `program`, whose own `initialize` answer
-/// its newest snapshot says offered to reopen a session as `reopen`
-/// (unspecified: the answer was never seen); and its first spec. The host
+/// a conversation of the program `program`, whose newest snapshot's
+/// capabilities say whether a new process reopens it (None: no answer was
+/// ever seen); and its first spec. The host
 /// holds no copy of what the program offers.
 fn acp_agent(
     install: &Install,
     name: &str,
     program: &str,
-    reopen: wire::AcpReopen,
+    resumable: Option<bool>,
 ) -> SyntheticAgent {
     use prost::Message as _;
     let agent = SyntheticAgent::new(install, name, SEGMENTS);
     let mut row = agent.row(install);
     row.kind = wire::Kind::Acp as i32;
-    row.phase = wire::Phase::Idle as i32;
+    row.provider = program.to_owned();
+    row.status.phase = wire::Phase::Idle as i32;
     row.snapshot = Some(wire::Snapshot {
         kind: wire::Kind::Acp as i32,
-        phase: wire::Phase::Idle as i32,
-        body: wire::AcpSnapshot {
-            agent: Some(program.to_owned()),
-            session_id: Some(format!("{name}-session")),
-            reopen: (reopen != wire::AcpReopen::Unspecified).then_some(reopen as i32),
-            ..Default::default()
-        }
-        .encode_to_vec(),
+        status: wire::AgentStatus::in_phase(wire::Phase::Idle),
+        body: wire::AcpSnapshot::default().encode_to_vec(),
+        conversation: Some(format!("{name}-session")),
+        capabilities: resumable
+            .map(|resumable| wire::AgentCapabilities::acp(resumable, false, false))
+            .map(Box::new),
         ..Default::default()
     });
     install.store().put_agent(&row).unwrap();
@@ -536,9 +535,9 @@ async fn an_acp_agent_that_cannot_reopen_its_conversation_ends_with_the_machine(
     let install = Install::new();
     let daemon = install.start("boot-1", suspending()).await;
     daemon.shutdown().await.unwrap();
-    let lonely = acp_agent(&install, "lonely", "forgetful", wire::AcpReopen::None);
-    let unseen = acp_agent(&install, "unseen", "mindful", wire::AcpReopen::Unspecified);
-    let sleeper = acp_agent(&install, "sleeper", "mindful", wire::AcpReopen::Resume);
+    let lonely = acp_agent(&install, "lonely", "forgetful", Some(false));
+    let unseen = acp_agent(&install, "unseen", "mindful", None);
+    let sleeper = acp_agent(&install, "sleeper", "mindful", Some(true));
 
     let daemon = install.start("boot-2", suspending()).await;
     let runtime = runtime(&daemon, &install);
@@ -628,12 +627,8 @@ async fn an_acp_agent_that_cannot_reopen_its_conversation_never_suspends() {
     let daemon = install.start("boot-1", launch).await;
     let runtime = runtime(&daemon, &install);
     let create = |agent: &str| wire::CreateAgentRequest {
-        agent: Some(wire::create_agent_request::Agent::Acp(
-            wire::AcpCreateConfig {
-                agent: agent.to_owned(),
-                ..Default::default()
-            },
-        )),
+        provider: agent.to_owned(),
+        kind: wire::Kind::Acp as i32,
         ..create(&install.work, &format!("{agent}-one"), Some("say hello"))
     };
     let keeper = runtime.spawn(create("keeper"), None).await.unwrap();
@@ -654,11 +649,11 @@ async fn an_acp_agent_that_cannot_reopen_its_conversation_never_suspends() {
     tokio::time::sleep(Duration::from_millis(1_500)).await;
     let held = row(&forgetter);
     assert_eq!(
-        (held.lifecycle, held.exit_cause, held.phase),
+        (held.lifecycle, held.exit_cause, held.phase()),
         (
             Lifecycle::Live as i32,
             ExitCause::Unspecified as i32,
-            wire::Phase::Idle as i32
+            wire::Phase::Idle
         ),
         "idle as long, and still running"
     );
@@ -666,15 +661,12 @@ async fn an_acp_agent_that_cannot_reopen_its_conversation_never_suspends() {
     assert!(runtime.hello(id).is_some(), "its process still runs");
     // Each newest snapshot says what its program's own `initialize`
     // answer offered, which is what a restart of the machine reads.
-    let reopen = |agent: &wire::Agent| {
-        use prost::Message as _;
+    let reopens = |agent: &wire::Agent| {
         let snapshot = row(agent).snapshot.expect("a snapshot");
-        wire::AcpSnapshot::decode(snapshot.body.as_slice())
-            .unwrap()
-            .reopen()
+        snapshot.capabilities.expect("its capabilities").resumable
     };
-    assert_eq!(reopen(&keeper), wire::AcpReopen::Resume);
-    assert_eq!(reopen(&forgetter), wire::AcpReopen::None);
+    assert!(reopens(&keeper));
+    assert!(!reopens(&forgetter));
     support::kill_all(&runtime).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();

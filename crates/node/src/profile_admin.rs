@@ -214,12 +214,9 @@ impl ProfileAdminService for ProfileAdmin {
         &self,
         request: Request<UnpairRequest>,
     ) -> Result<Response<UnpairResponse>, Status> {
-        let peer = request
-            .into_inner()
-            .peer
-            .ok_or_else(|| failed(ErrorCode::InvalidArgument, "name the peer to unpair"))?;
+        let host_id = request.into_inner().host_id;
         Ok(Response::new(UnpairResponse {
-            peer: Some(self.edge()?.unpair(peer).await?),
+            peer: Some(self.edge()?.unpair(&host_id).await?),
         }))
     }
 

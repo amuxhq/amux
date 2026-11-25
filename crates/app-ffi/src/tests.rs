@@ -2125,23 +2125,12 @@ fn an_attached_mac_app_sets_up_through_the_c_abi() {
         !settings["Ok"]["host_name"].as_str().unwrap().is_empty(),
         "{settings}"
     );
-    // Kept as canonical paths, as the pickers offer them.
-    let work = std::fs::canonicalize(&net.host("desk").unwrap().work)
-        .unwrap()
-        .to_string_lossy()
-        .into_owned();
-    let change = c(&json!({"repositories": [work], "keep_awake": false}).to_string());
+    let change = c(&json!({"keep_awake": false}).to_string());
     // SAFETY: the runtime is live; the string lives for the call.
     let changed = kept.answer(&queue, fleet, unsafe {
         amux_runtime_update_settings(runtime, change.as_ptr())
     });
-    assert_eq!(changed["Ok"]["repositories"], json!([work]), "{changed}");
     assert_eq!(changed["Ok"]["keep_awake"], false, "{changed}");
-    // SAFETY: the runtime is live.
-    let suggested = kept.answer(&queue, fleet, unsafe {
-        amux_runtime_suggest_repositories(runtime)
-    });
-    assert!(suggested["Ok"].is_array(), "{suggested}");
 
     // One window takes the PIN or the QR code's link, and its status is
     // handed over while it is open.

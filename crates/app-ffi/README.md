@@ -138,9 +138,10 @@ The installation's settings are the runtime's: `amux_runtime_settings`
 answers `MachineSettings` (the machine's name, start at login where the
 install has a supervisor, keep awake, repositories, usage counts and automatic
 reports) and `amux_runtime_update_settings` applies a `SettingsChange` at
-once, answering the settings it left. `amux_runtime_suggest_repositories`
-answers the `RepositorySuggestion`s, the repositories Claude Code and Codex ran
-in lately, and `amux_runtime_web_sign_in_link(rt, profile, path)` a
+once, answering the settings it left. The repositories are the folders the
+config pins, changed only by pinning one (`amux_profile_pin_folder`); where
+Claude Code and Codex ran lately is the History folders of the machine's own
+host entry. `amux_runtime_web_sign_in_link(rt, profile, path)` answers a
 one-time link that signs the browser in to the profile's account and opens
 `path` (`/offer` after a sign-in on this computer).
 

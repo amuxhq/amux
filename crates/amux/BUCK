@@ -50,7 +50,7 @@ TEST_DEPS = [
 
 amux_rust_binary(
     name = "amux",
-    version = "0.10.0",
+    version = "0.10.1",
     crate_root = "src/main.rs",
     deps = DEPS,
     link_library = False,
@@ -60,7 +60,7 @@ amux_rust_binary(
 
 amux_rust_test(
     name = "integration",
-    version = "0.10.0",
+    version = "0.10.1",
     deps = DEPS + TEST_DEPS,
     run_env = {
         "CARGO_BIN_EXE_amux": "$(location :amux)",

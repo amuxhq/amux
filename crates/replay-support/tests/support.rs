@@ -180,7 +180,8 @@ pub fn with_git() -> (Dumped, Vec<String>) {
             let on_branch = runtime
                 .read_store(|store| {
                     store.agents().unwrap().iter().any(|row| {
-                        row.git
+                        row.status
+                            .git
                             .as_ref()
                             .is_some_and(|git| git.branch.as_deref() == Some("main"))
                     })
@@ -226,10 +227,10 @@ pub fn shapes(store: &Sqlite) -> Vec<String> {
         let snapshot = row.snapshot.as_ref().map(|snapshot| {
             (
                 snapshot.revision,
-                snapshot.phase,
+                snapshot.phase() as i32,
                 snapshot.body.len(),
-                snapshot.working_on.as_ref().map(String::len),
-                git(&snapshot.git),
+                snapshot.status().working_on.as_ref().map(String::len),
+                git(&snapshot.status().git),
                 snapshot.queue.len(),
             )
         });
@@ -241,9 +242,9 @@ pub fn shapes(store: &Sqlite) -> Vec<String> {
             row.name.len(),
             row.cwd.len(),
             row.lifecycle,
-            row.phase,
-            row.working_on.as_ref().map(String::len),
-            git(&row.git),
+            row.phase() as i32,
+            row.status.working_on.as_ref().map(String::len),
+            git(&row.status.git),
             row.ingest_cursor,
         ));
         let page = store.page(&row.agent, None, u32::MAX).unwrap();

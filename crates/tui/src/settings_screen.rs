@@ -20,6 +20,11 @@ const LABEL_COL: usize = MARGIN + 2;
 #[derive(Clone, Debug, PartialEq)]
 pub enum SettingsEffect {
     Update(Box<wire::UpdateSettingsRequest>),
+    /// Pin a folder among this machine's repositories, or unpin it.
+    Pin {
+        path: String,
+        pinned: bool,
+    },
     SignIn,
     CancelSignIn,
     SignOut,
@@ -50,6 +55,8 @@ enum Row {
 #[derive(Debug)]
 pub struct SettingsScreen {
     settings: wire::Settings,
+    /// This machine's repositories, as its config pins them.
+    repositories: Vec<String>,
     profile: Option<wire::Profile>,
     copy_on_select: bool,
     /// "Mac" or "computer", as "Keep this Mac awake" names it.
@@ -127,6 +134,7 @@ impl SettingsScreen {
         machine: &str,
     ) -> SettingsScreen {
         SettingsScreen {
+            repositories: settings.repositories.clone(),
             settings,
             profile,
             copy_on_select: true,
@@ -153,7 +161,7 @@ impl SettingsScreen {
             rows.push(Row::StartAtLogin);
         }
         rows.push(Row::KeepAwake);
-        rows.extend((0..self.settings.repositories.len()).map(Row::Repository));
+        rows.extend((0..self.repositories.len()).map(Row::Repository));
         rows.extend([
             Row::AddRepository,
             Row::ChatIn,
@@ -177,6 +185,8 @@ impl SettingsScreen {
     }
 
     pub fn settings_changed(&mut self, settings: wire::Settings) {
+        self.repositories.clone_from(&settings.repositories);
+        self.focus = self.focus.min(self.rows().len() - 1);
         self.settings = settings;
         self.error = None;
     }
@@ -261,12 +271,8 @@ impl SettingsScreen {
                     if path.is_empty() {
                         return Vec::new();
                     }
-                    let mut paths = self.settings.repositories.clone();
-                    paths.push(path);
-                    return self.update(wire::UpdateSettingsRequest {
-                        repositories: Some(wire::RepositoryList { paths }),
-                        ..Default::default()
-                    });
+                    self.error = None;
+                    return vec![SettingsEffect::Pin { path, pinned: true }];
                 }
                 _ => {
                     editor.key(key);
@@ -291,12 +297,11 @@ impl SettingsScreen {
             KeyCode::Enter | KeyCode::Char(' ') => return self.change(),
             KeyCode::Char('x') | KeyCode::Backspace | KeyCode::Delete => {
                 if let Row::Repository(at) = self.focused() {
-                    let mut paths = self.settings.repositories.clone();
-                    paths.remove(at);
-                    return self.update(wire::UpdateSettingsRequest {
-                        repositories: Some(wire::RepositoryList { paths }),
-                        ..Default::default()
-                    });
+                    self.error = None;
+                    return vec![SettingsEffect::Pin {
+                        path: self.repositories[at].clone(),
+                        pinned: false,
+                    }];
                 }
             }
             _ => {}
@@ -398,7 +403,7 @@ impl SettingsScreen {
             Row::Name => "This device's name".to_owned(),
             Row::StartAtLogin => "Start amux when you log in".to_owned(),
             Row::KeepAwake => format!("Keep this {} awake while it's plugged in", self.machine),
-            Row::Repository(at) => text::tilde(&self.settings.repositories[at]),
+            Row::Repository(at) => text::tilde(&self.repositories[at]),
             Row::AddRepository => "+ Add a repository…".to_owned(),
             Row::ChatIn => "Chat with agents in".to_owned(),
             Row::CopyOnSelect => "Copy text when you select it".to_owned(),

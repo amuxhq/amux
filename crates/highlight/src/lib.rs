@@ -23,7 +23,7 @@
 //! functions, from which a diff says where a hunk sits (`impl Store › fn
 //! open`) and which definitions its changes touch.
 //!
-//! ```
+//! ```text
 //! use highlight::{Highlighter, Language, TokenKind};
 //!
 //! let highlighter = Highlighter::new();

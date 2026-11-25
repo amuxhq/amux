@@ -26,8 +26,8 @@ use codex_protocol::{
 };
 use serde_json::Value;
 use wire::{
-    AccessGrant, ApiError, BackgroundJob, CodexAsk, CodexUsage, CodexUsageWindow, CommandApproval,
-    Decision, DecisionOutcome, FileChangeApproval, FormAsk, Limit, LinkAsk, McpToolApproval,
+    AccessGrant, ApiError, BackgroundJob, CodexAsk, CodexDecision, CodexUsage, CodexUsageWindow,
+    CommandApproval, DecisionOutcome, FileChangeApproval, FormAsk, Limit, LinkAsk, McpToolApproval,
     OfferedModel, Question, QuestionAsk, QuestionOption, ReviewerVerdict, SignIn, SignInState,
     TaskListStatus, ToolClass, ToolDecision, ToolServer, ToolServerStatus, ToolState, Turn,
     TurnOutcome, UsageMeter, UsageState, Work, codex_ask, codex_item, work,
@@ -162,15 +162,15 @@ fn tool_state(status: &str) -> ToolState {
 }
 
 /// An offered approval decision as the wire's, and the response it sends.
-fn offered_decision(offered: &CommandDecision) -> Option<(Decision, String)> {
+fn offered_decision(offered: &CommandDecision) -> Option<(CodexDecision, String)> {
     let decision = match offered {
-        CommandDecision::Plain(Offered::Accept) => Decision::Approve,
-        CommandDecision::Plain(Offered::AcceptForSession) => Decision::ApproveSession,
-        CommandDecision::Plain(Offered::Decline) => Decision::Deny,
-        CommandDecision::Plain(Offered::Cancel) => Decision::Abort,
+        CommandDecision::Plain(Offered::Accept) => CodexDecision::Approve,
+        CommandDecision::Plain(Offered::AcceptForSession) => CodexDecision::ApproveSession,
+        CommandDecision::Plain(Offered::Decline) => CodexDecision::Deny,
+        CommandDecision::Plain(Offered::Cancel) => CodexDecision::Abort,
         CommandDecision::Plain(Offered::Other(_)) => return None,
-        CommandDecision::AcceptWithExecpolicyAmendment { .. } => Decision::ApproveSimilar,
-        CommandDecision::ApplyNetworkPolicyAmendment { .. } => Decision::ApproveNetwork,
+        CommandDecision::AcceptWithExecpolicyAmendment { .. } => CodexDecision::ApproveSimilar,
+        CommandDecision::ApplyNetworkPolicyAmendment { .. } => CodexDecision::ApproveNetwork,
     };
     Some((decision, response_text(&decision_response(offered.clone()))))
 }
@@ -731,6 +731,7 @@ impl State {
                     }
                     Request::Compact | Request::Review | Request::Clear => {
                         self.interrupt_pending = false;
+                        self.compact_asked = false;
                         self.shared.turn_abandoned();
                     }
                     Request::IdleCompact => self.idle_compaction_over(emit),
@@ -744,7 +745,6 @@ impl State {
                     | Request::TitleConfig
                     | Request::TitleThread
                     | Request::TitleTurn
-                    | Request::Persist
                     | Request::Skills
                     | Request::Jobs { .. }
                     | Request::StopJob { .. }
@@ -802,7 +802,6 @@ impl State {
             | Request::TitleConfig
             | Request::TitleThread
             | Request::TitleTurn
-            | Request::Persist
             | Request::Skills
             | Request::Jobs { .. }
             | Request::StopJob { .. }
@@ -1526,29 +1525,29 @@ impl State {
         let (item_key, call_server, tool) = self
             .running_tool_call(&server, &named_tool)
             .unwrap_or_else(|| (String::new(), server.clone(), named_tool));
-        let (body, offered): (_, Vec<(Decision, ClientResponse)>) = if approval {
+        let (body, offered): (_, Vec<(CodexDecision, ClientResponse)>) = if approval {
             let mut offered = vec![(
-                Decision::Approve,
+                CodexDecision::Approve,
                 elicitation_response(ElicitationAction::Accept, no_content(), None),
             )];
             if session {
                 offered.push((
-                    Decision::ApproveSession,
+                    CodexDecision::ApproveSession,
                     elicitation_response(ElicitationAction::Accept, no_content(), Some("session")),
                 ));
             }
             if always {
                 offered.push((
-                    Decision::ApproveAlways,
+                    CodexDecision::ApproveAlways,
                     elicitation_response(ElicitationAction::Accept, no_content(), Some("always")),
                 ));
             }
             offered.push((
-                Decision::Deny,
+                CodexDecision::Deny,
                 elicitation_response(ElicitationAction::Decline, None, None),
             ));
             offered.push((
-                Decision::Abort,
+                CodexDecision::Abort,
                 elicitation_response(ElicitationAction::Cancel, None, None),
             ));
             (
@@ -2179,11 +2178,20 @@ impl State {
                         &self.idle_compaction,
                         Some(IdleCompaction::Running { turn: running }) if running == turn
                     );
-                    self.boundary_item(
+                    // Codex says nothing of who started it or of the tokens
+                    // either side: a compaction neither amux nor a person
+                    // asked for is Codex's own.
+                    let asked = std::mem::take(&mut self.compact_asked);
+                    self.emit_item(
                         emit,
-                        wire::Boundary {
-                            kind: wire::BoundaryKind::Compacted as i32,
-                            idle,
+                        ItemDraft {
+                            key: id.clone(),
+                            body: item_body(codex_item::Kind::Compaction(wire::Compaction {
+                                automatic: !idle && !asked,
+                                idle,
+                                ..Default::default()
+                            })),
+                            complete: true,
                             ..Default::default()
                         },
                     );
@@ -2355,7 +2363,7 @@ impl State {
                 ItemDraft {
                     key: id.to_owned(),
                     text,
-                    body: item_body(codex_item::Kind::Prompt(wire::Prompt {})),
+                    body: item_body(codex_item::Kind::Prompt(wire::Prompt::default())),
                     complete: true,
                     ..Default::default()
                 },
@@ -2408,7 +2416,7 @@ impl State {
             .join("\n");
         // Another client's: the prompt that started the turn, or a steer.
         let kind = if first_in_turn {
-            codex_item::Kind::Prompt(wire::Prompt {})
+            codex_item::Kind::Prompt(wire::Prompt::default())
         } else {
             codex_item::Kind::Steer(wire::Steer {})
         };

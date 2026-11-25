@@ -793,7 +793,7 @@ pub(crate) fn frame(state: &SessionState, now_ms: i64, ended: Option<String>) ->
         phase: state.phase(),
         composer: ui_view::composer(state, now_ms),
         controls: ui_view::controls(state),
-        git: agent.git.clone(),
+        git: agent.git().cloned(),
         context: ui_view::context(state),
         sign_in: ui_view::sign_in(state),
         connection: state.connection(),
@@ -820,7 +820,7 @@ pub(crate) fn frame(state: &SessionState, now_ms: i64, ended: Option<String>) ->
 /// refused for an attachment the agent takes none of says which, by the
 /// agent's name, so the draft that comes back says why.
 fn worded(state: &SessionState, input_id: &[u8], refusal: Refusal) -> Refusal {
-    if refusal.reason != wire::Refusal::Unsupported || refusal.detail.is_some() {
+    if refusal.reason != ui_state::RefusalReason::Unsupported || refusal.detail.is_some() {
         return refusal;
     }
     let untaken = state
@@ -868,7 +868,7 @@ fn attachment_refusal(state: &SessionState, name: &str, mime: &str, size: u64) -
 /// not said, which is what the host would name it by.
 fn provider_label(state: &SessionState) -> ProviderLabel {
     ProviderLabel {
-        provider: state.agent().provider_id().to_owned(),
+        provider: state.agent().provider.as_str().to_owned(),
         name: state.provider_name(),
     }
 }
@@ -890,6 +890,10 @@ fn with_review(
 fn outcome_state(outcome: &InputOutcome) -> InputState {
     match outcome {
         InputOutcome::Lost => InputState::Uncertain,
+        InputOutcome::NotSent { detail } => InputState::Rejected(ui_state::Refusal {
+            reason: ui_state::RefusalReason::HostUnreachable,
+            detail: detail.clone(),
+        }),
         InputOutcome::Reply(reply) => match &reply.of {
             Some(send_input_response::Of::Accepted(accepted)) if accepted.queued => {
                 InputState::Queued

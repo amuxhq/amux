@@ -604,7 +604,10 @@ impl Provider {
 
         let handshake = sender.clone();
         let cwd = spec.cwd.clone();
-        let model = spec.config.as_ref().and_then(|config| config.model.clone());
+        let model = spec
+            .config
+            .as_ref()
+            .and_then(|config| config.settings.as_ref()?.model.clone());
         let fork = codex_fork(spec);
         tokio::spawn(async move {
             let initialize = ClientMessage::request(
@@ -1999,7 +2002,12 @@ fn provider_session(spec: &AgentSpec, dir: &Path) -> io::Result<(String, bool)> 
 fn codex_fork(spec: &AgentSpec) -> Option<ThreadForkParams> {
     use codex_protocol::thread::{ApprovalPolicy, ApprovalsReviewer, AskForApproval, SandboxMode};
     let fork = spec.fork.as_ref()?;
-    let config = spec.config.clone().unwrap_or_default();
+    let config = spec
+        .config
+        .clone()
+        .unwrap_or_default()
+        .settings
+        .unwrap_or_default();
     let named = config
         .permission
         .as_deref()

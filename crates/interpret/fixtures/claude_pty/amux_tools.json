@@ -59,7 +59,7 @@
               {
                 "type": "tool_use",
                 "id": "st1",
-                "name": "mcp__amux__status",
+                "name": "mcp__amux__set_working_on",
                 "input": {
                   "working_on": "Splitting the parser"
                 }
@@ -124,7 +124,7 @@
               {
                 "type": "tool_use",
                 "id": "sn1",
-                "name": "mcp__amux__send",
+                "name": "mcp__amux__message_agent",
                 "input": {
                   "to": "reviewer",
                   "text": "Please review the parser change.\nIt is on branch parser.",
@@ -194,7 +194,7 @@
               {
                 "type": "tool_use",
                 "id": "sn2",
-                "name": "mcp__amux__send",
+                "name": "mcp__amux__message_agent",
                 "input": {
                   "to": "ghost",
                   "text": "Are you there?"

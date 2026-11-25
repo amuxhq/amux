@@ -11,9 +11,14 @@ pub fn agent(kind: Kind) -> wire::Agent {
         agent_id: b"agent".to_vec(),
         host_id: b"host".to_vec(),
         kind: kind as i32,
+        provider: match kind {
+            Kind::Codex => wire::agents::CODEX,
+            _ => wire::agents::CLAUDE,
+        }
+        .into(),
         name: "worker".into(),
         lifecycle: wire::Lifecycle::Live as i32,
-        phase: wire::Phase::Idle as i32,
+        status: wire::AgentStatus::in_phase(wire::Phase::Idle),
         incarnation: 1,
         ..wire::Agent::default()
     }
@@ -34,7 +39,7 @@ pub fn offered_providers() -> Vec<wire::ProviderOnHost> {
 /// One agent a host offers, signed in, with what its kind's agents can do.
 pub fn offered(id: &str, name: &str, kind: Kind) -> wire::ProviderOnHost {
     wire::ProviderOnHost {
-        provider_id: id.into(),
+        provider: id.into(),
         catalogue: Some(vec![0; 32]),
         signed_in: true,
         descriptor: Some(wire::ProviderDescriptor {
@@ -42,10 +47,23 @@ pub fn offered(id: &str, name: &str, kind: Kind) -> wire::ProviderOnHost {
             kind: kind as i32,
             ..Default::default()
         }),
-        capabilities: Some(
-            wire::AgentCapabilities::of_kind(kind, wire::Platform::here())
-                .unwrap_or_else(|| wire::AgentCapabilities::acp(true, true, false)),
-        ),
+        // As a host lists them: Claude runs as both its kinds whichever it
+        // starts.
+        kinds: match kind {
+            Kind::ClaudePty | Kind::ClaudeSdk => vec![Kind::ClaudePty, Kind::ClaudeSdk],
+            kind => vec![kind],
+        }
+        .into_iter()
+        .map(|kind| wire::KindOnHost {
+            kind: kind as i32,
+            capabilities: Some(match kind {
+                Kind::ClaudePty => wire::AgentCapabilities::claude_pty(),
+                Kind::ClaudeSdk => wire::AgentCapabilities::claude_sdk(),
+                Kind::Codex => wire::AgentCapabilities::codex(wire::Platform::here()),
+                _ => wire::AgentCapabilities::acp(true, true, false),
+            }),
+        })
+        .collect(),
     }
 }
 
@@ -65,7 +83,7 @@ pub fn host_entry(providers: Vec<wire::ProviderOnHost>) -> wire::HostEntry {
         ..wire::HostEntry::trusted_host(
             b"host".to_vec(),
             "studio",
-            wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+            wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Direct)),
         )
     }
 }

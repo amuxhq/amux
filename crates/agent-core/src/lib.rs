@@ -885,14 +885,18 @@ impl<I: Interpreter> Agent<I> {
             // A person's input to a provider subagent this agent's provider
             // runs: the interpreter answers the provider for it, and the
             // reply goes back keyed by the input id as any input's does. A
-            // frame without an input carries no id to answer, so it is
-            // dropped.
+            // frame that carries nothing to do is dropped.
             Some(ctl_frame::Of::ChildInput(wire::ChildInput {
                 agent_id,
-                input: Some(input),
+                input_id,
+                of: Some(of),
             })) => {
-                let id = input.input_id.clone();
-                self.take(id, Event::ChildInput { agent_id, input }, out);
+                let event = Event::ChildInput {
+                    agent_id,
+                    input_id: input_id.clone(),
+                    of,
+                };
+                self.take(input_id, event, out);
             }
             Some(ctl_frame::Of::AgentMessage(envelope)) => {
                 let id = envelope.id.clone();

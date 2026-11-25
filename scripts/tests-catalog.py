@@ -14,6 +14,7 @@ import sys
 import tomllib
 from typing import Any
 
+import cargo_metadata
 import suites as selections
 
 
@@ -95,7 +96,7 @@ def cargo_inventory() -> tuple[
 ]:
     """Every Cargo target that holds tests, each package's features, and the
     suite modules of each package's integration binary."""
-    metadata = json.loads(run("cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"))
+    metadata = cargo_metadata.load()
     targets: dict[tuple[str, str, str], dict[str, Any]] = {}
     features: dict[str, set[str]] = {}
     modules: dict[str, set[str]] = {}

@@ -70,8 +70,9 @@
             "item": {
               "appContext": null,
               "arguments": {
+                "agent": "codex",
                 "name": "reviewer",
-                "prompt": "Review the parser change."
+                "task": "Review the parser change."
               },
               "durationMs": null,
               "error": null,
@@ -82,7 +83,7 @@
               "result": null,
               "server": "amux",
               "status": "inProgress",
-              "tool": "spawn",
+              "tool": "start_subagent",
               "type": "mcpToolCall"
             },
             "threadId": "t1",
@@ -106,23 +107,29 @@
               ],
               "tool_description": "Start a new agent.",
               "tool_params": {
+                "agent": "codex",
                 "name": "reviewer",
-                "prompt": "Review the parser change."
+                "task": "Review the parser change."
               },
               "tool_params_display": [
+                {
+                  "display_name": "agent",
+                  "name": "agent",
+                  "value": "codex"
+                },
                 {
                   "display_name": "name",
                   "name": "name",
                   "value": "reviewer"
                 },
                 {
-                  "display_name": "prompt",
-                  "name": "prompt",
+                  "display_name": "task",
+                  "name": "task",
                   "value": "Review the parser change."
                 }
               ]
             },
-            "message": "Allow the amux MCP server to run tool \"spawn\"?",
+            "message": "Allow the amux MCP server to run tool \"start_subagent\"?",
             "mode": "form",
             "requestedSchema": {
               "properties": {},
@@ -150,8 +157,9 @@
             "item": {
               "appContext": null,
               "arguments": {
+                "agent": "codex",
                 "name": "reviewer",
-                "prompt": "Review the parser change."
+                "task": "Review the parser change."
               },
               "durationMs": 3,
               "error": null,
@@ -171,7 +179,7 @@
               },
               "server": "amux",
               "status": "completed",
-              "tool": "spawn",
+              "tool": "start_subagent",
               "type": "mcpToolCall"
             },
             "threadId": "t1",

@@ -32,7 +32,7 @@ pub(crate) enum It {
 pub(crate) fn item(order: u64, it: &It) -> Item {
     use wire::claude_item::Kind as K;
     let tool = |name: &str, input: String, state: ToolState, reads: bool, exit: Option<i32>| {
-        K::Tool(wire::ToolCall {
+        K::Tool(wire::ClaudeToolCall {
             name: name.into(),
             input: Some(interpret::tool_input(
                 name,
@@ -140,7 +140,7 @@ pub(crate) fn session_from(first: u64, cap: usize, items: &[It]) -> SessionState
         host_id: b"host".to_vec(),
         kind: Kind::ClaudeSdk as i32,
         lifecycle: wire::Lifecycle::Live as i32,
-        phase: Phase::Working as i32,
+        status: wire::AgentStatus::in_phase(Phase::Working),
         incarnation: 1,
         ..wire::Agent::default()
     };
@@ -532,7 +532,12 @@ fn a_command_carries_what_the_agent_said_it_is_for() {
 fn a_continuation_after_a_restart_draws_as_its_line_not_as_a_prompt() {
     let mut state = session(&[It::Prompt("fix it"), It::Say("on it")]);
     let mut continued = item(3, &It::Prompt("carry on"));
-    continued.input_id = wire::continued_input_id(b"agent", 2);
+    continued.body = wire::ClaudeItem {
+        kind: Some(wire::claude_item::Kind::Prompt(wire::Prompt {
+            continued: true,
+        })),
+    }
+    .encode_to_vec();
     state.update(event(session_event::Of::Item(continued)));
     let kinds: Vec<ui_view::RowKind> = rows(&state, ToolRows::ShowAll)
         .into_iter()

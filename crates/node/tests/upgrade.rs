@@ -17,9 +17,10 @@
 //! build makes afresh, so nothing here reads those.
 //!
 //! Each directory under `tests/fixtures/upgrade/` is one release's, made at
-//! its tag by `just upgrade-fixture`. Only a release that changed what a
-//! profile holds gets one: any other writes what the newest one already
-//! holds. Until the first is committed there is nothing to open.
+//! its tag by `just upgrade-fixture`. 0.11.0's is the base: profiles from
+//! before it are not read. A later release gets one only when it writes
+//! something the base cannot hold; any other writes what an earlier one
+//! already holds. Until the base is committed there is nothing to open.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -148,19 +149,15 @@ fn the_store_holds_what_the_release_left(install: &Install) {
     };
     let (keeper, child, asker, afar) = (named(AGENT), named(CHILD), named(ASKER), named(AFAR));
     assert_eq!(child.parent.as_ref(), Some(&keeper.agent));
-    // A release's rows name no program: each reads as the one its kind
-    // implies, which is what the inventory says of it.
+    // Each row names its program, which is what the inventory says of it.
     for row in [keeper, child, asker, afar] {
-        assert_eq!(row.provider, "", "{} named its program", row.name);
-        let kind = wire::Kind::try_from(row.kind).unwrap();
-        assert_eq!(row.provider_id(), wire::agents::implied_by(kind));
         assert!(
-            matches!(row.provider_id(), "claude" | "codex"),
+            matches!(row.provider.as_str(), "claude" | "codex"),
             "{} reads as {:?}",
             row.name,
-            row.provider_id()
+            row.provider
         );
-        assert_eq!(node::to_wire(row).provider, row.provider_id());
+        assert_eq!(node::to_wire(row).provider, row.provider);
     }
 
     // The paired host: its pinned key, where it answered, and its agent.
@@ -225,11 +222,10 @@ fn an_agents_directory_reads(dir: &Path, agent: uuid::Uuid) {
     let spec = std::fs::read(dir.join("spec.1")).expect("the release's spec");
     let spec = wire::AgentSpec::decode(spec.as_slice()).unwrap();
     assert_eq!(spec.agent_id, agent.as_bytes());
-    // A release's spec names no program; its kind says which.
     assert!(
-        matches!(spec.provider_id(), "claude" | "codex"),
+        matches!(spec.provider.as_str(), "claude" | "codex"),
         "the spec reads as {:?}",
-        spec.provider_id()
+        spec.provider
     );
     let journal = journal::Reader::new(dir.join(agent_dir::JOURNAL), 0)
         .read_to_end()

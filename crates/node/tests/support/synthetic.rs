@@ -235,6 +235,7 @@ impl SyntheticAgent {
 
     pub fn row(&self, install: &Install) -> AgentRow {
         let mut row = AgentRow::new(self.key(install), KIND, self.cwd.to_string_lossy());
+        row.provider = wire::agents::CLAUDE.to_owned();
         row.name = self.name.clone();
         row.parent = self.parent.clone();
         row.parent_incarnation = match self.parent {
@@ -386,7 +387,8 @@ impl SyntheticAgent {
                                 // process answers for its subagent.
                                 Some(ctl_frame::Of::ChildInput(wire::ChildInput {
                                     agent_id,
-                                    input: Some(input),
+                                    of: Some(wire::child_input::Of::Input(input)),
+                                    ..
                                 })) => {
                                     child_inputs
                                         .lock()
@@ -621,7 +623,11 @@ pub fn snapshot(phase: Phase, queue: &[&str], at_ms: i64) -> Step {
     Step {
         snapshot: Some(Snapshot {
             kind: KIND as i32,
-            phase: phase as i32,
+            status: Some(Box::new(wire::AgentStatus {
+                phase: phase as i32,
+                working_on: Some("the task".to_owned()),
+                ..wire::AgentStatus::NONE
+            })),
             queue: queue
                 .iter()
                 .map(|id| QueuedInput {
@@ -630,7 +636,6 @@ pub fn snapshot(phase: Phase, queue: &[&str], at_ms: i64) -> Step {
                     ..QueuedInput::default()
                 })
                 .collect(),
-            working_on: Some("the task".to_owned()),
             at_ms,
             ..Snapshot::default()
         }),
@@ -646,7 +651,7 @@ pub fn describe(event: &SessionEvent) -> String {
         session_event::Of::Snapshot(s) => format!(
             "snapshot r{} {:?} queue={:?}",
             s.revision,
-            Phase::try_from(s.phase).unwrap_or(Phase::Starting),
+            s.phase(),
             s.queue
                 .iter()
                 .map(|q| String::from_utf8_lossy(&q.input_id).into_owned())

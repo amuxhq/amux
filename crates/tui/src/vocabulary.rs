@@ -966,7 +966,7 @@ pub fn authored_home() -> HomeScene {
         (
             b"desk".as_slice(),
             "desk",
-            Reach::Online(wire::RouteKind::Direct as i32),
+            Reach::Online(wire::Online::via(wire::RouteKind::Direct)),
         ),
         (
             b"studio".as_slice(),
@@ -1195,9 +1195,9 @@ pub fn authored_home() -> HomeScene {
             host_id: host.as_bytes().to_vec(),
             kind: kind as i32,
             provider: if kind == Kind::Acp {
-                opencode.provider_id.clone()
+                opencode.provider.clone()
             } else {
-                String::new()
+                provider_of(kind).to_owned()
             },
             name: name.into(),
             cwd: "/home/sam/src/amux".into(),
@@ -1206,17 +1206,20 @@ pub fn authored_home() -> HomeScene {
             } else {
                 Lifecycle::Live
             } as i32,
-            exit_cause: exit_cause.map_or(0, |(cause, _)| cause as i32),
-            exit_detail: exit_cause.and_then(|(_, detail)| detail.map(str::to_owned)),
-            phase: phase as i32,
-            phase_since_ms: NOW - minutes * MINUTE,
+            exit: exit_cause
+                .map(|(cause, detail)| wire::IncarnationEnd::new(cause, detail.map(str::to_owned))),
+            status: Some(Box::new(wire::AgentStatus {
+                phase: phase as i32,
+                phase_since_ms: NOW - minutes * MINUTE,
+                git: Some(wire::Git {
+                    branch: branch.map(str::to_owned),
+                    ..Default::default()
+                }),
+                ..wire::AgentStatus::NONE
+            })),
             parent: parent.map(|parent| wire::AgentRef {
                 host_id: host.as_bytes().to_vec(),
                 agent_id: parent.as_bytes().to_vec(),
-            }),
-            git: Some(wire::Git {
-                branch: branch.map(str::to_owned),
-                ..Default::default()
             }),
             incarnation: 1,
             // A one-shot child that finished, and one the person put away,
@@ -3161,7 +3164,7 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
                 use wire::codex_item::Kind as K;
                 wire::CodexItem {
                     kind: Some(if prompt {
-                        K::Prompt(wire::Prompt {})
+                        K::Prompt(wire::Prompt { continued: false })
                     } else {
                         K::Message(wire::Text { complete: true })
                     }),
@@ -3172,7 +3175,7 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
                 use wire::claude_item::Kind as K;
                 wire::ClaudeItem {
                     kind: Some(if prompt {
-                        K::Prompt(wire::Prompt {})
+                        K::Prompt(wire::Prompt { continued: false })
                     } else {
                         K::Message(wire::Text { complete: true })
                     }),
@@ -3191,28 +3194,29 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
             ..Default::default()
         }
     };
-    let session = |kind: Kind, body: Vec<u8>| {
+    let session = |kind: Kind, snapshot: wire::Snapshot| {
         let agent = wire::Agent {
             agent_id: b"agent".to_vec(),
             host_id: b"host".to_vec(),
             kind: kind as i32,
+            provider: provider_of(kind).into(),
             name: "fixer".into(),
             cwd: "/srv/amux".into(),
             lifecycle: wire::Lifecycle::Live as i32,
-            phase: wire::Phase::Idle as i32,
+            status: Some(Box::new(wire::AgentStatus {
+                phase: wire::Phase::Idle as i32,
+                git: Some(git.clone()),
+                ..wire::AgentStatus::NONE
+            })),
             incarnation: 1,
-            git: Some(git.clone()),
             ..Default::default()
         };
         let mut state = SessionState::new(agent, crate::chat::layout::CAP as usize);
         let event = |of| Msg::Event(wire::SessionEvent { of: Some(of) });
         state.update(Msg::Connection(Connection::Live));
-        state.update(event(session_event::Of::Snapshot(wire::Snapshot {
-            kind: kind as i32,
-            body,
-            phase: wire::Phase::Idle as i32,
-            ..Default::default()
-        })));
+        state.update(event(session_event::Of::Snapshot(story_snapshot(
+            kind, snapshot,
+        ))));
         for item in [
             item(
                 1,
@@ -3255,48 +3259,54 @@ fn around_a_chat() -> (Vec<(&'static str, &'static str, ChatScene)>, ChatScene) 
             }
         };
 
-    let claude_working = wire::ClaudeSnapshot {
-        model: Some("opus".into()),
-        model_name: Some("Opus".into()),
-        permission: Some("default".into()),
-        background_jobs: Some(jobs.clone()),
-        ..Default::default()
-    }
-    .encode_to_vec();
-    let changes = session(Kind::ClaudeSdk, claude_working);
+    let opus = |body: wire::ClaudeSnapshot, jobs: Option<wire::BackgroundJobs>| wire::Snapshot {
+        jobs,
+        ..running(
+            ("opus", "Opus"),
+            None,
+            Some("default"),
+            None,
+            body.encode_to_vec(),
+        )
+    };
+    let changes = session(
+        Kind::ClaudeSdk,
+        opus(wire::ClaudeSnapshot::default(), Some(jobs.clone())),
+    );
     let claude = session(
         Kind::ClaudeSdk,
-        wire::ClaudeSnapshot {
-            model: Some("opus".into()),
-            model_name: Some("Opus".into()),
-            permission: Some("default".into()),
-            usage: Some(claude_usage.clone()),
-            ..Default::default()
-        }
-        .encode_to_vec(),
+        opus(
+            wire::ClaudeSnapshot {
+                usage: Some(claude_usage.clone()),
+                ..Default::default()
+            },
+            None,
+        ),
     );
     let everything = session(
         Kind::ClaudeSdk,
-        wire::ClaudeSnapshot {
-            model: Some("opus".into()),
-            model_name: Some("Opus".into()),
-            permission: Some("default".into()),
-            background_jobs: Some(jobs.clone()),
-            usage: Some(claude_usage),
-            ..Default::default()
-        }
-        .encode_to_vec(),
+        opus(
+            wire::ClaudeSnapshot {
+                usage: Some(claude_usage),
+                ..Default::default()
+            },
+            Some(jobs.clone()),
+        ),
     );
     let codex = session(
         Kind::Codex,
-        wire::CodexSnapshot {
-            model: Some("gpt-5.5".into()),
-            model_name: Some("GPT-5.5".into()),
-            approval_policy: Some("on-request".into()),
-            usage: Some(codex_usage),
-            ..Default::default()
-        }
-        .encode_to_vec(),
+        running(
+            ("gpt-5.5", "GPT-5.5"),
+            None,
+            None,
+            None,
+            wire::CodexSnapshot {
+                approval_policy: Some("on-request".into()),
+                usage: Some(codex_usage),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+        ),
     );
     let overview = scene(&everything, Comparison::Uncommitted, Some(&uncommitted));
     let goldens = vec![
@@ -3569,14 +3579,12 @@ fn control_chats() -> Vec<(
             display_name: "Normal".into(),
             normal: true,
             settable: true,
-            ..Default::default()
         },
         OfferedMode {
             value: "plan".into(),
             display_name: "Plan".into(),
             normal: false,
             settable: true,
-            ..Default::default()
         },
     ];
     let model = |value: &str, name: &str, efforts: &[&str]| wire::OfferedModel {
@@ -3591,7 +3599,7 @@ fn control_chats() -> Vec<(
                 use wire::codex_item::Kind as K;
                 wire::CodexItem {
                     kind: Some(if prompt {
-                        K::Prompt(wire::Prompt {})
+                        K::Prompt(wire::Prompt { continued: false })
                     } else {
                         K::Message(wire::Text { complete: true })
                     }),
@@ -3602,7 +3610,7 @@ fn control_chats() -> Vec<(
                 use wire::claude_item::Kind as K;
                 wire::ClaudeItem {
                     kind: Some(if prompt {
-                        K::Prompt(wire::Prompt {})
+                        K::Prompt(wire::Prompt { continued: false })
                     } else {
                         K::Message(wire::Text { complete: true })
                     }),
@@ -3621,15 +3629,16 @@ fn control_chats() -> Vec<(
             ..Default::default()
         }
     };
-    let session = |kind: Kind, body: Vec<u8>, catalogue: wire::Catalogue| {
+    let session = |kind: Kind, snapshot: wire::Snapshot, catalogue: wire::Catalogue| {
         let agent = wire::Agent {
             agent_id: b"agent".to_vec(),
             host_id: b"host".to_vec(),
             kind: kind as i32,
+            provider: provider_of(kind).into(),
             name: "fixer".into(),
             cwd: "/srv/amux".into(),
             lifecycle: wire::Lifecycle::Live as i32,
-            phase: wire::Phase::Idle as i32,
+            status: wire::AgentStatus::in_phase(wire::Phase::Idle),
             incarnation: 1,
             ..Default::default()
         };
@@ -3637,11 +3646,8 @@ fn control_chats() -> Vec<(
         let event = |of| Msg::Event(wire::SessionEvent { of: Some(of) });
         state.update(Msg::Connection(Connection::Live));
         state.update(event(session_event::Of::Snapshot(wire::Snapshot {
-            kind: kind as i32,
-            body,
-            phase: wire::Phase::Idle as i32,
             catalogue: Some(b"offered".to_vec()),
-            ..Default::default()
+            ..story_snapshot(kind, snapshot)
         })));
         state.update(Msg::Catalogue {
             hash: b"offered".to_vec(),
@@ -3675,14 +3681,13 @@ fn control_chats() -> Vec<(
 
     let claude_sdk = session(
         Kind::ClaudeSdk,
-        wire::ClaudeSnapshot {
-            model: Some("claude-opus-5-5".into()),
-            model_name: Some("Opus 5.5".into()),
-            effort: Some("high".into()),
-            permission: Some("acceptEdits".into()),
-            ..Default::default()
-        }
-        .encode_to_vec(),
+        running(
+            ("claude-opus-5-5", "Opus 5.5"),
+            Some("high"),
+            Some("acceptEdits"),
+            None,
+            wire::ClaudeSnapshot::default().encode_to_vec(),
+        ),
         wire::Catalogue {
             models: vec![
                 wire::OfferedModel {
@@ -3696,16 +3701,16 @@ fn control_chats() -> Vec<(
             ..Default::default()
         },
     );
-    let codex_settings = |settings: wire::CodexSnapshot| {
+    let codex_settings = |permission: Option<&str>, mode: &str, body: wire::CodexSnapshot| {
         session(
             Kind::Codex,
-            wire::CodexSnapshot {
-                model: Some("gpt-5.5".into()),
-                model_name: Some("GPT-5.5".into()),
-                effort: Some("medium".into()),
-                ..settings
-            }
-            .encode_to_vec(),
+            running(
+                ("gpt-5.5", "GPT-5.5"),
+                Some("medium"),
+                permission,
+                Some(mode),
+                body.encode_to_vec(),
+            ),
             wire::Catalogue {
                 models: vec![model("gpt-5.5", "GPT-5.5", &["low", "medium", "high"])],
                 permissions: codex.clone(),
@@ -3714,26 +3719,31 @@ fn control_chats() -> Vec<(
             },
         )
     };
-    let codex_plan = codex_settings(wire::CodexSnapshot {
-        permission: Some("full-access".into()),
-        mode: Some("plan".into()),
-        approval_policy: Some("never".into()),
-        ..Default::default()
-    });
-    let codex_custom = codex_settings(wire::CodexSnapshot {
-        mode: Some("default".into()),
-        approval_policy: Some("untrusted".into()),
-        ..Default::default()
-    });
+    let codex_plan = codex_settings(
+        Some("full-access"),
+        "plan",
+        wire::CodexSnapshot {
+            approval_policy: Some("never".into()),
+            ..Default::default()
+        },
+    );
+    let codex_custom = codex_settings(
+        None,
+        "default",
+        wire::CodexSnapshot {
+            approval_policy: Some("untrusted".into()),
+            ..Default::default()
+        },
+    );
     let claude_pty = session(
         Kind::ClaudePty,
-        wire::ClaudeSnapshot {
-            model: Some("claude-opus-5-5".into()),
-            model_name: Some("Opus 5.5".into()),
-            permission: Some("plan".into()),
-            ..Default::default()
-        }
-        .encode_to_vec(),
+        running(
+            ("claude-opus-5-5", "Opus 5.5"),
+            None,
+            Some("plan"),
+            None,
+            wire::ClaudeSnapshot::default().encode_to_vec(),
+        ),
         wire::Catalogue {
             permissions: claude(false),
             ..Default::default()
@@ -3765,4 +3775,57 @@ fn control_chats() -> Vec<(
             vec![],
         ),
     ]
+}
+
+/// The provider a story's agent of `kind` runs.
+fn provider_of(kind: wire::Kind) -> &'static str {
+    match kind {
+        wire::Kind::Codex => wire::agents::CODEX,
+        wire::Kind::Acp => "opencode",
+        _ => wire::agents::CLAUDE,
+    }
+}
+
+/// A story agent's snapshot running `model` (its value and the name people
+/// read), on the effort, permission and mode given, with the kind's own
+/// `body`.
+fn running(
+    (model, name): (&str, &str),
+    effort: Option<&str>,
+    permission: Option<&str>,
+    mode: Option<&str>,
+    body: Vec<u8>,
+) -> wire::Snapshot {
+    wire::Snapshot {
+        body,
+        model_name: Some(name.to_owned()),
+        status: Some(Box::new(wire::AgentStatus {
+            settings: Some(wire::AgentSettings {
+                model: Some(model.to_owned()),
+                effort: effort.map(str::to_owned),
+                permission: permission.map(str::to_owned),
+                permission_level: 0,
+                mode: mode.map(str::to_owned),
+            }),
+            ..wire::AgentStatus::NONE
+        })),
+        ..Default::default()
+    }
+}
+
+/// `snapshot` as a story agent of `kind` sends it: idle, with what an agent
+/// of the kind can do.
+fn story_snapshot(kind: wire::Kind, snapshot: wire::Snapshot) -> wire::Snapshot {
+    let mut snapshot = wire::Snapshot {
+        kind: kind as i32,
+        capabilities: snapshot.capabilities.clone().or(Some(Box::new(match kind {
+            wire::Kind::ClaudePty => wire::AgentCapabilities::claude_pty(),
+            wire::Kind::Codex => wire::AgentCapabilities::codex(wire::Platform::here()),
+            wire::Kind::Acp => wire::AgentCapabilities::acp(true, true, false),
+            _ => wire::AgentCapabilities::claude_sdk(),
+        }))),
+        ..snapshot
+    };
+    snapshot.status_mut().phase = wire::Phase::Idle as i32;
+    snapshot
 }

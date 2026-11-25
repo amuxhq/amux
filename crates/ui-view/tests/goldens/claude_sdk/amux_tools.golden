@@ -1,6 +1,6 @@
 ## 0 initial
   composer Send activity=None queue=[] underway=[] refused=[]
-## 2 fact {"channel":"stream","json":{"message":{"content":[{"id":"st1","input":{"working_on":"Splitting the parser"},"name":"mcp__amux__status","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"session_id":"s1","type":"assistant","uuid":"a1"}}
+## 2 fact {"channel":"stream","json":{"message":{"content":[{"id":"st1","input":{"working_on":"Splitting the parser"},"name":"mcp__amux__set_working_on","type":"tool_use"}],"id":"m1","model":"claude-opus-5-5","role":"assistant"},"session_id":"s1","type":"assistant","uuid":"a1"}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 == chat
      1 boundary:1 Hidden collapsed

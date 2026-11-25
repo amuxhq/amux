@@ -25,8 +25,7 @@ pub enum Entry {
         hex: String,
     },
     /// The encoded `wire::ChildInput`: a person's input to one of the
-    /// provider subagents the agent runs. A ring from before subagents were
-    /// agents of their own has none.
+    /// provider subagents the agent runs.
     ChildInput {
         hex: String,
     },
@@ -76,11 +75,16 @@ impl Entry {
             Event::Input(input) => Entry::Input {
                 hex: crate::to_hex(&input.encode_to_vec()),
             },
-            Event::ChildInput { agent_id, input } => Entry::ChildInput {
+            Event::ChildInput {
+                agent_id,
+                input_id,
+                of,
+            } => Entry::ChildInput {
                 hex: crate::to_hex(
                     &wire::ChildInput {
                         agent_id: agent_id.clone(),
-                        input: Some(input.clone()),
+                        input_id: input_id.clone(),
+                        of: Some(of.clone()),
                     }
                     .encode_to_vec(),
                 ),
@@ -122,7 +126,8 @@ impl Entry {
                     wire::ChildInput::decode(crate::from_hex(&hex).ok()?.as_slice()).ok()?;
                 Event::ChildInput {
                     agent_id: child.agent_id,
-                    input: child.input?,
+                    input_id: child.input_id,
+                    of: child.of?,
                 }
             }
             Entry::AgentMessage { hex } => Event::AgentMessage(
@@ -200,11 +205,17 @@ mod tests {
             }),
             Event::ChildInput {
                 agent_id: vec![7; 16],
-                input: wire::Input {
+                input_id: b"i2".to_vec(),
+                of: wire::child_input::Of::Input(wire::Input {
                     input_id: b"i2".to_vec(),
                     body: vec![1, 2, 3],
                     ..Default::default()
-                },
+                }),
+            },
+            Event::ChildInput {
+                agent_id: vec![7; 16],
+                input_id: b"i3".to_vec(),
+                of: wire::child_input::Of::StopJob(wire::StopJob { key: "job".into() }),
             },
             Event::Tick { at_ms: 5 },
             Event::ProviderExit { code: Some(3) },
@@ -256,26 +267,32 @@ mod tests {
         );
     }
 
-    /// A person's input to a subagent is a ring line of its own, under a
-    /// name an older ring simply lacks; its body is the encoded
-    /// `ChildInput`, so it reads back whole.
+    /// A person's input to a subagent is a ring line of its own; its body
+    /// is the encoded `ChildInput`, so it reads back whole.
     #[test]
     fn a_child_input_line_on_disk_holds() {
-        let line = br#"{"event":"child_input","hex":"0a02070712040a026932"}"#;
+        // ChildInput { agent_id: [7, 7], input_id: "i2", input: { input_id: "i2" } }
+        let line = br#"{"event":"child_input","hex":"0a020707120269321a040a026932"}"#;
         let entry: Entry = serde_json::from_slice(line).unwrap();
         let event = entry.event().unwrap();
-        let Event::ChildInput { agent_id, input } = &event else {
+        let Event::ChildInput {
+            agent_id,
+            input_id,
+            of: wire::child_input::Of::Input(input),
+        } = &event
+        else {
             panic!("{event:?}");
         };
         assert_eq!(agent_id, &[7, 7]);
+        assert_eq!(input_id, b"i2");
         assert_eq!(input.input_id, b"i2");
         let written = serde_json::to_string(&Entry::of(&event)).unwrap();
         assert!(
             written.starts_with(r#"{"event":"child_input","hex":""#),
             "{written}"
         );
-        // A child input that carries no input is a line this build cannot
-        // read, skipped as any other.
+        // A child input that carries neither an input nor a stop is a line
+        // this build cannot read, skipped as any other.
         let empty = Entry::ChildInput {
             hex: crate::to_hex(&wire::ChildInput::default().encode_to_vec()),
         };

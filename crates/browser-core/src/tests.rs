@@ -33,7 +33,7 @@ fn fleet_with_one_agent(kind: wire::Kind) -> u32 {
         }),
         providers: vec![
             wire::ProviderOnHost {
-                provider_id: "claude".into(),
+                provider: "claude".into(),
                 descriptor: Some(wire::ProviderDescriptor {
                     name: "Claude".into(),
                     kind: wire::Kind::ClaudeSdk as i32,
@@ -42,7 +42,7 @@ fn fleet_with_one_agent(kind: wire::Kind) -> u32 {
                 ..Default::default()
             },
             wire::ProviderOnHost {
-                provider_id: "opencode".into(),
+                provider: "opencode".into(),
                 descriptor: Some(wire::ProviderDescriptor {
                     name: "OpenCode".into(),
                     kind: wire::Kind::Acp as i32,
@@ -164,10 +164,10 @@ fn a_new_agent_is_the_kind_its_host_publishes() {
         STANDARD.decode(body.as_str().unwrap()).unwrap().as_slice(),
     )
     .unwrap();
-    assert!(matches!(
-        request.agent,
-        Some(wire::create_agent_request::Agent::ClaudeSdk(_))
-    ));
+    assert_eq!(
+        (request.provider.as_str(), request.kind()),
+        ("claude", wire::Kind::ClaudeSdk)
+    );
     assert_eq!(request.cwd, "~/site");
     assert!(request.initial_prompt.is_none());
 }
@@ -191,13 +191,8 @@ fn a_new_agent_is_the_provider_the_request_names() {
     )
     .unwrap();
     assert_eq!(
-        request.agent,
-        Some(wire::create_agent_request::Agent::Acp(
-            wire::AcpCreateConfig {
-                agent: "opencode".into(),
-                ..Default::default()
-            }
-        ))
+        (request.provider.as_str(), request.kind()),
+        ("opencode", wire::Kind::Acp)
     );
     let refused: Value = serde_json::from_str(&handle(
         &json!({

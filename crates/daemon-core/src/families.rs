@@ -1007,7 +1007,7 @@ impl Daemon {
         let mut row = AgentRow::new(self.own_key(create.agent), create.spec.kind(), cwd);
         row.name = name.to_owned();
         row.name_given = create.given.is_some();
-        row.provider = create.spec.provider_id().to_owned();
+        row.provider = create.spec.provider.clone();
         row.parent = create
             .spec
             .parent
@@ -1197,7 +1197,7 @@ impl Daemon {
             .store
             .cut(&self.own_key(resume.agent), 0)?
             .snapshot
-            .map(|snapshot| snapshot.body);
+            .map(Box::new);
         let job = self.pending.mint();
         out.push(Output::Job {
             id: job,
@@ -1634,7 +1634,7 @@ impl Daemon {
             self.store.put_agents(&subagents)?;
             self.subagents_ended_with_host(&key, &subagents, out)?;
         }
-        if row.phase != wire::Phase::Idle as i32 {
+        if row.phase() != wire::Phase::Idle {
             self.store
                 .set_phase(&key, wire::Phase::Idle, self.timers.now_ms as i64)?;
         }
@@ -1782,7 +1782,7 @@ impl Daemon {
                 rows.iter()
                     .any(|sub| sub.native.is_some() && sub.lifecycle == Lifecycle::Live as i32)
             });
-            return if row.phase == wire::Phase::Idle as i32 && !runs_subagents {
+            return if row.phase() == wire::Phase::Idle && !runs_subagents {
                 Gone::Suspended
             } else {
                 Gone::Continued
@@ -2259,8 +2259,7 @@ impl Daemon {
             name: row.title.clone().unwrap_or_else(|| row.name.clone()),
             notice: wire::Notice {
                 of: Some(wire::notice::Of::Died(wire::DiedNotice {
-                    cause: cause.cause,
-                    detail: cause.detail.clone().unwrap_or_default(),
+                    ended: Some(cause.clone()),
                 })),
             }
             .encode_to_vec(),
@@ -2437,18 +2436,29 @@ impl Daemon {
 }
 
 /// What an agent the machine restarted under in its turn is resumed with:
-/// a prompt saying so, whose input id marks the resume as a continuation
-/// for the interpreter to draw as one rather than as a person's message.
+/// a prompt saying so, marked a continuation for the interpreter to draw as
+/// one rather than as a person's message.
 fn continue_after_restart(row: &AgentRow) -> wire::Bootstrap {
     wire::Bootstrap {
         of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
-            input_id: wire::continued_input_id(&row.agent.agent, row.incarnation + 1),
+            input_id: continued_input_id(&row.agent.agent, row.incarnation + 1),
             prompt: Some(wire::PromptInput {
                 text: CONTINUE_AFTER_RESTART.to_owned(),
                 ..Default::default()
             }),
+            continued: true,
         })),
     }
+}
+
+/// The input id of the continuation that begins `incarnation` of `agent`:
+/// sixteen bytes, as every input id is, unique to the incarnation, so a
+/// retried resume is the same input.
+fn continued_input_id(agent: &[u8], incarnation: u32) -> Vec<u8> {
+    let mut id = b"continue".to_vec();
+    id.extend(incarnation.to_be_bytes());
+    id.extend(agent.iter().copied().chain(std::iter::repeat(0)).take(4));
+    id
 }
 
 /// A Stop frame: a kill ends the provider's group at once.
@@ -2489,6 +2499,18 @@ fn first_spec(
     spec
 }
 
+/// Whether a new process of the agent's program can carry its conversation
+/// on, as its newest snapshot's capabilities say. One whose program cannot
+/// reopen it, or that has not said it can, ends with its process, so it is
+/// never suspended, continued or resumed in a way that would start a fresh
+/// conversation as the old one.
+pub fn reopens(row: &AgentRow) -> bool {
+    row.snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.capabilities.as_ref())
+        .is_some_and(|capabilities| capabilities.resumable)
+}
+
 /// Whether the end a row's journal gave is one a machine shutting down can
 /// give before the daemon sees the process go: none at all, or the
 /// provider's own end by a signal, killed by it or exiting with its status
@@ -2504,37 +2526,11 @@ fn first_spec(
 /// SIGTERM mid-turn, counts whatever the phase. The grace only defers any of these,
 /// and the next start takes them for a shutdown only if the machine
 /// restarted, recording them as they are otherwise.
-/// Whether a new process of the agent's program can carry its conversation
-/// on. Claude and Codex always can. An ACP agent can only when its newest
-/// snapshot says its program's own `initialize` answer offered to resume or
-/// load a session: one that offered neither, or whose answer was never
-/// seen, ends with its process, so it is never suspended, continued or
-/// resumed in a way that would start a fresh conversation as the old one.
-pub fn reopens(row: &AgentRow) -> bool {
-    use prost::Message as _;
-    match wire::Kind::try_from(row.kind) {
-        Ok(wire::Kind::Acp) => row
-            .snapshot
-            .as_ref()
-            .and_then(|snapshot| wire::AcpSnapshot::decode(snapshot.body.as_slice()).ok())
-            .is_some_and(|body| {
-                matches!(
-                    body.reopen(),
-                    wire::AcpReopen::Resume | wire::AcpReopen::Load
-                )
-            }),
-        Ok(wire::Kind::ClaudePty | wire::Kind::ClaudeSdk | wire::Kind::Codex) => true,
-        // A row of no kind, or one a newer build wrote, has no program this
-        // build knows to reopen anything.
-        Ok(wire::Kind::Unspecified) | Err(_) => false,
-    }
-}
-
 fn shutdown_like(row: &AgentRow) -> bool {
     match ExitCause::try_from(row.exit_cause) {
         Ok(ExitCause::Unspecified) => true,
         Ok(ExitCause::Quit) => {
-            row.kind != wire::Kind::ClaudePty as i32 || row.phase == wire::Phase::Idle as i32
+            row.kind != wire::Kind::ClaudePty as i32 || row.phase() == wire::Phase::Idle
         }
         Ok(ExitCause::ProviderExited) => wire::provider_signalled(row.exit_detail.as_deref()),
         _ => false,
@@ -2642,7 +2638,7 @@ mod tests {
         fn suspend(&mut self, agent: AgentId) -> Vec<Output> {
             let mut row = self.row(agent).unwrap();
             row.exit_cause = ExitCause::Suspended as i32;
-            row.phase = wire::Phase::Starting as i32;
+            row.status.phase = wire::Phase::Starting as i32;
             self.daemon.store.put_agent(&row).unwrap();
             self.step(Input::ControlClosed {
                 agent,
@@ -2654,8 +2650,15 @@ mod tests {
         fn left(&mut self, agent: AgentId, phase: wire::Phase, cause: ExitCause) {
             let mut row = AgentRow::new(self.daemon.own_key(agent), wire::Kind::Codex, "/src");
             row.incarnation = 1;
-            row.phase = phase as i32;
+            row.status.phase = phase as i32;
             row.exit_cause = cause as i32;
+            // Its last snapshot, which says its program can reopen it.
+            row.snapshot = Some(wire::Snapshot {
+                kind: wire::Kind::Codex as i32,
+                status: wire::AgentStatus::in_phase(phase),
+                capabilities: Some(Box::new(wire::AgentCapabilities::codex(wire::Platform::here()))),
+                ..wire::Snapshot::default()
+            });
             self.daemon.store.put_agent(&row).unwrap();
         }
 
@@ -3002,7 +3005,10 @@ mod tests {
         else {
             panic!("the spec is asked for once the directory is free: {unlocked:?}");
         };
-        assert_eq!(snapshot.as_deref(), Some(&b"model b"[..]));
+        assert_eq!(
+            snapshot.as_deref().map(|snapshot| snapshot.body.as_slice()),
+            Some(&b"model b"[..])
+        );
 
         let built = rig.step(Input::JobDone {
             job: spec_job,
@@ -3150,11 +3156,11 @@ mod tests {
         let out = rig.suspend(PARENT);
         let row = rig.row(PARENT).unwrap();
         assert_eq!(
-            (row.lifecycle, row.exit_cause, row.phase),
+            (row.lifecycle, row.exit_cause, row.phase()),
             (
                 Lifecycle::Live as i32,
                 ExitCause::Suspended as i32,
-                wire::Phase::Idle as i32
+                wire::Phase::Idle
             ),
             "{out:?}"
         );
@@ -3172,7 +3178,7 @@ mod tests {
         let (call, out) = rig.call(ClientRequest::KillAgent { agent: PARENT });
         let answered = answer_of(&out, call).expect("answered at once");
         assert_eq!(answered.lifecycle, Lifecycle::Exited as i32);
-        assert_eq!(answered.exit_cause, ExitCause::Stopped as i32);
+        assert_eq!(answered.exit_cause(), ExitCause::Stopped);
         assert_eq!(stops(&out, CHILD), [false], "{out:?}");
     }
 
@@ -3187,8 +3193,8 @@ mod tests {
         });
         let answered = answer_of(&out, call).expect("answered at once");
         assert_eq!(
-            (answered.lifecycle, answered.exit_cause),
-            (Lifecycle::Exited as i32, ExitCause::Stopped as i32)
+            (answered.lifecycle, answered.exit_cause()),
+            (Lifecycle::Exited as i32, ExitCause::Stopped)
         );
         assert!(rig.row(PARENT).unwrap().is_closed());
     }
@@ -3218,8 +3224,8 @@ mod tests {
         let out = rig.suspend(PARENT);
         let answered = answer_of(&out, call).expect("answered once it ends");
         assert_eq!(
-            (answered.lifecycle, answered.exit_cause),
-            (Lifecycle::Exited as i32, ExitCause::Stopped as i32)
+            (answered.lifecycle, answered.exit_cause()),
+            (Lifecycle::Exited as i32, ExitCause::Stopped)
         );
     }
 
@@ -3228,6 +3234,7 @@ mod tests {
             agent,
             bootstrap: Some(wire::Bootstrap {
                 of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                    continued: false,
                     input_id: text.as_bytes().to_vec(),
                     prompt: Some(wire::PromptInput {
                         text: text.into(),
@@ -3308,8 +3315,8 @@ mod tests {
         );
         let gone = rig.suspend(CHILD);
         assert_eq!(
-            answer_of(&gone, stop).map(|row| row.exit_cause),
-            Some(ExitCause::Stopped as i32)
+            answer_of(&gone, stop).map(|row| row.exit_cause()),
+            Some(ExitCause::Stopped)
         );
         assert_eq!(job_of(&gone), None, "nothing starts: {gone:?}");
 
@@ -3423,8 +3430,8 @@ mod tests {
             // And a stop still marks it exited.
             let (call, out) = rig.call(ClientRequest::KillAgent { agent: PARENT });
             assert_eq!(
-                answer_of(&out, call).map(|agent| agent.exit_cause),
-                Some(ExitCause::Stopped as i32)
+                answer_of(&out, call).map(|agent| agent.exit_cause()),
+                Some(ExitCause::Stopped)
             );
         }
     }
@@ -3468,7 +3475,7 @@ mod tests {
             let Some(wire::bootstrap::Of::Prompt(prompt)) = bootstrap.of else {
                 panic!("a prompt: {bootstrap:?}");
             };
-            assert!(wire::is_continued_input(&prompt.input_id));
+            assert!(prompt.continued);
             assert_eq!(prompt.prompt.unwrap().text, CONTINUE_AFTER_RESTART);
             let row = rig.row(agent).unwrap();
             assert_eq!(
@@ -3490,29 +3497,26 @@ mod tests {
     /// nor continued; one whose program resumes is suspended as Codex is.
     #[test]
     fn after_a_reboot_an_acp_agent_reopens_only_where_its_program_said_it_can() {
-        use prost::Message as _;
         const NEITHER: AgentId = AgentId(*b"neither-00000000");
         const UNSEEN: AgentId = AgentId(*b"unseen-000000000");
         const RESUMES: AgentId = AgentId(*b"resumes-00000000");
         let mut rig = suspension_rig(true);
         rig.left(PARENT, wire::Phase::Idle, ExitCause::Unspecified);
-        for (agent, phase, reopen) in [
-            (NEITHER, wire::Phase::Idle, wire::AcpReopen::None),
-            (UNSEEN, wire::Phase::Working, wire::AcpReopen::Unspecified),
-            (RESUMES, wire::Phase::Idle, wire::AcpReopen::Resume),
+        for (agent, phase, resumable) in [
+            (NEITHER, wire::Phase::Idle, Some(false)),
+            (UNSEEN, wire::Phase::Working, None),
+            (RESUMES, wire::Phase::Idle, Some(true)),
         ] {
             let mut row = AgentRow::new(rig.daemon.own_key(agent), wire::Kind::Acp, "/src");
             row.incarnation = 1;
-            row.phase = phase as i32;
+            row.status.phase = phase as i32;
             row.snapshot = Some(wire::Snapshot {
                 kind: wire::Kind::Acp as i32,
-                phase: phase as i32,
-                body: wire::AcpSnapshot {
-                    session_id: Some("s".into()),
-                    reopen: (reopen != wire::AcpReopen::Unspecified).then_some(reopen as i32),
-                    ..Default::default()
-                }
-                .encode_to_vec(),
+                status: wire::AgentStatus::in_phase(phase),
+                conversation: Some("s".into()),
+                capabilities: resumable
+                    .map(|resumable| wire::AgentCapabilities::acp(resumable, false, false))
+                    .map(Box::new),
                 ..Default::default()
             });
             rig.daemon.store.put_agent(&row).unwrap();
@@ -3886,7 +3890,7 @@ mod tests {
             row.native = Some(wire::NativeChild {
                 provider_child_id: format!("thread-{}", agent.0[0]),
             });
-            row.phase = wire::Phase::Working as i32;
+            row.status.phase = wire::Phase::Working as i32;
             if !live {
                 row.lifecycle = Lifecycle::Exited as i32;
                 row.exit_cause = ExitCause::Finished as i32;

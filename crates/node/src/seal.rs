@@ -314,8 +314,10 @@ mod tests {
             (
                 "died",
                 of(notice::Of::Died(wire::DiedNotice {
-                    detail: "exited with status 1".to_owned(),
-                    ..wire::DiedNotice::default()
+                    ended: Some(wire::IncarnationEnd::new(
+                        wire::ExitCause::ProviderExited,
+                        Some("exited with status 1".to_owned()),
+                    )),
                 })),
             ),
         ]

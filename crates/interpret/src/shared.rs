@@ -15,8 +15,7 @@ pub use wire::AMUX_TOOL_SERVER;
 use wire::{
     ATTACH_TOOL, AgentMessage, AgentSpec, Append, Attachment, Bootstrap, Envelope, Item,
     MESSAGE_TOOL, Notice, Phase, PromptInput, QueuedInput, Refusal, Rejected, Sender, Snapshot,
-    Step, TurnEnd, WORKING_ON_TOOL, bootstrap, child_report, envelope, former_tools, is_tool,
-    sender,
+    Step, TurnEnd, WORKING_ON_TOOL, bootstrap, child_report, envelope, sender,
 };
 
 use crate::checks::{self, Watch};
@@ -30,7 +29,7 @@ pub trait OpenAsk: prost::Message + prost::Name + Default + Clone + PartialEq {
     fn item_key(&self) -> &str;
 }
 
-impl OpenAsk for wire::Ask {
+impl OpenAsk for wire::ClaudeAsk {
     fn key(&self) -> &str {
         &self.key
     }
@@ -561,11 +560,6 @@ pub struct Shared<A: OpenAsk> {
     trouble: Option<wire::BlockedNotice>,
     /// The newest plan's own title; a plan ask points at it.
     plan_title: String,
-    /// The agent declared its work with its set_working_on tool. Until it
-    /// does, the snapshot says nothing it works on: a state an earlier
-    /// build checkpointed may hold a prompt's first line here, which is
-    /// never shown.
-    declared: bool,
     turn: TurnCounter,
     /// Prompts handed to the provider and not yet reflected, oldest first:
     /// the reflection FIFO.
@@ -611,12 +605,10 @@ pub struct Shared<A: OpenAsk> {
     awaiting_sign_in: bool,
     /// What the provider process holds that ending it would lose: its
     /// scheduled wake-ups, a grant for its session, and a turn it owes.
-    /// Absent from a checkpoint an earlier build wrote.
     #[serde(default)]
     held: Held,
     /// When the agent last finished a turn and went idle; None before its
-    /// first, and while a turn runs. A checkpoint from before this field
-    /// existed reads it as never.
+    /// first, and while a turn runs.
     #[serde(default)]
     idle_since_ms: Option<i64>,
     /// Housekeeping amux started on its own while the agent was idle is
@@ -628,22 +620,52 @@ pub struct Shared<A: OpenAsk> {
     #[serde(default)]
     housekept: bool,
     /// The provider subagents running in this agent's provider process, by
-    /// the provider's id for each. A checkpoint from before subagents were
-    /// agents of their own has none, and one with none writes none.
+    /// the provider's id for each. A checkpoint with none writes none.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     subagents: BTreeMap<String, Native<A>>,
     /// What the agent can do, as its snapshot says: fixed by the kind for
     /// Claude and Codex, and for an ACP agent set by its interpreter from
-    /// what the agent's program said. None until then, and in a checkpoint
-    /// an earlier build wrote, which the next incarnation fills.
+    /// what the agent's program said. None until then.
     #[serde(default, with = "serde_pb::opt_msg")]
     capabilities: Option<wire::AgentCapabilities>,
-    /// The model, effort and permission the agent runs with, as its kind
-    /// last said them, for the snapshot's envelope.
-    #[serde(default, with = "serde_pb::opt_msg")]
-    settings: Option<wire::AgentSettings>,
+    /// What the kind last said of the session that every kind says the same
+    /// way, for the snapshot's envelope.
+    #[serde(default)]
+    reported: Reported,
+    /// The input id of the prompt this incarnation was resumed with to
+    /// carry on a turn its machine's restart cut short, which nobody sent.
+    #[serde(default, with = "serde_pb::opt_bytes")]
+    continued: Option<Vec<u8>>,
     /// What the checks after every step watch.
     watch: Watch,
+}
+
+/// What a kind says of its session that every kind says the same way,
+/// for [`Shared::report`]. Each value is absent while unknown.
+#[derive(Clone, Debug, Default)]
+pub struct Report<'a> {
+    pub model: Option<&'a str>,
+    pub effort: Option<&'a str>,
+    pub permission: Option<&'a str>,
+    pub mode: Option<&'a str>,
+    /// The running model as a person reads it.
+    pub model_name: Option<String>,
+    pub sign_in: Option<wire::SignIn>,
+    /// The provider's id for the conversation.
+    pub conversation: Option<&'a str>,
+}
+
+/// The last [`Report`], as the snapshot's envelope says it.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+struct Reported {
+    #[serde(default, with = "serde_pb::opt_msg")]
+    settings: Option<wire::AgentSettings>,
+    #[serde(default)]
+    model_name: Option<String>,
+    #[serde(default, with = "serde_pb::opt_msg")]
+    sign_in: Option<wire::SignIn>,
+    #[serde(default)]
+    conversation: Option<String>,
 }
 
 /// What a provider process holds that a kill and resume would lose or cut
@@ -712,7 +734,6 @@ impl<A: OpenAsk> Shared<A> {
             person_title: None,
             trouble: None,
             plan_title: String::new(),
-            declared: false,
             turn: TurnCounter::default(),
             submitted: Vec::new(),
             open_items: BTreeMap::new(),
@@ -730,10 +751,9 @@ impl<A: OpenAsk> Shared<A> {
             housekeeping: false,
             housekept: false,
             subagents: BTreeMap::new(),
-            // The interpreter runs on the agent's own host, so it says
-            // what the agent can do there.
-            capabilities: wire::AgentCapabilities::of_kind(kind, wire::Platform::here()),
-            settings: None,
+            capabilities: fixed_capabilities(kind),
+            reported: Reported::default(),
+            continued: None,
             watch: Watch::default(),
         };
         shared.bootstrap(spec);
@@ -758,12 +778,12 @@ impl<A: OpenAsk> Shared<A> {
         // Nor any subagent of the last one. One that process never ended
         // takes the end of its incarnation, which the journal holds.
         self.subagents.clear();
-        // A kind whose agents are all alike says so again, for a state an
-        // earlier build checkpointed without it; an ACP agent's interpreter
-        // says it from the new process's handshake.
+        // A kind whose agents are all alike says again what this build's
+        // agents of it can do; an ACP agent's interpreter says it from the
+        // new process's handshake.
         if let Some(fixed) = wire::Kind::try_from(self.kind)
             .ok()
-            .and_then(|kind| wire::AgentCapabilities::of_kind(kind, wire::Platform::here()))
+            .and_then(fixed_capabilities)
         {
             self.capabilities = Some(fixed);
         }
@@ -780,6 +800,14 @@ impl<A: OpenAsk> Shared<A> {
         let Some(entry) = spec.bootstrap.as_ref().and_then(queued_from_bootstrap) else {
             return;
         };
+        if let Some(bootstrap::Of::Prompt(submission)) = spec
+            .bootstrap
+            .as_ref()
+            .and_then(|bootstrap| bootstrap.of.as_ref())
+            && submission.continued
+        {
+            self.continued = Some(submission.input_id.clone());
+        }
         let held = self.queue.contains(&entry.input_id)
             || self
                 .opening
@@ -792,6 +820,14 @@ impl<A: OpenAsk> Shared<A> {
             self.opening = Some(entry);
         } else {
             self.queue.push(entry);
+        }
+    }
+
+    /// The item body of the prompt `input_id` names: a continuation when it
+    /// is the one this incarnation was resumed with, which nobody sent.
+    pub fn prompt(&self, input_id: &[u8]) -> wire::Prompt {
+        wire::Prompt {
+            continued: self.continued.as_deref() == Some(input_id),
         }
     }
 
@@ -929,38 +965,52 @@ impl<A: OpenAsk> Shared<A> {
         force: bool,
     ) {
         let phase = self.phase() as i32;
+        let last = self.last_snapshot.as_ref().map(Snapshot::status);
         // Since when is stamped only when the phase changes; streamed output
         // and every other change within a phase keep the earlier stamp.
-        let phase_since_ms = match &self.last_snapshot {
+        let phase_since_ms = match last {
             Some(last) if last.phase == phase => last.phase_since_ms,
             _ => self.now_ms,
+        };
+        let status = wire::AgentStatus {
+            phase,
+            phase_since_ms,
+            // Only what the agent declared: a prompt is the person's or
+            // the parent's words, never something to show the fleet.
+            working_on: self.working_on.clone(),
+            git: self.git.clone(),
+            background_jobs: self.jobs.as_ref().map_or(0, |jobs| jobs.jobs.len() as u32),
+            title: self.title.clone(),
+            // Taken only while the agent is not working, so the replies a
+            // turn writes as it goes cost no snapshot beyond the turn's
+            // end, where the phase changes anyway. A working agent's row
+            // says its step, not what it last said.
+            last_said: match last {
+                Some(last) if phase == Phase::Working as i32 => last.last_said.clone(),
+                _ => self.said.clone(),
+            },
+            settings: self.reported.settings.clone(),
         };
         let snapshot = Snapshot {
             revision: 0,
             queue: self.queue.entries.clone(),
             kind: self.kind,
             body,
-            phase,
-            // Only what the agent declared: a prompt is the person's or
-            // the parent's words, never something to show the fleet.
-            working_on: self.declared.then(|| self.working_on.clone()).flatten(),
-            title: self.title.clone(),
-            // Taken only while the agent is not working, so the replies a
-            // turn writes as it goes cost no snapshot beyond the turn's
-            // end, where the phase changes anyway. A working agent's row
-            // says its step, not what it last said.
-            last_said: match &self.last_snapshot {
-                Some(last) if phase == Phase::Working as i32 => last.last_said.clone(),
-                _ => self.said.clone(),
-            },
             at_ms: self.now_ms,
-            phase_since_ms,
-            git: self.git.clone(),
+            status: Some(Box::new(status)),
             catalogue: self.catalogue.clone(),
-            background_jobs: self.jobs.as_ref().map_or(0, |jobs| jobs.jobs.len() as u32),
             notice: notice.map(Box::new),
-            capabilities: self.capabilities,
-            settings: self.settings.clone().map(Box::new),
+            capabilities: self.capabilities.clone().map(Box::new),
+            model_name: self.reported.model_name.clone(),
+            sign_in: Some(
+                self.reported
+                    .sign_in
+                    .clone()
+                    .unwrap_or_else(crate::unknown::sign_in),
+            ),
+            conversation: self.reported.conversation.clone(),
+            jobs: Some(self.jobs()),
+            experimental: Default::default(),
         };
         let changed = self.last_snapshot.as_ref().is_none_or(|last| {
             Snapshot {
@@ -974,31 +1024,34 @@ impl<A: OpenAsk> Shared<A> {
         }
     }
 
-    /// Says what the agent can do from now on, on its next snapshot.
-    /// Says on the snapshot's envelope how the agent runs: its model,
-    /// effort and permission by its catalogue's values, the permission's
-    /// level by its provider's table. Nothing is said while all are
-    /// unknown.
-    pub fn set_settings(
-        &mut self,
-        provider: &str,
-        model: Option<&str>,
-        effort: Option<&str>,
-        permission: Option<&str>,
-    ) {
+    /// Says on the snapshot's envelope what every kind says of its session
+    /// the same way: its model, effort, permission and mode by its
+    /// catalogue's values, the permission's level by its provider's table,
+    /// the model's name as a person reads it, its sign-in and the
+    /// provider's id for its conversation.
+    pub fn report(&mut self, provider: &str, said: Report<'_>) {
         let known =
             |value: Option<&str>| value.filter(|value| !value.is_empty()).map(str::to_owned);
         let settings = wire::AgentSettings {
-            model: known(model),
-            effort: known(effort),
-            permission: known(permission),
-            permission_level: permission.map_or(wire::PermissionLevel::Unspecified, |permission| {
-                wire::levels::of(provider, permission)
-            }) as i32,
+            model: known(said.model),
+            effort: known(said.effort),
+            permission: known(said.permission),
+            permission_level: said
+                .permission
+                .map_or(wire::PermissionLevel::Unspecified, |permission| {
+                    wire::levels::of(provider, permission)
+                }) as i32,
+            mode: known(said.mode),
         };
-        self.settings = (settings != wire::AgentSettings::default()).then_some(settings);
+        self.reported = Reported {
+            settings: (!settings.is_none()).then_some(settings),
+            model_name: said.model_name,
+            sign_in: said.sign_in,
+            conversation: known(said.conversation),
+        };
     }
 
+    /// Says what the agent can do from now on, on its next snapshot.
     pub fn set_capabilities(&mut self, capabilities: wire::AgentCapabilities) {
         self.capabilities = Some(capabilities);
     }
@@ -1150,7 +1203,9 @@ impl<A: OpenAsk> Shared<A> {
     /// The jobs for the snapshot body: the explicit unknown until the
     /// interpreter has set them.
     pub fn jobs(&self) -> wire::BackgroundJobs {
-        self.jobs.clone().unwrap_or_default()
+        self.jobs
+            .clone()
+            .unwrap_or_else(crate::unknown::background_jobs)
     }
 
     // --- what the provider holds -------------------------------------------
@@ -1352,6 +1407,7 @@ impl<A: OpenAsk> Shared<A> {
             attachments: prompt.attachments,
             steer: false,
             sender: Some(sender),
+            continued: false,
         };
         if self.ready() && self.queue.is_empty() {
             self.mark_submitted(&entry.input_id);
@@ -1379,7 +1435,7 @@ impl<A: OpenAsk> Shared<A> {
                 .sender
                 .as_ref()
                 .and_then(|sender| sender.value.as_ref()),
-            Some(sender::Value::Human(_))
+            Some(sender::Value::Person(_))
         );
         person
             && self.fresh
@@ -1466,7 +1522,15 @@ impl<A: OpenAsk> Shared<A> {
     /// Withdraws a queued prompt; refused as `REFUSAL_NOT_QUEUED` if it already left
     /// the queue.
     pub fn withdraw(&mut self, emit: &mut Emit, input_id: &[u8], target: &[u8]) {
-        if self.queue.withdraw(target) {
+        // amux's own continuation is nobody's to take back.
+        let continued = self
+            .queue
+            .entries()
+            .iter()
+            .any(|entry| entry.continued && entry.input_id == target);
+        if continued {
+            self.reject(emit, input_id, Refusal::Unsupported);
+        } else if self.queue.withdraw(target) {
             self.accept(emit, input_id, false);
         } else {
             self.reject(emit, input_id, Refusal::NotQueued);
@@ -1476,8 +1540,9 @@ impl<A: OpenAsk> Shared<A> {
     /// Sends a queued prompt into the running turn: marked steered and
     /// returned, so the kind hands it to the provider's steering path.
     /// Rejected not queued if it is not waiting in the queue, and
-    /// unsupported if no turn is `running` or the entry is an
-    /// agent's message, which only ever arrives through its own channel.
+    /// unsupported if no turn is `running` or the entry is an agent's
+    /// message, which only ever arrives through its own channel, or amux's
+    /// own continuation, which nobody sent.
     pub fn send_now(
         &mut self,
         emit: &mut Emit,
@@ -1499,9 +1564,9 @@ impl<A: OpenAsk> Shared<A> {
                 .sender
                 .as_ref()
                 .and_then(|sender| sender.value.as_ref()),
-            Some(sender::Value::Human(_))
+            Some(sender::Value::Person(_))
         );
-        if !running || !from_person {
+        if !running || !from_person || waiting.continued {
             self.reject(emit, input_id, Refusal::Unsupported);
             return None;
         }
@@ -1903,7 +1968,6 @@ impl<A: OpenAsk> Shared<A> {
 
     /// Set from the set_working_on tool call; never cleared automatically.
     pub fn set_working_on(&mut self, working_on: Option<String>) {
-        self.declared = true;
         self.working_on = working_on
             .map(|text| without_terminal_codes(&text))
             .filter(|text| !text.trim().is_empty());
@@ -1990,22 +2054,18 @@ pub(crate) fn first_string(arguments: &serde_json::Value) -> String {
         .to_owned()
 }
 
-///
-/// Each of these knows the tool by the name a release before 0.11 gave it
-/// too: an agent resumed from then has calls by those names in its
-/// provider's history.
 pub fn is_status_tool(server: &str, tool: &str) -> bool {
-    server == AMUX_TOOL_SERVER && is_tool(tool, WORKING_ON_TOOL, former_tools::STATUS_TOOL)
+    server == AMUX_TOOL_SERVER && tool == WORKING_ON_TOOL
 }
 
 /// Whether a tool-server call is amux's attach tool.
 pub fn is_attach_tool(server: &str, tool: &str) -> bool {
-    server == AMUX_TOOL_SERVER && is_tool(tool, ATTACH_TOOL, former_tools::ATTACH_TOOL)
+    server == AMUX_TOOL_SERVER && tool == ATTACH_TOOL
 }
 
 /// Whether a tool-server call is amux's send tool.
 pub fn is_send_tool(server: &str, tool: &str) -> bool {
-    server == AMUX_TOOL_SERVER && is_tool(tool, MESSAGE_TOOL, former_tools::SEND_TOOL)
+    server == AMUX_TOOL_SERVER && tool == MESSAGE_TOOL
 }
 
 /// Where a send tool call has got to.
@@ -2337,6 +2397,7 @@ fn queued_from_bootstrap(bootstrap: &Bootstrap) -> Option<QueuedInput> {
             attachments: attachments(envelope).to_vec(),
             steer: false,
             sender: envelope.from.clone(),
+            continued: false,
         },
         bootstrap::Of::Prompt(submission) => {
             let prompt = submission.prompt.as_ref()?;
@@ -2345,16 +2406,17 @@ fn queued_from_bootstrap(bootstrap: &Bootstrap) -> Option<QueuedInput> {
                 text: prompt.text.clone(),
                 attachments: prompt.attachments.clone(),
                 steer: false,
-                sender: Some(human()),
+                sender: Some(person()),
+                continued: submission.continued,
             }
         }
     })
 }
 
 /// The sender of a person's input.
-pub fn human() -> Sender {
+pub fn person() -> Sender {
     Sender {
-        value: Some(sender::Value::Human(wire::Human {})),
+        value: Some(sender::Value::Person(wire::Person::default())),
     }
 }
 
@@ -2477,9 +2539,32 @@ fn capitalised(word: &str) -> String {
     }
 }
 
+/// What a provider subagent's chat can do: answer its asks, and stop it
+/// where its parent's kind stops one job. It takes no messages, keeps no
+/// settings of its own and is never resumed by amux.
+pub(crate) fn subagent_capabilities(stops_job: bool) -> wire::AgentCapabilities {
+    wire::AgentCapabilities {
+        stops_job,
+        ..wire::AgentCapabilities::default()
+    }
+}
+
+/// What every agent of `kind` can do, for the kinds whose agents are all
+/// alike: Claude's two and Codex. None for an ACP agent, whose interpreter
+/// says it from its program's handshake. The interpreter runs on the
+/// agent's own host, so it says what the agent can do there.
+fn fixed_capabilities(kind: wire::Kind) -> Option<wire::AgentCapabilities> {
+    match kind {
+        wire::Kind::ClaudePty => Some(wire::AgentCapabilities::claude_pty()),
+        wire::Kind::ClaudeSdk => Some(wire::AgentCapabilities::claude_sdk()),
+        wire::Kind::Codex => Some(wire::AgentCapabilities::codex(wire::Platform::here())),
+        wire::Kind::Acp | wire::Kind::Unspecified => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use wire::Ask;
+    use wire::ClaudeAsk;
 
     use super::*;
 
@@ -2497,7 +2582,7 @@ mod tests {
         assert!(one_line.len() - cut <= OUTPUT_CAP);
     }
 
-    fn shared() -> Shared<Ask> {
+    fn shared() -> Shared<ClaudeAsk> {
         let spec = AgentSpec {
             agent_id: b"a".to_vec(),
             created_at_ms: 10,
@@ -2540,13 +2625,13 @@ mod tests {
         };
         assert!(
             shared
-                .admit_prompt(&mut emit, b"p1", prompt.clone(), human())
+                .admit_prompt(&mut emit, b"p1", prompt.clone(), person())
                 .is_some()
         );
         assert!(!shared.quiescent(), "a turn is running");
         assert!(
             shared
-                .admit_prompt(&mut emit, b"p2", prompt, human())
+                .admit_prompt(&mut emit, b"p2", prompt, person())
                 .is_none()
         );
         assert_eq!(
@@ -2583,7 +2668,11 @@ mod tests {
     #[test]
     fn since_when_moves_only_when_the_phase_changes() {
         let mut shared = shared();
-        let since = |step: &Step| step.snapshot.as_ref().map(|s| (s.phase, s.phase_since_ms));
+        let since = |step: &Step| {
+            step.snapshot
+                .as_ref()
+                .map(|s| (s.status().phase, s.status().phase_since_ms))
+        };
         let first = shared.initial_step(Vec::new());
         assert_eq!(since(&first), Some((Phase::Starting as i32, 10)));
 
@@ -2636,7 +2725,7 @@ mod tests {
     #[test]
     fn git_facts_ride_the_snapshot_and_a_folder_outside_a_repository_has_none() {
         let mut shared = shared();
-        let git = |step: &Step| step.snapshot.as_ref().map(|s| s.git.clone());
+        let git = |step: &Step| step.snapshot.as_ref().map(|s| s.status().git.clone());
         assert_eq!(git(&shared.initial_step(Vec::new())), Some(None));
 
         let facts = wire::Git {
@@ -2658,7 +2747,7 @@ mod tests {
     #[test]
     fn an_open_ask_outranks_every_other_phase() {
         let mut shared = shared();
-        shared.open_ask(Ask {
+        shared.open_ask(ClaudeAsk {
             key: "k".into(),
             ..Default::default()
         });
@@ -2679,12 +2768,8 @@ mod tests {
         assert_eq!(status_working_on(br#"{"working_on": null}"#), Some(None));
         assert_eq!(status_working_on(br#"{"other": 1}"#), None);
         assert!(is_status_tool("amux", "set_working_on"));
-        assert!(
-            is_status_tool("amux", "status"),
-            "the name releases before 0.11 gave it"
-        );
-        assert!(!is_status_tool("other", "status"));
-        assert!(is_send_tool("amux", "message_agent") && is_send_tool("amux", "send"));
+        assert!(!is_status_tool("other", "set_working_on"));
+        assert!(is_send_tool("amux", "message_agent"));
         let mut shared = shared();
         shared.set_working_on(Some("  ".into()));
         assert_eq!(shared.working_on(), None);
@@ -2692,8 +2777,7 @@ mod tests {
 
     /// A prompt never stands in for declared work: it is the person's or
     /// the parent's words, which the fleet listing must not show. Only a
-    /// declaration fills the snapshot's working_on, and a checkpoint an
-    /// earlier build left with a prompt's line there shows nothing.
+    /// declaration fills the snapshot's working_on.
     #[test]
     fn only_declared_work_reaches_the_snapshot() {
         let spec = AgentSpec {
@@ -2705,14 +2789,19 @@ mod tests {
                         text: "Run the first thing".into(),
                         ..Default::default()
                     }),
+                    continued: false,
                 })),
             }),
             ..Default::default()
         };
-        let mut shared: Shared<Ask> = Shared::new(&spec, wire::Kind::Unspecified);
-        let said = |step: &Step| step.snapshot.as_ref().and_then(|s| s.working_on.clone());
+        let mut shared: Shared<ClaudeAsk> = Shared::new(&spec, wire::Kind::Unspecified);
+        let said = |step: &Step| {
+            step.snapshot
+                .as_ref()
+                .and_then(|s| s.status().working_on.clone())
+        };
         assert_eq!(said(&shared.initial_step(Vec::new())), None);
-        shared.working_on = Some("a prompt an earlier build kept".into());
+        shared.turn_started();
         assert_eq!(
             said(&shared.finish(Emit::default(), Vec::new(), None).step),
             None

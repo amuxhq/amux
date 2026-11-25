@@ -468,7 +468,7 @@ fn settings_picks_reach_the_interpreter() {
     );
     assert_eq!(
         pick_all::<Acp>(Kind::Acp, "acp"),
-        BTreeSet::from(["effort", "mode", "model"]),
+        BTreeSet::from(["effort", "mode", "model", "permission"]),
         "an ACP agent's picks"
     );
 }

@@ -313,7 +313,7 @@ async fn a_prompt_for_an_unreachable_host_is_refused_and_goes_only_when_sent_aga
     .await;
     let sent = session.send_prompt("Run the tests.", Vec::new()).await;
     let refused = Some(InputState::Rejected(ui_state::Refusal::of(
-        wire::Refusal::HostUnreachable,
+        ui_state::RefusalReason::HostUnreachable,
     )));
     assert_eq!(session.state().input_state(&sent.id), refused);
     // The composer takes the words back, and the kept draft is its words.

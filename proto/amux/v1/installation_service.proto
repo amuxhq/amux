@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package amux.v1;
 
-import "amux/v1/inventory.proto";
 import "amux/v1/records.proto";
 
 // The installation's front door: the installation itself and its profiles.
@@ -39,9 +38,6 @@ service InstallationService {
   // One profile's onboarding steps, now and on every change.
   rpc SubscribeOnboarding(SubscribeOnboardingRequest) returns (stream SubscribeOnboardingResponse);
   rpc AnswerOnboarding(AnswerOnboardingRequest) returns (AnswerOnboardingResponse);
-  // Folders worth offering as repositories: where Claude Code and Codex ran
-  // lately, Git repositories that still exist.
-  rpc SuggestRepositories(SuggestRepositoriesRequest) returns (SuggestRepositoriesResponse);
   // A one-time link that signs the browser in to the profile's account and
   // opens `path` on amux.sh.
   rpc WebSignInLink(WebSignInLinkRequest) returns (WebSignInLinkResponse);
@@ -72,20 +68,22 @@ message Settings {
   // On power the machine stays awake while amux runs; on battery only while
   // an agent works.
   bool keep_awake = 3;
-  // The repository list new-agent pickers offer, as canonical paths.
-  repeated string repositories = 4;
-  ChatIn chat_in = 5;
+  ChatIn chat_in = 4;
   // Which Claude a new agent runs; KIND_UNSPECIFIED follows chat_in. The
   // person's setting: the kind it resolves to is what the host's entry
   // lists as the Claude provider's ProviderDescriptor.kind, which is what
   // clients start Claude agents with.
-  Kind claude_kind = 6;
-  bool telemetry = 7;
-  bool auto_reports = 8;
+  Kind claude_kind = 5;
+  bool telemetry = 6;
+  bool auto_reports = 7;
   // Every experiment this build implements, in the order a settings screen
-  // lists them. Empty from a build that implements none, as from builds
-  // before experiments.
-  repeated Experiment experiments = 9;
+  // lists them; empty from a build that implements none.
+  repeated Experiment experiments = 8;
+  // The folders the config pins, as absolute paths in its order, whether or
+  // not each is there now: what a settings screen lists, and unpins with
+  // PinFolder, the one way to change them. The host's entry offers only
+  // those that exist, as places to start an agent.
+  repeated string repositories = 9;
 }
 
 // A feature whose shape is still moving, shipped outside amux.v1's
@@ -125,24 +123,18 @@ message UpdateSettingsRequest {
   optional string host_name = 1;
   optional bool start_at_login = 2;
   optional bool keep_awake = 3;
-  // The whole new list.
-  optional RepositoryList repositories = 4;
-  optional ChatIn chat_in = 5;
-  optional Kind claude_kind = 6;
-  optional bool telemetry = 7;
-  optional bool auto_reports = 8;
+  optional ChatIn chat_in = 4;
+  optional Kind claude_kind = 5;
+  optional bool telemetry = 6;
+  optional bool auto_reports = 7;
   // The whole new list of experiments switched on; absent leaves it as it
   // is. The daemon restarts itself to apply it, as `applying` shows until
   // it has.
-  optional ExperimentList experiments = 9;
+  optional ExperimentList experiments = 8;
 }
 
 message UpdateSettingsResponse {
   Settings settings = 1;
-}
-
-message RepositoryList {
-  repeated string paths = 1;
 }
 
 message ExperimentList {
@@ -223,16 +215,6 @@ enum OfferRole {
   OFFER_ROLE_RECEIVER = 2;
 }
 
-message SuggestRepositoriesRequest {}
-
-message SuggestRepositoriesResponse {
-  // Was a list of an older entry shape.
-  reserved 1;
-  reserved "suggestions";
-  // Each of kind FOLDER_KIND_HISTORY, newest first.
-  repeated Folder folders = 2;
-}
-
 message WebSignInLinkRequest {
   bytes profile_id = 1;
   // A path on amux.sh, such as "/offer".
@@ -275,15 +257,26 @@ message CloudStanding {
 // What a signed-in profile's relay link is doing.
 message RelayLink {
   oneof state {
-    Empty connecting = 1;
+    RelayConnecting connecting = 1;
     RelayConnected connected = 2;
-    Empty retrying = 3;
+    RelayRetrying retrying = 3;
     // The account service refused the profile's credentials.
-    Empty sign_in_again = 4;
+    RelaySignInAgain sign_in_again = 4;
     // The cloud refused this build as too old for its protocol.
-    Empty version_mismatch = 5;
+    RelayVersionMismatch version_mismatch = 5;
   }
 }
+
+// The first attempt to reach the relay since the profile signed in or the
+// daemon started.
+message RelayConnecting {}
+
+// The link was lost or an attempt failed, and the daemon tries again.
+message RelayRetrying {}
+
+message RelaySignInAgain {}
+
+message RelayVersionMismatch {}
 
 message RelayConnected {
   // The plan the relay admitted this link on, from the credential the host

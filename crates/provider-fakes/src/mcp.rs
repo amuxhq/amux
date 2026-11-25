@@ -286,8 +286,8 @@ mod tests {
     #[test]
     fn claude_names_split_into_server_and_tool() {
         assert_eq!(
-            ToolServers::split("mcp__amux__send"),
-            Some(("amux", "send"))
+            ToolServers::split("mcp__amux__message_agent"),
+            Some(("amux", "message_agent"))
         );
         assert_eq!(ToolServers::split("Bash"), None);
         let servers = ToolServers::from_claude(&[json!({

@@ -765,6 +765,7 @@ impl Machine for AgentLifecycle {
     fn init(&self) -> State {
         let bootstrap = self.one_shot.then(|| Bootstrap {
             of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                continued: false,
                 input_id: SPAWN.to_vec(),
                 prompt: Some(wire::PromptInput {
                     text: "spawn".to_owned(),

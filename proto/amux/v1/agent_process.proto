@@ -60,9 +60,7 @@ message AgentSpec {
   optional string title = 16;
   // Which agent program the kind runs, by its provider id: "claude",
   // "codex", or for kind acp the ACP agent's ("antigravity", "opencode",
-  // "grok", or one a person added). Empty in a spec an earlier build wrote,
-  // whose kind names its program: Claude's kinds are "claude", Codex's
-  // "codex".
+  // "grok", or one a person added).
   string provider = 17;
   // Set on the first incarnation of an agent started from a copy of its
   // parent's conversation: the conversation its provider copies into a new
@@ -127,18 +125,16 @@ message EffectiveConfig {
   // exits orphaned.
   uint32 drain_ms = 2;
   uint64 facts_ring_bytes = 3;
-  // The model, permission, mode and effort this incarnation starts with, as
+  // The model, effort, permission and mode this incarnation starts with, as
   // its catalogue names them: the creation's for the first, and for a
-  // resumed one the ones the agent last ran with.
-  optional string model = 4;
-  optional string permission = 5;
-  optional string mode = 6;
-  optional string effort = 7;
+  // resumed one the ones the agent last ran with. The permission level is
+  // unset: a level is mapped onto a permission before a spec is written.
+  AgentSettings settings = 4;
   // The canonical install path the hook binary and tool server run from.
-  string install_path = 8;
+  string install_path = 5;
   // How long one step of the agent's core may take before it asks for a
   // dump; 0 is the agent's own budget.
-  uint64 step_budget_micros = 9;
+  uint64 step_budget_micros = 6;
 }
 
 // ctl.sock frames, length-prefixed, no version integer.
@@ -180,13 +176,10 @@ message CtlFrame {
     DumpAsked dump_asked = 11;
     // Daemon to agent: a person's input to one of the provider subagents
     // this agent's provider runs: the answer to one of its asks, or a job
-    // stop naming a job in the subagent's own snapshot, its own included,
-    // which stops it. The daemon refuses every other input to a subagent
-    // itself. Answered by `reply` keyed by the input's id, as `input` is.
+    // stop. Answered by `reply` keyed by the input's id, as `input` is.
     ChildInput child_input = 12;
     // Daemon to agent: the folder may have changed since the agent last
-    // read its git facts, so read them again. An agent from before this
-    // frame ignores it and reads them at its next turn end as ever.
+    // read its git facts, so read them again.
     ReadGit read_git = 13;
   }
 }
@@ -196,9 +189,18 @@ message CtlFrame {
 message ChildInput {
   // The subagent's agent id, as its row and its AgentStep parts name it.
   bytes agent_id = 1;
-  // The input as the client sent it to the subagent, of the subagent's kind,
-  // which is its host's.
-  Input input = 2;
+  // The input's id, which the verdict is keyed by.
+  bytes input_id = 2;
+  oneof of {
+    // The input as the client sent it to the subagent, of the subagent's
+    // kind, which is its host's: an answer to one of the subagent's asks.
+    // The daemon refuses every other input to a subagent itself.
+    Input input = 3;
+    // Stops a job in the subagent's own snapshot, the subagent itself
+    // included. The daemon sends this for every kind, so it never builds a
+    // kind's input.
+    StopJob stop_job = 4;
+  }
 }
 
 message AgentDumpRequest {
@@ -330,9 +332,6 @@ message PtyResize {
 // private/agent.sock in the agent directory. One connection carries one ask
 // and its answer, each framed as on ctl.sock.
 message AgentAsk {
-  // Builds before the create took its host from the call's address asked
-  // for a spawn here, in a request this one does not read.
-  reserved 1;
   oneof of {
     // A child agent: the create the tool server wants, made on the host
     // host_id names. The tool server resolves a host a model names to its
@@ -340,10 +339,10 @@ message AgentAsk {
     // makes the create, addressed to that host, through its daemon and
     // hands the answer back, so it knows of every child it asked for from
     // before any daemon does.
-    CreateAgentRequest spawn = 2;
+    CreateAgentRequest spawn = 1;
   }
   // The host a spawn is made on, by id; empty, the agent's own host.
-  bytes host_id = 3;
+  bytes host_id = 2;
 }
 
 message AgentAnswer {
@@ -352,7 +351,7 @@ message AgentAnswer {
     CreateAgentResponse spawned = 1;
     // The ask was not carried out, or nobody can say whether it was: why,
     // in the words the model reads. Also the answer to an ask the agent
-    // process does not know, from a build before that ask existed.
+    // process does not know: one a later build's tool server added.
     string refused = 2;
   }
 }

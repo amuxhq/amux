@@ -12,6 +12,16 @@ use crate::process::{Descendant, ProcessRef, descendants, kill_descendants};
 /// The roles only Unix has.
 pub(crate) fn run_role(name: &str, _rest: &[&str]) {
     match name {
+        // Names itself with bytes that aren't UTF-8, as any process may.
+        #[cfg(target_os = "linux")]
+        "odd-name" => {
+            let name = b"am\xffux\xfe\0";
+            // SAFETY: PR_SET_NAME reads a NUL-terminated name of at most
+            // 16 bytes from a live buffer.
+            assert_eq!(unsafe { libc::prctl(libc::PR_SET_NAME, name.as_ptr()) }, 0);
+            crate::process::tests::say("named");
+            std::thread::sleep(std::time::Duration::from_secs(60));
+        }
         // `contained`, in a process whose census can't read the process
         // table, as one where `/proc` can't be opened.
         #[cfg(feature = "async")]
@@ -70,6 +80,27 @@ fn killing_an_empty_census_reads_no_table() {
     super::table::READS.with(|reads| reads.set(0));
     kill_descendants(&[]);
     assert_eq!(super::table::READS.with(std::cell::Cell::get), 0);
+}
+
+/// A process whose name isn't UTF-8 is still found and pinned.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_process_named_in_bytes_that_are_not_utf8_is_found() {
+    let mut driven = Driven::start(helper("odd-name"));
+    assert_eq!(driven.expect("named"), "");
+    let pinned = ProcessRef::open(driven.child.id()).expect("found");
+    assert!(pinned.alive());
+    let _ = driven.child.kill();
+}
+
+/// The fields after the name, whatever bytes and parentheses it holds.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_stat_row_is_read_past_any_name() {
+    let mut stat = b"4242 (a) b\xff (c)) S 7 4242 4242 0 -1 0".to_vec();
+    stat.extend_from_slice(b" 0 0 0 0 0 0 0 0 20 0 1 0 987654 0 0\n");
+    let row = super::table::parse_stat(4242, &stat).expect("a row");
+    assert_eq!((row.pid, row.ppid, row.started, row.zombie), (4242, 7, 987654, false));
 }
 
 #[test]

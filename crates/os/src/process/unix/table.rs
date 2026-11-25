@@ -111,12 +111,20 @@ fn read_table() -> std::io::Result<Vec<Row>> {
 /// The row for `pid`, if it names a process.
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub(super) fn row(pid: i32) -> Option<Row> {
-    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    // The command name in parentheses may hold spaces and parentheses of
-    // its own; the fields after it are plain. They start at the state, so
-    // the parent pid is the second and the start time (field 22) the
-    // twentieth.
-    let mut fields = stat.get(stat.rfind(')')? + 1..)?.split_whitespace();
+    parse_stat(pid, &std::fs::read(format!("/proc/{pid}/stat")).ok()?)
+}
+
+/// A row from the bytes of `/proc/<pid>/stat`. The command name in
+/// parentheses may hold spaces, parentheses and bytes that aren't UTF-8
+/// (it is whatever the process named itself), so only what follows the
+/// last `)` is read, which is plain ASCII. Its fields start at the state,
+/// so the parent pid is the second and the start time (field 22) the
+/// twentieth.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(super) fn parse_stat(pid: i32, stat: &[u8]) -> Option<Row> {
+    let after = stat.iter().rposition(|&byte| byte == b')')? + 1;
+    let rest = std::str::from_utf8(&stat[after..]).ok()?;
+    let mut fields = rest.split_whitespace();
     let state = fields.next()?;
     let ppid = fields.next()?.parse().ok()?;
     let started = fields.nth(17)?.parse().ok()?;

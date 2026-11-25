@@ -1,0 +1,338 @@
+//! The file system as amux uses it: owner-only folders and files, durable
+//! whole-file writes, patient renames and removals, one canonical path
+//! form, and what a root's volume must support.
+//!
+//! Each function is one API with an implementation per OS (`unix.rs`,
+//! `windows.rs`); callers never write `cfg`. A primitive an OS cannot
+//! provide returns [`io::ErrorKind::Unsupported`], unless its doc comment
+//! names the exception.
+
+use std::fmt;
+use std::fs::{File, Metadata, OpenOptions};
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
+#[cfg(unix)]
+mod unix;
+#[cfg(unix)]
+use unix as imp;
+mod verbatim;
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+use windows as imp;
+
+#[cfg(test)]
+mod tests;
+
+/// How long a durable write and [`rename_patiently`] keep retrying while
+/// something else holds the file: long enough for a virus scanner or an
+/// indexer that opened it without delete sharing, short enough that a
+/// handle held for good is reported, not waited on.
+pub const SHARING_PATIENCE: Duration = Duration::from_secs(1);
+
+// Owner-only ----------------------------------------------------------------
+
+/// Creates `dir`, and any missing parent, with `dir` itself owner-only; an
+/// existing `dir` is made owner-only ([`make_private`]).
+///
+/// Unix: mode 0700 (on the parents it creates too). Windows: a protected
+/// DACL giving full control to the current user, SYSTEM and Administrators
+/// only, inherited (OI|CI) by what is created inside, set as the folder is
+/// created, so no other user can open it in between; parents it creates
+/// inherit theirs as usual.
+pub fn create_private_dir(dir: &Path) -> io::Result<()> {
+    imp::create_private_dir(dir)
+}
+
+/// Makes the existing file or folder at `path` owner-only.
+///
+/// Unix: 0700 for a folder, 0600 for a file (0700 for one with an execute
+/// bit, which it keeps). Windows: the protected DACL [`create_private_dir`]
+/// describes, applied to a folder's contents by inheritance (anything
+/// inside that inherits its ACL takes the new one), which upgrades an
+/// existing installation in place.
+pub fn make_private(path: &Path) -> io::Result<()> {
+    imp::make_private(path)
+}
+
+/// Options that create a file only its owner can open: write access, to
+/// which the caller adds what else it needs.
+///
+/// Unix: mode 0600. Windows: std cannot carry a security descriptor into
+/// the file's creation, so the file takes its folder's inherited DACL:
+/// owner-only inside a [`create_private_dir`] folder or one
+/// [`make_private`] was applied to, and only there. [`write_durably`] and
+/// [`create_new_durably`] are owner-only wherever they write.
+pub fn private_open_options() -> OpenOptions {
+    imp::private_open_options()
+}
+
+/// The current user's SID as a string (`S-1-5-21-…`), for an SDDL.
+/// Windows only: elsewhere it returns [`io::ErrorKind::Unsupported`].
+pub fn current_user_sid() -> io::Result<String> {
+    imp::current_user_sid()
+}
+
+// Durable whole-file writes --------------------------------------------------
+
+/// Replaces `path` with `bytes` so that a crash or power cut leaves either
+/// the old file or the new one, and the new one is on disk before this
+/// returns.
+///
+/// A temporary file beside `path`, written, flushed, then atomically put in
+/// place, then the folder synced ([`sync_dir`]). Windows replaces through
+/// the open temporary file with POSIX semantics (`FileRenameInfoEx`,
+/// `REPLACE_IF_EXISTS | POSIX_SEMANTICS`), so a reader holding the old file
+/// with delete sharing doesn't stop it, falling back to a plain replace on
+/// a volume that refuses POSIX semantics. A sharing violation is retried
+/// for [`SHARING_PATIENCE`], then reported. The temporary file is never
+/// left behind, whatever fails.
+///
+/// The result is owner-only on every OS: 0600 on Unix, the DACL
+/// [`create_private_dir`] describes on Windows.
+pub fn write_durably(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    durably(path, bytes, Publish::Replace)
+}
+
+/// Writes `bytes` to `path` as [`write_durably`] does, but only if `path`
+/// does not exist: otherwise [`io::ErrorKind::AlreadyExists`], with the
+/// existing file untouched. The check and the creation are one step, so of
+/// two writers exactly one succeeds.
+pub fn create_new_durably(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    durably(path, bytes, Publish::New)
+}
+
+/// How a durable write puts its temporary file in place.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Publish {
+    Replace,
+    New,
+}
+
+fn durably(path: &Path, bytes: &[u8], publish: Publish) -> io::Result<()> {
+    let name = path.file_name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{} names no file to write", path.display()),
+        )
+    })?;
+    let dir = match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => Path::new("."),
+    };
+    let (temp, file) = temp_beside(dir, &name.to_string_lossy())?;
+    match imp::finish_durably(file, &temp, path, bytes, publish) {
+        Ok(()) => sync_dir(dir),
+        Err(error) => {
+            // The temporary file is closed by now; one nobody else opened
+            // goes at once, and its name is ours alone.
+            let _ = std::fs::remove_file(&temp);
+            Err(error)
+        }
+    }
+}
+
+/// A new owner-only file beside the target, under a name no other writer
+/// uses: `.<name>.<pid>.<n>.tmp`.
+fn temp_beside(dir: &Path, name: &str) -> io::Result<(PathBuf, File)> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let pid = std::process::id();
+    loop {
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        let temp = dir.join(format!(".{name}.{pid}.{n}.tmp"));
+        match imp::create_temp(&temp) {
+            Ok(file) => return Ok((temp, file)),
+            // A crashed writer's leftover under a reused pid.
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists && n < u64::MAX => continue,
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+/// Makes a rename or creation in `dir` durable.
+///
+/// Unix: fsync of the folder. Windows: the folder opened with
+/// `FILE_FLAG_BACKUP_SEMANTICS | GENERIC_WRITE`, then `FlushFileBuffers`,
+/// which NTFS and ReFS honour for a folder: it commits the folder's index,
+/// where a rename lands.
+pub fn sync_dir(dir: &Path) -> io::Result<()> {
+    imp::sync_dir(dir)
+}
+
+// Patient renames and removals ----------------------------------------------
+
+/// Renames `from` to `to`, replacing a file at `to`, retrying for
+/// [`SHARING_PATIENCE`] while something else holds either one (Windows'
+/// sharing violations; Unix has none, so it is one rename there).
+pub fn rename_patiently(from: &Path, to: &Path) -> io::Result<()> {
+    patiently(SHARING_PATIENCE, || std::fs::rename(from, to))
+}
+
+/// What [`remove_patiently`] did.
+#[must_use]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Removed {
+    /// Nothing is at the path any more (or nothing was).
+    Gone,
+    /// Something else still holds it or something inside it: a process
+    /// with its working directory there, or a file open without delete
+    /// sharing. What could go has gone; try again later.
+    Later,
+}
+
+/// Removes the file or folder tree at `path`, retrying for `patience`
+/// while something else holds it, then reporting [`Removed::Later`]
+/// instead of an error: a sweep leaves what's held for its next pass, and
+/// nothing a start does dies of it. A read-only file is removed too. An
+/// error is only what waiting can't fix, such as a permission refused.
+pub fn remove_patiently(path: &Path, patience: Duration) -> io::Result<Removed> {
+    let started = Instant::now();
+    let mut pause = Duration::from_millis(5);
+    loop {
+        let removed = match std::fs::symlink_metadata(path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Removed::Gone),
+            Err(error) => Err(error),
+            // A link goes itself, never what it points at.
+            Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(path),
+            Ok(_) => imp::remove_file(path),
+        };
+        match removed {
+            Ok(()) => return Ok(Removed::Gone),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Removed::Gone),
+            Err(error) if imp::is_held(&error) => {
+                if started.elapsed() >= patience {
+                    return Ok(Removed::Later);
+                }
+            }
+            Err(error) => return Err(error),
+        }
+        std::thread::sleep(pause.min(patience.saturating_sub(started.elapsed())));
+        pause = (pause * 2).min(Duration::from_millis(100));
+    }
+}
+
+/// Runs `attempt` until it succeeds, fails for a reason other than a
+/// sharing violation, or `patience` runs out.
+fn patiently<T>(patience: Duration, mut attempt: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    let started = Instant::now();
+    let mut pause = Duration::from_millis(5);
+    loop {
+        match attempt() {
+            Err(error) if imp::is_held(&error) && started.elapsed() < patience => {
+                std::thread::sleep(pause.min(patience.saturating_sub(started.elapsed())));
+                pause = (pause * 2).min(Duration::from_millis(100));
+            }
+            done => return done,
+        }
+    }
+}
+
+// One canonical path form -------------------------------------------------------
+
+/// `path` made canonical, in the form people and programs take:
+/// [`std::fs::canonicalize`], then [`plain`].
+pub fn canonical(path: &Path) -> io::Result<PathBuf> {
+    path.canonicalize().map(plain)
+}
+
+/// A path in the form programs take, without Windows' verbatim prefix
+/// where the plain form means the same: `\\?\C:\…` becomes `C:\…`, and
+/// `\\?\UNC\server\share\…` becomes `\\server\share\…`. Windows writes a
+/// canonical path verbatim, a form `cmd.exe`, git and many tools an agent
+/// runs refuse or print back oddly.
+///
+/// A path stays verbatim when its plain form would name something else
+/// or nothing: one of `MAX_PATH` or more, one with a component Windows
+/// would rewrite (a trailing dot or space, `.` or `..`) or read as a
+/// device (`con`, `nul`, `com1`…), and a verbatim form with no plain one
+/// (`\\?\Volume{…}`). Elsewhere, and for a path without the prefix,
+/// `path` is returned as it is.
+pub fn plain(path: PathBuf) -> PathBuf {
+    if !imp::VERBATIM_PATHS {
+        return path;
+    }
+    match path.to_str().and_then(verbatim::plain) {
+        Some(plain) => PathBuf::from(plain),
+        None => path,
+    }
+}
+
+// Executables ------------------------------------------------------------------
+
+/// Lets `path` be run. Unix: an execute bit wherever there is a read bit.
+/// Windows: nothing, and `Ok`: Windows runs a file by its extension, and
+/// has no bit to set.
+pub fn make_executable(path: &Path) -> io::Result<()> {
+    imp::make_executable(path)
+}
+
+/// Whether the file at `path`, whose metadata is `meta`, can be run as a
+/// program. Unix: a regular file with an execute bit. Windows: a regular
+/// file whose extension `PATHEXT` lists (`.exe`, `.cmd`, `.bat`…).
+pub fn is_executable(path: &Path, meta: &Metadata) -> bool {
+    imp::is_executable(path, meta)
+}
+
+// The root's volume ----------------------------------------------------------------
+
+/// Whether the volume holding `path` (or, for a path not yet created, its
+/// nearest existing ancestor) can hold an amux root.
+///
+/// Windows: a local fixed drive, formatted NTFS or ReFS, that supports
+/// POSIX unlink and rename (`FILE_SUPPORTS_POSIX_UNLINK_RENAME`), which
+/// durable writes and removal of open files rely on. Unix: always
+/// [`VolumeCheck::Suitable`] (documented exception), as every volume amux
+/// meets there has POSIX semantics.
+pub fn volume_supports_root(path: &Path) -> io::Result<VolumeCheck> {
+    imp::volume_supports_root(path)
+}
+
+/// What [`volume_supports_root`] found.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VolumeCheck {
+    Suitable,
+    /// Each thing the volume lacks; never empty.
+    Unsuitable(Vec<VolumeProblem>),
+}
+
+/// One thing a volume lacks for a root.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VolumeProblem {
+    /// A network share, removable or optical drive, or RAM disk: `kind`
+    /// names which.
+    NotLocal { kind: &'static str },
+    /// Formatted with a file system other than NTFS or ReFS.
+    FileSystem { name: String },
+    /// No POSIX unlink and rename.
+    NoPosixRename,
+}
+
+impl fmt::Display for VolumeProblem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotLocal { kind } => write!(f, "it is on a {kind}, not a local fixed drive"),
+            Self::FileSystem { name } => write!(f, "its file system is {name}, not NTFS or ReFS"),
+            Self::NoPosixRename => f.write_str("its file system has no POSIX unlink and rename"),
+        }
+    }
+}
+
+impl fmt::Display for VolumeCheck {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Suitable => f.write_str("suitable for a root"),
+            Self::Unsuitable(problems) => {
+                for (n, problem) in problems.iter().enumerate() {
+                    if n > 0 {
+                        f.write_str("; ")?;
+                    }
+                    write!(f, "{problem}")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}

@@ -30,6 +30,7 @@ members = [
     "crates/log-file",
     "crates/models",
     "crates/node",
+    "crates/os",
     "crates/path-core",
     "crates/patience",
     "crates/provider-fakes",
@@ -72,6 +73,7 @@ agent = { path = "crates/agent" }
 agent-core = { path = "crates/agent-core" }
 core-ring = { path = "crates/core-ring" }
 log-file = { path = "crates/log-file" }
+os = { path = "crates/os" }
 daemon-core = { path = "crates/daemon-core" }
 relay-core = { path = "crates/relay-core" }
 path-core = { path = "crates/path-core" }

@@ -1,0 +1,283 @@
+//! `os::fs` on Windows: what only Windows can show.
+
+use super::testing::dacl_sddl;
+use super::*;
+use crate::fs::{Removed, canonical, plain, remove_patiently, write_durably};
+use std::os::windows::fs::OpenOptionsExt as _;
+use std::time::{Duration, Instant};
+
+/// A folder beside the test program, which with the build's target folder
+/// outside the user profile (`C:\amux-cargo\…` here) is a root that does
+/// not inherit `%LOCALAPPDATA%`'s owner-only ACL; removed when dropped.
+struct OutsideProfile(PathBuf);
+
+impl OutsideProfile {
+    fn new() -> Self {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let exe = std::env::current_exe().unwrap();
+        let path = exe
+            .parent()
+            .unwrap()
+            .join(format!("dacl-test-{}-{nanos}", std::process::id()));
+        fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+}
+
+impl Drop for OutsideProfile {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The DACL's flags (`P`, `AI`…) and its ACEs, from its SDDL.
+fn parse(sddl: &str) -> (String, Vec<String>) {
+    let dacl = sddl.strip_prefix("D:").unwrap_or_else(|| panic!("{sddl}"));
+    let flags = dacl.split('(').next().unwrap().to_owned();
+    let aces = dacl
+        .split('(')
+        .skip(1)
+        .map(|ace| ace.trim_end_matches(')').to_owned())
+        .collect();
+    (flags, aces)
+}
+
+fn owner_only(inheritance: &str) -> Vec<String> {
+    let sid = current_user_sid().unwrap();
+    [sid.as_str(), "SY", "BA"]
+        .iter()
+        .map(|who| format!("A;{inheritance};FA;;;{who}"))
+        .collect()
+}
+
+#[test]
+fn a_private_folder_outside_the_profile_reads_back_owner_only_and_passes_it_on() {
+    let root = OutsideProfile::new();
+    let (_, inherited) = parse(&dacl_sddl(&root.0).unwrap());
+    eprintln!(
+        "the test root at {} inherits {inherited:?}",
+        root.0.display()
+    );
+
+    let private = root.0.join("amux");
+    crate::fs::create_private_dir(&private).unwrap();
+    let (flags, aces) = parse(&dacl_sddl(&private).unwrap());
+    assert!(flags.starts_with('P'), "protected: {flags}");
+    assert_eq!(aces, owner_only("OICI"));
+
+    let inside = private.join("device.key");
+    fs::write(&inside, b"secret").unwrap();
+    let (flags, aces) = parse(&dacl_sddl(&inside).unwrap());
+    assert!(!flags.contains('P'), "inherits: {flags}");
+    assert_eq!(aces, owner_only("ID"));
+
+    let nested = private.join("agents");
+    fs::create_dir(&nested).unwrap();
+    let (_, aces) = parse(&dacl_sddl(&nested).unwrap());
+    assert_eq!(aces, owner_only("OICIID"));
+}
+
+#[test]
+fn making_an_existing_folder_private_upgrades_what_it_holds() {
+    let root = OutsideProfile::new();
+    let existing = root.0.join("old-root");
+    fs::create_dir_all(existing.join("profile")).unwrap();
+    let account = existing.join("profile").join("account");
+    fs::write(&account, b"x").unwrap();
+    let (_, before) = parse(&dacl_sddl(&account).unwrap());
+    assert_ne!(
+        before,
+        owner_only("ID"),
+        "the test root must not be owner-only already"
+    );
+
+    crate::fs::create_private_dir(&existing).unwrap();
+    let (flags, aces) = parse(&dacl_sddl(&existing).unwrap());
+    assert!(flags.starts_with('P'), "{flags}");
+    assert_eq!(aces, owner_only("OICI"));
+    let (_, aces) = parse(&dacl_sddl(&account).unwrap());
+    assert_eq!(aces, owner_only("ID"));
+}
+
+#[test]
+fn a_durably_written_file_is_owner_only_wherever_it_is() {
+    let root = OutsideProfile::new();
+    let path = root.0.join("relay-token");
+    write_durably(&path, b"token").unwrap();
+    let (flags, aces) = parse(&dacl_sddl(&path).unwrap());
+    assert!(flags.starts_with('P'), "{flags}");
+    assert_eq!(aces, owner_only(""));
+    crate::fs::make_private(&path).unwrap();
+    assert_eq!(parse(&dacl_sddl(&path).unwrap()).1, owner_only(""));
+}
+
+#[test]
+fn the_user_sid_is_a_sid() {
+    let sid = current_user_sid().unwrap();
+    assert!(sid.starts_with("S-1-"), "{sid}");
+}
+
+/// Opens `path` the way a scanner or `Get-Content` might: reading, sharing
+/// reads and writes but not deletion.
+fn hold_without_delete_sharing(path: &Path) -> File {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    options.share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE);
+    if path.is_dir() {
+        options.custom_flags(FILE_FLAG_BACKUP_SEMANTICS);
+    }
+    options.open(path).unwrap()
+}
+
+#[test]
+fn a_durable_replace_against_a_holder_without_delete_sharing_retries_then_reports() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("generation");
+    fs::write(&path, b"old").unwrap();
+
+    let holder = hold_without_delete_sharing(&path);
+    let started = Instant::now();
+    let error = write_durably(&path, b"new").unwrap_err();
+    assert!(is_held(&error), "{error}");
+    assert!(
+        started.elapsed() >= SHARING_PATIENCE,
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(fs::read(&path).unwrap(), b"old");
+    assert_eq!(
+        fs::read_dir(dir.path()).unwrap().count(),
+        1,
+        "the temporary file is gone"
+    );
+    drop(holder);
+
+    let holder = hold_without_delete_sharing(&path);
+    let started = Instant::now();
+    std::thread::scope(|scope| {
+        scope.spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            drop(holder);
+        });
+        write_durably(&path, b"new").unwrap();
+    });
+    assert!(started.elapsed() >= Duration::from_millis(200));
+    assert_eq!(fs::read(&path).unwrap(), b"new");
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+}
+
+#[test]
+fn a_durable_replace_goes_through_a_reader_that_shares_deletion() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(&path, b"old").unwrap();
+    let mut reader = File::open(&path).unwrap();
+    let started = Instant::now();
+    write_durably(&path, b"new").unwrap();
+    assert!(
+        started.elapsed() < SHARING_PATIENCE,
+        "no waiting: POSIX semantics"
+    );
+    assert_eq!(fs::read(&path).unwrap(), b"new");
+    let mut old = String::new();
+    io::Read::read_to_string(&mut reader, &mut old).unwrap();
+    assert_eq!(old, "old", "the reader keeps the file it opened");
+}
+
+/// The fallback is for other volumes: this one takes POSIX semantics, so a
+/// replace here never falls back.
+#[test]
+fn this_volume_takes_a_posix_replace_through_the_handle() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("target");
+    fs::write(&target, b"old").unwrap();
+    let temp = dir.path().join("temp");
+    let file = create_temp(&temp).unwrap();
+    let flags = FILE_RENAME_FLAG_POSIX_SEMANTICS | FILE_RENAME_FLAG_REPLACE_IF_EXISTS;
+    set_rename_info(&file, &wide(&target).unwrap(), FileRenameInfoEx, flags).unwrap();
+    drop(file);
+    assert!(!temp.exists());
+    assert_eq!(fs::read(&target).unwrap(), b"");
+}
+
+#[test]
+fn patient_removal_of_a_held_file_or_folder_is_later() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("agent.log");
+    fs::write(&file, b"x").unwrap();
+    let tree = dir.path().join("agent");
+    fs::create_dir_all(tree.join("worktree")).unwrap();
+    let held_inside = tree.join("worktree").join("held");
+    fs::write(&held_inside, b"x").unwrap();
+    let cwd = dir.path().join("shell-cwd");
+    fs::create_dir(&cwd).unwrap();
+
+    let patience = Duration::from_millis(300);
+    for (path, held) in [(&file, &file), (&tree, &held_inside), (&cwd, &cwd)] {
+        let holder = hold_without_delete_sharing(held);
+        let started = Instant::now();
+        assert_eq!(
+            remove_patiently(path, patience).unwrap(),
+            Removed::Later,
+            "{}",
+            path.display()
+        );
+        assert!(started.elapsed() >= patience);
+        assert!(held.exists());
+        drop(holder);
+        assert_eq!(remove_patiently(path, patience).unwrap(), Removed::Gone);
+        assert!(!path.exists());
+    }
+}
+
+/// `node`'s test from before the move, with the share now plain too, as
+/// [`canonical`] makes it.
+#[test]
+fn a_drive_path_loses_its_verbatim_prefix_and_so_does_a_share() {
+    assert_eq!(
+        plain(PathBuf::from(r"\\?\C:\Users\me\shop")),
+        PathBuf::from(r"C:\Users\me\shop")
+    );
+    assert_eq!(
+        plain(PathBuf::from(r"\\?\UNC\server\share\shop")),
+        PathBuf::from(r"\\server\share\shop")
+    );
+    let device = PathBuf::from(r"\\?\C:\x\nul");
+    assert_eq!(plain(device.clone()), device);
+}
+
+#[test]
+fn a_canonical_path_stays_verbatim_where_the_plain_form_means_another_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let verbatim_dir = dir.path().canonicalize().unwrap();
+    assert!(verbatim_dir.to_string_lossy().starts_with(r"\\?\"));
+    for name in ["trail.", "trail ", "con"] {
+        let odd = verbatim_dir.join(name);
+        fs::create_dir(&odd).unwrap();
+        let canonical = canonical(&odd).unwrap();
+        assert!(
+            canonical.to_string_lossy().starts_with(r"\\?\"),
+            "{}",
+            canonical.display()
+        );
+        assert!(canonical.is_dir());
+        fs::remove_dir(&odd).unwrap();
+    }
+}
+
+#[test]
+fn a_long_path_is_made_private_and_written_durably() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut deep = dir.path().to_owned();
+    while deep.as_os_str().len() < 300 {
+        deep.push("a-folder-with-a-long-name");
+    }
+    crate::fs::create_private_dir(&deep).unwrap();
+    let path = deep.join("file");
+    write_durably(&path, b"deep").unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"deep");
+    crate::fs::sync_dir(&deep).unwrap();
+}

@@ -10,6 +10,7 @@ DEPS = [
     "//crates/highlight:highlight",
     "//crates/journal:journal",
     "//crates/log-file:log-file",
+    "//crates/os:os",
     "//crates/path-core:path-core",
     "//crates/redaction:redaction",
     "//crates/relay-core:relay-core",

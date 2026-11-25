@@ -11,30 +11,36 @@ use crate::process::TETHER_GRACE_SECS;
 
 /// `others`: whether a process other than the shell itself, and not a
 /// zombie, is still in group `$g`. Linux and Android read `/proc` with
-/// builtins alone, so the shell starts nothing in the group to look;
-/// elsewhere `ps`, through a shell that names its own pid so its line is
-/// left out (a shell that forks a subshell for `$(...)` adds a line, which
-/// only makes the tether wait out the grace and SIGKILL). Where neither can
-/// be read, nothing is found and the leader alone is watched.
+/// builtins alone (`others_proc`), so the shell starts nothing in the
+/// group to look. Elsewhere `others_ps` asks `ps`, through a shell that
+/// names its own pid, and leaves out what the census itself started in
+/// the group: that shell, which becomes `ps`, and any child of the tether
+/// shell's (a shell that forks a subshell for `$(...)` waits in one, as
+/// macOS's bash does). The tether shell's children are only ever its own
+/// commands; the group's members are the provider's. Where neither can be
+/// read, nothing is found and the leader alone is watched.
 const OTHERS: &str = r#"g=$1
-others() {
-  if [ -r /proc/self/stat ]; then
-    for s in /proc/[0-9]*/stat; do
-      [ "$s" = "/proc/$$/stat" ] && continue
-      read -r l < "$s" 2>/dev/null || continue
-      set -- ${l##*)}
-      [ "$1" != Z ] && [ "$3" = "$g" ] && return 0
-    done
-    return 1
-  fi
-  set -- $(sh -c 'echo $$; exec ps -A -o pgid= -o pid=' 2>/dev/null)
-  [ $# -ge 1 ] || return 1
-  n=$1; shift
-  while [ $# -ge 2 ]; do
-    [ "$1" = "$g" ] && [ "$2" != "$$" ] && [ "$2" != "$n" ] && return 0
-    shift 2
+others_proc() {
+  for s in /proc/[0-9]*/stat; do
+    [ "$s" = "/proc/$$/stat" ] && continue
+    read -r l < "$s" 2>/dev/null || continue
+    set -- ${l##*)}
+    [ "$1" != Z ] && [ "$3" = "$g" ] && return 0
   done
   return 1
+}
+others_ps() {
+  set -- $(sh -c 'echo $$; exec ps -A -o pgid= -o pid= -o ppid=' 2>/dev/null)
+  [ $# -ge 1 ] || return 1
+  n=$1; shift
+  while [ $# -ge 3 ]; do
+    [ "$1" = "$g" ] && [ "$2" != "$$" ] && [ "$2" != "$n" ] && [ "$3" != "$$" ] && return 0
+    shift 3
+  done
+  return 1
+}
+others() {
+  if [ -r /proc/self/stat ]; then others_proc; else others_ps; fi
 }
 "#;
 
@@ -136,6 +142,46 @@ mod tests {
         })
         .await;
         assert!(gone.is_ok(), "nothing of the group lives on");
+    }
+
+    /// The `ps` census, from a shell alone in a group of its own, leaves
+    /// out what the census itself starts there: here a subshell of the
+    /// shell's, standing for the one macOS's bash forks for `$(...)`,
+    /// which counted would make the tether wait out the grace for nothing.
+    #[test]
+    fn the_ps_census_leaves_out_its_own_shells() {
+        use std::os::unix::process::CommandExt as _;
+
+        let script = format!(
+            r#"{}g=$$
+( others_ps ) && echo found || echo none"#,
+            super::OTHERS.replacen("g=$1\n", "", 1)
+        );
+        let output = std::process::Command::new("/bin/sh")
+            .args(["-c", &script])
+            .process_group(0)
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "none");
+    }
+
+    /// A provider that exits leaving nothing in its group is let go of at
+    /// once, not after the grace.
+    #[tokio::test]
+    async fn releasing_an_empty_group_is_prompt() {
+        let mut provider = Command::new("/bin/sh")
+            .args(["-c", "exit 0"])
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let tether = Tether::new(&provider).unwrap();
+        provider.wait().await.unwrap();
+        let grace = Duration::from_secs(u64::from(crate::process::TETHER_GRACE_SECS));
+        let started = std::time::Instant::now();
+        tokio::time::timeout(grace, tether.release())
+            .await
+            .expect("released before the grace is up");
+        assert!(started.elapsed() < Duration::from_secs(2), "{:?}", started.elapsed());
     }
 
     /// Whether a process of `group` still runs (a zombie doesn't).

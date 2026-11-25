@@ -73,8 +73,16 @@ async fn stdio(binary: &Path, recording: &Path, process: &Process) -> Result<(),
         .prefix("fake-claude-config-")
         .tempdir()
         .map_err(|error| format!("scratch directory: {error}"))?;
+    // A Codex recording was taken over its socket; played over stdio, its
+    // server listens there instead, as on a Windows host.
+    let mut argv = process.argv.clone();
+    if let Some(at) = argv.iter().position(|arg| arg == "--listen")
+        && at + 1 < argv.len()
+    {
+        argv[at + 1] = "stdio://".into();
+    }
     let mut child = tokio::process::Command::new(binary)
-        .args(&process.argv)
+        .args(&argv)
         .env(
             PLAYBACK_ENV,
             playback::selector(recording, &process.transport),

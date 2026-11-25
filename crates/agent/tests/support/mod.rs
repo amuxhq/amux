@@ -176,6 +176,7 @@ impl Agent {
     }
 
     pub async fn start(setup: Setup) -> Self {
+        os::testing::require_test_runner("this test starts fake providers");
         let root = tempfile::tempdir().expect("a temp dir");
         let dir = root.path().join("agents").join("a1");
         let work = root.path().join("work");
@@ -592,13 +593,63 @@ pub fn terminal_test<F: std::future::Future<Output = ()>>(test: F) {
     }
 }
 
-/// Whether a process whose command line contains `marker` is running.
+/// Whether a process whose command line contains `marker` is running:
+/// `pgrep` where there is one, else PowerShell's table of processes, as
+/// amux's own test support asks (a stopgap until a test can read the
+/// agent's providers from its `os::process::Family`).
 pub fn running(marker: &str) -> bool {
-    std::process::Command::new("pgrep")
+    match std::process::Command::new("pgrep")
         .args(["-f", marker])
         .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
-        .is_ok_and(|status| status.success())
+    {
+        Ok(status) => status.success(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // The script names the marker in single quotes, doubled within.
+            let quoted = marker.replace('\'', "''");
+            let script = format!(
+                "@(Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and \
+                 $_.CommandLine -and $_.CommandLine.Contains('{quoted}') }}).Count"
+            );
+            let output = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+                .stdin(std::process::Stdio::null())
+                .output()
+                .expect("neither pgrep nor PowerShell runs here");
+            let count = String::from_utf8_lossy(&output.stdout);
+            count.trim().parse::<u32>().expect("PowerShell counts") > 0
+        }
+        Err(error) => panic!("pgrep: {error}"),
+    }
+}
+
+/// Ends every process whose command line contains `marker`, as [`running`]
+/// finds them: what a test leaves running when it fails.
+pub fn kill_mentioning(marker: &str) {
+    match std::process::Command::new("pkill")
+        .args(["-f", marker])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+    {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let quoted = marker.replace('\'', "''");
+            let script = format!(
+                "Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and \
+                 $_.CommandLine -and $_.CommandLine.Contains('{quoted}') }} | \
+                 ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+            );
+            let _ = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+        Err(_) => {}
+    }
 }
 
 pub fn prompt(kind: Kind, id: &[u8], text: &str) -> Input {

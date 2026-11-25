@@ -83,7 +83,7 @@ fn a_headless_claude_agent_dumps_without_its_secrets() {
     dumps_without_its_secrets(Kind::ClaudeSdk);
 }
 
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]

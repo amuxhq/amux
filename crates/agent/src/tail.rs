@@ -518,19 +518,18 @@ mod tests {
     /// was read. A file this process cannot open shows it: unchanged, it has
     /// no rows rather than an error. A file shorter than what was read, or
     /// one put in its place, cannot be read on.
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_tail_reads_only_what_was_written_since_and_stops_at_a_file_shortened_or_replaced() {
-        use std::os::unix::fs::PermissionsExt as _;
+        use provider_fakes::faults;
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("agent-a1.jsonl");
         let cursor = root.path().join("cursor");
         std::fs::write(&path, "one\n").unwrap();
         std::fs::write(&cursor, format!("4\n{}", path.display())).unwrap();
         let tail = Tail::new(cursor.clone(), path.clone());
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = faults::deny(&path, faults::Deny::All).unwrap();
         assert_eq!(tail.unread(), Ok(Vec::new()), "the file was read again");
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        denied.undo().unwrap();
         std::fs::write(&path, "one\ntwo\nthr").unwrap();
         assert_eq!(tail.unread(), Ok(vec![b"two".to_vec()]));
         std::fs::write(&path, "on").unwrap();

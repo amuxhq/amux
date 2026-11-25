@@ -2484,21 +2484,19 @@ mod tests {
     /// path's drive becomes its first folder and its separators slashes.
     #[test]
     fn a_rule_names_a_path_as_claude_matches_it() {
-        #[cfg(unix)]
-        assert_eq!(
-            super::rule_path(Path::new("/agents/a/blobs")),
-            "/agents/a/blobs"
-        );
-        #[cfg(windows)]
-        {
-            assert_eq!(
-                super::rule_path(Path::new(r"C:\Users\RUNNER~1\AppData\blobs")),
-                "/c/Users/RUNNER~1/AppData/blobs"
-            );
-            assert_eq!(
-                super::rule_path(Path::new(r"\\?\D:\agents\a\blobs")),
-                "/d/agents/a/blobs"
-            );
+        let cases: &[(&str, &str)] = if cfg!(windows) {
+            &[
+                (
+                    r"C:\Users\RUNNER~1\AppData\blobs",
+                    "/c/Users/RUNNER~1/AppData/blobs",
+                ),
+                (r"\\?\D:\agents\a\blobs", "/d/agents/a/blobs"),
+            ]
+        } else {
+            &[("/agents/a/blobs", "/agents/a/blobs")]
+        };
+        for (path, rule) in cases {
+            assert_eq!(super::rule_path(Path::new(path)), *rule, "{path}");
         }
     }
 }

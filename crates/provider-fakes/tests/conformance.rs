@@ -39,6 +39,7 @@ macro_rules! recordings {
         $(
             #[tokio::test]
             async fn $name() {
+                crate::support::ready();
                 let recording = root($root).join($dir);
                 if let Err(drift) = conformance($kind, Path::new(binary($kind)), &recording).await {
                     panic!("{drift}");
@@ -102,10 +103,10 @@ mod claude_sdk {
 }
 
 /// Terminal Claude's corpus: captures from live runs, driven by amux's own
-/// interpreter. Unix only: Windows does not host terminal Claude, and
-/// ConPTY re-renders the child's output in its own escape sequences, so
-/// byte-exact playback against these Unix recordings cannot hold there; see
-/// docs/ARCHITECTURE.md, "Windows, as a stated cost".
+/// interpreter. ConPTY re-renders the child's output in its own escape
+/// sequences, so byte-exact playback against these Unix recordings cannot
+/// hold on Windows; see docs/ARCHITECTURE.md, "Windows, as a stated cost".
+// out of scope on Windows: terminal Claude.
 #[cfg(unix)]
 mod claude_pty {
     use super::*;
@@ -177,11 +178,10 @@ mod claude_pty {
     }
 }
 
-// Unix only: these were recorded over Codex's socket, which amux uses only on
-// Unix; a Windows host speaks to Codex over stdio.
 /// Codex's corpus: captures from live runs, driven by amux's own
-/// interpreter.
-#[cfg(unix)]
+/// interpreter. They were recorded over Codex's socket, which amux uses only
+/// on Unix; on Windows each plays over stdio, as a Windows host speaks to
+/// Codex.
 mod codex {
     use super::*;
 

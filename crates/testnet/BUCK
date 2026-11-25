@@ -125,6 +125,12 @@ amux_check(
     env = {"TESTNET_BINARIES": "$(location //crates/provider-fakes:binaries)"},
     labels = ["journey"],
     host = True,
+    # Out of scope on Windows: the TUI (the terminal client, in tmux), so a
+    # Windows build skips them as `just test-windows` leaves out `journey`.
+    target_compatible_with = select({
+        "DEFAULT": [],
+        "prelude//os:windows": ["prelude//:none"],
+    }),
     # The stories run half the machine's cores at once, each a set of
     # daemons in tmux on a clock; beside other tests they miss their waits,
     # as they did beside the models on the build host. They had the machine

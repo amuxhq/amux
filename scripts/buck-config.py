@@ -278,6 +278,11 @@ def write(mode: str) -> None:
         "[rust]",
         f"  toolchain_dir = {toolchain_dir}",
     ]
+    host = {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}[platform.system()]
+    if host == "windows" and platform.machine().lower() in ("arm64", "aarch64"):
+        # An Arm64 Windows machine's worker runs Arm64 actions only, so an x64
+        # default would leave every test it runs queued with no worker to take it.
+        host = "windows-arm64"
     lines += [
         # The cores this machine's NativeLink worker offers
         # (scripts/nativelink.py), all of which a test that uses every core
@@ -287,6 +292,10 @@ def write(mode: str) -> None:
         f"  linux = {'true' if linux(mode) else 'false'}",
         f"  local = {'true' if mode == 'local-build' else 'false'}",
         f"  build_here = {'true' if mode.endswith(' builds-here') else 'false'}",
+        # The platform this machine's own builds and tests are for
+        # (build/platforms/defs.bzl's host_target): Buck2 runs as x64 on an
+        # Arm64 Windows machine, so its own idea of the host says x64.
+        f"  host = {host}",
     ]
     if mode == "local-build" and platform.system() == "Linux":
         # A release build's C tools (build/toolchains/BUCK), by full path:
@@ -311,11 +320,6 @@ def write(mode: str) -> None:
         # The prelude leaves most actions' cache upload to this default, and
         # an action Buck2 runs itself is otherwise never kept.
         lines += ["[buck2]", "  default_allow_cache_upload = true"]
-    host = {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}[platform.system()]
-    if host == "windows" and platform.machine().lower() in ("arm64", "aarch64"):
-        # An Arm64 Windows machine's worker runs Arm64 actions only, so an x64
-        # default would leave every test it runs queued with no worker to take it.
-        host = "windows-arm64"
     lines += [
         # A target that doesn't name its own platform is a development
         # build of the desktop product for this machine.

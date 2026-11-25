@@ -49,7 +49,15 @@ EXEC_RUNS_TARGET = select({
 })
 
 def host_target() -> str:
-    """The TARGETS entry for the machine Buck2 runs on."""
+    """The TARGETS entry for the machine Buck2 runs on: what
+    scripts/buck-config.py found (`amux.host`), since Buck2 is an x64 build
+    under emulation on Windows on Arm and `host_info()` says x64 there;
+    `host_info()`'s OS before that file is written."""
+    host = read_root_config("amux", "host", "")
+    if host:
+        if host not in TARGETS:
+            fail("amux.host names no target platform: " + host)
+        return host
     if host_info().os.is_macos:
         return "macos"
     if host_info().os.is_linux:

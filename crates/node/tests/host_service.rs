@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 
 use prost::Message as _;
-use provider_fakes::script::{INPUT_LOG_ENV, OfferedCommand, OfferedModel, SCRIPT_ENV, Script};
+use provider_fakes::script::{INPUT_LOG_ENV, OfferedModel, SCRIPT_ENV, Script};
 use sha2::{Digest as _, Sha256};
 use support::synthetic::*;
 use support::*;
@@ -31,8 +31,10 @@ fn model(value: &str) -> OfferedModel {
     }
 }
 
-fn command(name: &str) -> OfferedCommand {
-    OfferedCommand {
+// Only terminal Claude's tests offer commands.
+#[cfg(not(windows))] // out of scope on Windows: terminal Claude
+fn command(name: &str) -> provider_fakes::script::OfferedCommand {
+    provider_fakes::script::OfferedCommand {
         name: name.to_owned(),
         description: format!("{name}, scripted"),
         argument_hint: String::new(),

@@ -152,10 +152,6 @@ test-store-ios:
 test-build:
     {{bounded}} 3600 {{buck2}} build //crates/...
 
-# Run all workspace documentation tests.
-doctest:
-    {{bounded}} 600 cargo test --locked --workspace --doc
-
 # Exercise TUI behavior.
 test-tui:
     {{bounded}} 1200 {{buck2}} test //crates/tui: -- --timeout 1200

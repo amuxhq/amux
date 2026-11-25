@@ -15,7 +15,7 @@
 //! a few milliseconds, and a file is parsed from scratch on every call. A
 //! caller that sees the same file again keeps the [`Definitions`].
 //!
-//! ```
+//! ```text
 //! use highlight::{Definitions, Language, LineRange};
 //!
 //! let code = "impl Store {\n    fn open() {\n        todo!()\n    }\n}\n";

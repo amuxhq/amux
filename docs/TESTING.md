@@ -168,14 +168,18 @@ shares a global, an environment variable or a once-built fixture with another, w
 `HOME` and `TMPDIR` of its own, made empty for it, so none reads the machine's. No test builds a binary: a test that
 starts `amux`, a fake provider, `fake-amux` or the agent's install-path stand-in is given the directory Buck2 built
 them into as `TESTNET_BINARIES`. A test is reported slow after a minute and ended after three; a test that ends while
-a process it started still holds its output fails, since that process would outlive it. The documentation tests,
-the C ABI's pointer checks (`just miri`) and the sanitizers run under `cargo test`.
+a process it started still holds its output fails, since that process would outlive it. The C ABI's pointer checks
+(`just miri`) and the sanitizers run under `cargo test`.
 
 CI's Linux gate runs them through Buck2 on the build host. Its macOS and Windows runners have no Buck2 yet, so they
 run the same tests under [cargo-nextest](https://nexte.st), configured in
 [`.config/nextest.toml`](../.config/nextest.toml) to the same bounds, through `just cargo-test` (`brew install
 cargo-nextest`; the Nix dev shell has it). There a setup script
 ([`scripts/test-binaries.sh`](../scripts/test-binaries.sh)) builds the binaries the tests start before any test runs.
+
+Nothing runs documentation tests. The Buck2 prelude runs them only with its nightly features on, which puts every Rust
+compile of the build in that mode, changing every compile's cache key, for what were five examples. So a code block in
+a doc comment is marked `text` (or with the language it is in), and what an example should prove is a unit test.
 
 ```sh
 just test                                  # every workspace test whose inputs changed

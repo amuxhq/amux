@@ -77,7 +77,7 @@ bufbuild/buf/buf`. Its Buck2 test, `//:proto-compat`, brings its own.
 from the same `Cargo.toml` files for what Buck2 doesn't do: CI's Windows
 job when it has no build host, a fork's pull request (through `just
 cargo-test`), rust-analyzer, `just miri`, `just sanitize`, `just
-fuzz-smoke` and `just doctest`, and the nightlies. The Apple apps build
+fuzz-smoke`, and the nightlies. The Apple apps build
 with Buck2 ([the iPhone app](IOS.md#builds)), and so do the command-line
 release binaries ([Release](RELEASE.md)). CI's Linux gate and Windows job
 run through Buck2 on the build host ([CI](CI.md#the-linux-gate)).
@@ -544,7 +544,6 @@ The recipes a build or change usually needs:
 | `just test-crate <crate>` | One crate's tests |
 | `just test-build` | Compiles every test target without running it |
 | `just goldens` | Re-records the goldens in the checkout |
-| `just doctest` | Documentation tests, under Cargo |
 | `just lint` | Clippy on every target, warnings denied |
 | `just parity` | Fails when a crate's `BUCK` and `Cargo.toml` disagree |
 | `just shipping-check` | Fails when a test-only crate or test feature reaches the desktop binary or the extension's WebAssembly as they ship |

@@ -12,30 +12,18 @@
 //!   on, and a call is addressed to that host by its authority, the host's
 //!   id. The node passes a call addressed to another host on to it unread.
 //!   Their stubs exist only through [`Client::host`] and [`Client::agent`],
-//!   so no call to a host service can be made without saying which host:
+//!   so no call to a host service can be made without saying which host.
+//!   [`Client`] has no unaddressed agent service, and an [`Agent`]'s
+//!   constructor is private to this crate: the only way to one is from the
+//!   client and the agent's address.
 //!
-//! ```compile_fail,E0599
-//! # fn unaddressed(client: &client::Client) {
-//! // There is no agent service but an addressed one.
-//! client.agents();
-//! # }
-//! ```
-//!
-//! ```compile_fail,E0624
-//! // Nor any way to make an agent's handle but from the client and the
-//! // agent's address.
-//! let _ = client::Agent::new(todo!(), b"agent".to_vec());
-//! ```
-//!
-//! ```no_run
-//! # async fn addressed(client: client::Client, row: wire::Agent) {
+//! ```text
 //! // An agent's row carries its host and its id together, so the call
 //! // goes to its host and names it there, from the one value.
-//! client.agent(&row).rename("docs").await.unwrap();
+//! client.agent(&row).rename("docs").await?;
 //! // A new agent has no row yet, so it starts from a host.
 //! let desk = client.host(&row.host_id);
-//! desk.catalogue("claude").await.unwrap();
-//! # }
+//! desk.catalogue("claude").await?;
 //! ```
 //!
 //! Every call names the client it is ([`Surface`]), which the node counts

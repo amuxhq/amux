@@ -329,6 +329,22 @@ update = ""
 cargo = [{ package = "provider-fakes", modules = ["conformance", "scripted"], features = [] }]
 
 [[suite]]
+name = "test-filesystem-faults"
+contract = "Each filesystem fault a test injects (a denied permission, a read-only file, a file held so no other open succeeds, a directory link, a symbolic link) happens on the OS the test runs on and is undone when its guard drops; where the OS will not let this user make a symbolic link, or has no share modes, the test skips saying why."
+paths = ["crates/provider-fakes/src/faults", "crates/provider-fakes/tests/faults.rs"]
+recipe = "just suite test-filesystem-faults"
+boundary = "System composition"
+oracle = "The error each faulted operation returns, and what reads once each guard drops."
+real = ["the filesystem", "file modes and ACLs", "share modes", "junctions and symbolic links"]
+substituted = []
+time = "none"
+capabilities = ["Rust toolchain"]
+lane = "fast"
+evidence = ""
+update = ""
+cargo = [{ package = "provider-fakes", modules = ["faults"], features = [] }]
+
+[[suite]]
 name = "interpreter-emissions"
 contract = "Each kind's interpreter turns its recorded and authored facts into the reviewed items, snapshots and effects, and every chat-vocabulary row a kind can show has a place in its bodies and a golden that shows it."
 paths = ["crates/interpret/src", "crates/interpret/fixtures", "crates/interpret/tests/acp.rs", "crates/interpret/tests/claude_pty.rs", "crates/interpret/tests/claude_sdk.rs", "crates/interpret/tests/codex.rs", "crates/interpret/tests/coverage.rs", "crates/interpret/tests/checks.rs", "crates/interpret/tests/record.rs", "crates/interpret/tests/vocabulary.toml"]

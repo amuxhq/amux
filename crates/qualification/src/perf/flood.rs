@@ -13,7 +13,6 @@
 //! is measured apart, with the agents unthrottled, as ingest's cost per
 //! committed frame.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -347,13 +346,6 @@ async fn capacity(net: &mut Net, options: &FloodOptions) -> Result<MetricRun> {
         net.spawn(agent).await?;
     }
     let names: Vec<String> = (0..options.agents).map(agent_name).collect();
-    let pids = agent_pids(net, &names)?;
-    ensure!(
-        pids.len() == names.len(),
-        "found {} of {} agent processes",
-        pids.len(),
-        names.len()
-    );
     let runtime = net.runtime(ORIGIN)?;
     let keys = names
         .iter()
@@ -405,7 +397,9 @@ async fn capacity(net: &mut Net, options: &FloodOptions) -> Result<MetricRun> {
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     };
-    signal(&pids, "-STOP")?;
+    for name in &names {
+        net.freeze(name)?;
+    }
     // What the writers had written by the time they stopped.
     let ends = journals(net, &names)?
         .into_iter()
@@ -457,7 +451,9 @@ async fn capacity(net: &mut Net, options: &FloodOptions) -> Result<MetricRun> {
     // A stop ingests its agent's journal to the end, and these agents
     // write far faster than ingest drains: crash the origin instead, and
     // the shutdown kills its agents unread.
-    signal(&pids, "-CONT")?;
+    for name in &names {
+        net.thaw(name)?;
+    }
     net.kill_daemon(ORIGIN).await?;
     Ok(run.finish())
 }
@@ -490,16 +486,6 @@ fn drain_costs(drain: &[(Instant, u64)]) -> Result<Vec<f64>> {
         }
     }
     Ok(costs)
-}
-
-fn signal(pids: &[u32], signal: &str) -> Result<()> {
-    let status = std::process::Command::new("kill")
-        .arg(signal)
-        .args(pids.iter().map(u32::to_string))
-        .status()
-        .context("run kill")?;
-    ensure!(status.success(), "kill {signal} failed: {status}");
-    Ok(())
 }
 
 async fn measure(net: &mut Net, options: &FloodOptions) -> Result<Vec<MetricRun>> {
@@ -564,12 +550,6 @@ async fn measure(net: &mut Net, options: &FloodOptions) -> Result<Vec<MetricRun>
         Unit::Megabytes,
     ));
     let pids = agent_pids(net, &names)?;
-    ensure!(
-        pids.len() == names.len(),
-        "found {} of {} agent processes",
-        pids.len(),
-        names.len()
-    );
     let until = Instant::now() + options.sampling;
     let mut at = 0;
     while Instant::now() < until {
@@ -766,24 +746,10 @@ async fn catch_up(
     Ok(run.finish())
 }
 
-/// The `amux agent` process of each named agent.
+/// The agent process of each named agent.
 fn agent_pids(net: &Net, names: &[String]) -> Result<Vec<u32>> {
-    let mut pids = Vec::new();
-    for name in names {
-        let dir = net.agent_dir(name)?;
-        pids.extend(pids_with_argument(&dir)?);
-    }
-    Ok(pids)
-}
-
-fn pids_with_argument(dir: &Path) -> Result<Vec<u32>> {
-    let output = std::process::Command::new("pgrep")
-        .arg("-f")
-        .arg(format!("agent {}", dir.display()))
-        .output()
-        .context("run pgrep")?;
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| line.trim().parse().ok())
-        .collect())
+    names
+        .iter()
+        .map(|name| Ok(net.agent_process(name)?.pid()))
+        .collect()
 }

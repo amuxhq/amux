@@ -397,7 +397,52 @@ type Seen = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
 /// A socket at `path` in front of the node's socket at `node`, passing
 /// every call on to it and writing down each one.
 async fn recorded(node: &std::path::Path, path: &std::path::Path) -> Seen {
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use agent_dir::local_socket::LocalStream;
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
     use tonic::codegen::http;
+
+    /// A connection the recording socket accepted, as tonic serves one.
+    struct Accepted(LocalStream);
+
+    impl tonic::transport::server::Connected for Accepted {
+        type ConnectInfo = ();
+
+        fn connect_info(&self) -> Self::ConnectInfo {}
+    }
+
+    impl AsyncRead for Accepted {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Pin::new(&mut self.0).poll_read(cx, buf)
+        }
+    }
+
+    impl AsyncWrite for Accepted {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Pin::new(&mut self.0).poll_write(cx, buf)
+        }
+
+        fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Pin::new(&mut self.0).poll_flush(cx)
+        }
+
+        fn poll_shutdown(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Pin::new(&mut self.0).poll_shutdown(cx)
+        }
+    }
 
     #[derive(Clone)]
     struct Recording {
@@ -442,9 +487,9 @@ async fn recorded(node: &std::path::Path, path: &std::path::Path) -> Seen {
         node,
         seen: seen.clone(),
     };
-    let listener = tokio::net::UnixListener::bind(path).unwrap();
-    let incoming = futures_util::stream::unfold(listener, |listener| async move {
-        let accepted = listener.accept().await.map(|(stream, _)| stream);
+    let listener = agent_dir::local_socket::LocalListener::bind(path).unwrap();
+    let incoming = futures_util::stream::unfold(listener, |mut listener| async move {
+        let accepted = listener.accept().await.map(Accepted);
         Some((accepted, listener))
     });
     tokio::spawn(

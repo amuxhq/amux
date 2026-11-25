@@ -342,6 +342,20 @@ pub async fn listens(path: &Path) -> bool {
     agent_dir::local_socket::connect(path).await.is_ok()
 }
 
+/// The agent process serving the agent directory `dir`, pinned: whoever
+/// serves its `private/agent.sock`, as the operating system names that
+/// socket's server. For a test that freezes (`suspend`), thaws (`resume`)
+/// or kills an agent from outside, as a stalled or crashed machine would.
+pub async fn agent_process(dir: &Path) -> os::process::ProcessRef {
+    let (stream, pid) =
+        agent_dir::local_socket::connect_to_process(&agent_dir::agent_sock::path(dir))
+            .await
+            .expect("the agent answers on its socket");
+    stream.close();
+    os::process::ProcessRef::open(pid.expect("the socket names its server"))
+        .expect("the agent process runs")
+}
+
 /// A gRPC channel to a local socket.
 pub async fn local_channel(path: &Path) -> tonic::transport::Channel {
     let path = path.to_owned();

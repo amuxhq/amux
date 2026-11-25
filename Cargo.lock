@@ -144,6 +144,7 @@ dependencies = [
  "libc",
  "log-file",
  "node",
+ "os",
  "patience",
  "prost",
  "provider-fakes",
@@ -3338,6 +3339,7 @@ dependencies = [
  "unicode-width 0.2.2",
  "uuid",
  "vt100",
+ "windows-sys 0.61.2",
  "wire",
 ]
 

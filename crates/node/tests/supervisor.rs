@@ -372,7 +372,10 @@ impl Fixture {
     }
 
     fn signal_supervisor(&self, signal: libc::c_int) {
-        kill(self.supervisor_pid(), signal);
+        // SAFETY: a signal to this test's own child.
+        unsafe {
+            libc::kill(self.supervisor_pid() as libc::pid_t, signal);
+        }
     }
 
     /// Waits for the supervisor process to exit.
@@ -393,21 +396,30 @@ impl Drop for Fixture {
             let _ = child.wait();
         }
         for event in self.events() {
-            kill(event.pid, libc::SIGKILL);
+            kill(event.pid);
         }
     }
 }
 
-fn kill(pid: u32, signal: libc::c_int) {
-    // SAFETY: a signal to a test's own process.
-    unsafe {
-        libc::kill(pid as libc::pid_t, signal);
+/// Ends the process `pid` names at once, if it still runs.
+fn kill(pid: u32) {
+    if let Ok(process) = os::process::ProcessRef::open(pid) {
+        let _ = process.kill();
     }
 }
 
 fn alive(pid: u32) -> bool {
-    // SAFETY: signal 0 only probes.
-    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    os::process::ProcessRef::open(pid).is_ok_and(|process| process.alive())
+}
+
+/// Whether something answers on the local socket at `path`. The test's
+/// runtime has threads to spare, so this one blocks for the dial.
+fn answers(path: &Path) -> bool {
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current()
+            .block_on(agent_dir::local_socket::connect(path))
+            .is_ok()
+    })
 }
 
 async fn until_dead(pid: u32) {
@@ -419,8 +431,8 @@ async fn until_dead(pid: u32) {
 }
 
 fn locked(path: &Path) -> bool {
-    let file = OpenOptions::new().write(true).open(path).unwrap();
-    matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock))
+    assert!(path.exists(), "no lock file at {}", path.display());
+    os::lock::FileLock::held(path).unwrap()
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -437,13 +449,13 @@ async fn restarts_the_daemon_whenever_it_exits_and_stops_it_when_asked() {
         "the lock names the supervisor's pid"
     );
 
-    kill(first.pid, libc::SIGKILL);
+    kill(first.pid);
     let second = fixture.nth(2, "go", "1.0.0").await;
     assert_ne!(second.pid, first.pid);
 
     // A crash right after go is restarted too, after a backoff.
     fixture.behave("1.0.0", "crash-after-go");
-    kill(second.pid, libc::SIGKILL);
+    kill(second.pid);
     fixture.nth(1, "crash", "1.0.0").await;
     let fourth = fixture.nth(4, "go", "1.0.0").await;
 
@@ -544,7 +556,7 @@ async fn installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and
     );
 
     // The exec'd supervisor still waits on and restarts the child.
-    kill(new.pid, libc::SIGKILL);
+    kill(new.pid);
     let restarted = fixture.nth(2, "go", "2.0.0").await;
     assert_ne!(restarted.pid, new.pid);
     fixture.transcript("an update to 2.0.0, activated, then a crash of the new daemon");
@@ -751,7 +763,7 @@ async fn the_amux_daemon_exits_when_its_supervisor_dies() {
     let mut supervisor = start(|| command.spawn()).unwrap();
     let lock = data.join(node::INSTALLATION_LOCK);
     until("the daemon to answer on its socket", || {
-        let answered = std::os::unix::net::UnixStream::connect(&socket).is_ok();
+        let answered = answers(&socket);
         let exited = supervisor.try_wait().unwrap();
         std::future::ready(match (answered, exited) {
             (true, _) => Ok(()),

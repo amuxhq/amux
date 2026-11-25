@@ -403,7 +403,7 @@ The harness owns resources, verbs and observations, never scenarios. Scenarios l
 | `delete(name)` | Delete an agent on its own host, as a person does. Its children follow on their own hosts by the family rule, after the call returns. |
 | `spawn_child(parent, decl)` | Spawn as the parent's own `start_subagent` tool does, through its agent process's own socket, naming the child's host. |
 | `next_start(name, script)` | Give the next process the host starts for `name` this script, for a resume the host makes itself. |
-| `freeze(name)`, `thaw(name)` | Stop an agent process where it stands, holding its lock and connection, and let it run again. |
+| `freeze(name)`, `thaw(name)` | Stop an agent process where it stands, holding its lock and connection, and let it run again (SIGSTOP and SIGCONT on Unix, `NtSuspendProcess` and `NtResumeProcess` on Windows). `agent_process(name)` is that process, pinned. |
 | `sign_in(host, account)`, `set_tier(account, tier)` | Sign a host in through its front door; change what an account has bought. |
 | `block_udp(host, blocked)` | Drop every datagram on the host's way to the relay, or stop dropping them. |
 | `open_gate(name)` | Create a gate file, releasing every `wait_for` step waiting on it. |

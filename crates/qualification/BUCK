@@ -22,7 +22,7 @@ DEPS = [
     "//third-party/rust:tokio-rustls",
     "//third-party/rust:tonic",
     "//third-party/rust:uuid",
-] + select({"DEFAULT": ["//third-party/rust:futures-util", "//third-party/rust:libc", "//third-party/rust:tokio-tungstenite"], "prelude//os:windows": [], "prelude//os:none": []})
+] + select({"DEFAULT": ["//third-party/rust:futures-util", "//third-party/rust:libc", "//third-party/rust:tokio-tungstenite"], "prelude//os:windows": [], "prelude//os:none": []}) + select({"DEFAULT": [], "prelude//os:windows": ["//third-party/rust:windows-sys"]})
 
 TEST_DEPS = [
     "//crates/agent-dir:agent-dir",

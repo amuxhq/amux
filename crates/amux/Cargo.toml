@@ -59,6 +59,7 @@ rcgen = { workspace = true }
 ring = { workspace = true }
 agent = { workspace = true }
 journal = { workspace = true }
+os = { workspace = true }
 prost = { workspace = true }
 provider-fakes = { workspace = true }
 tempfile = { workspace = true }

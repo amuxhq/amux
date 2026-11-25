@@ -290,7 +290,7 @@ pub(crate) fn write(wrappers: &Wrappers<'_>) -> Result<Commands, String> {
         (&commands.codex, codex),
         (&commands.acp, acp),
     ] {
-        dispatch::install(&binary, path, &Plan::Host(command))
+        dispatch::install(&binary, path, &Plan::Host(Box::new(command)))
             .map_err(|error| format!("writing {}: {error}", path.display()))?;
     }
     Ok(commands)

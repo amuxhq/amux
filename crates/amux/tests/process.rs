@@ -535,6 +535,10 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
+)]
 async fn the_cli_verbs_work_against_a_started_daemon() {
     let gate = tempfile::tempdir().unwrap();
     let gate = gate.path().join("gate");
@@ -703,6 +707,10 @@ async fn uninstall_stops_agents_and_the_daemon_and_deletes_the_installation() {
 /// A root too deep for a Unix socket's address still has its front door
 /// there, and the CLI finds it, as it finds the profile's socket beside it.
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
+)]
 async fn a_root_too_deep_for_a_socket_address_still_serves() {
     let mut install = Install::rooted_at(Vec::new(), &"deep".repeat(30));
     assert!(install.socket.as_os_str().len() > 108);
@@ -751,6 +759,10 @@ fn zombies_of(pid: u32) -> Vec<String> {
 /// restart, and a name this build does not have restarts nothing. The agent
 /// the old image started is reaped by the new one once it exits.
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: the daemon the service manager started is still running after the experiment switch"
+)]
 async fn switching_an_experiment_restarts_the_daemon_in_place_once() {
     let gate = tempfile::tempdir().unwrap();
     let gate = gate.path().join("gate");

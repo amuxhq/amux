@@ -47,8 +47,9 @@ pub const NO_REAL_EXIT: i32 = 70;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "plan", rename_all = "snake_case")]
 pub enum Plan {
-    /// A testnet host's provider command.
-    Host(HostCommand),
+    /// A testnet host's provider command, boxed as it is several times
+    /// the size of the other plans.
+    Host(Box<HostCommand>),
     /// Runs `program` with `args` before the ones this was given.
     Run { program: PathBuf, args: Vec<String> },
     /// Reads `lines` lines of input, writes `stderr`, then `stdout`, and

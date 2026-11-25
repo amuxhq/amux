@@ -40,7 +40,7 @@ impl Term {
             cwd: desk.work.clone(),
             env: vec![
                 ("AMUX_CONFIG".into(), desk.config.clone().into()),
-                ("PATH".into(), path.into()),
+                ("PATH".into(), path),
                 ("TERM".into(), "xterm-256color".into()),
                 (super::NO_DISCOVERY.0.into(), super::NO_DISCOVERY.1.into()),
             ],

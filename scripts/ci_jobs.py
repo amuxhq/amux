@@ -72,6 +72,7 @@ class Globs:
     """A list of globs in which a `!` glob takes back what earlier ones matched."""
 
     def __init__(self, patterns: list[str]):
+        self.patterns = patterns
         self.rules = [(p.startswith("!"), glob_regex(p.removeprefix("!"))) for p in patterns]
 
     def match(self, path: str) -> bool:

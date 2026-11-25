@@ -86,9 +86,11 @@ name = "agent-dir"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "os",
  "prost",
  "tempfile",
  "tokio",
+ "tracing",
  "windows-sys 0.61.2",
  "wire",
 ]

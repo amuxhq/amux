@@ -577,11 +577,20 @@ nicer in several places, and Windows pays for each:
   pipe and writes its name into the file at the socket's path, because a pipe
   lives on while any connection to it is open and a successor could not take
   its name
-  ([`agent_dir::local_socket`](../crates/agent-dir/src/local_socket.rs)).
-  Pipe names are predictable and the pipe namespace is shared by every user,
-  where a Unix socket sits in a private folder: so each pipe is created with
-  a security descriptor that admits only the user who made it, and a client
-  refuses a pipe whose serving process runs as anyone else.
+  ([`agent_dir::local_socket`](../crates/agent-dir/src/local_socket/mod.rs)).
+  The pipe namespace is shared by every user, where a Unix socket sits in a
+  private folder, so: a pipe's name is `\\.\pipe\amux-` and 128 random bits,
+  which nobody can take first; it is created owned by its user, admitting
+  that user alone and local clients only; and a client opens only a name of
+  exactly that form, whatever the file says (never another host's pipe or a
+  device), then refuses a pipe its own user doesn't own. The owner, not the
+  serving process's token, is what's checked, so a client accepts an
+  elevated daemon of the same user. A server keeps four instances
+  listening, and a client finding them all busy, or the file naming a pipe
+  that has gone, tries again with the file read afresh until a deadline (two
+  seconds unless the caller chooses). Shutting down a pipe's write half does
+  nothing, so a connection is ended by closing it
+  (`LocalStream::close`, or a `Closer` for a split one).
 - **Process groups.** Agents start with `CREATE_NEW_PROCESS_GROUP` and
   `DETACHED_PROCESS`; a kill ends the process tree with `taskkill /F /T`.
 - **Terminals.** Pseudo-terminals are ConPTY, through `portable-pty` in

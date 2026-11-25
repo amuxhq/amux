@@ -4,7 +4,8 @@ DEPS = [
     "//crates/wire:wire",
     "//third-party/rust:prost",
     "//third-party/rust:tokio",
-] + select({"DEFAULT": ["//third-party/rust:libc"], "prelude//os:windows": [], "prelude//os:none": []}) + select({"DEFAULT": [], "prelude//os:windows": ["//third-party/rust:windows-sys"]})
+    "//third-party/rust:tracing",
+] + select({"DEFAULT": ["//third-party/rust:libc"], "prelude//os:windows": [], "prelude//os:none": []}) + select({"DEFAULT": [], "prelude//os:windows": ["//crates/os:os", "//third-party/rust:windows-sys"]})
 
 TEST_DEPS = [
     "//third-party/rust:tempfile",

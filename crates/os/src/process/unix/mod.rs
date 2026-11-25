@@ -160,18 +160,18 @@ fn below(root: i32, table: &[table::Row]) -> Vec<Descendant> {
 }
 
 pub(super) fn kill_descendants(census: &[Descendant]) {
-    let _ = signal_descendants(census, libc::SIGKILL);
+    let _ = signal_descendants(census, libc::SIGKILL, &table::table());
 }
 
 /// Sends `signal` to each process of `census` still the one the census
 /// found; the ones that refused it, and why. One gone meanwhile is not
 /// among them.
-fn signal_descendants(census: &[Descendant], signal: libc::c_int) -> Vec<(Pid, io::Error)> {
+fn signal_descendants(
+    census: &[Descendant],
+    signal: libc::c_int,
+    table: &[table::Row],
+) -> Vec<(Pid, io::Error)> {
     let mut refused = Vec::new();
-    if census.is_empty() {
-        return refused;
-    }
-    let table = table::table();
     for descendant in census {
         let same = table
             .iter()
@@ -279,7 +279,11 @@ impl Family {
             // The census first, while everything still runs: once a parent
             // is killed its children belong to init and are no longer
             // below us.
-            let census = descendants(me);
+            let table = table::try_table();
+            let census = match &table {
+                Ok(table) => below(me as i32, table),
+                Err(_) => Vec::new(),
+            };
             for descendant in &census {
                 if !found.contains(descendant) {
                     found.push(descendant.clone());
@@ -292,10 +296,14 @@ impl Family {
                     note_refusal(&mut refused, joined.leader);
                 }
             }
-            for (pid, error) in signal_descendants(&census, libc::SIGKILL) {
+            // A table that can't be read is an error, not an empty
+            // family: the groups are killed, but nothing else could be
+            // found to kill, or seen gone.
+            let table = table?;
+            for (pid, error) in signal_descendants(&census, libc::SIGKILL, &table) {
                 refused.push((pid, error));
             }
-            let table = table::table();
+            let table = table::try_table()?;
             let left: Vec<Pid> = found
                 .iter()
                 .filter(|descendant| {
@@ -329,7 +337,7 @@ impl Family {
 
     pub(super) fn members(&self) -> io::Result<Vec<Pid>> {
         let me = std::process::id() as i32;
-        let table = table::table();
+        let table = table::try_table()?;
         #[cfg(feature = "async")]
         let tethers: Vec<Pid> = self
             .groups

@@ -15,21 +15,46 @@ pub(super) struct Row {
     pub zombie: bool,
 }
 
-/// Every process.
-#[cfg(target_os = "macos")]
+/// Every process, or none where the table can't be read: for a census
+/// that only looks. One that must know it saw everything (a family's
+/// end) uses [`try_table`].
 pub(super) fn table() -> Vec<Row> {
+    try_table().unwrap_or_default()
+}
+
+/// Every process, or why the table couldn't be read.
+pub(super) fn try_table() -> std::io::Result<Vec<Row>> {
+    #[cfg(test)]
+    if BLIND.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(std::io::Error::other(
+            "the process table is hidden from this test",
+        ));
+    }
+    read_table()
+}
+
+/// A test's way to make this process's census fail, as an unreadable
+/// `/proc` would.
+#[cfg(test)]
+pub(super) static BLIND: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_os = "macos")]
+fn read_table() -> std::io::Result<Vec<Row>> {
     // SAFETY: a null buffer asks only for the number of pids.
     let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
     if count <= 0 {
-        return Vec::new();
+        return Err(std::io::Error::last_os_error());
     }
     // Room for processes started since the count.
     let mut pids = vec![0 as libc::pid_t; count as usize + 64];
     let bytes = (pids.len() * size_of::<libc::pid_t>()) as libc::c_int;
     // SAFETY: the buffer holds `bytes` bytes of pids.
     let count = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), bytes) };
-    pids.truncate(count.max(0) as usize);
-    pids.into_iter().filter_map(row).collect()
+    if count <= 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    pids.truncate(count as usize);
+    Ok(pids.into_iter().filter_map(row).collect())
 }
 
 /// The row for `pid`, if it names a process.
@@ -60,15 +85,19 @@ pub(super) fn row(pid: i32) -> Option<Row> {
     })
 }
 
-/// Every process.
 #[cfg(any(target_os = "linux", target_os = "android"))]
-pub(super) fn table() -> Vec<Row> {
-    let Ok(entries) = std::fs::read_dir("/proc") else {
-        return Vec::new();
-    };
-    entries
-        .filter_map(|entry| row(entry.ok()?.file_name().to_str()?.parse().ok()?))
-        .collect()
+fn read_table() -> std::io::Result<Vec<Row>> {
+    let mut rows = Vec::new();
+    for entry in std::fs::read_dir("/proc")? {
+        if let Some(row) = entry?
+            .file_name()
+            .to_str()
+            .and_then(|name| row(name.parse().ok()?))
+        {
+            rows.push(row);
+        }
+    }
+    Ok(rows)
 }
 
 /// The row for `pid`, if it names a process.
@@ -92,8 +121,8 @@ pub(super) fn row(pid: i32) -> Option<Row> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
-pub(super) fn table() -> Vec<Row> {
-    Vec::new()
+fn read_table() -> std::io::Result<Vec<Row>> {
+    Err(std::io::ErrorKind::Unsupported.into())
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]

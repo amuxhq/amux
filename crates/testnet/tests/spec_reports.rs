@@ -5,8 +5,6 @@
 //! and counted as a usage event either way. What is sent is what was
 //! saved, byte for byte.
 
-#![cfg(unix)]
-
 use analytics::{Event, Recording};
 use prost::Message as _;
 use provider_fakes::script::Step;

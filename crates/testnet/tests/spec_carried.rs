@@ -2,8 +2,6 @@
 //! the person is attached to, when only the relay reaches that host and
 //! the account's plan lapsed to free: it never leaves, and says why.
 
-#![cfg(unix)]
-
 use node::harness::LiveRoute;
 use prost::Message as _;
 use support::*;
@@ -53,9 +51,11 @@ async fn a_call_carried_to_a_host_only_a_lapsed_plan_reached_names_the_lapse() {
     let laptop = wire::authority(&host_id(&net, "laptop"));
     let mut to_laptop = wire::host_service_client(socket(&net, "desk", &laptop).await);
     // Unpinning a folder never pinned: answered, and it changes nothing.
+    // Absolute on every OS, as a repository's path must be.
+    let never_pinned = std::env::temp_dir().join("nowhere").join("never-pinned");
     let unpinning = || {
         tonic::Request::new(PinFolderRequest {
-            path: "/nowhere/never-pinned".to_owned(),
+            path: never_pinned.to_string_lossy().into_owned(),
             pinned: false,
         })
     };

@@ -7,8 +7,6 @@
 //! over loopback QUIC, discovery is the net's scripted bus, and SSH is the
 //! net's stand-in on the PATH, running the far host's own `amux relay`.
 
-#![cfg(unix)]
-
 use std::time::Duration;
 
 use node::RelayCarrier;
@@ -94,6 +92,7 @@ async fn route_lan_reaches_a_session_on_the_same_network() {
 /// Before the desk trusts the laptop the link is refused; once it does,
 /// the link comes up over SSH at both ends and the laptop streams the
 /// desk's session live.
+#[cfg(not(windows))] // out of scope on Windows: SSH with a Windows machine at the far end
 #[tokio::test(flavor = "multi_thread")]
 async fn route_ssh_reaches_a_session_through_the_far_hosts_link_socket() {
     let said = "said over SSH";
@@ -144,6 +143,7 @@ async fn route_ssh_reaches_a_session_through_the_far_hosts_link_socket() {
 /// through their own daemons, each trusts the other, the laptop remembers
 /// the desk's SSH destination, and the link comes up over SSH. The same
 /// command aimed at the laptop itself is refused as a pairing with itself.
+#[cfg(not(windows))] // out of scope on Windows: SSH with a Windows machine at the far end
 #[tokio::test(flavor = "multi_thread")]
 async fn pair_over_ssh_from_the_cli_trusts_both_ends_and_links() {
     let said = "paired over SSH";
@@ -545,6 +545,7 @@ async fn pairing_via_daemon_pairs_a_host_a_paired_host_announces() {
 /// and the desk's session cannot be opened from the phone. The hosts the
 /// desk reaches without the relay still reach it: the laptop on the same
 /// network, and a box with nothing but SSH to the desk.
+#[cfg(not(windows))] // out of scope on Windows: SSH with a Windows machine at the far end
 #[tokio::test(flavor = "multi_thread")]
 async fn entitlement_free_sees_presence_and_carries_nothing_while_lan_and_ssh_reach() {
     let said = "said on a free account";
@@ -943,6 +944,7 @@ async fn row_until(
 
 /// `near` trusts `far` as an SSH pairing commits it, through its
 /// profile's socket, with the target and profile it reaches `far` by.
+#[cfg(not(windows))] // out of scope on Windows: SSH with a Windows machine at the far end
 async fn trust_over_ssh(net: &Net, near: &str, far: &str) {
     admin(net, near)
         .await

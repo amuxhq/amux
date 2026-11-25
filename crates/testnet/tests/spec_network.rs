@@ -10,8 +10,6 @@
 //! production relay server on loopback beside a stand-in cloud, its
 //! credentials timed by the net's policy clock.
 
-#![cfg(unix)]
-
 use std::time::Duration;
 
 use node::RelayCarrier;

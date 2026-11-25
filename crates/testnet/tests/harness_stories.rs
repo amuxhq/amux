@@ -4,8 +4,6 @@
 //! simulated one by seed (`just sim`), held to the same verbs, fences and
 //! observations.
 
-#![cfg(unix)]
-
 use testnet::modes::run_story;
 
 use crate::stories;

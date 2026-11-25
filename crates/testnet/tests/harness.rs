@@ -4,8 +4,6 @@
 //! when their predicate is stuck, the block invariant catches a broken
 //! replica, and the door serves a topology to a real client.
 
-#![cfg(unix)]
-
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::net::{SocketAddr, TcpStream};
 use std::process::{Command, Stdio};
@@ -41,6 +39,10 @@ fn turn_ended(events: &[SessionEvent]) -> bool {
 }
 
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "windows: an agent naming a branch with cwd \"/tmp\" validates, where \"names a branch\" was expected"
+)]
 fn a_topology_rejects_unknown_and_duplicate_names_before_anything_starts() {
     let two = || Topology::new().host("a").host("b");
     let cases: Vec<(Topology, &str)> = vec![
@@ -156,11 +158,13 @@ async fn the_polling_waiters_fail_on_a_false_a_broken_or_a_hung_check() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_real_agent_runs_on_each_fake_and_its_stream_opens_with_a_snapshot() {
     let mut topology = Topology::new().host("desk");
-    for (name, kind) in [
-        ("pty", FakeKind::ClaudePty),
-        ("sdk", FakeKind::ClaudeSdk),
-        ("codex", FakeKind::Codex),
-    ] {
+    let mut fakes = vec![("sdk", FakeKind::ClaudeSdk), ("codex", FakeKind::Codex)];
+    // out of scope on Windows: terminal Claude (claude_pty)
+    if !cfg!(windows) {
+        fakes.insert(0, ("pty", FakeKind::ClaudePty));
+    }
+    let names: Vec<&str> = fakes.iter().map(|(name, _)| *name).collect();
+    for (name, kind) in fakes {
         topology = topology.agent(
             AgentDecl::new(name, "desk")
                 .kind(kind)
@@ -171,7 +175,7 @@ async fn a_real_agent_runs_on_each_fake_and_its_stream_opens_with_a_snapshot() {
         );
     }
     let net = Net::start(topology).await.unwrap();
-    for name in ["pty", "sdk", "codex"] {
+    for name in names {
         let mut observer = net.observe("desk", name, 50).await.unwrap();
         let wanted = format!("hello from {name}");
         let events = observer
@@ -791,6 +795,10 @@ async fn the_gate_reorders_jitters_and_caps_the_rate_of_what_it_passes() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: process host: the story never finished (still running after 40 min)"
+)]
 async fn a_process_host_pairs_for_real_through_gates_that_cut_it_and_survives_a_crash() {
     assert!(matches!(
         Net::start(Topology::new().host_decl(HostDecl {
@@ -906,6 +914,10 @@ async fn a_process_host_pairs_for_real_through_gates_that_cut_it_and_survives_a_
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: process host: a supervised host (H5); its one run was cut off before it said why"
+)]
 async fn a_supervised_host_takes_a_published_release_and_rolls_back_a_broken_one() {
     let mut net = Net::start_with(Topology::new(), wall()).await.unwrap();
     net.add_host(HostDecl {
@@ -1051,6 +1063,10 @@ fn plan(net: &Net, account: &str) -> Value {
 /// one in the net's process, and the plan read a phone makes says the same:
 /// given access while Pro, access that ended when it went Free.
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: process host: the story never finished (still running after 40 min)"
+)]
 async fn a_changed_tier_reaches_a_process_host_and_the_plan_read_at_once() {
     let mut net = Net::start_with(Topology::new().relay(&["ada"]), wall())
         .await
@@ -1104,6 +1120,7 @@ async fn a_changed_tier_reaches_a_process_host_and_the_plan_read_at_once() {
 
 /// Two in-process hosts with no LAN between them, for links a test makes
 /// by hand.
+#[cfg(not(windows))] // out of scope on Windows: SSH with a Windows machine at the far end
 fn bare_host(name: &str) -> HostDecl {
     HostDecl {
         name: name.to_owned(),
@@ -1126,6 +1143,7 @@ async fn until_route(net: &Net, near: &str, far: &str, via: node::harness::LiveR
     .unwrap();
 }
 
+#[cfg(not(windows))] // out of scope on Windows: SSH with a Windows machine at the far end
 #[tokio::test(flavor = "multi_thread")]
 async fn the_ssh_stand_in_carries_a_link_into_the_far_hosts_link_socket() {
     let mut net = Net::start_with(Topology::new(), testnet::NetOptions::default())

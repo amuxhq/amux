@@ -10,8 +10,6 @@
 //! child's finished and failed messages over the peer link, exactly once,
 //! to the incarnation that was waiting for them.
 
-#![cfg(unix)]
-
 use std::sync::Arc;
 
 use client::RpcError;
@@ -1403,10 +1401,12 @@ async fn a_file_one_agent_sends_another_arrives_on_the_recipients_own_host() {
     let held = local.exists();
     net.shutdown().await.unwrap();
     println!("what helper's Claude read: {delivered:?}; its copy held: {held}");
+    // The provider reads JSON lines, so the path is in them as JSON spells
+    // it (on Windows each `\` doubled).
+    let named = serde_json::to_string(&*local.to_string_lossy()).unwrap();
+    let named = named.trim_matches('"');
     assert!(
-        delivered
-            .iter()
-            .any(|line| line.contains(&*local.to_string_lossy())),
+        delivered.iter().any(|line| line.contains(named)),
         "the file reached the other host's agent naming the sender host's path, not one on its own host: {delivered:?}"
     );
     assert!(held, "the recipient's host holds no copy of the file");

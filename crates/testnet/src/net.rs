@@ -4425,6 +4425,10 @@ mod teardown_tests {
         net.kill_daemon("desk").await.unwrap();
         assert!(worker.alive(), "the agent outlives its daemon");
         net.shutdown().await.unwrap();
-        assert!(!worker.alive(), "agent process {} outlived the net", worker.pid());
+        assert!(
+            !worker.alive(),
+            "agent process {} outlived the net",
+            worker.pid()
+        );
     }
 }

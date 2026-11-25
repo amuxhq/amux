@@ -20,27 +20,21 @@ mod tests;
 /// An exclusive lock on a file, held until this is dropped or the process
 /// dies, when the kernel releases it.
 ///
-/// Unix: `flock` over the whole file, which is what std's
-/// [`File::try_lock`] takes, so a build that locks with std and one that
-/// locks with this exclude each other.
+/// Unix: `flock` over the whole file, through std's [`File::try_lock`].
 ///
-/// Windows: `LockFileEx` on the single byte at offset `u64::MAX - 1`
-/// ([`LOCKED_BYTE`]). std's [`File::try_lock`] (Rust 1.98,
-/// `library/std/src/sys/fs/windows.rs`) locks offset 0 for `u64::MAX`
-/// bytes, the range `0 ..= u64::MAX - 1`, which holds that byte: so an
-/// older build holding the file with std and a newer one probing with this
-/// exclude each other, and the other way round. The byte lies past any
-/// data, and a Windows lock is mandatory only over the bytes it covers, so
-/// the file's contents stay readable, and writable through
-/// [`FileLock::write_data`], while it is held: `amux status` reads the
-/// supervisor's pid out of its lock.
+/// Windows: `LockFileEx` on the single byte at offset `u64::MAX - 1`. A
+/// Windows lock is mandatory over the bytes it covers, so one past the
+/// data leaves the file's contents readable, and writable through
+/// [`FileLock::write_data`], while it is held: the agent's lock carries
+/// its pid. That byte is also the last of the range std's
+/// [`File::try_lock`] takes (offset 0 for `u64::MAX` bytes), so a std lock
+/// and this one on the same file exclude each other: `supervisor.lock` and
+/// `installation.lock` are still std locks, which tests probe with
+/// [`FileLock::held`], and test support probes an agent's lock with std's.
 #[derive(Debug)]
 pub struct FileLock {
     file: File,
 }
-
-/// The byte a [`FileLock`] locks on Windows.
-pub const LOCKED_BYTE: u64 = u64::MAX - 1;
 
 impl FileLock {
     /// Takes the lock on `path`, creating the file if needed and keeping

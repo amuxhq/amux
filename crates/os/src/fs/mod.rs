@@ -51,8 +51,8 @@ pub fn create_private_dir(dir: &Path) -> io::Result<()> {
 /// Unix: 0700 for a folder, 0600 for a file (0700 for one with an execute
 /// bit, which it keeps). Windows: the protected DACL [`create_private_dir`]
 /// describes, applied to a folder's contents by inheritance (anything
-/// inside that inherits its ACL takes the new one), which upgrades an
-/// existing installation in place.
+/// inside that inherits its ACL takes the new one), so a folder that was
+/// not private becomes so in place, with what it holds.
 pub fn make_private(path: &Path) -> io::Result<()> {
     imp::make_private(path)
 }

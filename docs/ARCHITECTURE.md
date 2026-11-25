@@ -328,7 +328,7 @@ the agent's directory.
 | Path | Created by | Written by | Read by | Deleted by |
 |---|---|---|---|---|
 | the directory, `spec.<n>` | daemon | daemon, one file per incarnation | agent at start | daemon, on delete, a parent's delete, or retention; never on exit, because resume uses the directory again |
-| `lock` | daemon | the agent, its pid, as it takes the lock; emptied as it lets go (an older build's agent writes none) | held by the agent; the daemon try-locks it to probe liveness; `agent_dir::lock_holder` reads the pid of a holder, believed only when that process also serves `private/agent.sock` | with the directory |
+| `lock` | daemon | the agent, its pid, as it takes the lock; emptied as it lets go | held by the agent; the daemon try-locks it to probe liveness; `agent_dir::lock_holder` reads the pid of a holder, believed only when that process also serves `private/agent.sock` | with the directory |
 | `ctl.sock`, `pty.sock` | agent | — | the daemon dials `ctl.sock`; terminal clients dial `pty.sock` | agent, at exit |
 | `tools.sock` | daemon | — | the agent's tool server; the agent process, for a spawn | daemon, when the agent exits; bound again at resume |
 | `journal/*` | agent | agent | daemon, from its cursor | daemon: segments wholly below a cursor that has reached the drive, keeping the newest two for debug bundles |
@@ -584,12 +584,7 @@ nicer in several places, and Windows pays for each:
   exactly that form, whatever the file says (never another host's pipe or a
   device), then refuses a pipe its own user doesn't own. The owner, not the
   serving process's token, is what's checked, so a client accepts an
-  elevated daemon of the same user. Earlier builds named their pipes
-  `amux-<16 hex>-<pid>-<count>` and left the owner to the token's default
-  (Administrators, when elevated); a pipe of that form is also accepted
-  when Administrators own it and its serving process runs as the user, the
-  check those builds made, so a daemon still adopts an agent an elevated
-  earlier build started. The name file is read on a blocking thread
+  elevated daemon of the same user. The name file is read on a blocking thread
   within the connect's deadline, at most 256 bytes of it. A server keeps four instances
   listening, and a client finding them all busy, or the file naming a pipe
   that has gone, tries again with the file read afresh until a deadline (two

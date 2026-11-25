@@ -4230,9 +4230,9 @@ async fn kill_agents_in(agents: &[PathBuf]) -> Result<(), NetError> {
 
 /// Kills the holder of each of `dirs`' locks, keeping each killed process
 /// in `killed`, and answers the directories still held: a killed holder
-/// until the kernel lets go of its lock, and a holder the lock file names
-/// no process for, which only an older build or an agent a moment into its
-/// start leaves.
+/// until the kernel lets go of its lock, and a holder not yet confirmed
+/// ([`agent_dir::Holder::Unconfirmed`]): an agent a moment into its start,
+/// which a later look names and kills.
 fn kill_holders(dirs: &[PathBuf], killed: &mut Vec<os::process::ProcessRef>) -> Vec<String> {
     let mut held = Vec::new();
     for dir in dirs {

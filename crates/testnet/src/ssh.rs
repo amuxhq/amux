@@ -8,7 +8,7 @@
 //! beyond the two sockets.
 
 use std::path::Path;
-use std::sync::Once;
+use std::sync::OnceLock;
 
 /// The directory in a target that the stand-in puts first on the PATH of the
 /// command it runs, holding the login as `amux`.
@@ -26,24 +26,42 @@ const STAND_IN: &str = include_str!("../stand-in/ssh");
 /// process's own: the checkout's file need not carry an execute bit (one
 /// uploaded from a Windows checkout to a Linux worker has none), and a
 /// program search skips a file without one, so the system's own `ssh`
-/// would answer instead. The folder outlives every net, as the PATH does.
+/// would answer instead.
+///
+/// The folder is made afresh under a random name, which fails rather than
+/// takes a folder already there, and is owner-only: in a temp directory
+/// other users share, a folder at a name they could guess would put their
+/// programs first on this process's PATH. It is held in a static, so it
+/// lives as long as the PATH names it: the process's life.
 pub(crate) fn install() {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let dir = std::env::temp_dir().join(format!("testnet-ssh-{}", std::process::id()));
-        let copied = std::fs::create_dir_all(&dir)
-            .and_then(|()| std::fs::write(dir.join("ssh"), STAND_IN))
-            .and_then(|_| os::fs::make_executable(&dir.join("ssh")));
+    static INSTALL: OnceLock<tempfile::TempDir> = OnceLock::new();
+    INSTALL.get_or_init(|| {
+        let made = tempfile::Builder::new().prefix("testnet-ssh-").tempdir();
+        let dir = match made {
+            Ok(dir) => dir,
+            Err(error) => panic!("making a folder for the ssh stand-in: {error}"),
+        };
+        let ssh = dir.path().join("ssh");
+        let copied = os::fs::make_private(dir.path())
+            .and_then(|()| std::fs::write(&ssh, STAND_IN))
+            .and_then(|()| os::fs::make_executable(&ssh));
         if let Err(error) = copied {
-            panic!("copying the ssh stand-in into {}: {error}", dir.display());
+            panic!(
+                "copying the ssh stand-in into {}: {error}",
+                dir.path().display()
+            );
         }
         let path = std::env::var_os("PATH").unwrap_or_default();
-        let path = std::env::join_paths(std::iter::once(dir).chain(std::env::split_paths(&path)))
-            .expect("the stand-in's directory joins the PATH");
-        // SAFETY: called under a Once by the first net a process starts,
-        // before any of its hosts run; nets started on other threads read
-        // the environment only through std, which takes the same lock.
+        let path = std::env::join_paths(
+            std::iter::once(dir.path().to_owned()).chain(std::env::split_paths(&path)),
+        )
+        .expect("the stand-in's directory joins the PATH");
+        // SAFETY: called once, by the first net a process starts, before
+        // any of its hosts run; nets started on other threads wait on the
+        // OnceLock, and read the environment only through std, which takes
+        // the same lock.
         unsafe { std::env::set_var("PATH", path) };
+        dir
     });
 }
 
@@ -61,4 +79,34 @@ pub(crate) fn write_login(dir: &Path, amux: &Path, config: &Path) -> std::io::Re
             args: vec!["--config".to_owned(), config.to_string_lossy().into_owned()],
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The folder the stand-in goes on the PATH from is one this process
+    /// made, never one that was there: a folder at a name another user
+    /// could guess and make first would put their programs ahead of every
+    /// other on the PATH.
+    #[test]
+    fn the_stand_in_goes_on_the_path_from_a_folder_made_fresh() {
+        let guessed = std::env::temp_dir().join(format!("testnet-ssh-{}", std::process::id()));
+        std::fs::create_dir_all(&guessed).unwrap();
+        std::fs::write(guessed.join("planted"), b"").unwrap();
+        install();
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let first = std::env::split_paths(&path).next().expect("a PATH");
+        let planted = first.join("planted").exists();
+        let _ = std::fs::remove_dir_all(&guessed);
+        assert_ne!(
+            first, guessed,
+            "the stand-in went into a folder that was there"
+        );
+        assert!(!planted, "the PATH leads with a folder someone else filled");
+        assert_eq!(
+            std::fs::read_to_string(first.join("ssh")).unwrap(),
+            STAND_IN
+        );
+    }
 }

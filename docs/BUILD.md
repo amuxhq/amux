@@ -317,6 +317,12 @@ It needs:
   makes only `python.exe`, and the `python3.exe` that answers first is a
   stub that opens the Microsoft Store; a copy of `python.exe` named
   `python3.exe` beside it does.
+- rustup, with the toolchain `rust-toolchain.toml` pins and the formatting
+  nightly (above), and Visual Studio's C++ build tools, whose linker
+  `cargo install` needs. `just premerge`'s scripts run Cargo here (`cargo
+  metadata`, `cargo tree`, rustfmt), and the unused-dependency checker
+  `just shear` runs is installed once with the `cargo install` line above
+  that recipe in the justfile; it builds without clang.
 - Developer Mode (symbolic links without elevation), long paths, and
   `git config core.autocrlf false`, so a checkout's goldens and fixtures
   keep main's bytes.
@@ -352,6 +358,18 @@ fast or slow store") after the build host's cache was wiped is a stale Buck2
 daemon: it remembers the blobs it uploaded before the wipe as already there,
 and so never uploads them again. `scripts/buck2 kill` ends it, and the next
 build starts a daemon that knows nothing and uploads what's missing.
+
+Windows can't start a sh script itself, so a Python script that runs
+`scripts/buck2` or `scripts/bounded` runs it with `sh`, and one that runs
+another Python script runs it with its own Python rather than `scripts/py`.
+On Windows the justfile sets, for every recipe, `MSYS2_ARG_CONV_EXCL=//`
+(and `MSYS2_ENV_CONV_EXCL`, which keeps that value whole through a Python
+script to the next `sh`): Git's `sh` rewrites an argument that looks like a
+path as it starts a native program, and took `//js:` for an escaped `/js:`;
+an argument starting `//`, a Buck2 pattern, is now left alone. It sets
+`PYTHONUTF8=1` too, so the scripts read and write UTF-8 there as they do
+elsewhere. Running `scripts/buck2` by hand from Git Bash with a `//` pattern
+needs `export MSYS2_ARG_CONV_EXCL=//` first.
 
 On Windows on Arm (a Windows VM on an Apple Silicon Mac), `just
 check-windows` and `just test-windows` build and run Arm64 binaries, natively;

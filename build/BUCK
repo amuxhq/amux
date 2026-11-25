@@ -80,6 +80,13 @@ amux_files(
     srcs = ["checks/deny.sh"] + glob(["checks/inputs/deny/**"], exclude = ["checks/inputs/deny/key", "checks/inputs/deny/index-refreshed"]),
 )
 
+# The script that writes the checks' inputs, for its tests among the root
+# BUCK's script tests.
+amux_files(
+    name = "check-inputs",
+    srcs = ["checks/inputs.py"],
+)
+
 # The platform check's script and its allowlist (`//:platform-check`, and
 # its tests among the root BUCK's script tests).
 amux_files(

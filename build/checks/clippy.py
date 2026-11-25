@@ -11,17 +11,19 @@ checks only what changed.
     clippy.py [buck2 build arguments...]
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-BUCK2 = str(ROOT / "scripts/buck2")
+# scripts/buck2 is a shell script, which Windows can't start itself.
+BUCK2 = (["sh"] if os.name == "nt" else []) + [str(ROOT / "scripts/buck2")]
 
 
 def main() -> int:
     targets = subprocess.check_output(
-        [BUCK2, "uquery", "kind('^rust_(library|binary)$', //crates/...)"],
+        [*BUCK2, "uquery", "kind('^rust_(library|binary)$', //crates/...)"],
         cwd=ROOT,
         text=True,
         stderr=subprocess.DEVNULL,
@@ -30,7 +32,7 @@ def main() -> int:
         # A denied lint fails its target's clippy action
         # (build/toolchains/bootstrap-guard.py), so every target is built
         # whatever fails, to report them all.
-        [BUCK2, "build", "--keep-going", *sys.argv[1:], "--show-full-output", *[t + "[clippy.txt]" for t in targets]],
+        [*BUCK2, "build", "--keep-going", *sys.argv[1:], "--show-full-output", *[t + "[clippy.txt]" for t in targets]],
         cwd=ROOT,
         capture_output=True,
         text=True,

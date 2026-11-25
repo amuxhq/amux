@@ -24,6 +24,10 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# The repository's sh scripts (scripts/bounded, scripts/with), which Windows
+# can't start itself, and its Python (scripts/py picks one).
+SH = ["sh"] if os.name == "nt" else []
+PY = [sys.executable] if os.name == "nt" else [str(ROOT / "scripts/py")]
 ENVIRONMENTS = ROOT / "environments"
 TESTNET = ROOT / "target/debug/testnet"
 # Outside the checkout, as a QA run's nets are: inside it, git would find
@@ -57,7 +61,7 @@ def has_real_host(world: Path) -> bool:
 def build_commands(phone: bool, real: bool) -> list[list[str]]:
     """The cargo builds a world needs: the net's binaries, and the probes
     when a host runs real agents."""
-    bounded = [str(ROOT / "scripts/bounded"), "1800", "cargo", "build", "--locked"]
+    bounded = [*SH, str(ROOT / "scripts/bounded"), "1800", "cargo", "build", "--locked"]
     commands = [bounded + ["-p", "amux", "-p", "provider-fakes", "-p", "testnet", "--bins"]]
     if real:
         commands.append(bounded + ["-p", "qualification"] + [f"--bin={probe}" for probe in PROBES])
@@ -75,7 +79,7 @@ def build(phone: bool, real: bool) -> None:
 
 
 def ctl(folder: Path, *arguments: str, quiet: bool = False) -> int:
-    command = [str(ROOT / "scripts/bounded"), "900", str(TESTNET), "ctl", *arguments]
+    command = [*SH, str(ROOT / "scripts/bounded"), "900", str(TESTNET), "ctl", *arguments]
     output = subprocess.DEVNULL if quiet else None
     return subprocess.run(command, cwd=folder, stdout=output, stderr=output).returncode
 
@@ -129,8 +133,9 @@ def main(arguments: list[str]) -> int:
     if phone and not os.environ.get("WT_LEASE_IPHONE"):
         build(phone, real)
         os.environ["AMUX_ENV_BUILT"] = "1"
-        script = [str(ROOT / "scripts/py"), "-B", str(Path(__file__).resolve()), name]
-        os.execv(str(ROOT / "scripts/with"), [str(ROOT / "scripts/with"), "iphone", "--", *script])
+        script = [*PY, "-B", str(Path(__file__).resolve()), name]
+        leased = [*SH, str(ROOT / "scripts/with"), "iphone", "--", *script]
+        os.execvp(leased[0], leased)
     if not os.environ.get("AMUX_ENV_BUILT"):
         build(phone, real)
     folder = FOLDERS / name

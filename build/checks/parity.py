@@ -18,11 +18,14 @@ With no arguments it runs `cargo metadata` and `buck2 uquery` itself.
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+# scripts/buck2 is a shell script, which Windows can't start itself.
+BUCK2 = (["sh"] if os.name == "nt" else []) + [str(ROOT / "scripts/buck2")]
 
 
 def cargo_metadata(path: str | None) -> dict:
@@ -41,7 +44,7 @@ def buck_targets(path: str | None) -> dict:
     return json.loads(
         subprocess.check_output(
             [
-                str(ROOT / "scripts/buck2"),
+                *BUCK2,
                 "uquery",
                 "kind('^rust_(library|binary)$', //crates/...)",
                 "--output-attribute",

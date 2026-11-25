@@ -40,12 +40,14 @@ import hashlib
 import io
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
 import tarfile
 import time
-from pathlib import Path
+import urllib.parse
+from pathlib import Path, PurePath, PureWindowsPath
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "build" / "checks" / "inputs"
@@ -69,9 +71,30 @@ def write(path: Path, content: bytes) -> None:
     if path.is_file() and path.read_bytes() == content:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_bytes(content)
-    os.replace(temporary, path)
+    # A name of this run's own, as two runs can write at once (premerge's
+    # and its `just test`'s), hidden so a Buck2 glob over the directory
+    # never takes one left behind.
+    temporary = path.with_name(f".{path.name}.{os.getpid()}-{secrets.token_hex(4)}.tmp")
+    try:
+        with temporary.open("xb") as out:
+            out.write(content)
+        replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def replace(source: Path, target: Path) -> None:
+    """os.replace, waiting out Windows' sharing violations: a scanner
+    (Defender) or a reader holding the target open refuses it for a moment."""
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if os.name != "nt" or time.monotonic() > deadline:
+                raise
+            time.sleep(0.1)
 
 
 def tracked() -> bytes:
@@ -117,7 +140,9 @@ def warn(message: str) -> None:
 def cargo_inputs(listing: bytes) -> None:
     """Cargo's graph and the workspace's manifests, for cargo-deny."""
     manifests = sorted(path for path in listing.decode().splitlines() if path == "Cargo.toml" or path.endswith("/Cargo.toml"))
-    key = hashlib.sha256()
+    # Names how metadata.json is made, so a snapshot made an older way is
+    # made again when that changes.
+    key = hashlib.sha256(b"metadata 2\0")
     for path in ["Cargo.lock", "rust-toolchain.toml", ".cargo/config.toml", *manifests]:
         file = ROOT / path
         key.update(path.encode() + b"\0" + (file.read_bytes() if file.is_file() else b"") + b"\0")
@@ -138,7 +163,7 @@ def cargo_inputs(listing: bytes) -> None:
         return
     metadata = json.loads(result.stdout)
     workspace = Path(metadata["workspace_root"])
-    text = result.stdout.replace(str(workspace), "@ROOT@/build/checks/inputs/deny/workspace").replace(str(cargo_home()), "/cargo")
+    text = json.dumps(portable(metadata, workspace, cargo_home()), ensure_ascii=False, separators=(",", ":")) + "\n"
     shutil.rmtree(DENY / "workspace", ignore_errors=True)
     for package in metadata["packages"]:
         manifest = Path(package["manifest_path"])
@@ -148,6 +173,45 @@ def cargo_inputs(listing: bytes) -> None:
         write(DENY / "workspace" / name, (workspace / name).read_bytes())
     write(DENY / "metadata.json", text.encode())
     write(stamp, key.hexdigest().encode())
+
+
+def portable(metadata, workspace: PurePath, home: PurePath):
+    """Cargo's graph with this checkout's path replaced by `@ROOT@` and Cargo's
+    home by `/cargo`, in each of its strings.
+
+    Each path is replaced in both forms Cargo writes: a native path
+    (`manifest_path`, `src_path`; on Windows with backslashes, which become
+    `/`, as the deny check reads it on Linux) and the path in a `file://` URL
+    (a package's id). The parsed values are rewritten, not the text, in which
+    JSON escapes each backslash; serialised as Cargo does (compact, in its
+    order), they are Cargo's own text with the paths replaced.
+    """
+    swaps = [(workspace, "@ROOT@/build/checks/inputs/deny/workspace"), (home, "/cargo")]
+    windows = isinstance(workspace, PureWindowsPath)
+    native = [(str(path), to) for path, to in swaps]
+    # A file URL's path: `/C:/Users/...` on Windows, escaped as Cargo's are.
+    urls = [(urllib.parse.quote(("/" if windows else "") + path.as_posix(), safe="/:@!$&'()*+,;="), to) for path, to in swaps]
+
+    def rewrite(text: str) -> str:
+        for path, to in native:
+            if path in text:
+                text = text.replace(path, to)
+                if windows:
+                    text = text.replace("\\", "/")
+        for path, to in urls:
+            text = text.replace(path, to)
+        return text
+
+    def walk(value):
+        if isinstance(value, str):
+            return rewrite(value)
+        if isinstance(value, list):
+            return [walk(item) for item in value]
+        if isinstance(value, dict):
+            return {rewrite(key): walk(item) for key, item in value.items()}
+        return value
+
+    return walk(metadata)
 
 
 def cargo_home() -> Path:

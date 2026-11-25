@@ -14,4 +14,4 @@ of its builds; `just mac release` writes it.
 MARKETING_VERSION = "1.0.40"
 BUILD_NUMBER = "49"
 
-MAC_VERSION = "0.0.1"
+MAC_VERSION = "0.0.2"

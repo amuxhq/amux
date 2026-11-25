@@ -312,6 +312,10 @@ def write(mode: str) -> None:
         # an action Buck2 runs itself is otherwise never kept.
         lines += ["[buck2]", "  default_allow_cache_upload = true"]
     host = {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}[platform.system()]
+    if host == "windows" and platform.machine().lower() in ("arm64", "aarch64"):
+        # An Arm64 Windows machine's worker runs Arm64 actions only, so an x64
+        # default would leave every test it runs queued with no worker to take it.
+        host = "windows-arm64"
     lines += [
         # A target that doesn't name its own platform is a development
         # build of the desktop product for this machine.

@@ -43,3 +43,10 @@ amux_files(
     name = "swift",
     srcs = glob(["**/*.swift"]),
 )
+
+# The driven build's string catalogue, which the strings lint reads
+# (apps/apple/Tools/BUCK).
+amux_files(
+    name = "copy",
+    srcs = ["Sources/AmuxTestSupport/Resources/DebugCopy.xcstrings"],
+)

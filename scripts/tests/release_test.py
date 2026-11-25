@@ -11,6 +11,7 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,16 @@ recipe = importlib.util.module_from_spec(specification)
 specification.loader.exec_module(recipe)
 
 ROOT = SCRIPTS.parent
+
+
+def ignored_by_the_checkout(root, path):
+    """Whether the checkout's .gitignore ignores `path`, asked of a repository
+    holding only that file: a test runs where the checkout's files are but
+    its git directory may not be (a Buck2 action)."""
+    with tempfile.TemporaryDirectory() as scratch:
+        shutil.copy(root / ".gitignore", scratch)
+        subprocess.run(["git", "init", "-q", scratch], check=True)
+        return subprocess.run(["git", "-C", scratch, "check-ignore", "-q", str(path)]).returncode == 0
 
 
 @contextlib.contextmanager
@@ -193,6 +204,7 @@ class InterruptedRelease(unittest.TestCase):
                                 ("inputs", ([], {"clean": True})),
                                 ("numbers", ("1.2.3", 44)),
                                 ("notes", "Release notes"),
+                                ("ci_covered", (True, "covered")),
                             ):
                                 stack.enter_context(unittest.mock.patch.object(
                                     recipe, name, return_value=result))
@@ -318,8 +330,7 @@ class TheSigningFile(unittest.TestCase):
             self.assertEqual("", facts["team"])
 
     def test_the_repository_ignores_it(self):
-        self.assertEqual(0, os.system(
-            f"git -C {ROOT} check-ignore -q {recipe.SIGNING_FILE}"))
+        self.assertTrue(ignored_by_the_checkout(ROOT, recipe.SIGNING_FILE))
 
 
 class TheSigning(unittest.TestCase):
@@ -413,6 +424,44 @@ class TheLastStep(unittest.TestCase):
         self.assertIn('"--api-issuer", facts["issuer"]', source)
 
 
+class TheCIBackstop(unittest.TestCase):
+    """A release refuses a commit CI's iPhone app job has not judged; a
+    rehearsal, which ships nothing, does not ask."""
+
+    def run_main(self, argv, covered):
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(unittest.mock.patch.object(sys, "argv", argv))
+            stack.enter_context(unittest.mock.patch.object(recipe, "inputs", return_value=([], {"clean": True, "tree": ""})))
+            stack.enter_context(unittest.mock.patch.object(recipe, "numbers", return_value=("1.2.3", 44)))
+            asked = stack.enter_context(unittest.mock.patch.object(recipe, "ci_covered", return_value=covered))
+            write = stack.enter_context(unittest.mock.patch.object(recipe, "write_numbers"))
+            build = stack.enter_context(unittest.mock.patch.object(recipe, "build_app", side_effect=subprocess.CalledProcessError(1, ["buck2"])))
+            out = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+            code = recipe.main()
+        return code, asked, write, build, out.getvalue()
+
+    def test_an_unjudged_commit_is_refused_before_anything_is_written(self):
+        code, asked, write, build, said = self.run_main(["release.py"], (False, "apps/apple/A.swift is in its territory"))
+        self.assertEqual(1, code)
+        asked.assert_called_once()
+        write.assert_not_called()
+        build.assert_not_called()
+        self.assertIn("MISSING", said)
+        self.assertIn("apps/apple/A.swift", said)
+
+    def test_a_preflight_reports_it(self):
+        code, _, _, build, said = self.run_main(["release.py", "--preflight"], (False, "not judged"))
+        self.assertEqual(1, code)
+        build.assert_not_called()
+        self.assertIn("CI's iPhone app job on this commit", said)
+
+    def test_a_rehearsal_does_not_ask(self):
+        _, asked, _, build, _ = self.run_main(["release.py", "--rehearse"], (False, "not judged"))
+        asked.assert_not_called()
+        build.assert_called_once()
+
+
 class TheOrderOfARelease(unittest.TestCase):
     """Nothing permanent is recorded until Apple has accepted the build.
 
@@ -447,6 +496,7 @@ class TheOrderOfARelease(unittest.TestCase):
                 "inputs": lambda: ([recipe.Check("a clean tree", True, "clean")],
                                    facts),
                 "notes": lambda *_: "amux 1.0.32",
+                "ci_covered": lambda: (True, "covered"),
                 "tree": lambda: "",
                 "write_numbers": step("write_numbers"),
                 "build_app": step("build_app", (Path(directory) / "Amux.app", Path(directory) / "dSYMs")),

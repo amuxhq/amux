@@ -1081,8 +1081,9 @@ fn commit(
             } else {
                 rows.item_text(agent, &turn_end.last_message_key)?
             };
-            // Zero when the parent's row is not held: unknown, see Delivery.
-            let parent_incarnation = rows.incarnation(parent)?.unwrap_or(0);
+            // For the parent incarnation the child last heard from, as its
+            // row says in this transaction.
+            let parent_incarnation = row.parent_incarnation;
             rows.put_delivery(&Delivery {
                 child_id: agent.agent.clone(),
                 incarnation: row.incarnation,

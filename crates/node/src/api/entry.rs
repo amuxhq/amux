@@ -260,7 +260,19 @@ async fn client_caller(
             // change while it runs, so the name is read as the call comes.
             let runtime = upgrade(runtime)?;
             match runtime.row_by_id(agent.as_bytes()).await {
-                Ok(Some(row)) => Ok(Caller::agent_of(runtime.host(), agent, row.name)),
+                // Its incarnation and permission level too, from its row,
+                // so a host the call is carried to takes them as this host's
+                // word rather than judging them from its copy of the row.
+                Ok(Some(row)) => {
+                    let level = row.status.settings().permission_level();
+                    Ok(Caller::agent_of(
+                        runtime.host(),
+                        agent,
+                        row.name,
+                        row.incarnation,
+                        level,
+                    ))
+                }
                 Ok(None) => Err(status(wire_error(
                     wire::ErrorCode::NotFound,
                     "the agent this socket serves is gone",

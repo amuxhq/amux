@@ -84,6 +84,9 @@ pub struct SyntheticAgent {
     pub name: String,
     pub dir: PathBuf,
     pub parent: Option<AgentKey>,
+    /// With a parent: the parent incarnation the agent last heard from,
+    /// which its reports are for.
+    pub parent_incarnation: u32,
     pub incarnation: u32,
     journal: Arc<Mutex<SyntheticWriter>>,
     segment_bytes: u64,
@@ -143,6 +146,7 @@ impl SyntheticAgent {
             name: name.to_owned(),
             dir,
             parent: None,
+            parent_incarnation: 1,
             incarnation: 1,
             journal: Arc::new(Mutex::new(journal)),
             segment_bytes,
@@ -234,6 +238,10 @@ impl SyntheticAgent {
         row.provider = wire::agents::CLAUDE.to_owned();
         row.name = self.name.clone();
         row.parent = self.parent.clone();
+        row.parent_incarnation = match self.parent {
+            Some(_) => self.parent_incarnation,
+            None => 0,
+        };
         row.incarnation = self.incarnation;
         row.created_at_ms = 1;
         row

@@ -375,6 +375,8 @@ mod tests {
                 host: self.here,
                 agent: self.own,
                 name: "own".to_owned(),
+                incarnation: 1,
+                level: wire::PermissionLevel::Auto,
             }
         }
     }
@@ -426,6 +428,8 @@ mod tests {
             host: host.paired,
             agent: AgentId::new_v4(),
             name: "remote".to_owned(),
+            incarnation: 1,
+            level: wire::PermissionLevel::Auto,
         };
         for (served, calling) in [
             (Served::Link, afar),

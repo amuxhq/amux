@@ -12,7 +12,10 @@ set_reindeer_platforms(select({
         "DEFAULT": None,
         "prelude//cpu:arm64": "macos-arm64",
     }),
-    "prelude//os:windows": "windows-msvc",
+    "prelude//os:windows": select({
+        "DEFAULT": "windows-msvc",
+        "prelude//cpu:arm64": "windows-arm64-msvc",
+    }),
     "prelude//os:iphoneos": select({
         "DEFAULT": "ios-arm64",
         "root//build/constraints:simulator": "ios-sim-arm64",

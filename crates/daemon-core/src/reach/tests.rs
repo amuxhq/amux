@@ -323,6 +323,39 @@ fn a_failed_attempt_is_tried_again_after_a_second_doubling_to_thirty() {
     );
 }
 
+/// A host whose handshake refused this one as no longer trusted is not
+/// dialled again: not when the pause after the refusal ends, nor when the
+/// local network finds it somewhere new. Only something that says it may
+/// have taken the revocation back (a pairing, an answer) lifts the mark.
+#[test]
+fn a_host_that_refused_this_one_as_revoked_is_not_dialled_again() {
+    let mut daemon = daemon(trusting());
+    let (attempt, _) = dial_of(&step(&mut daemon, Input::Dialling(Dialling::All)), DESK);
+    let out = ended(&mut daemon, DESK, attempt, AttemptOutcome::Revoked);
+    assert!(daemon.revoked_by(DESK));
+    let mut after = out.clone();
+    if let Some(due) = armed(&out, TimerId::Retry(DESK)) {
+        after.extend(step(
+            &mut daemon,
+            Input::Tick {
+                now_ms: due,
+                link_ms: due,
+            },
+        ));
+        after.extend(step(
+            &mut daemon,
+            Input::Timer {
+                id: TimerId::Retry(DESK),
+            },
+        ));
+    }
+    after.extend(found(&mut daemon, DESK, &["10.0.0.2:7000"]));
+    assert!(
+        dials(&after).iter().all(|(host, ..)| *host != DESK),
+        "the desk is dialled again: {after:?}"
+    );
+}
+
 #[test]
 fn an_attempt_past_its_deadline_is_abandoned_and_counts_as_a_failure() {
     let mut daemon = daemon(trusting());

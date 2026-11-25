@@ -11,11 +11,11 @@
 //! settings a person picks only in the provider's own terms (a raw
 //! permission value or a mode), stay the person's.
 //!
-//! The subagent's host settles all of it, as it answers every rule about
-//! its caller: it holds the parent's row (its own, or the copy it keeps of
-//! a paired host's, which carries the parent's settings), and its own
-//! provider's catalogue, onto which it maps the level and against which it
-//! checks the model and effort.
+//! The subagent's host settles all of it, against what the parent's own
+//! host states of the parent on the call (its permission level, read from
+//! the parent's own row as the call leaves, never from a copy here that
+//! may lag), and its own provider's catalogue, onto which it maps the level
+//! and against which it checks the model and effort.
 
 use wire::{AgentSettings, Catalogue, CreateAgentRequest, PermissionLevel};
 
@@ -364,35 +364,19 @@ fn list(words: &[&str]) -> String {
 impl ProfileRuntime {
     /// Settles what an agent, `parent`, asked for its subagent on this
     /// host: only the picks an agent may make; the permission level capped
-    /// at the parent's, from the parent's row as this host holds it (its
-    /// own, or the copy it keeps of a paired host's); the model, effort and
-    /// level fitted to what the provider offers here; and a fork only of
-    /// the parent's own conversation, on this host, by the same provider.
-    /// Answers the settings the subagent starts on and the conversation it
-    /// forks.
+    /// at `parent_level`, the parent's own as its host stated it on the
+    /// call; the model, effort and level fitted to what the provider offers
+    /// here; and a fork only of the parent's own conversation, on this
+    /// host, by the same provider. Answers the settings the subagent starts
+    /// on and the conversation it forks.
     pub(crate) async fn delegate(
         &self,
         request: &mut CreateAgentRequest,
         parent: crate::api::CallingAgent,
+        parent_level: PermissionLevel,
     ) -> Result<(Fitted, Option<wire::ForkFrom>), RegistryError> {
         only_picks(request)?;
-        let parent_row = self.row_by_id(parent.agent.as_bytes()).await?;
-        let asked = request.settings().permission_level();
-        let level = match &parent_row {
-            Some(row) => ceiling(asked, row.status.settings().permission_level())?,
-            None if parent.host == self.host() => {
-                return Err(RegistryError::NotFound(parent.agent));
-            }
-            // A paired host's agent this host holds no copy of yet, such as
-            // one that started a moment ago: its tool server names the
-            // parent's own level when the parent asks for none, and a
-            // paired host is trusted to keep to the protocol. Naming none,
-            // the parent's level is not known, so the child is read-only.
-            None => match asked {
-                PermissionLevel::Unspecified => PermissionLevel::ReadOnly,
-                named => named,
-            },
-        };
+        let level = ceiling(request.settings().permission_level(), parent_level)?;
         let here = self
             .edge()
             .map_or_else(|| "this host".to_owned(), |edge| edge.host_name());
@@ -422,7 +406,10 @@ impl ProfileRuntime {
                          the subagent there, or leave fork out",
                     ));
                 }
-                let parent_row = parent_row.ok_or(RegistryError::NotFound(parent.agent))?;
+                let parent_row = self
+                    .row_by_id(parent.agent.as_bytes())
+                    .await?
+                    .ok_or(RegistryError::NotFound(parent.agent))?;
                 Some(self.fork_of(&parent_row, &provider)?)
             }
             false => None,

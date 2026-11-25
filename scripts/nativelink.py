@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Run this Mac's NativeLink: the build cache and worker Buck2 sends every
-action to (docs/BUILD.md, "The build cache").
+action to (docs/BUILD.md, "The build cache"). A Windows development machine
+runs one the same way (docs/BUILD.md, "A Windows development machine").
 
     nativelink.py install [--cores N] [--background] [--remote URL --workers HOST:PORT]
-        Write the config and a launchd agent, and (re)start it.
+        Write the config and a launchd agent (on Windows, a scheduled task),
+        and (re)start it.
     nativelink.py uninstall
-        Stop it and remove the agent. The cache directory is kept.
+        Stop it and remove the agent or task. The cache directory is kept.
     nativelink.py status
         Say whether it answers on 127.0.0.1:50051.
     nativelink.py run [--cores N] [--background]
@@ -29,7 +31,9 @@ action to (docs/BUILD.md, "The build cache").
         The CAS holds at most N GiB.
 
 `--cores` is how many cores the worker offers (default: the machine's
-count less three), so builds never take the whole laptop. `--background`
+count less three), so builds never take the whole laptop; on Windows, where
+the machine is one set aside for this, all of them, and never fewer than a
+Windows test that takes the whole worker asks for. `--background`
 runs every action at macOS background priority (`taskpolicy -b`: mostly
 efficiency cores, yielding to foreground apps); it is off by default.
 One NativeLink serves every worktree on the machine.
@@ -45,6 +49,7 @@ values those are. They are remembered, so a later `install` keeps them;
 import argparse
 import json
 import os
+import platform
 import plistlib
 import shutil
 import socket
@@ -60,7 +65,17 @@ ROOT = Path(__file__).resolve().parents[1]
 PY = [sys.executable] if os.name == "nt" else [str(ROOT / "scripts/py")]
 TEMPLATE = ROOT / "build/nativelink/mac.json5"
 LABEL = "sh.amux.nativelink"
-CACHE = Path.home() / "Library/Caches/amux/nativelink"
+WINDOWS = os.name == "nt"
+# The scheduled task that runs it on Windows.
+TASK = "amux NativeLink"
+# On Windows near the drive's root: an action's directory is under it, and a
+# test's git objects under that, and from the profile's AppData those passed
+# the 260 characters git on Windows allows a path. CI's runner uses one of
+# about this length (D:\a\_temp\nativelink).
+CACHE = (
+    Path(os.environ.get("SystemDrive", "C:") + "\\") / "amux/nativelink" if WINDOWS
+    else Path.home() / "Library/Caches/amux/nativelink"
+)
 CONFIG = CACHE / "config.json5"
 # The same with no remote in it, for while the remote is out of reach (it
 # would wait on it), or the address its worker registers at isn't this
@@ -70,14 +85,13 @@ CONFIG_LOCAL = CACHE / "config-local.json5"
 # What launchd runs: picks one of the two (start_script), and records which
 # in SERVING (`remote` or `local`), read by scripts/buck-config.py.
 START = CACHE / "start"
+# What the scheduled task runs on Windows (install_windows).
+START_CMD = CACHE / "start.cmd"
 SERVING = CACHE / "serving"
-# Made as it first starts without the remote; what the local layer gained
-# after it is removed as it next starts in front of the remote (start_script).
-UNSHARED_SINCE = CACHE / "unshared-since"
 # The remote, read by scripts/buck-config.py too.
 SETTINGS = CACHE / "settings.json"
 PLIST = Path.home() / f"Library/LaunchAgents/{LABEL}.plist"
-LOG = Path.home() / "Library/Logs/amux/nativelink.log"
+LOG = CACHE / "nativelink.log" if WINDOWS else Path.home() / "Library/Logs/amux/nativelink.log"
 GIB = 1024**3
 
 
@@ -110,6 +124,17 @@ def tool_bin() -> Path:
             link.unlink(missing_ok=True)
             link.symlink_to(target)
     return bin
+
+
+def background_entrypoint() -> str:
+    """A script that runs its arguments at macOS background priority, for
+    `--background`: NativeLink runs an entrypoint as one program, its name
+    taken whole, so `taskpolicy -b` has to be a program of its own."""
+    script = CACHE / "bin" / "background"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text('#!/bin/sh\nexec /usr/sbin/taskpolicy -b "$@"\n')
+    script.chmod(0o755)
+    return str(script)
 
 
 def remote_stores(url: str) -> str:
@@ -159,11 +184,10 @@ def remote_stores(url: str) -> str:
       // SHARED_CAS's answer alone called the outputs this machine's worker
       // built, which stay here, missing; a daemon up for hours then failed
       // the next action that needed one ("an artifact that has expired in
-      // the RE CAS"). What this answer costs is that a blob only this
-      // machine holds is never uploaded: a Linux action can't take an
-      // output built here (the remote's worker fails it for a missing
-      // input), and what was written here while the remote was out of
-      // reach is dropped when it is back (start_script).
+      // the RE CAS"). With this answer a blob only this machine holds (an
+      // output built here, one the remote has evicted, one uploaded while
+      // the remote was out of reach) is never uploaded: the remote's worker
+      // reads it from here when an action needs it (remote_workers).
       name: "CAS",
       fast_slow: {{
         fast: {{ ref_store: {{ name: "SHARED_CAS" }} }},
@@ -203,11 +227,18 @@ LOCAL_ONLY_STORES = """    {
 
 def remote_workers(address: str) -> str:
     return f"""    {{
-      // Where the remote's worker registers, over the network.
+      // Where the remote's worker registers, over the network, and where it
+      // reads what only this machine holds: CAS counts this machine's layer
+      // (remote_stores), so Buck2 doesn't upload a blob the remote lacks
+      // when it is here, and an action of this machine's on the remote's
+      // worker that needs one reads it from here, which writes it into the
+      // remote's cache (the build host's worker configuration).
       name: "remote-workers",
       listener: {{ http: {{ socket_address: "{address}" }} }},
       services: {{
         worker_api: {{ scheduler: "SCHEDULER" }},
+        cas: [{{ instance_name: "main", cas_store: "LOCAL_ONLY_CAS" }}],
+        bytestream: [{{ instance_name: "main", cas_store: "LOCAL_ONLY_CAS" }}],
         health: {{}},
       }},
     }},"""
@@ -247,16 +278,32 @@ def render(cores: int, background: bool, remote: dict) -> None:
     CACHE.mkdir(parents=True, exist_ok=True)
     (CACHE / "cores").write_text(f"{cores}\n")
     values = {
-        "os": "macos",
-        "path": f"{tool_bin()}:/usr/bin:/bin:/usr/sbin:/sbin",
-        "cache": str(CACHE),
+        "cpu": cpu(),
         "cas_bytes": str(40 * GIB),
         "ac_bytes": str(4 * GIB),
         "cores": str(cores),
         # Three quarters of the machine's memory, in KiB.
         "memory_kb": str(memory_bytes() * 3 // 4 // 1024),
-        "entrypoint": 'entrypoint: "/usr/sbin/taskpolicy -b",' if background else "",
     }
+    if WINDOWS:
+        # The installing shell's PATH (its Python, git and Git's sh) and the
+        # system's own variables, as on CI's Windows runner; paths written
+        # as JSON strings, whose backslashes need escaping.
+        values |= {
+            "os": "windows",
+            "path": json.dumps(os.environ["PATH"])[1:-1],
+            "environment": windows_environment(exclude=frozenset({"PATH"})),
+            "cache": CACHE.as_posix(),
+            "entrypoint": "",
+        }
+    else:
+        values |= {
+            "os": "macos",
+            "path": f"{tool_bin()}:/usr/bin:/bin:/usr/sbin:/sbin",
+            "environment": "",
+            "cache": str(CACHE),
+            "entrypoint": f'entrypoint: "{background_entrypoint()}",' if background else "",
+        }
     template = fill(TEMPLATE.read_text(), values)
     local = {"remote_stores": LOCAL_ONLY_STORES, "worker_slow": "{ noop: {} }", "remote_workers": ""}
     full = local if not remote else {
@@ -266,7 +313,17 @@ def render(cores: int, background: bool, remote: dict) -> None:
     }
     for path, fills in ((CONFIG, full), (CONFIG_LOCAL, local)):
         path.write_text(fill(template, fills))
-    START.write_text(start_script(remote))
+    if WINDOWS:
+        # Always the rendering with the remote: Windows has no start script
+        # choosing between the two, nor does scripts/buck-config.py switch a
+        # Windows machine's Linux actions off when the remote is gone.
+        START_CMD.write_text(
+            "@echo off\r\nrem Written by scripts/nativelink.py.\r\n"
+            "set RUST_LOG=warn\r\n"
+            f'"{binary()}" "{CONFIG}" >> "{LOG}" 2>&1\r\n'
+        )
+    else:
+        START.write_text(start_script(remote))
 
 
 def serve(cache: Path, cores: int) -> None:
@@ -283,6 +340,8 @@ def serve(cache: Path, cores: int) -> None:
         # (build/toolchains/nix-realize.sh), so Nix is on PATH, wherever
         # its installer put it.
         "path": "/usr/bin:/bin:/nix/var/nix/profiles/default/bin",
+        "environment": "",
+        "cpu": cpu(),
         "cache": str(cache),
         "cas_bytes": str(40 * GIB),
         "ac_bytes": str(4 * GIB),
@@ -314,6 +373,16 @@ WINDOWS_ENVIRONMENT = [
 WINDOWS_WHOLE_WORKER = 6
 
 
+def windows_environment(exclude: frozenset[str] = frozenset()) -> str:
+    """This process's WINDOWS_ENVIRONMENT, as entries of a worker's
+    `additional_environment`."""
+    return "\n".join(
+        f"          {json.dumps(key)}: {{ value: {json.dumps(os.environ[key])} }},"
+        for key in WINDOWS_ENVIRONMENT
+        if key in os.environ and key not in exclude
+    )
+
+
 def windows(cache: Path, remote: str, results: Path | None, cores: int) -> None:
     """Runs CI's Windows NativeLink in the foreground."""
     if sys.platform != "win32":
@@ -321,11 +390,7 @@ def windows(cache: Path, remote: str, results: Path | None, cores: int) -> None:
     cache.mkdir(parents=True, exist_ok=True)
     results = results or cache / "ac"
     results.mkdir(parents=True, exist_ok=True)
-    environment = "\n".join(
-        f"          {json.dumps(key)}: {{ value: {json.dumps(os.environ[key])} }},"
-        for key in WINDOWS_ENVIRONMENT
-        if key in os.environ
-    )
+    environment = windows_environment()
     # Windows reserves ranges of ports at boot (for Hyper-V, among others),
     # different on each runner, and refuses to bind one in them even when
     # nothing holds it: 50051 was refused on one runner and free on the
@@ -358,17 +423,7 @@ def free_port() -> int:
 
 
 def start_script(remote: dict) -> str:
-    # In front of the remote, FindMissingBlobs counts a blob in the local
-    # layer as present (remote_stores), so Buck2 never uploads one the
-    # remote lacks. What Buck2 uploaded while NativeLink ran without the
-    # remote reached only the local layer, and a Linux action needing it
-    # would fail on the remote's worker; so it is removed before NativeLink
-    # starts in front of the remote again, and Buck2 uploads it afresh
-    # (scripts/buck-config.py restarts the daemon, which remembers what it
-    # uploaded). Results built meanwhile lose their outputs with it, and
-    # the action cache, which checks a result's outputs, has them rebuilt.
-    local = f"""[ -e "{UNSHARED_SINCE}" ] || touch "{UNSHARED_SINCE}"
-echo local > "{SERVING}"
+    local = f"""echo local > "{SERVING}"
 exec "{binary()}" "{CONFIG_LOCAL}"
 """
     if not remote:
@@ -381,17 +436,33 @@ exec "{binary()}" "{CONFIG_LOCAL}"
 # this when that changes.
 if /sbin/ifconfig | grep -q "inet {workers} " \\
         && /usr/bin/nc -z -G 2 {url.hostname} {url.port or 50051} > /dev/null 2>&1; then
-    if [ -e "{UNSHARED_SINCE}" ]; then
-        /usr/bin/find "{CACHE}/cas" -type f -newer "{UNSHARED_SINCE}" -delete
-        rm -f "{UNSHARED_SINCE}"
-    fi
     echo remote > "{SERVING}"
     exec "{binary()}" "{CONFIG}"
 fi
 {local}"""
 
 
+def cpu() -> str:
+    """This machine's architecture, as the build's `prelude//cpu` names it."""
+    machine = platform.machine().lower()
+    return {"amd64": "x86_64", "aarch64": "arm64"}.get(machine, machine)
+
+
 def memory_bytes() -> int:
+    if WINDOWS:
+        import ctypes
+
+        class MemoryStatus(ctypes.Structure):
+            _fields_ = [("length", ctypes.c_ulong), ("load", ctypes.c_ulong)] + [
+                (name, ctypes.c_ulonglong)
+                for name in ("total", "available", "page_total", "page_available",
+                             "virtual_total", "virtual_available", "extended_available")
+            ]
+
+        status = MemoryStatus(length=ctypes.sizeof(MemoryStatus))
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            raise ctypes.WinError()
+        return status.total
     return int(subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True))
 
 
@@ -407,7 +478,57 @@ def launchctl(*args: str, check: bool = True) -> None:
     subprocess.run(["launchctl", *args], check=check, capture_output=not check)
 
 
+def powershell(script: str) -> None:
+    subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script], check=True)
+
+
+# Stopping the task ends the cmd.exe it started but not NativeLink, which
+# would go on serving the old config and hold the ports the new one binds;
+# so NativeLink is stopped too, every copy of it this user runs, and its
+# ports waited for.
+STOP_WINDOWS = """
+Stop-ScheduledTask -TaskName '""" + TASK + """' -ErrorAction SilentlyContinue
+Get-Process nativelink -ErrorAction SilentlyContinue | Stop-Process -Force
+$deadline = (Get-Date).AddSeconds(20)
+while ((Get-NetTCPConnection -State Listen -LocalPort 50051 -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
+    Start-Sleep -Milliseconds 200
+}
+"""
+
+
+def install_windows(cores: int, remote: dict) -> None:
+    """Runs it as a scheduled task of this user's that starts at boot,
+    signed in or not (S4U: no password is stored, and it has no network
+    credentials, which nothing it runs uses), and starts again a minute
+    after it stops. At boot the tailnet address the remote's worker
+    registers at may not be up yet; NativeLink then can't bind it, exits,
+    and is started again."""
+    render(cores, False, remote)
+    powershell(f"""
+$ErrorActionPreference = 'Stop'
+$action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c "{START_CMD}"'
+$trigger = New-ScheduledTaskTrigger -AtStartup
+# The account's own name, not USERDOMAIN\\USERNAME: in an SSH session
+# USERDOMAIN is the workgroup, which names no account.
+$user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+$principal = New-ScheduledTaskPrincipal -UserId $user -LogonType S4U -RunLevel Limited
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -RestartCount 9999 -RestartInterval (New-TimeSpan -Minutes 1) `
+    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
+Register-ScheduledTask -TaskName '{TASK}' -Action $action -Trigger $trigger -Principal $principal `
+    -Settings $settings -Force | Out-Null
+{STOP_WINDOWS}
+Start-ScheduledTask -TaskName '{TASK}'
+""")
+    print(f"nativelink: running as the scheduled task '{TASK}', {cores} cores, log {LOG}")
+    if remote:
+        print(f"nativelink: in front of {remote['remote']}; its worker registers at {remote['workers']}")
+
+
 def install(cores: int, background: bool, remote: dict) -> None:
+    if WINDOWS:
+        install_windows(cores, remote)
+        return
     render(cores, background, remote)
     LOG.parent.mkdir(parents=True, exist_ok=True)
     PLIST.parent.mkdir(parents=True, exist_ok=True)
@@ -456,6 +577,13 @@ def stop(domain: str) -> None:
 
 
 def uninstall() -> None:
+    if WINDOWS:
+        powershell(f"""
+{STOP_WINDOWS}
+Unregister-ScheduledTask -TaskName '{TASK}' -Confirm:$false -ErrorAction SilentlyContinue
+""")
+        print(f"nativelink: stopped; the cache under {CACHE} is kept")
+        return
     stop(f"gui/{os.getuid()}")
     PLIST.unlink(missing_ok=True)
     print(f"nativelink: stopped; the cache under {CACHE} is kept")
@@ -527,7 +655,10 @@ def main() -> None:
             parser.error("serve needs the directory its cache goes in")
         serve(args.directory, args.cores or os.cpu_count() or 4)
         return
-    args.cores = args.cores or max(1, (os.cpu_count() or 4) - 3)
+    if WINDOWS:
+        args.cores = max(args.cores or os.cpu_count() or 1, WINDOWS_WHOLE_WORKER)
+    else:
+        args.cores = args.cores or max(1, (os.cpu_count() or 4) - 3)
     if args.command == "install":
         install(args.cores, args.background, remember(args.remote, args.workers))
     elif args.command == "uninstall":

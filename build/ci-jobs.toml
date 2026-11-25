@@ -1,0 +1,229 @@
+# Which of CI's expensive jobs a change runs (scripts/ci_jobs.py; docs/CI.md,
+# "Which jobs a change runs").
+#
+# The Linux gate runs on every push and tests every change it can. The jobs
+# below need a macOS or Windows runner, so each runs only when the change
+# touches what it alone exercises: its territory. A file is judged in this
+# order:
+#
+#   1. `everyone`: the build graph's shape, the toolchains and CI's own
+#      machinery. Every gated job runs.
+#   2. A job's `paths`, or, for a file under its `contains_in`, a `contains`
+#      substring in the file (before or after the change). That job runs.
+#   3. `covered`: what the Linux gate exercises, or what no gated job uses.
+#      No gated job runs for it.
+#   4. Anything else is unclassified, and every gated job runs. A script
+#      test holds every tracked file to one of the first three.
+#
+# Globs: `*` matches within a path segment, `**` any number of segments; a
+# leading `!` takes the paths it matches back out of the list's earlier
+# globs. A job's territory wins over `covered`.
+#
+# Two files are read rather than matched (scripts/ci_jobs.py says how):
+# Cargo.lock counts as `covered` when only workspace crates' entries changed,
+# and in .github/workflows/ci.yml a changed line runs the job whose block
+# holds it (`workflow_job`), every job when it is outside the jobs, and no
+# gated job when it is in another job's block.
+
+[everyone]
+paths = [
+    ".github/actions/**",
+    ".buckconfig",
+    ".buckroot",
+    ".cargo/**",
+    "BUCK",
+    "Cargo.lock",
+    # The Rust toolchain's: every Rust action reads it, though only Clippy uses it.
+    "clippy.toml",
+    "Cargo.toml",
+    "reindeer.toml",
+    "rust-toolchain.toml",
+    "third-party/**",
+    "build/BUCK",
+    "build/archive_tool.bzl",
+    "build/rust.bzl",
+    "build/third_party.bzl",
+    "build/constraints/**",
+    "build/platforms/**",
+    "build/test-runner.py",
+    "build/tools.json",
+    "build/toolchains/**",
+    "!build/toolchains/android.bzl",
+    "!build/toolchains/nix-realize.sh",
+    "!build/toolchains/nix-run.sh",
+    "build/ci-jobs.toml",
+    "scripts/bounded",
+    "scripts/buck-config.py",
+    "scripts/buck-tools.py",
+    "scripts/buck2",
+    "scripts/ci_cache.py",
+    "scripts/ci_jobs.py",
+    "scripts/nativelink.py",
+    "scripts/no-update-flags.sh",
+    "scripts/py",
+]
+
+[covered]
+paths = [
+    "*.md",
+    "**/*.md",
+    "LICENSE",
+    ".gitattributes",
+    ".gitignore",
+    ".gitleaks.toml",
+    ".gitleaksignore",
+    ".wt.toml",
+    "buf.yaml",
+    "deny.toml",
+    "rustfmt.toml",
+    ".github/workflows/*",
+    "apps/android/**",
+    "build/android.bzl",
+    "build/android/**",
+    "build/checks/**",
+    "build/goldens.py",
+    "build/js.bzl",
+    "build/js.py",
+    "build/nativelink/mac.json5",
+    "build/smoke/**",
+    "build/toolchains/android.bzl",
+    "crates/**",
+    "docs/**",
+    "environments/**",
+    "fuzz/**",
+    "images/**",
+    "journeys/**",
+    "js/**",
+    "marketing/**",
+    "nix/android.nix",
+    "perf/**",
+    "proto/**",
+    "qa/**",
+    "scripts/**",
+    "tests/**",
+]
+
+# The phone's own: what its graph reads that no Linux target compiles (a
+# premerge check holds these globs to the graph), and the Rust only it calls
+# or only it compiles.
+[jobs.iphone]
+name = "iPhone app"
+workflow_job = "iphone"
+paths = [
+    "apps/apple/**",
+    "!apps/apple/Mac/**",
+    "!apps/apple/Packages/AmuxMacScreens/**",
+    "build/apple.bzl",
+    "build/apple/**",
+    # The macOS worker's configuration and what every macOS job runs its
+    # Buck2 commands and samples the runner with.
+    "build/nativelink/macos.json5",
+    "scripts/ci-sample-system.sh",
+    "scripts/rerun-on-cache-timeout.sh",
+    "scripts/ci-sample-system.sh",
+    "scripts/rerun-on-cache-timeout.sh",
+    # The C ABI the app calls, and the tools that write its Swift mirrors.
+    "crates/app-ffi/**",
+    "crates/ios-tools/**",
+]
+# Code only an iOS build compiles. `any(target_os = "ios", target_os =
+# "android")` is not here: Android's build in the Linux gate compiles it.
+contains_in = ["crates/**"]
+contains = [
+    'cfg(target_os = "ios")',
+    'cfg!(target_os = "ios")',
+    'target_os = "macos", target_os = "ios"',
+    'target_vendor = "apple"',
+]
+
+[jobs.mac-app]
+name = "Mac app"
+workflow_job = "mac-app"
+paths = [
+    "apps/apple/**",
+    "!apps/apple/Amux/**",
+    "!apps/apple/AmuxAppTests/**",
+    "!apps/apple/AmuxNotifications/**",
+    "!apps/apple/AmuxUITests/**",
+    "build/apple.bzl",
+    "build/apple/**",
+    "build/nativelink/macos.json5",
+    "scripts/ci-sample-system.sh",
+    "scripts/rerun-on-cache-timeout.sh",
+    "crates/app-ffi/**",
+    "crates/ios-tools/**",
+    # The stories the Mac app's storybook draws.
+    "tests/stories.json",
+]
+
+# The workspace's tests on macOS: code only a Mac compiles, and the recipes
+# and worker configuration its run goes through (a recipe can use a tool
+# that differs between the BSD and GNU userlands).
+[jobs.macos-tests]
+name = "macOS tests"
+workflow_job = "macos-tests"
+paths = [
+    "justfile",
+    "build/nativelink/macos.json5",
+    "scripts/ci-sample-system.sh",
+    "scripts/rerun-on-cache-timeout.sh",
+]
+contains_in = ["crates/**"]
+contains = [
+    'target_os = "macos"',
+    'target_vendor = "apple"',
+    "os:macos",
+]
+
+[jobs.macos-journeys]
+name = "macOS journeys"
+workflow_job = "macos-journeys"
+paths = [
+    "justfile",
+    "build/checks.bzl",
+    "build/nativelink/macos.json5",
+    "scripts/ci-sample-system.sh",
+    "scripts/rerun-on-cache-timeout.sh",
+]
+contains_in = ["crates/**"]
+contains = [
+    'target_os = "macos"',
+    'target_vendor = "apple"',
+    "os:macos",
+]
+
+# The workspace's tests on Windows. Every Windows binary is built in the
+# landing gate (`just premerge` runs `just check-windows`), so this territory
+# is what only running them can find: code only Windows compiles, and the
+# Windows toolchain, worker and recipes.
+[jobs.windows-tests]
+name = "Windows"
+workflow_job = "windows"
+paths = [
+    "justfile",
+    "flake.lock",
+    "flake.nix",
+    "nix/build-tools.nix",
+    "nix/toolchain.nix",
+    "nix/windows.nix",
+    "build/nativelink/windows.json5",
+    "build/toolchains/nix-realize.sh",
+    "build/toolchains/nix-run.sh",
+    # What the Windows job runs a fork's pull request with instead (Cargo).
+    ".config/**",
+    "scripts/test-binaries.sh",
+    "scripts/workspace-test.sh",
+]
+contains_in = ["crates/**"]
+contains = [
+    "cfg(windows)",
+    "cfg!(windows)",
+    "not(windows)",
+    "any(windows",
+    "all(windows",
+    ", windows)",
+    'target_os = "windows"',
+    'target_family = "windows"',
+    "os:windows",
+    "not(unix)",
+]

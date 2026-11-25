@@ -290,9 +290,23 @@ async fn trimming_after_a_reset_keeps_the_block_whole_and_runs_on_the_retention_
     net.assert_block_invariant("laptop", "worker")
         .await
         .unwrap();
-    // Below the trimmed block the origin still answers.
-    let older = fetch(&net, "laptop", "worker", None, 100).await.unwrap();
-    assert!(older.exhausted);
+    // Below the trimmed block the origin still answers. It is asked while
+    // the laptop holds the desk's agents current; the reconnect above can
+    // still be settling (the laptop following the desk's inventory again),
+    // and meanwhile a page answers with what is held and says there may be
+    // more, for the next page down to ask again, as a client does.
+    let older = until("the origin to answer below the block", || async {
+        let page = fetch(&net, "laptop", "worker", None, 100)
+            .await
+            .map_err(|error| error.to_string())?;
+        if page.exhausted {
+            Ok(page)
+        } else {
+            Err(format!("{} held items, not exhausted", page.items.len()))
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(older.items.len(), origin_rows(&net, "worker").await.len());
 
     // The sweep is scheduled: one retention interval of policy time runs it.

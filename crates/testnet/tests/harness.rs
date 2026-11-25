@@ -917,52 +917,64 @@ async fn a_supervised_host_takes_a_published_release_and_rolls_back_a_broken_one
     .unwrap();
     let install = net.host("box").unwrap().dir.join("install/amux");
     let supervisor_log = net.host("box").unwrap().data_dir.join("supervisor.log");
+    // The installed binary's version, read as an until's probe: async and
+    // killed if the wait's deadline passes, so a slow start reports what it
+    // saw rather than holding the test past its runner's limit.
     let version = || {
-        Command::new(&install)
-            .arg("--version")
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-            .unwrap_or_default()
+        let install = install.clone();
+        async move {
+            tokio::process::Command::new(&install)
+                .arg("--version")
+                .stdin(Stdio::null())
+                .kill_on_drop(true)
+                .output()
+                .await
+                .ok()
+                .filter(|output| output.status.success())
+                .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+                .unwrap_or_default()
+        }
     };
-    assert!(
-        version().ends_with(testnet::SUPERVISED_VERSION),
-        "{}",
-        version()
-    );
+    let before = version().await;
+    assert!(before.ends_with(testnet::SUPERVISED_VERSION), "{before}");
+    println!("box runs {before} under its supervisor");
 
     net.publish_release("0.0.2", "stable", None, false)
         .await
         .unwrap();
-    until("the supervisor to run 0.0.2", || {
+    println!("0.0.2 published");
+    // The supervisor's log is read every look; the binary, which takes a
+    // process to read, only once the log says the supervisor took it.
+    until("the supervisor to run 0.0.2", || async {
         let log = std::fs::read_to_string(&supervisor_log).unwrap_or_default();
-        let now = version();
-        async move {
-            (log.contains("supervising version=\"0.0.2\"") && now.ends_with("0.0.2"))
-                .then_some(())
-                .ok_or(now)
+        if !log.contains("supervising version=\"0.0.2\"") {
+            return Err("not supervising 0.0.2 yet".to_owned());
         }
+        let now = version().await;
+        now.ends_with("0.0.2").then_some(()).ok_or(now)
     })
     .await
     .unwrap();
+    println!("box runs 0.0.2");
 
     net.publish_release("0.0.3", "stable", None, true)
         .await
         .unwrap();
-    until("the supervisor to reject 0.0.3 and put 0.0.2 back", || {
-        let log = std::fs::read_to_string(&supervisor_log).unwrap_or_default();
-        let now = version();
-        async move {
-            (log.contains("rejected=0.0.3")
-                && log.contains("put prev back")
-                && now.ends_with("0.0.2"))
-            .then_some(())
-            .ok_or(now)
-        }
-    })
+    println!("a broken 0.0.3 published");
+    until(
+        "the supervisor to reject 0.0.3 and put 0.0.2 back",
+        || async {
+            let log = std::fs::read_to_string(&supervisor_log).unwrap_or_default();
+            if !(log.contains("rejected=0.0.3") && log.contains("put prev back")) {
+                return Err("0.0.3 not rejected yet".to_owned());
+            }
+            let now = version().await;
+            now.ends_with("0.0.2").then_some(()).ok_or(now)
+        },
+    )
     .await
     .unwrap();
+    println!("0.0.3 rejected and 0.0.2 put back");
     // Putting prev back only starts its daemon: the crash below needs one
     // serving, and the binary on disk says nothing of the process.
     until("0.0.2's daemon to serve again", || async {
@@ -985,9 +997,11 @@ async fn a_supervised_host_takes_a_published_release_and_rolls_back_a_broken_one
     })
     .await
     .unwrap();
+    println!("0.0.2's daemon serves again");
 
     // A crash under a supervisor is followed by a start it makes itself.
     net.kill_daemon("box").await.unwrap();
+    println!("box's daemon killed");
     net.spawn(
         AgentDecl::new("worker", "box")
             .steps(vec![text("after the crash"), Step::TurnEnd])
@@ -996,6 +1010,7 @@ async fn a_supervised_host_takes_a_published_release_and_rolls_back_a_broken_one
     .await
     .unwrap();
     net.turn_ended("worker", 1).await.unwrap();
+    println!("an agent ran after the crash");
     // Removing it takes the supervisor with the daemon.
     let dir = net.host("box").unwrap().dir.clone();
     net.remove_host("box").await.unwrap();

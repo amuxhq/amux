@@ -340,7 +340,7 @@ path carried a link the way a person reading the log would:
 | Verb | Effect |
 | --- | --- |
 | `link_log(host)` | Every line the host has written, oldest first, across restarts. |
-| `carrying_path(host, peer)` | The path the host's last line for that peer names, or none once that line says the link went down. |
+| `carrying_path(host, peer)` | The path the host's last line for that peer names, or none once none of the running daemon's links to the peer is up. A host can hold several links to one peer at once (a server keeps a killed phone process's link until it times out beside the next process's), and one path carries them all, so an old link going down leaves the path to the live one. Lines a daemon wrote before it was stopped or killed name no link up. |
 
 ### SSH
 

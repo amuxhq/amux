@@ -78,6 +78,20 @@ pub trait World {
     /// client does there, seeded with `prompt`; its process plays the same
     /// script again.
     async fn resume(&mut self, agent: &str, prompt: Option<&str>) -> Result<wire::Agent, NetError>;
+    /// `from` sends `to` a message of `text` under the id `label` names, as
+    /// its send tool does: the call is `from`'s, carried to `to`'s host when
+    /// that is another, which takes the sender from the caller, and sent
+    /// again under the same id it is taken once. Answers once `to` has
+    /// accepted it, resumed with it when it had exited.
+    async fn message(&self, from: &str, to: &str, label: &str, text: &str)
+    -> Result<Ack, NetError>;
+    /// The next process to start for `agent`, whoever starts it (a resume
+    /// by a message, say), plays `steps`.
+    fn next_start(
+        &self,
+        agent: &str,
+        steps: Vec<provider_fakes::script::Step>,
+    ) -> Result<Ack, NetError>;
     /// Sends `envelope` to host `to` as host `from`'s daemon sends one on
     /// its link: a child's report, the child taken as given to be one of
     /// `from`'s agents. A refusal is [`NetError::Refused`] with the code a
@@ -240,6 +254,31 @@ impl World for Net {
 
     async fn resume(&mut self, agent: &str, prompt: Option<&str>) -> Result<wire::Agent, NetError> {
         Net::resume(self, agent, prompt).await
+    }
+
+    async fn message(
+        &self,
+        from: &str,
+        to: &str,
+        label: &str,
+        text: &str,
+    ) -> Result<Ack, NetError> {
+        Net::message(self, from, to, label, text).await
+    }
+
+    fn next_start(
+        &self,
+        agent: &str,
+        steps: Vec<provider_fakes::script::Step>,
+    ) -> Result<Ack, NetError> {
+        Net::next_start(
+            self,
+            agent,
+            provider_fakes::script::Script {
+                steps,
+                ..provider_fakes::script::Script::default()
+            },
+        )
     }
 
     async fn peer_message(

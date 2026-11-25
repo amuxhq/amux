@@ -529,70 +529,6 @@ impl Platform {
         }
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Caller {
-    #[prost(oneof = "caller::Of", tags = "1, 2")]
-    pub of: ::core::option::Option<caller::Of>,
-}
-/// Nested message and enum types in `Caller`.
-pub mod caller {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
-    pub enum Of {
-        #[prost(message, tag = "1")]
-        Person(super::Person),
-        #[prost(message, tag = "2")]
-        Agent(super::AgentCaller),
-    }
-}
-impl ::prost::Name for Caller {
-    const NAME: &'static str = "Caller";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Caller".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Caller".into()
-    }
-}
-/// A person at the calling host.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct Person {
-    /// The client the person is using: "terminal", "mac", "ios", "android"
-    /// or "browser", as the client names itself to its own node. A word this
-    /// build does not know reads as another client.
-    #[prost(string, tag = "1")]
-    pub surface: ::prost::alloc::string::String,
-}
-impl ::prost::Name for Person {
-    const NAME: &'static str = "Person";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.Person".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.Person".into()
-    }
-}
-/// One of the calling host's own agents.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct AgentCaller {
-    #[prost(bytes = "vec", tag = "1")]
-    pub agent_id: ::prost::alloc::vec::Vec<u8>,
-    /// Its name on its host, as the answering host writes it beside what the
-    /// agent sends.
-    #[prost(string, tag = "2")]
-    pub name: ::prost::alloc::string::String,
-}
-impl ::prost::Name for AgentCaller {
-    const NAME: &'static str = "AgentCaller";
-    const PACKAGE: &'static str = "amux.v1";
-    fn full_name() -> ::prost::alloc::string::String {
-        "amux.v1.AgentCaller".into()
-    }
-    fn type_url() -> ::prost::alloc::string::String {
-        "type.googleapis.com/amux.v1.AgentCaller".into()
-    }
-}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -686,8 +622,10 @@ impl ::prost::Name for MessageBody {
 /// outbox; no sender can send one.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ChildReport {
-    /// The parent's incarnation the report is for: the recipient's daemon
-    /// drops it for any other.
+    /// The parent's incarnation the report is for: the newest the child's host
+    /// heard from the parent itself (Agent.parent_incarnation) when the child's
+    /// turn ended or it exited. The recipient's daemon drops it unless it is of
+    /// the parent's current run, and drops it for a parent that has exited.
     #[prost(uint32, tag = "1")]
     pub to_incarnation: u32,
     /// The child's own incarnation it is from, so its parent matches the
@@ -803,6 +741,26 @@ impl ::prost::Name for AgentSender {
     }
     fn type_url() -> ::prost::alloc::string::String {
         "type.googleapis.com/amux.v1.AgentSender".into()
+    }
+}
+/// A person: one at the calling host (Caller.person), or the one who sent
+/// a message (Sender.person).
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Person {
+    /// The client the person is using: "terminal", "mac", "ios", "android"
+    /// or "browser", as the client names itself to its own node. A word this
+    /// build does not know reads as another client.
+    #[prost(string, tag = "1")]
+    pub surface: ::prost::alloc::string::String,
+}
+impl ::prost::Name for Person {
+    const NAME: &'static str = "Person";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Person".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Person".into()
     }
 }
 /// One interpreter step: what the journal frames.
@@ -4891,6 +4849,15 @@ pub struct Agent {
     /// title, settings and the rest. Default until its first snapshot.
     #[prost(message, optional, boxed, tag = "16")]
     pub status: ::core::option::Option<::prost::alloc::boxed::Box<AgentStatus>>,
+    /// For an agent with a parent: the newest incarnation of the parent that
+    /// the agent's host heard from the parent itself, as the parent's host
+    /// stated it on the create and on each message, input or resume the
+    /// parent sent since. The agent's reports are for that incarnation, and a
+    /// parent waits only for the children it engaged in its current run.
+    /// Never raised by a person's or another agent's call. 0 for an agent
+    /// with no parent.
+    #[prost(uint32, tag = "17")]
+    pub parent_incarnation: u32,
     /// What experiments say about the agent, each entry keyed by an
     /// experiment's version (e.g. "workspaces/1") and holding an encoded
     /// amux.experimental message. A build reads and writes only the entries of
@@ -5542,6 +5509,63 @@ impl Refusal {
             "REFUSAL_AGENT_CLOSED" => Some(Self::AgentClosed),
             _ => None,
         }
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Caller {
+    #[prost(oneof = "caller::Of", tags = "1, 2")]
+    pub of: ::core::option::Option<caller::Of>,
+}
+/// Nested message and enum types in `Caller`.
+pub mod caller {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Of {
+        #[prost(message, tag = "1")]
+        Person(super::Person),
+        #[prost(message, tag = "2")]
+        Agent(super::AgentCaller),
+    }
+}
+impl ::prost::Name for Caller {
+    const NAME: &'static str = "Caller";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.Caller".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.Caller".into()
+    }
+}
+/// One of the calling host's own agents, with what its host states about it
+/// from its own row as the call leaves: the answering host takes these as
+/// the caller's word and does not judge them from its copy of that row.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AgentCaller {
+    #[prost(bytes = "vec", tag = "1")]
+    pub agent_id: ::prost::alloc::vec::Vec<u8>,
+    /// Its name on its host, as the answering host writes it beside what the
+    /// agent sends.
+    #[prost(string, tag = "2")]
+    pub name: ::prost::alloc::string::String,
+    /// The incarnation that is calling. When the caller is the parent of the
+    /// agent the call acts on (a create, a message, input or a resume), the
+    /// answering host records it as the newest incarnation of the parent the
+    /// child has heard from, and the child's reports are for it.
+    #[prost(uint32, tag = "3")]
+    pub incarnation: u32,
+    /// The caller's own permission level: what caps a subagent it starts.
+    /// Unspecified when its permission has no level amux knows.
+    #[prost(enumeration = "PermissionLevel", tag = "4")]
+    pub permission_level: i32,
+}
+impl ::prost::Name for AgentCaller {
+    const NAME: &'static str = "AgentCaller";
+    const PACKAGE: &'static str = "amux.v1";
+    fn full_name() -> ::prost::alloc::string::String {
+        "amux.v1.AgentCaller".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/amux.v1.AgentCaller".into()
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -9623,7 +9647,8 @@ pub struct DeliverReportRequest {
     /// The parent, one of this host's agents.
     #[prost(bytes = "vec", tag = "4")]
     pub parent_agent_id: ::prost::alloc::vec::Vec<u8>,
-    /// Carries the parent's incarnation it is for.
+    /// Carries the parent's incarnation it is for, as the child's host stated
+    /// it; this host judges it against the parent's current run.
     #[prost(message, optional, tag = "5")]
     pub report: ::core::option::Option<ChildReport>,
 }
@@ -9835,8 +9860,8 @@ pub mod peer_service_client {
         }
         /// A child's report to its parent here. The child is one of the calling
         /// host's agents: that host is whoever the link authenticated. A report is
-        /// for one incarnation of its parent, dropped for any other, and never
-        /// wakes the parent.
+        /// for one incarnation of its parent, dropped when the parent has exited or
+        /// is in a run that incarnation is not of, and never wakes the parent.
         pub async fn deliver_report(
             &mut self,
             request: impl tonic::IntoRequest<super::DeliverReportRequest>,
@@ -9926,8 +9951,8 @@ pub mod peer_service_server {
         >;
         /// A child's report to its parent here. The child is one of the calling
         /// host's agents: that host is whoever the link authenticated. A report is
-        /// for one incarnation of its parent, dropped for any other, and never
-        /// wakes the parent.
+        /// for one incarnation of its parent, dropped when the parent has exited or
+        /// is in a run that incarnation is not of, and never wakes the parent.
         async fn deliver_report(
             &self,
             request: tonic::Request<super::DeliverReportRequest>,

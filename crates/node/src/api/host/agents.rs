@@ -274,6 +274,12 @@ impl AgentService for Agents {
             .map(crate::spec::prompt_bootstrap)
             .transpose()
             .map_err(|error| status(error.to_wire()))?;
+        // A parent resuming its child engages it: the child's reports are
+        // for the incarnation its host stated.
+        runtime
+            .heard_from(own.id, &caller)
+            .await
+            .map_err(|error| status(error.to_wire()))?;
         let resumed = if request.if_suspended {
             runtime.wake(own.id, bootstrap).await
         } else {
@@ -335,6 +341,11 @@ impl AgentService for Agents {
             .input
             .as_ref()
             .and_then(|input| InputShape::of(input, own.row.provider.as_str()));
+        // Input from its parent engages the child, as a message does.
+        runtime
+            .heard_from(own.id, &caller)
+            .await
+            .map_err(|error| status(error.to_wire()))?;
         let verdict = runtime
             .send_input(&request)
             .await
@@ -367,7 +378,14 @@ impl AgentService for Agents {
         let runtime = self.runtime()?;
         // Any agent may message any agent, so the only question about the
         // recipient is whether it is this host's to deliver to.
-        own_agent(&runtime, &request.agent_id).await?;
+        let (id, _) = own_agent(&runtime, &request.agent_id).await?;
+        // A message from its parent engages the child: its reports are for
+        // the incarnation the parent's host stated. The core records it only
+        // for the recipient's own parent.
+        runtime
+            .heard_from(id, &caller)
+            .await
+            .map_err(|error| status(error.to_wire()))?;
         runtime
             .send_message_by(request, &caller)
             .await

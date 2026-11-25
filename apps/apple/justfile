@@ -34,14 +34,16 @@ tools:
     {{bounded}} 900 cargo build --locked -p ios-tools -p testnet -p qualification -p amux -p provider-fakes --bins
 
 # The rules the screens package is written to: SwiftUI only outside a
-# registered leaf, no platform conditionals, no spinners. Pure text, so it runs
-# before anything is compiled and says which line is wrong. Then the generated
-# Swift mirror against the Rust it mirrors: premerge runs this recipe and
-# nothing else of the Apple side's, so a stale mirror would otherwise pass.
+# registered leaf, no platform conditionals, no spinners; no test waiting a
+# counted number of yields; the strings' house rules. Pure text, so they run
+# before anything is compiled and say which line is wrong. Then the generated
+# Swift mirror against the Rust it mirrors (ios-tools' unit tests). All Buck2
+# checks (apps/apple/Tools/BUCK), which `just premerge` runs with every other
+# test, so a stale mirror fails there too.
 # Check the Swift sources against the screens package's writing rules.
 lint:
-    {{bounded}} 300 sh -c 'sh apps/apple/Tools/feature-lint.sh && sh apps/apple/Tools/test-waits-lint.sh && apps/apple/Tools/strings-lint.sh'
-    {{bounded}} 300 {{buck2}} run //crates/ios-tools:ios-tools-bin -- swift-types --check
+    {{just_executable()}} test //apps/apple/Tools: --include ios-lint
+    {{just_executable()}} test //crates/ios-tools:unit
 
 # Prove the bridge graph carries no provider, agent host or test
 # infrastructure onto the phone. The driving tools are the one deliberate
@@ -178,11 +180,11 @@ shipping:
 measured:
     {{bounded}} 12600 cargo run --locked -q -p ios-tools -- verify --measured
 
-# The unit tests of the phone's recipe scripts. Pure Python; nothing is
-# built or booted.
+# The unit tests of the phone's recipe scripts, as Buck2 checks, one per
+# test file (apps/apple/Tools/BUCK). Nothing is built or booted.
 # Run the phone's recipe scripts' own unit tests.
 script-tests:
-    {{bounded}} 120 {{python}} -m unittest discover -s apps/apple/Tools/tests -p '*_test.py' -t apps/apple/Tools/tests
+    {{just_executable()}} test //apps/apple/Tools: --include ios-script-tests
 
 # Version, build, sign, audit, validate and upload the iPhone app, then
 # commit and tag the numbers and push both (--no-upload and --no-push stop

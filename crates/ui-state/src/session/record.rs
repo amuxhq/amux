@@ -413,6 +413,7 @@ fn agent(agent: Agent) -> Agent {
         status: agent.status.map(|held| Box::new(status(*held))),
         // An experiment's entry may name folders; none is kept.
         experimental: Default::default(),
+        parent_incarnation: agent.parent_incarnation,
     }
 }
 

@@ -303,6 +303,10 @@ struct Host {
     process: Option<ProcessHost>,
     /// A process host's daemon is up as far as the net's verbs know.
     running: bool,
+    /// How many of the host's link log lines its daemons that are gone
+    /// wrote: a link of a run that ended is down, said or not, since a
+    /// crash writes nothing and a clean stop ends its links' tasks.
+    ended_runs_logged: usize,
     /// The host's `claude` and `codex` commands.
     commands: Commands,
 }
@@ -1459,6 +1463,33 @@ impl Net {
         Ok(client::Client::connect(&socket, client::Surface::Terminal).await?)
     }
 
+    /// `from` sends `to` a message of `text` under the id `label` names, as
+    /// its send tool does: on its own tools socket, addressed to the recipient's host, which takes the
+    /// sender from the caller. Answers once the recipient has accepted it,
+    /// resumed with it when it had exited.
+    pub async fn message(
+        &self,
+        from: &str,
+        to: &str,
+        label: &str,
+        text: &str,
+    ) -> Result<Ack, NetError> {
+        let recipient = self.agent(to)?.clone();
+        self.tools(from)
+            .await?
+            .agent(&recipient)
+            .send_message(
+                message_id(label),
+                None,
+                wire::MessageBody {
+                    text: text.to_owned(),
+                    attachments: Vec::new(),
+                },
+            )
+            .await?;
+        Ok(self.ack(format!("{from}'s message to {to} accepted")))
+    }
+
     /// `parent` spawns `decl` as its own spawn tool does: the request goes
     /// to `parent`'s agent process on its own socket, and that process
     /// makes the create, addressed to `decl.host` by its id, as the spawn
@@ -1886,6 +1917,7 @@ impl Net {
                 others: Arc::default(),
                 process,
                 running: false,
+                ended_runs_logged: 0,
                 commands: Commands {
                     claude: PathBuf::new(),
                     codex: PathBuf::new(),
@@ -2663,24 +2695,46 @@ impl Net {
     }
 
     /// The path carrying `host`'s link to `peer` now, by `host`'s link log:
-    /// the path its last line for the peer names, or none once that line
-    /// says the link went down.
+    /// the path its last line for the peer names, or none once none of its
+    /// running daemon's links to the peer is up. A host can hold several
+    /// links to one peer, as a server holds the link of a phone's killed
+    /// process until it times out beside the next process's, and one path
+    /// carries them all; the old link going down leaves the new one up.
     pub fn carrying_path(
         &self,
         host: &str,
         peer: &str,
     ) -> Result<Option<node::link_log::PathKind>, NetError> {
+        use node::link_log::LinkTransition;
         let peer = self.host(peer)?.host_id;
-        Ok(self
-            .link_log(host)?
-            .iter()
-            .rev()
-            .find(|event| {
-                event.peer == peer && event.event != node::link_log::LinkTransition::CaughtUp
-            })
-            .and_then(|event| {
-                (event.event != node::link_log::LinkTransition::Down).then_some(event.path)
-            }))
+        let ended = self.hosts[host].ended_runs_logged;
+        let (mut up, mut path) = (0usize, None);
+        for event in self.link_log(host)?.iter().skip(ended) {
+            if event.peer != peer {
+                continue;
+            }
+            match event.event {
+                LinkTransition::Up => {
+                    up += 1;
+                    path = Some(event.path);
+                }
+                LinkTransition::PathChanged => path = Some(event.path),
+                LinkTransition::Down => up = up.saturating_sub(1),
+                LinkTransition::CaughtUp => {}
+            }
+        }
+        Ok(path.filter(|_| up > 0))
+    }
+
+    /// Notes that `host`'s daemon has ended: every line its log holds now
+    /// is of a run that is gone.
+    fn run_ended(&mut self, host: &str) -> Result<(), NetError> {
+        let logged = self.link_log(host)?.len();
+        self.hosts
+            .get_mut(host)
+            .ok_or_else(|| NetError::NoHost(host.to_owned()))?
+            .ended_runs_logged = logged;
+        Ok(())
     }
 
     /// What the gate in front of `host`'s LAN listener does to each
@@ -2818,7 +2872,7 @@ impl Net {
             }
         })
         .await?;
-        Ok(())
+        self.run_ended(name)
     }
 
     // --- faults ------------------------------------------------------------
@@ -3104,6 +3158,7 @@ impl Net {
                 host: host.to_owned(),
                 why,
             })?;
+            self.run_ended(host)?;
             let supervised = self.hosts[host].decl.supervised;
             // A supervisor starts its daemon again on its own, as it does
             // after any crash; a bare daemon stays down.
@@ -3135,6 +3190,7 @@ impl Net {
                 host: host.to_owned(),
                 why,
             })?;
+            self.run_ended(host)?;
             self.hosts.get_mut(host).expect("the host").running = false;
             self.withdraw_process(host);
             return Ok(self.ack(format!("{host}'s daemon stopped with amux server stop")));
@@ -3911,6 +3967,15 @@ pub fn submission(id: &[u8], text: &str) -> wire::PromptSubmission {
             attachments: Vec::new(),
         }),
     }
+}
+
+/// A message's 16-byte id, readable as `label` in what a host keeps: the
+/// same label is the same message, which its recipient takes once.
+pub fn message_id(label: &str) -> Vec<u8> {
+    assert!(label.len() <= 16, "{label:?} is longer than an id");
+    let mut id = label.as_bytes().to_vec();
+    id.resize(16, b'.');
+    id
 }
 
 pub fn prompt(kind: FakeKind, id: &[u8], text: &str) -> Input {

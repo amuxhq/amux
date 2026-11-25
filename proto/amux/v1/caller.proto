@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package amux.v1;
 
+import "amux/v1/records.proto";
+
 // The caller: who a call is for, when a node carries it to another host.
 //
 // A node that passes a call on to the host it is addressed to writes the
@@ -24,18 +26,20 @@ message Caller {
   }
 }
 
-// A person at the calling host.
-message Person {
-  // The client the person is using: "terminal", "mac", "ios", "android"
-  // or "browser", as the client names itself to its own node. A word this
-  // build does not know reads as another client.
-  string surface = 1;
-}
-
-// One of the calling host's own agents.
+// One of the calling host's own agents, with what its host states about it
+// from its own row as the call leaves: the answering host takes these as
+// the caller's word and does not judge them from its copy of that row.
 message AgentCaller {
   bytes agent_id = 1;
   // Its name on its host, as the answering host writes it beside what the
   // agent sends.
   string name = 2;
+  // The incarnation that is calling. When the caller is the parent of the
+  // agent the call acts on (a create, a message, input or a resume), the
+  // answering host records it as the newest incarnation of the parent the
+  // child has heard from, and the child's reports are for it.
+  uint32 incarnation = 3;
+  // The caller's own permission level: what caps a subagent it starts.
+  // Unspecified when its permission has no level amux knows.
+  PermissionLevel permission_level = 4;
 }

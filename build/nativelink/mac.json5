@@ -1,8 +1,9 @@
 // NativeLink on a Mac: the cache and the worker every Buck2 action runs on
 // (docs/BUILD.md, "The build cache"). scripts/nativelink.py fills in the
-// {{...}} values and runs it under launchd. `nativelink.py serve` renders the
-// same, with no remote, for a Linux machine that has no build host to send
-// its actions to (a CI runner without the tailnet).
+// {{...}} values and runs it under launchd, or on a Windows development
+// machine as a scheduled task. `nativelink.py serve` renders the same, with
+// no remote, for a Linux machine that has no build host to send its actions
+// to (a CI runner without the tailnet).
 //
 // Every action goes through this worker rather than Buck2's own local
 // executor: Buck2 records only remotely executed results in the action
@@ -10,10 +11,11 @@
 // hit in another. It is also the sandbox: an action sees only its declared
 // inputs.
 //
-// With a remote (`nativelink.py install --remote URL`, normally nova's
-// NativeLink), the remote's worker also registers with this scheduler over
-// the worker listener below, and runs the actions only Linux can run, and
-// the cache is this machine's in front of the remote's: what Buck2 uploads
+// With a remote (`nativelink.py install --remote URL`, normally the build
+// host's NativeLink), the remote's worker also registers with this
+// scheduler over the worker listener below, and runs the actions only
+// Linux can run, and the cache is this machine's in front of the remote's:
+// what Buck2 uploads
 // reaches the remote too, so the remote's worker finds an action's inputs,
 // and results the remote holds are hits here. While the remote is out of
 // reach this runs from a second rendering with no remote in it at all, so
@@ -77,6 +79,9 @@
       simple: {
         supported_platform_properties: {
           OSFamily: "exact",
+          // Asked for only by a Windows on Arm test
+          // (build/platforms/BUCK's exec-windows-arm64).
+          cpu: "exact",
           cpu_count: "minimum",
           memory_kb: "minimum",
           // Carried only so an Xcode upgrade changes every Mac action's key.
@@ -102,8 +107,11 @@
         // Only a modern python3 and the operating system's own tools are
         // on PATH (on Linux, also Nix, which realizes the toolchain); every
         // toolchain is called by its pinned path.
+        // On Windows, also what a Windows process needs from the system to
+        // start (scripts/nativelink.py's WINDOWS_ENVIRONMENT).
         additional_environment: {
           PATH: { value: "{{path}}" },
+{{environment}}
         },
         capacity: {},
         // No `directory_cache`. It keeps a copy of each action's whole
@@ -114,6 +122,7 @@
         // straight from the CAS into the action's directory.
         platform_properties: {
           OSFamily: { values: ["{{os}}"] },
+          cpu: { values: ["{{cpu}}"] },
           cpu_count: { values: ["{{cores}}"] },
           memory_kb: { values: ["{{memory_kb}}"] },
         },
@@ -127,12 +136,14 @@
       services: {
         // FindMissingBlobs belongs to the CAS service, so CAS answers it
         // (scripts/nativelink.py says why it counts the local layer).
-        // ByteStream asks no such question, and a read through SHARED_CAS
-        // looks in the local layer first, where one through CAS would ask
-        // the remote about the blob before reading it.
+        // Execution checks that an action's own blobs are there before
+        // queueing it, and CAS answers that too: Buck2 didn't upload one the
+        // local layer holds. ByteStream asks no such question, and a read
+        // through SHARED_CAS looks in the local layer first, where one
+        // through CAS would ask the remote about the blob before reading it.
         cas: [{ instance_name: "main", cas_store: "CAS" }],
         ac: [{ instance_name: "main", ac_store: "AC" }],
-        execution: [{ instance_name: "main", cas_store: "SHARED_CAS", scheduler: "SCHEDULER" }],
+        execution: [{ instance_name: "main", cas_store: "CAS", scheduler: "SCHEDULER" }],
         capabilities: [{ instance_name: "main", remote_execution: { scheduler: "SCHEDULER" } }],
         bytestream: [{ instance_name: "main", cas_store: "SHARED_CAS" }],
       },

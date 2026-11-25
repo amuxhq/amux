@@ -391,7 +391,12 @@ async fn the_peer_service_refuses_a_call_carried_for_someone() {
     let mut peer = pair.laptop_peer().await;
     let callers = [
         wire::Caller::person("terminal"),
-        wire::Caller::agent(pair.coder.id.as_bytes().to_vec(), "coder"),
+        wire::Caller::agent(
+            pair.coder.id.as_bytes().to_vec(),
+            "coder",
+            1,
+            wire::PermissionLevel::Auto,
+        ),
     ];
     for caller in &callers {
         let report = DeliverReportRequest {
@@ -700,7 +705,7 @@ fn reports(agent: &SyntheticAgent) -> Vec<(Vec<u8>, String)> {
 /// The desk's daemon reports its child's turn to the parent here. It
 /// reaches the parent's incarnation it is for, as from the desk's agent;
 /// one for another incarnation is dropped; and an exited parent is not
-/// woken by one.
+/// woken by one, which is dropped too.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_report_reaches_its_parents_incarnation_and_never_wakes_it() {
     let mut pair = Pair::new().await;
@@ -739,7 +744,7 @@ async fn a_report_reaches_its_parents_incarnation_and_never_wakes_it() {
     assert_eq!(stale.code(), Code::NotFound, "{stale:?}");
 
     // The parent exits; a report for the incarnation that exited does not
-    // start it again.
+    // start it again, and is stale: the parent's next life is a new run.
     pair.notes.exit(wire::ExitCause::Finished, None).await;
     until("the parent to exit", || async {
         match pair.laptop_runtime.agent(notes).await {
@@ -754,7 +759,7 @@ async fn a_report_reaches_its_parents_incarnation_and_never_wakes_it() {
         .deliver_report(report(pair.notes.incarnation, "after it exited"))
         .await
         .expect_err("a report does not wake an exited parent");
-    assert_eq!(refused.code(), Code::FailedPrecondition, "{refused:?}");
+    assert_eq!(refused.code(), Code::NotFound, "{refused:?}");
     let agent = pair.laptop_runtime.agent(notes).await.unwrap();
     assert_eq!(
         (agent.lifecycle(), agent.incarnation),

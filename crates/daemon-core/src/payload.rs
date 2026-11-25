@@ -209,6 +209,17 @@ pub enum ClientRequest {
         #[serde(with = "codec::boxed")]
         envelope: Box<wire::Envelope>,
     },
+    /// An agent, of this host or of a paired one, is calling on one of this
+    /// host's agents, and its host states it is incarnation `incarnation`:
+    /// a message, input or a resume the node passes on next. When the
+    /// caller is the agent's parent, the agent's row records the newest
+    /// incarnation of its parent heard from: its reports are for it.
+    /// Anyone else's call records nothing. Answered once it is written.
+    HeardFromCaller {
+        agent: AgentId,
+        caller: (HostId, AgentId),
+        incarnation: u32,
+    },
     /// A change of the trust store, answered once it is on the drive.
     ChangeTrust(crate::trust::TrustChange),
     /// Opens the pairing window for `ttl_ms`.

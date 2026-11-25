@@ -117,7 +117,12 @@ a `Caller` ([`caller.proto`](../proto/amux/v1/caller.proto)), encoded as
 gRPC encodes a binary header. It replaces any such header a client sent, so a
 client cannot say who it is. It never names a host: the caller's host is
 whoever the link authenticated, so a host speaks only for its own people and
-agents. The header is promised as the address is. A host service refuses a
+agents. An agent's caller also states the agent's current incarnation and
+its permission level, which its own host reads from its own row: the host a
+call reaches may hold no copy of the caller, or one out of date, and it
+settles a child's permission ceiling, the life of its parent a child
+reports to, and whether a parent it sees as exited is the one calling, from
+these. The header is promised as the address is. A host service refuses a
 link call with no header, and the peer service one with a header, so a
 client cannot reach the peer service through its node.
 
@@ -251,7 +256,7 @@ never for its copies of others:
 | `FollowSession` | stream of `SessionEvent` | One of this host's conversations, from a tail or from the cursor the caller's copy holds |
 | `FetchItems` | a page of items | Older items of one of this host's conversations |
 | `FetchBlob` | the bytes | A file in one of this host's agents' directories |
-| `DeliverReport` | nothing | A child's report to its parent here. The child is one of the calling host's agents; the report is for one incarnation of the parent, dropped for any other, and never wakes it |
+| `DeliverReport` | nothing | A child's report to its parent here. The child is one of the calling host's agents; the report is for one incarnation of the parent, dropped when the parent is gone, has exited, or is in a run that incarnation is not of, and never wakes it |
 
 Each local read has its feed here: the inventory from `FollowAgents`, a
 conversation from `FollowSession`, older pages from `FetchItems` and files from
@@ -699,7 +704,7 @@ message Envelope {
 }
 
 message ChildReport {
-  uint32 to_incarnation = 1;    // the parent's incarnation it is for
+  uint32 to_incarnation = 1;    // the parent incarnation the child last heard from
   uint32 from_incarnation = 2;  // the child's own
   oneof end {
     TurnEnded turn_ended = 3;   // text, outcome, last
@@ -719,7 +724,9 @@ incarnation ends, and no caller can submit one: `SendMessageRequest` has no
 place for it. A child's daemon hands a report to a parent on another host
 with `PeerService.DeliverReport`, which only a link serves and only a paired
 daemon asking for itself may call. A report names the parent incarnation it
-is for (`to_incarnation`; the recipient's daemon drops it for any other) and
+is for (`to_incarnation`, the newest the child heard from its parent; the
+recipient's daemon drops it when the parent has exited or is in a run that
+incarnation is not of) and
 the child incarnation it is from (`from_incarnation`). Its end is one of two:
 
 - `TurnEnded`: the child's turn ended. Its `text` is the child's last
@@ -1050,8 +1057,11 @@ for that host's agents keep running.
 program's id, as the host's `providers` name it), `name` (always set, unique
 on its host), `cwd`, `parent` (a host and an id, since families cross hosts),
 `lifecycle` with `exit` (an `IncarnationEnd`: how the newest incarnation
-ended, absent while it runs), `incarnation`, `filing`, `native`, `status`
-and `descendants`. `status` is the `AgentStatus` of the agent's newest
+ended, absent while it runs), `incarnation`, `parent_incarnation` (for an
+agent with a parent, the newest incarnation of the parent that has spoken to
+it, which its reports are for and which
+[the family rule](PROTOCOL.md#the-family-rule) weighs a parent's exit
+against), `filing`, `native`, `status` and `descendants`. `status` is the `AgentStatus` of the agent's newest
 snapshot, copied whole: its phase, `phase_since_ms` (on the origin host's
 clock; the row's creation time until its first snapshot), `working_on`,
 `git` (or, on its own host, the totals of a diff that just showed it out of

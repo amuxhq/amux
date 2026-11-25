@@ -22,7 +22,8 @@ use crate::{
 const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, provider, name, cwd, parent_host, \
     parent_id, lifecycle, exit_cause, exit_detail, status, title, snapshot, ingest_cursor, \
     next_revision, source_cursor, source_generation, complete_from_order, exhausted, owes_report, \
-    created_at_ms, incarnation, descendants, filing, filed_at_ms, name_given, native, experimental";
+    created_at_ms, incarnation, descendants, filing, filed_at_ms, name_given, native, experimental, \
+    parent_incarnation";
 
 const ITEM_COLUMNS: &str =
     "key, position, revision, at_ms, input_id, text, kind, attachments, body";
@@ -210,8 +211,10 @@ pub(crate) fn update_of(columns: &[&str]) -> String {
 /// columns, and one moving to a new incarnation is back in phase starting
 /// with a turn owed: the new process has said nothing yet. Its status is
 /// then `?{STARTED}`, the held status in phase starting, which
-/// [`Rows::upsert_agent`] binds. A replica takes the registry columns and
-/// the envelope its inventory row carries.
+/// [`Rows::upsert_agent`] binds. Its parent incarnation only rises, so a
+/// write from a row read before the parent was last heard from does not
+/// undo it. A replica takes the registry columns, its origin's parent
+/// incarnation and the envelope its inventory row carries.
 pub(crate) fn registry_update(own: bool) -> String {
     let registry = update_of(REGISTRY);
     if own {
@@ -222,11 +225,12 @@ pub(crate) fn registry_update(own: bool) -> String {
              status = CASE WHEN excluded.incarnation > agents.incarnation \
                THEN ?{STARTED} ELSE agents.status END, \
              owes_report = CASE WHEN excluded.incarnation > agents.incarnation \
-               THEN 1 ELSE agents.owes_report END",
+               THEN 1 ELSE agents.owes_report END, \
+             parent_incarnation = MAX(agents.parent_incarnation, excluded.parent_incarnation)",
         )
     } else {
         format!(
-            "{registry}, {}, {}, {}",
+            "{registry}, parent_incarnation = excluded.parent_incarnation, {}, {}, {}",
             update_of(INVENTORY_ENVELOPE),
             update_of(INVENTORY_COUNTS),
             update_of(EXPERIMENTAL)
@@ -236,7 +240,7 @@ pub(crate) fn registry_update(own: bool) -> String {
 
 /// The parameter `registry_update` binds an own row's started status to:
 /// the one after every column of [`AGENT_COLUMNS`].
-pub(crate) const STARTED: usize = 30;
+pub(crate) const STARTED: usize = 31;
 
 /// An agents row with its status, snapshot, native and experimental
 /// columns still encoded.
@@ -315,6 +319,7 @@ fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
             name_given: row.get(26)?,
             native: None,
             experimental: Default::default(),
+            parent_incarnation: row.get(29)?,
         },
         row.get(11)?,
         row.get(13)?,
@@ -472,17 +477,6 @@ impl Rows<'_> {
         self.agents_where("name = ?1", params![name])
     }
 
-    /// The incarnation an agent's row holds, if it is held.
-    pub(crate) fn incarnation(&self, agent: &AgentKey) -> Result<Option<u32>, StoreError> {
-        Ok(self
-            .conn
-            .prepare_cached(
-                "SELECT incarnation FROM agents WHERE origin_host = ?1 AND agent_id = ?2",
-            )?
-            .query_row(params![agent.host, agent.agent], |row| row.get(0))
-            .optional()?)
-    }
-
     /// Inserts the row whole, or writes `update` (a `DO UPDATE SET` list)
     /// over the held one.
     pub(crate) fn upsert_agent(&self, row: &AgentRow, update: &str) -> Result<(), StoreError> {
@@ -504,7 +498,7 @@ impl Rows<'_> {
             .prepare_cached(&format!(
                 "INSERT INTO agents ({AGENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
                  ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
-                 ?25, ?26, ?27, ?28, ?29) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
+                 ?25, ?26, ?27, ?28, ?29, ?30) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
             ))?
             .execute(rusqlite::params_from_iter(
                 params![
@@ -539,6 +533,7 @@ impl Rows<'_> {
                     row.name_given,
                     row.native.as_ref().map(|native| native.encode_to_vec()),
                     encode_experimental(&row.experimental),
+                    row.parent_incarnation,
                 ]
                 .iter()
                 .copied()

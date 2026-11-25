@@ -218,10 +218,11 @@ What a parent may choose is kept in three kinds, because they differ:
   ask for a narrower one, and a wider one is refused naming the parent's
   (`permission full is wider than yours, auto: a subagent gets at most your
   own; ask for auto or narrower`). The create carries the level as
-  `permission_level`: left out, it is unspecified and the child's host
-  reads the parent's level from its row for the parent, except that a start
-  on a named host carries the parent's own level, since that host may not
-  have copied the parent's row yet. A parent whose own level is not known
+  `permission_level`: left out, it is unspecified and the child gets the
+  parent's level. The child's host takes the parent's level from the caller
+  header, which the parent's own host fills from the parent's row, never
+  from its own copy of that row, which may be missing or out of date on
+  another host. A parent whose own level is not known
   (its permission has no level, or it has not reported its settings yet)
   gets a `read-only` child, and may ask for nothing wider: any other default
   could exceed it. The child's host maps it onto the widest
@@ -391,8 +392,10 @@ start, and takes one `SendMessage` at a time, in order. For each message it:
 1. Looks up the envelope id among the recipient's items. An item whose input
    id is the envelope id means the message was already accepted, and the
    answer is accepted again without handing anything over.
-2. Drops a message meant for one incarnation of the recipient when another
-   has begun (only the outbox's reports carry an incarnation).
+2. Drops a child's report the recipient can no longer take: one for an
+   incarnation outside its current run, or for a recipient that has exited,
+   since resuming it begins a new run (only the outbox's reports carry an
+   incarnation).
 3. Hands the message to the recipient's process as an `agent_message` frame
    on its control socket, or resumes it first if it has exited and the sender
    is its parent.
@@ -522,7 +525,10 @@ the request arrives, before the daemon has heard of it, and the tool server
 gets the daemon's answer only once the process has taken it, so no turn can
 end on a spawn the process has not heard of. What exists, the daemon knows:
 its answer to the create, and the `children` control frame, which names the
-agent's live children with their incarnations.
+agent's live children with their incarnations. It names only the children
+the agent's current run engaged: a child whose newest word from its parent
+came from an earlier life (see the resume below) owes that life its
+reports, and the parent in its new life does not wait for it.
 
 | The daemon's answer | The child |
 | --- | --- |
@@ -572,6 +578,21 @@ as for a live child. Any other sender is told the child has exited. A person
 resuming the child from the fleet or with `amux resume` starts the same next
 incarnation.
 
+**Which life of its parent a child serves.** A parent can itself be resumed,
+and a child reports to the life of its parent that last spoke to it. Every
+call a parent makes on its own child (the create, a message, input, a
+resume) states the parent's incarnation and permission level in the caller
+header, which the parent's host reads from the parent's own row. The child's
+host keeps the newest incarnation it has been told on the child's row
+(`parent_incarnation`), never lowers it, and takes it from no one else: a
+person's call or another agent's states nothing about the parent. Each
+report the child writes is for that incarnation, stamped in the same
+transaction as the turn end or exit. So a resumed parent that messages its
+child hears back, the children it leaves alone report to a life that has
+ended and are dropped, and a child that a person or a third agent resumes
+under a parent since resumed reports to the parent's earlier life, which
+takes nothing.
+
 **Stop and delete.** The `stop_subagent` tool reaches direct children only. A stop
 or a delete, by the tool or by a person, acts on the agent it names; its
 family follows by one rule, which each host enforces for its own agents from
@@ -585,6 +606,10 @@ it is back and has caught up with the parent's host, and then follows; a
 child whose parent's host is merely out of reach, or no longer paired, carries
 on, and its report waits for the parent's host (or, once unpaired, is
 dropped). A resumed parent hears nothing extra about stopped children.
+Word of an exit reaches a child's host late when the hosts were apart, and
+by then the resumed parent may have spoken to the child again: an exit (or
+close) of an incarnation older than the one the child last heard from stops
+nothing.
 A `start_subagent` call an agent makes once its host sees it as exited is refused ("agent …
 has ended and starts no more agents"). A start onto another host that has
 not yet caught up with the parent's host since they reconnected, or has not
@@ -625,20 +650,17 @@ A parent hears one thing per event, from the daemon, through an outbox: the
   each child incarnation sends exactly one last report, the finished turn's
   report marked `last` or the exit report, which always is.
 
-A row records the parent's incarnation as it was when the row was written, or
-zero when the parent's row is not held yet, in which case the drain stamps it
-when it first sees the parent.
+A row records the parent incarnation the child last heard from, as the
+child's row holds it when the row is written.
 
 The drain runs once after start, only after every own journal has been read to
 its end, and again whenever a row may have become deliverable: a turn end, a
 lifecycle or incarnation change, a paired host coming into reach. While rows
 wait it retries every 30 seconds. For each row it:
 
-- drops it when the parent's incarnation has moved on, because a resumed
-  parent is a later incarnation that is not waiting for anything, when the
-  parent has been deleted, or when the parent's host is no longer paired;
-- keeps it while the parent has exited (a later resume makes it stale) or
-  its host is away;
+- drops it when the parent's host is no longer paired, the one thing the
+  child's host judges for itself;
+- keeps it while the parent's host is away;
 - otherwise sends it as an `Envelope` from the child whose body is a
   `ChildReport`: a turn that ended (the child's last message as its text) or
   an incarnation that exited (how it ended as data, which the parent's
@@ -648,15 +670,19 @@ wait it retries every 30 seconds. For each row it:
   one row has the same id. A local parent gets it through its lane; a remote
   parent's host is handed it with `PeerService.DeliverReport`, which this
   daemon calls for itself, and runs the parent's lane the same way. The row
-  is deleted once the parent has accepted.
+  is deleted once the parent has accepted, and dropped when the parent's
+  host answers that it is stale: the parent is gone, has exited (resuming
+  it begins a new run, waiting for nothing from the old one), or is in a
+  run the row's incarnation is not of.
 
 The fixed envelope id is what makes a crash harmless. A daemon that dies
 between the hand-off and the deletion re-sends the row on its next start, and
 the parent's own daemon finds the envelope id already among the parent's
-items and answers accepted without handing it over again. The incarnation
-check is made where the parent lives, so it holds for a parent whose host
-was away when the child finished and that was resumed before the row reached
-it.
+items and answers accepted without handing it over again. Every check on the
+parent is made where the parent lives, against its own row, so it holds for
+a parent whose host was away when the child finished and that was resumed
+before the row reached it, and a child's host never acts on a copy of the
+parent that is out of date.
 
 The parent receives the report like any agent message, through its own
 carrier, labelled `[agent <name> finished its turn]` (or, by how the turn
@@ -700,8 +726,8 @@ to messaging.
   next hears from the parent's host.
 - **Reports to a parent.** A deliveries row for a parent on another host is
   handed to that host with `PeerService.DeliverReport`, the child's daemon
-  asking for itself. An answer of not found means the parent or its
-  incarnation is gone, and the row is dropped; an unreachable host keeps the
+  asking for itself. An answer of not found means the parent is gone, has
+  exited, or is in another run, and the row is dropped; an unreachable host keeps the
   row until the host is back, and a host no longer paired has its rows
   dropped.
 

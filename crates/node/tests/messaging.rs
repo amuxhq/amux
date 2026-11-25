@@ -877,28 +877,53 @@ async fn a_crash_between_hand_off_and_delete_yields_one_item() {
     crash(daemon, runtime).await;
 }
 
+/// A child's report is for the parent incarnation the child last heard
+/// from, as its row records it, whatever the parent's row says now: one
+/// for that incarnation reaches it, stamped so.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_resumed_parent_receives_nothing() {
+async fn a_childs_report_is_for_the_parent_incarnation_it_last_heard_from() {
     let install = Install::new();
     let mut parent = SyntheticAgent::new(&install, "parent", SEGMENTS);
+    parent.incarnation = 3;
     parent.register(&install);
-    finished_child(&install, &parent);
-    // The parent is exited when its child finishes: the row waits.
+    parent.go_live();
+    let mut child = SyntheticAgent::new(&install, "child", SEGMENTS);
+    child.parent = Some(parent.key(&install));
+    child.parent_incarnation = 3;
+    child.register(&install);
+    child.append(&snapshot(wire::Phase::Working, &[], 2_000));
+    child.append(&item("last", "the tests pass"));
+    child.append(&turn_end(1, "last"));
     let (daemon, runtime) = start(&install, "boot-1").await;
-    assert_eq!(runtime.drain_deliveries().await.kept, 1);
-    assert_eq!(
-        runtime
-            .read_store(|store| store.deliveries().unwrap()[0].parent_incarnation)
-            .await
-            .unwrap(),
-        1
-    );
+    until("the delivery", || rows(&runtime, 0)).await.unwrap();
+    let stamped: Vec<u32> = parent
+        .inputs()
+        .into_iter()
+        .filter_map(|handed| match handed {
+            Handed::Message(envelope) => match envelope.body {
+                Some(wire::envelope::Body::Report(report)) => Some(report.to_incarnation),
+                _ => None,
+            },
+            Handed::Input(_) => None,
+        })
+        .collect();
+    assert_eq!(stamped, vec![3], "for the incarnation the child heard from");
     crash(daemon, runtime).await;
+}
 
-    // The parent is resumed: a new incarnation, waiting for nothing.
+/// A parent stopped and resumed by the person is a new run: a child its
+/// earlier life engaged, and the new one never did, reports to the earlier
+/// life, which is gone, so the report is dropped and the resumed parent is
+/// handed nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_resumed_parent_receives_nothing_from_a_child_of_its_earlier_life() {
+    let install = Install::new();
+    let mut parent = SyntheticAgent::new(&install, "parent", SEGMENTS);
     parent.incarnation = 2;
     parent.register(&install);
     parent.go_live();
+    // The child last heard from the parent's first incarnation.
+    finished_child(&install, &parent);
     let (daemon, runtime) = start(&install, "boot-1").await;
     until("the stale row to go", || rows(&runtime, 0))
         .await
@@ -909,42 +934,6 @@ async fn a_resumed_parent_receives_nothing() {
     assert!(
         parent.inputs().is_empty(),
         "the resumed parent was handed nothing"
-    );
-    crash(daemon, runtime).await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_child_whose_parent_row_is_missing_keeps_its_row_until_the_parent_is_known() {
-    let install = Install::new();
-    // The parent's row is not held yet: on another daemon's inventory
-    // still to arrive, say, or dropped by a rewind.
-    let mut parent = SyntheticAgent::new(&install, "parent", SEGMENTS);
-    parent.incarnation = 3;
-    finished_child(&install, &parent);
-    let (daemon, runtime) = start(&install, "boot-1").await;
-    let report = runtime.drain_deliveries().await;
-    assert_eq!(report.kept, 1, "never dropped and never sent");
-    let row = runtime
-        .read_store(|store| store.deliveries().unwrap().remove(0))
-        .await
-        .unwrap();
-    assert_eq!(
-        row.parent_incarnation, 0,
-        "the incarnation is unknown, not guessed"
-    );
-    crash(daemon, runtime).await;
-
-    // The first daemon removed the parent's directory, which no row
-    // listed; now the parent exists here.
-    parent.reopen_journal();
-    parent.register(&install);
-    parent.go_live();
-    let (daemon, runtime) = start(&install, "boot-1").await;
-    until("the delivery", || rows(&runtime, 0)).await.unwrap();
-    assert_eq!(
-        messages(&parent),
-        vec![(Is::TurnEnded, "the tests pass".to_owned())],
-        "stamped with the parent's incarnation once its row was held, then delivered"
     );
     crash(daemon, runtime).await;
 }

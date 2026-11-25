@@ -454,6 +454,8 @@ async fn every_entry_answers_a_person_and_an_agent_only_about_its_children() {
         host,
         agent: agent.id,
         name: agent.name.clone(),
+        incarnation: 1,
+        level: wire::PermissionLevel::Auto,
     };
     let denied = Err(tonic::Code::PermissionDenied);
     for target in [&lead, &coder, &helper] {
@@ -470,6 +472,8 @@ async fn every_entry_answers_a_person_and_an_agent_only_about_its_children() {
         host: paired,
         agent: remote,
         name: "remote".into(),
+        incarnation: 1,
+        level: wire::PermissionLevel::Auto,
     };
     assert_eq!(ask(Served::Link, remote.clone(), &helper).await, Ok(()));
     assert_eq!(ask(Served::Link, remote, &coder).await, denied);

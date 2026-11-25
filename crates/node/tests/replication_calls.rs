@@ -252,7 +252,7 @@ async fn a_daemon_asks_a_paired_one_only_on_the_peer_service() {
         .channel(pair.laptop_runtime.host())
         .await
         .unwrap();
-    let sender = wire::Caller::agent(coder.clone(), "coder");
+    let sender = wire::Caller::agent(coder.clone(), "coder", 1, wire::PermissionLevel::Auto);
     wire::agent_service_client(channel)
         .send_message(carried(
             wire::SendMessageRequest {

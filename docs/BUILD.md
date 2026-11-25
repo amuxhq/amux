@@ -27,7 +27,7 @@ Other tools a full checkout uses:
 - Python 3.11 or newer runs the repository scripts. `scripts/py` finds one
   even when `python3` on the PATH is the macOS system 3.9.
 - Buck2 builds the Apple apps with Xcode's compilers and SDKs (see [the iPhone app](IOS.md#builds)).
-- Buck2 builds the Android app on a Linux worker with its own SDK, NDK and JDK (see [the Android app](ANDROID.md), `just --list android`); a Mac needs the Android SDK's emulator and platform tools only to run what nova built.
+- Buck2 builds the Android app on a Linux worker with its own SDK, NDK and JDK (see [the Android app](ANDROID.md), `just --list android`); a Mac needs the Android SDK's emulator and platform tools only to run what the build host built.
 - `tmux` drives the terminal journeys.
 - Node 24 or newer, with npm, builds the browser extension under `js/`
   (`just browser build`). Biome formats and lints it (`just browser fmt`),
@@ -171,6 +171,16 @@ ended after three. A test that leaves a process running behind it fails.
 Tests labelled `live` (the live provider lanes) are never cached and never
 run by `just test`.
 
+A compile that fails is never kept. The prelude builds a library's
+`[check]` output and its `[diag.*]` and `[clippy.*]` subtargets in a mode
+where rustc's failure still exits 0, its errors recorded for a later step
+that fails the build; a worker stores anything that exits 0, so a compile
+that failed because the machine did (a full disk) was replayed from the
+cache until its crate changed. Every prelude tool written in Python runs
+through [`build/toolchains/bootstrap-guard.py`](../build/toolchains/bootstrap-guard.py),
+which fails such a compile where it ran instead, with rustc's errors in its
+output, so it runs again next time.
+
 A golden test writes its file into the sandbox, where nothing reaches the
 checkout, so `just goldens` re-records them instead: it runs the golden
 tests here, with every update switch on. The next `just test` reruns only
@@ -186,8 +196,8 @@ every six hours.
 
 ### Linux builds and the build host
 
-Linux targets build and run on a Linux worker: a build host's NativeLink
-(nova), or the one on a Linux machine itself. Their toolchain is
+Linux targets build and run on a Linux worker: a build host's NativeLink,
+or the one on a Linux machine itself. Their toolchain is
 `packages.actions` in [`flake.nix`](../flake.nix), the same list as the dev
 shell less the build tools, and an action on the Linux worker realizes it
 (`//:nix-linux`, [`build/toolchains/nix.bzl`](../build/toolchains/nix.bzl)):
@@ -210,32 +220,46 @@ host already has is a hit on the Mac, so a branch tested on the host is
 cache hits for the same configuration on the Mac and the other way round.
 macOS results stay on the Mac.
 
+An output built on the host stays there until the Mac needs it, so a Linux
+test sent from the Mac brings back only its result. `buck2 build` is
+different: it fetches every output it was asked for into `buck-out`. A
+Linux test binary is 150–240 MB, and the tailnet carries about 10 MB/s, so
+building the Linux test binaries above `daemon-core` from the Mac fetched
+2.5–2.7 GiB and took 365–414 s, where the build itself took 124–186 s;
+while the download ran, every other call to the host queued behind it.
+With `--materializations none`, which `just check-windows` passes for the
+same reason, the same build took 128 s and fetched 2 MiB. The host builds it
+in 85 s. Pass it whenever the Mac won't run what it builds.
+
 Asked whether it holds a blob, the Mac's cache asks the host, then its own
 layer for what the host lacks. Buck2 asks before it uploads an action's
 inputs, and again as an output it refers to nears the end of the three
 hours it assumes one lives; answered by the host alone, the outputs the
 Mac's own worker built were called gone, and a daemon up for hours failed
 the next action that needed one ("an artifact that has expired in the RE
-CAS"). The cost of counting the Mac's layer is that Buck2 never uploads a
-blob only the Mac holds, so a Linux target can't take an output built on
-the Mac: its action fails on the host's worker for a missing input. A blob
-the host has evicted while the Mac kept it fails a Linux action the same
-way; removing it from the Mac's layer
-(`~/Library/Caches/amux/nativelink/cas/d2/<hash>-*`) and restarting
-NativeLink (`scripts/nativelink.py install`) has Buck2 upload it again.
-Sending what the Mac builds to the host as well would lift that, at the
-price of uploading every Mac build over the tailnet.
+CAS"). Counting the Mac's layer means Buck2 never uploads a blob only the
+Mac holds: an output built on the Mac, one the host has evicted while the
+Mac kept it, one uploaded while the host was out of reach. So the host's
+worker reads such a blob from the Mac when an action of the Mac's needs
+it, over the port it registers at, and writes it into the host's cache as
+it passes (the build host's worker configuration does this, one store per
+Mac it serves). A Linux target can take an output built on the Mac.
+
+NativeLink has no store that copies a blob to the host when it is asked
+whether it holds one, so the copy happens when the host's worker reads it
+instead. Uploading everything the Mac builds to the host as well would
+also close the gap for the Mac's own outputs, but not for what the host
+evicts, and at the price of sending every Mac build over the tailnet.
 
 When the host doesn't answer (or the tailnet is down), `scripts/buck2`
 says so, restarts NativeLink without it and turns Linux off for the tree:
-Linux actions fail at once rather than wait, and tests marked `nova_only`
+Linux actions fail at once rather than wait, and tests marked `linux_only`
 (the model checks' integration target, which takes every core for ten
 minutes) are skipped, which `just test` names at the end. When the host
 answers again it switches back. Each switch restarts NativeLink, which
 interrupts any build another tree has running at that moment. What the
-Mac's layer gained in between never reached the host, so NativeLink drops
-it as it starts in front of the host again: Buck2 uploads the sources
-afresh, and what the Mac built in the meantime is built again once.
+Mac's layer gained in between never reached the host; the host's worker
+reads it from the Mac when a Linux action needs it.
 
 A Linux machine sends its actions to the NativeLink on its own loopback,
 as the build host's trees do, or to the one `AMUX_NATIVELINK` names
@@ -246,26 +270,31 @@ that has neither (a fork's pull request in CI).
 
 ### Windows builds
 
-Everything built for `x86_64-pc-windows-msvc` compiles and links on a
-Linux worker, from any machine: Rust's own Windows target, LLVM's
+Everything built for Windows compiles and links on a Linux worker, from
+any machine, for x64 (`x86_64-pc-windows-msvc`, what releases ship and CI
+tests; the `windows` target platforms) or for Arm64
+(`aarch64-pc-windows-msvc`, Windows on Arm; `windows-arm64`): Rust's own Windows target, LLVM's
 MSVC-compatible C compiler and linker (`clang-cl`, `lld-link`,
 `llvm-lib`), and Microsoft's C runtime and Windows SDK, which nixpkgs
 fetches with `xwin` from the Visual Studio release it pins, under
 Microsoft's licence. They are `packages.x86_64-linux.windows` in
 [`flake.nix`](../flake.nix) ([`nix/windows.nix`](../nix/windows.nix)),
 realized on the worker like the Linux toolchain (`//:nix-windows`), and
-apart from it, so an SDK update changes only Windows keys. A Windows
+apart from it, so an SDK update changes only Windows keys. Each
+architecture has its own compiler and linker wrappers over its own CRT and
+SDK (Arm64's under `arm64/bin`), beside one Rust that carries both. A Windows
 machine only runs what it is given: the binaries a Windows test starts are
 built for Windows (`amux_binaries` in [`build/rust.bzl`](../build/rust.bzl)),
-and the test runs on a Windows worker (`exec-windows`), which only CI's
-Windows job has.
+and the test runs on a Windows worker (`exec-windows`), which CI's
+Windows job has, and so does a Windows development machine (below).
 
 ```sh
 just check-windows    # every library, binary and test, for Windows
+AMUX_WINDOWS_PLATFORM=windows-arm64 just check-windows    # for Windows on Arm
 ```
 
-builds the whole workspace for `windows-cli-testing-dev` and downloads
-nothing. It needs a Linux worker in reach. A crate's C, which reindeer's
+builds the whole workspace for `windows-cli-testing-dev` (on a Windows on
+Arm machine, `windows-arm64-cli-testing-dev`) and downloads nothing. It needs a Linux worker in reach. A crate's C, which reindeer's
 fixups compile for Windows, is compiled against the C runtime as a DLL
 (`/MD`), as Rust's own Windows code and the `cc` crate's builds link it;
 `windows-targets` links the Windows API with `raw-dylib`
@@ -273,48 +302,142 @@ fixups compile for Windows, is compiled against the C runtime as a DLL
 companion crate carries is found through a search path a build script
 gives Cargo, which reaches no dependent's link under Buck2.
 
+### A Windows development machine
+
+A Windows machine you develop on is set up like a Mac in front of a build
+host: its own checkout, and its own NativeLink, whose cache fronts the build
+host's and whose worker runs the Windows tests. The build host's worker
+registers with it too and runs the Linux actions, which on Windows means
+every compile and link, so nothing builds on the Windows machine itself.
+It needs:
+
+- Git for Windows, with its `bin` directory on `PATH`: the recipes run under
+  its `sh` (the justfile's `windows-shell`).
+- `just`, and Python 3.12 or newer, also named `python3`. Python's installer
+  makes only `python.exe`, and the `python3.exe` that answers first is a
+  stub that opens the Microsoft Store; a copy of `python.exe` named
+  `python3.exe` beside it does.
+- Developer Mode (symbolic links without elevation), long paths, and
+  `git config core.autocrlf false`, so a checkout's goldens and fixtures
+  keep main's bytes.
+- The build host's NativeLink in reach, and this machine reachable from the
+  build host's worker on the port it registers at.
+
+```sh
+python scripts/nativelink.py install --remote grpc://<host>:50051 --workers <this machine's address>:50062
+just test-windows
+```
+
+`install` runs NativeLink as a scheduled task of yours that starts at boot,
+signed in or not, and starts it again a minute after it stops; at boot the
+address the build host's worker registers at may not be up yet, and
+NativeLink exits until it is. Its cache and log are under
+`C:\amux\nativelink`, near the drive's root because an action's directory
+is under it, and from the profile's `AppData` a test's git objects passed
+the 260 characters git on Windows allows a path. The worker offers every core, and never
+fewer than the six a Windows test that takes the whole worker asks for
+(`build/toolchains/BUCK`). Unlike a Mac's, it doesn't fall back to building
+alone when the build host is out of reach: a Windows machine can't compile
+anything itself, so Linux actions wait for it instead.
+
+On Windows on Arm (a Windows VM on an Apple Silicon Mac), `just
+check-windows` and `just test-windows` build and run Arm64 binaries, natively;
+`AMUX_WINDOWS_PLATFORM=windows` runs the x64 ones instead, under Windows'
+emulation, which matches what CI tests but is slower. The worker says it is
+Arm (its `cpu` property), and an Arm64 test asks for that
+(`exec-windows-arm64`), so it never reaches CI's x64 runner; an x64 test asks
+for no `cpu` and may run on either. Buck2 and NativeLink themselves are their
+x64 builds, under emulation: the pins name no Arm build for Windows.
+
 ### Repository checks
 
 The repository's own checks are Buck2 tests too, so `just premerge` gets a
 check from the cache until a file it reads changes: a docs-only edit reruns
 the docs check and the tests that read that page, and nothing else. Each is a
 script run over exactly the files its target declares
-([`build/checks.bzl`](../build/checks.bzl)), in the root
-[`BUCK`](../BUCK) file: `docs-check`, `store-check`, `proto-compat`,
-`cores-check` (the sources half), `typed-provider-check`,
-`client-kind-check` and `codegen-check`. The browser extension's Biome,
-type checks, unit tests and end-to-end test are in
-[`js/BUCK`](../js/BUCK) ([Browser extension](BROWSER.md#building-and-testing)),
-and the terminal journeys are `//crates/testnet:terminal-journeys`.
+([`build/checks.bzl`](../build/checks.bzl)):
+
+- in the root [`BUCK`](../BUCK) file: `docs-check`, `store-check`,
+  `proto-compat`, `cores-check` (the sources half), `typed-provider-check`,
+  `client-kind-check`, `codegen-check`, `deny`, and the unit tests of the
+  repository's scripts, one test per file (`//:script-tests-land_queue`);
+- beside the apps' scripts: the Apple apps' writing lints and their recipe
+  scripts' tests ([`apps/apple/Tools/BUCK`](../apps/apple/Tools/BUCK)), and
+  the Android app's ([`apps/android/BUCK`](../apps/android/BUCK),
+  [`apps/android/tools/BUCK`](../apps/android/tools/BUCK)); the Swift and
+  Kotlin mirrors of the bridge's values are held to their Rust by
+  `//crates/ios-tools:unit`;
+- in [`js/BUCK`](../js/BUCK): the browser extension's Biome, type checks,
+  unit tests, end-to-end test and npm audit ([Browser extension](BROWSER.md#building-and-testing));
+- the terminal journeys, `//crates/testnet:terminal-journeys`.
 
 ```sh
 just checks                    # the repository's and the JavaScript's checks
 just test //:docs-check        # one of them
 just docs-check                # the same: the recipes of the checks' names run their tests
+just script-tests              # a set of them, by label (`just test //: --include script-tests`)
 ```
 
 A check is sent to the Linux worker when one is in reach, so a Mac and the
 build host run the same action and share its result; with none in reach
-it runs on the Mac's own worker. On a Mac, Node for the JavaScript's
-checks is the release `//build:node` pins, the version the Linux
-toolchain's is.
+it runs on the Mac's own worker, except `deny`, whose dependency checker
+is the Linux toolchain's: it is skipped then, and `just test` names it. On a Mac,
+Node for the JavaScript's checks is the release `//build:node` pins, the
+version the Linux toolchain's is. A check finds nothing it didn't declare:
+a test that reads a file outside its inputs fails, rather than passing on
+whatever the checkout holds.
 
 A check that needs more than the checkout's files gets it from
 [`build/checks/inputs.py`](../build/checks/inputs.py), which `just test`
-runs first and which writes `build/checks/inputs/` (not committed): the
-list of files the checkout tracks, which the docs check resolves links
-against, so it reruns when a file is added or removed rather than whenever
-one changes; and the newest release's store schema and protobuf schemas,
-which the store and protocol checks compare with in place of git's
-history. A clone without the release tags therefore fails those two
-checks. A docs page that shows a source file word for word
-(`<!-- source: ... -->`) needs that file among the docs check's inputs.
+runs first and which writes `build/checks/inputs/` (not committed):
 
-Some checks stay scripts that `just premerge` runs in the checkout: those
-that read the whole workspace's graph (`dependency-policy`, `deny`,
-`shear`, the tokio half of `cores-check`, `parity`, `shipping-check`), the
-suite catalogue's `tests-check`, which runs Cargo and `just` over the
-whole tree, and `script-tests`, whose tests ask git about the checkout.
+- the list of files the checkout tracks, which the docs check resolves
+  links against, so it reruns when a file is added or removed rather than
+  whenever one changes. A docs page that shows a source file word for word
+  (`<!-- source: ... -->`) needs that file among the docs check's inputs.
+- the newest release's store schema and protobuf schemas, which the store
+  and protocol checks compare with in place of git's history. A clone
+  without the release tags therefore fails those two checks.
+- what `deny` reads: Cargo's resolved graph with every feature (which needs
+  Cargo's registry, so it can't be made inside an action) and the
+  workspace's manifests, made again when a manifest or the lockfile
+  changes; a snapshot of the RustSec advisory database; and crates.io's
+  index entry for each crate in the graph, which says whether a release was
+  yanked. The last two are refreshed at most once a day, the index by
+  `cargo update --dry-run`, which writes no lockfile. `deny` itself runs
+  offline on them, so its result is a function of its inputs: it reruns
+  when the lockfile, a manifest, `deny.toml` or a day's snapshot changes.
+- today's date (UTC), for the npm audit. npm's advisories are a question
+  to its registry that no file can stand in for, so `//js:audit` asks it
+  inside the action and declares the date: its answer is kept for the rest
+  of the day and asked again on the next, or when the lockfile changes.
+
+`just premerge` is `just test` over the whole graph and, at the same time,
+the checks that stay scripts ([`build/checks/premerge.py`](../build/checks/premerge.py)),
+each run in the checkout with its output kept and printed when it fails:
+
+| Check | Why it isn't a Buck2 test |
+| --- | --- |
+| `fmt-check` | rustfmt on the dated nightly over every Rust file: a test target would need every file of the workspace and the nightly realized on the worker, to replace a three-second run |
+| `dependency-policy`, `shear`, the tokio half of `cores-check` | They read Cargo's resolved graph (`cargo metadata`, `cargo tree`), which needs Cargo's registry, and shear every crate's code besides |
+| `tests-check` | It checks the suite catalogue against every crate's targets as Cargo sees them, every `just` recipe, and every path the catalogue names: its inputs would be the whole checkout |
+| `parity`, `shipping-check`, `ci-jobs-check` | Queries of Buck2's own graph (`uquery`, `cquery`), which no action of that graph can make |
+| `lint` | Clippy is Buck2 actions, cached like the tests, but a build of each target's clippy output, which `buck2 test` doesn't build, so it is a `buck2 build` beside the test run |
+| `check-windows` | Every Windows binary is Buck2 actions on a Linux worker, cached like the tests, but in the Windows configuration, which `buck2 test` over the Linux targets doesn't build, so it is a `buck2 build --materializations none` beside the test run; with no Linux worker in reach it is skipped and named |
+
+`no-update-flags`, which refuses fixture-regeneration variables in the
+environment, runs first, before anything starts, and then
+`build/checks/inputs.py`: Buck2's daemon runs the test run and clippy's
+build at once only while both see the same files, so what the check
+targets read is written before either starts.
+
+At the end, [`build/checks/timing.py`](../build/checks/timing.py) says
+where the test run's time went: how many compiles, links and tests ran
+rather than came from the cache, the worker time each kind took and the
+longest of each, how many actions the worker ran at once, and the critical
+path. A landing's log carries the same lines from the build host.
+`scripts/py build/checks/timing.py <event log>` says it for any Buck2
+command's log in `buck-out/v2/log`.
 
 ## Profiles
 
@@ -467,12 +590,22 @@ test task. [`.wt.toml`](../.wt.toml) holds the tree's side:
   recipes lease through `scripts/with`.
 - `just land` never touches the tree it is run from
   ([AGENTS.md](../AGENTS.md)). With `git config --global amux.landInbox
-  nova:/var/lib/build/inbox.git` set, it pushes the branch to nova's landing
-  queue and waits for the verdict: the queue lands one request at a time,
-  from every machine, oldest first, and writes each landing's whole log
-  beside its result. `just land --local`, or no inbox set, lands from a
-  worktree of this machine's own under `~/.cache/amux/land`, one landing at
-  a time per machine; that is the way to land while nova is down. Either
+  <inbox>` set to your landing host's inbox (an SSH URL such as
+  `host:/path/to/inbox.git`, or a path on the landing host itself), it
+  pushes the branch to that host's landing queue and waits for the verdict:
+  the queue lands one request at a time, from every machine, oldest first,
+  and writes each landing's whole log beside its result. `just land
+  --local`, or no inbox set, lands from a worktree of this machine's own
+  under `~/.cache/amux/land`, one landing at a time per machine; that is
+  the way to land while the landing host is down. Either
   way the landing runs `just premerge` and nothing else: the protocol
   models, the C ABI's pointer checks and the sanitizers run in the nightly
   ([CI](CI.md#nightlies)).
+- A landing host runs the queue from a checkout of main, as an account that
+  may push to the repository: `python3 scripts/land_queue.py serve --inbox
+  <inbox> --tree <tree> --nix --self-update`, where the inbox is a bare
+  repository everyone who lands can write and the tree is a clone of its
+  own that landings reset and clean. `--nix` runs each check in the merge's
+  own `nix develop`; `--self-update` moves the queue to main's copy of its
+  code when a landing changes it. Where those live, and the service that
+  runs it, are the host's configuration, not this repository's.

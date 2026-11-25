@@ -294,12 +294,20 @@ async fn an_acp_agent_on_one_host_is_driven_from_another() {
 
     // The permission request, read and answered on the laptop.
     send(&net, "laptop", &address, prompt("Run the test suite.")).await;
+    // A replica's row hears the phase over the desk's inventory and the
+    // snapshot that holds the ask over the agent's session, two streams
+    // either of which can land first: the row is read once it has both.
+    let open_ask = |row: &AgentRow| {
+        row.snapshot
+            .as_ref()
+            .and_then(|snapshot| wire::AcpSnapshot::decode(snapshot.body.as_slice()).ok())
+            .and_then(|snapshot| snapshot.asks.first().cloned())
+    };
     let asking = until_row(&net, "laptop", &key, "the permission request", |row| {
-        phase(row) == Phase::NeedsYou
+        phase(row) == Phase::NeedsYou && open_ask(row).is_some()
     })
     .await;
-    let snapshot = wire::AcpSnapshot::decode(asking.snapshot.unwrap().body.as_slice()).unwrap();
-    let ask = snapshot.asks.first().expect("an open ask").clone();
+    let ask = open_ask(&asking).expect("an open ask");
     let Some(wire::acp_ask::Body::Permission(permission)) = &ask.body else {
         panic!("a permission request: {ask:?}");
     };

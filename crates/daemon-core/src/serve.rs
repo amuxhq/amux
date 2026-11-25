@@ -185,6 +185,11 @@ impl Daemon {
                 Ok(())
             }
             ClientRequest::SendMessage { envelope } => self.send_message(call, *envelope, out),
+            ClientRequest::HeardFromCaller {
+                agent,
+                caller,
+                incarnation,
+            } => self.heard_from_caller(call, agent, caller, incarnation, out),
         };
         self.end_unanswered(call, answered, out);
     }
@@ -603,6 +608,7 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         // Whole and undecoded: an own row's as this host's experiments
         // wrote it, a replica's as its origin sent it.
         experimental: row.experimental.clone(),
+        parent_incarnation: row.parent_incarnation,
     }
 }
 

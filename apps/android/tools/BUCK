@@ -1,3 +1,4 @@
+load("//build:checks.bzl", "amux_script_tests")
 load("//build:rust.bzl", "amux_files")
 
 # The Android app's scripts that Buck2 runs as checks of what it built.
@@ -35,4 +36,18 @@ export_file(
 amux_files(
     name = "noncopy",
     srcs = ["noncopy.json"],
+)
+
+# The unit tests of these scripts, one check per file
+# (`:android-script-tests-android_release`), each over the scripts here: as
+# repository checks (build/checks.bzl), so they run on the machine's own
+# worker too when no Linux worker is in reach.
+amux_script_tests(
+    prefix = "android-script-tests",
+    tests = glob(["tests/*_test.py"]),
+    srcs = glob(["*", "tests/*.py"], exclude = ["BUCK"]),
+    deps = ["//:app-script-helpers"],
+    extra = {
+        "android_release": {"deps": ["//apps/android/app:version"]},
+    },
 )

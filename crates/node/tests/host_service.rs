@@ -426,20 +426,34 @@ async fn a_new_provider_version_is_asked_again() {
         "2.1.300 (Claude Code)"
     );
 
-    // A new version is found by the ask that reads it, in the background:
-    // that ask is answered with the copy at once, and the host's entry
-    // names the new copy once the helper has answered.
+    // A new version is found by an ask that reads it, in the background:
+    // each ask is answered with a copy at once, and the host's entry names
+    // the new copy once the helper has answered. An ask that comes while
+    // an earlier one still reads the version leaves the reading to it, and
+    // the asks above may still be reading, so the person asks until the
+    // entry names the new copy.
     host.play(&Script {
         version: Some("2.1.301".into()),
         models: vec![model("opus"), model("fable")],
         ..Script::default()
     });
-    assert_eq!(ask(&socket, "claude").await, first, "the copy, at once");
-    let hash = until_listed(&runtime, "claude", |offered| {
-        offered.catalogue.as_ref() != Some(&first.blob.hash)
+    let hash = until("an ask to find the new version", || async {
+        let answered = ask(&socket, "claude").await;
+        let entry = runtime.host_entry();
+        match entry
+            .provider("claude")
+            .and_then(|offered| offered.catalogue.clone())
+        {
+            Some(hash) if hash != first.blob.hash => Ok(hash),
+            other => Err(format!(
+                "answered {:?}, listed {other:?}",
+                answered.blob.hash
+            )),
+        }
     })
-    .await;
-    assert_eq!(host.asked(CLAUDE_ASKED), 2);
+    .await
+    .unwrap();
+    assert_eq!(host.asked(CLAUDE_ASKED), 2, "the helper is asked once");
     let second = ask_for(&socket, "claude", &hash).await;
     assert_eq!(values(&second.models, |m| &m.value), ["opus", "fable"]);
     assert!(listed(runtime.host_entry().providers).contains(&on_host("claude", &second, true)));

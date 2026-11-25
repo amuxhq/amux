@@ -271,6 +271,17 @@ def installed_profiles() -> list[dict]:
     return found
 
 
+def ci_covered() -> tuple[bool, str]:
+    """Whether CI's iPhone app job judged this commit: CI runs the phone's
+    suites only for changes that reach what only they test, so a release
+    asks that its last pass on main covers HEAD (scripts/ci_jobs.py)."""
+    here = Path(__file__).resolve().parent
+    out = subprocess.run([str(here / "py"), str(here / "ci_jobs.py"), "--covered", "iphone", "HEAD"],
+                         capture_output=True, text=True, timeout=600)
+    said = (out.stdout + out.stderr).strip().removeprefix("ci_jobs: ")
+    return out.returncode == 0, said
+
+
 class Check:
     def __init__(self, what: str, held: bool, detail: str) -> None:
         self.what, self.held, self.detail = what, held, detail
@@ -604,6 +615,10 @@ def main() -> int:
             "because no tag records one yet and a rehearsal issues none. A "
             "release refuses here until --build seeds the ledger")
     checks.append(numbering)
+    # A rehearsal ships nothing, so it may build what CI has not judged.
+    if not arguments.rehearse:
+        covered, said = ci_covered()
+        checks.append(Check("CI's iPhone app job on this commit", covered, said))
 
     print("just ios release, on this Mac:")
     for check in checks:

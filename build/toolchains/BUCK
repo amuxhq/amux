@@ -1,7 +1,8 @@
 # Toolchains (docs/BUILD.md). Each language's toolchain is added here when
 # the build first needs it.
 load(":cxx.bzl", "amux_cxx_toolchain")
-load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain", "remote_python_toolchain")
+load("@prelude//toolchains:python.bzl", "remote_python_toolchain")
+load(":python_bootstrap.bzl", "amux_python_bootstrap_toolchain")
 load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
 load("@prelude//tests:test_toolchain.bzl", "noop_test_toolchain")
 load("@prelude//toolchains:zip_file.bzl", "zip_file_toolchain")
@@ -79,10 +80,18 @@ _WINDOWS_TOOLS = {
     "bin/strip": "bin/llvm-strip",
 }
 
+# Arm64's compiler and linker are their own wrappers, over its own CRT and
+# SDK (nix/windows.nix); the LLVM tools that read any architecture are
+# shared.
+_WINDOWS_ARM64_TOOLS = _WINDOWS_TOOLS | {
+    "bin/c++": "arm64/bin/clang-cl",
+    "bin/cc": "arm64/bin/clang-cl",
+}
+
 # The cores a Linux test that uses every core asks for. It has to be the
 # same wherever the test is sent from, or the same test would have two
-# keys, and no more than nova's worker offers any scheduler it registers
-# with; it is a minimum, so a bigger worker still takes it.
+# keys, and no more than the build host's worker offers any scheduler it
+# registers with; it is a minimum, so a bigger worker still takes it.
 _LINUX_WHOLE_WORKER = read_root_config("amux", "linux_worker_cores", "8")
 
 # The slots the Windows CI job's worker offers, six on the runner's four
@@ -141,7 +150,10 @@ amux_cxx_toolchain(
     nix_linker = select({
         "DEFAULT": "bin/c++",
         "prelude//os:none": "lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld",
-        "prelude//os:windows": "bin/lld-link",
+        "prelude//os:windows": select({
+            "DEFAULT": "bin/lld-link",
+            "prelude//cpu:arm64": "arm64/bin/lld-link",
+        }),
     }),
     nix = select({
         "DEFAULT": _NIX_COMPILE,
@@ -149,7 +161,10 @@ amux_cxx_toolchain(
     }),
     nix_paths = select({
         "DEFAULT": {},
-        "prelude//os:windows": _WINDOWS_TOOLS,
+        "prelude//os:windows": select({
+            "DEFAULT": _WINDOWS_TOOLS,
+            "prelude//cpu:arm64": _WINDOWS_ARM64_TOOLS,
+        }),
         "prelude//os:android": select({
             "prelude//cpu:arm64": ndk_tools("aarch64-linux-android"),
             "prelude//cpu:x86_64": ndk_tools("x86_64-linux-android"),
@@ -215,8 +230,20 @@ amux_genrule_toolchain(
     visibility = ["PUBLIC"],
 )
 
-system_python_bootstrap_toolchain(
+# The prelude's Python tools, rustc's wrapper among them, run through
+# bootstrap-guard.py, so a compile whose rustc failed is never stored as a
+# success (the script says why).
+amux_python_bootstrap_toolchain(
     name = "python_bootstrap",
+    guard = ":bootstrap-guard.py",
+    visibility = ["PUBLIC"],
+)
+
+# For its unit test (scripts/tests/bootstrap_guard_test.py).
+export_file(
+    name = "bootstrap-guard.py",
+    # At its path in the checkout, where the test reads it.
+    mode = "reference",
     visibility = ["PUBLIC"],
 )
 
@@ -275,16 +302,30 @@ remote_test_execution_toolchain(
         # binary at a time: 79 took 958 s. One per core, four at once, they
         # took 662 s, 1,381 s of it running and 883 s fetching binaries from
         # the build host, which uses no core; so six slots, on four cores.
-        "prelude//os:windows": {
-            "default": {
-                "capabilities": {"OSFamily": "windows", "cpu_count": "1"},
-                "use_case": "buck2-default",
+        "prelude//os:windows": select({
+            "DEFAULT": {
+                "default": {
+                    "capabilities": {"OSFamily": "windows", "cpu_count": "1"},
+                    "use_case": "buck2-default",
+                },
+                "whole-worker": {
+                    "capabilities": {"OSFamily": "windows", "cpu_count": _WINDOWS_WHOLE_WORKER},
+                    "use_case": "buck2-default",
+                },
             },
-            "whole-worker": {
-                "capabilities": {"OSFamily": "windows", "cpu_count": _WINDOWS_WHOLE_WORKER},
-                "use_case": "buck2-default",
+            # An Arm64 test only on a Windows on Arm worker
+            # (build/platforms/BUCK's exec-windows-arm64).
+            "prelude//cpu:arm64": {
+                "default": {
+                    "capabilities": {"OSFamily": "windows", "cpu": "arm64", "cpu_count": "1"},
+                    "use_case": "buck2-default",
+                },
+                "whole-worker": {
+                    "capabilities": {"OSFamily": "windows", "cpu": "arm64", "cpu_count": _WINDOWS_WHOLE_WORKER},
+                    "use_case": "buck2-default",
+                },
             },
-        },
+        }),
     }),
     visibility = ["PUBLIC"],
 )
@@ -313,7 +354,7 @@ zip_file_toolchain(
 # and Android toolchains, with the JDK and Android SDK from the Android Nix
 # toolchain (android.bzl). Their actions run only on a Linux worker:
 # `exec_compatible_with` on a toolchain carries to every target that uses
-# it, so a Mac sends Android work to nova whatever it builds for.
+# it, so a Mac sends Android work to the build host whatever it builds for.
 _LINUX_EXEC = ["prelude//os:linux"]
 
 _ANDROID_BUILD_TOOLS = "sdk/build-tools/36.0.0"

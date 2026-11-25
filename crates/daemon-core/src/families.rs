@@ -251,6 +251,11 @@ pub struct Create {
     /// Its parent, when it has one, is the new agent's.
     #[serde(with = "codec::message")]
     pub spec: AgentSpec,
+    /// With a parent, the parent's incarnation making the create, as the
+    /// parent's own host stated it: the first the child hears from, and
+    /// what an exited copy of the parent's row is judged against. 0 with no
+    /// parent.
+    pub parent_incarnation: u32,
 }
 
 /// A resume, with what seeds its next incarnation's queue. Its spec is
@@ -971,8 +976,13 @@ impl Daemon {
         // child made before this host caught up with the parent's host, or
         // before the parent's row arrived, is made: an exited parent's
         // listing stops it, and one that outlives a deleted parent finishes
-        // its work and exits, left for the clean-up of leftover agents.
-        if self.parent_ended(&parent)?.is_some() {
+        // its work and exits, left for the clean-up of leftover agents. A
+        // row older than the incarnation the parent's host says is calling
+        // is a copy from before a resume, and says nothing of the caller.
+        if self
+            .parent_ended(&parent, create.parent_incarnation)?
+            .is_some()
+        {
             let id = AgentId::from_slice(&parent.agent).unwrap_or(AgentId([0; 16]));
             return Err(Refusal::ParentEnded(id));
         }
@@ -1005,6 +1015,7 @@ impl Daemon {
             .map(|parent| AgentKey::new(parent.host_id.clone(), parent.agent_id.clone()));
         row.created_at_ms = create.spec.created_at_ms;
         row.incarnation = 1;
+        row.parent_incarnation = create.parent_incarnation;
         row
     }
 
@@ -2058,16 +2069,27 @@ impl Daemon {
     /// Each of this host's own agents under `parent`, whose row now says
     /// `says`, follows it: exited stops each live child, closed closes
     /// each child not yet closed, deleted deletes each child. A parent that is merely out of reach says neither, so
-    /// its children carry on and their reports wait in the outbox.
+    /// its children carry on and their reports wait in the outbox. An exit
+    /// or a close is of the incarnation the parent's row holds here, and a
+    /// child that has since heard from a later incarnation of its parent
+    /// was engaged after it: word of it came late, and the child carries
+    /// on.
     pub(crate) fn parent_changed(
         &mut self,
         parent: &AgentKey,
         says: ParentSays,
         out: &mut Vec<Output>,
     ) -> Result<(), StoreError> {
+        let said_at = match says {
+            ParentSays::Exited | ParentSays::Closed => {
+                self.store.agent(parent)?.map(|row| row.incarnation)
+            }
+            ParentSays::Deleted => None,
+        };
         for child in self.store.agents_of_parent(parent)? {
             if child.agent.host != self.store.own_host()
                 || (says == ParentSays::Exited && child.lifecycle != Lifecycle::Live as i32)
+                || said_at.is_some_and(|said| child.parent_incarnation > said)
                 || (says == ParentSays::Closed && child.is_closed())
             {
                 continue;
@@ -2103,12 +2125,18 @@ impl Daemon {
         self.registry_call(Caller::Family, child, op, out);
     }
 
-    /// Whether `parent` has already ended as this host sees it: exited by
-    /// its row, or deleted. Another host's row counts only once that host's
-    /// listing has caught up, since a row kept from before may be stale;
-    /// and a missing row means deleted only for this host's own agents,
-    /// since another host's row may simply not have arrived yet.
-    fn parent_ended(&self, parent: &AgentKey) -> Result<Option<ParentSays>, StoreError> {
+    /// Whether `parent`, its host saying incarnation `calling` is calling,
+    /// has already ended as this host sees it: exited by its row, or
+    /// deleted. Another host's row counts only once that host's listing has
+    /// caught up, and only at the calling incarnation or later, since a row
+    /// kept from before may be stale; and a missing row means deleted only
+    /// for this host's own agents, since another host's row may simply not
+    /// have arrived yet.
+    fn parent_ended(
+        &self,
+        parent: &AgentKey,
+        calling: u32,
+    ) -> Result<Option<ParentSays>, StoreError> {
         let own = parent.host == self.store.own_host();
         if !own
             && !crate::HostId::from_slice(&parent.host).is_some_and(|host| self.sources.ready(host))
@@ -2116,10 +2144,42 @@ impl Daemon {
             return Ok(None);
         }
         Ok(match self.store.agent(parent)? {
-            Some(row) if row.lifecycle == Lifecycle::Exited as i32 => Some(ParentSays::Exited),
+            Some(row)
+                if row.lifecycle == Lifecycle::Exited as i32 && row.incarnation >= calling =>
+            {
+                Some(ParentSays::Exited)
+            }
             None if own => Some(ParentSays::Deleted),
             _ => None,
         })
+    }
+
+    /// An agent calling on one of this host's agents, its host saying it is
+    /// incarnation `incarnation`: when it is the agent's parent, the row
+    /// keeps the newest incarnation of its parent heard from, which the
+    /// agent's reports are for and its parent's wait counts. A person's or
+    /// another agent's call never moves it.
+    pub(crate) fn heard_from_caller(
+        &mut self,
+        call: CallId,
+        agent: AgentId,
+        caller: (crate::HostId, AgentId),
+        incarnation: u32,
+        out: &mut Vec<Output>,
+    ) -> Result<(), CallError> {
+        let caller = AgentKey::new(caller.0.0.to_vec(), caller.1.0.to_vec());
+        if let Some(mut row) = self.store.agent(&self.own_key(agent))?
+            && row.parent.as_ref() == Some(&caller)
+            && incarnation > row.parent_incarnation
+        {
+            row.parent_incarnation = incarnation;
+            self.put_own_row(&row, out)?;
+        }
+        out.push(Output::EndCall {
+            call,
+            status: Status::Ok,
+        });
+        Ok(())
     }
 
     /// The names this host's own agents hold, exited ones included.
@@ -2271,17 +2331,14 @@ impl Daemon {
         if !held.owes_report || held.native.is_some() {
             return Ok(());
         }
-        // Zero when the parent's row is not held: stamped by the drain.
-        let parent_incarnation = self
-            .store
-            .agent(parent)?
-            .map_or(0, |parent| parent.incarnation);
+        // For the parent incarnation the child last heard from, as a turn
+        // end's report is.
         self.store.put_delivery(&Delivery {
             child_id: row.agent.agent.clone(),
             incarnation: row.incarnation,
             turn_id: 0,
             parent: parent.clone(),
-            parent_incarnation,
+            parent_incarnation: held.parent_incarnation,
             end: wire::child_report::End::Exited(wire::Exited { ended: Some(cause) }),
         })?;
         self.deliveries_due();
@@ -2352,16 +2409,27 @@ impl Daemon {
     /// nothing changed. A child on another host is here once its host lists
     /// it; until then the agent's own process holds it, having carried the
     /// create itself, and a list from here only ever adds to what it holds.
+    /// Only a child last engaged by an incarnation of the agent's current
+    /// run is named: one an earlier life engaged reports to that life,
+    /// which is gone, so the agent never hears its last report.
     fn children_of(&self, agent: AgentId) -> Result<Vec<(Vec<u8>, u32)>, StoreError> {
-        let rows = self.store.agents_of_parent(&self.own_key(agent))?;
+        let key = self.own_key(agent);
+        let Some(parent) = self.store.agent(&key)? else {
+            return Ok(Vec::new());
+        };
+        let rows = self.store.agents_of_parent(&key)?;
         // A provider subagent sends no report, so a parent told of one would
         // wait for it forever; the parent's own process follows those it
         // runs from its journal.
-        let mut children: Vec<(Vec<u8>, u32)> = rows
-            .iter()
-            .filter(|row| row.lifecycle == Lifecycle::Live as i32 && row.native.is_none())
-            .map(|row| (row.agent.agent.clone(), row.incarnation))
-            .collect();
+        let mut children = Vec::new();
+        for row in rows {
+            if row.lifecycle == Lifecycle::Live as i32
+                && row.native.is_none()
+                && self.of_current_run(&parent, row.parent_incarnation)?
+            {
+                children.push((row.agent.agent.clone(), row.incarnation));
+            }
+        }
         children.sort();
         Ok(children)
     }
@@ -2620,6 +2688,7 @@ mod tests {
 
     fn create(agent: AgentId, name: &str, parent: Option<AgentId>) -> ClientRequest {
         ClientRequest::CreateAgent(Box::new(Create {
+            parent_incarnation: u32::from(parent.is_some()),
             agent,
             cwd: "/src".into(),
             given: Some(name.into()),
@@ -2680,6 +2749,85 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// The child's row keeps the newest incarnation of its parent heard
+    /// from the parent itself: another agent's call never moves it, and an
+    /// older one never lowers it.
+    #[test]
+    fn a_child_records_only_its_parents_newest_incarnation_heard_from_it() {
+        let mut rig = rig();
+        rig.live(PARENT, "lead", None);
+        rig.live(OTHER, "other", None);
+        rig.live(CHILD, "helper", Some(PARENT));
+        assert_eq!(
+            rig.row(CHILD).unwrap().parent_incarnation,
+            1,
+            "from the create"
+        );
+        let heard = |caller: AgentId, incarnation| ClientRequest::HeardFromCaller {
+            agent: CHILD,
+            caller: (crate::HostId(OWN), caller),
+            incarnation,
+        };
+        for (caller, incarnation, kept) in [(OTHER, 5, 1), (PARENT, 3, 3), (PARENT, 2, 3)] {
+            let (call, out) = rig.call(heard(caller, incarnation));
+            assert!(
+                out.contains(&Output::EndCall {
+                    call,
+                    status: Status::Ok
+                }),
+                "{out:?}"
+            );
+            assert_eq!(rig.row(CHILD).unwrap().parent_incarnation, kept);
+        }
+    }
+
+    /// Word of a far parent's exit stops a child that last heard from that
+    /// incarnation or an earlier one, and not one a later incarnation has
+    /// engaged since: the word came late.
+    #[test]
+    fn a_far_parents_exit_stops_only_a_child_engaged_no_later_than_it() {
+        const FAR: [u8; 16] = *b"far-host-0000000";
+        for (heard, stopped) in [(1, true), (2, false)] {
+            let mut rig = rig();
+            let (call, out) = rig.call(ClientRequest::CreateAgent(Box::new(Create {
+                parent_incarnation: heard,
+                agent: CHILD,
+                cwd: "/src".into(),
+                given: Some("helper".into()),
+                branches: BTreeSet::new(),
+                new_workspace: false,
+                workspace: None,
+                recent: None,
+                spec: AgentSpec {
+                    agent_id: CHILD.0.to_vec(),
+                    kind: wire::Kind::Codex as i32,
+                    parent: Some(wire::AgentRef {
+                        host_id: FAR.to_vec(),
+                        agent_id: PARENT.0.to_vec(),
+                    }),
+                    ..AgentSpec::default()
+                },
+            })));
+            assert!(out.contains(&Output::DialAgent { agent: CHILD }), "{out:?}");
+            let out = rig.step(Input::AgentHello { agent: CHILD });
+            assert!(answer_of(&out, call).is_some(), "{out:?}");
+            let parent = AgentKey::new(FAR.to_vec(), PARENT.0.to_vec());
+            let mut row = AgentRow::new(parent.clone(), wire::Kind::Codex, "/src");
+            row.lifecycle = Lifecycle::Exited as i32;
+            row.incarnation = 1;
+            rig.daemon.store.put_agent(&row).unwrap();
+            let mut out = Vec::new();
+            rig.daemon
+                .parent_changed(&parent, ParentSays::Exited, &mut out)
+                .unwrap();
+            assert_eq!(
+                !stops(&out, CHILD).is_empty(),
+                stopped,
+                "heard from {heard}: {out:?}"
+            );
+        }
     }
 
     #[test]

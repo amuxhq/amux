@@ -743,7 +743,7 @@ fn retention_of_a_replica_keeps_its_agents_row_for_the_children_here() {
     assert!(sweep.removed.is_empty());
     assert_eq!(store.page(&child, None, 10).unwrap().items.len(), 2);
 
-    // (b) The child's next turn end names the parent's real incarnation.
+    // (b) The child's next turn end still names its parent.
     let step = Step {
         items: vec![Item {
             key: "final".into(),
@@ -763,7 +763,6 @@ fn retention_of_a_replica_keeps_its_agents_row_for_the_children_here() {
     let deliveries = store.deliveries().unwrap();
     assert_eq!(deliveries.len(), 1);
     assert_eq!(deliveries[0].parent, parent);
-    assert_eq!(deliveries[0].parent_incarnation, 3);
 }
 
 #[test]

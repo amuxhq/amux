@@ -262,6 +262,14 @@ message Agent {
   // What the agent's newest snapshot said of it: its phase, git facts,
   // title, settings and the rest. Default until its first snapshot.
   AgentStatus status = 16;
+  // For an agent with a parent: the newest incarnation of the parent that
+  // the agent's host heard from the parent itself, as the parent's host
+  // stated it on the create and on each message, input or resume the
+  // parent sent since. The agent's reports are for that incarnation, and a
+  // parent waits only for the children it engaged in its current run.
+  // Never raised by a person's or another agent's call. 0 for an agent
+  // with no parent.
+  uint32 parent_incarnation = 17;
   // What experiments say about the agent, each entry keyed by an
   // experiment's version (e.g. "workspaces/1") and holding an encoded
   // amux.experimental message. A build reads and writes only the entries of

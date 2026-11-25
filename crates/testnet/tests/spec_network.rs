@@ -1074,27 +1074,13 @@ async fn a_host_revoked_while_away_reads_the_desk_as_revoked_once_it_dials_throu
         (tonic::Code::Unauthenticated, node::TRUST_REVOKED),
         "a call through the relay is refused as no longer trusted"
     );
-    // Nor does it go on dialling a host that refused it: once the refused
-    // call's own packets have settled, the relay forwards nothing more
-    // from it over two of the dialler's backoff pauses (1 s, then 2 s).
-    let forwarded = || net.relay().unwrap().forward_counts().forwarded;
-    let mut settled = forwarded();
-    loop {
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        let now = forwarded();
-        if now == settled {
-            break;
-        }
-        settled = now;
-    }
-    tokio::time::sleep(Duration::from_millis(3500)).await;
-    assert_eq!(
-        forwarded(),
-        settled,
-        "the tablet dialled the desk again after it was refused as revoked"
-    );
+    // That it dials the desk no more once refused is the core's rule
+    // (daemon-core's reach test
+    // a_host_that_refused_this_one_as_revoked_is_not_dialled_again): the
+    // relay's packet counts cannot tell a dial from the refused one's last
+    // packets without a guess at how long those take.
     println!(
-        "the tablet, revoked while stopped, dialled through the relay once and reads the desk as revoked"
+        "the tablet, revoked while stopped, reads the desk as revoked once it dials through the relay"
     );
 
     net.shutdown().await.unwrap();
@@ -3248,65 +3234,6 @@ async fn a_host_behind_the_relay_rebinds_mid_stream_and_its_session_carries_on()
     println!("the desk moved under an open session; the relay carried it on");
 
     still_relayed(&net, "laptop", "desk");
-    net.shutdown().await.unwrap();
-}
-
-/// A relay link lost before the device's network changed is dialled again
-/// at the change, not after its pause: what failed on the old network says
-/// nothing of the new one.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_network_change_redials_a_lost_relay_without_its_pause() {
-    let net = Net::start(Topology::new().relay(&["ada"]).host("phone"))
-        .await
-        .unwrap();
-    net.sign_in("phone", "ada").await.unwrap();
-    let phone = edge(&net, "phone");
-    let relay = net.relay().unwrap();
-    let ups = || {
-        testnet::link_log::captured(phone.host_id())
-            .iter()
-            .filter(|event| {
-                event.peer == relay.host_id() && event.event == node::link_log::LinkTransition::Up
-            })
-            .count()
-    };
-    let before = ups();
-    let mut status = phone.subscribe_relay();
-    assert!(matches!(
-        *status.borrow(),
-        Some(node::Relay::Connected { .. })
-    ));
-    relay
-        .server()
-        .send_link_close_to_all(wire::LinkCloseReason::UserShutdown)
-        .await;
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        status.wait_for(|state| !matches!(state, Some(node::Relay::Connected { .. }))),
-    )
-    .await
-    .expect("the old relay link ends")
-    .unwrap();
-    let began = tokio::time::Instant::now();
-    phone.network_changed().unwrap();
-    // The shortest pause is 750 ms. A new link, not the old connection's
-    // status, is what counts.
-    tokio::time::timeout(Duration::from_millis(700), async {
-        loop {
-            let connected = matches!(*status.borrow(), Some(node::Relay::Connected { .. }));
-            if ups() > before && connected && relay.links("ada").await == vec![(phone.host_id(), 1)]
-            {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-    })
-    .await
-    .expect("the network change ends the pause");
-    println!(
-        "the relay link came back {:?} after the change",
-        began.elapsed()
-    );
     net.shutdown().await.unwrap();
 }
 

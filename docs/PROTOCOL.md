@@ -1107,6 +1107,12 @@ on what that row actually says (`ParentSays` and `parent_changed` in
   open again under a closed parent stays so.
 - **The parent's row says it exited**, whatever the cause: the child is
   stopped.
+- **But a late word stops nothing.** A child's row keeps the newest
+  incarnation of its parent that has spoken to it (`parent_incarnation`,
+  from the caller header of the parent's own calls). A close or exit of an
+  older incarnation than that is word of a life the child no longer serves:
+  the parent was resumed and engaged the child again before this host
+  heard of the earlier exit, and the child carries on.
 - **The parent is gone from its host's listing**: the child is stopped and
   deleted. A parent's absence counts only when the host said so: an
   `AgentRemoved` on its inventory stream, or a listing read to `CaughtUp`
@@ -1138,7 +1144,9 @@ and a later clean-up of leftover agents collects what remains.
 A create's parent is its caller: an agent of this host on its tools socket,
 or an agent of a paired host whose call that host carried here. If this host
 already sees that parent as exited, or as deleted (its own agent with no
-row), the create is refused as `FAILED_PRECONDITION`. The parent check and
+row), the create is refused as `FAILED_PRECONDITION`. An exited copy counts
+only when it is of the incarnation the caller header states or a later one:
+a copy older than the parent that is calling is out of date, not an end. The parent check and
 the child's row are written under one hold of the store, so a parent that ends after the check finds the child
 and stops it. A parent on another host is checked only against a caught-up
 row: while this host has not caught up with that host's listing since they
@@ -1217,8 +1225,10 @@ local sender. A message's attachments name files on the sender's host, which
 the recipient's host fetches with `PeerService.FetchBlob` before it hands the
 message over. A child's "finished" or "failed" report to a parent on another
 host is not a message: the child's daemon calls the parent's host's
-`PeerService.DeliverReport` for itself, carrying the parent's incarnation so
-the parent's own daemon can drop it for any other incarnation.
+`PeerService.DeliverReport` for itself, carrying the parent incarnation the
+child last heard from. Only the parent's own daemon judges it: it drops the
+report when the parent is gone, has exited, or is in a run that incarnation
+is not of.
 [Agent tools](AGENT_TOOLS.md#across-hosts) describes the whole path.
 
 ### Errors

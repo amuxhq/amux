@@ -383,7 +383,7 @@ jobs:
       # store is about a fifth of this.
       JOB_CAS_GIB: "6"
       JOB_BUILD: >-
-        scripts/buck2 build --target-platforms root//build/platforms:ios-sim-app-shipping-dev
+        scripts/buck2 build --materializations none --target-platforms root//build/platforms:ios-sim-app-shipping-dev
         $(scripts/buck2 uquery "attrregexfilter(default_target_platform, ios-sim, //apps/apple/...)")
       JOB_RUN: >-
         scripts/buck2 test --build-default-info --target-platforms root//build/platforms:ios-sim-app-shipping-dev
@@ -439,12 +439,22 @@ jobs:
             macos-${{ env.JOB_KEY }}-store-${{ github.sha }}-
             macos-${{ env.JOB_KEY }}-store-
             ${{ env.JOB_FALLBACK || format('macos-{0}-store-', env.JOB_KEY) }}
+      # What the store held as it was restored: a run whose actions all came
+      # from it adds nothing, and keeping it again took a minute or two.
+      - name: Note what the store holds
+        run: >-
+          scripts/py scripts/ci_cache.py digest "$RUNNER_TEMP"/nativelink/{cas,cas.exec,ac,ac.exec}
+          > "$RUNNER_TEMP/store-restored"
       - name: Start a NativeLink on the runner
         run: |
           nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --cas-gib "${{ env.JOB_CAS_GIB }}" \
             > "$RUNNER_TEMP/nativelink.log" 2>&1 &
           for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/nativelink.log"; exit 1
+      # The build only fills the cache, so its outputs stay in the store
+      # (JOB_BUILD's `--materializations none`): the worker runs the tests
+      # from there, and a warm run of the tests job spent 292 of its 296 s
+      # copying 3.5 GiB of test binaries out of it into buck-out.
       - name: Build ${{ env.JOB_NAME }}
         if: env.JOB_BUILD
         timeout-minutes: 60
@@ -511,14 +521,22 @@ jobs:
       # run) it is still writing the results: the cache's archiver failed
       # on a file that changed under it, so a cancelled run kept nothing.
       - name: Stop NativeLink
+        id: stop
         if: always()
         run: |
           pkill -f "$RUNNER_TEMP/nativelink/config.json5" || true
           for _ in $(seq 30); do pgrep -f "$RUNNER_TEMP/nativelink/config.json5" > /dev/null || break; sleep 1; done
           du -sh "$RUNNER_TEMP"/nativelink/cas* "$RUNNER_TEMP"/nativelink/ac* || true
+          if scripts/py scripts/ci_cache.py digest "$RUNNER_TEMP"/nativelink/{cas,cas.exec,ac,ac.exec} \
+              | cmp -s - "$RUNNER_TEMP/store-restored"; then
+            echo "The store is as it was restored, so the entry it came from stays."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+      # Only when the run added to it or evicted from it; otherwise the entry
+      # it was restored from holds the same, and the next run restores that.
       - name: Keep the store
         id: save
-        if: always()
+        if: always() && steps.stop.outputs.changed != 'false'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -624,7 +642,7 @@ jobs:
       JOB_NAME: macOS tests
       JOB_CAS_GIB: "12"
       JOB_BUILD: >-
-        scripts/py build/checks/inputs.py && scripts/buck2 build $(scripts/buck2 uquery "kind(_amux_test, //crates/...)
+        scripts/buck2 build --materializations none $(scripts/buck2 uquery "kind(_amux_test, //crates/...)
         - attrfilter(labels, journey, //crates/...) - attrfilter(labels, live, //crates/...)
         - attrfilter(labels, nightly, //crates/...) - attrfilter(labels, linux-only, //crates/...)")
       JOB_RUN: >-

@@ -406,7 +406,12 @@ the cap the least recently used outputs go, and an action whose outputs
 went runs again. After saving, a job deletes its older stores
 (`scripts/ci_cache.py`): GitHub evicts the least recently used entry past
 10 GB, and an older store, just read by the run that restored it, could
-otherwise outlive another job's newer cache.
+otherwise outlive another job's newer cache. A run that added nothing to its store,
+because every action and test came from it, keeps no new one: the job
+digests the store as restored and again once NativeLink has stopped
+(`scripts/ci_cache.py digest`), and when the two match the entry it came
+from stays for the next run to restore. Archiving and uploading an
+unchanged store had taken a warm run one to two minutes a job.
 
 The macOS jobs don't use the build host. It can't run a Mac's actions,
 and it is about 100 ms from GitHub's runners: when the runners' CAS was in
@@ -462,7 +467,11 @@ kept as the run's `buck2-logs-*` artifacts for a week (`scripts/buck2 log
 what-ran`, `log critical-path`). A run started by hand with `cold` set
 starts the macOS jobs with no kept store, to time them from nothing.
 The macOS tests job builds every test binary first, then runs `just test
-//crates/...` but the journeys: beside the compiles of a protocol change,
+//crates/...` but the journeys. Both its build and the iPhone app job's
+leave their outputs in the store (`--materializations none`), where the
+worker reads the tests' inputs: copied out into `buck-out`, the test
+binaries had been 3.5 GiB and 292 s of a warm build's 296. The binaries
+are built before any test runs because beside the compiles of a protocol change,
 on three cores, the system suites crawled and failed on timing. On macOS that is the
 system lane as well, since the built `amux` binary's suites (`process`,
 `supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor`

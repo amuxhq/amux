@@ -164,6 +164,52 @@ fn a_private_folder_is_created_with_its_parents_and_an_existing_one_is_kept() {
     assert_eq!(names(&root), ["kept"]);
 }
 
+/// What each way of creating a private file does with a file already
+/// there: New refuses it, Truncate empties it, Append writes after it.
+#[test]
+fn a_private_file_is_created_truncated_or_appended_to() {
+    use std::io::{Read as _, Seek as _, Write as _};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("secret");
+    let mut file = create_private(&path, Create::New).unwrap();
+    file.write_all(b"one").unwrap();
+    drop(file);
+    assert_eq!(
+        create_private(&path, Create::New).unwrap_err().kind(),
+        io::ErrorKind::AlreadyExists
+    );
+    assert_eq!(fs::read(&path).unwrap(), b"one");
+
+    let mut file = create_private(&path, Create::Append).unwrap();
+    file.write_all(b"two").unwrap();
+    file.rewind().unwrap();
+    let mut read = String::new();
+    file.read_to_string(&mut read).unwrap();
+    assert_eq!(read, "onetwo", "appended, and readable");
+    drop(file);
+
+    let mut file = create_private(&path, Create::Truncate).unwrap();
+    file.write_all(b"three").unwrap();
+    drop(file);
+    assert_eq!(fs::read(&path).unwrap(), b"three");
+    assert_eq!(names(dir.path()), ["secret"]);
+}
+
+#[test]
+fn an_atomic_replace_replaces_and_leaves_nothing_else() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ctl.sock");
+    replace_atomically(&path, b"one").unwrap();
+    replace_atomically(&path, b"two").unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"two");
+    assert_eq!(names(dir.path()), ["ctl.sock"]);
+    let missing = dir.path().join("missing").join("file");
+    assert!(replace_atomically(&missing, b"x").is_err());
+    assert_eq!(names(dir.path()), ["ctl.sock"]);
+    assert!(left_stages().is_empty(), "nothing is left to remove later");
+}
+
 #[test]
 fn the_temporary_folder_can_hold_a_root() {
     let dir = tempfile::tempdir().unwrap();

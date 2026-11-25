@@ -64,10 +64,35 @@ pub fn make_private(path: &Path) -> io::Result<()> {
 /// Unix: mode 0600. Windows: std cannot carry a security descriptor into
 /// the file's creation, so the file takes its folder's inherited DACL:
 /// owner-only inside a [`create_private_dir`] folder or one
-/// [`make_private`] was applied to, and only there. [`write_durably`] and
-/// [`create_new_durably`] are owner-only wherever they write.
+/// [`make_private`] was applied to, and only there. A secret that may land
+/// anywhere else is made with [`create_private`], which is owner-only
+/// wherever it creates; so are [`write_durably`] and [`create_new_durably`].
 pub fn private_open_options() -> OpenOptions {
     imp::private_open_options()
+}
+
+/// How [`create_private`] treats a file already at the path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Create {
+    /// Only a new file: an existing one is [`io::ErrorKind::AlreadyExists`].
+    New,
+    /// A new file, or the existing one emptied.
+    Truncate,
+    /// A new file, or the existing one, every write going to its end.
+    Append,
+}
+
+/// Opens `path` for reading and writing (appending, for
+/// [`Create::Append`]), creating it owner-only.
+///
+/// A file it creates is owner-only from its creation, wherever it is:
+/// Unix, mode 0600 given to `open`; Windows, the protected DACL
+/// [`create_private_dir`] describes, given to `CreateFileW`, so no other
+/// user can open it in between. An existing file it opens is made
+/// owner-only through the handle before this returns (0600 by `fchmod`;
+/// the same DACL by `SetSecurityInfo`).
+pub fn create_private(path: &Path, how: Create) -> io::Result<File> {
+    imp::create_private(path, how)
 }
 
 /// The current user's SID as a string (`S-1-5-21-…`), for an SDDL.
@@ -94,7 +119,15 @@ pub fn current_user_sid() -> io::Result<String> {
 /// The result is owner-only on every OS: 0600 on Unix, the DACL
 /// [`create_private_dir`] describes on Windows.
 pub fn write_durably(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    durably(path, bytes, Publish::Replace)
+    durably(path, bytes, Publish::Replace, Flush::Yes)
+}
+
+/// Replaces `path` with `bytes` as [`write_durably`] does, readers seeing
+/// the old file or the new one and never part of either, but with nothing
+/// flushed: for a file that means nothing after a crash, such as the name
+/// of a pipe that died with its process.
+pub fn replace_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    durably(path, bytes, Publish::Replace, Flush::No)
 }
 
 /// Writes `bytes` to `path` as [`write_durably`] does, but only if `path`
@@ -102,7 +135,7 @@ pub fn write_durably(path: &Path, bytes: &[u8]) -> io::Result<()> {
 /// existing file untouched. The check and the creation are one step, so of
 /// two writers exactly one succeeds.
 pub fn create_new_durably(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    durably(path, bytes, Publish::New)
+    durably(path, bytes, Publish::New, Flush::Yes)
 }
 
 /// How a durable write puts its temporary file in place.
@@ -112,7 +145,14 @@ enum Publish {
     New,
 }
 
-fn durably(path: &Path, bytes: &[u8], publish: Publish) -> io::Result<()> {
+/// Whether a whole-file write reaches the disk before it returns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Flush {
+    Yes,
+    No,
+}
+
+fn durably(path: &Path, bytes: &[u8], publish: Publish, flush: Flush) -> io::Result<()> {
     let name = path.file_name().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -123,16 +163,71 @@ fn durably(path: &Path, bytes: &[u8], publish: Publish) -> io::Result<()> {
         Some(dir) if !dir.as_os_str().is_empty() => dir,
         _ => Path::new("."),
     };
+    sweep_left_stages();
     let (temp, file) = temp_beside(dir, &name.to_string_lossy())?;
-    match imp::finish_durably(file, &temp, path, bytes, publish) {
-        Ok(()) => sync_dir(dir),
-        Err(error) => {
-            // The temporary file is closed by now; one nobody else opened
-            // goes at once, and its name is ours alone.
-            let _ = std::fs::remove_file(&temp);
-            Err(error)
+    // Windows deletes the temporary file through its own handle when this
+    // fails, before anyone else can open it; what follows is for whatever
+    // that could not do.
+    match imp::finish_durably(file, &temp, path, bytes, publish, flush) {
+        Ok(()) if flush == Flush::Yes => sync_dir(dir),
+        Ok(()) => Ok(()),
+        Err(error) => Err(abandon_stage(&temp, error)),
+    }
+}
+
+/// Temporary files a failed write could not remove yet (something else
+/// held them), removed by a later write.
+static LEFT_STAGES: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+/// Removes the temporary file of a write that failed with `error`, waiting
+/// out a brief hold; one still held is kept for a later write to remove,
+/// and the error says so.
+fn abandon_stage(temp: &Path, error: io::Error) -> io::Error {
+    match remove_patiently(temp, SHARING_PATIENCE) {
+        Ok(Removed::Gone) => error,
+        Ok(Removed::Later) | Err(_) => {
+            LEFT_STAGES
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(temp.to_owned());
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "{error} (its temporary file {} is still held; a later write removes it)",
+                    temp.display()
+                ),
+            )
         }
     }
+}
+
+/// Removes what [`abandon_stage`] could not, keeping what is still held.
+fn sweep_left_stages() {
+    let left = std::mem::take(
+        &mut *LEFT_STAGES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    );
+    if left.is_empty() {
+        return;
+    }
+    let still: Vec<PathBuf> = left
+        .into_iter()
+        .filter(|temp| !matches!(remove_patiently(temp, Duration::ZERO), Ok(Removed::Gone)))
+        .collect();
+    LEFT_STAGES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .extend(still);
+}
+
+/// The temporary files failed writes left that are still to be removed.
+#[cfg(test)]
+fn left_stages() -> Vec<PathBuf> {
+    LEFT_STAGES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
 }
 
 /// A new owner-only file beside the target, under a name no other writer
@@ -195,7 +290,9 @@ pub fn remove_patiently(path: &Path, patience: Duration) -> io::Result<Removed> 
         let removed = match std::fs::symlink_metadata(path) {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Removed::Gone),
             Err(error) => Err(error),
-            // A link goes itself, never what it points at.
+            // A link goes itself, never what it points at: a link to a
+            // folder (a junction too, on Windows) goes as the file
+            // removal's own case.
             Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(path),
             Ok(_) => imp::remove_file(path),
         };

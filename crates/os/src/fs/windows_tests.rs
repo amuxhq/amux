@@ -281,3 +281,144 @@ fn a_long_path_is_made_private_and_written_durably() {
     assert_eq!(fs::read(&path).unwrap(), b"deep");
     crate::fs::sync_dir(&deep).unwrap();
 }
+
+/// A junction (which needs no privilege) goes as the link itself: its
+/// target and what the target holds stay.
+#[test]
+fn patient_removal_of_a_junction_removes_the_link_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("worktree");
+    fs::create_dir(&target).unwrap();
+    fs::write(target.join("kept"), b"x").unwrap();
+    let link = dir.path().join("link");
+    let made = std::process::Command::new("cmd")
+        .arg("/C")
+        .arg("mklink")
+        .arg("/J")
+        .arg(&link)
+        .arg(&target)
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "{made:?}");
+    assert_eq!(
+        remove_patiently(&link, Duration::from_millis(300)).unwrap(),
+        Removed::Gone
+    );
+    assert!(fs::symlink_metadata(&link).is_err(), "the junction is gone");
+    assert!(target.join("kept").exists(), "its target is untouched");
+}
+
+/// A directory symlink likewise, where this account may make one (the
+/// privilege, or developer mode); skipped, with the reason, where it may not.
+#[test]
+fn patient_removal_of_a_directory_symlink_removes_the_link_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("worktree");
+    fs::create_dir(&target).unwrap();
+    fs::write(target.join("kept"), b"x").unwrap();
+    let link = dir.path().join("link");
+    if let Err(error) = std::os::windows::fs::symlink_dir(&target, &link) {
+        eprintln!("skipped: this account may not make a directory symlink: {error}");
+        return;
+    }
+    assert_eq!(
+        remove_patiently(&link, Duration::from_millis(300)).unwrap(),
+        Removed::Gone
+    );
+    assert!(fs::symlink_metadata(&link).is_err(), "the link is gone");
+    assert!(target.join("kept").exists(), "its target is untouched");
+}
+
+/// A failed write's temporary file is gone even when a scanner opens it,
+/// without delete sharing, the moment the writer closes it: the writer
+/// deletes it through its own handle first.
+#[test]
+fn a_failed_writes_temporary_file_survives_no_scanner() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("generation");
+    fs::write(&path, b"old").unwrap();
+    let holder = hold_without_delete_sharing(&path);
+
+    let done = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        let scanner = scope.spawn(|| {
+            let mut held = Vec::new();
+            while !done.load(Ordering::Relaxed) {
+                for entry in fs::read_dir(dir.path()).unwrap().flatten() {
+                    if entry.file_name().to_string_lossy().ends_with(".tmp")
+                        && let Ok(file) = OpenOptions::new()
+                            .read(true)
+                            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+                            .open(entry.path())
+                    {
+                        held.push(file);
+                    }
+                }
+            }
+            // Holds what it caught a little past the writer's cleanup.
+            std::thread::sleep(Duration::from_millis(200));
+            held.len()
+        });
+        let error = write_durably(&path, b"new").unwrap_err();
+        assert!(is_held(&error), "{error}");
+        done.store(true, Ordering::Relaxed);
+        let caught = scanner.join().unwrap();
+        eprintln!("the scanner caught {caught} temporary files open");
+    });
+    drop(holder);
+    let left: Vec<_> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(left, ["generation"], "no temporary file is left");
+    assert!(crate::fs::left_stages().is_empty());
+}
+
+/// A secret created outside any private folder, in one whose ACL lets
+/// everyone read what it holds, is owner-only from its creation, where
+/// `private_open_options` inherits the broad ACL. An existing file opened
+/// by `create_private` is made owner-only too.
+#[test]
+fn a_private_file_is_owner_only_in_a_folder_everyone_can_read() {
+    use crate::fs::{Create, create_private};
+
+    let root = OutsideProfile::new();
+    let broad = root.0.join("shared");
+    fs::create_dir(&broad).unwrap();
+    let granted = std::process::Command::new("icacls")
+        .arg(&broad)
+        .args(["/grant", "*S-1-1-0:(OI)(CI)R"])
+        .output()
+        .unwrap();
+    assert!(granted.status.success(), "{granted:?}");
+
+    let inherited = broad.join("inherited");
+    private_open_options()
+        .create_new(true)
+        .open(&inherited)
+        .unwrap();
+    let (_, aces) = parse(&dacl_sddl(&inherited).unwrap());
+    assert!(
+        aces.iter().any(|ace| ace.ends_with(";WD")),
+        "the old options inherit everyone's read: {aces:?}"
+    );
+
+    for how in [Create::New, Create::Truncate, Create::Append] {
+        let path = broad.join(format!("secret-{how:?}"));
+        drop(create_private(&path, how).unwrap());
+        let (flags, aces) = parse(&dacl_sddl(&path).unwrap());
+        assert!(flags.starts_with('P'), "{how:?}: protected: {flags}");
+        assert_eq!(aces, owner_only(""), "{how:?}");
+    }
+
+    for how in [Create::Truncate, Create::Append] {
+        let path = broad.join(format!("existing-{how:?}"));
+        fs::write(&path, b"x").unwrap();
+        drop(create_private(&path, how).unwrap());
+        let (flags, aces) = parse(&dacl_sddl(&path).unwrap());
+        assert!(flags.starts_with('P'), "{how:?}: protected: {flags}");
+        assert_eq!(aces, owner_only(""), "{how:?}");
+    }
+}

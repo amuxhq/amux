@@ -16,6 +16,7 @@ use windows_sys::Win32::Foundation::{
     ERROR_SHARING_VIOLATION, ERROR_USER_MAPPED_FILE, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
     LocalFree,
 };
+use windows_sys::Win32::Security::Authorization::SetSecurityInfo;
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
     SE_FILE_OBJECT, SetNamedSecurityInfoW,
@@ -26,10 +27,13 @@ use windows_sys::Win32::Security::{
     TOKEN_USER, TokenUser,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CREATE_NEW, CreateDirectoryW, CreateFileW, DELETE, FILE_ATTRIBUTE_NORMAL,
-    FILE_FLAG_BACKUP_SEMANTICS, FILE_RENAME_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, FileRenameInfo, FileRenameInfoEx, FlushFileBuffers, GetDriveTypeW,
-    GetVolumeInformationW, GetVolumePathNameW, OPEN_EXISTING, SetFileInformationByHandle,
+    CREATE_ALWAYS, CREATE_NEW, CreateDirectoryW, CreateFileW, DELETE, FILE_APPEND_DATA,
+    FILE_ATTRIBUTE_NORMAL, FILE_DISPOSITION_FLAG_DELETE, FILE_DISPOSITION_FLAG_POSIX_SEMANTICS,
+    FILE_DISPOSITION_INFO, FILE_DISPOSITION_INFO_EX, FILE_FLAG_BACKUP_SEMANTICS, FILE_GENERIC_READ,
+    FILE_GENERIC_WRITE, FILE_RENAME_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FILE_WRITE_DATA, FileDispositionInfo, FileDispositionInfoEx, FileRenameInfo, FileRenameInfoEx,
+    FlushFileBuffers, GetDriveTypeW, GetVolumeInformationW, GetVolumePathNameW, OPEN_ALWAYS,
+    OPEN_EXISTING, SetFileInformationByHandle, WRITE_DAC,
 };
 use windows_sys::Win32::System::SystemServices::FILE_SUPPORTS_POSIX_UNLINK_RENAME;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
@@ -38,7 +42,7 @@ use windows_sys::Win32::System::WindowsProgramming::{
     FILE_RENAME_FLAG_POSIX_SEMANTICS, FILE_RENAME_FLAG_REPLACE_IF_EXISTS,
 };
 
-use super::{Publish, SHARING_PATIENCE, VolumeCheck, VolumeProblem};
+use super::{Create, Flush, Publish, SHARING_PATIENCE, VolumeCheck, VolumeProblem};
 
 /// Windows writes a canonical path verbatim (`\\?\C:\…`).
 pub(super) const VERBATIM_PATHS: bool = true;
@@ -97,6 +101,63 @@ pub(super) fn private_open_options() -> OpenOptions {
     let mut options = OpenOptions::new();
     options.write(true);
     options
+}
+
+pub(super) fn create_private(path: &Path, how: Create) -> io::Result<File> {
+    let descriptor = PrivateDescriptor::new(false)?;
+    let attributes = descriptor.attributes();
+    let wide = wide(path)?;
+    let (access, disposition) = match how {
+        Create::New => (FILE_GENERIC_READ | FILE_GENERIC_WRITE, CREATE_NEW),
+        Create::Truncate => (FILE_GENERIC_READ | FILE_GENERIC_WRITE, CREATE_ALWAYS),
+        // As std appends: FILE_APPEND_DATA without FILE_WRITE_DATA, so every
+        // write lands at the end, whoever else writes.
+        Create::Append => (
+            FILE_GENERIC_READ | (FILE_GENERIC_WRITE & !FILE_WRITE_DATA) | FILE_APPEND_DATA,
+            OPEN_ALWAYS,
+        ),
+    };
+    // SAFETY: `wide` is NUL-terminated and `attributes` points at a
+    // descriptor that outlives the call. A file this creates takes the
+    // descriptor; one that exists keeps its own, set below.
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            access | WRITE_DAC,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            &attributes,
+            disposition,
+            FILE_ATTRIBUTE_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    // CREATE_ALWAYS and OPEN_ALWAYS succeed on an existing file and say so.
+    let existed = how != Create::New
+        && io::Error::last_os_error().raw_os_error() == Some(ERROR_ALREADY_EXISTS as i32);
+    // SAFETY: a valid handle this function owns.
+    let file = unsafe { File::from_raw_handle(handle) };
+    if existed {
+        // SAFETY: the handle is open with WRITE_DAC; the ACL lives in
+        // `descriptor`, which outlives the call.
+        let status = unsafe {
+            SetSecurityInfo(
+                file.as_raw_handle(),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                descriptor.dacl()?,
+                ptr::null(),
+            )
+        };
+        if status != 0 {
+            return Err(io::Error::from_raw_os_error(status as i32));
+        }
+    }
+    Ok(file)
 }
 
 pub(super) fn current_user_sid() -> io::Result<String> {
@@ -247,19 +308,72 @@ pub(super) fn create_temp(temp: &Path) -> io::Result<File> {
 
 /// Writes and flushes the temporary file, then renames it into place
 /// through its own handle, retrying sharing violations, and closes it.
+///
+/// If any of it fails, the temporary file is deleted through the same
+/// handle before it closes. Shared with nobody while open, it can't be
+/// held by anyone else (a scanner that opens a file as it closes) when
+/// the deletion is asked for, so it never stays behind.
 pub(super) fn finish_durably(
     mut file: File,
     _temp: &Path,
     path: &Path,
     bytes: &[u8],
     publish: Publish,
+    flush: Flush,
 ) -> io::Result<()> {
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    let target = wide(path)?;
-    super::patiently(SHARING_PATIENCE, || {
-        rename_by_handle(&file, &target, publish == Publish::Replace)
-    })
+    let mut put = || {
+        file.write_all(bytes)?;
+        if flush == Flush::Yes {
+            file.sync_all()?;
+        }
+        let target = wide(path)?;
+        super::patiently(SHARING_PATIENCE, || {
+            rename_by_handle(&file, &target, publish == Publish::Replace)
+        })
+    };
+    let put = put();
+    if put.is_err() {
+        // A failure here leaves the file for the caller's own removal.
+        let _ = delete_on_close(&file);
+    }
+    put
+}
+
+/// Marks the file `file` is open on (with DELETE access) for deletion: at
+/// once with POSIX semantics where the volume has them, else as the last
+/// handle closes.
+pub(crate) fn delete_on_close(file: &File) -> io::Result<()> {
+    let posix = FILE_DISPOSITION_INFO_EX {
+        Flags: FILE_DISPOSITION_FLAG_DELETE | FILE_DISPOSITION_FLAG_POSIX_SEMANTICS,
+    };
+    // SAFETY: the handle is open; the struct outlives the call, which reads
+    // `size_of` bytes of it.
+    let done = unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfoEx,
+            (&raw const posix).cast(),
+            size_of::<FILE_DISPOSITION_INFO_EX>() as u32,
+        )
+    } != 0;
+    if done {
+        return Ok(());
+    }
+    let plain = FILE_DISPOSITION_INFO { DeleteFile: true };
+    // SAFETY: as above.
+    let done = unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfo,
+            (&raw const plain).cast(),
+            size_of::<FILE_DISPOSITION_INFO>() as u32,
+        )
+    } != 0;
+    if done {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
 }
 
 /// Renames the file `file` is open on to `target` (NUL-terminated): with
@@ -348,8 +462,14 @@ pub(super) fn sync_dir(dir: &Path) -> io::Result<()> {
 // Removal ----------------------------------------------------------------------
 
 /// Removes a file, read-only or not: Windows refuses to delete a
-/// read-only file, which git's objects are.
+/// read-only file, which git's objects are. A link to a folder (a
+/// directory symlink or a junction) is a folder to Windows: it goes as an
+/// empty folder does, the link alone, nothing it points at.
 pub(super) fn remove_file(path: &Path) -> io::Result<()> {
+    use std::os::windows::fs::FileTypeExt as _;
+    if fs::symlink_metadata(path)?.file_type().is_symlink_dir() {
+        return fs::remove_dir(path);
+    }
     match fs::remove_file(path) {
         Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
             let meta = fs::symlink_metadata(path)?;

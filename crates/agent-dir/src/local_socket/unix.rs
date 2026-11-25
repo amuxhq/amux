@@ -130,7 +130,10 @@ pub async fn connect(path: &Path, patience: Duration) -> io::Result<(Stream, Opt
             // Linux: the listener's backlog is full. It is there, and busy.
             io::ErrorKind::WouldBlock => io::Error::new(
                 io::ErrorKind::ResourceBusy,
-                format!("{} is too busy to take a connection: {error}", path.display()),
+                format!(
+                    "{} is too busy to take a connection: {error}",
+                    path.display()
+                ),
             ),
             _ => error,
         })?;

@@ -9,6 +9,7 @@ autotests = false
 
 [dependencies]
 log-file = { workspace = true }
+os = { workspace = true }
 agent-dir = { workspace = true }
 attachments = { workspace = true }
 analytics = { workspace = true }

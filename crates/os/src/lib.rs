@@ -12,6 +12,8 @@ pub mod paths;
 pub mod process;
 #[cfg(feature = "async")]
 pub mod signal;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
 /// A process id, as every OS amux runs on numbers them.
 pub type Pid = u32;

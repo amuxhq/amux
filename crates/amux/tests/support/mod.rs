@@ -3,6 +3,7 @@
 //! client socket.
 
 pub mod desk;
+#[cfg(not(windows))] // out of scope on Windows: attach
 pub mod term;
 
 use std::collections::BTreeMap;

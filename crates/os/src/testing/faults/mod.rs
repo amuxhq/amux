@@ -16,13 +16,16 @@
 //! process running as root on Unix reads and writes whatever the mode
 //! says, so the fault would not happen.
 //!
-//! The per-OS code belongs with the other OS primitives in the `os` crate
-//! once production code needs it; until then tests are its only readers.
+//! Tests are its only readers, so it is built only with the `testing`
+//! feature. `provider_fakes::faults` re-exports it for the tests that
+//! already depend on the fakes.
 
 use std::fs::{File, Permissions};
 use std::io;
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
+mod tests;
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]
@@ -167,12 +170,16 @@ pub fn symlink(target: &Path, link: &Path) -> io::Result<Linked> {
 pub fn unenforced() -> Option<&'static str> {
     static UNENFORCED: std::sync::OnceLock<Option<&'static str>> = std::sync::OnceLock::new();
     *UNENFORCED.get_or_init(|| {
-        let dir = tempfile::tempdir().ok()?;
-        let probe = dir.path().join("probe");
+        // This crate takes no tempfile (docs/ARCHITECTURE.md's crate map),
+        // so the probe is named for this process and removed after.
+        let probe = std::env::temp_dir().join(format!("os-faults-probe-{}", std::process::id()));
         std::fs::write(&probe, "probe").ok()?;
-        let denied = deny(&probe, Deny::All).ok()?;
-        let read = std::fs::read(&probe).is_ok();
-        drop(denied);
-        read.then_some("this process is not held to file permissions (it runs as root)")
+        let read = deny(&probe, Deny::All).ok().map(|denied| {
+            let read = std::fs::read(&probe).is_ok();
+            drop(denied);
+            read
+        });
+        let _ = std::fs::remove_file(&probe);
+        read?.then_some("this process is not held to file permissions (it runs as root)")
     })
 }

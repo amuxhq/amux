@@ -127,7 +127,7 @@ test-windows *ARGS:
 # them (every Android target is linux-only).
 # Run the workspace's and the Android app's tests through Buck2.
 test *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live --exclude nightly -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py "$@"; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live --exclude nightly -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
 
 # The repository's checks (the root BUCK file, and the apps' script tests and
 # lints beside their scripts) and the JavaScript's (js/BUCK) as Buck2 tests,

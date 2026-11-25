@@ -33,7 +33,14 @@ A file is written only when its content changes. The `just` recipes that run
 the check targets run this first (`just checks`, `just test`, `just
 premerge`); `scripts/buck2 test` alone uses whatever was last written.
 
-    inputs.py
+    inputs.py [BUCK2_ARGS...]
+
+Given the arguments of the `buck2 test` a recipe is about to run, it writes
+nothing when every target pattern there is under crates/ or apps/: only the
+root package's and js/'s checks read these files, and on a machine with no
+Cargo cache, as on a CI runner, Cargo's graph alone fetches every crate the
+workspace depends on, which took the macOS jobs 30 to 50 s a run. A pattern
+it can't place, and no pattern at all, writes everything.
 """
 
 import hashlib
@@ -239,7 +246,30 @@ def advisories() -> None:
     write(ref, head.stdout)
 
 
+# No target in these packages reads what this writes (build/BUCK's
+# `tracked`, `day`, `store-baseline`, `proto-baseline` and `deny`).
+UNREACHED = ("//crates/", "//apps/", "root//crates/", "root//apps/")
+# buck2 test's options whose value is a label, not a target pattern.
+LABEL_OPTIONS = ("--exclude", "--include")
+
+
+def reaches_checks(arguments: list[str]) -> bool:
+    patterns, label = [], False
+    for argument in arguments:
+        if argument == "--":
+            break
+        if label:
+            label = False
+        elif argument in LABEL_OPTIONS:
+            label = True
+        elif not argument.startswith("-"):
+            patterns.append(argument)
+    return not patterns or any(not pattern.startswith(UNREACHED) for pattern in patterns)
+
+
 def main() -> None:
+    if not reaches_checks(sys.argv[1:]):
+        return
     listing = tracked()
     write(OUT / "tracked", listing)
     write(OUT / "day", f"{time.strftime('%Y-%m-%d', time.gmtime())}\n".encode())

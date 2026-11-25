@@ -10,8 +10,9 @@ A desktop-platform conditional is any of:
   `target_family`, or a `target_os` other than `"ios"` and `"android"`;
 - a path into `std::os::unix` or `std::os::windows`, `libc` or
   `windows_sys`: in a `use`, grouped trees too (`use std::{os::unix::fs}`,
-  counted once for each module a `use` reaches), or in an expression
-  (`libc::kill`, `os::unix::fs::symlink` after `use std::os`).
+  counted once for each module a `use` reaches, and `use os::unix::..`
+  after `use std::os`), or in an expression (`libc::kill`,
+  `os::unix::fs::symlink` after `use std::os`).
 
 Each one is counted where it is written. Three rules hold them:
 
@@ -27,7 +28,8 @@ Each one is counted where it is written. Three rules hold them:
    `cfg(any(unix, feature = ..))`, nor a lint's `cfg_attr`; a `cfg` nested
    in `cfg_attr`s only where every one around it applies on Windows). Such
    a gate exempts what it gates too: the item after an attribute (only the
-   field, variant, parameter or arm, where it is on one), a `mod name;`'s
+   field, variant, parameter or arm, where it is on one, ending at its
+   comma or at the brace of a block body with none), a `mod name;`'s
    file and folder, the whole file for an inner `#![cfg(...)]`, and the
    block an `if cfg!(...) {` or `if !cfg!(...) {` opens, when that is its
    whole condition.
@@ -39,8 +41,8 @@ Each one is counted where it is written. Three rules hold them:
    `*_test.rs` or `*_tests.rs`, a module declared under a `cfg(test)` gate
    (`#[cfg(test)] mod name;`, its file and folder), the item after a `cfg`
    that holds only in test builds (`test`, `all(test, unix)`; not
-   `any(windows, test)`), and an item marked `#[test]` (before or after the
-   gate). A test held back on Windows while a phase works is written
+   `any(windows, test)`), and an item marked `#[test]` or
+   `#[<path>::test]`, with or without a gate (before or after it). A test held back on Windows while a phase works is written
    `#[cfg_attr(windows, ignore = "windows: <symptom>")]`: allowed, and
    counted, wherever it is (homes and out-of-scope modules too). An ignore
    under a desktop predicate written any other way, nested ones
@@ -55,7 +57,10 @@ Each one is counted where it is written. Three rules hold them:
 
 `cfg!` is data when it picks a value rather than deciding what runs: it is
 not in the condition of an `if` or `while` or the scrutinee of a `match`,
-looking back across lines to the statement's start (`windows: cfg!(windows),`,
+looking back across lines to the statement's start (a `;` or a brace
+outside the brackets the `cfg!` is in, so a closure's block in the
+condition is no start, nor is an `if` inside a closure there its head)
+(`windows: cfg!(windows),`,
 `!cfg!(windows)`,
 `cfg!(windows).then(..)`), or it is, and every branch or arm gives a value:
 an `if` chain that ends in an `else` (`let s = if cfg!(windows) { ';' }
@@ -279,7 +284,9 @@ def item_end(code: str, at: int) -> int:
 
 def member_end(code: str, at: int) -> int:
     """Where the field, variant, parameter or arm starting at `at` ends: at
-    its comma outside brackets, or the bracket closing the list."""
+    its comma outside brackets, the bracket closing the list, or the brace
+    closing a block that nothing continues (a match arm `=> { .. }` may
+    leave out its comma)."""
     depth = 0
     for i in range(at, len(code)):
         c = code[i]
@@ -289,6 +296,12 @@ def member_end(code: str, at: int) -> int:
             depth -= 1
             if depth < 0:
                 return i
+            if c == "}" and depth == 0:
+                after = code[i + 1 :].lstrip()
+                if after.startswith(","):
+                    return len(code) - len(after) + 1
+                if not after.startswith((".", "?")) and not re.match(r"as\b", after):
+                    return i + 1
         elif c == "," and depth == 0:
             return i + 1
     return len(code)
@@ -530,9 +543,42 @@ def condition_head(code: str, offset: int) -> tuple[int, re.Match | None]:
     """The `if`, `while` or `match` whose condition or scrutinee holds the
     `cfg!` at `offset`, looking back across lines to the statement's start
     (the last `{`, `}` or `;`): the boundary, and the keyword or None."""
-    boundary = max(code.rfind(c, 0, offset) for c in "{};")
-    heads = list(HEAD.finditer(code, boundary + 1, offset))
-    return boundary, heads[-1] if heads else None
+    # Back to the statement's start: a `;` or a brace outside the brackets
+    # the `cfg!` is in, so a closure's block in the condition is no start.
+    depth, boundary = 0, -1
+    for i in range(offset - 1, -1, -1):
+        c = code[i]
+        if c in ")]":
+            depth += 1
+        elif c in "([":
+            depth = max(depth - 1, 0) if depth else 0
+        elif c == "}":
+            if depth == 0:
+                boundary = i
+                break
+            depth += 1
+        elif c == "{":
+            if depth == 0:
+                boundary = i
+                break
+            depth -= 1
+        elif c == ";" and depth == 0:
+            boundary = i
+            break
+    # The keywords still open at the `cfg!`: one inside a bracket that
+    # closes before it (a closure's `if`) is not its head.
+    keywords = {m.start(): m for m in HEAD.finditer(code, boundary + 1, offset)}
+    levels: list[list[re.Match]] = [[]]
+    for i in range(boundary + 1, offset):
+        c = code[i]
+        if i in keywords:
+            levels[-1].append(keywords[i])
+        elif c in "([{":
+            levels.append([])
+        elif c in ")]}" and len(levels) > 1:
+            levels.pop()
+    heads = [head for level in levels for head in level]
+    return boundary, max(heads, key=lambda m: m.start()) if heads else None
 
 
 def macro_is_data(source: Source, offset: int) -> bool:
@@ -839,22 +885,51 @@ def use_paths(tree: str) -> list[str]:
 def paths(source: Source) -> list[tuple[int, str]]:
     code = source.code
     found, uses = [], []
-    for m in USE.finditer(code):
+    statements = [(m, [path.removeprefix("::") for path in use_paths(m.group(1))]) for m in USE.finditer(code)]
+    # `use std::os;` makes `os::unix` a platform path in a later `use`.
+    os_imported = any(path in ("std::os", "std::os::self") for _, named in statements for path in named)
+    for m, named_paths in statements:
         uses.append((m.start(), m.end()))
         # Once for each platform module a `use` reaches, however many names
         # it takes from it.
         named = set()
-        for path in use_paths(m.group(1)):
-            hit = PLATFORM_PATH.match(path.removeprefix("::"))
+        for path in named_paths:
+            if os_imported:
+                path = re.sub(r"^os::(?=(?:unix|windows)(?:::|$))", "std::os::", path)
+            hit = PLATFORM_PATH.match(path)
             if hit:
                 named.add(f"use std::os::{hit.group(1)}" if hit.group(1) else f"use {hit.group(2)}")
         found += [(m.start(), what) for what in sorted(named)]
+    starts = [start for start, _ in uses]
     for m in EXPRESSION_PATH.finditer(code):
-        if any(start <= m.start() < end for start, end in uses):
+        # The `use` starting last before it, if it reaches past it.
+        at = bisect.bisect_right(starts, m.start()) - 1
+        if at >= 0 and m.start() < uses[at][1]:
             continue
         os_name = m.group(1) or m.group(2)
         found.append((m.start(), f"std::os::{os_name}" if os_name else f"{m.group(3)}::"))
     return sorted(found)
+
+
+TEST_FUNCTION = re.compile(r"#\s*\[\s*(?:\w+::)*test\s*[\](]")
+
+
+def test_items(code: str) -> list[tuple[int, int]]:
+    """The spans of the items `#[test]` or `#[<path>::test]` marks."""
+    spans = []
+    for m in TEST_FUNCTION.finditer(code):
+        open_at = code.find("[", m.start())
+        depth, end = 0, len(code)
+        for i in range(open_at, len(code)):
+            if code[i] == "[":
+                depth += 1
+            elif code[i] == "]":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        spans.append((m.start(), item_end(code, end)))
+    return spans
 
 
 def rust_files(root: Path) -> list[str]:
@@ -923,7 +998,7 @@ def scan(root: Path) -> Result:
         # what they test is the API callers use without `cfg`.
         held_tests_only = home and not is_integration_test(path)
         test_file = is_test_file(path) or under(path, test_modules)
-        tests = [g.extent for g in file_gates if g.test and g.extent]
+        tests = [g.extent for g in file_gates if g.test and g.extent] + test_items(source.code)
         scoped = [g.extent for g in file_gates if g.exempts and g.extent]
 
         for gate in file_gates:

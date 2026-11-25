@@ -207,8 +207,14 @@ impl Listener {
                 return Poll::Pending;
             };
             // Its place is refilled before the next connection is awaited,
-            // and a failure to refill never costs this one.
-            drop(instances.swap_remove(at));
+            // and a failure to refill never costs this one. The rest keep
+            // their order, oldest first, and the refill goes last: a client
+            // waiting on an older instance is served before newer ones,
+            // however fast they come.
+            drop(instances.remove(at));
+            // And refilled now, so a client that comes before the next
+            // accept finds an instance listening, not every one taken.
+            self.refill(cx);
             match connected {
                 Ok(()) => return Poll::Ready(Stream::Server(server)),
                 // The client came and went before it was accepted: an
@@ -476,16 +482,22 @@ async fn read_name(path: &Path, until: Instant) -> io::Result<Named> {
             tests::stall(&file);
             let _ = answer.send(read_name_now(&file));
         })?;
+    let late = || {
+        io::Error::new(
+            io::ErrorKind::TimedOut,
+            format!("{}: reading it did not finish in time", path.display()),
+        )
+    };
     match tokio::time::timeout_at(until.into(), reading).await {
+        // An answer seen only after the deadline (this task ran late, and
+        // a timeout looks at what it waits on before the clock) is late.
+        Ok(Ok(_)) if Instant::now() > until => Err(late()),
         Ok(Ok(named)) => named,
         Ok(Err(_)) => Err(io::Error::other(format!(
             "{}: the read ended without an answer",
             path.display()
         ))),
-        Err(_) => Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            format!("{}: reading it did not finish in time", path.display()),
-        )),
+        Err(_) => Err(late()),
     }
 }
 

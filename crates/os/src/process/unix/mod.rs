@@ -160,6 +160,10 @@ fn below(root: i32, table: &[table::Row]) -> Vec<Descendant> {
 }
 
 pub(super) fn kill_descendants(census: &[Descendant]) {
+    // Nothing to kill is the common stop (Provider::finish): no scan.
+    if census.is_empty() {
+        return;
+    }
     let _ = signal_descendants(census, libc::SIGKILL, &table::table());
 }
 
@@ -263,11 +267,19 @@ impl Family {
     }
 
     /// SIGKILLs every group and every descendant, then goes round until
-    /// nothing any census found still runs, within one deadline for all of
-    /// it (as Windows does): a member may fork while the last is killed,
-    /// and a killed one stuck in the kernel runs on a while. A signal
-    /// refused (not a process gone, which is what is wanted) is the error
-    /// while its member runs; what runs at the deadline is named.
+    /// a census finds nobody live and nothing an earlier one found still
+    /// runs, within one deadline for all of it (as Windows does): a member
+    /// may fork while the last is killed (one in a group of its own, which
+    /// killpg misses), and a killed one stuck in the kernel runs on a
+    /// while. A signal refused (not a process gone, which is what is
+    /// wanted) is the error while its member runs; what runs at the
+    /// deadline is named.
+    ///
+    /// What no census sees can't be ended: a child forked and orphaned
+    /// between two censuses (its parent killed, it reparented to init or a
+    /// subreaper) is out of the tree, as a daemon that detached itself is
+    /// (proposal §2.2). Windows' job holds those; Unix has no such
+    /// containment.
     pub(super) fn kill_others(&self) -> io::Result<()> {
         let me = std::process::id();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -304,6 +316,13 @@ impl Family {
                 refused.push((pid, error));
             }
             let table = table::try_table()?;
+            // And what has forked since this round's census, below us
+            // still: it is killed on the next round.
+            for descendant in below(me as i32, &table) {
+                if !found.contains(&descendant) {
+                    found.push(descendant);
+                }
+            }
             let left: Vec<Pid> = found
                 .iter()
                 .filter(|descendant| {

@@ -85,6 +85,39 @@ async fn a_short_deadline_is_kept_through_a_slow_read() {
     assert_eq!(error.kind(), io::ErrorKind::TimedOut, "{error}");
 }
 
+/// Clients already waiting are served while new ones keep arriving: each
+/// accept refills an instance a newcomer takes at once, and still the
+/// four that were waiting first are the next four served.
+#[tokio::test]
+async fn waiting_clients_are_served_before_newcomers() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("ctl.sock");
+    let mut listener = LocalListener::bind(&path).unwrap();
+    let mut clients = Vec::new();
+    for n in 0..INSTANCES {
+        let mut client = soon("a client connects", connect(&path)).await.unwrap();
+        client.write_all(&[n as u8]).await.unwrap();
+        clients.push(client);
+    }
+    let mut served = Vec::new();
+    for n in INSTANCES..2 * INSTANCES {
+        let mut stream = soon("an accept", listener.accept()).await.unwrap();
+        let mut said = [0u8];
+        stream.read_exact(&mut said).await.unwrap();
+        served.push(said[0] as usize);
+        // A newcomer takes the instance that accept just refilled.
+        let mut client = soon("a newcomer connects", connect(&path)).await.unwrap();
+        client.write_all(&[n as u8]).await.unwrap();
+        clients.push(client);
+    }
+    served.sort_unstable();
+    assert_eq!(
+        served,
+        (0..INSTANCES).collect::<Vec<_>>(),
+        "the first four, before any newcomer"
+    );
+}
+
 /// Within a few seconds, or the test fails rather than hangs.
 async fn soon<T>(what: &str, future: impl std::future::Future<Output = T>) -> T {
     tokio::time::timeout(Duration::from_secs(5), future)

@@ -158,7 +158,7 @@ _CRATES = [
     "app-embedded", "app-ffi", "app-jni", "app-runtime", "attachments", "browser-core",
     "claude-protocol", "client", "codex-protocol", "core-ring", "daemon-core", "fake-amux",
     "git-facts", "highlight", "installer", "interpret", "ios-tools", "journal", "log-file",
-    "models", "node", "path-core", "patience", "preview", "provider-fakes", "pty-host",
+    "models", "node", "os", "path-core", "patience", "preview", "provider-fakes", "pty-host",
     "qualification", "redaction", "relay-core", "release", "replay-support", "settings",
     "shot", "socket-core", "source-tree", "store", "supervisor-core", "testnet", "tui",
     "ui-code", "ui-runtime", "ui-state", "ui-view", "wire", "workspace-core", "xtask",

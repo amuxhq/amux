@@ -214,7 +214,11 @@ shares a global, an environment variable or a once-built fixture with another, w
 `HOME` and `TMPDIR` of its own, made empty for it, so none reads the machine's. No test builds a binary: a test that
 starts `amux`, a fake provider, `fake-amux` or the agent's install-path stand-in is given the directory Buck2 built
 them into as `TESTNET_BINARIES`. A test is reported slow after a minute and ended after three; a test that ends while
-a process it started still holds its output fails, since that process would outlive it. The documentation tests,
+a process it started still holds its output fails, since that process would outlive it. Whatever a test started ends
+with it: on Unix its process group is killed, and on Windows the test runs in a Job Object of its own (kill on close,
+no breakaway), joined before it runs, so even an orphan, which no walk of the process tree finds, is ended with the
+test. Within a test, the test net ends its agents itself, at `shutdown`, `remove_host` and `rewind_host`, by the
+process each agent's lock names (`agent_dir::lock_holder`), whether or not their daemon still runs. The documentation tests,
 the C ABI's pointer checks (`just miri`) and the sanitizers run under `cargo test`.
 
 CI's Linux gate runs them through Buck2 on the build host. Its macOS and Windows runners have no Buck2 yet, so they

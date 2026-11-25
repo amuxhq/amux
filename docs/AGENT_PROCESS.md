@@ -53,7 +53,7 @@ session id.
 ```text
 agents/<agent id>/
   spec.1, spec.2, …      one immutable spec per incarnation, written by the daemon
-  lock                   held by the agent process for its lifetime
+  lock                   held by the agent process for its lifetime; holds its pid
   ctl.sock               the agent listens; the daemon is its only client
   pty.sock               the agent listens; local terminal clients connect
                          (terminal Claude and Codex only)

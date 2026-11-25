@@ -7,6 +7,7 @@ description = "The agent directory: the contract between an agent process and it
 publish = false
 
 [dependencies]
+os = { workspace = true }
 prost = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -16,7 +17,6 @@ wire = { workspace = true }
 libc = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-os = { workspace = true }
 windows-sys = { workspace = true }
 
 [dev-dependencies]

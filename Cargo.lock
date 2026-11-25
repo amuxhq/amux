@@ -4470,6 +4470,7 @@ dependencies = [
  "journal",
  "models",
  "node",
+ "os",
  "patience",
  "prost",
  "provider-fakes",

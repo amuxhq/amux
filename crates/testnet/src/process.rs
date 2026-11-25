@@ -110,14 +110,16 @@ impl ProcessHost {
         lock_holder(&self.data_dir.join(node::INSTALLATION_LOCK))
     }
 
-    /// Crashes the daemon: SIGKILL, so nothing is flushed or closed
-    /// politely. A supervisor, if there is one, sees its daemon die as it
-    /// would any crash.
+    /// Crashes the daemon: killed outright (SIGKILL, `TerminateProcess`),
+    /// so nothing is flushed or closed politely. A supervisor, if there is
+    /// one, sees its daemon die as it would any crash.
     pub(crate) fn kill(&self) -> Result<u32, String> {
         let pid = self
             .daemon_pid()
             .ok_or("no daemon holds the installation lock")?;
-        signal(pid, "-KILL")?;
+        os::process::ProcessRef::open(pid)
+            .and_then(|daemon| daemon.kill())
+            .map_err(|error| format!("killing the daemon (pid {pid}): {error}"))?;
         Ok(pid)
     }
 
@@ -193,17 +195,4 @@ fn lock_holder(lock: &Path) -> Option<u32> {
         .lines()
         .filter_map(|line| line.trim().parse::<u32>().ok())
         .next()
-}
-
-pub(crate) fn signal(pid: u32, signal: &str) -> Result<(), String> {
-    let status = std::process::Command::new("kill")
-        .arg(signal)
-        .arg(pid.to_string())
-        .status()
-        .map_err(|error| error.to_string())?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("no process {pid} to signal"))
-    }
 }

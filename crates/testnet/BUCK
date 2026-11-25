@@ -10,6 +10,7 @@ DEPS = [
     "//crates/journal:journal",
     "//crates/models:models",
     "//crates/node:node",
+    "//crates/os:os",
     "//crates/patience:patience",
     "//crates/provider-fakes:provider-fakes",
     "//crates/release:release",

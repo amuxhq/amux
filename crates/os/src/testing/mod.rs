@@ -3,3 +3,4 @@
 //! crates turn on.
 
 pub mod faults;
+pub mod pipe;

@@ -555,10 +555,8 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
         "{args:?}"
     );
 
-    // Claude in its own terminal keeps to Claude's settings. Windows does not
-    // host terminal Claude (see docs/ARCHITECTURE.md, "Windows, as a stated
-    // cost").
-    #[cfg(unix)]
+    // Claude in its own terminal keeps to Claude's settings.
+    #[cfg(not(windows))] // out of scope on Windows: terminal Claude
     {
         let terminal = runtime
             .spawn(
@@ -579,9 +577,7 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
     daemon.shutdown().await.unwrap();
 }
 
-// Unix only: Windows does not host terminal Claude (see docs/ARCHITECTURE.md,
-// "Windows, as a stated cost").
-#[cfg(unix)]
+#[cfg(not(windows))] // out of scope on Windows: terminal Claude
 #[tokio::test(flavor = "multi_thread")]
 async fn terminal_claude_offers_what_its_hosts_claude_offers() {
     use wire::{Kind, session_event};
@@ -660,7 +656,7 @@ async fn terminal_claude_offers_what_its_hosts_claude_offers() {
 /// script when asked from inside the project.
 /// QA: a project's own slash commands never appeared in terminal Claude's
 /// command list.
-#[cfg(unix)]
+#[cfg(not(windows))] // out of scope on Windows: terminal Claude
 #[tokio::test(flavor = "multi_thread")]
 async fn terminal_claude_offers_the_commands_of_the_project_it_runs_in() {
     use std::os::unix::fs::PermissionsExt as _;

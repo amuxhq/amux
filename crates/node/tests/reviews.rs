@@ -1657,8 +1657,6 @@ mod stores {
     const SECRET: &str = "PLANTEDreviewsecret0001";
     const WORDS: &str = "PLANTEDreviewwords0002";
 
-    // Unix only for the link: making one on Windows takes a privilege.
-    #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread")]
     async fn switched_off_the_next_open_removes_every_review_and_nothing_else() {
         fn names(dir: &Path) -> std::collections::BTreeSet<String> {
@@ -1701,12 +1699,13 @@ mod stores {
 
         let review = agent.dir.join(daemon_core::reviews::REVIEW);
         assert!(review.join("objects").is_dir());
-        // Another agent's review folder is a link out of its directory:
-        // the link goes, and nothing it names.
+        // Another agent's review folder is a link out of its directory (a
+        // junction on Windows, which takes no privilege): the link goes,
+        // and nothing it names.
         let elsewhere = install.work.with_file_name("elsewhere");
         std::fs::create_dir_all(&elsewhere).unwrap();
         std::fs::write(elsewhere.join("kept.txt"), "kept\n").unwrap();
-        std::os::unix::fs::symlink(&elsewhere, linked.dir.join(daemon_core::reviews::REVIEW))
+        provider_fakes::faults::link_dir(&elsewhere, &linked.dir.join(daemon_core::reviews::REVIEW))
             .unwrap();
         let mut kept = names(&agent.dir);
         kept.remove(daemon_core::reviews::REVIEW);

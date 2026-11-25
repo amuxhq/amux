@@ -4,8 +4,6 @@
 //! reaching an amux started with its stop signals blocked, the sleep
 //! assertion, `amux update` and `amux config channel`.
 
-#![cfg(unix)]
-
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::Duration;
@@ -13,7 +11,7 @@ use std::time::Duration;
 use node::release;
 use node::supervisor::SUPERVISOR_LOCK;
 use patience::{holds_for, until_within};
-use support::{Channel, PATIENCE, amux_binary};
+use support::{Channel, PATIENCE, agent_pid, amux_binary};
 
 use crate::support;
 
@@ -66,6 +64,10 @@ impl Install {
             .args(args)
             .env("AMUX_CONFIG", &self.config)
             .env("HOME", self.root.path().join("home"))
+            // Windows' homes, so nothing a test runs reaches the person's.
+            .env("USERPROFILE", self.root.path().join("home"))
+            .env("APPDATA", self.root.path().join("home").join("AppData"))
+            .env("LOCALAPPDATA", self.root.path().join("home").join("Local"))
             .env(support::NO_DISCOVERY.0, support::NO_DISCOVERY.1)
             .env_remove("AMUX_LOG")
             .env_remove("XDG_CONFIG_HOME")
@@ -173,6 +175,10 @@ async fn stop_goes_to_the_supervisor_first_where_the_install_has_one() {
     .unwrap();
 }
 
+// Unix's own behaviour: a launcher's blocked signal mask is inherited, and
+// the stop is a signal. Windows stops amux through supervisor.sock, which
+// no mask reaches, and `stop_goes_to_the_supervisor_first_...` drives it.
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn stop_reaches_an_amux_started_with_its_stop_signals_blocked() {
     use std::os::unix::process::CommandExt;
@@ -270,12 +276,10 @@ async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
     );
 }
 
-// Built on every Unix so the test listing names it wherever the contracts
+// Built everywhere so the test listing names it wherever the contracts
 // are checked; only macOS has the assertion to look for.
-#[cfg_attr(
-    not(target_os = "macos"),
-    ignore = "only macOS holds a sleep assertion"
-)]
+#[cfg_attr(target_os = "linux", ignore = "only macOS holds a sleep assertion")]
+#[cfg_attr(windows, ignore = "windows: SYMPTOM_KEEP_AWAKE")]
 #[tokio::test(flavor = "multi_thread")]
 async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
     fn assertions_of(pid: u32) -> Vec<String> {
@@ -360,8 +364,14 @@ fn login_item(install: &Install) -> PathBuf {
 /// `start_at_login` writes the login item for the next login and removes
 /// it, with amux stopped; an install without a supervisor has none.
 #[cfg_attr(
-    not(target_os = "macos"),
+    target_os = "linux",
     ignore = "registering the systemd unit needs a user session"
+)]
+// Not run on Windows: there `start_at_login` registers the scheduled task
+// `amux` in the person's own Task Scheduler, which no test home keeps apart.
+#[cfg_attr(
+    windows,
+    ignore = "windows: not run: it would register the real scheduled task `amux`"
 )]
 #[test]
 fn start_at_login_writes_and_removes_the_login_item() {
@@ -668,20 +678,4 @@ async fn under_a_supervisor_an_experiment_switch_restarts_the_daemon_through_it(
     .await
     .expect("one restart");
     desk.run(&["settle", "sdk"]).await;
-}
-
-/// The agent process hosting the directory `dir`, found by the agent id
-/// its command line ends with.
-fn agent_pid(dir: &Path) -> Option<u32> {
-    let id = dir.file_name()?.to_string_lossy().into_owned();
-    let output = Command::new("pgrep")
-        .args(["-f", &format!(" agent .*{id}$")])
-        .output()
-        .ok()?;
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .next()?
-        .trim()
-        .parse()
-        .ok()
 }

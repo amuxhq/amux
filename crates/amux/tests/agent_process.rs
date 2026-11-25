@@ -11,9 +11,7 @@
 //! process group it leaves nothing running and a directory the next
 //! incarnation starts from.
 
-#![cfg(unix)]
-
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
 use agent::attach::Attached;
@@ -27,14 +25,11 @@ use wire::{
     CtlFrame, EffectiveConfig, Input, Kind, Phase, PromptInput, PtyMode, Stop, claude_item,
     claude_pty_input, claude_sdk_input, codex_input, codex_item, ctl_frame, send_input_response,
 };
+use crate::support;
+
 /// Long enough that no deadline fires during a test: the daemon's absence
 /// is survived, never drained.
 const GRACE_MS: u32 = 10 * 60 * 1000;
-
-/// The fake providers.
-fn fakes() -> &'static Path {
-    provider_fakes::binaries::dir()
-}
 
 struct Fixture {
     kind: Kind,
@@ -72,7 +67,7 @@ impl Fixture {
         .unwrap();
         let script_path = self.root.path().join(format!("script.{n}.json"));
         std::fs::write(&script_path, script).unwrap();
-        let fake = fakes().join(match self.kind {
+        let fake = provider_fakes::binaries::path(match self.kind {
             Kind::ClaudePty => "fake-claude-pty",
             Kind::Codex => "fake-codex",
             _ => "fake-claude-sdk",
@@ -106,20 +101,21 @@ impl Fixture {
         std::fs::write(self.dir.join(format!("spec.{n}")), spec.encode_to_vec()).unwrap();
     }
 
-    /// Starts `amux internal agent <dir>` as the daemon does: in a process group of
-    /// its own, detached from the test's terminal.
+    /// Starts `amux internal agent <dir>` as the daemon does: detached as an
+    /// agent is ([`os::process::Detach::Group`]: a process group of its
+    /// own on Unix), away from the test's terminal.
     fn spawn(&self, n: u32) -> Child {
-        use std::os::unix::process::CommandExt as _;
         let log = std::fs::File::create(self.root.path().join(format!("agent.{n}.log"))).unwrap();
-        Command::new(source_tree::bin!("amux"))
-            .args(["internal", "agent"])
-            .arg(&self.dir)
+        let mut command = Command::new(source_tree::bin!("amux"));
+        command.args(["internal", "agent"]).arg(&self.dir);
+        os::process::background(&mut command, os::process::Detach::Group, &self.work);
+        command
             .stdin(Stdio::null())
             .stdout(log.try_clone().unwrap())
-            .stderr(log)
-            .process_group(0)
-            .spawn()
+            .stderr(log);
+        os::process::spawn_background(&mut command)
             .expect("amux agent starts")
+            .child
     }
 
     async fn dial(&self) -> Daemon {
@@ -204,21 +200,16 @@ impl Fixture {
 
     /// The lock is free and ctl.sock is gone: the next incarnation may start.
     fn assert_released(&self) {
-        let lock = std::fs::OpenOptions::new()
-            .write(true)
-            .open(self.dir.join(agent::LOCK))
-            .unwrap();
-        assert!(lock.try_lock().is_ok(), "the agent released its lock");
+        assert!(
+            self.dir.join(agent::LOCK).exists() && !agent_dir::locked(&self.dir),
+            "the agent released its lock"
+        );
     }
 
     /// Whether any process mentioning this agent's directory still runs:
     /// the agent, its provider, or the provider's tool server.
     fn anything_running(&self) -> bool {
-        Command::new("pgrep")
-            .args(["-f", self.dir.to_str().unwrap()])
-            .stdout(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
+        support::running_mentioning(self.dir.to_str().unwrap())
     }
 }
 
@@ -454,6 +445,7 @@ async fn life_of_an_agent(kind: Kind) {
                 drawn(attached, "size 33x111").await;
             }
         }
+        #[cfg(not(windows))] // out of scope on Windows: attach
         Kind::Codex => {
             let thread = agent.provider_session();
             for _ in 0..2 {
@@ -463,10 +455,12 @@ async fn life_of_an_agent(kind: Kind) {
                 terminals.push(attached);
             }
         }
-        _ => assert!(
+        Kind::ClaudeSdk => assert!(
             !agent.dir.join(agent::PTY_SOCK).exists(),
             "headless Claude has no terminal to attach to"
         ),
+        // Codex on Windows, whose attach is out of scope there.
+        _ => {}
     }
 
     // A daemon dialling back in finds it caught up, and stops it.
@@ -510,12 +504,10 @@ async fn life_of_an_agent(kind: Kind) {
         agent.agent_logs()
     );
 
-    // Killed by process group, it leaves nothing running behind it.
+    // Killed as the daemon kills an agent (its process group on Unix, its
+    // tree on Windows), it leaves nothing running behind it.
     assert!(agent.anything_running(), "the search finds the live agent");
-    let group = process.id() as libc::pid_t;
-    // SAFETY: kill with a negative pid signals that process group; the
-    // group is the agent process this test started as its leader.
-    assert_eq!(unsafe { libc::kill(-group, libc::SIGKILL) }, 0);
+    assert!(support::kill_group(process.id()), "the agent is killed");
     assert!(!exits(&mut process).await.success());
     until("every process of the killed agent to go", || {
         std::future::ready(
@@ -528,9 +520,11 @@ async fn life_of_an_agent(kind: Kind) {
     .unwrap();
     agent.assert_released();
 
-    // The killed Codex server's socket is left where the next one listens.
-    let codex_socket = agent.dir.join(agent::PRIVATE).join("codex.sock");
+    // The killed Codex server's socket is left where the next one listens:
+    // Codex serves one for attach, and speaks over stdio without it.
+    #[cfg(not(windows))] // out of scope on Windows: attach
     if kind == Kind::Codex {
+        let codex_socket = agent.dir.join(agent::PRIVATE).join("codex.sock");
         assert!(
             std::fs::symlink_metadata(&codex_socket).is_ok(),
             "the killed server left its socket"
@@ -571,6 +565,7 @@ async fn life_of_an_agent(kind: Kind) {
     agent.assert_released();
 }
 
+#[cfg(not(windows))] // out of scope on Windows: terminal Claude
 #[tokio::test(flavor = "multi_thread")]
 async fn a_terminal_claude_agent_outlives_its_daemon_and_resumes() {
     life_of_an_agent(Kind::ClaudePty).await;
@@ -590,7 +585,6 @@ async fn a_codex_agent_outlives_its_daemon_and_resumes() {
 /// after its input closes, so an agent killed outright mid-turn would leave
 /// it running with no one to answer. Tethered as Codex is, it is asked to
 /// finish when its agent dies, and killed if it has not a few seconds on.
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_killed_agent_takes_its_headless_claude_with_it() {
     let agent = Fixture::new(Kind::ClaudeSdk);
@@ -617,11 +611,8 @@ async fn a_killed_agent_takes_its_headless_claude_with_it() {
     agent
         .wait("the turn is under way", |log| log.has_text("working"))
         .await;
-    // SAFETY: signals the agent process this test started, alone.
-    assert_eq!(
-        unsafe { libc::kill(process.id() as libc::pid_t, libc::SIGKILL) },
-        0
-    );
+    // The agent alone, at once.
+    process.kill().unwrap();
     assert!(!exits(&mut process).await.success());
     let gone = until("headless Claude to go with its agent", || {
         std::future::ready(

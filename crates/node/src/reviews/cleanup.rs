@@ -68,7 +68,6 @@ pub(super) fn remove(agent_dir: &Path) -> io::Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(unix)]
     #[test]
     fn a_link_inside_the_review_folder_is_removed_not_followed() {
         let root = tempfile::tempdir().unwrap();
@@ -78,7 +77,8 @@ mod tests {
         std::fs::create_dir_all(folder.join("objects")).unwrap();
         std::fs::create_dir_all(&elsewhere).unwrap();
         std::fs::write(elsewhere.join("kept"), "kept").unwrap();
-        std::os::unix::fs::symlink(&elsewhere, folder.join("objects").join("info")).unwrap();
+        // A junction on Windows, which takes no privilege.
+        provider_fakes::faults::link_dir(&elsewhere, &folder.join("objects").join("info")).unwrap();
 
         assert!(super::remove(&agent).unwrap());
         assert!(!folder.exists());

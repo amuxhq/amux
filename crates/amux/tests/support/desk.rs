@@ -129,6 +129,10 @@ impl Desk {
             .env("PATH", path)
             .env(SCRIPT_ENV, self.root.path().join("script.json"))
             .env("CLAUDE_CONFIG_DIR", self.root.path().join("claude"))
+            // Windows' homes, so nothing a test runs reaches the person's.
+            .env("USERPROFILE", self.root.path().join("home"))
+            .env("APPDATA", self.root.path().join("home").join("AppData"))
+            .env("LOCALAPPDATA", self.root.path().join("home").join("Local"))
             .env(super::NO_DISCOVERY.0, super::NO_DISCOVERY.1)
             .env_remove("AMUX_LOG")
             .stdin(Stdio::null())
@@ -235,6 +239,7 @@ impl Drop for Desk {
             .env(super::NO_DISCOVERY.0, super::NO_DISCOVERY.1)
             .env_remove("AMUX_LOG")
             .output();
+        super::kill_agents_under(&self.data);
         let _ = std::process::Command::new("pkill")
             .args(["-9", "-f"])
             .arg(self.root.path())

@@ -1,5 +1,5 @@
 ## 0 initial
-snapshot capabilities stops_job attachable resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
+snapshot capabilities stops_job resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
 snapshot STARTING queue=[] working_on=- at=1800000000000 conversation=? model_name=? sign_in=? background=? asks=[] approval=? context=? plan=? usage=? servers=[]
 ## 1 fact {"channel":"rpc","json":{"id":2,"result":{"approvalPolicy":"on-request","model":"gpt-5.6-luna","reasoningEffort":null,"sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.160.0","id":"t1","turns":[]}}}}
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"

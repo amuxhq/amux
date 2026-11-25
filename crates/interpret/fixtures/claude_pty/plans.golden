@@ -1,5 +1,5 @@
 ## 0 initial
-snapshot capabilities switches_back attachable resumable sends_now images files passes_unknown_commands forks model=command:/model effort=command:/effort permission=step mode=-
+snapshot capabilities switches_back resumable sends_now images files passes_unknown_commands forks model=command:/model effort=command:/effort permission=step mode=-
 snapshot STARTING queue=[] working_on=- at=1800000000000 conversation=? model_name=? sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue 9d924e4e models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]

@@ -2260,12 +2260,13 @@ fn render_part<'a, I: Interpreter>(
 }
 
 /// What an agent can do, as a golden prints it: each ability it has, then
-/// how each setting is changed.
+/// how each setting is changed. Whether it is attachable is left out: for
+/// Codex that is the platform the tests run on (not on Windows), and a
+/// golden reads the same on every platform.
 fn describe_capabilities(capabilities: &wire::AgentCapabilities) -> String {
     let abilities = [
         ("stops_job", capabilities.stops_job),
         ("switches_back", capabilities.switches_back),
-        ("attachable", capabilities.attachable),
         ("resumable", capabilities.resumable),
         ("sends_now", capabilities.sends_now),
         ("images", capabilities.images),

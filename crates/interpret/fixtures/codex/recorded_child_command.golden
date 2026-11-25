@@ -1,5 +1,5 @@
 ## 0 initial
-snapshot capabilities stops_job attachable resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
+snapshot capabilities stops_job resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
 snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] approval=? context=? plan=? usage=? servers=[]
 ## 6 recorded 5: fact Rpc method=account/updated
 snapshot STARTING queue=[] working_on=- at=1794830997932 conversation=? model_name=? sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=? context=? plan=? usage=? servers=[]

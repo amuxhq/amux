@@ -32,6 +32,7 @@ mod generation;
 mod grpc;
 mod host_settings;
 pub use host_settings::{SettingsOptions, claude_kind};
+pub use offers::own_kinds;
 mod hosts;
 mod identity;
 mod install;

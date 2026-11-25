@@ -1275,7 +1275,7 @@ impl ChatView {
         };
         if let Some(branch) = state
             .agent()
-            .git
+            .git()
             .as_ref()
             .and_then(|git| git.branch.as_deref())
         {
@@ -1311,7 +1311,7 @@ pub(super) fn change_totals(
     state: &SessionState,
     comparison: Comparison,
 ) -> Option<wire::ChangeTotals> {
-    let git = state.agent().git.as_ref()?;
+    let git = state.agent().git()?;
     match comparison {
         Comparison::Uncommitted => git.uncommitted,
         Comparison::OnBranch => git.on_branch,

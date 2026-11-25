@@ -292,7 +292,7 @@ impl ProfileRuntime {
                 .unwrap_or_default();
             let own = self.host().as_bytes().to_vec();
             for row in rows.iter().filter(|row| row.agent.host == own) {
-                let Some(kind) = kind_coded(row.kind, row.provider_id()) else {
+                let Some(kind) = kind_coded(row.kind, row.provider.as_str()) else {
                     continue;
                 };
                 let running =
@@ -456,7 +456,7 @@ mod tests {
             of: Some(wire::codex_input::Of::Answer(wire::CodexAnswer {
                 ask_key: "k".into(),
                 of: Some(wire::codex_answer::Of::Approve(
-                    wire::Decision::Approve as i32,
+                    wire::CodexDecision::Approve as i32,
                 )),
             })),
         });

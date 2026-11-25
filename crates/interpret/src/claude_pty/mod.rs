@@ -115,9 +115,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 pub(crate) use subagents::{CONTINUED_CLOSING, CONTINUED_PREAMBLE};
 use wire::{
-    AgentSpec, Ask, AskClosed, Attachment, BoundaryKind, ClaudeAnswer, ClaudeGrant, ClaudeSnapshot,
-    DecisionOutcome, Envelope, Input, KindInput, Refusal, RunningCall, Step, ToolDecision,
-    claude_answer, claude_item, claude_pty_input, tool_decision,
+    AgentSpec, AskClosed, Attachment, BoundaryKind, ClaudeAnswer, ClaudeAsk, ClaudeGrant,
+    ClaudeSnapshot, DecisionOutcome, Envelope, Input, KindInput, Refusal, RunningCall, Step,
+    ToolDecision, claude_answer, claude_item, claude_pty_input, tool_decision,
 };
 
 use crate::claude_answers::{self, AnswerShape, Decided};
@@ -127,7 +127,7 @@ use crate::claude_common::{
 };
 use crate::{
     Carrier, Checkpoint, Effect, Emit, Event, FixtureInput, Interpreter, ItemDraft, ItemView,
-    Shared, SnapshotView, Stepped, ask_item, claude_pty_input, human, serde_pb, unknown,
+    Shared, SnapshotView, Stepped, ask_item, claude_pty_input, person, serde_pb, unknown,
 };
 
 /// The interpreter for kind `claude_pty`.
@@ -508,7 +508,7 @@ struct AskMeta {
     /// asked it: the open ask only says it is answered in the terminal,
     /// and its item keeps what was asked.
     #[serde(with = "serde_pb::opt_msg")]
-    asked: Option<Ask>,
+    asked: Option<ClaudeAsk>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -559,15 +559,14 @@ struct Running {
 /// Everything the Claude PTY interpreter holds; its checkpoint.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct State {
-    shared: Shared<Ask>,
+    shared: Shared<ClaudeAsk>,
     provider: Provider,
     tools: BTreeMap<String, Tool>,
     asks: BTreeMap<String, AskMeta>,
     seq: u64,
     next_ask: u64,
     next_boundary: u64,
-    /// The spec's incarnation: a later one's session is a resume. A
-    /// checkpoint from before it was kept reads 0, as a first.
+    /// The spec's incarnation: a later one's session is a resume.
     #[serde(default)]
     incarnation: u32,
     /// The boundary drawn above a first prompt drawn before Claude
@@ -583,8 +582,7 @@ pub struct State {
     /// The subagents Claude's Agent tool started, by Claude's agent id for
     /// each, from when Claude names one until its end: nothing of a
     /// finished subagent stays, so a long-lived agent's checkpoint does not
-    /// grow with every subagent it ever ran. A checkpoint from before they
-    /// were agents of their own has none.
+    /// grow with every subagent it ever ran.
     #[serde(default)]
     subagents: BTreeMap<String, subagents::Sub>,
     /// How a finished subagent's last run ended, by its agent id, while the
@@ -691,7 +689,7 @@ pub(super) struct Stream {
 impl State {
     /// The kind-neutral state: the agent process reads the pending
     /// agent-message set and quiescence from here.
-    pub fn shared(&self) -> &Shared<Ask> {
+    pub fn shared(&self) -> &Shared<ClaudeAsk> {
         &self.shared
     }
 
@@ -751,25 +749,36 @@ impl State {
         self.seq
     }
 
+    /// Says on the snapshot's envelope what every kind says the same way.
+    /// Terminal Claude reports no sign-in.
+    fn report(&mut self) {
+        let provider = &self.provider;
+        self.shared.report(
+            wire::agents::CLAUDE,
+            crate::shared::Report {
+                model: provider.model.as_deref(),
+                effort: provider.effort.as_deref(),
+                permission: provider.permission_mode.as_deref(),
+                mode: None,
+                // Terminal Claude lists no models of its own to name it from.
+                model_name: provider
+                    .model
+                    .as_deref()
+                    .filter(|model| !model.is_empty())
+                    .map(crate::claude_common::tidy_model),
+                sign_in: None,
+                conversation: provider.session.as_deref(),
+            },
+        );
+    }
+
     fn body(&self) -> Vec<u8> {
         let tasks = task_list(&self.tasks);
         ClaudeSnapshot {
             asks: self.shared.asks().open_asks().to_vec(),
             tasks: Some(tasks),
             context: Some(context_meter(self.context_tokens, None)),
-            model: self.provider.model.clone(),
-            // Terminal Claude lists no models of its own to name it from.
-            model_name: self
-                .provider
-                .model
-                .as_deref()
-                .filter(|model| !model.is_empty())
-                .map(crate::claude_common::tidy_model),
-            effort: self.provider.effort.clone(),
             switched_away: Some(self.provider.switched_away),
-            permission: self.provider.permission_mode.clone(),
-            provider_session: self.provider.session.clone(),
-            background_jobs: Some(self.shared.jobs()),
             servers: if self.provider.tools_withheld {
                 crate::claude_common::amux_tools_withheld(Vec::new())
             } else {
@@ -811,7 +820,7 @@ impl State {
     }
 
     /// The open ask keyed `ask_key`, in whichever agent's snapshot holds it.
-    fn wire_ask(&self, ask_key: &str) -> Option<Ask> {
+    fn wire_ask(&self, ask_key: &str) -> Option<ClaudeAsk> {
         match self.asker(ask_key) {
             None => self.shared.asks().get(ask_key).cloned(),
             Some(child) => self.shared.subagent_asks(&child)?.get(ask_key).cloned(),
@@ -820,7 +829,7 @@ impl State {
 
     /// Opens an ask, or rewrites the open one, in the snapshot of the agent
     /// that raised it.
-    fn put_ask(&mut self, emit: &mut Emit, ask: Ask) {
+    fn put_ask(&mut self, emit: &mut Emit, ask: ClaudeAsk) {
         match self.asker(&ask.key) {
             None => self.shared.open_ask(ask),
             Some(child) => self.shared.subagent(emit, &child).open_ask(ask),
@@ -828,7 +837,7 @@ impl State {
     }
 
     /// Closes an open ask in the snapshot of the agent that raised it.
-    fn take_ask(&mut self, emit: &mut Emit, ask_key: &str) -> Option<Ask> {
+    fn take_ask(&mut self, emit: &mut Emit, ask_key: &str) -> Option<ClaudeAsk> {
         match self.asker(ask_key) {
             None => self.shared.close_ask(ask_key),
             Some(child) => self.shared.subagent(emit, &child).close_ask(ask_key),
@@ -859,7 +868,7 @@ impl State {
             }
             None => {
                 if let Some(open) = self.wire_ask(ask_key) {
-                    let ask = Ask {
+                    let ask = ClaudeAsk {
                         item_key: tool_id.to_owned(),
                         ..open
                     };
@@ -1092,7 +1101,7 @@ impl State {
     /// Writes the own item of an ask that is not a call's (a tool server's
     /// form or link, the trust question), open or closed, into the chat of
     /// the agent that raised it.
-    fn emit_ask_item(&mut self, emit: &mut Emit, ask: &Ask, closed: Option<AskClosed>) {
+    fn emit_ask_item(&mut self, emit: &mut Emit, ask: &ClaudeAsk, closed: Option<AskClosed>) {
         let who = self.asker(&ask.key);
         if let Some(draft) = crate::claude_subagent::ask_draft(ask, closed) {
             self.draw(emit, who.as_deref(), draft);
@@ -1111,9 +1120,9 @@ impl State {
 
     /// An open ask as its item records it: what the tool server asked,
     /// for one left to Claude's dialog.
-    fn as_asked(&self, ask: Ask) -> Ask {
+    fn as_asked(&self, ask: ClaudeAsk) -> ClaudeAsk {
         match self.asks.get(&ask.key).and_then(|meta| meta.asked.as_ref()) {
-            Some(asked) => Ask {
+            Some(asked) => ClaudeAsk {
                 body: asked.body.clone(),
                 ..ask
             },
@@ -1135,11 +1144,11 @@ impl State {
             return;
         };
         let reason = match &open.body {
-            Some(wire::ask::Body::Link(link)) => format!(
+            Some(wire::claude_ask::Body::Link(link)) => format!(
                 "{} is showing a link in Claude's terminal; open it there, or stop the agent.",
                 link.server
             ),
-            Some(wire::ask::Body::Form(form)) => format!(
+            Some(wire::claude_ask::Body::Form(form)) => format!(
                 "{} is showing a form in Claude's terminal; answer it there, or stop the agent.",
                 form.server
             ),
@@ -1148,10 +1157,10 @@ impl State {
         self.release(emit, ask_key);
         self.put_ask(
             emit,
-            Ask {
-                body: Some(wire::ask::Body::Unanswerable(wire::UnanswerableAsk {
-                    reason,
-                })),
+            ClaudeAsk {
+                body: Some(wire::claude_ask::Body::Unanswerable(
+                    wire::UnanswerableAsk { reason },
+                )),
                 ..open.clone()
             },
         );
@@ -1166,7 +1175,7 @@ impl State {
         &mut self,
         emit: &mut Emit,
         ask_key: &str,
-        mut ask: Ask,
+        mut ask: ClaudeAsk,
         closed: AskClosed,
     ) {
         if ask.item_key.is_empty() {
@@ -1222,7 +1231,7 @@ impl State {
             if !open.item_key.is_empty() {
                 continue;
             }
-            let ask = Ask {
+            let ask = ClaudeAsk {
                 item_key: ask_item::key(&key),
                 ..open
             };
@@ -1356,8 +1365,10 @@ impl State {
                 key: format!("prompt:{}", crate::serde_pb::to_hex(&entry.input_id)),
                 text: entry.text,
                 attachments: entry.attachments,
+                body: item_body(claude_item::Kind::Prompt(
+                    self.shared.prompt(&entry.input_id),
+                )),
                 input_id: entry.input_id,
-                body: item_body(claude_item::Kind::Prompt(wire::Prompt {})),
                 complete: true,
                 ..Default::default()
             },
@@ -1454,7 +1465,7 @@ impl State {
                     return;
                 }
                 self.dismiss_plan(emit);
-                if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, human()) {
+                if let Some(entry) = self.shared.admit_prompt(emit, &id, prompt, person()) {
                     self.typed(emit, entry);
                 }
             }
@@ -1541,13 +1552,13 @@ impl State {
         };
         let body = open.body.clone();
         let asked = match &body {
-            Some(wire::ask::Body::Question(asked)) => Some(asked.clone()),
+            Some(wire::claude_ask::Body::Question(asked)) => Some(asked.clone()),
             _ => None,
         };
         // A tool server's form or link is the ask's own item, closed with
         // what was sent.
         let dialog = match (&parsed, &body) {
-            (Some(claude_answer::Of::Form(form)), Some(wire::ask::Body::Form(asked))) => {
+            (Some(claude_answer::Of::Form(form)), Some(wire::claude_ask::Body::Form(asked))) => {
                 Some(ask_item::form_sent(form, &asked.schema_json))
             }
             (Some(claude_answer::Of::Link(link)), _) => Some(ask_item::link_answered(link.action)),
@@ -1630,7 +1641,7 @@ impl State {
         who: Option<&str>,
         id: &[u8],
         key: &str,
-    ) -> Option<Ask> {
+    ) -> Option<ClaudeAsk> {
         match who {
             None => self.shared.answer(emit, id, key),
             Some(child) => self.shared.subagent(emit, child).answer(id, key),
@@ -1691,7 +1702,7 @@ impl State {
         };
         self.asks.remove(key);
         let closed = match &ask.body {
-            Some(wire::ask::Body::Question(asked)) => ask_item::answered(asked, &answer),
+            Some(wire::claude_ask::Body::Question(asked)) => ask_item::answered(asked, &answer),
             _ => None,
         };
         self.emit_ask_item(emit, &ask, closed);
@@ -1767,7 +1778,11 @@ impl Interpreter for ClaudePty {
             }
             Event::Fact(fact) => state.fact(&mut emit, fact),
             Event::Input(input) => state.input(&mut emit, input),
-            Event::ChildInput { agent_id, input } => state.child_input(&mut emit, &agent_id, input),
+            Event::ChildInput {
+                agent_id,
+                input_id,
+                of,
+            } => state.child_input(&mut emit, &agent_id, input_id, of),
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
             Event::Rename { .. } => state.shared.renamed(),
             Event::ProviderExit { code } => state.exited(&mut emit, crate::provider_exit(code)),
@@ -1796,12 +1811,7 @@ impl Interpreter for ClaudePty {
             .retain(|prompt| awaiting.contains(&prompt.id));
         state.drop_settled_runs();
         state.subagent_snapshots(&mut emit);
-        state.shared.set_settings(
-            wire::agents::CLAUDE,
-            state.provider.model.as_deref(),
-            state.provider.effort.as_deref(),
-            state.provider.permission_mode.as_deref(),
-        );
+        state.report();
         let body = state.body();
         let notice = state.shared.notice(crate::notice::claude_ask);
         state.shared.finish(emit, body, notice)

@@ -435,11 +435,24 @@ impl Values {
                     let body = self.proto(input_message(I::KIND), &recorded["shape"]);
                     Event::ChildInput {
                         agent_id,
-                        input: Input {
+                        input_id: input_id.clone(),
+                        of: wire::child_input::Of::Input(Input {
                             input_id,
                             kind: I::KIND as i32,
                             body,
-                        },
+                        }),
+                    }
+                }
+                // The daemon's stop of one of a subagent's jobs, for every
+                // kind alike.
+                "child_stop_job" => {
+                    let input_id = self.id(recorded["input_id"].as_str().unwrap_or_default(), 16);
+                    let agent_id = self.id(recorded["agent"].as_str().unwrap_or_default(), 16);
+                    let key = self.key(recorded["job"].as_str().unwrap_or_default());
+                    Event::ChildInput {
+                        agent_id,
+                        input_id,
+                        of: wire::child_input::Of::StopJob(wire::StopJob { key }),
                     }
                 }
                 "agent_message" => {
@@ -479,6 +492,23 @@ impl Values {
 
     /// The bytes a record's id alias (`id-<hash>`) stands for, made up as
     /// `size` bytes when none is bound.
+    /// The key a record's key alias (`key-<hash>`, `turn:<hash>`) stood
+    /// for: the one a step concluded, or one made up to stand in for it.
+    fn key(&mut self, alias: &str) -> String {
+        let made = match alias.strip_prefix("key-") {
+            Some(hash) => self.value(hash, "", 12, 0),
+            None => match alias.split_once(':') {
+                Some((prefix, hash)) => {
+                    let mut key = format!("{prefix}:").into_bytes();
+                    key.extend(self.value(hash, "", 12, 0));
+                    key
+                }
+                None => Vec::new(),
+            },
+        };
+        String::from_utf8_lossy(&made).into_owned()
+    }
+
     fn id(&mut self, alias: &str, size: usize) -> Vec<u8> {
         match alias.strip_prefix("id-") {
             Some(hash) => self.value(hash, "", size, 0),

@@ -7,7 +7,9 @@ premerge`, through Buck2 on the build host's cache, so what a landing or a
 premerge already tested comes back as cache hits rather than running again.
 On macOS four jobs build the iPhone app, build the Mac app, run the
 workspace's tests and run the terminal journeys through Buck2, on the runner itself, with a cache of
-their own kept between runs. Windows still tests under Cargo beside its Buck2 job. Every job runs `just` recipes — the same recipes a
+their own kept between runs, and on Windows a job runs the workspace's tests.
+Those five run only when a change reaches what they alone test ([Which jobs
+a change runs](#which-jobs-a-change-runs)). Every job runs `just` recipes — the same recipes a
 developer runs locally, so a job's log names the command to reproduce it.
 [Build](BUILD.md) describes the recipes; [Testing](TESTING.md) describes
 the suites they run.
@@ -42,10 +44,12 @@ reach a shipped binary.
 
 ### CI jobs
 
-Every job runs on every push. The Linux gate needs nothing to tell it what
-a change can reach: Buck2 reruns only the tests and checks whose inputs
-changed, and takes the rest from the cache. The macOS jobs, through Buck2
-too, rerun only what changed; the Windows Cargo job runs whole.
+The Linux gate runs on every push, and needs nothing to tell it what a
+change can reach: Buck2 reruns only the tests and checks whose inputs
+changed, and takes the rest from the cache. The macOS and Windows jobs,
+through Buck2 too, rerun only what changed, but each still costs minutes of a
+runner the organisation has few of, so each runs only when the change
+reaches what it alone tests ([Which jobs a change runs](#which-jobs-a-change-runs)).
 
 CI on `main` judges the newest commit, not every commit. Each job of a
 push's run waits for the same job of the run before it, and a newer push
@@ -68,8 +72,8 @@ takes seconds shares a job.
 
 | Job | Runner | Runs |
 | --- | --- | --- |
+| Which jobs this change runs | `ubuntu-latest` | `scripts/ci_jobs.py decide`: whether each of the last five jobs here runs, and why, in the run's summary ([Which jobs a change runs](#which-jobs-a-change-runs)) |
 | Linux gate | `ubuntu-latest`, its actions on the build host | `just premerge` through Buck2 on the build host's cache ([The Linux gate](#the-linux-gate)) |
-| Documentation tests | `ubuntu-latest` | `just doctest`, under Cargo, beside the gate |
 | Linux gate, Android app | `ubuntu-latest` | Only without the build host (a fork's pull request): `just premerge-half android`, the Android app's half of the gate, while the Linux gate runs `just premerge-half workspace`; with the build host it does nothing |
 | Windows | `windows-latest`, its builds on the build host | `just check-windows` on the build host, then `just test-windows` on a Windows worker of the runner's own ([The Windows job](#the-windows-job)); without the build host, `just cargo-test` |
 | iPhone app | `macos-26`, building in Buck2 and testing on a worker of its own | `just ios simulator golden`, then through Buck2 every target under `apps/apple` but the Mac app's built, and the package suites and the hosted app suite run on the simulator ([The macOS jobs](#the-macos-jobs)) |
@@ -103,14 +107,22 @@ with the repository's Tailscale OAuth client (`TS_OAUTH_CLIENT_ID`,
 `TS_OAUTH_SECRET`), which the tailnet's rules let reach the build cache's
 port and nothing else. The build host's name on the tailnet is the
 repository's `BUILD_HOST` Actions variable (`gh variable set BUILD_HOST
---body <host>`), which `ci.yml` reads into its environment. The pinned
-tools come from the repository's Nix flake (`nix develop`), as on the build
-host, so the runner's actions have the build host's keys.
+--body <host>`), which `ci.yml` reads into its environment. The runner only
+drives Buck2: every compile, test and check runs on the build host's
+worker, the checks that run Cargo and rustfmt among them
+([Checks that run Cargo](BUILD.md#checks-that-run-cargo)), and the
+checks that stay scripts read what they need of Cargo from there. So its
+tools are the Nix flake's small `ci` shell (`nix develop .#ci`: Python,
+`just`, `git` and `zstd`), pinned by `flake.lock`, and the `buck2`
+`build/tools.json` pins, which `scripts/buck2` fetches; the whole
+toolchain, which took most of a minute to fetch on every run, stays on the
+build host.
 
 A fork's pull request gets no secrets and so no tailnet, and a repository
 with no `BUILD_HOST` set has no build host to reach. Its gate starts a
 NativeLink on the runner (`scripts/nativelink.py serve`) and builds and
-tests everything there: slower, the same checks. All of it on one
+tests everything there, in the full dev shell (`nix develop`): slower, the
+same checks. All of it on one
 four-core runner takes longer than a test run's bound, so the gate runs in
 two halves on two runners (`just premerge-half workspace` here, `just
 premerge-half android` in the Linux gate, Android app job), which together
@@ -121,21 +133,110 @@ eight would run such a test beside others, and the tests that measure time
 fail. Running the workflow by hand with `without-build-host` does the
 same, to check that path.
 
-The documentation tests run under Cargo (`just doctest`)
-in a job of their own beside the gate, since Cargo compiles the workspace for
-them on the runner. The C ABI's pointer checks (`just miri`) and the sanitizers run
-under Cargo too, since they rebuild the standard library under their checks,
-which Buck2's Rust rules can't, but in the nightly rather than on a push
+The C ABI's pointer checks (`just miri`) and the sanitizers run under
+Cargo, since they rebuild the standard library under their checks, which
+Buck2's Rust rules can't, and in the nightly rather than on a push
 ([Nightlies](#nightlies)).
+
+### Which jobs a change runs
+
+Five jobs are gated: the iPhone app, the Mac app, the macOS tests, the macOS
+journeys and Windows. A first job on Linux, `changes`
+([`scripts/ci_jobs.py`](../scripts/ci_jobs.py)), decides for each whether
+this change runs it, and the job's `if` reads the answer; a job the change
+doesn't reach shows as skipped. The rest of CI always runs.
+
+A job runs when the change touches its territory: what that job alone
+exercises, which the Linux gate cannot vouch for. The territories are in
+[`build/ci-jobs.toml`](../build/ci-jobs.toml), and each changed file is
+judged in this order:
+
+1. `everyone`: the build graph's shape (`Cargo.lock`'s third-party
+   entries, `third-party/`, the Rust and C++ rules and toolchains, the
+   platforms) and CI's own machinery (the actions, the Buck2 and NativeLink
+   scripts, the table itself). Every gated job runs.
+2. A job's `paths`, or for a file under its `contains_in`, a `contains`
+   substring in the file before or after the change. The phone's is
+   everything under `apps/apple` but the Mac app's, the Apple build rules,
+   the C ABI crate it calls (`app-ffi`) and the tools that write its Swift
+   mirrors (`ios-tools`), and code only an iOS build compiles (code for iOS
+   and Android alike is the Android build's in the Linux gate). The macOS
+   tests and journeys own code only a Mac compiles, the root `justfile` and
+   the macOS worker's configuration; Windows owns code only Windows compiles
+   (`cfg(windows)`, `not(unix)` and the like), its toolchain, worker and
+   recipes. That job runs.
+3. `covered`: what the Linux gate exercises (every crate, the protocol, the
+   documentation, the scripts) or what no gated job uses. No gated job runs.
+4. Anything else is unclassified, and every gated job runs.
+
+Two files are read rather than matched. A `Cargo.lock` change that touches
+only workspace crates' entries (a version, a dependency between crates) is
+`covered`. In `.github/workflows/ci.yml` a changed line runs the job whose
+block holds it, every job that shares a block through a YAML anchor, every
+gated job when it is outside the jobs, and none when it is in another job's
+block.
+
+Each job judges everything that changed since its newest successful run on
+main, which the decision reads from GitHub, not just the push: CI on main
+runs for the newest commit only, so a commit whose job a newer push took the
+place of never ran it, and a job that failed keeps running until it passes.
+That run's commit must be behind this one, or the job runs. A pull request
+is judged from main's last pass when the pull request contains it, else from
+where it left main. A run started by hand runs every job, and so does a
+decision that fails: a gated job runs unless `changes` said `false`, and
+`ci_jobs.py` answers `true` for every job when anything goes wrong deciding.
+`scripts/ci_jobs.py explain BASE HEAD` says what a change runs, locally.
+
+To classify a new file, add its path, or a glob, to the table it belongs
+in: a job's `paths` when only that job tests it, `covered` when the Linux gate
+does or nothing gated uses it, `everyone` when it shapes every build. Two
+checks hold the table to the tree. The scripts' unit tests
+(`//:script-tests-ci_jobs`) fail on a tracked file no table names, so a new
+directory gets a decision when it lands rather than running everything. And
+`just ci-jobs-check`, in premerge, asks Buck2 what each Apple app's graph
+reads that no Linux target compiles, and fails on any such file outside that
+app's `paths`: the Mac app's storybook reads `tests/stories.json`, which only
+the graph says. Those graphs configure only on a Mac, so off one, as on
+the landing host, the check says it skipped.
+
+The macOS and Windows jobs are skipped on a change far from them, such as
+one in `node` or `daemon-core`, though the phone embeds both: a change there
+is tested by the Linux gate, the terminal client and testnet, and should a
+behaviour only the phone's suites see break, the phone's job finds it at the
+next change near the phone, and a release finds it first (below). Two things
+keep a skipped job from hiding what only it catches. Every Windows binary is
+built in the landing gate (`just premerge` runs `just check-windows`), since
+a change that stops Windows compiling is usually ordinary code calling a Unix
+API defined elsewhere, which no file territory can name. And each release
+asks that CI judged the commit it ships: `just ios release` refuses unless
+the iPhone app's last pass on main covers HEAD (`scripts/ci_jobs.py
+--covered iphone`), `just mac release` the Mac app's, and `just amux release`
+the macOS tests', the macOS journeys' and Windows'. When one has not, it says
+which file it has not judged; `gh workflow run ci.yml --ref main` runs every
+gated job on main, and once they pass the release goes ahead. A rehearsal
+ships nothing and doesn't ask.
+
+Replayed over main's last 400 commits, the table skips the phone's job on
+about half of them, the Mac app's on half, the macOS tests and journeys on
+two thirds and Windows on three fifths; a job that does nothing still takes
+six to nine minutes of a macOS runner to set up.
+
+Rejected: choosing jobs by what a change can reach, as
+`scripts/ci-affected.py` did before the gate moved to Buck2 (a job ran when
+the change touched a crate its tests are built from). Buck2's cache already
+reruns only what a change reaches, so that saved nothing the cache doesn't,
+and nearly every Rust change reaches the phone's bridge (32 of the 53
+crates): replayed over the same commits, it would skip the phone's job on a
+fifth of them.
 
 ### The Windows job
 
 The Windows job tests the workspace on `windows-latest` without compiling
-anything there. It joins the tailnet as the Linux gate does and runs `just
-check-windows` against the build host, whose Linux worker compiles and
-links every Windows binary with the Windows toolchain ([Windows
-builds](BUILD.md#windows-builds)); a commit already built that way is cache
-hits. Then it starts a NativeLink of its own
+anything there, when the change reaches what only Windows tests. It joins
+the tailnet as the Linux gate does and runs `just check-windows` against the
+build host, whose Linux worker compiles and links every Windows binary with
+the Windows toolchain ([Windows builds](BUILD.md#windows-builds)); the
+landing gate built the same commit that way, so the step is cache hits. Then it starts a NativeLink of its own
 ([`build/nativelink/windows.json5`](../build/nativelink/windows.json5),
 `scripts/nativelink.py windows`) in front of the build host's cache, with a
 worker that offers `OSFamily=windows`, and runs `just test-windows`: every
@@ -284,7 +385,10 @@ release builds the shipping binary on all three platforms itself.
 
 ### The macOS jobs
 
-Four jobs run what only a Mac can, side by side: the iPhone app builds the
+Four jobs run what only a Mac can, side by side, each when the change
+reaches it ([Which jobs a change runs](#which-jobs-a-change-runs)); they
+share their steps through a YAML anchor and set what differs as `JOB_*`
+variables: the iPhone app builds the
 bridge for the simulator, the Mac app the bridge for the Mac, the tests the
 workspace for this Mac, and the journeys the part of it the terminal
 journeys start. The journeys take the whole worker and miss their waits
@@ -294,20 +398,28 @@ ARM iOS targets and tmux, restores its store and starts a NativeLink on
 the runner (`scripts/nativelink.py macos`, `build/nativelink/macos.json5`).
 Buck2 runs every build action itself (`AMUX_BUILD_HERE=1`,
 `scripts/buck-config.py`), looking it up in the cache first and uploading
-what it made; NativeLink's worker runs the tests, so their results are
-cached too. The store, every output and every result, is on the runner's
+what it made, C and assembly included (`third_party_cxx_library` in
+`build/third_party.bzl`); NativeLink's worker runs the tests, so their
+results are cached too. What Buck2 builds itself is keyed apart from the
+same action on a worker (`built_in` in `build/platforms/defs.bzl`): outside
+a sandbox it sees all of `buck-out`, so its result must never answer for a
+sandboxed one. The store, every output and every result, is on the runner's
 disk, and the job keeps it in GitHub's cache between runs
 (`macos-<job>-store-*`), restoring the newest any run of that job kept.
 A push therefore rebuilds and reruns only what its change reaches. Each
-job's CAS holds at most 6 GiB, the tests job's 12 (the matrix's `cas_gib`;
+job's CAS holds at most 6 GiB, the tests job's 12 (its `JOB_CAS_GIB`;
 compressed, a store is about a fifth of that), so the four stores and the
 other jobs' caches fit in the 10 GB GitHub keeps for the repository; past
 the cap the least recently used outputs go, and an action whose outputs
 went runs again. After saving, a job deletes its older stores
-(`scripts/ci_cache.py`), and the documentation tests job its older Rust
-caches: GitHub evicts the least recently used entry past 10 GB, and an
-older store, just read by the run that restored it, could otherwise
-outlive another job's newer cache.
+(`scripts/ci_cache.py`): GitHub evicts the least recently used entry past
+10 GB, and an older store, just read by the run that restored it, could
+otherwise outlive another job's newer cache. A run that added nothing to its store,
+because every action and test came from it, keeps no new one: the job
+digests the store as restored and again once NativeLink has stopped
+(`scripts/ci_cache.py digest`), and when the two match the entry it came
+from stays for the next run to restore. Archiving and uploading an
+unchanged store had taken a warm run one to two minutes a job.
 
 The macOS jobs don't use the build host. It can't run a Mac's actions,
 and it is about 100 ms from GitHub's runners: when the runners' CAS was in
@@ -322,20 +434,27 @@ the development workspace's third-party graph, and a cold build of it
 takes about half as long. The debug tools are in both. Release builds are
 unchanged.
 
-The iPhone app job makes the golden simulator first (`just ios simulator
-golden`), before NativeLink starts, and the worker hands every test that
-device's udid (`AMUX_SIMULATOR_UDID`, `scripts/nativelink.py`), outside the
-action's key; the tests take it in turns, under a lock ([the iPhone
-app](IOS.md#builds)). A test that looked the device up itself asked
-CoreSimulator while the runner compiled on all three cores, and `simctl
-list` took over three minutes; xcodebuild, handed the udid, can still give
-up on finding the device then, and is asked again when it does. It then
-builds every target under `apps/apple` but the Mac app's and runs the
-phone's suites; the Mac app job builds the Mac app, its storybook and
-screens and runs the Mac app's tests. Each is one `buck2 test
---build-default-info` over its targets, so a suite starts as soon as what
-it needs is built: the Mac app's bridge and the development workspace its
-tests start are two chains of about a quarter of an hour each on the
+The iPhone app job first builds every target under `apps/apple` but the
+Mac app's, and only then makes and boots the golden simulator (`just ios
+simulator golden`) and runs the phone's suites on it. A booted simulator
+is some 240 processes holding about 3 GB of the runner's 7 GB, with a load
+of 150 to 350 on its three cores: compiling beside it took the job to 21
+minutes after a protocol change, and in its first minutes stalled every
+process on the runner for 20 s at a time, long enough for NativeLink to
+give up on reading a blob from its own store (a 30 s limit fixed in
+NativeLink) and fail the build. With the device made, NativeLink starts
+again so its worker hands every test that device's udid
+(`AMUX_SIMULATOR_UDID`, `scripts/nativelink.py`), outside the action's key;
+the tests take it in turns, under a lock ([the iPhone app](IOS.md#builds)).
+A test that looked the device up itself asked CoreSimulator while the
+runner compiled on all three cores, and `simctl list` took over three
+minutes; xcodebuild, handed the udid, can still give up on finding the
+device then, and is asked again when it does. The Mac app job builds the
+Mac app, its storybook and screens and runs the Mac app's tests in one
+`buck2 test --build-default-info` over its targets, so a suite starts as
+soon as what it needs is built: the Mac app's bridge and the development
+workspace its tests start are two chains of about a quarter of an hour
+each on the
 runner, and one after the other they were half an hour. The
 Release app for a phone is not built here: its bridge is a fat-LTO link of
 the whole Rust graph for one more target, and it reruns on every Rust
@@ -343,11 +462,25 @@ change; `just ios release` builds and audits it on the Mac. The run step is boun
 at 75 minutes inside a 100-minute job, so a cold run that runs out of time
 still saves what it finished and the next run picks up from there, as a
 cancelled one does: NativeLink is stopped before the store is archived,
-since it may still be writing to it. Buck2's event logs and NativeLink's
-log are kept as the run's `buck2-logs-*` artifacts for a week (`scripts/buck2
-log what-ran`, `log critical-path`). A run started by hand with `cold` set
+since it may still be writing to it. A Buck2 command that failed only
+because NativeLink gave up on reading or writing a blob in that time (the
+burst of uploads as the tests job's eighty tests start has held a write
+past it too) runs once more
+(`scripts/rerun-on-cache-timeout.sh`), taking what the first finished from
+the cache; any other failure stands. Spotlight is turned off on the
+runners, which otherwise indexed every output Buck2 wrote. Buck2's event
+logs, NativeLink's log and what the runner did every ten seconds (load,
+memory, swap and the busiest processes, `scripts/ci-sample-system.sh`) are
+kept as the run's `buck2-logs-*` artifacts for a week (`scripts/buck2 log
+what-ran`, `log critical-path`). A run started by hand with `cold` set
 starts the macOS jobs with no kept store, to time them from nothing.
-The macOS tests job runs `just test //crates/...` but the journeys: on macOS that is the
+The macOS tests job builds every test binary first, then runs `just test
+//crates/...` but the journeys. Both its build and the iPhone app job's
+leave their outputs in the store (`--materializations none`), where the
+worker reads the tests' inputs: copied out into `buck-out`, the test
+binaries had been 3.5 GiB and 292 s of a warm build's 296. The binaries
+are built before any test runs because beside the compiles of a protocol change,
+on three cores, the system suites crawled and failed on timing. On macOS that is the
 system lane as well, since the built `amux` binary's suites (`process`,
 `supervise_cli`, `overlap`, `attach` and the rest), node's `supervisor`
 suite and the `survive-daemon` system journey are ordinary Buck2 tests. The `linux-only` tests are the Linux gate's and are
@@ -433,9 +566,10 @@ extension's checks and its npm audit, the repository's checks, deny among
 them, the scripts' unit tests and the phone apps' lints. Each runs only when
 something it reads changed since it last passed, in this tree or any other on
 the machine. The few checks that stay scripts, because they read the whole
-workspace or query the build graph itself (`fmt-check`, `dependency-policy`,
-`shear`, the tokio half of `cores-check`, `tests-check`, `parity` and
-`shipping-check`), and Clippy, a Buck2 build of its own, run at the same time
+checkout or query the build graph itself (`tests-check`, `parity`,
+`shipping-check` and `ci-jobs-check`), Clippy, the build of every Windows
+binary (`check-windows`) and, on a Mac, the compile of the Apple apps'
+Swift (`apple-build`), each a Buck2 build of its own, run at the same time
 as the tests ([`build/checks/premerge.py`](../build/checks/premerge.py)); each
 one's output is kept and printed at the end if it fails. With nothing
 changed, premerge takes a few seconds; a change to a leaf crate or a document
@@ -443,14 +577,29 @@ reruns a handful of tests; a change to a crate most of the workspace depends
 on, such as `wire`, reruns most of the suite, about a quarter of an hour on a
 laptop.
 
-It leaves out the Apple apps: any change to a core crate rebuilds the
-bridge for three platforms and reruns the simulator suites, which is not a
-load every premerge on a laptop should carry. Whoever changes Apple code
-runs `just ios verify` and `just mac test`, on the same cache, and CI's
-iPhone app and Mac app jobs run them after every push. It leaves out the
+On a Mac it compiles every Swift module of the Apple apps, and links and
+runs none of them: the iPhone app's, the Mac app's, every package's and
+every test bundle's, in the configurations CI's two Apple jobs build, with
+no simulator booted. CI runs those jobs only for a change it judges theirs,
+and a change to the Rust, the bridge or the protocol beneath them breaks
+their Swift without touching a file of theirs; the build graph, not the
+paths, is what catches that. The Swift reads only the bridge's generated
+header and values, never its compiled library, so a change to `wire` costs
+about half a minute here, where building the bridge for both apps and
+linking them took three minutes on a quiet Mac and over ten on a busy one.
+Linking, bundling, asset catalogues, strings and Info.plist are left to
+CI's Apple jobs: they break from changes under `apps/apple`, which those
+jobs already run for. The Apple graphs configure only on a Mac, so on the
+landing host it is skipped and says so. The apps' tests, which need the
+simulator, stay with `just ios verify` and `just mac test`, on the same
+cache, and CI's iPhone app and Mac app jobs. It leaves out the
 protocol models, the C ABI's pointer checks, the sanitizers and the
 release build too, which run in the nightly ([Nightlies](#nightlies)), and
-Windows, which runs only in CI.
+Windows' tests, which run only in CI. It does build every Windows binary, on
+the build host's Linux worker with nothing fetched back: CI runs Windows'
+tests only for changes that reach what only Windows tests, so the landing
+gate is where a change that stops Windows compiling is caught. With no Linux
+worker in reach it skips that build and says so.
 
 The checks, by the recipe that runs each alone:
 
@@ -461,7 +610,7 @@ The checks, by the recipe that runs each alone:
 | `fmt-check` | Formatting, with the pinned nightly |
 | `codegen-check` | The committed protobuf output matches the schemas (`//:codegen-check`) |
 | `proto-compat` | The schemas pass buf's lint, and `amux.v1` still reads what the latest release from 0.11.0 wrote; with a ref, what that ref wrote ([`buf.yaml`](../buf.yaml)) |
-| `store-check` | Every store migration the latest release from 0.9.0 shipped is unchanged, and the ones added since only add: no table or column is gone or changed type, and any new column is one an existing store can take; with a ref, against that ref ([`scripts/store-check.py`](../scripts/store-check.py)) |
+| `store-check` | Every store migration the latest release from 0.11.0 shipped is unchanged, and the ones added since only add: no table or column is gone or changed type, and any new column is one an existing store can take; with a ref, against that ref ([`scripts/store-check.py`](../scripts/store-check.py)) |
 | `dependency-policy` | Production and test-infrastructure dependency boundaries ([`scripts/check-dependency-policy.py`](../scripts/check-dependency-policy.py)) |
 | `deny` | No dependency has an open security advisory or is a yanked release, every licence is one [`deny.toml`](../deny.toml) allows, and every crate comes from crates.io or the rustls patch; each advisory it sets aside says why it does not reach amux. A Buck2 test (`//:deny`) on the day's snapshots of the advisory database and crates.io's index, run on a Linux worker ([Repository checks](BUILD.md#repository-checks)) |
 | `shear` | Every dependency a manifest lists is used by that crate's code; one only the code cannot show, such as a crate named only to pass on a feature, is listed in that crate's manifest as one to skip, with why |
@@ -475,6 +624,9 @@ The checks, by the recipe that runs each alone:
 | `browser audit` | No known vulnerability in the npm packages the browser extension ships, as the npm registry says that day (`//js:audit`) |
 | `shipping-check` | No crate that exists for tests and no test feature is in the desktop binary's or the browser extension's graph as they ship ([`build/checks/shipping.py`](../build/checks/shipping.py)) |
 | `parity` | Every crate's `BUCK` file and `Cargo.toml` agree on its targets and dependencies ([`build/checks/parity.py`](../build/checks/parity.py)) |
+| `check-windows` | Every workspace library, binary and test compiles and links for Windows, on a Linux worker with the Windows toolchain (`--materializations none`: nothing comes back); skipped, and named, with no Linux worker in reach |
+| `apple-build` | Every Swift module of the iPhone app, the Mac app, their packages and their test bundles compiles, in the configurations CI's Apple jobs build, with nothing linked or run (`--materializations none`: nothing comes back); linking, bundling, assets, strings and Info.plist stay with CI's Apple jobs; on a Mac only, skipped and named elsewhere |
+| `ci-jobs-check` | What the Apple apps' build graphs read that no Linux target compiles is inside their territory in [`build/ci-jobs.toml`](../build/ci-jobs.toml) ([Which jobs a change runs](#which-jobs-a-change-runs)); on a Mac only |
 | `test` | Every workspace test, through Buck2: only the tests whose inputs changed since a passing run, in any tree on the machine, run again |
 
 ## Checking Windows from a Mac

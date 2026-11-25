@@ -22,6 +22,7 @@ import os
 import plistlib
 import subprocess
 import sys
+from pathlib import Path
 
 RUNTIME = "com.apple.CoreSimulator.SimRuntime.iOS-26-5"
 BUNDLE_ID = "sh.amux.app"
@@ -136,7 +137,11 @@ def ensure(kind_or_name: str, device_type: str | None = None) -> str:
         if device["deviceTypeIdentifier"] != device_type:
             raise RuntimeError(f"{name} must be a {device_type.rsplit('.', 1)[-1]}")
         return device["udid"]
-    return run("xcrun", "simctl", "create", name, device_type, RUNTIME)
+    udid = run("xcrun", "simctl", "create", name, device_type, RUNTIME)
+    created = find(name)
+    if created and created.get("dataPath"):
+        seed_region(Path(created["dataPath"]))
+    return udid
 
 
 # What the pinned region is, as a `defaults read` would print it back. The
@@ -236,6 +241,29 @@ SYSTEM_PROCESSES = {"com.apple.Spotlight", "com.apple.family"}
 SIMULATOR_APP = "com.apple.iphonesimulator"
 
 
+def region_values() -> dict:
+    """REGION as the values a preferences file holds."""
+    convert = {"-array": list, "-string": lambda a: a[0], "-bool": lambda a: a[0] == "true"}
+    return {key: convert[kind](arguments) for key, (kind, arguments, _) in REGION.items()}
+
+
+def seed_region(data: Path) -> None:
+    """Write the pinned region into a device that has never booted.
+
+    SpringBoard reads the region once, as it starts, so a region written
+    into a booted device needs a second boot to show (`pin`). Written into
+    the new device's own preferences before its first boot, it is there
+    when SpringBoard starts, survives the first boot's setup, and `pin`
+    finds nothing to change: one boot instead of two, which on a CI runner
+    is about two minutes.
+    """
+    path = data / "Library/Preferences/.GlobalPreferences.plist"
+    preferences = plistlib.loads(path.read_bytes()) if path.exists() else {}
+    preferences.update(region_values())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(plistlib.dumps(preferences, fmt=plistlib.FMT_BINARY))
+
+
 def disconnect_hardware_keyboard(udid: str) -> bool:
     """Pin Simulator.app's hardware keyboard off for the device.
 
@@ -268,7 +296,9 @@ def pin(udid: str) -> None:
     if disconnect_hardware_keyboard(udid):
         print(f"{udid}: hardware keyboard pinned off; reopen Simulator.app for it to apply")
     # Language and region are read by an app at launch, so they are set before
-    # anything under test is installed rather than between screens.
+    # anything under test is installed rather than between screens. A device
+    # `ensure` created has them from before its first boot (seed_region);
+    # this is for one made before that, or by hand.
     if write_region(udid):
         # SpringBoard reads the region once, when it starts, and it drew the
         # status bar before these values existed. Without a second boot the

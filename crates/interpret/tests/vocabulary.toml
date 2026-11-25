@@ -8,8 +8,9 @@
 #
 # A kind whose mark is full or partial names where the row lives in its
 # bodies — `item:<arm>` (or `item:<arm>.<field>` inside that arm) in the
-# kind's item body, `snapshot:<field>` in its snapshot body, `ask:<arm>` in
-# its ask — and a golden line that shows it: every string in `golden` must
+# kind's item body, `snapshot:<field>` in its snapshot body, `envelope:<field>`
+# (or a path of fields) in the Snapshot every kind's body rides in, `ask:<arm>`
+# in its ask — and a golden line that shows it: every string in `golden` must
 # appear on one line of a golden under fixtures/<kind>/, and none prefixed
 # with `!` may. The vocabulary_coverage test in coverage.rs holds every row
 # to this.
@@ -110,9 +111,9 @@ acp = { mark = "none" }
 [[row]]
 id = "C11"
 item = "Background process"
-claude_pty = { mark = "partial", carriers = ["item:tool", "snapshot:background_jobs"], golden = ["snapshot ", " background=", "!background=?", "!background=[]"] }
-claude_sdk = { mark = "partial", carriers = ["item:tool", "snapshot:background_jobs"], golden = ["snapshot ", " background=", "!background=?", "!background=[]"] }
-codex = { mark = "partial", carriers = ["item:work.command", "snapshot:background_jobs"], golden = ["snapshot ", " background=", "!background=?", "!background=[]"] }
+claude_pty = { mark = "partial", carriers = ["item:tool", "envelope:jobs"], golden = ["snapshot ", " background=", "!background=?", "!background=[]"] }
+claude_sdk = { mark = "partial", carriers = ["item:tool", "envelope:jobs"], golden = ["snapshot ", " background=", "!background=?", "!background=[]"] }
+codex = { mark = "partial", carriers = ["item:work.command", "envelope:jobs"], golden = ["snapshot ", " background=", "!background=?", "!background=[]"] }
 acp = { mark = "none" }
 
 [[row]]
@@ -207,7 +208,8 @@ id = "C22"
 item = "Compaction"
 claude_pty = { mark = "full", carriers = ["item:compaction"], golden = [" compaction final "] }
 claude_sdk = { mark = "full", carriers = ["item:compaction"], golden = [" compaction final "] }
-codex = { mark = "partial", carriers = ["item:boundary"], golden = [" boundary ", "BOUNDARY_KIND_COMPACTED"] }
+# Codex says no tokens before or after, nor who started it.
+codex = { mark = "partial", carriers = ["item:compaction"], golden = [" compaction final "] }
 # Tokens before and after only where the agent says (Grok's own report).
 acp = { mark = "partial", carriers = ["item:compaction"], golden = [" compaction final "] }
 
@@ -259,10 +261,10 @@ acp = { mark = "full", carriers = ["snapshot:context"], golden = ["snapshot ", "
 [[row]]
 id = "C28"
 item = "Model, effort, mode"
-claude_pty = { mark = "partial", carriers = ["snapshot:model", "snapshot:model_name", "snapshot:permission"], golden = ["snapshot ", " mode=", "!mode=?", "!model_name=?"] }
-claude_sdk = { mark = "full", carriers = ["snapshot:model", "snapshot:model_name", "snapshot:effort", "snapshot:permission"], golden = ["snapshot ", " effort=", "!effort=?", "!model_name=?"] }
-codex = { mark = "full", carriers = ["snapshot:model", "snapshot:model_name", "snapshot:effort", "snapshot:approval_policy"], golden = ["snapshot ", " effort=", "!effort=?", "!model_name=?"] }
-acp = { mark = "full", carriers = ["snapshot:model", "snapshot:model_name", "snapshot:effort", "snapshot:mode"], golden = ["snapshot ", " effort=", "!effort=?", "!model_name=?"] }
+claude_pty = { mark = "partial", carriers = ["envelope:status.settings.model", "envelope:model_name", "envelope:status.settings.permission"], golden = ["snapshot settings ", " permission=", "!permission=?", "!model=?"] }
+claude_sdk = { mark = "full", carriers = ["envelope:status.settings.model", "envelope:model_name", "envelope:status.settings.effort", "envelope:status.settings.permission"], golden = ["snapshot settings ", " effort=", "!effort=?", "!model=?"] }
+codex = { mark = "full", carriers = ["envelope:status.settings.model", "envelope:model_name", "envelope:status.settings.effort", "envelope:status.settings.mode", "snapshot:approval_policy"], golden = ["snapshot settings ", " effort=", "!effort=?", "!model=?"] }
+acp = { mark = "full", carriers = ["envelope:status.settings.model", "envelope:model_name", "envelope:status.settings.effort", "envelope:status.settings.permission", "envelope:status.settings.mode"], golden = ["snapshot settings ", " effort=", "!effort=?", "!model=?"] }
 
 [[row]]
 id = "C29"
@@ -285,6 +287,6 @@ acp = { mark = "none" }
 id = "C31"
 item = "Sign-in problem"
 claude_pty = { mark = "partial", carriers = ["item:api_error"], golden = [" api_error ", " authentication_failed "] }
-claude_sdk = { mark = "full", carriers = ["snapshot:sign_in"], golden = ["snapshot ", " sign_in=", "!sign_in=?", "!SIGN_IN_STATE_SIGNED_IN"] }
-codex = { mark = "full", carriers = ["snapshot:sign_in"], golden = ["snapshot ", " sign_in=", "!sign_in=?", "!SIGN_IN_STATE_SIGNED_IN"] }
-acp = { mark = "full", carriers = ["snapshot:sign_in"], golden = ["snapshot ", " sign_in=SIGNED_OUT"] }
+claude_sdk = { mark = "full", carriers = ["envelope:sign_in"], golden = ["snapshot ", " sign_in=", "!sign_in=?", "!sign_in=SIGNED_IN "] }
+codex = { mark = "full", carriers = ["envelope:sign_in"], golden = ["snapshot ", " sign_in=", "!sign_in=?", "!sign_in=SIGNED_IN "] }
+acp = { mark = "full", carriers = ["envelope:sign_in"], golden = ["snapshot ", " sign_in=SIGNED_OUT"] }

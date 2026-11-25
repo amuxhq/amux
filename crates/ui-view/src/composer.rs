@@ -69,7 +69,7 @@ pub fn sign_in(state: &SessionState) -> Option<SignInView> {
             provider_name: state.provider_name(),
             hint: state
                 .host()
-                .and_then(|host| host.provider(state.agent().provider_id()))
+                .and_then(|host| host.provider(&state.agent().provider))
                 .and_then(|offered| offered.descriptor.as_ref())
                 .map(|descriptor| descriptor.sign_in_hint.clone())
                 .unwrap_or_default(),
@@ -127,7 +127,7 @@ pub fn queue_rows(state: &SessionState) -> Vec<QueuedRow> {
         .queue()
         .into_iter()
         // A continuation after a restart is nobody's to withdraw or send.
-        .filter(|row| !wire::is_continued_input(&row.entry.input_id))
+        .filter(|row| !row.entry.continued)
         .map(|row| {
             let from_agent = match row
                 .entry

@@ -50,7 +50,7 @@ use claude_protocol::stream::{ContentBlock, MessageContent};
 use claude_protocol::transcript::{self, Row};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use wire::{BackgroundJob, DecisionOutcome, Input, KindInput, NativeStart, Refusal, ToolState};
+use wire::{BackgroundJob, DecisionOutcome, KindInput, NativeStart, Refusal, ToolState};
 
 use super::{Decision, State};
 use crate::claude_common::{JobInput, item_body, timestamp_ms, tool_result_text};
@@ -298,10 +298,21 @@ impl State {
     /// A person's input to one of the subagents: an answer to an ask it
     /// raised. Terminal Claude has no per-job stop, so nothing else reaches
     /// a subagent.
-    pub(super) fn child_input(&mut self, emit: &mut Emit, agent_id: &[u8], input: Input) {
-        let id = input.input_id.clone();
+    pub(super) fn child_input(
+        &mut self,
+        emit: &mut Emit,
+        agent_id: &[u8],
+        id: Vec<u8>,
+        of: wire::child_input::Of,
+    ) {
         let Some(child) = self.shared.subagent_child(agent_id).map(str::to_owned) else {
             return self.shared.reject(emit, &id, Refusal::Unsupported);
+        };
+        let wire::child_input::Of::Input(input) = of else {
+            return self
+                .shared
+                .subagent(emit, &child)
+                .reject(&id, Refusal::Unsupported);
         };
         match input.decode_body() {
             Some(KindInput::ClaudePty(wire::ClaudePtyInput {
@@ -1090,7 +1101,11 @@ impl State {
         }
         let mut view = self.shared.subagent(emit, child);
         sub.conversation.close(&mut view, now);
-        sub.conversation.snapshot(&mut view, Vec::new());
+        sub.conversation.snapshot(
+            &mut view,
+            Vec::new(),
+            wire::AgentCapabilities::claude_pty().stops_job,
+        );
         view.end(end);
         let owned: Vec<String> = self
             .owned_tasks
@@ -1158,7 +1173,11 @@ impl State {
                 .cloned()
                 .collect();
             let mut view = self.shared.subagent(emit, &child);
-            sub.conversation.snapshot(&mut view, jobs);
+            sub.conversation.snapshot(
+                &mut view,
+                jobs,
+                wire::AgentCapabilities::claude_pty().stops_job,
+            );
         }
     }
 

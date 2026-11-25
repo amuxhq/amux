@@ -239,8 +239,8 @@ no breakaway), joined before it runs, so even an orphan, which no walk of the pr
 test. Within a test, the test net ends its agents itself, at `shutdown`, `remove_host` and `rewind_host`, by the
 process each agent's lock names (`agent_dir::lock_holder`), whether or not their daemon still runs. It looks only in
 its hosts' agents folders (`profiles/*/agents/*` of each host's data directory) and follows no symbolic link or
-junction there, so a link in a workspace to another installation never leads it to that installation's agents. The documentation tests,
-the C ABI's pointer checks (`just miri`) and the sanitizers run under `cargo test`.
+junction there, so a link in a workspace to another installation never leads it to that installation's agents. The
+C ABI's pointer checks (`just miri`) and the sanitizers run under `cargo test`.
 
 The runner sets `AMUX_TEST_RUNNER=1` for every test. On Windows, test support that starts amux processes (the
 `amux` suites' `support::amux_binary`, and `testnet::Net::start`, the tests' net) calls
@@ -255,6 +255,10 @@ run the same tests under [cargo-nextest](https://nexte.st), configured in
 [`.config/nextest.toml`](../.config/nextest.toml) to the same bounds, through `just cargo-test` (`brew install
 cargo-nextest`; the Nix dev shell has it). There a setup script
 ([`scripts/test-binaries.sh`](../scripts/test-binaries.sh)) builds the binaries the tests start before any test runs.
+
+Nothing runs documentation tests. The Buck2 prelude runs them only with its nightly features on, which puts every Rust
+compile of the build in that mode, changing every compile's cache key, for what were five examples. So a code block in
+a doc comment is marked `text` (or with the language it is in), and what an example should prove is a unit test.
 
 ```sh
 just test                                  # every workspace test whose inputs changed

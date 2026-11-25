@@ -275,7 +275,8 @@ pub fn create(cwd: &Path, name: &str, prompt: Option<&str>) -> wire::CreateAgent
         agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
         name: Some(name.to_owned()),
         cwd: cwd.to_string_lossy().into_owned(),
-        agent: wire::create_agent_request::Agent::defaults(Kind::ClaudeSdk),
+        provider: "claude".into(),
+        kind: wire::Kind::ClaudeSdk as i32,
         initial_prompt: prompt.map(|text| submission(b"p0", text)),
         ..wire::CreateAgentRequest::default()
     }
@@ -307,6 +308,7 @@ pub fn copy_files(from: &Path, to: &Path) {
 /// A first prompt for a create or a resume.
 pub fn submission(id: &[u8], text: &str) -> PromptSubmission {
     PromptSubmission {
+        continued: false,
         input_id: id.to_vec(),
         prompt: Some(PromptInput {
             text: text.to_owned(),
@@ -470,10 +472,7 @@ pub async fn served_to(
             let (name, incarnation, level) = row.map_or_else(
                 || (String::new(), 1, wire::PermissionLevel::Unspecified),
                 |row| {
-                    let level = row.settings.as_deref().map_or(
-                        wire::PermissionLevel::Unspecified,
-                        wire::AgentSettings::permission_level,
-                    );
+                    let level = row.settings().permission_level();
                     (row.name, row.incarnation, level)
                 },
             );

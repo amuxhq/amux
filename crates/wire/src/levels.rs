@@ -33,7 +33,8 @@ pub fn codex(value: &str) -> PermissionLevel {
 }
 
 /// The modes of the built-in ACP agents whose modes are permissions, with
-/// their levels. Grok's modes choose how hard it thinks, not what it may
+/// their levels. Their interpreter lists these modes among the agent's
+/// permissions, not its modes. Grok's modes choose how hard it thinks, not what it may
 /// do, so it has none. OpenCode's build mode runs tools as the person's
 /// OpenCode config allows, which by default is everything, so it counts as
 /// full.
@@ -76,7 +77,7 @@ pub fn acp_mode(agent: &str, mode: &str) -> PermissionLevel {
 }
 
 /// Where `value`, a permission of the provider `provider` (for an ACP
-/// agent, a mode), sits.
+/// agent, one of its modes that is a permission), sits.
 pub fn of(provider: &str, value: &str) -> PermissionLevel {
     match provider {
         crate::agents::CLAUDE => claude(value),
@@ -119,43 +120,22 @@ pub struct Leveled {
 }
 
 /// The permissions `provider` offers on the scale: its catalogue's
-/// settable permissions, or for an ACP agent, whose modes are its
-/// permissions, its settable modes, each at the level the catalogue states
-/// or else at the one amux knows for it (a copy an earlier build kept
-/// states none); a value with neither is left out. With no catalogue to
-/// read, what amux knows the provider always offers: Claude's permissions
-/// that need no particular model or setting, Codex's, and a built-in ACP
-/// agent's known modes.
+/// settable permissions at the levels the catalogue states, a value with
+/// none left out. With no catalogue to read, what amux knows the provider
+/// always offers: Claude's permissions that need no particular model or
+/// setting, Codex's, and a built-in ACP agent's known permission modes.
 pub fn offered(provider: &str, catalogue: Option<&Catalogue>) -> Vec<Leveled> {
-    let acp = provider != crate::agents::CLAUDE && provider != crate::agents::CODEX;
-    let leveled = |value: &str, stated: PermissionLevel, normal: bool| {
-        let level = match stated {
-            PermissionLevel::Unspecified => of(provider, value),
-            stated => stated,
-        };
-        (level != PermissionLevel::Unspecified).then(|| Leveled {
-            value: value.to_owned(),
-            level,
-            normal,
-        })
-    };
-    if let Some(catalogue) = catalogue {
-        if !catalogue.permissions.is_empty() {
-            return catalogue
-                .permissions
-                .iter()
-                .filter(|offered| offered.settable)
-                .filter_map(|offered| leveled(&offered.value, offered.level(), offered.normal))
-                .collect();
-        }
-        if acp && !catalogue.modes.is_empty() {
-            return catalogue
-                .modes
-                .iter()
-                .filter(|offered| offered.settable)
-                .filter_map(|offered| leveled(&offered.value, offered.level(), offered.normal))
-                .collect();
-        }
+    if let Some(catalogue) = catalogue.filter(|catalogue| !catalogue.permissions.is_empty()) {
+        return catalogue
+            .permissions
+            .iter()
+            .filter(|offered| offered.settable && offered.level() != PermissionLevel::Unspecified)
+            .map(|offered| Leveled {
+                value: offered.value.clone(),
+                level: offered.level(),
+                normal: offered.normal,
+            })
+            .collect();
     }
     let known: Vec<(&str, PermissionLevel)> = match provider {
         crate::agents::CLAUDE => ["plan", "default", "acceptEdits"]
@@ -208,7 +188,7 @@ pub fn levels(offered: &[Leveled]) -> Vec<PermissionLevel> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OfferedMode, OfferedPermission};
+    use crate::OfferedPermission;
 
     fn permission(value: &str, level: PermissionLevel, normal: bool) -> OfferedPermission {
         OfferedPermission {
@@ -252,21 +232,16 @@ mod tests {
         );
     }
 
-    /// An ACP agent's modes are its permissions; a mode with no level is
-    /// never picked.
+    /// A permission with no level is never picked, and a built-in ACP
+    /// agent whose catalogue has not been read offers its known
+    /// permission modes; an agent a person added offers none.
     #[test]
-    fn an_acp_agents_modes_are_its_permissions() {
-        let mode = |value: &str, level: PermissionLevel| OfferedMode {
-            value: value.to_owned(),
-            settable: true,
-            level: level as i32,
-            ..OfferedMode::default()
-        };
+    fn an_unleveled_permission_is_never_picked() {
         let catalogue = Catalogue {
-            modes: vec![
-                mode("default", PermissionLevel::Ask),
-                mode("plan", PermissionLevel::ReadOnly),
-                mode("custom", PermissionLevel::Unspecified),
+            permissions: vec![
+                permission("default", PermissionLevel::Ask, true),
+                permission("plan", PermissionLevel::ReadOnly, false),
+                permission("custom", PermissionLevel::Unspecified, false),
             ],
             ..Catalogue::default()
         };
@@ -281,8 +256,6 @@ mod tests {
             levels(&listed),
             [PermissionLevel::ReadOnly, PermissionLevel::Ask]
         );
-        // A built-in whose catalogue has not listed its modes yet offers
-        // the ones amux knows; an agent a person added offers none.
         let known = offered("antigravity", None);
         assert_eq!(
             at(&known, PermissionLevel::ReadOnly)

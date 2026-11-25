@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 
 use prost::Message as _;
 use wire::{
-    AgentRef, AgentSpec, Bootstrap, Catalogue, EffectiveConfig, Kind, PromptSubmission, bootstrap,
-    create_agent_request,
+    AgentRef, AgentSettings, AgentSpec, Bootstrap, Catalogue, EffectiveConfig, Kind,
+    PromptSubmission, bootstrap,
 };
 
 use crate::runtime::{Launch, RegistryError};
@@ -45,70 +45,42 @@ pub struct Resolved {
     /// agent's.
     pub provider: String,
     pub provider_args: Vec<String>,
-    pub model: Option<String>,
-    pub permission: Option<String>,
-    pub mode: Option<String>,
-    pub effort: Option<String>,
-}
-
-/// The settings an agent last ran with, as its snapshot says them; each
-/// one absent is carried from the previous incarnation's spec.
-#[derive(Clone, Debug, Default)]
-pub struct Settings {
-    pub model: Option<String>,
-    pub permission: Option<String>,
-    pub mode: Option<String>,
-    pub effort: Option<String>,
+    /// The model, effort, permission and mode it starts on; never a level,
+    /// which a create maps onto a permission before it resolves.
+    pub settings: AgentSettings,
 }
 
 /// What a resumed incarnation starts with: the previous one's extra
 /// arguments, and the model, permission, mode and effort the agent last
-/// ran with, not the ones it was created with. A setting changed in the
-/// chat survives a stop and a resume. An ACP agent is started as its
-/// program is configured now ([`build`]), so nothing of how the previous
-/// one started is carried but which agent it is.
-pub fn carry(previous: &AgentSpec, latest: Settings) -> Resolved {
-    use create_agent_request::Agent;
+/// ran with (`latest`, as its newest snapshot says them), not the ones it
+/// was created with; each one `latest` leaves unknown is the previous
+/// spec's. A setting changed in the chat survives a stop and a resume. An
+/// ACP agent is started as its program is configured now ([`build`]), so
+/// nothing of how the previous one started is carried but which agent it
+/// is and its settings.
+pub fn carry(previous: &AgentSpec, latest: &AgentSettings) -> Resolved {
     let config = previous.config.clone().unwrap_or_default();
-    let args = without_settings(&previous.provider_args, &config);
-    let model = latest.model.or(config.model);
-    let permission = latest.permission.or(config.permission);
-    let mode = latest.mode.or(config.mode);
-    let effort = latest.effort.or(config.effort);
-    match previous.kind() {
-        Kind::Codex => resolve(&Agent::Codex(wire::CodexCreateConfig {
-            model,
-            effort,
-            permission,
-            mode,
-        })),
-        Kind::Acp => resolve(&Agent::Acp(wire::AcpCreateConfig {
-            agent: previous.provider.clone(),
-            model,
-            effort,
-            mode,
-        })),
-        Kind::ClaudePty | Kind::ClaudeSdk => resolve(&Agent::ClaudeSdk(wire::ClaudeCreateConfig {
-            args,
-            model,
-            effort,
-            permission,
-        })),
-        // No spec a build wrote has no kind; one that did would start no
-        // program, and its agent process says so.
-        Kind::Unspecified => Resolved::default(),
-    }
+    let started = config.settings.unwrap_or_default();
+    let args = without_settings(&previous.provider_args, &started);
+    let settings = AgentSettings {
+        model: latest.model.clone().or(started.model),
+        effort: latest.effort.clone().or(started.effort),
+        permission: latest.permission.clone().or(started.permission),
+        permission_level: 0,
+        mode: latest.mode.clone().or(started.mode),
+    };
+    resolve(previous.kind(), &previous.provider, &settings, &args)
 }
 
 /// Claude's arguments without the settings [`resolve`] appended for the
 /// previous incarnation, leaving exactly the ones the person gave, their
 /// own `--model` or `--effort` among them: [`resolve`] appends the
 /// settings again, after the person's, so the ones last run with win.
-fn without_settings(args: &[String], config: &EffectiveConfig) -> Vec<String> {
+fn without_settings(args: &[String], settings: &AgentSettings) -> Vec<String> {
     let appended: Vec<String> = [
-        ("--model", &config.model),
-        ("--permission-mode", &config.permission),
-        ("--effort", &config.effort),
+        ("--model", &settings.model),
+        ("--permission-mode", &settings.permission),
+        ("--effort", &settings.effort),
     ]
     .into_iter()
     .filter_map(|(flag, value)| value.as_ref().map(|value| [flag.to_owned(), value.clone()]))
@@ -120,38 +92,34 @@ fn without_settings(args: &[String], config: &EffectiveConfig) -> Vec<String> {
     }
 }
 
-/// Resolves a creation's per-provider settings. Claude takes its model and
-/// permission as arguments; Codex takes the model in its thread start, the
-/// settings a permission names as configuration overrides, and its mode in
-/// the first turn the interpreter starts.
-pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
-    use create_agent_request::Agent;
-    match agent {
-        Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => {
-            let claude = claude.clone();
-            let mut args = claude.args.clone();
-            if let Some(model) = &claude.model {
-                args.extend(["--model".to_owned(), model.clone()]);
+/// Resolves a creation's settings for the program `kind` runs. Claude takes
+/// the person's arguments, then its model, permission and effort as
+/// arguments; Codex takes the model in its thread start, the settings a
+/// permission names as configuration overrides, and its mode in the first
+/// turn the interpreter starts; an ACP agent takes its settings in its
+/// session, from the interpreter, never as arguments.
+pub fn resolve(kind: Kind, provider: &str, settings: &AgentSettings, args: &[String]) -> Resolved {
+    let settings = AgentSettings {
+        permission_level: 0,
+        ..settings.clone()
+    };
+    let provider_args = match kind {
+        Kind::ClaudePty | Kind::ClaudeSdk => {
+            let mut args = args.to_vec();
+            for (flag, value) in [
+                ("--model", &settings.model),
+                ("--permission-mode", &settings.permission),
+                ("--effort", &settings.effort),
+            ] {
+                if let Some(value) = value {
+                    args.extend([flag.to_owned(), value.clone()]);
+                }
             }
-            if let Some(permission) = &claude.permission {
-                args.extend(["--permission-mode".to_owned(), permission.clone()]);
-            }
-            if let Some(effort) = &claude.effort {
-                args.extend(["--effort".to_owned(), effort.clone()]);
-            }
-            Resolved {
-                provider: wire::agents::CLAUDE.to_owned(),
-                provider_args: args,
-                model: claude.model,
-                permission: claude.permission,
-                mode: None,
-                effort: claude.effort,
-            }
+            args
         }
-        Agent::Codex(codex) => {
-            let codex = codex.clone();
+        Kind::Codex => {
             let mut args = Vec::new();
-            let named = codex
+            let named = settings
                 .permission
                 .as_deref()
                 .and_then(wire::codex::permission);
@@ -162,7 +130,7 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
                     "approvals_reviewer",
                     named.map(|named| named.approvals_reviewer),
                 ),
-                ("model_reasoning_effort", codex.effort.as_deref()),
+                ("model_reasoning_effort", settings.effort.as_deref()),
             ] {
                 if let Some(value) = value {
                     args.extend([
@@ -171,26 +139,14 @@ pub fn resolve(agent: &create_agent_request::Agent) -> Resolved {
                     ]);
                 }
             }
-            Resolved {
-                provider: wire::agents::CODEX.to_owned(),
-                provider_args: args,
-                model: codex.model,
-                permission: codex.permission,
-                mode: codex.mode,
-                effort: codex.effort,
-            }
+            args
         }
-        // An ACP agent takes its settings in its session, from the
-        // interpreter, never as arguments; its mode's default is the
-        // agent's own.
-        Agent::Acp(acp) => Resolved {
-            provider: acp.agent.clone(),
-            provider_args: Vec::new(),
-            model: acp.model.clone(),
-            permission: None,
-            mode: acp.mode.clone(),
-            effort: acp.effort.clone(),
-        },
+        Kind::Acp | Kind::Unspecified => Vec::new(),
+    };
+    Resolved {
+        provider: provider.to_owned(),
+        provider_args,
+        settings,
     }
 }
 
@@ -243,7 +199,7 @@ impl Picked {
 
     /// The pick an agent's program took, as its journal says, if it is one
     /// to keep.
-    pub fn taken(kind: Kind, provider: &str, taken: &wire::PickTaken) -> Option<Self> {
+    pub fn taken(kind: Kind, provider: &str, taken: &AgentSettings) -> Option<Self> {
         Self {
             kind,
             provider: provider.to_owned(),
@@ -257,21 +213,17 @@ impl Picked {
 /// The pick a creation asks the host to keep, if it asks: its model with
 /// `remember_model`, its effort with `remember_effort`.
 pub fn picked_at_creation(
-    agent: &create_agent_request::Agent,
+    kind: Kind,
+    provider: &str,
+    settings: &AgentSettings,
     remember_model: bool,
     remember_effort: bool,
 ) -> Option<Picked> {
-    use create_agent_request::Agent;
-    let (model, effort) = match agent {
-        Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => (&claude.model, &claude.effort),
-        Agent::Codex(codex) => (&codex.model, &codex.effort),
-        Agent::Acp(acp) => (&acp.model, &acp.effort),
-    };
     Picked {
-        kind: agent.kind(),
-        provider: agent.provider_id().to_owned(),
-        model: model.clone().filter(|_| remember_model),
-        effort: effort.clone().filter(|_| remember_effort),
+        kind,
+        provider: provider.to_owned(),
+        model: settings.model.clone().filter(|_| remember_model),
+        effort: settings.effort.clone().filter(|_| remember_effort),
     }
     .worth_keeping()
 }
@@ -297,43 +249,34 @@ impl Default for PickKeeper {
     }
 }
 
-/// `agent` with what it does not choose filled from the host's remembered
-/// picks. Claude in its own terminal keeps to Claude's settings, arguments
-/// the person passed win, and a remembered effort its model does not take is
-/// left for the provider to decide.
+/// `settings` with what they do not choose filled from the host's
+/// remembered picks for `provider`. Claude in its own terminal keeps to
+/// Claude's settings, a model or effort the person passed as Claude's own
+/// arguments wins, and a remembered effort its model does not take is left
+/// for the provider to decide. A mode is never remembered.
 pub fn with_remembered(
-    agent: &create_agent_request::Agent,
+    kind: Kind,
+    provider: &str,
+    settings: &AgentSettings,
+    args: &[String],
     remembered: &settings::NewAgentSettings,
     offered: Option<&wire::Catalogue>,
-) -> create_agent_request::Agent {
-    use create_agent_request::Agent;
-    let named = |args: &[String], flag: &str| {
+) -> AgentSettings {
+    let mut filled = settings.clone();
+    if kind == Kind::ClaudePty {
+        return filled;
+    }
+    let named = |flag: &str| {
         args.iter()
             .any(|arg| arg == flag || arg.starts_with(&format!("{flag}=")))
     };
-    let mut filled = agent.clone();
-    let defaults = remembered.of(agent.provider_id());
-    let (model, effort, passed_model, passed_effort) = match &mut filled {
-        Agent::ClaudePty(_) => return filled,
-        Agent::ClaudeSdk(claude) => {
-            let passed_model = named(&claude.args, "--model");
-            let passed_effort = named(&claude.args, "--effort");
-            (
-                &mut claude.model,
-                &mut claude.effort,
-                passed_model,
-                passed_effort,
-            )
-        }
-        Agent::Codex(codex) => (&mut codex.model, &mut codex.effort, false, false),
-        // Its model and thought level; its mode is never remembered.
-        Agent::Acp(acp) => (&mut acp.model, &mut acp.effort, false, false),
-    };
-    if model.is_none() && !passed_model {
-        model.clone_from(&defaults.model);
+    let defaults = remembered.of(provider);
+    if filled.model.is_none() && !named("--model") {
+        filled.model.clone_from(&defaults.model);
     }
-    if effort.is_none() && !passed_effort {
-        let starting = model
+    if filled.effort.is_none() && !named("--effort") {
+        let starting = filled
+            .model
             .clone()
             .or_else(|| offered.and_then(|catalogue| catalogue.new_agent.as_ref()?.model.clone()));
         let entry = starting.as_deref().and_then(|starting| {
@@ -345,7 +288,7 @@ pub fn with_remembered(
         let taken = |value: &String| {
             entry.is_none_or(|entry| entry.efforts.is_empty() || entry.efforts.contains(value))
         };
-        *effort = defaults.effort.clone().filter(taken);
+        filled.effort = defaults.effort.clone().filter(taken);
     }
     filled
 }
@@ -439,10 +382,7 @@ pub fn build(launch: &Launch, at: Incarnation<'_>) -> Result<AgentSpec, Registry
             grace_ms: millis(agent.grace_secs),
             drain_ms: millis(agent.drain_secs),
             facts_ring_bytes: agent.facts_ring_mib.saturating_mul(1024 * 1024),
-            model: at.resolved.model.clone(),
-            permission: at.resolved.permission.clone(),
-            mode: at.resolved.mode.clone(),
-            effort: at.resolved.effort.clone(),
+            settings: Some(at.resolved.settings.clone()),
             install_path: launch.install_path.to_string_lossy().into_owned(),
             step_budget_micros: launch.agent_step_budget_micros,
         }),
@@ -526,36 +466,54 @@ pub fn newest(dir: &Path) -> io::Result<Option<AgentSpec>> {
 
 #[cfg(test)]
 mod tests {
-    use wire::create_agent_request::Agent;
-    use wire::{ClaudeCreateConfig, CodexCreateConfig};
-
     use super::*;
 
-    #[test]
-    fn a_resume_carries_the_persons_arguments_and_the_settings_last_run_with() {
-        let created = resolve(&Agent::ClaudePty(ClaudeCreateConfig {
-            args: vec!["--verbose".into(), "--add-dir".into(), "/tmp".into()],
-            model: Some("opus".into()),
-            permission: Some("plan".into()),
-            effort: None,
-        }));
-        let previous = AgentSpec {
-            kind: Kind::ClaudePty as i32,
-            provider_args: created.provider_args,
+    /// Settings naming what is given.
+    fn settings(
+        model: Option<&str>,
+        effort: Option<&str>,
+        permission: Option<&str>,
+        mode: Option<&str>,
+    ) -> AgentSettings {
+        AgentSettings {
+            model: model.map(str::to_owned),
+            effort: effort.map(str::to_owned),
+            permission: permission.map(str::to_owned),
+            permission_level: 0,
+            mode: mode.map(str::to_owned),
+        }
+    }
+
+    fn args(args: &[&str]) -> Vec<String> {
+        args.iter().map(|arg| (*arg).to_owned()).collect()
+    }
+
+    /// A spec as the daemon writes it for `resolved`, run by `kind`.
+    fn previous(kind: Kind, resolved: Resolved) -> AgentSpec {
+        AgentSpec {
+            kind: kind as i32,
+            provider: resolved.provider,
+            provider_args: resolved.provider_args,
             config: Some(EffectiveConfig {
-                model: created.model,
-                permission: created.permission,
+                settings: Some(resolved.settings),
                 ..EffectiveConfig::default()
             }),
             ..AgentSpec::default()
-        };
+        }
+    }
+
+    #[test]
+    fn a_resume_carries_the_persons_arguments_and_the_settings_last_run_with() {
+        let created = resolve(
+            Kind::ClaudePty,
+            "claude",
+            &settings(Some("opus"), None, Some("plan"), None),
+            &args(&["--verbose", "--add-dir", "/tmp"]),
+        );
+        let previous = previous(Kind::ClaudePty, created);
         let resumed = carry(
             &previous,
-            Settings {
-                permission: Some("acceptEdits".into()),
-                effort: Some("high".into()),
-                ..Settings::default()
-            },
+            &settings(None, Some("high"), Some("acceptEdits"), None),
         );
         assert_eq!(
             resumed.provider_args,
@@ -571,35 +529,25 @@ mod tests {
                 "high"
             ]
         );
-        assert_eq!(resumed.effort.as_deref(), Some("high"));
+        assert_eq!(resumed.settings.effort.as_deref(), Some("high"));
     }
 
     #[test]
     fn a_resume_keeps_the_persons_own_setting_arguments() {
-        let created = resolve(&Agent::ClaudePty(ClaudeCreateConfig {
-            args: vec![
-                "--model".into(),
-                "sonnet".into(),
-                "--permission-mode=plan".into(),
-                "--effort".into(),
-                "low".into(),
-            ],
-            model: None,
-            permission: None,
-            effort: Some("high".into()),
-        }));
-        let previous = AgentSpec {
-            kind: Kind::ClaudePty as i32,
-            provider_args: created.provider_args,
-            config: Some(EffectiveConfig {
-                model: created.model,
-                permission: created.permission,
-                effort: created.effort,
-                ..EffectiveConfig::default()
-            }),
-            ..AgentSpec::default()
-        };
-        let resumed = carry(&previous, Settings::default());
+        let created = resolve(
+            Kind::ClaudePty,
+            "claude",
+            &settings(None, Some("high"), None, None),
+            &args(&[
+                "--model",
+                "sonnet",
+                "--permission-mode=plan",
+                "--effort",
+                "low",
+            ]),
+        );
+        let previous = previous(Kind::ClaudePty, created);
+        let resumed = carry(&previous, &AgentSettings::NONE);
         assert_eq!(
             resumed.provider_args,
             [
@@ -621,7 +569,7 @@ mod tests {
         use std::time::Duration;
 
         use settings::experiments::{Enabled, SUSPENSION};
-        let resolved = resolve(&Agent::ClaudeSdk(ClaudeCreateConfig::default()));
+        let resolved = resolve(Kind::ClaudeSdk, "claude", &AgentSettings::NONE, &[]);
         let spec = |launch: &Launch, parent: Option<AgentRef>| {
             build(
                 launch,
@@ -709,12 +657,12 @@ mod tests {
     fn an_acp_spec_runs_the_program_its_agent_id_names() {
         let dir = tempfile::tempdir().unwrap();
         let launch = acp_launch(dir.path());
-        let resolved = resolve(&Agent::Acp(wire::AcpCreateConfig {
-            agent: "mine".into(),
-            model: Some("fast".into()),
-            effort: Some("high".into()),
-            mode: Some("plan".into()),
-        }));
+        let resolved = resolve(
+            Kind::Acp,
+            "mine",
+            &settings(Some("fast"), Some("high"), None, Some("plan")),
+            &[],
+        );
         let spec = acp_spec(&launch, &resolved).unwrap();
         assert_eq!(spec.kind(), Kind::Acp);
         assert_eq!(spec.provider, "mine");
@@ -732,7 +680,7 @@ mod tests {
                 ("MINE_TOKEN".to_owned(), "t".to_owned()),
             ])
         );
-        let config = spec.config.unwrap();
+        let config = spec.config.unwrap().settings.unwrap();
         assert_eq!(
             (config.model, config.effort, config.mode, config.permission),
             (
@@ -750,19 +698,13 @@ mod tests {
     fn an_acp_agent_this_host_cannot_start_is_refused() {
         let dir = tempfile::tempdir().unwrap();
         let mut launch = acp_launch(dir.path());
-        let unknown = resolve(&Agent::Acp(wire::AcpCreateConfig {
-            agent: "theirs".into(),
-            ..Default::default()
-        }));
+        let unknown = resolve(Kind::Acp, "theirs", &AgentSettings::NONE, &[]);
         assert!(matches!(
             acp_spec(&launch, &unknown),
             Err(RegistryError::UnknownAgent(id)) if id == "theirs"
         ));
         launch.agents[0].command = dir.path().join("gone").to_string_lossy().into_owned();
-        let mine = resolve(&Agent::Acp(wire::AcpCreateConfig {
-            agent: "mine".into(),
-            ..Default::default()
-        }));
+        let mine = resolve(Kind::Acp, "mine", &AgentSettings::NONE, &[]);
         assert!(matches!(
             acp_spec(&launch, &mine),
             Err(RegistryError::AgentNotInstalled { name, .. }) if name == "Mine"
@@ -776,26 +718,19 @@ mod tests {
     fn a_resumed_acp_agent_is_started_as_its_program_is_configured_now() {
         let dir = tempfile::tempdir().unwrap();
         let mut launch = acp_launch(dir.path());
-        let created = resolve(&Agent::Acp(wire::AcpCreateConfig {
-            agent: "mine".into(),
-            model: Some("fast".into()),
-            mode: Some("plan".into()),
-            ..Default::default()
-        }));
+        let created = resolve(
+            Kind::Acp,
+            "mine",
+            &settings(Some("fast"), None, None, Some("plan")),
+            &[],
+        );
         let previous = acp_spec(&launch, &created).unwrap();
         launch.agents[0].args = vec!["acp".into()];
-        let resumed = carry(
-            &previous,
-            Settings {
-                model: Some("slow".into()),
-                effort: Some("low".into()),
-                ..Settings::default()
-            },
-        );
+        let resumed = carry(&previous, &settings(Some("slow"), Some("low"), None, None));
         let spec = acp_spec(&launch, &resumed).unwrap();
         assert_eq!(spec.provider, "mine");
         assert_eq!(spec.provider_args, ["acp"]);
-        let config = spec.config.unwrap();
+        let config = spec.config.unwrap().settings.unwrap();
         assert_eq!(
             (config.model, config.effort, config.mode),
             (Some("slow".into()), Some("low".into()), Some("plan".into()))
@@ -804,21 +739,24 @@ mod tests {
 
     #[test]
     fn a_claude_permission_is_its_permission_mode_argument() {
-        let resolved = resolve(&Agent::ClaudeSdk(ClaudeCreateConfig {
-            permission: Some("acceptEdits".into()),
-            ..ClaudeCreateConfig::default()
-        }));
+        let resolved = resolve(
+            Kind::ClaudeSdk,
+            "claude",
+            &settings(None, None, Some("acceptEdits"), None),
+            &[],
+        );
         assert_eq!(resolved.provider_args, ["--permission-mode", "acceptEdits"]);
-        assert_eq!(resolved.permission.as_deref(), Some("acceptEdits"));
+        assert_eq!(resolved.settings.permission.as_deref(), Some("acceptEdits"));
     }
 
     #[test]
     fn a_codex_permission_is_the_settings_it_names_and_its_mode_rides_along() {
-        let resolved = resolve(&Agent::Codex(CodexCreateConfig {
-            permission: Some("auto".into()),
-            mode: Some("plan".into()),
-            ..CodexCreateConfig::default()
-        }));
+        let resolved = resolve(
+            Kind::Codex,
+            "codex",
+            &settings(None, None, Some("auto"), Some("plan")),
+            &[],
+        );
         assert_eq!(
             resolved.provider_args,
             [
@@ -830,12 +768,14 @@ mod tests {
                 "approvals_reviewer=\"auto_review\"",
             ]
         );
-        assert_eq!(resolved.mode.as_deref(), Some("plan"));
+        assert_eq!(resolved.settings.mode.as_deref(), Some("plan"));
 
-        let unnamed = resolve(&Agent::Codex(CodexCreateConfig {
-            permission: Some("on-request/read-only".into()),
-            ..CodexCreateConfig::default()
-        }));
+        let unnamed = resolve(
+            Kind::Codex,
+            "codex",
+            &settings(None, None, Some("on-request/read-only"), None),
+            &[],
+        );
         assert!(unnamed.provider_args.is_empty(), "{unnamed:?}");
     }
 
@@ -858,11 +798,8 @@ mod tests {
         remembered
     }
 
-    fn claude(model: Option<&str>) -> ClaudeCreateConfig {
-        ClaudeCreateConfig {
-            model: model.map(str::to_owned),
-            ..Default::default()
-        }
+    fn model(model: Option<&str>) -> AgentSettings {
+        settings(model, None, None, None)
     }
 
     fn offered(efforts: &[&str]) -> wire::Catalogue {
@@ -879,72 +816,74 @@ mod tests {
     #[test]
     fn remembered_picks_fill_only_what_is_not_chosen() {
         let filled = with_remembered(
-            &Agent::ClaudeSdk(claude(None)),
+            Kind::ClaudeSdk,
+            "claude",
+            &model(None),
+            &[],
             &remembered(),
             Some(&offered(&["high", "xhigh"])),
         );
-        let Agent::ClaudeSdk(filled) = filled else {
-            panic!("the kind stays");
-        };
         assert_eq!(filled.model.as_deref(), Some("sonnet"));
         assert_eq!(filled.effort.as_deref(), Some("xhigh"));
 
         let chosen = with_remembered(
-            &Agent::ClaudeSdk(claude(Some("haiku"))),
+            Kind::ClaudeSdk,
+            "claude",
+            &model(Some("haiku")),
+            &[],
             &remembered(),
             None,
         );
-        let Agent::ClaudeSdk(chosen) = chosen else {
-            panic!("the kind stays");
-        };
         assert_eq!(chosen.model.as_deref(), Some("haiku"));
     }
 
     #[test]
     fn claude_in_its_own_terminal_keeps_to_claudes_settings() {
-        let agent = Agent::ClaudePty(claude(None));
-        assert_eq!(with_remembered(&agent, &remembered(), None), agent);
+        let filled = with_remembered(
+            Kind::ClaudePty,
+            "claude",
+            &model(None),
+            &[],
+            &remembered(),
+            None,
+        );
+        assert_eq!(filled, model(None));
     }
 
     #[test]
     fn a_persons_arguments_beat_a_remembered_pick() {
         let filled = with_remembered(
-            &Agent::ClaudeSdk(ClaudeCreateConfig {
-                args: vec!["--model=opus".into(), "--effort".into(), "low".into()],
-                ..Default::default()
-            }),
+            Kind::ClaudeSdk,
+            "claude",
+            &model(None),
+            &args(&["--model=opus", "--effort", "low"]),
             &remembered(),
             None,
         );
-        let Agent::ClaudeSdk(filled) = filled else {
-            panic!("the kind stays");
-        };
         assert_eq!((filled.model, filled.effort), (None, None));
     }
 
     #[test]
     fn a_remembered_effort_the_model_cannot_take_is_left_out() {
         let filled = with_remembered(
-            &Agent::ClaudeSdk(claude(None)),
+            Kind::ClaudeSdk,
+            "claude",
+            &model(None),
+            &[],
             &remembered(),
             Some(&offered(&["low", "high"])),
         );
-        let Agent::ClaudeSdk(filled) = filled else {
-            panic!("the kind stays");
-        };
         assert_eq!(filled.effort, None);
     }
 
     #[test]
     fn only_a_marked_creation_keeps_its_picks() {
-        let agent = Agent::ClaudeSdk(ClaudeCreateConfig {
-            model: Some("sonnet".into()),
-            effort: Some("high".into()),
-            ..Default::default()
-        });
-        assert_eq!(picked_at_creation(&agent, false, false), None);
+        let chosen = settings(Some("sonnet"), Some("high"), None, None);
+        let picked =
+            |kind, model, effort| picked_at_creation(kind, "claude", &chosen, model, effort);
+        assert_eq!(picked(Kind::ClaudeSdk, false, false), None);
         assert_eq!(
-            picked_at_creation(&agent, true, false),
+            picked(Kind::ClaudeSdk, true, false),
             Some(Picked {
                 kind: Kind::ClaudeSdk,
                 provider: "claude".into(),
@@ -952,38 +891,37 @@ mod tests {
                 effort: None,
             })
         );
-        let terminal = Agent::ClaudePty(claude(Some("sonnet")));
-        assert_eq!(picked_at_creation(&terminal, true, true), None);
-    }
-
-    fn acp(agent: &str) -> wire::AcpCreateConfig {
-        wire::AcpCreateConfig {
-            agent: agent.into(),
-            ..Default::default()
-        }
+        assert_eq!(picked(Kind::ClaudePty, true, true), None);
     }
 
     #[test]
     fn an_acp_agents_picks_are_remembered_by_its_id_but_never_its_mode() {
-        let filled = with_remembered(&Agent::Acp(acp("opencode")), &remembered(), None);
-        let Agent::Acp(filled) = filled else {
-            panic!("the kind stays");
-        };
+        let filled = with_remembered(
+            Kind::Acp,
+            "opencode",
+            &AgentSettings::NONE,
+            &[],
+            &remembered(),
+            None,
+        );
         assert_eq!(filled.model.as_deref(), Some("anthropic/sonnet"));
         assert_eq!(filled.effort.as_deref(), Some("high"));
         assert_eq!(filled.mode, None);
 
         // Another agent's picks are its own.
-        let other = Agent::Acp(acp("gemini"));
-        assert_eq!(with_remembered(&other, &remembered(), None), other);
+        let other = with_remembered(
+            Kind::Acp,
+            "gemini",
+            &AgentSettings::NONE,
+            &[],
+            &remembered(),
+            None,
+        );
+        assert!(other.is_none());
 
-        let picked = Agent::Acp(wire::AcpCreateConfig {
-            model: Some("anthropic/opus".into()),
-            mode: Some("plan".into()),
-            ..acp("opencode")
-        });
+        let chosen = settings(Some("anthropic/opus"), None, None, Some("plan"));
         assert_eq!(
-            picked_at_creation(&picked, true, true),
+            picked_at_creation(Kind::Acp, "opencode", &chosen, true, true),
             Some(Picked {
                 kind: Kind::Acp,
                 provider: "opencode".into(),

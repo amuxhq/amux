@@ -442,7 +442,7 @@ impl Drop for CloseUnlessKept {
 /// first answers within a round trip.
 #[derive(Clone, Debug)]
 pub(crate) struct Opening {
-    pub(crate) hello: wire::Message,
+    pub(crate) hello: wire::LinkMessage,
     pub(crate) neighbors: Vec<crate::routing::Host>,
     /// The forwarding link the profile's packets for other hosts go out
     /// on through the relay, put on each attempt as it says its Hello:
@@ -1234,7 +1234,7 @@ fn close_reason_from_connection(error: quinn::ConnectionError) -> wire::LinkClos
 async fn run_control_stream(
     stream: oneshot::Receiver<Result<(EarlySend, EarlyRecv), quinn::ConnectionError>>,
     writes: mpsc::Receiver<ControlWrite>,
-    reads: mpsc::Sender<io::Result<wire::Message>>,
+    reads: mpsc::Sender<io::Result<wire::LinkMessage>>,
     finish: oneshot::Receiver<oneshot::Sender<()>>,
 ) {
     let Ok(Ok((send, recv))) = stream.await else {
@@ -1252,7 +1252,7 @@ async fn run_control_stream(
 
 async fn read_control_messages(
     mut recv: EarlyRecv,
-    sender: mpsc::Sender<io::Result<wire::Message>>,
+    sender: mpsc::Sender<io::Result<wire::LinkMessage>>,
 ) {
     // A link's first message, its Hello or the answer to one, is read
     // before anything has checked who sent it: a relay reads one from any
@@ -1260,7 +1260,7 @@ async fn read_control_messages(
     // checked the peer's key. Only it is held to the Hello's own bound.
     let mut limit = wire::HELLO_SIZE_LIMIT;
     loop {
-        match read_proto::<wire::Message>(&mut recv, limit).await {
+        match read_proto::<wire::LinkMessage>(&mut recv, limit).await {
             Ok(Some(message)) => {
                 limit = wire::MESSAGE_SIZE_LIMIT;
                 if sender.send(Ok(message)).await.is_err() {
@@ -1552,9 +1552,12 @@ mod tests {
         // Writing one frame makes the connector-opened control stream visible
         // before any application stream is opened.
         let (mut client_control, _client_source) = client.control();
-        super::super::carrier::write_message(&mut client_control, &wire::Message { body: None })
-            .await
-            .unwrap();
+        super::super::carrier::write_message(
+            &mut client_control,
+            &wire::LinkMessage { body: None },
+        )
+        .await
+        .unwrap();
 
         LoopbackPair {
             _client_endpoint: client_endpoint,
@@ -2279,16 +2282,16 @@ mod tests {
         (carrier, early)
     }
 
-    fn hello_frame() -> wire::Message {
-        wire::Message {
-            body: Some(wire::message::Body::Hello(wire::Hello {
+    fn hello_frame() -> wire::LinkMessage {
+        wire::LinkMessage {
+            body: Some(wire::link_message::Body::Hello(wire::Hello {
                 auth_token: Some("a token".to_owned()),
                 ..Default::default()
             })),
         }
     }
 
-    fn frame_of(message: &wire::Message) -> Vec<u8> {
+    fn frame_of(message: &wire::LinkMessage) -> Vec<u8> {
         prost::Message::encode_to_vec(message)
     }
 
@@ -2393,7 +2396,7 @@ mod tests {
         client: &LinkEndpoint,
         server: &LinkEndpoint,
         config: &quinn::ClientConfig,
-    ) -> (EarlyData, bool, wire::Message) {
+    ) -> (EarlyData, bool, wire::LinkMessage) {
         let addr = server.local_addr().unwrap();
         let dial = async {
             let opening = Opening {
@@ -2427,11 +2430,13 @@ mod tests {
             let connection = answer_early(&server.endpoint).await;
             let (send, recv) = connection.accept_bi().await.unwrap();
             let early = recv.is_0rtt();
-            let message =
-                read_proto::<wire::Message>(&mut EarlyRecv::plain(recv), wire::MESSAGE_SIZE_LIMIT)
-                    .await
-                    .unwrap()
-                    .unwrap();
+            let message = read_proto::<wire::LinkMessage>(
+                &mut EarlyRecv::plain(recv),
+                wire::MESSAGE_SIZE_LIMIT,
+            )
+            .await
+            .unwrap()
+            .unwrap();
             let (mut reply, _) = connection.open_bi().await.unwrap();
             reply.write_all(b"!").await.unwrap();
             let _ = connection.closed().await;
@@ -2677,10 +2682,13 @@ mod tests {
                     .into_0rtt()
                     .unwrap_or_else(|_| panic!("a server's connection is usable at once"));
                 let (send, recv) = connection.accept_bi().await.unwrap();
-                read_proto::<wire::Message>(&mut EarlyRecv::plain(recv), wire::MESSAGE_SIZE_LIMIT)
-                    .await
-                    .unwrap()
-                    .unwrap();
+                read_proto::<wire::LinkMessage>(
+                    &mut EarlyRecv::plain(recv),
+                    wire::MESSAGE_SIZE_LIMIT,
+                )
+                .await
+                .unwrap()
+                .unwrap();
                 // The ticket goes once the handshake is done; answering
                 // after it, the client has the ticket when it closes.
                 handshaken.await;

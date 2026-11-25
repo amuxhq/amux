@@ -20,7 +20,7 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    Ask, AskClosed, BackgroundJob, ClaudeSnapshot, DecisionOutcome, ToolState, claude_item,
+    AskClosed, BackgroundJob, ClaudeAsk, ClaudeSnapshot, DecisionOutcome, ToolState, claude_item,
 };
 
 use crate::claude_answers::Decided;
@@ -62,8 +62,7 @@ pub(crate) struct Conversation {
     pub(crate) working_on: Option<String>,
     /// The text of its newest assistant frame that had any: what a
     /// completed subagent reports, which outlives its end so the call that
-    /// ran it can hand it back. A checkpoint from before this field existed
-    /// reads it as empty.
+    /// ran it can hand it back.
     #[serde(default)]
     pub(crate) last_said: String,
 }
@@ -190,7 +189,7 @@ pub(crate) fn apply_decided<T>(tool: &mut Tool<T>, decided: Decided, now_ms: i64
 
 impl Conversation {
     /// Writes the call's row into the subagent's part, if it changed.
-    pub(crate) fn emit_tool(&mut self, sub: &mut Subagent<'_, Ask>, id: &str) {
+    pub(crate) fn emit_tool(&mut self, sub: &mut Subagent<'_, ClaudeAsk>, id: &str) {
         if let Some(draft) = self.tools.get_mut(id).and_then(|tool| tool.draft(id)) {
             sub.item(draft);
         }
@@ -201,7 +200,7 @@ impl Conversation {
     /// frame, so either may open it.
     pub(crate) fn tool_seen(
         &mut self,
-        sub: &mut Subagent<'_, Ask>,
+        sub: &mut Subagent<'_, ClaudeAsk>,
         id: &str,
         name: &str,
         input: Option<&Value>,
@@ -232,7 +231,7 @@ impl Conversation {
     /// keyed by its message and its place in it.
     pub(crate) fn assistant(
         &mut self,
-        sub: &mut Subagent<'_, Ask>,
+        sub: &mut Subagent<'_, ClaudeAsk>,
         message_id: &str,
         model: &str,
         blocks: &[ContentBlock],
@@ -322,7 +321,7 @@ impl Conversation {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn user(
         &mut self,
-        sub: &mut Subagent<'_, Ask>,
+        sub: &mut Subagent<'_, ClaudeAsk>,
         key: &str,
         content: &MessageContent,
         result: Option<&Value>,
@@ -368,7 +367,7 @@ impl Conversation {
             key: key.to_owned(),
             text,
             attachments,
-            body: item_body(claude_item::Kind::Prompt(wire::Prompt {})),
+            body: item_body(claude_item::Kind::Prompt(wire::Prompt::default())),
             at_ms: Some(at_ms),
             complete: true,
             ..Default::default()
@@ -378,7 +377,7 @@ impl Conversation {
     #[allow(clippy::too_many_arguments)]
     fn tool_result(
         &mut self,
-        sub: &mut Subagent<'_, Ask>,
+        sub: &mut Subagent<'_, ClaudeAsk>,
         id: &str,
         content: Option<&ToolResultBody>,
         is_error: bool,
@@ -437,7 +436,7 @@ impl Conversation {
     /// A decision on one of its calls, reached on an ask it raised.
     pub(crate) fn decide(
         &mut self,
-        sub: &mut Subagent<'_, Ask>,
+        sub: &mut Subagent<'_, ClaudeAsk>,
         id: &str,
         decided: Decided,
         now_ms: i64,
@@ -451,7 +450,7 @@ impl Conversation {
     /// An ask it raised closed with no answer: a call it held that is still
     /// in flight will never run as asked, so it reads cancelled until
     /// Claude says more.
-    pub(crate) fn dismissed(&mut self, sub: &mut Subagent<'_, Ask>, call: &str, now_ms: i64) {
+    pub(crate) fn dismissed(&mut self, sub: &mut Subagent<'_, ClaudeAsk>, call: &str, now_ms: i64) {
         let Some(tool) = self.tools.get_mut(call) else {
             return;
         };
@@ -474,7 +473,12 @@ impl Conversation {
     /// One of its calls now opens the provider subagent `child`: the
     /// Agent call that started it, or a SendMessage that continued it.
     /// False when the call is not one of its own.
-    pub(crate) fn link(&mut self, sub: &mut Subagent<'_, Ask>, call: &str, child: &[u8]) -> bool {
+    pub(crate) fn link(
+        &mut self,
+        sub: &mut Subagent<'_, ClaudeAsk>,
+        call: &str,
+        child: &[u8],
+    ) -> bool {
         let Some(tool) = self.tools.get_mut(call) else {
             return false;
         };
@@ -494,7 +498,7 @@ impl Conversation {
     /// subagent's end, or its shell's. `text` is what the task reported.
     pub(crate) fn finish_launched(
         &mut self,
-        sub: &mut Subagent<'_, Ask>,
+        sub: &mut Subagent<'_, ClaudeAsk>,
         call: &str,
         state: ToolState,
         text: Option<&str>,
@@ -522,7 +526,7 @@ impl Conversation {
 
     /// It is ending: a call still running will not finish, so it ends as
     /// cancelled, with `at_ms` as its end.
-    pub(crate) fn close(&mut self, sub: &mut Subagent<'_, Ask>, at_ms: i64) {
+    pub(crate) fn close(&mut self, sub: &mut Subagent<'_, ClaudeAsk>, at_ms: i64) {
         let open: Vec<String> = self.tools.keys().cloned().collect();
         for id in open {
             if let Some(tool) = self.tools.get_mut(&id)
@@ -544,7 +548,14 @@ impl Conversation {
     /// can be stopped, and the background commands it started), the model
     /// it runs and what it says it is working on. Its title is left out:
     /// the start carries it, and the daemon keeps it from there.
-    pub(crate) fn snapshot(&self, sub: &mut Subagent<'_, Ask>, jobs: Vec<BackgroundJob>) {
+    /// `stops_job` is whether the kind running it stops one of its jobs,
+    /// which is how a person stops the subagent.
+    pub(crate) fn snapshot(
+        &self,
+        sub: &mut Subagent<'_, ClaudeAsk>,
+        jobs: Vec<BackgroundJob>,
+        stops_job: bool,
+    ) {
         // What its row counts as running in the background leaves out its
         // own job, which its chat stops and which is the subagent itself.
         let count = jobs
@@ -559,18 +570,26 @@ impl Conversation {
             .map(|head| Box::new(crate::notice::claude_ask(head, asks.len() as u32 - 1, "")));
         let body = ClaudeSnapshot {
             asks,
-            model: self.model.clone(),
-            model_name: self.model.as_deref().map(crate::claude_common::tidy_model),
-            background_jobs: Some(wire::BackgroundJobs { known: true, jobs }),
             ..unknown::claude()
         }
         .encode_to_vec();
+        let settings = wire::AgentSettings {
+            model: self.model.clone(),
+            ..Default::default()
+        };
         sub.snapshot(wire::Snapshot {
-            phase: sub.phase() as i32,
             body,
-            working_on: self.working_on.clone(),
-            background_jobs: count,
+            status: Some(Box::new(wire::AgentStatus {
+                phase: sub.phase() as i32,
+                working_on: self.working_on.clone(),
+                background_jobs: count,
+                settings: (!settings.is_none()).then_some(settings),
+                ..Default::default()
+            })),
             notice,
+            model_name: self.model.as_deref().map(crate::claude_common::tidy_model),
+            jobs: Some(wire::BackgroundJobs { known: true, jobs }),
+            capabilities: Some(Box::new(crate::shared::subagent_capabilities(stops_job))),
             ..Default::default()
         });
     }
@@ -578,11 +597,11 @@ impl Conversation {
 
 /// Writes the own item of an ask that is not a call's (a tool server's
 /// form or link), open or closed, into whichever part `item` lands in.
-pub(crate) fn ask_draft(ask: &Ask, closed: Option<AskClosed>) -> Option<ItemDraft> {
+pub(crate) fn ask_draft(ask: &ClaudeAsk, closed: Option<AskClosed>) -> Option<ItemDraft> {
     let asked = match &ask.body {
-        Some(wire::ask::Body::Form(form)) => wire::ask_item::Ask::Form(form.clone()),
-        Some(wire::ask::Body::Link(link)) => wire::ask_item::Ask::Link(link.clone()),
-        Some(wire::ask::Body::Question(question)) => {
+        Some(wire::claude_ask::Body::Form(form)) => wire::ask_item::Ask::Form(form.clone()),
+        Some(wire::claude_ask::Body::Link(link)) => wire::ask_item::Ask::Link(link.clone()),
+        Some(wire::claude_ask::Body::Question(question)) => {
             wire::ask_item::Ask::Question(question.clone())
         }
         _ => return None,

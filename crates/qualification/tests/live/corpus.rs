@@ -56,7 +56,7 @@ fn boundaries(log: &Log, kind: wire::BoundaryKind) -> usize {
         .count()
 }
 
-pub(super) fn tools(log: &Log) -> Vec<wire::ToolCall> {
+pub(super) fn tools(log: &Log) -> Vec<wire::ClaudeToolCall> {
     claude_items(log)
         .into_iter()
         .filter_map(|item| match item {
@@ -578,7 +578,7 @@ impl Install {
                 let OpenAsk::Claude(claude) = ask else {
                     return self.by_the_way(ask);
                 };
-                let Some(wire::ask::Body::Plan(plan)) = &claude.body else {
+                let Some(wire::claude_ask::Body::Plan(plan)) = &claude.body else {
                     return self.by_the_way(ask);
                 };
                 plans += 1;
@@ -667,7 +667,7 @@ impl Install {
                 OpenAsk::Claude(claude)
                     if matches!(
                         claude.body,
-                        Some(wire::ask::Body::Form(_) | wire::ask::Body::Link(_))
+                        Some(wire::claude_ask::Body::Form(_) | wire::claude_ask::Body::Link(_))
                     ) =>
                 {
                     answer

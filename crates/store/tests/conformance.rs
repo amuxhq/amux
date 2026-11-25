@@ -46,8 +46,11 @@ fn snapshot(phase: Phase, working_on: Option<&str>, at_ms: i64) -> Snapshot {
     Snapshot {
         kind: wire::Kind::ClaudeSdk as i32,
         body: vec![9],
-        phase: phase as i32,
-        working_on: working_on.map(str::to_owned),
+        status: Some(Box::new(wire::AgentStatus {
+            phase: phase as i32,
+            working_on: working_on.map(str::to_owned),
+            ..wire::AgentStatus::NONE
+        })),
         at_ms,
         ..Default::default()
     }
@@ -271,18 +274,19 @@ fn snapshots_copy_their_envelope_onto_the_row() {
         effort: Some("low".into()),
         permission: Some("plan".into()),
         permission_level: wire::PermissionLevel::ReadOnly as i32,
+        mode: None,
     };
+    let mut said = snapshot(Phase::Working, Some("fixing the build"), 777);
+    let status = said.status_mut();
+    status.phase_since_ms = 700;
+    status.git = Some(git.clone());
+    status.background_jobs = 2;
+    status.title = Some("Fix the build".into());
+    status.last_said = Some("The build is green.".into());
+    status.settings = Some(settings.clone());
     let step = Step {
         items: vec![item("m1", "hi")],
-        snapshot: Some(Snapshot {
-            phase_since_ms: 700,
-            git: Some(git.clone()),
-            background_jobs: 2,
-            title: Some("Fix the build".into()),
-            last_said: Some("The build is green.".into()),
-            settings: Some(Box::new(settings.clone())),
-            ..snapshot(Phase::Working, Some("fixing the build"), 777)
-        }),
+        snapshot: Some(said),
         ..Default::default()
     };
     let committed = store.commit(&agent, &[(5, step)], CLOCK).unwrap();
@@ -291,15 +295,15 @@ fn snapshots_copy_their_envelope_onto_the_row() {
     };
     assert_eq!(snap.revision, 2);
     let row = store.agent(&agent).unwrap().unwrap();
-    assert_eq!(row.phase, Phase::Working as i32);
-    assert_eq!(row.working_on.as_deref(), Some("fixing the build"));
+    assert_eq!(row.phase(), Phase::Working);
+    assert_eq!(row.status.working_on.as_deref(), Some("fixing the build"));
     assert_eq!(row.last_activity_ms(), Some(777));
-    assert_eq!(row.phase_since_ms, Some(700));
-    assert_eq!(row.git, Some(git));
-    assert_eq!(row.background_jobs, 2);
+    assert_eq!(row.status.phase_since_ms, 700);
+    assert_eq!(row.status.git, Some(git));
+    assert_eq!(row.status.background_jobs, 2);
     assert_eq!(row.title.as_deref(), Some("Fix the build"));
-    assert_eq!(row.last_said.as_deref(), Some("The build is green."));
-    assert_eq!(row.settings, Some(settings));
+    assert_eq!(row.status.last_said.as_deref(), Some("The build is green."));
+    assert_eq!(row.status.settings, Some(settings));
     assert_eq!(held_snapshot(&row), 2);
     assert_eq!(row.snapshot.as_ref(), Some(snap));
 }
@@ -347,24 +351,26 @@ fn live_descendants_walk_own_rows_and_take_a_replicas_own_count() {
 fn a_replica_takes_its_last_words_from_its_inventory_row() {
     let mut store = fresh();
     let mut row = AgentRow::new(peer("helper"), wire::Kind::ClaudeSdk, "/src/amux");
-    row.last_said = Some("Merged.".into());
+    row.status.last_said = Some("Merged.".into());
     store.put_agent(&row).unwrap();
     assert_eq!(
         store
             .agent(&peer("helper"))
             .unwrap()
             .unwrap()
+            .status
             .last_said
             .as_deref(),
         Some("Merged.")
     );
-    row.last_said = Some("Merged, and tagged.".into());
+    row.status.last_said = Some("Merged, and tagged.".into());
     store.put_agent(&row).unwrap();
     assert_eq!(
         store
             .agent(&peer("helper"))
             .unwrap()
             .unwrap()
+            .status
             .last_said
             .as_deref(),
         Some("Merged, and tagged.")
@@ -373,9 +379,9 @@ fn a_replica_takes_its_last_words_from_its_inventory_row() {
     let lead = own("lead");
     store = with_agent(store, &lead);
     let mut own_row = store.agent(&lead).unwrap().unwrap();
-    own_row.last_said = Some("not from a snapshot".into());
+    own_row.status.last_said = Some("not from a snapshot".into());
     store.put_agent(&own_row).unwrap();
-    assert_eq!(store.agent(&lead).unwrap().unwrap().last_said, None);
+    assert_eq!(store.agent(&lead).unwrap().unwrap().status.last_said, None);
 }
 
 /// Whether the incarnation still owes its parent its last report: from its
@@ -717,7 +723,7 @@ fn put_agent_keeps_committed_state() {
     assert_eq!(row.exit_cause, wire::ExitCause::Stopped as i32);
     assert_eq!(row.exit_detail.as_deref(), Some("its words"));
     assert_eq!((row.ingest_cursor, row.next_revision), (42, 3));
-    assert_eq!(row.phase, Phase::Idle as i32);
+    assert_eq!(row.phase(), Phase::Idle);
     assert!(row.snapshot.is_some());
 
     // A resume: the next incarnation has said nothing yet.
@@ -728,9 +734,9 @@ fn put_agent_keeps_committed_state() {
     store.put_agent(&rename).unwrap();
     let row = store.agent(&agent).unwrap().unwrap();
     assert_eq!(row.incarnation, 2);
-    assert_eq!(row.phase, Phase::Starting as i32);
+    assert_eq!(row.phase(), Phase::Starting);
     assert_eq!(
-        row.working_on.as_deref(),
+        row.status.working_on.as_deref(),
         Some("w"),
         "working_on survives a resume"
     );
@@ -853,7 +859,7 @@ fn a_reset_replaces_the_block_and_keeps_older_rows_for_get() {
         .unwrap();
     let row = store.agent(&agent).unwrap().unwrap();
     assert_eq!(row.complete_from_order, Some(8));
-    assert_eq!(row.phase, Phase::Working as i32);
+    assert_eq!(row.phase(), Phase::Working);
     assert_eq!(held_snapshot(&row), 42);
     assert_eq!(keys(&store.last_n(&agent, 10).unwrap()), ["k8", "k9"]);
     let page = store.page(&agent, None, 10).unwrap();
@@ -929,8 +935,8 @@ fn a_delta_joins_above_and_only_live_records_move_the_cursor() {
     assert_eq!(store.get(&agent, "k3").unwrap().unwrap().text, "Hello");
     assert_eq!(keys(&store.last_n(&agent, 10).unwrap()), ["k1", "k2", "k3"]);
     let row = store.agent(&agent).unwrap().unwrap();
-    assert_eq!(row.phase, Phase::NeedsYou as i32);
-    assert_eq!(row.working_on.as_deref(), Some("asking"));
+    assert_eq!(row.phase(), Phase::NeedsYou);
+    assert_eq!(row.status.working_on.as_deref(), Some("asking"));
     // Replicas never enqueue notifications: that is the origin's outbox.
     assert!(store.notifications().unwrap().is_empty());
 }
@@ -969,8 +975,8 @@ fn an_older_snapshot_never_overwrites_a_newer_envelope() {
         .unwrap();
     assert!(absorbed.stored.is_empty());
     let row = store.agent(&agent).unwrap().unwrap();
-    assert_eq!(row.working_on.as_deref(), Some("newer"));
-    assert_eq!(row.phase, Phase::Idle as i32);
+    assert_eq!(row.status.working_on.as_deref(), Some("newer"));
+    assert_eq!(row.phase(), Phase::Idle);
     assert_eq!(row.source_cursor, 0);
 }
 
@@ -1075,7 +1081,7 @@ fn a_reset_under_another_generation_takes_the_envelope_even_at_revision_zero() {
         )
         .unwrap();
     let row = store.agent(&agent).unwrap().unwrap();
-    assert_eq!(row.phase, Phase::Working as i32);
+    assert_eq!(row.phase(), Phase::Working);
 
     store
         .absorb(
@@ -1089,8 +1095,8 @@ fn a_reset_under_another_generation_takes_the_envelope_even_at_revision_zero() {
         .unwrap();
     let row = store.agent(&agent).unwrap().unwrap();
     assert_eq!(row.source_generation, 2);
-    assert_eq!(row.phase, Phase::Idle as i32);
-    assert_eq!(row.working_on, None);
+    assert_eq!(row.phase(), Phase::Idle);
+    assert_eq!(row.status.working_on, None);
     assert_eq!(held_snapshot(&row), 0);
 }
 
@@ -1202,14 +1208,14 @@ fn an_inventory_put_keeps_a_replicas_last_activity() {
         .unwrap();
     let mut listed = AgentRow::new(agent.clone(), wire::Kind::ClaudeSdk, "/src/amux");
     listed.name = "worker".into();
-    listed.phase = Phase::Working as i32;
-    listed.phase_since_ms = Some(4_500);
+    listed.status.phase = Phase::Working as i32;
+    listed.status.phase_since_ms = 4_500;
     store.put_agent(&listed).unwrap();
     let row = store.agent(&agent).unwrap().unwrap();
     assert_eq!(row.last_activity_ms(), Some(4_000));
     assert_eq!(
-        (row.phase, row.phase_since_ms),
-        (Phase::Working as i32, Some(4_500))
+        (row.phase(), row.status.phase_since_ms),
+        (Phase::Working, 4_500)
     );
 }
 
@@ -1240,6 +1246,10 @@ fn a_replica_of_a_provider_subagent_keeps_the_registrys_title_through_a_snapshot
         )
         .unwrap();
     let row = store.agent(&agent).unwrap().unwrap();
-    assert_eq!(row.working_on.as_deref(), Some("reading"), "absorbed");
+    assert_eq!(
+        row.status.working_on.as_deref(),
+        Some("reading"),
+        "absorbed"
+    );
     assert_eq!(row.title.as_deref(), Some("Look at the logs"));
 }

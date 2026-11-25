@@ -99,9 +99,15 @@ fn standing(standing: Option<&host_entry::Standing>) -> String {
     match standing {
         Some(Standing::Trusted(trusted)) => {
             let reach = match &trusted.reach {
-                Some(Reach::Online(route)) => format!(
-                    "online {:?}",
-                    wire::RouteKind::try_from(*route).unwrap_or_default()
+                Some(Reach::Here(_)) => "here".to_owned(),
+                Some(Reach::Online(online)) => format!(
+                    "online {:?}{}",
+                    online.route(),
+                    if online.same_network {
+                        " same_network"
+                    } else {
+                        ""
+                    }
                 ),
                 Some(Reach::Away(_)) => "away".to_owned(),
                 Some(Reach::Offline(offline)) => format!(

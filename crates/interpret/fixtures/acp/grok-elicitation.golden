@@ -1,48 +1,48 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
-## 1 recorded 0: tick 332
-snapshot STARTING queue=[] working_on=- at=332 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+snapshot capabilities resumable files passes_unknown_commands model=pick effort=pick permission=pick mode=pick
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 2 recorded 1: fact Rpc "{\"id\":\"agent-initialize\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"agent…
-snapshot STARTING queue=[] working_on=- at=332 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot capabilities resumable images files passes_unknown_commands model=pick effort=pick permission=pick mode=pick
+snapshot STARTING queue=[] working_on=- at=332 conversation=? model_name=? sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 20 recorded 19: fact Rpc method=session/update
 effect catalogue 58dcf7a1 models=[] commands=63 permissions=[] modes=[]
 snapshot catalogue 58dcf7a1
-snapshot STARTING queue=[] working_on=- at=489 agent=grok session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot STARTING queue=[] working_on=- at=489 conversation=? model_name=? sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 30 recorded 29: fact Rpc "{\"id\":\"agent-session\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"codebase…
 effect session "01a1fe54-79dd-75d3-9713-f2f8d3b671d6"
 effect catalogue 9ba24f7a models=[grok-4.7{xhigh/high/medium/low},grok-4.7-build-fast{xhigh/high/medium/low},grok-4.6{xhigh/high/medium/low},grok-4.5{xhigh/high/medium/low}] commands=63 permissions=[] modes=[]
 item boundary:1 boundary final at=517 text="" BOUNDARY_KIND_STARTED
 snapshot catalogue 9ba24f7a
-snapshot settings model=grok-4.7 effort=high permission=? level=?
-snapshot IDLE queue=[] working_on=- at=517 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7 model_name=Grok 4.7 effort=high mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot settings model=grok-4.7 effort=high permission=? level=? mode=?
+snapshot IDLE queue=[] working_on=- at=517 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7" sign_in=SIGNED_IN - background=? asks=[] context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 33 recorded 32: input p1-1
 effect write "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"model\",\"sessionId\":\"01a1fe54-79dd-75d3-9713-f2f8d3b671d6\",\"value\":\"grok-4.7-build-fast\"}}"
 effect reply p1-1 accepted
 ## 47 recorded 46: fact Rpc method=_x.ai/mcp/server_status
-snapshot IDLE queue=[] working_on=- at=573 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7 model_name=Grok 4.7 effort=high mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH]
+snapshot IDLE queue=[] working_on=- at=573 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7" sign_in=SIGNED_IN - background=? asks=[] context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? servers=[linear-server:NEEDS_AUTH]
 ## 48 recorded 47: fact Rpc method=_x.ai/mcp/server_status
-snapshot IDLE queue=[] working_on=- at=573 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7 model_name=Grok 4.7 effort=high mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,spec:READY]
+snapshot IDLE queue=[] working_on=- at=573 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7" sign_in=SIGNED_IN - background=? asks=[] context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? servers=[linear-server:NEEDS_AUTH,spec:READY]
 ## 51 recorded 50: fact Rpc "{\"id\":\"amux-set-1\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
-snapshot settings model=grok-4.7-build-fast effort=high permission=? level=?
-snapshot IDLE queue=[] working_on=- at=582 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=high mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,spec:READY]
+snapshot settings model=grok-4.7-build-fast effort=high permission=? level=? mode=?
+snapshot IDLE queue=[] working_on=- at=582 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7 Fast" sign_in=SIGNED_IN - background=? asks=[] context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? servers=[linear-server:NEEDS_AUTH,spec:READY]
 ## 52 recorded 51: input p1-2
 effect write "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"method\":\"session/set_config_option\",\"params\":{\"configId\":\"reasoning_effort\",\"sessionId\":\"01a1fe54-79dd-75d3-9713-f2f8d3b671d6\",\"value\":\"low\"}}"
 effect reply p1-2 accepted
 ## 53 recorded 52: fact Rpc "{\"id\":\"amux-set-2\",\"jsonrpc\":\"2.0\",\"result\":{\"configOptions\":[{\"ca…
-snapshot settings model=grok-4.7-build-fast effort=low permission=? level=?
-snapshot IDLE queue=[] working_on=- at=582 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,spec:READY]
+snapshot settings model=grok-4.7-build-fast effort=low permission=? level=? mode=?
+snapshot IDLE queue=[] working_on=- at=582 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7 Fast" sign_in=SIGNED_IN - background=? asks=[] context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? servers=[linear-server:NEEDS_AUTH,spec:READY]
 ## 56 recorded 55: input p1-3
 effect reply p1-3 accepted
 effect write "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Call the ask_the_operator tool from the spec tool server with the word kiwi, then reply with exactly what it returned.\",\"type\":\"text\"}],\"sessionId\":\"01a1fe54-79dd-75d3-9713-f2f8d3b671d6\"}}"
 item prompt:70312d33 prompt final input=p1-3 at=582 text="Call the ask_the_operator tool from the spec tool server with the word kiwi, then reply with exactly what it returned."
-snapshot WORKING queue=[] working_on=- at=582 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,spec:READY]
+snapshot WORKING queue=[] working_on=- at=582 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7 Fast" sign_in=SIGNED_IN - background=? asks=[] context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? servers=[linear-server:NEEDS_AUTH,spec:READY]
 ## 64 recorded 63: fact Rpc method=_x.ai/mcp/server_status
-snapshot WORKING queue=[] working_on=- at=624 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH]
+snapshot WORKING queue=[] working_on=- at=624 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7 Fast" sign_in=SIGNED_IN - background=? asks=[] context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH]
 ## 72 recorded 71: fact Rpc method=_x.ai/mcp/server_status
-snapshot WORKING queue=[] working_on=- at=1018 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+snapshot WORKING queue=[] working_on=- at=1018 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7 Fast" sign_in=SIGNED_IN - background=? asks=[] context=1325/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
 ## 82 recorded 81: fact Rpc method=session/update
 item message:1 message open at=4472 text="I'll"
-snapshot WORKING queue=[] working_on=- at=4472 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=1442/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+snapshot WORKING queue=[] working_on=- at=4472 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7 Fast" sign_in=SIGNED_IN - background=? asks=[] context=1442/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
 ## 83 recorded 82: fact Rpc method=session/update
 append message:1 " look"
 ## 84 recorded 83: fact Rpc method=session/update
@@ -86,7 +86,7 @@ append message:1 "kiwi"
 ## 105 recorded 104: fact Rpc method=session/update
 append message:1 "\"."
 ## 110 recorded 109: fact Rpc method=session/update
-snapshot WORKING queue=[] working_on=- at=4491 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=20935/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+snapshot WORKING queue=[] working_on=- at=4491 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7 Fast" sign_in=SIGNED_IN - background=? asks=[] context=20935/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
 ## 113 recorded 112: fact Rpc method=session/update
 item message:1 message final at=4472 text="I'll look up the spec server's `ask_the_operator` tool and call it with \"kiwi\"."
 item tool:call-9f990d6b-22db-42a6-a62f-94c30d95acaf-0 tool open at=4493 text="" UNSPECIFIED RUNNING "search_tool" input="{\"limit\":5,\"query\":\"spec ask_the_operator\"}"
@@ -99,7 +99,7 @@ item tool:call-9f990d6b-22db-42a6-a62f-94c30d95acaf-0 tool open at=4493 text="" 
 ## 118 recorded 117: fact Rpc method=session/update
 item tool:call-9f990d6b-22db-42a6-a62f-94c30d95acaf-0 tool final at=4493 text="{\n  \"results\": [\n    {\n      \"server\": \"spec\",\n      \"tools\": [\n        {\n          \"tool_name\": \"spec__ask_the_operator\",\n          \"description\": \"Ask the operator to confirm a word, then return it.\",\n          \"score\": 1.8699337244033813,\n          \"input_schema\": {\n            \"properties\": {\n              \"word\": {\n                \"type\": \"string\"\n              }\n            },\n            \"required\": [\n              \"word\"\n            ],\n            \"type\": \"object\"\n          }\n        }\n      ]\n    }\n  ],\n  \"total_hidden_tools\": 1,\n  \"status\": \"ready\",\n  \"note\": null\n}" OTHER SUCCEEDED "Search tools: \"spec ask_the_operator\"" input="{\"limit\":5,\"query\":\"spec ask_the_operator\",\"variant\":\"SearchTool\"}"
 ## 123 recorded 122: fact Rpc method=session/update
-snapshot WORKING queue=[] working_on=- at=6334 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=21285/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+snapshot WORKING queue=[] working_on=- at=6334 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7 Fast" sign_in=SIGNED_IN - background=? asks=[] context=21285/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
 ## 126 recorded 125: fact Rpc method=session/update
 item tool:call-4bb0db79-840e-4123-a134-06de4921f953-1 tool open at=6335 text="" UNSPECIFIED RUNNING "use_tool" input="{\"tool_input\":{\"word\":\"kiwi\"},\"tool_name\":\"spec__ask_the_operator\"}"
 ## 127 recorded 126: fact Rpc method=_x.ai/session_notification
@@ -114,7 +114,7 @@ effect write "{\"error\":{\"code\":-32601,\"message\":\"amux does not handle _x.
 item tool:call-4bb0db79-840e-4123-a134-06de4921f953-1 tool final at=6335 text="" OTHER SUCCEEDED "spec__ask_the_operator" input="{\"tool_input\":{\"word\":\"kiwi\"},\"tool_name\":\"spec__ask_the_operator\",\"variant\":\"Us…"
 ## 139 recorded 138: fact Rpc method=session/update
 item thought:2 thought open at=9569 text="The tool was cancelled"
-snapshot WORKING queue=[] working_on=- at=9569 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=21341/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+snapshot WORKING queue=[] working_on=- at=9569 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7 Fast" sign_in=SIGNED_IN - background=? asks=[] context=21341/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
 ## 140 recorded 139: fact Rpc method=session/update
 append thought:2 " because it asked for input."
 ## 141 recorded 140: fact Rpc method=session/update
@@ -275,14 +275,14 @@ append message:3 " kiwi"
 ## 243 recorded 242: fact Rpc method=session/update
 append message:3 "?"
 ## 245 recorded 244: fact Rpc method=session/update
-snapshot WORKING queue=[] working_on=- at=9758 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=21479/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+snapshot WORKING queue=[] working_on=- at=9758 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7 Fast" sign_in=SIGNED_IN - background=? asks=[] context=21479/256000 plan=? usage=in:?/out:?/thought:?/total:? cost=? servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
 ## 256 recorded 255: fact Rpc "{\"id\":\"amux-prompt-70312d33\",\"jsonrpc\":\"2.0\",\"result\":{\"_meta\":{\"c…
 item message:3 message final at=9569 text="The call was cancelled before it returned a word. The tool result was:\n\n[grok] MCP server \"spec\" asked the user for input while this call was running and it was cancelled without an answer. Do not assume the requested action was performed; tell the user and ask before retrying.\nelicitation cancel\n\nShould I call `ask_the_operator` again with kiwi?"
 item turn:1 turn final at=9852 text="" #1 TURN_OUTCOME_COMPLETED started=582
 snapshot said "The call was cancelled before it returned a word. The tool result was:"
-snapshot IDLE queue=[] working_on=- at=9852 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=21479/256000 plan=? usage=in:21337/out:133/thought:55/total:21479 cost=? sign_in=SIGNED_IN reopen=RESUME servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
+snapshot IDLE queue=[] working_on=- at=9852 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7 Fast" sign_in=SIGNED_IN - background=? asks=[] context=21479/256000 plan=? usage=in:21337/out:133/thought:55/total:21479 cost=? servers=[linear-server:NEEDS_AUTH,spec:READY,posthog:NEEDS_AUTH,stripe:NEEDS_AUTH]
 turn_end 1 last=message:3
 ## 263 recorded 262: provider_exit Some(0)
 item boundary:2 boundary final at=13751 text="" BOUNDARY_KIND_EXITED cause=QUIT
-snapshot IDLE queue=[] working_on=- at=13751 agent=grok session=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 asks=[] model=grok-4.7-build-fast model_name=Grok 4.7 Fast effort=low mode=? context=21479/256000 plan=? usage=in:21337/out:133/thought:55/total:21479 cost=? sign_in=SIGNED_IN reopen=RESUME
+snapshot IDLE queue=[] working_on=- at=13751 conversation=01a1fe54-79dd-75d3-9713-f2f8d3b671d6 model_name="Grok 4.7 Fast" sign_in=SIGNED_IN - background=[] asks=[] context=21479/256000 plan=? usage=in:21337/out:133/thought:55/total:21479 cost=?
 incarnation_end QUIT

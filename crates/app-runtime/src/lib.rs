@@ -287,9 +287,8 @@ impl AppRuntime {
     /// Starts an agent on a host and returns it as the fleet names it: an
     /// agent of the program the person picked, of the kind the host's entry
     /// says that program starts as there, so an agent started here is the
-    /// same as one started at the host. A pick the kind takes no value of at
-    /// start is left out; what is not picked is the host's remembered pick,
-    /// else the program's own default.
+    /// same as one started at the host. What is not picked is the host's
+    /// remembered pick, else the program's own default.
     pub async fn create_agent(&self, agent: &NewAgent) -> Result<AgentKey, RpcError> {
         let kind = self
             .fleet
@@ -303,17 +302,9 @@ impl AppRuntime {
             permission: agent.permission.clone(),
             mode: agent.mode.clone(),
         };
-        // None: the host lists no such program, or names no kind for it.
-        let Some(config) = ui_view::create_config(kind, &agent.provider, &chosen) else {
-            return Err(RpcError::Refused(wire::Error {
-                code: wire::ErrorCode::FailedPrecondition as i32,
-                message: format!(
-                    "the device has not said it runs {}; try again once it is reachable",
-                    agent.provider
-                ),
-                details: Vec::new(),
-            }));
-        };
+        // Unspecified where the host lists no such program yet: the host
+        // starts it as it starts that program, or refuses one it does not
+        // run.
         let created = self
             .client
             .host(&agent.host_id)
@@ -322,12 +313,11 @@ impl AppRuntime {
                 agent_id: ui_runtime::inputs::input_id(),
                 name: Some(agent.name.clone()).filter(|name| !name.is_empty()),
                 cwd: agent.cwd.clone(),
-                agent: Some(config),
                 new_workspace: agent.new_worktree,
                 // A value is present here only because the person picked it.
                 remember_model: agent.model.is_some(),
                 remember_effort: agent.effort.is_some(),
-                ..Default::default()
+                ..ui_view::create_request(&agent.provider, kind, &chosen)
             })
             .await?;
         Ok(ui_state::agent_key(&created))

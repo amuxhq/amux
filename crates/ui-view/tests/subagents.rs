@@ -28,7 +28,7 @@ fn parent() -> wire::Agent {
         kind: Kind::ClaudeSdk as i32,
         name: "lead".into(),
         lifecycle: wire::Lifecycle::Live as i32,
-        phase: Phase::Working as i32,
+        status: wire::AgentStatus::in_phase(Phase::Working),
         incarnation: 1,
         ..wire::Agent::default()
     }
@@ -45,14 +45,20 @@ fn subagent(n: usize, phase: Phase, exited: Option<wire::ExitCause>) -> wire::Ag
         host_id: b"host".to_vec(),
         kind: Kind::ClaudeSdk as i32,
         name: format!("sub-{n:08}"),
-        title: Some(format!("survey part {n}")),
         lifecycle: if exited.is_some() {
             wire::Lifecycle::Exited
         } else {
             wire::Lifecycle::Live
         } as i32,
-        exit_cause: exited.map_or(0, |cause| cause as i32),
-        phase: phase as i32,
+        exit: exited.map(|cause| wire::IncarnationEnd {
+            cause: cause as i32,
+            detail: None,
+        }),
+        status: Some(Box::new(wire::AgentStatus {
+            phase: phase as i32,
+            title: Some(format!("survey part {n}")),
+            ..wire::AgentStatus::default()
+        })),
         incarnation: 1,
         parent: Some(wire::AgentRef {
             host_id: b"host".to_vec(),
@@ -504,20 +510,19 @@ fn a_subagents_composer_offers_only_its_own_stop() {
         stopping,
         ..Default::default()
     };
-    let snapshot = |jobs: Vec<wire::BackgroundJob>| {
+    let snapshot = |kind: Kind, jobs: Vec<wire::BackgroundJob>| {
         event(session_event::Of::Snapshot(wire::Snapshot {
-            phase: Phase::Working as i32,
-            body: wire::ClaudeSnapshot {
-                background_jobs: Some(wire::BackgroundJobs { known: true, jobs }),
-                ..Default::default()
-            }
-            .encode_to_vec(),
+            kind: kind as i32,
+            capabilities: Some(Box::new(crate::support::capabilities(kind))),
+            status: wire::AgentStatus::in_phase(Phase::Working),
+            body: wire::ClaudeSnapshot::default().encode_to_vec(),
+            jobs: Some(wire::BackgroundJobs { known: true, jobs }),
             ..Default::default()
         }))
     };
     let mut state = session(subagent(0, Phase::Working, None));
     assert!(!state.can_send());
-    state.update(snapshot(vec![job(false)]));
+    state.update(snapshot(Kind::ClaudeSdk, vec![job(false)]));
     assert_eq!(
         state.composer(),
         Composer::Native {
@@ -528,7 +533,7 @@ fn a_subagents_composer_offers_only_its_own_stop() {
     );
     // Its own job is the composer's to stop, not the overview's.
     assert!(ui_view::overview(&state, None).jobs.is_empty());
-    state.update(snapshot(vec![job(true)]));
+    state.update(snapshot(Kind::ClaudeSdk, vec![job(true)]));
     assert_eq!(
         state.composer(),
         Composer::Native {
@@ -550,7 +555,7 @@ fn a_subagents_composer_offers_only_its_own_stop() {
     let mut pty = subagent(1, Phase::Working, None);
     pty.kind = Kind::ClaudePty as i32;
     let mut state = session(pty);
-    state.update(snapshot(vec![job(false)]));
+    state.update(snapshot(Kind::ClaudePty, vec![job(false)]));
     assert_eq!(
         state.composer(),
         Composer::Native {

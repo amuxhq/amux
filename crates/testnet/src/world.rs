@@ -322,9 +322,7 @@ impl World for Net {
             })
             .await
             .map_err(|status| NetError::Refused(Box::new(status)))?;
-        Ok(wire::SendMessageResponse {
-            envelope_id: envelope.id,
-        })
+        Ok(wire::SendMessageResponse {})
     }
 
     async fn observe(&self, host: &str, agent: &str, tail: u32) -> Result<Observer, NetError> {

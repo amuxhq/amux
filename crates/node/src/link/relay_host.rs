@@ -135,15 +135,7 @@ impl RelayHost {
             .socket
             .add_forwarding(through, via, relay.path_kind());
 
-        let host = local_host(
-            id,
-            "relay-host",
-            Capabilities {
-                cloud_relay: false,
-                kinds: Vec::new(),
-            },
-            true,
-        );
+        let host = local_host(id, "relay-host", Capabilities { cloud_relay: false }, true);
         let ctx = LinkCtx::new_live(LiveLocalHost::new(host), Arc::new(LinkRegistry::new(id)));
         let auth = LinkConnectorAuth::new(
             LinkConnectorToken {

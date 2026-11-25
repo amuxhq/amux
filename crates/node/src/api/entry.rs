@@ -39,7 +39,7 @@ pub(crate) enum Entry {
     /// the caller of everything that arrives on it.
     Tools(AgentId),
     /// The phone's runtime, called in memory by the app it runs in: a
-    /// person on the iPhone app, the only app that runs a node in itself.
+    /// person on the iPhone or Android app, which names itself in its calls.
     Phone,
     /// The streams of links whose handshake presented a trusted key. The
     /// paired host is each connection's own, and the caller header says
@@ -247,13 +247,14 @@ async fn client_caller(
     headers: &http::HeaderMap,
 ) -> Result<Caller, Status> {
     match entry {
-        Entry::Profile => Ok(Caller::person_here(
+        // The iPhone and Android apps both run a node in themselves; each
+        // names itself in its calls, as every client does.
+        Entry::Profile | Entry::Phone => Ok(Caller::person_here(
             headers
                 .get(wire::SURFACE_HEADER)
                 .and_then(|value| value.to_str().ok())
                 .map_or(Surface::Other, surface_named),
         )),
-        Entry::Phone => Ok(Caller::person_here(Surface::Ios)),
         Entry::Tools(agent) => {
             // The socket knows the agent by its id alone, and its name can
             // change while it runs, so the name is read as the call comes.
@@ -263,12 +264,7 @@ async fn client_caller(
                 // so a host the call is carried to takes them as this host's
                 // word rather than judging them from its copy of the row.
                 Ok(Some(row)) => {
-                    let level = row
-                        .settings
-                        .as_ref()
-                        .map_or(wire::PermissionLevel::Unspecified, |settings| {
-                            settings.permission_level()
-                        });
+                    let level = row.status.settings().permission_level();
                     Ok(Caller::agent_of(
                         runtime.host(),
                         agent,

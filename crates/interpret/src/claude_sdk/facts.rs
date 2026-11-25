@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::claude_item::Kind;
 use wire::{
-    BoundaryKind, ClaudeUsage, ClaudeUsageWindow, DecisionOutcome, FormAsk, Limit, LinkAsk,
-    PermissionAsk, SignIn, SignInState, TaskState as WireTaskState, ToolServer, ToolServerStatus,
+    BoundaryKind, ClaudePermissionAsk, ClaudeUsage, ClaudeUsageWindow, DecisionOutcome, FormAsk,
+    Limit, LinkAsk, SignIn, SignInState, TaskState as WireTaskState, ToolServer, ToolServerStatus,
     ToolState, Turn, TurnOutcome, UsageMeter, UsageState,
 };
 
@@ -264,7 +264,7 @@ impl State {
                         emit,
                         ItemDraft {
                             key: status.uuid,
-                            body: item_body(Kind::Status(wire::Status {
+                            body: item_body(Kind::Status(wire::ClaudeStatus {
                                 status: typed as i32,
                                 word,
                             })),
@@ -494,7 +494,7 @@ impl State {
                 for key in keys {
                     let who = self.asker(&key);
                     let matches = self.open_ask(who.as_deref(), &key).is_some_and(|ask| {
-                        matches!(&ask.body, Some(wire::ask::Body::Link(link)) if link.url.contains(&elicitation))
+                        matches!(&ask.body, Some(wire::claude_ask::Body::Link(link)) if link.url.contains(&elicitation))
                     }) || key == elicitation;
                     if matches && let Some(ask) = self.close_open_ask(emit, &key) {
                         self.asks.remove(&key);
@@ -1272,7 +1272,7 @@ impl State {
             Kind::Steer(wire::Steer {})
         } else {
             self.shared.turn_started();
-            Kind::Prompt(wire::Prompt {})
+            Kind::Prompt(self.shared.prompt(&entry.input_id))
         };
         self.shared.item(
             emit,
@@ -1556,7 +1556,7 @@ impl State {
                 let message = without_terminal_codes(&elicitation.message);
                 let (body, shape) = if elicitation.mode.as_deref() == Some("url") {
                     (
-                        wire::ask::Body::Link(LinkAsk {
+                        wire::claude_ask::Body::Link(LinkAsk {
                             server,
                             message,
                             url: elicitation.url.unwrap_or_default(),
@@ -1565,7 +1565,7 @@ impl State {
                     )
                 } else {
                     (
-                        wire::ask::Body::Form(FormAsk {
+                        wire::claude_ask::Body::Form(FormAsk {
                             server,
                             message,
                             // The schema as Claude wrote it, key order kept.
@@ -1578,8 +1578,8 @@ impl State {
                 // Claude names no agent on a tool server's form: it is the
                 // form of the one agent with a call to that server running.
                 let server = match &body {
-                    wire::ask::Body::Link(link) => link.server.clone(),
-                    wire::ask::Body::Form(form) => form.server.clone(),
+                    wire::claude_ask::Body::Link(link) => link.server.clone(),
+                    wire::claude_ask::Body::Form(form) => form.server.clone(),
                     _ => String::new(),
                 };
                 let who = self.form_owner(&server);
@@ -1593,7 +1593,7 @@ impl State {
                         agent: who.clone(),
                     },
                 );
-                let ask = wire::Ask {
+                let ask = wire::ClaudeAsk {
                     item_key: ask_item::key(&request_id),
                     key: request_id,
                     body: Some(body),
@@ -1665,7 +1665,7 @@ impl State {
                     })
                     .collect();
                 (
-                    wire::ask::Body::Question(question),
+                    wire::claude_ask::Body::Question(question),
                     AnswerShape::Question(questions),
                 )
             }
@@ -1678,7 +1678,7 @@ impl State {
                 let switch = crate::claude_common::plan_switch(self.offers_auto(), self.never_ask)
                     .to_owned();
                 (
-                    wire::ask::Body::Plan(plan_ask(&switch)),
+                    wire::claude_ask::Body::Plan(plan_ask(&switch)),
                     AnswerShape::Plan { switch },
                 )
             }
@@ -1695,7 +1695,7 @@ impl State {
                         .unwrap_or_default(),
                 };
                 (
-                    wire::ask::Body::Permission(PermissionAsk {
+                    wire::claude_ask::Body::Permission(ClaudePermissionAsk {
                         tool_name: tool.clone(),
                         input: Some(tool_input(
                             &tool,
@@ -1745,7 +1745,7 @@ impl State {
                 .get(&tool_use_id)
                 .is_some_and(|tool| !tool.hidden),
         };
-        let ask = wire::Ask {
+        let ask = wire::ClaudeAsk {
             key: request_id.to_owned(),
             item_key: if drawn { tool_use_id } else { String::new() },
             body: Some(body),
@@ -1857,7 +1857,10 @@ impl State {
     /// Claude listed its commands, in an answer or unasked: the catalogue
     /// is rebuilt with them.
     fn commands_changed(&mut self, emit: &mut Emit, commands: &[SlashCommand]) {
-        self.commands = offered_commands(commands);
+        self.commands = offered_commands(commands)
+            .into_iter()
+            .filter(|command| !super::TERMINAL_ONLY_COMMANDS.contains(&command.name.as_str()))
+            .collect();
         self.shared.set_catalogue(
             emit,
             wire::Catalogue {

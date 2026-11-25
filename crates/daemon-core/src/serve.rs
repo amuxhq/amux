@@ -282,7 +282,10 @@ impl Daemon {
         let snapshot = cut.snapshot.unwrap_or_else(|| Snapshot {
             // Nothing emitted yet: the kind tag and an empty body.
             kind: row.kind,
-            phase: wire::Phase::Starting as i32,
+            status: Some(Box::new(wire::AgentStatus {
+                phase: wire::Phase::Starting as i32,
+                ..wire::AgentStatus::default()
+            })),
             ..Snapshot::default()
         });
         answer(session_event::Of::Snapshot(snapshot));
@@ -572,10 +575,18 @@ pub(crate) fn inventory(of: inventory_event::Of) -> InventoryEvent {
 
 /// An agent's row as the inventory carries it.
 pub fn to_wire(row: &AgentRow) -> Agent {
+    let mut status = row.status.clone();
+    status.title.clone_from(&row.title);
+    // Before its first snapshot an agent has been starting since it was
+    // created.
+    if status.phase_since_ms == 0 {
+        status.phase_since_ms = row.created_at_ms;
+    }
     Agent {
         agent_id: row.agent.agent.clone(),
         host_id: row.agent.host.clone(),
         kind: row.kind,
+        provider: row.provider.clone(),
         name: row.name.clone(),
         cwd: row.cwd.clone(),
         parent: row.parent.as_ref().map(|parent| AgentRef {
@@ -584,29 +595,19 @@ pub fn to_wire(row: &AgentRow) -> Agent {
         }),
         created_at_ms: row.created_at_ms,
         lifecycle: row.lifecycle,
-        exit_cause: row.exit_cause,
-        exit_detail: row.exit_detail.clone(),
-        phase: row.phase,
-        working_on: row.working_on.clone(),
-        // Before its first snapshot an agent has been starting since it
-        // was created.
-        phase_since_ms: row.phase_since_ms.unwrap_or(row.created_at_ms),
+        exit: (row.exit_cause != 0 || row.exit_detail.is_some()).then(|| wire::IncarnationEnd {
+            cause: row.exit_cause,
+            detail: row.exit_detail.clone(),
+        }),
         incarnation: row.incarnation,
-        git: row.git.clone(),
         descendants: row.descendants,
-        background_jobs: row.background_jobs,
         filing: row.filing,
         filed_at_ms: row.filed_at_ms,
-        title: row.title.clone(),
-        last_said: row.last_said.clone(),
         native: row.native.clone(),
+        status: Some(Box::new(status)),
         // Whole and undecoded: an own row's as this host's experiments
         // wrote it, a replica's as its origin sent it.
         experimental: row.experimental.clone(),
-        // Named for every agent, as the kind implies on a row kept before
-        // rows named it.
-        provider: row.provider_id().to_owned(),
-        settings: row.settings.clone().map(Box::new),
         parent_incarnation: row.parent_incarnation,
     }
 }
@@ -700,11 +701,8 @@ mod tests {
             }),
             generation: 7,
             standing: Some(wire::host_entry::Standing::Trusted(wire::Trusted {
-                reach: Some(wire::trusted::Reach::Online(
-                    wire::RouteKind::Unspecified as i32,
-                )),
+                reach: Some(wire::trusted::Reach::Here(wire::Here {})),
                 current: true,
-                same_network: false,
             })),
             ..Default::default()
         };

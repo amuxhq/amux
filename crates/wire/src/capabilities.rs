@@ -11,21 +11,9 @@
 //! another host's agent passes that host's, never the platform it was built
 //! for itself.
 
-use crate::{AgentCapabilities, Kind, Platform};
+use crate::{AgentCapabilities, Kind, Platform, SettingChange, SettingControl};
 
 impl AgentCapabilities {
-    /// What every agent of `kind` can do on a host running `platform`; None
-    /// for an ACP agent, whose program decides, and for a kind this build
-    /// does not know.
-    pub fn of_kind(kind: Kind, platform: Platform) -> Option<Self> {
-        match kind {
-            Kind::ClaudePty => Some(Self::claude_pty()),
-            Kind::ClaudeSdk => Some(Self::claude_sdk()),
-            Kind::Codex => Some(Self::codex(platform)),
-            Kind::Acp | Kind::Unspecified => None,
-        }
-    }
-
     /// Claude Code in its own terminal. amux types into that terminal, so
     /// a queued prompt can be typed into a running turn and a slash command
     /// amux does not know is Claude's to run; attachments go as paths
@@ -42,6 +30,13 @@ impl AgentCapabilities {
             files: true,
             passes_unknown_commands: true,
             forks: true,
+            // Terminal Claude takes no setting input: it runs its own
+            // commands, typed as any prompt, and steps its permission with
+            // its own cycle key.
+            model: Some(SettingChange::command("/model")),
+            effort: Some(SettingChange::command("/effort")),
+            permission: Some(SettingChange::step()),
+            mode: None,
         }
     }
 
@@ -58,6 +53,10 @@ impl AgentCapabilities {
             files: true,
             passes_unknown_commands: true,
             forks: true,
+            model: Some(SettingChange::pick()),
+            effort: Some(SettingChange::pick()),
+            permission: Some(SettingChange::pick()),
+            mode: None,
         }
     }
 
@@ -67,9 +66,7 @@ impl AgentCapabilities {
     /// stdio with room for amux alone. It refuses a slash command it does
     /// not list.
     ///
-    /// A platform nobody said (a host from before hosts said theirs) reads
-    /// as not Windows: attachable, as every reader before this read a host
-    /// other than its own Windows one.
+    /// A platform nobody said reads as not Windows: attachable.
     pub fn codex(platform: Platform) -> Self {
         Self {
             stops_job: true,
@@ -81,6 +78,10 @@ impl AgentCapabilities {
             files: true,
             passes_unknown_commands: false,
             forks: true,
+            model: Some(SettingChange::pick()),
+            effort: Some(SettingChange::pick()),
+            permission: Some(SettingChange::pick()),
+            mode: Some(SettingChange::pick()),
         }
     }
 
@@ -104,7 +105,66 @@ impl AgentCapabilities {
             files: true,
             passes_unknown_commands: true,
             forks: false,
+            // Each takes a pick of what the agent's catalogue lists, which
+            // may be nothing.
+            model: Some(SettingChange::pick()),
+            effort: Some(SettingChange::pick()),
+            permission: Some(SettingChange::pick()),
+            mode: Some(SettingChange::pick()),
         }
+    }
+}
+
+impl SettingChange {
+    /// A Set input naming a value the catalogue lists.
+    pub fn pick() -> Self {
+        Self {
+            control: SettingControl::Pick as i32,
+            command: String::new(),
+        }
+    }
+
+    /// One step input to the next value.
+    pub fn step() -> Self {
+        Self {
+            control: SettingControl::Step as i32,
+            command: String::new(),
+        }
+    }
+
+    /// Typed as `command` and the value.
+    pub fn command(command: &str) -> Self {
+        Self {
+            control: SettingControl::Command as i32,
+            command: command.to_owned(),
+        }
+    }
+}
+
+impl AgentCapabilities {
+    /// How a client changes each setting, unset ones as not offered.
+    pub fn model_change(&self) -> SettingControl {
+        self.model
+            .as_ref()
+            .map_or(SettingControl::Unspecified, SettingChange::control)
+    }
+
+    pub fn effort_change(&self) -> SettingControl {
+        self.effort
+            .as_ref()
+            .map_or(SettingControl::Unspecified, SettingChange::control)
+    }
+
+    pub fn permission_change(&self) -> SettingControl {
+        self.permission
+            .as_ref()
+            .map_or(SettingControl::Unspecified, SettingChange::control)
+    }
+
+    pub fn mode_change(&self) -> SettingControl {
+        self.mode
+            .as_ref()
+            .map_or(SettingControl::Unspecified, SettingChange::control)
     }
 }
 
@@ -126,29 +186,10 @@ impl Kind {
 mod tests {
     use super::*;
 
-    /// Every kind whose agents are alike says what it can do; an ACP
-    /// agent's come from its program.
+    /// An ACP agent whose program has said nothing can do only what every
+    /// ACP agent can.
     #[test]
-    fn the_fixed_kinds_say_what_they_can_do() {
-        for platform in [Platform::Macos, Platform::Linux, Platform::Windows] {
-            assert_eq!(
-                AgentCapabilities::of_kind(Kind::ClaudePty, platform),
-                Some(AgentCapabilities::claude_pty())
-            );
-            assert_eq!(
-                AgentCapabilities::of_kind(Kind::ClaudeSdk, platform),
-                Some(AgentCapabilities::claude_sdk())
-            );
-            assert_eq!(
-                AgentCapabilities::of_kind(Kind::Codex, platform),
-                Some(AgentCapabilities::codex(platform))
-            );
-            assert_eq!(AgentCapabilities::of_kind(Kind::Acp, platform), None);
-            assert_eq!(
-                AgentCapabilities::of_kind(Kind::Unspecified, platform),
-                None
-            );
-        }
+    fn an_acp_agent_that_said_nothing_can_do_the_least() {
         let unknown = AgentCapabilities::acp(false, false, false);
         assert!(!unknown.resumable && !unknown.images && !unknown.sends_now && !unknown.forks);
         assert!(unknown.files && unknown.passes_unknown_commands);
@@ -160,15 +201,11 @@ mod tests {
     /// (it runs on stdio there), and the same call says a Mac's has one.
     #[test]
     fn codex_attaches_on_every_host_but_windows_whoever_reads() {
-        let attachable = |platform| {
-            AgentCapabilities::of_kind(Kind::Codex, platform)
-                .unwrap()
-                .attachable
-        };
+        let attachable = |platform| AgentCapabilities::codex(platform).attachable;
         assert!(!attachable(Platform::Windows));
         assert!(attachable(Platform::Macos));
         assert!(attachable(Platform::Linux));
-        // An older host that never said its platform reads as not Windows.
+        // A platform nobody said reads as not Windows.
         assert!(attachable(Platform::Unspecified));
         // Nothing else of Codex's depends on where it runs.
         assert_eq!(

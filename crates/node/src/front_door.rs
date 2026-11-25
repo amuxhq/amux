@@ -22,7 +22,7 @@ use wire::{
     ListProfilesResponse, RenameProfileRequest, RenameProfileResponse, ShutdownRequest,
     ShutdownResponse, SignInEvent, SignInRequest, SignInResponse, SubscribeOnboardingRequest,
     SubscribeOnboardingResponse, SubscribeProfilesRequest, SubscribeProfilesResponse,
-    SuggestRepositoriesRequest, UpdateSettingsRequest, UpdateSettingsResponse, sign_in_event,
+    UpdateSettingsRequest, UpdateSettingsResponse, sign_in_event,
 };
 
 use crate::Tier;
@@ -40,16 +40,16 @@ pub fn info(state: ProfileState) -> wire::Profile {
         Cloud::SignedOut => Standing::SignedOut(Empty {}),
         Cloud::SignedIn(relay) => Standing::SignedIn(wire::RelayLink {
             state: Some(match relay {
-                Relay::Connecting => State::Connecting(Empty {}),
+                Relay::Connecting => State::Connecting(wire::RelayConnecting {}),
                 Relay::Connected { tier, .. } => State::Connected(wire::RelayConnected {
                     tier: match tier {
                         Tier::Free => wire::Tier::Free,
                         Tier::Pro => wire::Tier::Pro,
                     } as i32,
                 }),
-                Relay::Retrying => State::Retrying(Empty {}),
-                Relay::SignInAgain => State::SignInAgain(Empty {}),
-                Relay::VersionMismatch => State::VersionMismatch(Empty {}),
+                Relay::Retrying => State::Retrying(wire::RelayRetrying {}),
+                Relay::SignInAgain => State::SignInAgain(wire::RelaySignInAgain {}),
+                Relay::VersionMismatch => State::VersionMismatch(wire::RelayVersionMismatch {}),
             }),
         }),
     };
@@ -294,27 +294,6 @@ impl InstallationService for FrontDoor {
                 .map_err(|error| failed(ErrorCode::Internal, error.to_string()))??;
         Ok(Response::new(AnswerOnboardingResponse {
             onboarding: Some(answered),
-        }))
-    }
-
-    async fn suggest_repositories(
-        &self,
-        _request: Request<SuggestRepositoriesRequest>,
-    ) -> Result<Response<wire::SuggestRepositoriesResponse>, Status> {
-        let installation = self.registry.installation()?;
-        let suggestions = tokio::task::spawn_blocking(move || {
-            let suggestions = installation
-                .settings
-                .home()
-                .map(|home| crate::suggestions::suggest(home, std::time::SystemTime::now()))
-                .unwrap_or_default();
-            installation.onboarding.suggested(suggestions.len());
-            suggestions
-        })
-        .await
-        .map_err(|error| failed(ErrorCode::Internal, error.to_string()))?;
-        Ok(Response::new(wire::SuggestRepositoriesResponse {
-            folders: suggestions,
         }))
     }
 

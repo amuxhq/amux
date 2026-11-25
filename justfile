@@ -92,6 +92,33 @@ windows_platform := env("AMUX_WINDOWS_PLATFORM", if os() == "windows" { `scripts
 check-windows:
     {{bounded}} 3600 {{buck2}} build //crates/... --target-platforms root//build/platforms:{{windows_platform}}-cli-testing-dev --materializations none
 
+# Compile every Swift module of the iPhone app and the Mac app, their
+# packages' and their test bundles', in the configurations CI's two Apple
+# jobs build: nothing is linked or run, so no simulator boots, and nothing
+# comes back but the result. A change to the Rust, the bridge's header, its
+# generated Swift or the protocol that breaks the Swift fails here, on a
+# Mac, before it lands. The Swift reads only the bridge's generated header
+# and values, never its compiled library, so a deep Rust change costs a
+# small rebuild of the tools that write them, not the bridge. Linking,
+# bundling, assets, strings and Info.plist are left to CI's Apple jobs:
+# they break from changes under apps/apple, which those jobs already run
+# for. Off a Mac the Apple targets don't configure. `just premerge` runs it
+# on a Mac. Each build runs once more if the Mac's NativeLink only gave up
+# on a blob, as it does under a machine loaded past its cores
+# (scripts/rerun-on-cache-timeout.sh).
+apple-build:
+    #!/bin/sh
+    set -u
+    query() { {{buck2}} uquery "kind(_swift_library, attrregexfilter(default_target_platform, $1, //apps/apple/...))"; }
+    iphone=$(query ios-sim) && mac=$(query macos) || exit 1
+    build() { scripts/rerun-on-cache-timeout.sh "{{bounded}} 3600 {{buck2}} build --materializations none --target-platforms root//build/platforms:$1 $2"; }
+    build ios-sim-app-shipping-dev "$(echo $iphone)" & first=$!
+    build macos-app-shipping-dev "$(echo $mac)" & second=$!
+    status=0
+    wait $first || status=1
+    wait $second || status=1
+    exit $status
+
 # The workspace's tests for Windows, as CI's Windows job runs them after
 # `just check-windows` (docs/CI.md, "The Windows job"): only a Windows
 # worker runs them, which CI's Windows job has, and so does a Windows
@@ -114,7 +141,7 @@ test-windows *ARGS:
 # is skipped even when named (the terminal journeys on Windows).
 # Run the workspace's and the Android app's tests through Buck2.
 test *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live --exclude nightly --skip-incompatible-targets -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py "$@"; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live --exclude nightly --skip-incompatible-targets -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
 
 # The repository's checks (the root BUCK file, and the apps' script tests and
 # lints beside their scripts) and the JavaScript's (js/BUCK) as Buck2 tests,
@@ -166,10 +193,6 @@ test-store-ios:
 test-build:
     {{bounded}} 3600 {{buck2}} build //crates/...
 
-# Run all workspace documentation tests.
-doctest:
-    {{bounded}} 600 cargo test --locked --workspace --doc
-
 # Exercise TUI behavior.
 test-tui:
     {{bounded}} 1200 {{buck2}} test //crates/tui: -- --timeout 1200
@@ -201,9 +224,11 @@ buckify:
 fmt:
     {{bounded}} 600 {{nightly_cargo}} fmt --all
 
+# A Buck2 check (`//:fmt-check`), on a Linux worker with the Linux
+# toolchain's dated nightly, over every member's Rust files.
 # Check Rust formatting with the pinned nightly toolchain.
 fmt-check:
-    {{bounded}} 600 {{nightly_cargo}} fmt --all -- --check
+    "{{just_executable()}}" test //:fmt-check
 
 # Regenerate the committed protobuf bindings.
 protobuf:
@@ -345,14 +370,8 @@ sanitize KIND *CRATES:
 
 # Fail when any state-machine core's dependency graph contains tokio, or any
 # core source contains a lock, a spawned task, an async fn or an await.
-cores-check: cores-graph-check
-    "{{just_executable()}}" test //:cores-check
-
-# The tokio half of `cores-check`, which reads Cargo's whole graph and so
-# stays a script; `//:cores-check` checks the sources.
-[private]
-cores-graph-check:
-    {{bounded}} 120 scripts/py scripts/cores-check.py --graph
+cores-check:
+    "{{just_executable()}}" test //:cores-check //:cores-graph-check
 
 # A desktop-platform conditional (`cfg(unix)`, `cfg(windows)`, a desktop
 # `target_os`, `std::os::unix`, `libc::`, ...) belongs in the homes named for
@@ -369,23 +388,24 @@ platform-check *ARGS:
 
 # Enforce production and test-infrastructure dependency boundaries.
 dependency-policy:
-    {{bounded}} 60 scripts/py scripts/check-dependency-policy.py
+    "{{just_executable()}}" test //:dependency-policy
 
 # Check every dependency against deny.toml with cargo-deny: no open security
 # advisory or yanked release, only the licences it lists, and only crates.io
-# and the rustls patch and wt as sources. A Buck2 check (`//:deny`) on
-# snapshots of Cargo's graph, the advisory database and crates.io's index
-# that build/checks/inputs.py takes, the last two at most once a day; it runs
-# on a Linux worker, with the Linux toolchain's cargo-deny.
+# and the rustls patch and wt as sources. A Buck2 check (`//:deny`) on a
+# Linux worker, with the Linux toolchain's cargo-deny, over Cargo's graph
+# and crates.io's index as the day's fetch of the registry has them
+# (//:cargo-registry) and the snapshot of the advisory database that
+# build/checks/inputs.py takes at most once a day.
 deny:
     "{{just_executable()}}" test //:deny
 
 # Fail on any dependency no crate's code uses, so unused ones do not pile up
 # again. A crate lists what the code cannot show it needs under
-# `[package.metadata.cargo-shear]`. Needs
-# `cargo install --locked cargo-shear@1.14.0`.
+# `[package.metadata.cargo-shear]`. A Buck2 check (`//:shear`), with the
+# Linux toolchain's cargo-shear over the fetched registry.
 shear:
-    {{bounded}} 300 cargo shear --locked --deny-warnings
+    "{{just_executable()}}" test //:shear
 
 # `just suite desktop-cli-system` runs exactly the Cargo tests that suite of
 # tests/catalog.toml lists, on `just test`'s build; anything after the
@@ -400,8 +420,9 @@ tests-list:
     scripts/py -B scripts/tests-catalog.py list
 
 # Validate every catalogued recipe, target, feature, manifest and baseline.
-# A script, not a Buck2 check: it asks Cargo about every crate's targets and
-# just about every recipe, and looks for every path the catalogue names.
+# A script, not a Buck2 check: it asks just about every recipe and looks
+# for every path the catalogue names; Cargo's view of every crate's targets
+# it reads from //:cargo-metadata (scripts/cargo_metadata.py).
 tests-check:
     {{bounded}} 120 scripts/py -B scripts/tests-catalog.py check
 
@@ -466,9 +487,12 @@ premerge_android := "//apps/android/..."
 # inputs changed run; the rest come from NativeLink's cache, in this tree or
 # any other), and beside them the checks that stay scripts, because they read
 # the whole workspace or query the build graph itself (build/checks/premerge.py
-# names them and says why). A failing one fails the run and its output is
-# printed at the end. The other platforms' builds and the Apple app's tests
-# stay with `just ios verify` and CI (docs/CI.md, "`just premerge`").
+# names them and says why), among them the build of every Windows binary on
+# a Linux worker (`check-windows`) and, on a Mac, the compile of every
+# Swift module of the Apple apps and their tests (`apple-build`). A failing
+# one fails the run and its output is printed at the end. Linking the Apple
+# apps, their tests and the tests on macOS and Windows stay with `just ios
+# verify` and CI (docs/CI.md, "`just premerge`").
 # Run the checks a change passes before it reaches main.
 premerge: no-update-flags
     JUST="{{just_executable()}}" scripts/py -B build/checks/premerge.py {{premerge_tests}} {{premerge_android}}
@@ -478,6 +502,7 @@ premerge: no-update-flags
 # lints and script tests. A fork's pull request gets no build host, so CI
 # builds and tests everything on four-core runners, and all of it on one
 # takes longer than a test run's bound; it runs the halves side by side.
+# Neither builds Windows: a fork's Windows job compiles it under Cargo.
 # Run one half of `just premerge`: workspace or android.
 premerge-half HALF:
     #!/bin/sh
@@ -485,7 +510,7 @@ premerge-half HALF:
     case "{{HALF}}" in
         workspace)
             "{{just_executable()}}" no-update-flags
-            JUST="{{just_executable()}}" scripts/py -B build/checks/premerge.py {{premerge_tests}}
+            JUST="{{just_executable()}}" scripts/py -B build/checks/premerge.py --without-windows {{premerge_tests}}
             ;;
         android)
             "{{just_executable()}}" no-update-flags
@@ -493,6 +518,14 @@ premerge-half HALF:
             ;;
         *) echo "premerge-half: workspace or android, not {{HALF}}" >&2; exit 2 ;;
     esac
+
+# That build/ci-jobs.toml, which decides which of CI's macOS and Windows
+# jobs a change runs, names every file only the Apple apps' graphs read
+# (scripts/ci_jobs.py graph-check): a query of the configured graph, so
+# premerge runs it beside the tests.
+# Check CI's job table against the Apple apps' build graphs.
+ci-jobs-check:
+    {{bounded}} 300 scripts/py scripts/ci_jobs.py graph-check {{premerge_tests}} -- {{premerge_android}}
 
 # `just land "What the branch does"` merges this tree's HEAD onto a fresh
 # origin/main, runs `just premerge` on the merge and pushes it. With `git
@@ -503,6 +536,15 @@ premerge-half HALF:
 # Land this branch on main.
 land *ARGS:
     scripts/py -B scripts/land.py "$@"
+
+# Print the whole log of a landing the queue ran, by the id `just land` named.
+land-log ID:
+    scripts/py -B scripts/land.py --log "{{ID}}"
+
+# Merge a fresh origin/main into this branch; when only the generated
+# protobuf bindings conflict, regenerate them (scripts/merge-main.sh).
+merge-main:
+    scripts/merge-main.sh
 
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,

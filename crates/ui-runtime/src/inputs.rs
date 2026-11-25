@@ -25,6 +25,7 @@ pub fn submission(text: &str, attachments: Vec<Attachment>) -> PromptSubmission 
             text: text.to_owned(),
             attachments,
         }),
+        continued: false,
     }
 }
 

@@ -34,8 +34,8 @@ use std::process::Command;
 use release::{Manifest, Release};
 
 use crate::release::{
-    WORKFLOW, file_seed, gh, git, kept_seed, publish, repository_root, run, tagged_commit,
-    trusted_keys,
+    WORKFLOW, ci_covered, file_seed, gh, git, kept_seed, publish, repository_root, run,
+    tagged_commit, trusted_keys,
 };
 use crate::{credentials, signing};
 
@@ -146,6 +146,8 @@ fn cut(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
             )
             .into());
         }
+        // A rehearsal ships nothing, so it may build what CI has not judged.
+        ci_covered(&root, &["mac-app"])?;
         if !credentials::configured() {
             return Err(
                 "this machine has no credential command to hold the release key, so \

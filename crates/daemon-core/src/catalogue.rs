@@ -30,28 +30,25 @@ pub struct Said {
     pub name: String,
     pub version: String,
     pub cloud_relay: bool,
-    pub kinds: Vec<i32>,
     pub platform: wire::Platform,
     pub signed_in: Option<bool>,
 }
 
 impl Said {
     pub fn from_wire(host: &wire::Host) -> Self {
-        let capabilities = host.capabilities.clone().unwrap_or_default();
+        let capabilities = host.capabilities.unwrap_or_default();
         Self {
             name: host.name.clone(),
             version: host.version.clone(),
             cloud_relay: capabilities.cloud_relay,
-            kinds: capabilities.kinds,
             platform: host.platform(),
             signed_in: host.account_signed_in,
         }
     }
 
-    pub fn capabilities(&self) -> wire::Capabilities {
-        wire::Capabilities {
+    pub fn capabilities(&self) -> wire::HostCapabilities {
+        wire::HostCapabilities {
             cloud_relay: self.cloud_relay,
-            kinds: self.kinds.clone(),
         }
     }
 }
@@ -202,11 +199,11 @@ impl Daemon {
         &mut self,
         link: LinkId,
         peer: HostId,
-        body: &wire::message::Body,
+        body: &wire::link_message::Body,
         out: &mut Vec<Output>,
     ) {
         use wire::HelloAck;
-        use wire::message::Body;
+        use wire::link_message::Body;
 
         let own = HostId::from_slice(self.store.own_host());
         let other = |host: HostId| Some(host) != own && host != peer;

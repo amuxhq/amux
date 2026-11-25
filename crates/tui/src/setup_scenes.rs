@@ -59,12 +59,12 @@ pub fn settings() -> wire::Settings {
         host_name: "desk".to_owned(),
         start_at_login: Some(false),
         keep_awake: false,
-        repositories: Vec::new(),
         chat_in: wire::ChatIn::Amux as i32,
         claude_kind: wire::Kind::Unspecified as i32,
         telemetry: true,
         auto_reports: false,
         experiments: Vec::new(),
+        repositories: Vec::new(),
     }
 }
 
@@ -104,13 +104,13 @@ pub fn fleet(with_phone: bool) -> FleetState {
     event(Of::Host(wire::HostEntry::trusted_host(
         b"desk".as_slice(),
         "desk",
-        wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+        wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Direct)),
     )));
     if with_phone {
         let mut phone = wire::HostEntry::trusted_host(
             b"phone".as_slice(),
             PHONE,
-            wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+            wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Direct)),
         );
         if let Some(host) = phone.host.as_mut() {
             host.platform = wire::Platform::Ios as i32;
@@ -286,6 +286,26 @@ fn entry(path: &str) -> wire::Folder {
     }
 }
 
+/// The desk's entry, now offering `folders`.
+pub fn desk_offering(fleet: &mut FleetState, folders: Vec<wire::Folder>) {
+    let mut desk = wire::HostEntry::trusted_host(
+        b"desk".as_slice(),
+        "desk",
+        wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Direct)),
+    );
+    desk.folders = folders;
+    fleet.update(FleetMsg::Event(Box::new(wire::InventoryEvent {
+        of: Some(Of::Host(desk)),
+    })));
+}
+
+/// The repositories step opened while the desk's entry offers `folders`.
+pub fn repositories_offered(folders: Vec<wire::Folder>) -> SetupScene {
+    let mut fleet = fleet(true);
+    desk_offering(&mut fleet, folders);
+    opened(SetupStep::Repositories, later_steps(), fleet)
+}
+
 /// The folders Claude Code and Codex ran in lately, all ticked.
 pub fn repositories() -> SetupScene {
     let mut scene = opened(SetupStep::Repositories, later_steps(), fleet(true));
@@ -368,10 +388,6 @@ pub fn settings_page(signed_in: bool) -> SettingsScene {
     let settings = wire::Settings {
         start_at_login: Some(true),
         keep_awake: true,
-        repositories: vec![
-            "/Users/jordan/src/amux".to_owned(),
-            "/Users/jordan/src/amuxcloud".to_owned(),
-        ],
         auto_reports: true,
         experiments: vec![
             wire::Experiment {
@@ -390,6 +406,13 @@ pub fn settings_page(signed_in: bool) -> SettingsScene {
             },
         ],
         ..settings()
+    };
+    let settings = wire::Settings {
+        repositories: vec![
+            "/Users/jordan/src/amux".to_owned(),
+            "/Users/jordan/src/amuxcloud".to_owned(),
+        ],
+        ..settings
     };
     let mut scene = SettingsScene {
         screen: SettingsScreen::new(settings, Some(profile(signed_in)), "Mac"),

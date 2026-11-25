@@ -11,8 +11,15 @@ struct SettingsWindow: View {
         SettingsScreen(
             state: state,
             account: SettingsAccount(profile: model.current, signingIn: model.signingIn),
+            repositories: model.settings?.repositories ?? [],
             actions: SettingsActions(
                 apply: { await model.apply($0) },
+                pin: { path, pinned in
+                    let failed = await model.pin(path, pinned: pinned)
+                    // The config now pins it or not; the settings say so.
+                    await model.loadSettings()
+                    return failed
+                },
                 signIn: { Task { await model.signInFromMenu() } },
                 signOut: { Task { await model.signOut() } }))
             // Changed beside the app (`amux config`, the terminal's settings),

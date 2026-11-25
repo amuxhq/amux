@@ -54,7 +54,7 @@ pub use form::{
     FieldProblem, FormField, FormFieldKind, FormProblem, FormValue, form_answer, form_fields,
     form_problems,
 };
-pub use inputs::{Act, act_input, create_config};
+pub use inputs::{Act, act_input, create_request};
 pub use markdown::{
     InlineRun, Markdown, ProseBlock, ProseItem, TableAlign, inline_runs, runs_text,
 };

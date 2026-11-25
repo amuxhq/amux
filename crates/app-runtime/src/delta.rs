@@ -224,7 +224,7 @@ mod tests {
         let mut state = SessionState::new(agent, 3);
         state.update(event(session_event::Of::Snapshot(wire::Snapshot {
             kind: Kind::Codex as i32,
-            phase: Phase::Working as i32,
+            status: wire::AgentStatus::in_phase(Phase::Working),
             ..wire::Snapshot::default()
         })));
         for order in 1..=3 {

@@ -47,6 +47,30 @@ def git(*args: str, cwd: Path, capture: bool = False, check: bool = True) -> str
     return result.stdout.strip() if capture else ""
 
 
+# The committed protobuf bindings (`just protobuf`). They are generated from
+# proto/ alone, so when only they conflict, regenerating them from the merged
+# sources is the one right resolution.
+GENERATED = "crates/wire/src/generated/"
+# How many of main's commits a conflict names before saying how many more.
+NAMED_COMMITS = 5
+
+
+def conflict_detail(cwd: Path, base: str, commit: str, files: Sequence[str]) -> str:
+    """The files that conflict, the commits on main since the branch left
+    it that touched them, and, when only the generated bindings conflict,
+    how to resolve them."""
+    detail = ", ".join(files)
+    fork = git("merge-base", base, commit, cwd=cwd, capture=True, check=False)
+    touched = git("log", "--format=%h %s", f"{fork}..{base}", "--", *files, cwd=cwd, capture=True, check=False).splitlines() if fork and files else []
+    if touched:
+        named = "; ".join(touched[:NAMED_COMMITS])
+        more = f" and {len(touched) - NAMED_COMMITS} more" if len(touched) > NAMED_COMMITS else ""
+        detail += f" (changed on main by {named}{more})"
+    if files and all(file.startswith(GENERATED) for file in files):
+        detail += "; only the generated protobuf bindings conflict: `just merge-main` regenerates them from the merged sources"
+    return detail
+
+
 @dataclass
 class Gate:
     """How a landing is checked. `run(argv, cwd)` runs one command and
@@ -86,9 +110,9 @@ def land_once(
         cwd=tree, text=True, capture_output=True, env=dict(os.environ, **(lander or {})),
     )
     if merged.returncode != 0:
-        conflicts = git("diff", "--name-only", "--diff-filter=U", cwd=tree, capture=True, check=False)
+        conflicts = git("diff", "--name-only", "--diff-filter=U", cwd=tree, capture=True, check=False).splitlines()
         git("merge", "--abort", cwd=tree, check=False)
-        detail = ", ".join(conflicts.splitlines()) or (merged.stderr.strip() or merged.stdout.strip())
+        detail = conflict_detail(tree, base, commit, conflicts) if conflicts else (merged.stderr.strip() or merged.stdout.strip())
         raise Stopped(f"the branch doesn't merge onto main: {detail}")
     step("running the gate (just premerge)")
     gate.check("the gate", gate.premerge, tree)

@@ -22,8 +22,8 @@ use wire::cloud_standing::Standing;
 use wire::installation_service_client::InstallationServiceClient;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    BeginPairRequest, BindProfileRequest, Empty, HostRef, StartPairingRequest, UnpairRequest,
-    begin_pair_request, host_ref, inventory_event, start_pairing_request,
+    BeginPairRequest, BindProfileRequest, Empty, StartPairingRequest, UnpairRequest,
+    begin_pair_request, inventory_event, start_pairing_request,
 };
 
 /// The discovery scope the paired hosts share.
@@ -88,12 +88,6 @@ async fn channel(path: &Path) -> Channel {
         }))
         .await
         .expect("the front door answers")
-}
-
-fn host_ref(host: Uuid) -> Option<HostRef> {
-    Some(HostRef {
-        of: Some(host_ref::Of::HostId(host.as_bytes().to_vec())),
-    })
 }
 
 /// Waits for the outcome of `host`'s dial to `to`: the error it stored,
@@ -391,7 +385,7 @@ async fn paired_hosts_link_both_ways_refuse_strangers_and_unpair() {
     let removed = admin(&net, "desk")
         .await
         .unpair(UnpairRequest {
-            peer: host_ref(laptop_id),
+            host_id: laptop_id.as_bytes().to_vec(),
         })
         .await
         .unwrap()

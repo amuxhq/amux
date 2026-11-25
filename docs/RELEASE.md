@@ -18,6 +18,16 @@ the same two commands, on its own schedule:
 | The Mac app | `just mac release <version>`: build, sign with Developer ID, make the update zip and the disk image ([MAC](MAC.md#releases)) | `just mac deploy <version>`: sign the channel's Mac feed and publish it with the disk image | `mac-v<version>` |
 | The browser extension | `just browser release <version>`: raise the manifest's version, build, zip, and keep the zip as the tag's GitHub Release asset | `just browser deploy <version>`: upload that zip to the Chrome Web Store and submit it for review | `browser-v<version>` |
 
+CI runs its macOS and Windows jobs only for changes that reach what each
+alone tests ([CI](CI.md#which-jobs-a-change-runs)), so `just ios release`,
+`just mac release` and `just amux release` first ask that CI judged the
+commit they ship: the iPhone app's, the Mac app's, or the macOS tests', the
+macOS journeys' and Windows' last pass on main must cover HEAD. When one
+doesn't, the release refuses and names the file that job has not judged;
+`gh workflow run ci.yml --ref main` runs every one of those jobs on main, and
+once they pass the release goes ahead. A rehearsal ships nothing and doesn't
+ask.
+
 An extension version can meet an `amux` of any version, and needs nothing of
 it beyond `amux.v1` and the bridge
 ([Browser extension](BROWSER.md#how-it-connects)).

@@ -11,10 +11,13 @@ export_file(
 # protoc for `//crates/wire:protobuf`: the release protoc-bin-vendored
 # (Cargo's codegen) carries, 31.1, from protobuf's own releases, with its
 # include/ of well-known types.
+# With each archive's size beside its SHA-256, Buck2 takes it from the build
+# cache without asking GitHub anything; without the size it makes a HEAD
+# request for it first.
 _PROTOC = {
-    "linux-aarch_64": "6c554de11cea04c56ebf8e45b54434019b1cd85223d4bbd25c282425e306ecc2",
-    "linux-x86_64": "96553041f1a91ea0efee963cb16f462f5985b4d65365f3907414c360044d8065",
-    "osx-aarch_64": "4aeea0a34b0992847b03a8489a8dbedf3746de01109b74cc2ce9b6888a901ed9",
+    "linux-aarch_64": ("6c554de11cea04c56ebf8e45b54434019b1cd85223d4bbd25c282425e306ecc2", 3486063),
+    "linux-x86_64": ("96553041f1a91ea0efee963cb16f462f5985b4d65365f3907414c360044d8065", 3521988),
+    "osx-aarch_64": ("4aeea0a34b0992847b03a8489a8dbedf3746de01109b74cc2ce9b6888a901ed9", 2482345),
 }
 
 #
@@ -25,9 +28,10 @@ _PROTOC = {
         name = "protoc-" + platform,
         url = "https://github.com/protocolbuffers/protobuf/releases/download/v31.1/protoc-31.1-{}.zip".format(platform),
         sha256 = sha256,
+        size_bytes = size,
         type = "exploded_zip",
     )
-    for platform, sha256 in _PROTOC.items()
+    for platform, (sha256, size) in _PROTOC.items()
 ]
 
 archive_tool(
@@ -50,6 +54,14 @@ archive_tool(
 export_file(
     name = "checks/home.sh",
     src = "checks/home.sh",
+    mode = "reference",
+    visibility = ["PUBLIC"],
+)
+
+# What the checks that run Cargo run it through (build/cargo.bzl).
+export_file(
+    name = "checks/cargo.sh",
+    src = "checks/cargo.sh",
     mode = "reference",
     visibility = ["PUBLIC"],
 )
@@ -77,7 +89,7 @@ amux_files(
 # The deny check's script and what it reads.
 amux_files(
     name = "deny",
-    srcs = ["checks/deny.sh"] + glob(["checks/inputs/deny/**"], exclude = ["checks/inputs/deny/key", "checks/inputs/deny/index-refreshed"]),
+    srcs = ["checks/deny.sh"] + glob(["checks/inputs/deny/advisory-db.*"]),
 )
 
 # The script that writes the checks' inputs, for its tests among the root
@@ -133,4 +145,18 @@ http_archive(
 amux_files(
     name = "nativelink",
     srcs = glob(["nativelink/**"]),
+)
+
+# Which gated CI job each file runs (scripts/ci_jobs.py), which its test
+# holds every tracked file to.
+amux_files(
+    name = "ci-jobs",
+    srcs = ["ci-jobs.toml"],
+)
+
+# The summary after a Buck2 command of where its time went, which its test
+# reads (the root BUCK's script tests).
+amux_files(
+    name = "timing",
+    srcs = ["checks/timing.py"],
 )

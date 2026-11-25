@@ -69,6 +69,14 @@
           # downloading them.
           AMUX_TOOLS_CACHE = (import ./nix/build-tools.nix { inherit pkgs; }).cache;
         };
+        # What CI's Linux gate runs `just premerge` with when the build
+        # host's worker runs its actions: the runner only drives Buck2, and
+        # every check that needs Rust's tools is an action on that worker
+        # (build/cargo.bzl). scripts/buck-tools.py fetches the pinned buck2
+        # (build/tools.json), which zstd unpacks.
+        ci = pkgs.mkShellNoCC {
+          packages = [ pkgs.gitMinimal pkgs.just pkgs.python3 pkgs.zstd ];
+        };
       });
     };
 }

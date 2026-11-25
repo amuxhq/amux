@@ -661,7 +661,7 @@ impl ChatView {
                     Some(input) => vec![ChatEffect::Answer(input)],
                     // An agent that changes it only by its own command
                     // (terminal Claude) gets that command typed.
-                    None => ui_view::typed_setting(&change)
+                    None => ui_view::typed_setting(state, &change)
                         .map(|text| ChatEffect::Prompt {
                             text,
                             attachments: Vec::new(),

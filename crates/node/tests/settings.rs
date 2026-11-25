@@ -30,7 +30,7 @@ async fn desk_with_file(install: &Install, text: &str) -> (node::Daemon, std::pa
 
 /// A change through the front door is written to the file, keeping the rest
 /// of it, and is in force at once: the host's own entry says its new name
-/// and Claude kind, and its listing offers its new repositories.
+/// and Claude kind, and, once a folder is pinned, offers it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_settings_change_is_written_and_in_force_at_once() {
     let desk = Install::new();
@@ -50,7 +50,7 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
         settings.start_at_login, None,
         "no supervisor, no login item"
     );
-    assert!(settings.keep_awake && settings.repositories.is_empty());
+    assert!(settings.keep_awake);
     assert_eq!(settings.claude_kind, wire::Kind::Unspecified as i32);
     assert_eq!(
         runtime
@@ -67,9 +67,6 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
         .update_settings(Request::new(UpdateSettingsRequest {
             host_name: Some("study".into()),
             claude_kind: Some(wire::Kind::ClaudePty as i32),
-            repositories: Some(wire::RepositoryList {
-                paths: vec![repository.to_str().unwrap().to_owned()],
-            }),
             ..UpdateSettingsRequest::default()
         }))
         .await
@@ -91,6 +88,17 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
         wire::Kind::ClaudePty
     );
     assert_eq!(entry.host.unwrap().name, "study");
+    wire::host_service_client(node::harness::served_as(
+        &runtime,
+        node::harness::Served::Profile,
+        node::harness::Calling::PersonHere(analytics::Client::Terminal),
+    ))
+    .pin_folder(wire::PinFolderRequest {
+        path: repository.to_str().unwrap().to_owned(),
+        pinned: true,
+    })
+    .await
+    .unwrap();
     until(
         "the desk's entry to offer its repository",
         pinned_app(&runtime),
@@ -134,6 +142,21 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
         .await
         .unwrap_err();
     assert_eq!(refused.code(), tonic::Code::InvalidArgument, "{refused:?}");
+
+    // The settings list what the config pins as it is written, a folder
+    // gone from the disk too, so a settings screen can still unpin it; the
+    // entry offers only folders that are there.
+    let pinned = repository.canonicalize().unwrap();
+    std::fs::remove_dir_all(&repository).unwrap();
+    let listed = door
+        .get_settings(Request::new(wire::GetSettingsRequest {}))
+        .await
+        .unwrap()
+        .into_inner()
+        .settings
+        .unwrap()
+        .repositories;
+    assert_eq!(listed, [pinned.to_str().unwrap()]);
 
     drop(runtime);
     daemon.shutdown().await.unwrap();

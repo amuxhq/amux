@@ -139,7 +139,10 @@ impl Said {
                 blocked_notice::Why::Failed(message) => Self::Failed { message },
             },
             notice::Of::Died(died) => Self::Died {
-                detail: died.detail,
+                detail: died
+                    .ended
+                    .and_then(|ended| ended.detail)
+                    .unwrap_or_default(),
             },
         })
     }

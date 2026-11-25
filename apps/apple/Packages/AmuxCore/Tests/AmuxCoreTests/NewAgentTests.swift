@@ -234,8 +234,8 @@ final class NewAgentTests: XCTestCase {
             OfferedPermission(value: "locked", displayName: "Locked", normal: false, neverAsks: false, settable: false, models: [], level: 0),
         ],
         modes: [
-            OfferedMode(value: "default", displayName: "Default", normal: true, settable: true, level: 0),
-            OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true, level: 0),
+            OfferedMode(value: "default", displayName: "Default", normal: true, settable: true),
+            OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
         ],
         skills: [], newAgent: nil)
 
@@ -304,8 +304,8 @@ final class NewAgentTests: XCTestCase {
         let modes = Catalogue(
             models: [], commands: [], permissions: [],
             modes: [
-                OfferedMode(value: "default", displayName: "Default", normal: false, settable: true, level: 0),
-                OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true, level: 0),
+                OfferedMode(value: "default", displayName: "Default", normal: false, settable: true),
+                OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
             ],
             skills: [], newAgent: nil)
         store.offered(.success(modes), for: "grok", asked: store.askingOffer(for: "grok"))

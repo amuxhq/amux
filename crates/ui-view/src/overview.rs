@@ -202,8 +202,7 @@ impl Comparison {
             Comparison::Uncommitted => true,
             Comparison::OnBranch => state
                 .agent()
-                .git
-                .as_ref()
+                .git()
                 .is_some_and(|git| git.base_branch.is_some()),
         }
     }

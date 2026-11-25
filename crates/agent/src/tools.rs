@@ -44,8 +44,7 @@ use wire::inventory_service_client::InventoryServiceClient;
 use wire::{
     Agent, AgentRef, Attachment, BlobRef, CreateAgentRequest, ExitCause, Filing, HostEntry,
     Lifecycle, PromptInput, PromptSubmission, ResolveAgentRequest, ResolveHostRequest,
-    SendMessageRequest, SetFilingRequest, SubscribeInventoryRequest, attachment,
-    create_agent_request, inventory_event,
+    SendMessageRequest, SetFilingRequest, SubscribeInventoryRequest, attachment, inventory_event,
 };
 
 use crate::dir;
@@ -53,9 +52,8 @@ use crate::dir;
 /// What a fleet call answers when no daemon is listening.
 pub const NOT_RUNNING: &str = "amux daemon isn't running";
 
-/// What a spawn answers when its agent process has no socket for its tool
-/// server: the process was started by a build from before spawns went
-/// through it.
+/// What a spawn answers when its agent process is not listening on the
+/// socket its tool server asks through.
 pub const NOT_TAKING_SPAWNS: &str = "this agent's process is not taking spawn requests";
 
 /// How long a fleet call keeps redialling a daemon that is not answering:
@@ -365,17 +363,14 @@ impl Server {
                 // conversation; never a prompt, which is the person's or
                 // the parent's words.
                 if let Some(working_on) = agent
-                    .working_on
-                    .as_ref()
-                    .or(agent.title.as_ref())
+                    .working_on()
+                    .or(agent.title())
                     .filter(|said| !said.is_empty())
                 {
                     row["working_on"] = json!(working_on);
                 }
-                if let Some(settings) = &agent.settings {
-                    settings_into(&mut row, settings);
-                }
-                if let Some(branch) = agent.git.as_ref().and_then(|git| git.branch.as_ref()) {
+                settings_into(&mut row, agent.settings());
+                if let Some(branch) = agent.git().and_then(|git| git.branch.as_ref()) {
                     row["branch"] = json!(branch);
                 }
                 if let Some(cause) = exit_words(agent) {
@@ -400,7 +395,7 @@ impl Server {
         let mut rows = Vec::new();
         for host in hosts.iter().filter(|host| host.trusted().is_some()) {
             let presence = match host.reach() {
-                Some(wire::trusted::Reach::Online(_)) => "online",
+                Some(wire::trusted::Reach::Here(_) | wire::trusted::Reach::Online(_)) => "online",
                 Some(wire::trusted::Reach::Away(_)) => "away",
                 _ => "offline",
             };
@@ -413,7 +408,7 @@ impl Server {
             let mut offers = Vec::new();
             for provider in &host.providers {
                 let catalogue = match this_host || presence == "online" {
-                    true => self.catalogue(host.host_id(), &provider.provider_id).await,
+                    true => self.catalogue(host.host_id(), &provider.provider).await,
                     false => None,
                 };
                 offers.push(offered(provider, catalogue.as_ref()));
@@ -431,10 +426,7 @@ impl Server {
         let mut answer = json!({ "hosts": rows });
         // What a subagent gets when no permission is asked for, and the
         // most it can be given.
-        if let Some(level) = me
-            .and_then(|me| me.settings.as_ref())
-            .and_then(|settings| settings.permission_level().word())
-        {
+        if let Some(level) = me.and_then(|me| me.settings().permission_level().word()) {
             answer["your_permission"] = json!(level);
         }
         Ok(answer.to_string())
@@ -501,12 +493,8 @@ impl Server {
         )
         .await
         .map_err(|refusal| refusal.or_else(|status| refused(&status, &to)))?;
-        let id = if sent.envelope_id.is_empty() {
-            request.id
-        } else {
-            sent.envelope_id
-        };
-        Ok(json!({ "id": interpret::to_hex(&id) }).to_string())
+        let wire::SendMessageResponse {} = sent;
+        Ok(json!({ "id": interpret::to_hex(&request.id) }).to_string())
     }
 
     /// Asked of the agent process, which asks the child's host. The parent
@@ -518,7 +506,7 @@ impl Server {
         let provider = required(arguments, "agent")?;
         let model = optional(arguments, "model");
         let effort = optional(arguments, "effort");
-        let agent = agent_named(&provider, model, effort)?;
+        agent_named(&provider)?;
         let prompt = required(arguments, "task")?;
         let name = optional(arguments, "name");
         // A name is never an address: the daemon resolves it against this
@@ -565,14 +553,24 @@ impl Server {
             agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
             name,
             cwd,
-            agent: Some(agent),
+            provider: provider.clone(),
+            // A Claude child runs headless: people read a child in amux's
+            // chat, so how its Claude is driven is no business of the
+            // parent's.
+            kind: request_kind(&provider).map_or(0, |kind| kind as i32),
+            settings: Some(wire::AgentSettings {
+                model,
+                effort,
+                permission_level: level as i32,
+                ..wire::AgentSettings::default()
+            }),
             initial_prompt: Some(PromptSubmission {
                 input_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 prompt: Some(prompt),
+                continued: false,
             }),
             new_workspace,
             fork,
-            permission_level: level as i32,
             ..CreateAgentRequest::default()
         };
         let host = host.map_or_else(Vec::new, |host| host.as_bytes().to_vec());
@@ -594,9 +592,7 @@ impl Server {
         if !agent.cwd.is_empty() {
             answer["cwd"] = json!(agent.cwd);
         }
-        if let Some(settings) = &agent.settings {
-            settings_into(&mut answer, settings);
-        }
+        settings_into(&mut answer, agent.settings());
         // A new workspace's branch is named after the agent, as its host
         // made it.
         if new_workspace {
@@ -618,9 +614,8 @@ impl Server {
         agents
             .iter()
             .find(|agent| agent.agent_id == self.me)
-            .and_then(|me| me.settings.as_ref())
-            .map_or(wire::PermissionLevel::Unspecified, |settings| {
-                settings.permission_level()
+            .map_or(wire::PermissionLevel::Unspecified, |me| {
+                me.settings().permission_level()
             })
     }
 
@@ -1063,7 +1058,7 @@ fn word(name: &str, prefix: &str) -> String {
 /// one a start names. Both ways of driving Claude are `claude`, for the same
 /// reason a parent cannot pick one.
 fn kind_word(agent: &Agent) -> String {
-    match agent.provider_id() {
+    match agent.provider.as_str() {
         "" => "unknown".to_owned(),
         id => id.to_owned(),
     }
@@ -1083,50 +1078,34 @@ fn exit_words(agent: &Agent) -> Option<String> {
         known => Some(word(known.as_str_name(), "EXIT_CAUSE_")),
     };
     let detail = agent
-        .exit_detail
-        .clone()
-        .filter(|detail| !detail.is_empty());
+        .exit_detail()
+        .filter(|detail| !detail.is_empty())
+        .map(str::to_owned);
     match (cause, detail) {
         (Some(cause), Some(detail)) => Some(format!("{cause}: {detail}")),
         (cause, detail) => cause.or(detail),
     }
 }
 
-/// The agent a start names by its provider id, on the model and effort it
-/// names. A Claude child runs headless: people read a child in amux's chat,
-/// so how its Claude is driven is no business of the parent's. Any other id
-/// is an ACP agent's, which only the host it runs on knows whether it
-/// offers, so that host refuses one it does not; an id no agent can have is
-/// refused here. The host checks the model and effort against what it
-/// offers.
-fn agent_named(
-    id: &str,
-    model: Option<String>,
-    effort: Option<String>,
-) -> Result<create_agent_request::Agent, Refusal> {
-    use create_agent_request::Agent;
+/// Refuses a provider id no agent can have. Claude, Codex, and any other
+/// id is an ACP agent's, which only the host it runs on knows whether it
+/// offers, so that host refuses one it does not. The host checks the model
+/// and effort against what it offers.
+fn agent_named(id: &str) -> Result<(), Refusal> {
     match id {
-        wire::agents::CLAUDE => Ok(Agent::ClaudeSdk(wire::ClaudeCreateConfig {
-            model,
-            effort,
-            ..Default::default()
-        })),
-        wire::agents::CODEX => Ok(Agent::Codex(wire::CodexCreateConfig {
-            model,
-            effort,
-            ..Default::default()
-        })),
-        _ if wire::agents::shape_problem(id).is_none() => Ok(Agent::Acp(wire::AcpCreateConfig {
-            agent: id.to_owned(),
-            model,
-            effort,
-            mode: None,
-        })),
+        wire::agents::CLAUDE | wire::agents::CODEX => Ok(()),
+        _ if wire::agents::shape_problem(id).is_none() => Ok(()),
         _ => Err(format!(
             "no agent {id:?}; use claude, codex or another agent a host offers, by the id list_hosts lists"
         )
         .into()),
     }
+}
+
+/// The kind a subagent of `provider` starts as, where the parent's start
+/// decides it: headless for Claude; the host's own for every other.
+fn request_kind(provider: &str) -> Option<wire::Kind> {
+    (provider == wire::agents::CLAUDE).then_some(wire::Kind::ClaudeSdk)
 }
 
 /// How an agent runs, into a listing's row or a start's answer: its
@@ -1150,7 +1129,7 @@ fn settings_into(row: &mut Value, settings: &wire::AgentSettings) {
 /// from the host's catalogue, when it could be read, its models with their
 /// efforts, the permission levels it takes and what it starts on.
 fn offered(provider: &wire::ProviderOnHost, catalogue: Option<&wire::Catalogue>) -> Value {
-    let id = provider.provider_id.as_str();
+    let id = provider.provider.as_str();
     let mut row = json!({ "id": id });
     if let Some(descriptor) = &provider.descriptor
         && !descriptor.name.is_empty()
@@ -1161,8 +1140,7 @@ fn offered(provider: &wire::ProviderOnHost, catalogue: Option<&wire::Catalogue>)
         row["signed_in"] = json!(false);
     }
     let forks = provider
-        .capabilities
-        .as_ref()
+        .capabilities()
         .is_some_and(|capabilities| capabilities.forks);
     row["forks"] = json!(forks);
     let levels: Vec<&str> = wire::levels::levels(&wire::levels::offered(id, catalogue))

@@ -122,7 +122,7 @@ async fn until_row(
             Some(row) if holds(&row) => Ok(row),
             Some(row) => Err(format!(
                 "phase {:?}, lifecycle {:?}",
-                Phase::try_from(row.phase),
+                row.phase(),
                 Lifecycle::try_from(row.lifecycle)
             )),
             None => Err("no row".to_owned()),
@@ -133,7 +133,7 @@ async fn until_row(
 }
 
 fn phase(row: &AgentRow) -> Phase {
-    Phase::try_from(row.phase).unwrap_or(Phase::Unspecified)
+    row.phase()
 }
 
 /// The chat as the session's events build it: each item's text by its
@@ -229,12 +229,7 @@ async fn an_acp_agent_on_one_host_is_driven_from_another() {
                 .work
                 .to_string_lossy()
                 .into_owned(),
-            agent: Some(wire::create_agent_request::Agent::Acp(
-                wire::AcpCreateConfig {
-                    agent: FAKE_ACP_AGENT.into(),
-                    ..wire::AcpCreateConfig::default()
-                },
-            )),
+            provider: FAKE_ACP_AGENT.into(),
             ..wire::CreateAgentRequest::default()
         })
         .await
@@ -251,9 +246,13 @@ async fn an_acp_agent_on_one_host_is_driven_from_another() {
         phase(row) == Phase::Idle
     })
     .await;
-    let snapshot = wire::AcpSnapshot::decode(own.snapshot.unwrap().body.as_slice()).unwrap();
-    assert_eq!(snapshot.agent.as_deref(), Some(FAKE_ACP_AGENT));
-    assert_eq!(snapshot.reopen(), wire::AcpReopen::Resume);
+    assert_eq!(own.provider, FAKE_ACP_AGENT);
+    assert!(
+        own.snapshot
+            .and_then(|snapshot| snapshot.capabilities)
+            .is_some_and(|can| can.resumable),
+        "it offers session/resume"
+    );
     until_row(&net, "laptop", &key, "the agent ready", |row| {
         phase(row) == Phase::Idle
     })
@@ -293,12 +292,20 @@ async fn an_acp_agent_on_one_host_is_driven_from_another() {
 
     // The permission request, read and answered on the laptop.
     send(&net, "laptop", &address, prompt("Run the test suite.")).await;
+    // A replica's row hears the phase over the desk's inventory and the
+    // snapshot that holds the ask over the agent's session, two streams
+    // either of which can land first: the row is read once it has both.
+    let open_ask = |row: &AgentRow| {
+        row.snapshot
+            .as_ref()
+            .and_then(|snapshot| wire::AcpSnapshot::decode(snapshot.body.as_slice()).ok())
+            .and_then(|snapshot| snapshot.asks.first().cloned())
+    };
     let asking = until_row(&net, "laptop", &key, "the permission request", |row| {
-        phase(row) == Phase::NeedsYou
+        phase(row) == Phase::NeedsYou && open_ask(row).is_some()
     })
     .await;
-    let snapshot = wire::AcpSnapshot::decode(asking.snapshot.unwrap().body.as_slice()).unwrap();
-    let ask = snapshot.asks.first().expect("an open ask").clone();
+    let ask = open_ask(&asking).expect("an open ask");
     let Some(wire::acp_ask::Body::Permission(permission)) = &ask.body else {
         panic!("a permission request: {ask:?}");
     };
@@ -460,23 +467,26 @@ async fn a_hosts_acp_agent_is_offered_with_its_descriptor_and_capabilities_to_an
     );
     assert_eq!(offered.signed_in(), Some(true));
     assert_eq!(
-        offered.capabilities,
-        Some(wire::AgentCapabilities::acp(true, true, false)),
+        offered.capabilities(),
+        Some(&wire::AgentCapabilities::acp(true, true, false)),
         "resumable (it offers session/resume), takes images, and folds no prompt into a turn"
     );
-    let capabilities = offered.capabilities.unwrap();
+    let capabilities = offered.capabilities().cloned().unwrap();
     assert!(!capabilities.stops_job && !capabilities.switches_back && !capabilities.attachable);
     // Claude and Codex are listed beside it, each by its own descriptor.
     let ids: Vec<&str> = entry
         .providers
         .iter()
-        .map(|provider| provider.provider_id.as_str())
+        .map(|provider| provider.provider.as_str())
         .collect();
     assert_eq!(ids, ["claude", "codex", FAKE_ACP_AGENT]);
     for (id, name) in [("claude", "Claude"), ("codex", "Codex")] {
         let own = entry.provider(id).unwrap();
         assert_eq!(own.name(), name, "{id}");
-        assert!(own.capabilities.is_some(), "{id} says what it can do");
+        assert!(
+            own.kinds.iter().all(|kind| kind.capabilities.is_some()),
+            "{id} says what each of its kinds can do"
+        );
     }
     println!(
         "1. the laptop reads the desk's {FAKE_ACP_AGENT}: {:?} {} as {:?}, signed in, {capabilities:?}",

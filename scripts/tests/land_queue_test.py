@@ -82,12 +82,12 @@ class Repos(unittest.TestCase):
         git(self.dev, "push", "--quiet", str(self.inbox), f"{source}:refs/queue/{rid}")
         return head
 
-    def land(self, rid: str, premerge: str = "true") -> str:
+    def land(self, rid: str, premerge: str = "true", restart=None) -> str:
         def gate_for(log):
             return queue.logged_gate(log, None, premerge=("sh", "-c", premerge))
 
         with contextlib.redirect_stdout(io.StringIO()):
-            return queue.land_request(self.inbox, self.tree, rid, gate_for)
+            return queue.land_request(self.inbox, self.tree, rid, gate_for, restart)
 
     def result(self, rid: str) -> str:
         return git(self.inbox, "cat-file", "blob", f"refs/results/{rid}")
@@ -136,6 +136,44 @@ class LandingTest(Repos):
         self.assertIn("the tests broke", self.result("r1"))
         self.assertIn("the tests broke", git(self.inbox, "cat-file", "blob", "refs/logs/r1"))
 
+    def test_a_gate_stopped_by_a_stale_buck2_daemon_restarts_it_and_lands_again(self):
+        commit(self.dev, "a", "1\n", "One")
+        self.request("r1")
+        restarted = self.root / "restarted"
+        # Buck2's words until its daemon restarts, then a passing gate.
+        premerge = f"test -e {restarted} || {{ echo 'an artifact that has expired in the RE CAS'; exit 1; }}"
+
+        first = self.land("r1", premerge, restart=lambda: restarted.touch())
+
+        self.assertTrue(restarted.exists())
+        self.assertEqual(first, f"LANDED {self.main()}")
+        log = git(self.inbox, "cat-file", "blob", "refs/logs/r1")
+        self.assertIn("expired in the RE CAS", log)
+        self.assertIn("restarted it, landing again", log)
+
+    def test_a_stale_daemon_is_restarted_once_and_a_second_stop_stands(self):
+        before = self.main()
+        commit(self.dev, "a", "1\n", "One")
+        self.request("r1")
+        restarts = []
+
+        first = self.land("r1", "echo 'an artifact that has expired in the RE CAS'; exit 1",
+                          restart=lambda: restarts.append(1))
+
+        self.assertEqual(restarts, [1])
+        self.assertEqual(self.main(), before)
+        self.assertTrue(first.startswith("STOPPED the gate failed"), first)
+
+    def test_an_ordinary_gate_failure_leaves_the_daemon_alone(self):
+        commit(self.dev, "a", "1\n", "One")
+        self.request("r1")
+        restarts = []
+
+        first = self.land("r1", "echo the tests broke; exit 3", restart=lambda: restarts.append(1))
+
+        self.assertEqual(restarts, [])
+        self.assertTrue(first.startswith("STOPPED"), first)
+
     def test_a_branch_that_conflicts_with_main_stops_naming_the_file(self):
         commit(self.dev, "README", "mine\n", "Mine")
         self.request("r1")
@@ -147,7 +185,8 @@ class LandingTest(Repos):
         first = self.land("r1")
 
         self.assertEqual(self.main(), before)
-        self.assertEqual(first, "STOPPED the branch doesn't merge onto main: README")
+        self.assertTrue(first.startswith("STOPPED the branch doesn't merge onto main: README (changed on main by "), first)
+        self.assertIn(" Theirs)", first)
 
     def test_a_refused_push_lands_again_on_top_of_whoever_landed_first(self):
         commit(self.dev, "a", "1\n", "One")
@@ -255,6 +294,62 @@ class ClientTest(Repos):
 
         with patched(client, CHECKOUT=self.dev):
             self.assertEqual(client.ahead_of(str(self.inbox), client.request_id("later"), client.inbox_env()), 0)
+
+    def run_land(self, *argv: str) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with patched(client, CHECKOUT=self.dev, POLL_SECONDS=0.05), patched(sys, argv=["land.py", *argv]), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            status = client.main()
+        return status, out.getvalue(), err.getvalue()
+
+    def test_a_conflict_with_main_stops_before_anything_is_sent_naming_mains_commits(self):
+        other = self.clone("other")
+        commit(other, "README", "theirs\n", "Reword the readme")
+        git(other, "push", "--quiet", "origin", "HEAD:main")
+        commit(self.dev, "README", "mine\n", "Mine")
+        git(self.dev, "config", "amux.landInbox", str(self.inbox))
+
+        status, _, err = self.run_land("Add a feature")
+
+        self.assertEqual(status, 1)
+        self.assertIn("doesn't merge onto main: README (changed on main by ", err)
+        self.assertIn("Reword the readme", err)
+        self.assertIn("just merge-main", err)
+        self.assertEqual(queue.refs(self.inbox, "queue"), {})
+
+    def test_a_conflict_only_in_the_generated_bindings_says_how_to_resolve_it(self):
+        generated = "crates/wire/src/generated"
+        other = self.clone("other")
+        (other / generated).mkdir(parents=True)
+        commit(other, f"{generated}/amux.v1.rs", "theirs\n", "Regenerate on main")
+        git(other, "push", "--quiet", "origin", "HEAD:main")
+        (self.dev / generated).mkdir(parents=True)
+        commit(self.dev, f"{generated}/amux.v1.rs", "mine\n", "Regenerate here")
+
+        with patched(client, CHECKOUT=self.dev):
+            stop = client.conflicts_with_main(git(self.dev, "rev-parse", "HEAD"))
+
+        self.assertIn(f"{generated}/amux.v1.rs", stop)
+        self.assertIn("only the generated protobuf bindings conflict", stop)
+
+    def test_a_branch_that_merges_cleanly_is_sent(self):
+        commit(self.dev, "a", "1\n", "One")
+        with patched(client, CHECKOUT=self.dev):
+            self.assertIsNone(client.conflicts_with_main(git(self.dev, "rev-parse", "HEAD")))
+
+    def test_land_log_prints_a_landings_whole_log(self):
+        commit(self.dev, "a", "1\n", "One")
+        git(self.dev, "config", "amux.landInbox", str(self.inbox))
+        served = threading.Thread(target=self.serve_one, kwargs={"premerge": "echo the gate said hello"})
+        served.start()
+        self.run_land("Add a feature")
+        served.join(timeout=30)
+        [rid] = queue.refs(self.inbox, "logs")
+
+        status, out, _ = self.run_land("--log", rid)
+
+        self.assertEqual(status, 0)
+        self.assertIn("the gate said hello", out)
 
     def serve_one(self, premerge: str = "true"):
         for _ in range(600):

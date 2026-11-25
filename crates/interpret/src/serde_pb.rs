@@ -56,6 +56,21 @@ pub mod bytes {
     }
 }
 
+/// `Option<Vec<u8>>` as hex, or null.
+pub mod opt_bytes {
+    use super::*;
+
+    pub fn serialize<S: Serializer>(value: &Option<Vec<u8>>, s: S) -> Result<S::Ok, S::Error> {
+        value.as_deref().map(to_hex).serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Vec<u8>>, D::Error> {
+        Option::<String>::deserialize(d)?
+            .map(|text| from_hex(&text).map_err(D::Error::custom))
+            .transpose()
+    }
+}
+
 /// An encoded item body of the interpreter's own kind, as hex.
 pub mod item_body {
     use super::*;

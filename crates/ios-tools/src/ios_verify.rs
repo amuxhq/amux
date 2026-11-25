@@ -520,7 +520,9 @@ mod tests {
             .skip_while(|line| !line.starts_with("fmt-check:"))
             .nth(1)
             .unwrap();
-        assert!(fmt_check.contains("{{nightly_cargo}} fmt --all -- --check"));
+        // The Buck2 check, which runs the dated nightly's rustfmt on a
+        // Linux worker (the root BUCK file's `fmt-check`).
+        assert!(fmt_check.contains("test //:fmt-check"));
         let nightly_cargo = ROOT_JUSTFILE
             .lines()
             .find(|line| line.starts_with("nightly_cargo :="))

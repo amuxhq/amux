@@ -161,15 +161,12 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
         String,
         String,
         Option<String>,
-        Option<String>,
+        Vec<u8>,
         Option<Vec<u8>>,
-        Option<Vec<u8>>,
-        Option<String>,
         Option<String>,
     );
     let mut read = tx.prepare(
-        "SELECT rowid, kind, name, cwd, exit_detail, working_on, git, snapshot, title, last_said \
-         FROM agents",
+        "SELECT rowid, kind, name, cwd, exit_detail, status, snapshot, title FROM agents",
     )?;
     let rows = read
         .query_map([], |row| {
@@ -182,50 +179,47 @@ fn agents(tx: &rusqlite::Transaction<'_>, redactor: &dyn Redactor) -> Result<(),
                 row.get(5)?,
                 row.get(6)?,
                 row.get(7)?,
-                row.get(8)?,
-                row.get(9)?,
             ))
         })?
         .collect::<Result<Vec<Row>, _>>()?;
-    for (rowid, kind, name, cwd, exit_detail, working_on, git, snapshot, title, last_said) in rows {
-        let git = git
-            .map(|bytes| wire::Git::decode(bytes.as_slice()))
-            .transpose()
-            .map_err(|error| StoreError::Corrupt(error.to_string()))?;
+    for (rowid, kind, name, cwd, exit_detail, status, snapshot, title) in rows {
+        let corrupt = |error: prost::DecodeError| StoreError::Corrupt(error.to_string());
+        let mut status = wire::AgentStatus::decode(status.as_slice()).map_err(corrupt)?;
+        status.title = title;
         let agent = redacted(
             redactor,
             &wire::Agent {
                 kind,
                 name,
                 cwd,
-                exit_detail,
-                working_on,
-                git,
-                title,
-                last_said,
+                exit: Some(wire::IncarnationEnd {
+                    cause: 0,
+                    detail: exit_detail,
+                }),
+                status: Some(Box::new(status)),
                 ..Default::default()
             },
         );
         let snapshot = snapshot
             .map(|bytes| Snapshot::decode(bytes.as_slice()))
             .transpose()
-            .map_err(|error| StoreError::Corrupt(error.to_string()))?
+            .map_err(corrupt)?
             .map(|snapshot| redacted(redactor, &snapshot).encode_to_vec());
+        let mut status = agent.status.as_deref().cloned().unwrap_or_default();
+        let title = status.title.take();
         // No experiment says how its entries redact, and a workspace's
         // names its folder, so a dump carries none of them.
         tx.execute(
-            "UPDATE agents SET name = ?2, cwd = ?3, exit_detail = ?4, working_on = ?5, title = ?8, \
-             git = ?6, snapshot = ?7, last_said = ?9, experimental = NULL WHERE rowid = ?1",
+            "UPDATE agents SET name = ?2, cwd = ?3, exit_detail = ?4, status = ?5, title = ?6, \
+             snapshot = ?7, experimental = NULL WHERE rowid = ?1",
             params![
                 rowid,
                 agent.name,
                 agent.cwd,
-                agent.exit_detail,
-                agent.working_on,
-                agent.git.map(|git| git.encode_to_vec()),
+                agent.exit_detail(),
+                status.encode_to_vec(),
+                title,
                 snapshot,
-                agent.title,
-                agent.last_said,
             ],
         )?;
     }

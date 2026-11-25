@@ -73,7 +73,7 @@ impl DeleteWarning {
 /// What a person reads the agent as: its title when it has one, else its
 /// name. Addressing an agent, or renaming it, still takes the name.
 pub fn shown_name(agent: &Agent) -> &str {
-    agent.title.as_deref().unwrap_or(&agent.name)
+    agent.title().unwrap_or(&agent.name)
 }
 
 pub fn agent_key(agent: &Agent) -> AgentKey {
@@ -110,9 +110,10 @@ pub fn attention(agent: &Agent) -> Attention {
 /// cause unknown or not given, since unknown is not failure; anything else
 /// failed, in the cause's words followed by its own.
 pub fn exit_cause(agent: &Agent) -> ExitCause {
-    if wire::ExitCause::failed(agent.exit_cause) {
-        ExitCause::Failed(exit_words(agent.exit_cause, agent.exit_detail.as_deref()))
-    } else if agent.exit_cause == wire::ExitCause::Finished as i32 {
+    let cause = agent.exit_cause() as i32;
+    if wire::ExitCause::failed(cause) {
+        ExitCause::Failed(exit_words(cause, agent.exit_detail()))
+    } else if cause == wire::ExitCause::Finished as i32 {
         ExitCause::Finished
     } else {
         ExitCause::Ended
@@ -169,29 +170,14 @@ pub struct Families {
     children: BTreeMap<AgentKey, BTreeSet<AgentKey>>,
 }
 
-/// What `agent` can do, as far as its host says: what the host says a new
-/// agent of its provider can do, when the host starts that provider as the
-/// agent's own kind, else what every agent of its kind can do on that
-/// host's platform, else nothing beyond what every agent can. A running
-/// agent's own snapshot says it better ([`crate::SessionState::capabilities`]);
-/// this is for a row with no chat open. The host's word is for the kind it
-/// starts now, so it stands for this agent only when that is this agent's
-/// kind: a headless Claude started before the host switched to Claude's own
-/// terminal cannot switch back.
-///
-/// The kind's fallback is read for the platform of the host the agent runs
-/// on, never this client's own: a Mac describing a Windows host's Codex
-/// says it has no terminal to attach. A host this client has no entry for,
-/// or one that never said its platform, is `Unspecified`, which reads as
-/// not Windows, as every reader before this read a host other than its own
-/// Windows one.
+/// What `agent` can do, as far as its host says: what the host says an
+/// agent of its provider and kind started there now can do, else nothing
+/// beyond what every agent can. A running agent's own snapshot says it
+/// better ([`crate::SessionState::capabilities`]); this is for a row with no
+/// chat open.
 pub fn offered_capabilities(host: Option<&HostEntry>, agent: &Agent) -> wire::AgentCapabilities {
-    let kind = agent.kind();
-    let platform = host.map_or(wire::Platform::Unspecified, HostEntry::platform);
-    host.and_then(|host| host.provider(agent.provider_id()))
-        .filter(|offered| offered.kind() == kind)
-        .and_then(|offered| offered.capabilities)
-        .or_else(|| wire::AgentCapabilities::of_kind(kind, platform))
+    host.and_then(|host| host.provider(&agent.provider))
+        .and_then(|offered| offered.capabilities_of(agent.kind()).cloned())
         .unwrap_or_default()
 }
 
@@ -199,7 +185,7 @@ pub fn offered_capabilities(host: Option<&HostEntry>, agent: &Agent) -> wire::Ag
 /// gives it ("Claude", "OpenCode", the name a person gave their own agent),
 /// else its id, the only name a host that does not list it leaves.
 pub fn provider_name(host: Option<&HostEntry>, agent: &Agent) -> String {
-    let id = agent.provider_id();
+    let id = agent.provider.as_str();
     host.and_then(|host| host.provider(id))
         .map_or_else(|| wire::agents::name_or_id(id), wire::ProviderOnHost::name)
         .to_owned()

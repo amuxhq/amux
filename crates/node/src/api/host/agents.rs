@@ -168,15 +168,13 @@ impl AgentService for Agents {
         let caller = Caller::of(&request)?;
         let request = request.into_inner();
         let runtime = self.runtime()?;
-        let kind = request
-            .agent
-            .as_ref()
-            .and_then(|agent| telemetry::kind(agent.kind(), agent.provider_id()));
-        let first = first_prompt(kind, request.initial_prompt.as_ref());
+        let prompt = request.initial_prompt.clone();
         let created = runtime
             .create(request, &caller)
             .await
             .map_err(|error| status(error.to_wire()))?;
+        let kind = telemetry::kind(created.kind(), &created.provider);
+        let first = first_prompt(kind, prompt.as_ref());
         if let Some(kind) = kind {
             let by = match caller {
                 Caller::Person { surface, .. } => analytics::By::Person(surface),
@@ -268,7 +266,7 @@ impl AgentService for Agents {
             .await?;
         let request = request.into_inner();
         let first = first_prompt(
-            telemetry::kind_coded(own.row.kind, own.row.provider_id()),
+            telemetry::kind_coded(own.row.kind, own.row.provider.as_str()),
             request.initial_prompt.as_ref(),
         );
         let bootstrap = request
@@ -342,7 +340,7 @@ impl AgentService for Agents {
         let shape = request
             .input
             .as_ref()
-            .and_then(|input| InputShape::of(input, own.row.provider_id()));
+            .and_then(|input| InputShape::of(input, own.row.provider.as_str()));
         // Input from its parent engages the child, as a message does.
         runtime
             .heard_from(own.id, &caller)
@@ -391,11 +389,7 @@ impl AgentService for Agents {
         runtime
             .send_message_by(request, &caller)
             .await
-            .map(|sent| {
-                Response::new(SendMessageResponse {
-                    envelope_id: sent.envelope_id,
-                })
-            })
+            .map(Response::new)
             .map_err(|error| status(error.to_wire()))
     }
 

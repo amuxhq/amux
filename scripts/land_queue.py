@@ -58,6 +58,11 @@ TRIM_SECONDS = 6 * 3600
 # What `trim` keeps: outputs a build used in the last TRIM_AGE. Anything
 # older comes back from the cache when a landing needs it again.
 TRIM_AGE = "1d"
+# What Buck2 says when its daemon believes the cache holds an output the
+# cache has since lost (emptied, or moved to a new directory): the daemon
+# remembers what it uploaded and won't upload it again until it restarts, so
+# every landing stops the same way until then.
+STALE_DAEMON = "expired in the RE CAS"
 # The queue's own code: what --self-update watches on main.
 OWN_CODE = ("scripts/land_queue.py", "scripts/landing.py")
 
@@ -156,9 +161,33 @@ def tail(text: str) -> str:
     return "\n".join(text.rstrip().splitlines()[-TAIL_LINES:])
 
 
-def land_request(inbox: Path, tree: Path, rid: str, gate_for: Callable[..., Gate]) -> str:
+def land_request(
+    inbox: Path, tree: Path, rid: str, gate_for: Callable[..., Gate], restart: Callable[[], None] | None = None
+) -> str:
     """Lands one request and writes its result and log; returns the
-    result's first line. `gate_for(log)` makes the gate."""
+    result's first line. `gate_for(log)` makes the gate. When the gate stops
+    on Buck2's stale daemon (STALE_DAEMON), `restart` restarts it and the
+    request lands once more, its log holding both tries."""
+    earlier = ""
+    while True:
+        verdict, whole = land_once_logged(inbox, tree, rid, gate_for)
+        if restart is None or earlier or not verdict.startswith("STOPPED") or STALE_DAEMON not in whole:
+            break
+        say(f"{rid}: Buck2's daemon remembers outputs the cache has lost; restarting it and landing again")
+        restart()
+        earlier = whole + "land: Buck2's daemon remembered outputs the cache had lost; restarted it, landing again\n"
+    whole = earlier + whole
+    if verdict.startswith("STOPPED"):
+        verdict += "\n" + tail(whole) + "\n"
+    write_blob(inbox, f"refs/logs/{rid}", whole)
+    write_blob(inbox, f"refs/results/{rid}", verdict)
+    first = verdict.splitlines()[0]
+    say(f"{rid}: {first}")
+    return first
+
+
+def land_once_logged(inbox: Path, tree: Path, rid: str, gate_for: Callable[..., Gate]) -> tuple[str, str]:
+    """One try at a request: its verdict line and its whole log."""
     with tempfile.TemporaryFile("w+") as log:
 
         def step(what: str) -> None:
@@ -180,14 +209,22 @@ def land_request(inbox: Path, tree: Path, rid: str, gate_for: Callable[..., Gate
             verdict = f"STOPPED `{' '.join(map(str, error.cmd))}` failed (exited {error.returncode})\n"
         log.write(verdict)
         log.seek(0)
-        whole = log.read()
-    if verdict.startswith("STOPPED"):
-        verdict += "\n" + tail(whole) + "\n"
-    write_blob(inbox, f"refs/logs/{rid}", whole)
-    write_blob(inbox, f"refs/results/{rid}", verdict)
-    first = verdict.splitlines()[0]
-    say(f"{rid}: {first}")
-    return first
+        return verdict, log.read()
+
+
+def restart_daemon(tree: Path, wrap: Wrap | None) -> None:
+    """Stops the tree's Buck2 daemon; the next command starts a fresh one,
+    which uploads what the cache lacks. A kill that fails is said; the
+    landing's second try then shows what still stands."""
+    argv: Sequence[str] = ["scripts/buck2", "kill"]
+    if wrap is not None:
+        argv = wrap(argv, tree)
+    try:
+        status = subprocess.run(list(argv), cwd=tree, stdin=subprocess.DEVNULL).returncode
+        if status:
+            say(f"restarting Buck2's daemon exited {status}")
+    except OSError as error:
+        say(f"restarting Buck2's daemon failed ({error})")
 
 
 def trim(tree: Path, wrap: Wrap | None) -> None:
@@ -310,7 +347,7 @@ def serve(args: argparse.Namespace) -> int:
     say(f"landing queue up: inbox {args.inbox}, tree {args.tree}")
     while True:
         for rid in pending(args.inbox):
-            land_request(args.inbox, args.tree, rid, gate_for)
+            land_request(args.inbox, args.tree, rid, gate_for, lambda: restart_daemon(args.tree, wrap))
             next_update = 0.0
         prune(args.inbox, datetime.datetime.now(datetime.timezone.utc))
         if args.once:

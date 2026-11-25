@@ -596,11 +596,9 @@ fn an_interrupt_before_claude_starts_leaves_the_queued_prompt_to_run() {
 /// a new incarnation from a checkpoint that still listed it starts empty.
 #[test]
 fn the_job_list_empties_when_headless_claude_exits() {
-    use prost::Message as _;
     let jobs = |step: &wire::Step| {
         step.snapshot.as_ref().map(|snapshot| {
-            let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
-            let background = body.background_jobs.unwrap_or_default();
+            let background = snapshot.jobs.clone().unwrap_or_default();
             (background.known, background.jobs.len())
         })
     };
@@ -663,7 +661,7 @@ fn only_a_blocked_path_beyond_the_agents_folder_is_outside_the_allowed_directori
             .find(|ask| ask.key == id)
             .expect("the ask is listed");
         match &ask.body {
-            Some(wire::ask::Body::Permission(permission)) => permission.reason.clone(),
+            Some(wire::claude_ask::Body::Permission(permission)) => permission.reason.clone(),
             other => panic!("not a permission ask: {other:?}"),
         }
     };
@@ -762,6 +760,34 @@ fn a_commands_changed_event_rebuilds_the_offered_commands() {
         "the same list writes nothing"
     );
     assert!(again.step.snapshot.is_none());
+}
+
+/// A command that opens a screen of Claude's own terminal, or changes a
+/// setting a client offers directly, does nothing typed into headless
+/// Claude: its catalogue leaves each out, from the initialize answer and
+/// from a later change alike.
+#[test]
+fn headless_claude_lists_no_terminal_only_command() {
+    let names = |catalogue: &wire::Catalogue| -> Vec<String> {
+        catalogue
+            .commands
+            .iter()
+            .map(|command| command.name.clone())
+            .collect()
+    };
+    let mut state = started();
+    let first = ClaudeSdk::step(
+        &mut state,
+        stream(initialized(&["compact", "model", "config", "review"])),
+    );
+    let (_, first) = written_catalogue(&first).expect("the initialize answer writes a catalogue");
+    assert_eq!(names(&first), ["compact", "review"]);
+    let changed = ClaudeSdk::step(
+        &mut state,
+        stream(commands_changed(&["compact", "vim", "theme", "new-skill"])),
+    );
+    let (_, changed) = written_catalogue(&changed).expect("the commands changed");
+    assert_eq!(names(&changed), ["compact", "new-skill"]);
 }
 
 /// Claude's permissions, as the catalogue lists them for a Claude launched
@@ -895,7 +921,7 @@ fn compacting_status_is_an_item() {
         [
             (
                 "0f824bf4-6639-415d-bacc-1515a418fa59".to_owned(),
-                Kind::Status(wire::Status {
+                Kind::Status(wire::ClaudeStatus {
                     status: wire::SdkStatus::Compacting as i32,
                     word: "compacting".into(),
                 }),
@@ -1078,9 +1104,9 @@ fn a_pick_is_said_once_claude_took_it() {
     let taken = answered(&mut state, request_id(&asked), "success");
     assert_eq!(
         taken.step.picked,
-        Some(wire::PickTaken {
+        Some(wire::AgentSettings {
             model: Some("haiku".into()),
-            effort: None,
+            ..Default::default()
         })
     );
 
@@ -1099,11 +1125,10 @@ fn a_pick_is_said_once_claude_took_it() {
 
 /// The background jobs a headless Claude snapshot lists, by id.
 fn listed_jobs(stepped: &interpret::Stepped) -> Option<Vec<String>> {
-    use prost::Message as _;
     stepped.step.snapshot.as_ref().map(|snapshot| {
-        wire::ClaudeSnapshot::decode(&snapshot.body[..])
-            .unwrap()
-            .background_jobs
+        snapshot
+            .jobs
+            .clone()
             .unwrap_or_default()
             .jobs
             .into_iter()
@@ -1137,8 +1162,7 @@ fn a_subagent_lists_its_own_job_and_the_agent_lists_none() {
     );
     let host = listed_jobs(&launched).unwrap_or_default();
     assert!(host.is_empty(), "the agent lists its subagent: {host:?}");
-    let (_, snapshot) = part_snapshot(&launched).expect("the subagent's snapshot");
-    let jobs = snapshot.background_jobs.unwrap_or_default().jobs;
+    let jobs = part_jobs(&launched).expect("the subagent's snapshot");
     assert_eq!(
         jobs.iter()
             .map(|job| (job.kind(), job.key.as_str()))
@@ -1234,7 +1258,7 @@ fn the_attach_tools_answer_is_an_attachment_not_its_element() {
         stream(
             json!({"type": "assistant", "uuid": "a1", "session_id": "s", "message": {
             "id": "msg_1", "role": "assistant", "model": "claude-haiku-5-5",
-            "content": [{"type": "tool_use", "id": "toolu_attach", "name": "mcp__amux__attach",
+            "content": [{"type": "tool_use", "id": "toolu_attach", "name": "mcp__amux__attach_file",
                 "input": {"path": "/w/chart.png"}}]}}),
         ),
         stream(
@@ -1373,12 +1397,7 @@ fn boundaries(stepped: &interpret::Stepped) -> Vec<wire::BoundaryKind> {
 }
 
 fn snapshot_session(stepped: &interpret::Stepped) -> Option<String> {
-    use prost::Message as _;
-    stepped.step.snapshot.as_ref().and_then(|snapshot| {
-        wire::ClaudeSnapshot::decode(&snapshot.body[..])
-            .unwrap()
-            .provider_session
-    })
+    stepped.step.snapshot.as_ref()?.conversation.clone()
 }
 
 /// Claude's reset frame names an id it made up before it made the new
@@ -1521,9 +1540,7 @@ fn good_answer(uuid: &str) -> Event {
 
 /// The sign-in state the step published, if it published one.
 fn sign_in_of(stepped: &interpret::Stepped) -> Option<wire::SignInState> {
-    sdk_snapshot(stepped)
-        .and_then(|(_, snapshot)| snapshot.sign_in)
-        .map(|sign_in| sign_in.state())
+    Some(stepped.step.snapshot.as_ref()?.sign_in.as_ref()?.state())
 }
 
 /// Claude working through a lost connection and a stray 401 is one row that
@@ -1588,7 +1605,7 @@ fn an_answer_from_the_model_ends_a_failed_sign_in() {
     );
     assert_eq!(sign_in_of(&refused), Some(wire::SignInState::Failed));
     let answered = ClaudeSdk::step(&mut state, good_answer("m1"));
-    let (_, snapshot) = sdk_snapshot(&answered).expect("the sign-in changed");
+    let snapshot = answered.step.snapshot.clone().expect("the sign-in changed");
     let sign_in = snapshot.sign_in.expect("a sign-in state");
     assert_eq!(sign_in.state(), wire::SignInState::SignedIn);
     assert!(sign_in.message.is_empty());
@@ -1629,8 +1646,9 @@ fn a_subagents_frames_leave_the_main_thread_alone() {
     for frame in frames {
         let stepped = ClaudeSdk::step(&mut state, frame);
         if let Some((phase, snapshot)) = sdk_snapshot(&stepped) {
+            let envelope = stepped.step.snapshot.as_ref().unwrap();
             assert_ne!(phase, wire::Phase::Working, "no turn starts");
-            assert_eq!(snapshot.model.as_deref(), Some("claude-root"));
+            assert_eq!(envelope.settings().model.as_deref(), Some("claude-root"));
             assert_ne!(
                 snapshot.context.as_ref().map(|meter| meter.used_tokens),
                 Some(1432)
@@ -1640,7 +1658,7 @@ fn a_subagents_frames_leave_the_main_thread_alone() {
                 Some(999)
             );
             assert_ne!(
-                snapshot.sign_in.as_ref().map(|sign_in| sign_in.state()),
+                envelope.sign_in.as_ref().map(|sign_in| sign_in.state()),
                 Some(wire::SignInState::Failed)
             );
         }
@@ -1762,7 +1780,11 @@ fn a_subagents_ask_is_answered_and_it_is_stopped_from_its_chat() {
     let child = interpret::subagent_id(b"agent", "a1");
     let to_child = |id: &[u8], of: wire::claude_sdk_input::Of| Event::ChildInput {
         agent_id: child.clone(),
-        input: wire::Input::new(id.to_vec(), wire::ClaudeSdkInput { of: Some(of) }),
+        input_id: id.to_vec(),
+        of: wire::child_input::Of::Input(wire::Input::new(
+            id.to_vec(),
+            wire::ClaudeSdkInput { of: Some(of) },
+        )),
     };
     let written = |stepped: &interpret::Stepped| -> Vec<Value> {
         stepped
@@ -1821,8 +1843,7 @@ fn a_subagents_ask_is_answered_and_it_is_stopped_from_its_chat() {
             && line["request"]["task_id"] == "a1"),
         "the stop is not Claude's stop of the task: {lines:?}"
     );
-    let (_, snapshot) = part_snapshot(&stopped).expect("the subagent reads stopping");
-    let jobs = snapshot.background_jobs.unwrap_or_default().jobs;
+    let jobs = part_jobs(&stopped).expect("the subagent reads stopping");
     assert!(
         jobs.iter().any(|job| job.key == "a1" && job.stopping),
         "{jobs:?}"
@@ -1932,6 +1953,16 @@ fn part_snapshot(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::Cla
                 wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap(),
             )
         })
+}
+
+/// The jobs the first subagent snapshot in `stepped` lists.
+fn part_jobs(stepped: &interpret::Stepped) -> Option<Vec<wire::BackgroundJob>> {
+    let snapshot = stepped
+        .step
+        .agents
+        .iter()
+        .find_map(|part| part.snapshot.as_ref())?;
+    Some(snapshot.jobs.clone().unwrap_or_default().jobs)
 }
 
 fn part_tool_states(stepped: &interpret::Stepped) -> Vec<(String, wire::ToolState)> {
@@ -2403,7 +2434,7 @@ fn a_flagged_ask_offers_no_scope_and_says_it_defaults_to_no() {
         })),
     );
     let (_, snapshot) = sdk_snapshot(&asked).expect("a snapshot");
-    let Some(wire::ask::Body::Permission(permission)) = &snapshot.asks[0].body else {
+    let Some(wire::claude_ask::Body::Permission(permission)) = &snapshot.asks[0].body else {
         panic!("{:?}", snapshot.asks);
     };
     assert!(permission.scopes.is_empty(), "{:?}", permission.scopes);
@@ -2526,7 +2557,7 @@ fn a_plan_approval_switches_to_never_ask_where_claude_offers_it() {
         })),
     );
     let (_, snapshot) = sdk_snapshot(&asked).expect("a snapshot");
-    let Some(wire::ask::Body::Plan(plan)) = &snapshot.asks[0].body else {
+    let Some(wire::claude_ask::Body::Plan(plan)) = &snapshot.asks[0].body else {
         panic!("{:?}", snapshot.asks);
     };
     assert_eq!(plan.switch_permission, "bypassPermissions");
@@ -2587,8 +2618,8 @@ fn a_stopped_job_reads_stopping_until_claude_says_it_ended() {
     let mut jobs: Vec<wire::BackgroundJob> = Vec::new();
     let mut step = |state: &mut State, event: Event| {
         let stepped = ClaudeSdk::step(state, event);
-        if let Some((_, snapshot)) = sdk_snapshot(&stepped) {
-            jobs = snapshot.background_jobs.unwrap_or_default().jobs;
+        if let Some(snapshot) = &stepped.step.snapshot {
+            jobs = snapshot.jobs.clone().unwrap_or_default().jobs;
         }
         (stepped, jobs.clone())
     };
@@ -2723,6 +2754,7 @@ fn first_prompt_spec() -> wire::AgentSpec {
                     text: "Review the parser.".into(),
                     ..Default::default()
                 }),
+                continued: false,
             })),
         }),
         ..Default::default()
@@ -3033,8 +3065,11 @@ fn a_permission_granted_for_the_session_is_held_until_the_process_ends() {
     let mut moved = state.clone_via_checkpoint();
     let stepped = ClaudeSdk::step(&mut moved, allow(2));
     assert!(!ClaudeSdk::holds(&moved).session_grant);
-    let (_, snapshot) = sdk_snapshot(&stepped).expect("a snapshot");
-    assert_eq!(snapshot.permission.as_deref(), Some("acceptEdits"));
+    let snapshot = stepped.step.snapshot.as_ref().expect("a snapshot");
+    assert_eq!(
+        snapshot.settings().permission.as_deref(),
+        Some("acceptEdits")
+    );
     let mut granted = state.clone_via_checkpoint();
     ClaudeSdk::step(&mut granted, allow(1));
     assert!(ClaudeSdk::holds(&granted).session_grant);
@@ -3085,8 +3120,8 @@ fn an_approved_plan_moves_the_permission_and_holds_nothing() {
         }),
     );
     let stepped = ClaudeSdk::step(&mut state, approve);
-    let (_, snapshot) = sdk_snapshot(&stepped).expect("a snapshot");
-    assert_eq!(snapshot.permission.as_deref(), Some("default"));
+    let snapshot = stepped.step.snapshot.as_ref().expect("a snapshot");
+    assert_eq!(snapshot.settings().permission.as_deref(), Some("default"));
     assert!(
         ClaudeSdk::holds(&state).nothing(),
         "{:?}",
@@ -3189,8 +3224,8 @@ fn a_suspensions_last_snapshot_says_idle() {
             detail: None,
         }),
     );
-    let phase = stepped.step.snapshot.map(|snapshot| snapshot.phase);
-    assert_eq!(phase, Some(wire::Phase::Idle as i32));
+    let phase = stepped.step.snapshot.map(|snapshot| snapshot.phase());
+    assert_eq!(phase, Some(wire::Phase::Idle));
 }
 
 /// The provider's own end says by its last snapshot whether it cut a turn

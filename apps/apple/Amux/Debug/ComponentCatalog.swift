@@ -1910,8 +1910,8 @@ extension CatalogFixtures {
         ],
         commands: [], permissions: [],
         modes: [
-            OfferedMode(value: "build", displayName: "Build", normal: false, settable: true, level: 0),
-            OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true, level: 0),
+            OfferedMode(value: "build", displayName: "Build", normal: false, settable: true),
+            OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
         ],
         skills: [], newAgent: nil)
 
@@ -1927,8 +1927,8 @@ extension CatalogFixtures {
             OfferedPermission(value: "full-access", displayName: "Full access", normal: false, neverAsks: true, settable: true, models: [], level: 0),
         ],
         modes: [
-            OfferedMode(value: "default", displayName: "Default", normal: true, settable: true, level: 0),
-            OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true, level: 0),
+            OfferedMode(value: "default", displayName: "Default", normal: true, settable: true),
+            OfferedMode(value: "plan", displayName: "Plan", normal: false, settable: true),
         ],
         skills: [], newAgent: nil)
 

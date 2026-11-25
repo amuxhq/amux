@@ -148,6 +148,11 @@ impl Msg {
                 outcome: Some(match outcome {
                     InputOutcome::Reply(reply) => client_sent::Outcome::Reply(reply.clone()),
                     InputOutcome::Lost => client_sent::Outcome::Lost(wire::dump::ClientLost {}),
+                    InputOutcome::NotSent { detail } => {
+                        client_sent::Outcome::NotSent(wire::dump::ClientNotSent {
+                            detail: detail.clone(),
+                        })
+                    }
                 }),
             }),
             Msg::Discard(id) => Of::DiscardInputId(id.clone()),
@@ -182,6 +187,9 @@ impl Msg {
                 match sent.outcome.ok_or("a send with no outcome")? {
                     client_sent::Outcome::Reply(reply) => InputOutcome::Reply(reply),
                     client_sent::Outcome::Lost(_) => InputOutcome::Lost,
+                    client_sent::Outcome::NotSent(not_sent) => InputOutcome::NotSent {
+                        detail: not_sent.detail,
+                    },
                 },
             ),
             Of::DiscardInputId(id) => Msg::Discard(id),
@@ -255,9 +263,12 @@ fn input(sent: &SentInput) -> ClientInput {
         InputState::Settled => (ClientInputState::Settled, None),
         InputState::Uncertain => (ClientInputState::Uncertain, None),
         InputState::Rejected(refusal) => (
-            ClientInputState::Rejected,
+            match refusal.reason.wire() {
+                Some(_) => ClientInputState::Rejected,
+                None => ClientInputState::NotSent,
+            },
             Some(Rejected {
-                refusal: refusal.reason as i32,
+                refusal: refusal.reason.wire().unwrap_or_default() as i32,
                 detail: refusal.detail.clone(),
             }),
         ),
@@ -281,6 +292,10 @@ fn sent_input(held: ClientInput) -> Result<SentInput, String> {
             || Refusal::of(wire::Refusal::Unspecified),
             crate::inputs::refusal,
         )),
+        ClientInputState::NotSent => InputState::Rejected(Refusal {
+            reason: crate::RefusalReason::HostUnreachable,
+            detail: held.rejected.and_then(|rejected| rejected.detail.clone()),
+        }),
     };
     let input = held
         .input

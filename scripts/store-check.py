@@ -13,8 +13,8 @@ migrations in schema.rs, so:
   a rollback starts, then still reads and writes the file.
 
 The baseline is the newest release tag behind HEAD, or a ref named on the
-command line. Releases before 0.9.0 predate the rules and are not checked
-against.
+command line. Releases before 0.11.0 predate the rules and are not checked
+against: 0.11.0 starts the store afresh, as one migration.
 
     store-check.py [REF]
     store-check.py --baseline DIR
@@ -32,7 +32,7 @@ import subprocess
 import sys
 
 SCHEMA_FILE = "crates/store/src/schema.rs"
-FROZEN_SINCE = (0, 9, 0)
+FROZEN_SINCE = (0, 11, 0)
 
 
 def migrations(source):
@@ -126,7 +126,7 @@ def git(*args):
 def under_rule(tag):
     version = tuple(int(part) for part in tag.removeprefix("v").split("."))
     if version < FROZEN_SINCE:
-        print(f"the newest release, {tag}, predates the rule from 0.9.0; nothing to check against")
+        print(f"the newest release, {tag}, predates the rule from 0.11.0; nothing to check against")
         return False
     return True
 

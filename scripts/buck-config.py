@@ -22,7 +22,8 @@ turns Linux off
 (`amux.linux = false`: no Linux execution platform, and `linux_only` tests
 skipped), and back when it answers again. Buck2's daemon remembers what it
 uploaded to the cache it was talking to, so a switch also restarts this
-tree's daemon.
+tree's daemon. With AMUX_BUCK_MODE set (`just premerge`, which decides
+once with `buck-config.py decide`), that is the mode and nothing is asked.
 
 A Linux machine sends every action to its own NativeLink on loopback, or,
 with AMUX_NATIVELINK naming another (`grpc://host:50051`), to that one: a
@@ -142,6 +143,14 @@ def remote() -> str | None:
         return None
 
 
+def connects(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=2):
+            return True
+    except OSError:
+        return False
+
+
 def answers(url: str) -> bool:
     """Whether the remote's NativeLink takes a connection, remembered for a
     while so a recipe's many Buck2 commands don't each wait on a timeout."""
@@ -152,11 +161,19 @@ def answers(url: str) -> bool:
     except (OSError, ValueError):
         pass
     address = urlparse(url)
-    try:
-        with socket.create_connection((address.hostname, address.port or 50051), timeout=2):
+    # A remote that doesn't take the connection gets a second try a moment
+    # later, and only a second miss counts as out of reach. Going offline
+    # restarts NativeLink, and every tree's Buck2 daemon as it next runs a
+    # command, under whatever they were building, so one connection lost
+    # on the tailnet mustn't do it. A remote that is really gone costs the
+    # command that finds out about five seconds.
+    up = False
+    for attempt in range(2):
+        if attempt:
+            time.sleep(1)
+        if connects(address.hostname, address.port or 50051):
             up = True
-    except OSError:
-        up = False
+            break
     try:
         REACHABLE.write_text(f"{time.time()} {'yes' if up else 'no'}\n")
     except OSError:
@@ -192,7 +209,16 @@ def mode() -> str:
     this machine's (the tailnet is down); `solo`: none is set up. Only
     `remote` and `linux` run Linux actions. `local-build`, whatever the
     machine (AMUX_LOCAL_BUILD=1, scripts/release-build.py): a release build,
-    every action here with this machine's own toolchains."""
+    every action here with this machine's own toolchains.
+
+    AMUX_BUCK_MODE, when set, is the mode `decide` printed: `just premerge`
+    runs many recipes at once, each with Buck2 commands of its own, and
+    one that asked again could find the remote gone and switch the mode,
+    restarting the daemon, under the others. Should the remote go for good
+    mid-run, its Linux actions fail, and the next run finds out."""
+    pinned = os.environ.get("AMUX_BUCK_MODE")
+    if pinned:
+        return pinned
     if os.environ.get("AMUX_LOCAL_BUILD") == "1":
         return "local-build"
     if platform.system() != "Darwin":
@@ -269,8 +295,12 @@ def write(mode: str) -> None:
     channel = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
     # A Windows machine builds nothing itself: Windows targets compile on a
     # Linux worker with the Windows toolchain (nix/windows.nix), so no
-    # action names a compiler of its own.
-    toolchain_dir = "" if platform.system() == "Windows" and mode != "local-build" else sysroot(channel)
+    # action names a compiler of its own. Nor does a Linux machine's: its
+    # actions all name the Nix toolchain's (build/toolchains/nix.bzl), as a
+    # Mac's Linux actions do, which share their keys with the build host's,
+    # so CI's Linux gate needs no Rust of its own.
+    builds_nothing = mode != "local-build" and platform.system() in ("Windows", "Linux")
+    toolchain_dir = "" if builds_nothing else sysroot(channel)
     lines = [
         "# Written by scripts/buck-config.py; not committed. It is rewritten",
         "# when the pinned toolchains change, or where actions go does.",
@@ -371,6 +401,20 @@ def main() -> None:
     if sys.argv[1:2] == ["skipped"]:
         skipped(sys.argv[2:])
         return
+    if sys.argv[1:2] == ["linux"]:
+        # Exit 0 when Linux actions have a worker in reach (`just premerge`
+        # builds the Windows binaries on one).
+        sys.exit(0 if linux(mode()) else 1)
+    if sys.argv[1:2] == ["decide"]:
+        # Settle the mode now and print it, for AMUX_BUCK_MODE.
+        print(configure())
+        return
+    configure()
+
+
+def configure() -> str:
+    """Make this tree's configuration, NativeLink and daemon fit the mode,
+    and return it."""
     was = current_mode()
     now = mode()
     # NativeLink serves every tree on the machine, so whichever tree sees
@@ -388,6 +432,7 @@ def main() -> None:
         print(f"buck-config: actions now go {DESCRIBE[now.split(' ')[0]]}; restarted this tree's Buck2 daemon", file=sys.stderr)
     if now == "local":
         print(f"buck-config: {remote()} is out of reach: Linux actions are off and linux-only tests are skipped", file=sys.stderr)
+    return now
 
 
 DESCRIBE = {

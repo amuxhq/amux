@@ -1,5 +1,5 @@
 {
-  "//": "Pinned build tools, fetched by scripts/buck-tools.py into ~/.cache/amux/tools, and in the Nix dev shell (nix/build-tools.nix). Bump a version and its digests together; the digests are GitHub's own SHA-256 for each release asset. cargo-nextest is the release .config/nextest.toml requires, which .github/actions/setup-nextest installs for CI's Cargo test legs too: move the three together. An asset may name a version of its own, where a host's build comes later than the others' (NativeLink's first Windows build is 1.9.0); the protocol between versions is the same.",
+  "//": "Pinned build tools, fetched by scripts/buck-tools.py into ~/.cache/amux/tools, and in the Nix dev shell (nix/build-tools.nix). Bump a version and its digests together; the digests are GitHub's own SHA-256 for each release asset. A buck2 bump also moves the prelude fork's commit in .buckconfig (docs/BUILD.md, \"The prelude\"). cargo-nextest is the release .config/nextest.toml requires, which .github/actions/setup-nextest installs for CI's Cargo test legs too: move the three together. An asset may name a version of its own, where a host's build comes later than the others' (NativeLink's first Windows build is 1.9.0); the protocol between versions is the same.",
   "buck2": {
     "version": "2026-11-15",
     "assets": {

@@ -1,8 +1,8 @@
 # Operating Rules
 
-amux is released. From 0.9.0 on, builds of different versions meet, and a
-build reads what an earlier one left on disk. Five things are promises, and
-a change keeps them:
+amux is released. From 0.9.0 on, builds of different versions meet; from
+0.11.0 on, a build reads what 0.11.0 or a later release left on disk. Five
+things are promises, and a change keeps them:
 
 - **The protocol.** From 0.11.0 on, `amux.v1` only adds, as
   `proto/amux/v1/README.md` says (reserve a retired number; never renumber,
@@ -15,8 +15,9 @@ a change keeps them:
 - **A profile on disk.** What a release wrote, a later build opens: the
   `account` and `profile` files, and each agent's spec, journal and facts.
   A new field is one an older file can lack. The upgrade test
-  (`crates/node/tests/upgrade.rs`) opens a profile left by each release
-  that changed what it writes.
+  (`crates/node/tests/upgrade.rs`) opens the profile 0.11.0 left, plus one
+  from a later release only when that release writes something 0.11.0's
+  profile can't hold.
 - **The config file.** A key a release read keeps being read; a rename
   keeps the old name working. A key no build knows is ignored with a
   warning, so a config a release accepted never stops amux starting.
@@ -48,14 +49,15 @@ cannot keep a promise is not made by breaking it: it is the next protocol
 - Build, test and lint through `just` (`just --list`); `wt` is for worktrees
   and this tree's daemon. Recipes carry timeouts; a firing timeout is a hang
   to diagnose.
-- Before a change reaches main, run `just premerge`: every check and every
+- Before landing, run `just premerge`: every check and every
   test, through Buck2's cache, so only what the change affects runs. A
   failing golden is re-recorded in the same change (`just goldens`), after
   reading what moved.
 - Land a branch on main with `just land "What the branch does"`. It merges
   your HEAD with `--no-ff` onto a fresh main in a worktree of its own, runs
-  the checks on the merge, pushes, and prints `LANDED <sha>`; your tree is
-  never touched. If it stops, fix the branch and land again. Never
+  the checks again on the merge, pushes, and prints `LANDED <sha>`; your
+  tree is never touched. If it stops, fix the branch (`just merge-main`
+  brings main in) and land again. Never
   force-push. Without push access, open a pull request instead.
 - The why of a change and its test evidence go in the commit message; search
   past decisions with `git log --grep`. A rejected alternative that should

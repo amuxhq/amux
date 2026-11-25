@@ -7,8 +7,8 @@
     "at": "2026-11-16T00:18:45.882151Z"
   },
   "content": {
-    "io.jsonl": "sha256:c50eafac294deac1a2ba2286aff6cac947dfc49cfe9a3cac0a6c7234964715f2",
-    "spawn.jsonl": "sha256:83a71fc69a169ab8b1d42b95ca7ee7d6546d5d23df7348f228f6e45d9dc46f28"
+    "io.jsonl": "sha256:1235671cba3722365c897b3db9d2431b7ae02a5b200ee47ce4e50364fecdd777",
+    "spawn.jsonl": "sha256:2d0e1cc2a2aeada65802badec28aefdf20dd4f6827b2366f43cfb88d60435520"
   },
   "redaction": {
     "secrets": 1,
@@ -19,6 +19,7 @@
     "3b6e6a34-98e8-4974-8cb6-681e2328042f"
   ],
   "provider_extra": {
-    "driven_by": "amux's interpreter, in the live qualification lane"
+    "driven_by": "amux's interpreter, in the live qualification lane",
+    "edited": "amux's own tools renamed to their current names after recording"
   }
 }

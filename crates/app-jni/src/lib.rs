@@ -990,17 +990,6 @@ pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeUpdateSetti
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeSuggestRepositories(
-    mut env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
-) -> jlong {
-    guard_jni(&mut env, 0, |_| {
-        Ok(ticket_on_runtime(handle, AmuxRuntime::suggest_repositories))
-    })
-}
-
-#[unsafe(no_mangle)]
 pub extern "system" fn Java_sh_amux_core_runtime_NativeBridge_runtimeWebSignInLink(
     mut env: JNIEnv,
     _class: JClass,

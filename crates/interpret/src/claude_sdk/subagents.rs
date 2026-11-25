@@ -52,7 +52,9 @@ use claude_protocol::stream::{
     AssistantMessage, ContentBlock, ControlRequestBody, MessageContent, TaskNotificationMessage,
     TaskStartedMessage, UserMessageOutput,
 };
-use wire::{BackgroundJob, Input, KindInput, NativeStart, Refusal, ToolState, claude_sdk_input};
+use wire::{
+    BackgroundJob, KindInput, NativeStart, Refusal, ToolState, child_input, claude_sdk_input,
+};
 
 use super::{Request, State, Sub, TaskProgress};
 use crate::Emit;
@@ -67,10 +69,21 @@ impl State {
     /// A person's input to one of the subagents: an answer to an ask it
     /// raised, or a stop of its own job or of a command it started. Nothing
     /// else reaches a subagent.
-    pub(super) fn child_input(&mut self, emit: &mut Emit, agent_id: &[u8], input: Input) {
-        let id = input.input_id.clone();
+    pub(super) fn child_input(
+        &mut self,
+        emit: &mut Emit,
+        agent_id: &[u8],
+        id: Vec<u8>,
+        of: child_input::Of,
+    ) {
         let Some(child) = self.shared.subagent_child(agent_id).map(str::to_owned) else {
             return self.shared.reject(emit, &id, Refusal::Unsupported);
+        };
+        let input = match of {
+            child_input::Of::StopJob(stop) => {
+                return self.stop_job(emit, &id, &stop.key, Some(&child));
+            }
+            child_input::Of::Input(input) => input,
         };
         match input.decode_body() {
             Some(KindInput::ClaudeSdk(wire::ClaudeSdkInput {
@@ -735,7 +748,11 @@ impl State {
         sub.stop_error.clear();
         let mut view = self.shared.subagent(emit, child);
         sub.conversation.close(&mut view, now);
-        sub.conversation.snapshot(&mut view, Vec::new());
+        sub.conversation.snapshot(
+            &mut view,
+            Vec::new(),
+            wire::AgentCapabilities::claude_sdk().stops_job,
+        );
         view.end(end);
         // Its commands went with it. Each stays known as the subagent's
         // until its own notice comes: a stopped subagent's notice comes
@@ -808,7 +825,11 @@ impl State {
                     .cloned(),
             );
             let mut view = self.shared.subagent(emit, &child);
-            sub.conversation.snapshot(&mut view, jobs);
+            sub.conversation.snapshot(
+                &mut view,
+                jobs,
+                wire::AgentCapabilities::claude_sdk().stops_job,
+            );
         }
     }
 

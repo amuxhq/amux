@@ -32,7 +32,7 @@ future client.
 | **Chat row** | Would you scroll back to find it? | An item in the agent's journal: a reply, an edit, a command, a decision. It stays in history. | `ui_view::chat_rows`, one row per item |
 | **Activity line** | Does it only matter while it is happening? | Derived from the newest items and the snapshot's phase by `SessionState::activity`, timed by the renderer against item timestamps. Replaced as the agent moves on; never a row. | `ui_view::composer(state, now_ms).activity` |
 | **Ask** | Does it need your decision? | An entry in the snapshot's ask list, opened and closed only by provider facts. It takes over the composer; once settled it leaves a decision in the chat. | `ui_view::ask_card` |
-| **Session fact** | Does it describe the session rather than an event? | The snapshot's per-kind fields: tasks, context, model, effort, mode, usage, tool servers, sign-in, background processes. Always the latest value. | `ui_view::overview`, `ui_view::context`, `ui_view::sign_in`, `ui_view::settings` |
+| **Session fact** | Does it describe the session rather than an event? | The snapshot's fields: what every kind says the same way in its envelope (model, effort, permission, mode, sign-in, background processes) and the rest in its per-kind body (tasks, context, usage, tool servers). Always the latest value. | `ui_view::overview`, `ui_view::context`, `ui_view::sign_in`, `ui_view::settings` |
 | **Hidden** | None of the above? | Plumbing, kept in the interpreter's facts ring for debug reports, or a journal record no client draws. An item that belongs to the overview or the activity line maps to `RowKind::Hidden`. A failure can promote a fact to a notice row. | never drawn |
 
 Placement is decided once, by the interpreter inside each agent process, and stored: the item kind, the
@@ -70,7 +70,7 @@ kind is the [`ui_view::RowKind`](../crates/ui-view/src/rows.rs) variant the view
 | File edit | `FileChange { files, state }` | Each `FileRow` as path +N −N, opening that file's diff. A file in the agent's folder is named from it. A Codex patch that did not land made no file, so a file it would have added reads `Writing`, never `Created`. | full: exact patch and counts | full | partial: per-file diff |
 | File created, deleted, moved | `FileChange` with `Created { lines }`, `Deleted`, `Moved { to }` | "Created path · 38 lines", "Deleted path", "Moved a → b". | partial: create and overwrite only | partial | full |
 | Tool call | `ToolCall { server, tool, fact, state, result }` | "Used github · create_issue" plus one fact, opening to input and result. | partial: name and text result | full | full |
-| Subagent started or stopped | `Child { action, name, host, kind, state, result }` | amux's own `start_subagent` and `stop_subagent` calls (`spawn` and `stop` before 0.11) in their own words: "Started payment-tests on build · Codex", "Stopped copy-pass". The machine shows only when it is another one; a failure reads "Could not start …" and opens to why. amux's `list_agents` and `list_hosts` listings are the agent looking around, and hidden. | full | full | full |
+| Subagent started or stopped | `Child { action, name, host, kind, state, result }` | amux's own `start_subagent` and `stop_subagent` calls in their own words: "Started payment-tests on build · Codex", "Stopped copy-pass". The machine shows only when it is another one; a failure reads "Could not start …" and opens to why. amux's `list_agents` and `list_hosts` listings are the agent looking around, and hidden. | full | full | full |
 | Subagent | `Subagent { description, continued, state, answer, duration_ms }` | The call that started a subagent its provider runs, or continued it: Claude's Agent call and a SendMessage to it, Codex's spawn and follow-up of a child thread. It opens the subagent's own chat (`Row.opens`); how the subagent stands (running, waiting on you, done, stopped) is its fleet row's, never the call's; its answer once the call returned it. The calls of one turn that opened more than one agent fold into one "N subagents" row with their combined state, opening to each. A call from history names no agent and reads its own `state`, its steps collapsed under it (`parent`). | full | full | full: a Codex child's description is its fleet title |
 | Background process | `Background { command, description, running }` | "Started in background npm run dev"; the running job is listed in the overview. | partial | partial | partial |
 | Image | `Image { image, path, generated }` | A thumbnail opening full size on the phone and on a terminal that can draw images; elsewhere a line that opens it. Codex can report generated images. An image a Claude tool read is what the tool saw, not something presented, so it is no row. | none | none | full |
@@ -84,7 +84,7 @@ waiting on the person), `Pending` when it is announced, not started and asks nob
 the phase and branches on it, never on its own words.
 
 A provider subagent (Claude's Agent tool, a Codex child thread) is an agent with a chat of its own, which the
-call that started it opens: Claude's call row names it (`ToolCall.child_agent_id`, see
+call that started it opens: Claude's call row names it (`ClaudeToolCall.child_agent_id`, see
 [INTERPRETERS.md](INTERPRETERS.md#claudes-subagents)) and a Codex collab row lists its children
 (`CollabWork.agent_ids`). An amux spawn makes an agent with a process of its own ([AGENT_TOOLS.md](AGENT_TOOLS.md)),
 and its `Child` row opens it the same way. Every row that opens an agent carries it in `Row.opens`, reads how that
@@ -112,10 +112,10 @@ subagent on request (headless Claude and Codex; never terminal Claude). An ask t
 |---|---|---|---|---|---|
 | Turn finished | `TurnEnd { duration_ms, cost_usd, failed }` | A quiet footer under the last reply: "Worked 1m 42s". | full | full: duration and cost | full |
 | Stopped | `Stopped` | "You stopped it". A turn interrupted so the person's reply could go instead of answering a question is a `TurnEnd`, since nobody stopped it. | full | full | full |
-| Compaction | `Compaction { tokens_before, tokens_after, automatic, idle }` | A rule: "Compacted · 148k → 22k"; "Compacted while idle · 248k → 31k" for one amux ran while the agent sat idle. | full | full | partial: a compacted boundary, no counts |
+| Compaction | `Compaction { tokens_before, tokens_after, automatic, idle }` | A rule: "Compacted · 148k → 22k"; "Compacted while idle · 248k → 31k" for one amux ran while the agent sat idle. | full | full | partial: no counts, and not who started it |
 | Error | `Error { error_kind, message, attempts, gave_up }` | What failed and what to do. While the provider retries, the retry shows on the activity line instead. | full | full | full: typed error kind and will-retry |
 | Model switched | `ModelSwitch { from, to, reason }` | A notice: "Switched to Sonnet · reason". | none | full: refusal fallback | full: reroute with reason |
-| Session boundaries | `Boundary { kind, cause }` | A rule where the chat above no longer holds: cleared, or amux stopped. A start, resume, restart, fork or exit carries the same conversation on and is not drawn; how an exited agent ended is the composer's to say. Claude's compacted boundary sits beside its compaction row and is not drawn; Codex's is drawn as that row, without counts. | full | full | full |
+| Session boundaries | `Boundary { kind, exit }` | A rule where the chat above no longer holds: cleared, or amux stopped. A start, resume, restart, fork or exit carries the same conversation on and is not drawn; how an exited agent ended is the composer's to say. Claude's compacted boundary sits beside its compaction row and is not drawn. | full | full | full |
 | Automatic review | `AutoReview { status, status_word, risk, rationale, subject }` | "Auto-approved · low risk", opening to the reviewer's rationale; a status amux has no words for shows the reviewer's own word. | n/a | n/a | partial |
 
 ![Session boundaries drawn as rules across the chat: cleared, and amux stopped.](figures/vocabulary/row_boundary.light.png)
@@ -352,7 +352,7 @@ command-list changes, persisted files, plugin installs, memory recall, prompt su
 injected into a turn, checkpoints, session-state changes and model verification metadata.
 
 Some hidden facts are journal records: items kept, keyed and replicated like any other, that no client draws as a
-row. Headless Claude's `Status` items (Claude's "compacting" and "requesting", typed, with its own word kept;
+row. Headless Claude's `ClaudeStatus` items (Claude's "compacting" and "requesting", typed, with its own word kept;
 "compacting" is what the activity line reads until the compaction row lands) map to `RowKind::Hidden` in the view.
 Terminal Claude's compaction summary, an interruption marker (the turn's end says it was stopped), a failed tool
 server's startup (the snapshot's server list carries it) and Codex's whole-turn patch become no item at all. A body this build cannot decode is an

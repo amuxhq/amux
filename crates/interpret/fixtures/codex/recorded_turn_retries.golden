@@ -1,34 +1,35 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
+snapshot capabilities stops_job resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] approval=? context=? plan=? usage=? servers=[]
 ## 5 recorded 4: fact Rpc "{\"id\":\"agent-thread\",\"result\":{\"activePermissionProfile\":{\"extends\":n…
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1793447526697 text="" BOUNDARY_KIND_STARTED
-snapshot settings model=gpt-6.1-sol effort=? permission=read-only level=read-only
-snapshot IDLE queue=[] working_on=- at=1793447526697 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=? background=?
+snapshot settings model=gpt-6.1-sol effort=? permission=read-only level=read-only mode=?
+snapshot IDLE queue=[] working_on=- at=1793447526697 conversation=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model_name="GPT-6.1 Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[]
 ## 8 recorded 7: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1793447526698 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447526698 conversation=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model_name="GPT-6.1 Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING]
 ## 9 recorded 8: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1793447526698 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447526698 conversation=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model_name="GPT-6.1 Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING]
 ## 11 recorded 10: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1793447526700 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447526700 conversation=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model_name="GPT-6.1 Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY]
 ## 13 recorded 12: fact Rpc "{\"id\":\"amux-skills\",\"result\":{\"data\":[{\"cwd\":\"<MACHINE_PATH>\",\"err…
 effect catalogue ab7aca99 models=[] commands=5 skills=46 permissions=[read-only,default,auto,full-access] modes=[default,plan]
 snapshot catalogue ab7aca99
-snapshot IDLE queue=[] working_on=- at=1793447526704 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot IDLE queue=[] working_on=- at=1793447526704 conversation=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model_name="GPT-6.1 Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY]
 ## 18 recorded 17: fact Rpc method=deprecationNotice
 effect log "Codex deprecation notice: Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`."
 ## 21 recorded 20: input 0x6de81ad2ebab47c5a7a00144749caff1
 effect reply 0x6de81ad2ebab47c5a7a00144749caff1 accepted
 effect write "{\"id\":\"amux-1\",\"method\":\"turn/start\",\"params\":{\"clientUserMessageId\":\"6de81ad2ebab47c5a7a00144749caff1\",\"input\":[{\"text\":\"Reply with exactly UNREACHABLE.\",\"text_elements\":[],\"type\":\"text\"}],\"threadId\":\"01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae\"}}"
 item prompt:6de81ad2ebab47c5a7a00144749caff1 prompt final input=0x6de81ad2ebab47c5a7a00144749caff1 at=1793447526794 text="Reply with exactly UNREACHABLE."
-snapshot WORKING queue=[] working_on=- at=1793447526794 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793447526794 conversation=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model_name="GPT-6.1 Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY]
 ## 29 recorded 28: fact Rpc "{\"id\":\"amux-models-1\",\"result\":{\"data\":[{\"additionalSpeedTiers\":[\"fa…
 effect catalogue 3bcc6c14 models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max},gpt-5.5{low/medium*/high/xhigh}] commands=5 skills=46 permissions=[read-only,default,auto,full-access] modes=[default,plan]
 snapshot catalogue 3bcc6c14
-snapshot WORKING queue=[] working_on=- at=1793447527328 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793447527328 conversation=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model_name="GPT-6.1-Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY]
 ## 35 recorded 34: fact Rpc method=mcpServer/startupStatus/updated
-snapshot WORKING queue=[] working_on=- at=1793447527944 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1793447527944 conversation=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model_name="GPT-6.1-Sol" sign_in=? background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 37 recorded 36: fact Rpc method=error
 item error:01a191cd-818d-7383-bd80-522ef88b0add error final at=1793447527991 text="" responseStreamDisconnected "Connection failed: error sending request" retry=true 1/2
 ## 39 recorded 38: fact Rpc method=error
@@ -37,6 +38,6 @@ item error:01a191cd-818d-7383-bd80-522ef88b0add error final at=1793447528774 tex
 item error:01a191cd-818d-7383-bd80-522ef88b0add error final at=1793447529837 text="" httpConnectionFailed "Connection failed: error sending request" retry=false 0/0
 ## 44 recorded 43: fact Rpc method=turn/completed
 item turn:1 turn final at=1793447529842 text="" #1 TURN_OUTCOME_FAILED started=1793447526803
-snapshot IDLE queue=[] working_on=- at=1793447529842 asks=[] thread=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1793447529842 conversation=01a191cd-7c4f-7b51-98b2-c2bbbc8c42ae model_name="GPT-6.1-Sol" sign_in=? background=[] asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 notice blocked failed "Connection failed: error sending request"
 turn_end 1 last=-

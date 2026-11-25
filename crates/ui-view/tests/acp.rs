@@ -22,7 +22,7 @@ fn row(lifecycle: wire::Lifecycle) -> wire::Agent {
         provider: "opencode".into(),
         name: "worker".into(),
         lifecycle: lifecycle as i32,
-        phase: Phase::Working as i32,
+        status: wire::AgentStatus::in_phase(Phase::Working),
         incarnation: 1,
         ..Default::default()
     }
@@ -33,20 +33,23 @@ fn row(lifecycle: wire::Lifecycle) -> wire::Agent {
 fn host(can: wire::AgentCapabilities) -> wire::HostEntry {
     wire::HostEntry {
         providers: vec![wire::ProviderOnHost {
-            provider_id: "opencode".into(),
+            provider: "opencode".into(),
             descriptor: Some(wire::ProviderDescriptor {
                 name: "OpenCode".into(),
                 kind: Kind::Acp as i32,
                 sign_in_hint: "Run `opencode auth login` in the terminal".into(),
                 version: "1.18.33".into(),
             }),
-            capabilities: Some(can),
+            kinds: vec![wire::KindOnHost {
+                kind: Kind::Acp as i32,
+                capabilities: Some(can),
+            }],
             ..Default::default()
         }],
         ..wire::HostEntry::trusted_host(
             b"host",
             "desk",
-            wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+            wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Direct)),
         )
     }
 }
@@ -57,15 +60,34 @@ fn session(
     body: wire::AcpSnapshot,
     queue: Vec<wire::QueuedInput>,
 ) -> SessionState {
+    session_with(
+        lifecycle,
+        can,
+        wire::Snapshot {
+            body: body.encode_to_vec(),
+            queue,
+            ..Default::default()
+        },
+        None,
+    )
+}
+
+/// A caught-up session whose snapshot is `envelope`, as an ACP agent with
+/// `can` working, signed in as `sign_in` says.
+fn session_with(
+    lifecycle: wire::Lifecycle,
+    can: wire::AgentCapabilities,
+    envelope: wire::Snapshot,
+    sign_in: Option<wire::SignIn>,
+) -> SessionState {
     let mut state = SessionState::new(row(lifecycle), CAP);
-    state.update(Msg::Host(host(can)));
+    state.update(Msg::Host(host(can.clone())));
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: Kind::Acp as i32,
-        body: body.encode_to_vec(),
-        phase: Phase::Working as i32,
-        queue,
-        capabilities: Some(can),
-        ..Default::default()
+        status: wire::AgentStatus::in_phase(Phase::Working),
+        capabilities: Some(Box::new(can)),
+        sign_in,
+        ..envelope
     })));
     state.update(event(session_event::Of::CaughtUp(wire::CaughtUp {
         revision: 0,
@@ -178,17 +200,14 @@ fn attachments_follow_what_the_agent_takes() {
 #[test]
 fn the_provider_is_named_and_signed_in_to_as_its_host_says() {
     let can = wire::AgentCapabilities::acp(true, true, false);
-    let state = session(
+    let state = session_with(
         wire::Lifecycle::Live,
-        can,
-        wire::AcpSnapshot {
-            sign_in: Some(wire::SignIn {
-                state: wire::SignInState::SignedOut as i32,
-                ..Default::default()
-            }),
+        can.clone(),
+        wire::Snapshot::default(),
+        Some(wire::SignIn {
+            state: wire::SignInState::SignedOut as i32,
             ..Default::default()
-        },
-        Vec::new(),
+        }),
     );
     let notice = sign_in(&state).expect("signed out");
     assert_eq!(notice.provider_name, "OpenCode");
@@ -300,8 +319,8 @@ fn a_permission_offers_exactly_the_agents_options_and_a_reply_instead() {
     assert_eq!(instead(sent(&reply, "").of), "talk first");
 }
 
-/// Model, thought level and mode are picked from what the agent offers and
-/// sent in its own arm; it takes no permission.
+/// Model, thought level, permission and mode are picked from what the
+/// agent offers and sent in its own arm; nothing steps its permission.
 #[test]
 fn an_acp_agents_settings_go_in_its_own_arm() {
     for (change, expect) in [
@@ -318,6 +337,10 @@ fn an_acp_agents_settings_go_in_its_own_arm() {
             }),
         ),
         (
+            SettingChange::Permission("x".into()),
+            wire::acp_input::Of::Permission(wire::SetPermission { value: "x".into() }),
+        ),
+        (
             SettingChange::Mode("plan".into()),
             wire::acp_input::Of::Mode(wire::SetMode {
                 value: "plan".into(),
@@ -331,35 +354,31 @@ fn an_acp_agents_settings_go_in_its_own_arm() {
         );
     }
     assert_eq!(
-        setting_input(Kind::Acp, &SettingChange::Permission("x".into())),
-        None
-    );
-    assert_eq!(
         setting_input(Kind::Acp, &SettingChange::CyclePermission),
         None
     );
 }
 
-/// A new ACP agent starts as the agent its host offers, with what was
+/// A new ACP agent starts as the provider its host offers, with what was
 /// picked; a mode is sent only when one was.
 #[test]
 fn a_new_acp_agent_is_created_as_that_agent() {
     let chosen = NewAgentChoices {
         model: Some("m".into()),
         effort: Some("high".into()),
-        permission: Some("ignored".into()),
+        permission: Some("plan".into()),
         mode: None,
     };
+    let request = create_request("opencode", Kind::Acp, &chosen);
+    assert_eq!(request.provider, "opencode");
     assert_eq!(
-        create_config(Kind::Acp, "opencode", &chosen),
-        Some(wire::create_agent_request::Agent::Acp(
-            wire::AcpCreateConfig {
-                agent: "opencode".into(),
-                model: Some("m".into()),
-                effort: Some("high".into()),
-                mode: None,
-            }
-        ))
+        request.settings,
+        Some(wire::AgentSettings {
+            model: Some("m".into()),
+            effort: Some("high".into()),
+            permission: Some("plan".into()),
+            ..wire::AgentSettings::default()
+        })
     );
 }
 
@@ -493,7 +512,7 @@ fn settling_asks_when_it_cuts_work_or_ends_the_conversation_for_good() {
     let warning = |resumable: bool, phase: Phase| {
         let mut fleet = FleetState::new();
         let mut agent = row(wire::Lifecycle::Live);
-        agent.phase = phase as i32;
+        agent.status_mut().phase = phase as i32;
         for of in [
             wire::inventory_event::Of::Host(host(wire::AgentCapabilities::acp(
                 resumable, false, false,

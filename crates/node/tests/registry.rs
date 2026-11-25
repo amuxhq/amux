@@ -32,10 +32,10 @@ fn journal_end(dir: &std::path::Path) -> u64 {
 
 /// The agent's row says a turn is running, or what it says instead.
 async fn working(runtime: &node::ProfileRuntime, id: uuid::Uuid) -> Result<(), String> {
-    let phase = runtime.agent(id).await.unwrap().phase;
-    (phase == Phase::Working as i32)
+    let phase = runtime.agent(id).await.unwrap().phase();
+    (phase == Phase::Working)
         .then_some(())
-        .ok_or_else(|| format!("phase {phase}"))
+        .ok_or_else(|| format!("phase {phase:?}"))
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -149,7 +149,7 @@ async fn startup_prepares_after_looking_and_writes_only_after_go() {
     writer
         .append(&wire::Step {
             snapshot: Some(wire::Snapshot {
-                phase: Phase::Idle as i32,
+                status: wire::AgentStatus::in_phase(Phase::Idle),
                 at_ms: 1_000,
                 ..Default::default()
             }),
@@ -233,7 +233,7 @@ async fn startup_prepares_after_looking_and_writes_only_after_go() {
     assert_eq!(row.lifecycle, Lifecycle::Exited as i32);
     assert_eq!(row.exit_cause, ExitCause::EndedWhileAway as i32);
     assert_eq!(row.ingest_cursor, written, "the remainder is ingested");
-    assert_eq!(row.phase, Phase::Idle as i32);
+    assert_eq!(row.phase(), Phase::Idle);
     assert_eq!(
         marker,
         Some(Marker::CaughtUp),
@@ -284,7 +284,7 @@ async fn an_ingested_cause_survives_a_daemon_that_died_before_marking() {
         journal::Writer::open(install.agent_dir(id).join(agent_dir::JOURNAL), 1 << 20).unwrap();
     let last = wire::Step {
         snapshot: Some(wire::Snapshot {
-            phase: Phase::Idle as i32,
+            status: wire::AgentStatus::in_phase(Phase::Idle),
             at_ms: 1_000,
             ..Default::default()
         }),
@@ -371,14 +371,14 @@ async fn an_acp_agent_is_created_by_its_agents_id() {
     let daemon = install.start("boot-1", launch.clone()).await;
     let runtime = runtime(&daemon, &install);
     let acp = |agent: &str| wire::CreateAgentRequest {
-        agent: Some(wire::create_agent_request::Agent::Acp(
-            wire::AcpCreateConfig {
-                agent: agent.to_owned(),
-                model: None,
-                effort: None,
-                mode: Some("default".into()),
-            },
-        )),
+        provider: agent.to_owned(),
+        kind: wire::Kind::Acp as i32,
+        settings: Some(wire::AgentSettings {
+            model: None,
+            effort: None,
+            mode: Some("default".into()),
+            ..Default::default()
+        }),
         ..create(&install.work, "mine-first", Some("say hello"))
     };
 
@@ -405,7 +405,7 @@ async fn an_acp_agent_is_created_by_its_agents_id() {
     assert_eq!(
         spec.config
             .as_ref()
-            .and_then(|config| config.mode.as_deref()),
+            .and_then(|config| config.settings.as_ref()?.mode.as_deref()),
         Some("default")
     );
     until("the reply to be committed", || async {
@@ -422,9 +422,9 @@ async fn an_acp_agent_is_created_by_its_agents_id() {
             })
             .await
             .unwrap();
-        (row.phase == Phase::Idle as i32 && said)
+        (row.phase() == Phase::Idle && said)
             .then_some(())
-            .ok_or_else(|| format!("phase {}, said hello {said}", row.phase))
+            .ok_or_else(|| format!("phase {:?}, said hello {said}", row.phase()))
     })
     .await
     .unwrap();
@@ -516,9 +516,9 @@ async fn spawn_writes_spec_one_and_starts_the_agent_process() {
             })
             .await
             .unwrap();
-        (row.phase == Phase::Idle as i32 && said)
+        (row.phase() == Phase::Idle && said)
             .then_some(())
-            .ok_or_else(|| format!("phase {}, said hello {said}", row.phase))
+            .ok_or_else(|| format!("phase {:?}, said hello {said}", row.phase()))
     })
     .await
     .unwrap();
@@ -745,6 +745,7 @@ async fn resume_writes_the_next_spec_and_waits_for_a_dying_process() {
                     id,
                     Some(wire::Bootstrap {
                         of: Some(wire::bootstrap::Of::Prompt(wire::PromptSubmission {
+                            continued: false,
                             input_id: b"p1".to_vec(),
                             prompt: Some(wire::PromptInput {
                                 text: "carry on".into(),
@@ -1159,7 +1160,7 @@ fn thread_names(log: &std::path::Path) -> Vec<String> {
 /// The arm that carries a create's settings is its kind, so a create with
 /// no arm names no interpreter and is refused before anything is made.
 #[tokio::test]
-async fn a_create_without_a_kind_is_invalid() {
+async fn a_create_without_a_provider_is_invalid() {
     let install = Install::new();
     let daemon = install
         .start("boot-1", install.launch("idle", vec![]))
@@ -1168,7 +1169,8 @@ async fn a_create_without_a_kind_is_invalid() {
     let refused = runtime
         .spawn(
             wire::CreateAgentRequest {
-                agent: None,
+                provider: String::new(),
+                kind: 0,
                 ..create(&install.work, "kindless", None)
             },
             None,
@@ -1199,7 +1201,8 @@ async fn an_unnamed_agent_shows_its_providers_title_until_it_is_renamed() {
     let created = runtime
         .spawn(
             wire::CreateAgentRequest {
-                agent: wire::create_agent_request::Agent::defaults(wire::Kind::ClaudeSdk),
+                provider: "claude".into(),
+                kind: wire::Kind::ClaudeSdk as i32,
                 initial_prompt: Some(submission(b"p1", "fix the login test")),
                 name: None,
                 ..create(&install.work, "unused", None)
@@ -1208,11 +1211,15 @@ async fn an_unnamed_agent_shows_its_providers_title_until_it_is_renamed() {
         )
         .await
         .unwrap();
-    assert!(created.title.is_none(), "no title before Claude gives one");
+    assert!(
+        created.title().is_none(),
+        "no title before Claude gives one"
+    );
     let id = id_of(&created);
     until("the title reaches the row", || async {
-        let title = runtime.agent(id).await.map_err(|e| e.to_string())?.title;
-        (title.as_deref() == Some("Fake session title"))
+        let agent = runtime.agent(id).await.map_err(|e| e.to_string())?;
+        let title = agent.title();
+        (title == Some("Fake session title"))
             .then_some(())
             .ok_or(format!("{title:?}"))
     })
@@ -1220,7 +1227,7 @@ async fn an_unnamed_agent_shows_its_providers_title_until_it_is_renamed() {
     .unwrap();
     let renamed = runtime.rename(id, "login-work").await.unwrap();
     assert_eq!(renamed.name, "login-work");
-    assert_eq!(renamed.title, None, "the name is what shows now");
+    assert_eq!(renamed.title(), None, "the name is what shows now");
     kill_all(&runtime).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
@@ -1241,7 +1248,8 @@ async fn renaming_a_live_codex_agent_renames_its_thread() {
         &runtime
             .spawn(
                 wire::CreateAgentRequest {
-                    agent: wire::create_agent_request::Agent::defaults(wire::Kind::Codex),
+                    provider: "codex".into(),
+                    kind: wire::Kind::Codex as i32,
                     ..create(&install.work, "before", None)
                 },
                 None,
@@ -1496,10 +1504,10 @@ async fn agent_cause_reaches_the_row() {
         .await
         .unwrap();
     until("the ask to open", || async {
-        let phase = runtime.agent(orphaned).await.unwrap().phase;
-        (phase == Phase::NeedsYou as i32)
+        let phase = runtime.agent(orphaned).await.unwrap().phase();
+        (phase == Phase::NeedsYou)
             .then_some(())
-            .ok_or_else(|| format!("phase {phase}"))
+            .ok_or_else(|| format!("phase {phase:?}"))
     })
     .await
     .unwrap();
@@ -1552,10 +1560,10 @@ async fn agent_cause_reaches_the_row() {
     let drained = runtime.agent(drains).await.unwrap();
     assert_eq!(drained.lifecycle(), Lifecycle::Exited);
     assert_eq!(drained.exit_cause(), ExitCause::DaemonLost);
-    assert_eq!(drained.exit_detail, None);
+    assert_eq!(drained.exit_detail(), None);
     let orphan = runtime.agent(orphaned).await.unwrap();
     assert_eq!(orphan.exit_cause(), ExitCause::Orphaned);
-    assert_eq!(orphan.exit_detail, None);
+    assert_eq!(orphan.exit_detail(), None);
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }
@@ -1713,7 +1721,8 @@ async fn a_codex_resume_after_a_kill_waits_for_the_old_server_instead_of_racing_
         &runtime
             .spawn(
                 wire::CreateAgentRequest {
-                    agent: wire::create_agent_request::Agent::defaults(wire::Kind::Codex),
+                    provider: "codex".into(),
+                    kind: wire::Kind::Codex as i32,
                     ..create(&install.work, "codex", Some("first"))
                 },
                 None,
@@ -1730,7 +1739,7 @@ async fn a_codex_resume_after_a_kill_waits_for_the_old_server_instead_of_racing_
                 let row = runtime.agent(id).await.map_err(|error| error.to_string())?;
                 (row.incarnation == incarnation
                     && row.lifecycle == Lifecycle::Live as i32
-                    && row.phase == Phase::Idle as i32)
+                    && row.phase() == Phase::Idle)
                     .then_some(())
                     .ok_or_else(|| {
                         format!(
@@ -1833,7 +1842,8 @@ async fn a_codex_server_that_ignores_terminate_does_not_hold_its_thread_from_the
         &runtime
             .spawn(
                 wire::CreateAgentRequest {
-                    agent: wire::create_agent_request::Agent::defaults(wire::Kind::Codex),
+                    provider: "codex".into(),
+                    kind: wire::Kind::Codex as i32,
                     ..create(&install.work, "codex", Some("first"))
                 },
                 None,
@@ -1850,7 +1860,7 @@ async fn a_codex_server_that_ignores_terminate_does_not_hold_its_thread_from_the
                 let row = runtime.agent(id).await.map_err(|error| error.to_string())?;
                 (row.incarnation == incarnation
                     && row.lifecycle == Lifecycle::Live as i32
-                    && row.phase == Phase::Idle as i32)
+                    && row.phase() == Phase::Idle)
                     .then_some(())
                     .ok_or_else(|| {
                         format!(
@@ -2128,14 +2138,19 @@ async fn a_resume_keeps_the_permission_and_effort_the_agent_last_ran_with() {
             .read_store(move |store| store.cut(&key, 0).unwrap())
             .await
             .unwrap();
-        let body = cut
+        let settings = cut
             .snapshot
-            .map(|snapshot| wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap())
+            .map(|snapshot| snapshot.settings().clone())
             .unwrap_or_default();
-        (body.permission.as_deref() == Some("acceptEdits")
-            && body.effort.as_deref() == Some("high"))
+        (settings.permission.as_deref() == Some("acceptEdits")
+            && settings.effort.as_deref() == Some("high"))
         .then_some(())
-        .ok_or_else(|| format!("permission {:?}, effort {:?}", body.permission, body.effort))
+        .ok_or_else(|| {
+            format!(
+                "permission {:?}, effort {:?}",
+                settings.permission, settings.effort
+            )
+        })
     })
     .await
     .unwrap();
@@ -2144,8 +2159,12 @@ async fn a_resume_keeps_the_permission_and_effort_the_agent_last_ran_with() {
     kill_all(&runtime).await;
     drop(runtime);
     daemon.shutdown().await.unwrap();
-    let config = spec(&install.agent_dir(id), 2).config.unwrap_or_default();
-    println!("the resumed incarnation's config: {config:?}");
+    let config = spec(&install.agent_dir(id), 2)
+        .config
+        .unwrap_or_default()
+        .settings
+        .unwrap_or_default();
+    println!("the resumed incarnation's settings: {config:?}");
     assert_eq!(
         config.permission.as_deref(),
         Some("acceptEdits"),

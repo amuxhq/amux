@@ -3,26 +3,13 @@ syntax = "proto3";
 package amux.v1;
 
 import "amux/v1/chat.proto";
+import "amux/v1/records.proto";
 
 // The bodies of an agent program that speaks the Agent Client Protocol
 // (ACP): the item and snapshot messages encoded into Item.body and
 // Snapshot.body for kind acp, the inputs it accepts, and the answers inside
 // them. One envelope serves every ACP agent, built in or added by a person;
 // which agent it is, is a plain string id, never a closed list.
-
-message AcpCreateConfig {
-  // The agent's id: "antigravity", "opencode", "grok", or one a person
-  // added to their config.
-  string agent = 1;
-  // A value the agent's model option offers; absent leaves the agent's own
-  // default.
-  optional string model = 2;
-  // A value the agent's thought-level option offers.
-  optional string effort = 3;
-  // A value the agent's mode option, or its modes, offer. Absent, the
-  // agent starts in the mode its own settings name.
-  optional string mode = 4;
-}
 
 // ---------------------------------------------------------------------------
 // Items and snapshots
@@ -150,35 +137,18 @@ enum AcpNoticeSeverity {
 
 // Phase lives in the Snapshot envelope, once. What the agent offers is in
 // the catalogue the Snapshot names.
+// What only an ACP agent says about its session. Its phase, settings,
+// sign-in, session id and the rest every kind says are in the Snapshot
+// envelope; what it offers is in the catalogue the Snapshot names.
 message AcpSnapshot {
-  // The agent's id, as AcpCreateConfig names it; absent only in the first
-  // frame, before the interpreter has read the spec.
-  optional string agent = 1;
-  repeated AcpAsk asks = 2;
-  ContextMeter context = 3;
-  // The model, thought level and mode the session runs with, by the values
-  // the agent's options offer; absent until the agent says.
-  optional string model = 4;
-  // The running model as a person reads it: its name in the agent's list,
-  // else its id. Absent while the model is.
-  optional string model_name = 5;
-  optional string effort = 6;
-  optional string mode = 7;
-  AcpUsage usage = 8;
-  SignIn sign_in = 9;
+  repeated AcpAsk asks = 1;
+  ContextMeter context = 2;
+  AcpUsage usage = 3;
   // The agent's plan, entry by entry.
-  TaskList plan = 10;
-  // The agent's id for the conversation; absent until it names one.
-  optional string session_id = 11;
-  // How a later process of the agent's program reopens the conversation,
-  // as its own `initialize` answer said; unspecified until it answers. A
-  // daemon suspends, continues or resumes the agent only when this is
-  // resume or load, so an agent whose answer it never saw ends with its
-  // process.
-  optional AcpReopen reopen = 12;
+  TaskList plan = 4;
   // The agent's tool servers and how each stands, where the agent reports
   // them (Grok does, beside ACP); empty where it does not.
-  repeated ToolServer servers = 13;
+  repeated ToolServer servers = 5;
 }
 
 // What the agent says the session has used. Every field is absent until it
@@ -260,6 +230,8 @@ message AcpInput {
     // Refused REFUSAL_UNSUPPORTED for an agent not known to fold a prompt
     // into its running turn.
     SendQueuedNow send_now = 8;
+    // One of the agent's modes that its catalogue lists as a permission.
+    SetPermission permission = 9;
   }
 }
 

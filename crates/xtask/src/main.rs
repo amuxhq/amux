@@ -34,7 +34,7 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.Kind",
     "amux.v1.OfferedCommand",
     "amux.v1.OfferedSkill",
-    "amux.v1.NewAgentDefaults",
+    "amux.v1.AgentSettings",
     "amux.v1.OfferedMode",
     "amux.v1.OfferedModel",
     "amux.v1.OfferedPermission",
@@ -43,7 +43,6 @@ const VIEW_VALUES: &[&str] = &[
     "amux.v1.PageReview",
     "amux.v1.Platform",
     "amux.v1.Provider",
-    "amux.v1.Refusal",
     "amux.v1.ReviewStatus",
     "amux.v1.RouteKind",
     "amux.v1.SendState",
@@ -174,19 +173,16 @@ fn codegen(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     config.boxed(".amux.v1.Snapshot.notice");
     // The store's records hold a snapshot by value beside much smaller
     // items, and a client's session messages an inventory row beside
-    // smaller events, so their settings sit behind a pointer to keep each
+    // smaller events, so their status sits behind a pointer to keep each
     // message small.
-    config.boxed(".amux.v1.Snapshot.settings");
-    config.boxed(".amux.v1.Agent.settings");
+    config.boxed(".amux.v1.Snapshot.status");
+    config.boxed(".amux.v1.Agent.status");
+    // The same for what the agent can do, which says how each setting is
+    // changed and is the larger part of a snapshot.
+    config.boxed(".amux.v1.Snapshot.capabilities");
     // Every agent row carries its git facts, and the store's records hold
     // rows by value, so the checkout's room is taken only when there is one.
     config.boxed(".amux.v1.Git.checkout");
-    // The chat model's Refusal holds the wire's reason; the mirrors name
-    // the reason apart from it.
-    config.type_attribute(
-        "amux.v1.Refusal",
-        "#[cfg_attr(feature = \"schema\", schemars(rename = \"RefusalReason\"))]",
-    );
     // An experimental map encodes in key order, so a row, a spec or an
     // attachment encodes to the same bytes every time.
     config.btree_map([

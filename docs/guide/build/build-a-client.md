@@ -439,6 +439,16 @@ Rows from a host this machine cannot reach right now are as that host last
 reported them; the host's entry says whether it is reachable.
 
 `CreateAgent`, addressed to the machine that will run it, starts an agent.
+Name the agent program by its `provider` id, as the machine's entry lists it
+in `providers` (`claude`, `codex`, or an ACP agent's id), and put the model,
+effort, permission and mode to start on in `settings`, using values from
+that provider's catalogue (`HostService.GetCatalogue`); leave any of them
+out for the machine's own default. Leave `kind` unspecified and the machine
+starts the provider as its entry's descriptor says. What an agent can do,
+and how each of its settings is changed, is its `AgentCapabilities`: the
+provider's on the machine's entry until the agent's first snapshot, then
+the snapshot's own. Decide what to offer from those, never from the kind or
+the provider's name.
 `SendInput` sends a chat its prompts and answers, and `SetFiling`,
 `ResumeAgent`, `RenameAgent` and `DeleteAgent` act on an agent, each
 addressed to the agent's machine. Before a delete, `PreviewDelete` says what
@@ -460,9 +470,8 @@ file first.
 | `host_name` | What paired devices and the phone call this machine; never empty. Setting it empty returns to the machine's own name. A rename shows in discovery and in every pairing from then on; a device already paired keeps the name it paired with. |
 | `start_at_login` | Whether amux starts at login. Absent on an install without a supervisor, which has nothing to start. Turning it on writes the login item for the next login and leaves the running amux alone. |
 | `keep_awake` | On power the machine stays awake while amux runs; on battery only while an agent works. |
-| `repositories` | The folders new-agent pickers offer first, as absolute paths; `UpdateSettings` takes the whole new list, and `HostService.PinFolder`, addressed to the machine, adds or removes one, for a person on that machine or a paired one (an agent is refused). Every host's entry in the inventory lists them as `folders`, then the folders agents ran in lately and where Claude Code and Codex ran. |
 | `chat_in` | Where the terminal client chats: amux's chat or each agent's own interface. |
-| `claude_kind` | Which Claude a new agent runs; unspecified follows `chat_in` (its own interface means terminal Claude). Every host publishes what this resolves to as `HostEntry.claude_kind`; create Claude agents of that kind. |
+| `claude_kind` | Which Claude a new agent runs; unspecified follows `chat_in` (its own interface means terminal Claude). Every host publishes what this resolves to as the `kind` of its Claude provider's `ProviderDescriptor`, which a create that leaves `kind` unspecified starts. |
 | `telemetry`, `auto_reports` | Usage events and automatic reports. |
 | `experiments` | Every experiment the machine's build implements: its `name`, the `version` it implements, a one-line `description`, whether the settings switch it on (`enabled`) and whether amux is still restarting to apply that, or a change to its own settings (`applying`). `UpdateSettings` takes the whole new list of names switched on. Unlike the rest, a switch needs amux to restart, which it does on its own once its work under way settles: while `applying` is true, show the switch as being applied rather than on or off, and read the settings again after amux comes back. An experiment's own data on the wire, in `experimental` map entries keyed by version, may change in any release; a client reads the entries of versions it knows, whatever the machine has switched on, and ignores the rest. |
 
@@ -470,10 +479,17 @@ How amux is deployed (the supervisor, updates, where releases and data
 live, discovery's scope, the agents' tunables) stays in the file and
 `amux config`, not on this call.
 
-`SuggestRepositories` offers folders for the `repositories` setting: the Git
-repositories Claude Code and Codex ran in on this machine in the last 30
-days that still exist, newest first, at most eight. A session in a linked
-worktree suggests the repository it was made from.
+Where a machine offers to start an agent is on its own entry in the
+inventory, as `HostEntry.folders`: the folders its person pinned, in their
+order, then the ones its agents started in, newest first, then the ones
+Claude Code and Codex ran in lately outside amux. Search that list in the
+client. `HostService.PinFolder`, addressed to the machine, is the only way
+to pin or unpin one, for a person on that machine or a paired one (an agent
+is refused), and the machine's entry then says the change. The pins are
+kept in the `repositories` key of the machine's config, and `GetSettings`
+lists them as `Settings.repositories`, as written there: a folder that is
+gone stays listed, so a settings screen can unpin it, while the entry
+offers only folders that are there.
 
 Onboarding is one list of steps the daemon keeps for each profile, the
 same for every client. `SubscribeOnboarding` sends them now and again on
@@ -486,7 +502,7 @@ opens, the oldest. Each step is `needed`, `done`, `skipped` or
 | `pair_phone` | the profile trusts a phone |
 | `keep_reachable` | the person confirms starting at login and keeping awake; not needed on an install without a supervisor |
 | `sign_in` | the profile is signed in |
-| `repositories` | the person confirms the repository list |
+| `repositories` | the person confirms the pinned folders |
 | `improve` | the person confirms the telemetry and automatic-reports choice |
 | `first_agent` | a paired device created an agent on this machine |
 
@@ -522,7 +538,9 @@ message, written for a person to read: `NOT_FOUND` for an id the daemon
 does not know, or for an agent another machine runs, saying which;
 `FAILED_PRECONDITION` for an agent name that matches more than one agent,
 and, with the reason `HOST_UNREACHABLE`, for a machine that can't be reached
-right now, so the call was never sent; `ABORTED` for a call that went to
+right now, so the call was never sent, and with the reason `REFUSED` for a
+message the agent or its machine refused, the `ErrorInfo`'s
+`refusal` metadata naming which (`AGENT_CLOSED`); `ABORTED` for a call that went to
 another machine and lost its answer, so it may have happened; and
 `UNIMPLEMENTED` with no message for a call the machine's amux is too old
 for. Where a client may want to act on the reason, the status

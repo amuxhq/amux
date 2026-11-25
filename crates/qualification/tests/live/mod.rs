@@ -54,7 +54,7 @@ use tonic::transport::{Channel, Endpoint};
 use ui_state::{AgentState, ItemBody, OpenAsk};
 use wire::installation_service_client::InstallationServiceClient;
 use wire::{
-    ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexCreateConfig, CodexInput, Input, Item, Kind,
+    AgentSettings, ClaudeAnswer, ClaudePtyInput, ClaudeSdkInput, CodexInput, Input, Item, Kind,
     Phase, Snapshot, claude_answer, claude_pty_input, claude_sdk_input, codex_input,
     permission_answer, send_input_response, session_event,
 };
@@ -1091,9 +1091,9 @@ impl Install {
     async fn create_asking_codex(&self, scenario: Scenario) -> Result<Vec<u8>, String> {
         self.create_codex(
             scenario,
-            CodexCreateConfig {
+            AgentSettings {
                 permission: Some("read-only".into()),
-                ..CodexCreateConfig::default()
+                ..AgentSettings::default()
             },
         )
         .await
@@ -1104,7 +1104,7 @@ impl Install {
     async fn create_codex(
         &self,
         scenario: Scenario,
-        config: CodexCreateConfig,
+        config: AgentSettings,
     ) -> Result<Vec<u8>, String> {
         let agent = self
             .client
@@ -1114,7 +1114,8 @@ impl Install {
                 agent_id: uuid::Uuid::new_v4().as_bytes().to_vec(),
                 name: Some(scenario.agent()),
                 cwd: self.project(scenario)?.to_string_lossy().into_owned(),
-                agent: Some(wire::create_agent_request::Agent::Codex(config)),
+                provider: wire::agents::CODEX.into(),
+                settings: Some(config),
                 ..wire::CreateAgentRequest::default()
             })
             .await
@@ -1242,7 +1243,7 @@ impl Install {
     fn allow(&self, ask: &OpenAsk) -> Result<wire::KindInput, String> {
         match ask {
             OpenAsk::Claude(ask) => {
-                if !matches!(ask.body, Some(wire::ask::Body::Permission(_))) {
+                if !matches!(ask.body, Some(wire::claude_ask::Body::Permission(_))) {
                     return Err(format!(
                         "an unexpected ask opened: {}",
                         ask_token(&OpenAsk::Claude(ask.clone()))
@@ -1279,7 +1280,7 @@ impl Install {
                     of: Some(codex_input::Of::Answer(wire::CodexAnswer {
                         ask_key: ask.key.clone(),
                         of: Some(wire::codex_answer::Of::Approve(
-                            wire::Decision::Approve as i32,
+                            wire::CodexDecision::Approve as i32,
                         )),
                     })),
                 }))
@@ -2009,12 +2010,12 @@ fn turn(kind: Kind, item: &Item) -> Option<wire::Turn> {
 fn ask_token(ask: &OpenAsk) -> String {
     match ask {
         OpenAsk::Claude(ask) => match &ask.body {
-            Some(wire::ask::Body::Permission(_)) => "permission",
-            Some(wire::ask::Body::Question(_)) => "question",
-            Some(wire::ask::Body::Plan(_)) => "plan",
-            Some(wire::ask::Body::Form(_)) => "form",
-            Some(wire::ask::Body::Link(_)) => "link",
-            Some(wire::ask::Body::Unanswerable(_)) => "unanswerable",
+            Some(wire::claude_ask::Body::Permission(_)) => "permission",
+            Some(wire::claude_ask::Body::Question(_)) => "question",
+            Some(wire::claude_ask::Body::Plan(_)) => "plan",
+            Some(wire::claude_ask::Body::Form(_)) => "form",
+            Some(wire::claude_ask::Body::Link(_)) => "link",
+            Some(wire::claude_ask::Body::Unanswerable(_)) => "unanswerable",
             None => "empty",
         },
         OpenAsk::Codex(ask) => match &ask.body {

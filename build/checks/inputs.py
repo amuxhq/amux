@@ -12,33 +12,33 @@ Five checks need more than that, so this writes it into build/checks/inputs/
   release's crates/store/src/schema.rs, which the store check compares.
 - `proto-baseline/`: the same tag and that release's proto/ tree, which the
   protocol check compares.
-- `day`: today's date (UTC), which the npm audit (js/BUCK) declares: the npm
-  registry's answer changes without any file changing, so the audit is kept
-  for a day and asked again on the next.
-- `deny/`: what cargo-deny reads (the root BUCK's `deny`). `metadata.json` is
-  Cargo's resolved graph with every feature, which needs Cargo's registry, so
-  it is made here, with this checkout's path replaced by `@ROOT@` and Cargo's
-  home by `/cargo`, so every tree and machine writes the same bytes;
-  `workspace/` holds the workspace's manifests, which cargo-deny reads beside
-  it. Both are made again only when a manifest or the lockfile changes.
-  `advisory-db.tar` and `advisory-db.ref` are a snapshot of the RustSec
-  advisory database (its files and its commit and date), fetched at most once
-  a day into a clone this machine's trees share; `index/` is crates.io's index
-  entry for each crate in the graph, which says whether a release was yanked,
-  copied from Cargo's cache after Cargo has refreshed it, at most once a day
-  (`cargo update --dry-run`, which writes no lockfile). When a fetch fails,
-  the last snapshot stays.
+- `day`: today's date (UTC), which the npm audit (js/BUCK) and the fetch of
+  Cargo's registry (//:cargo-registry) declare: npm's advisories and
+  crates.io's yanked releases change without any file changing, so each is
+  kept for a day and asked again on the next.
+- `deny/`: the RustSec advisory database cargo-deny reads (the root BUCK's
+  `deny`), as `advisory-db.tar` and `advisory-db.ref`, a snapshot of its
+  files and its commit and date, fetched at most once a day into a clone
+  this machine's trees share. When a fetch fails, the last snapshot stays.
+  Cargo's graph and crates.io's index, which it reads too, come from a
+  Buck2 action on the Linux worker (//:cargo-registry, build/cargo.bzl), so
+  the machine running the checks needs no Cargo.
 
 A file is written only when its content changes. The `just` recipes that run
 the check targets run this first (`just checks`, `just test`, `just
 premerge`); `scripts/buck2 test` alone uses whatever was last written.
 
-    inputs.py
+    inputs.py [BUCK2_ARGS...]
+
+Given the arguments of the `buck2 test` a recipe is about to run, it writes
+nothing when every target pattern there is under crates/ or apps/: only the
+root package's and js/'s checks read these files, and on a machine with no
+Cargo cache, as on a CI runner, Cargo's graph alone fetches every crate the
+workspace depends on, which took the macOS jobs 30 to 50 s a run. A pattern
+it can't place, and no pattern at all, writes everything.
 """
 
-import hashlib
 import io
-import json
 import os
 import secrets
 import shutil
@@ -46,7 +46,7 @@ import subprocess
 import sys
 import tarfile
 import time
-from pathlib import Path, PurePath, PureWindowsPath
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "build" / "checks" / "inputs"
@@ -56,7 +56,6 @@ ADVISORIES = "https://github.com/rustsec/advisory-db"
 # The clone of the advisory database every tree on this machine snapshots.
 ADVISORY_CLONE = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "amux" / "advisory-db"
 ADVISORY_SECONDS = 24 * 60 * 60
-CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
 
 
 def git(*args: str, binary: bool = False):
@@ -136,159 +135,12 @@ def warn(message: str) -> None:
     print(f"check inputs: {message}", file=sys.stderr)
 
 
-def cargo_inputs(listing: bytes) -> None:
-    """Cargo's graph and the workspace's manifests, for cargo-deny."""
-    manifests = sorted(path for path in listing.decode().splitlines() if path == "Cargo.toml" or path.endswith("/Cargo.toml"))
-    # Names how metadata.json is made, so a snapshot made an older way is
-    # made again when that changes.
-    key = hashlib.sha256(b"metadata 2\0")
-    for path in ["Cargo.lock", "rust-toolchain.toml", ".cargo/config.toml", *manifests]:
-        file = ROOT / path
-        key.update(path.encode() + b"\0" + (file.read_bytes() if file.is_file() else b"") + b"\0")
-    stamp = DENY / "key"
-    if stamp.is_file() and stamp.read_text(encoding="utf-8") == key.hexdigest() and (DENY / "metadata.json").is_file():
-        return
-    try:
-        result = subprocess.run(
-            ["cargo", "metadata", "--all-features", "--locked", "--format-version", "1"],
-            cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=False,
-        )
-    except OSError as error:
-        result = subprocess.CompletedProcess([], 1, "", str(error))
-    if result.returncode != 0:
-        # Not fatal: only the deny check reads it, and it fails without it.
-        warn(f"cargo metadata failed, so the deny check has no graph to read:\n{result.stderr.strip()}")
-        (DENY / "metadata.json").unlink(missing_ok=True)
-        return
-    metadata = json.loads(result.stdout)
-    workspace = Path(metadata["workspace_root"])
-    text = json.dumps(portable(metadata, workspace, cargo_home()), ensure_ascii=False, separators=(",", ":")) + "\n"
-    shutil.rmtree(DENY / "workspace", ignore_errors=True)
-    for package in metadata["packages"]:
-        manifest = Path(package["manifest_path"])
-        if workspace in manifest.parents:
-            write(DENY / "workspace" / manifest.relative_to(workspace), manifest.read_bytes())
-    for name in ["Cargo.toml", "Cargo.lock"]:
-        write(DENY / "workspace" / name, (workspace / name).read_bytes())
-    write(DENY / "metadata.json", text.encode())
-    write(stamp, key.hexdigest().encode())
-
-
-# What the url crate, which Cargo's `file://` URLs come from
-# (`Url::from_file_path`), escapes in a path segment, besides controls and
-# every byte past ASCII: its path-segment set, with `\` as a special
-# scheme's. Brackets, `@`, `!` and the like stay as they are.
-URL_ESCAPED = frozenset(b' "#%<>?`{}\\')
-
-
-def file_url_path(path: PurePath) -> str:
-    """What follows `file://` in Cargo's URL for `path`: `/home/dev/amux`,
-    `/C:/Users/dev/amux`, or for a UNC path `server/share/amux` (the
-    server is the URL's host, which the url crate writes in lower case)."""
-
-    def segment(part: str) -> str:
-        return "".join(
-            f"%{byte:02X}" if byte <= 0x20 or byte >= 0x7F or byte in URL_ESCAPED else chr(byte)
-            for byte in part.encode("utf-8")
-        )
-
-    if not isinstance(path, PureWindowsPath):
-        return "/" + "/".join(segment(part) for part in path.parts[1:])
-    drive, rest = path.drive, [segment(part) for part in path.parts[1:]]
-    if drive.upper().startswith("\\\\?\\UNC\\"):
-        drive = "\\\\" + drive[len("\\\\?\\UNC\\") :]
-    elif drive.startswith("\\\\?\\"):
-        drive = drive[len("\\\\?\\") :]
-    if drive.startswith("\\\\"):
-        server, _, share = drive[2:].partition("\\")
-        return "/".join([server.lower(), segment(share), *rest])
-    return "/" + "/".join([drive, *rest])
-
-
-def portable(metadata, workspace: PurePath, home: PurePath):
-    """Cargo's graph with this checkout's path replaced by `@ROOT@` and Cargo's
-    home by `/cargo`, in each of its strings.
-
-    Each path is replaced in both forms Cargo writes: a native path
-    (`manifest_path`, `src_path`; on Windows with backslashes, which become
-    `/`, as the deny check reads it on Linux) and the path in a `file://` URL
-    (a package's id). The parsed values are rewritten, not the text, in which
-    JSON escapes each backslash; serialised as Cargo does (compact, in its
-    order), they are Cargo's own text with the paths replaced.
-    """
-    swaps = [(workspace, "@ROOT@/build/checks/inputs/deny/workspace"), (home, "/cargo")]
-    windows = isinstance(workspace, PureWindowsPath)
-    native = [(str(path), to) for path, to in swaps]
-    urls = [(file_url_path(path), to) for path, to in swaps]
-
-    def rewrite(text: str) -> str:
-        for path, to in native:
-            if path in text:
-                text = text.replace(path, to)
-                if windows:
-                    text = text.replace("\\", "/")
-        for path, to in urls:
-            text = text.replace(path, to)
-        return text
-
-    def walk(value):
-        if isinstance(value, str):
-            return rewrite(value)
-        if isinstance(value, list):
-            return [walk(item) for item in value]
-        if isinstance(value, dict):
-            return {rewrite(key): walk(item) for key, item in value.items()}
-        return value
-
-    return walk(metadata)
-
-
-def cargo_home() -> Path:
-    return Path(os.environ.get("CARGO_HOME") or Path.home() / ".cargo")
-
-
-def index_path(name: str) -> str:
-    """Where crates.io's index keeps a crate's entry, as Cargo's cache does."""
-    name = name.lower()
-    if len(name) <= 2:
-        return f"{len(name)}/{name}"
-    if len(name) == 3:
-        return f"3/{name[0]}/{name}"
-    return f"{name[:2]}/{name[2:4]}/{name}"
-
-
-def index_entries() -> None:
-    """Each locked crate's index entry, for the yanked check."""
-    metadata = DENY / "metadata.json"
-    if not metadata.is_file():
-        return
-    stamp = DENY / "index-refreshed"
-    if not stamp.is_file() or time.time() - stamp.stat().st_mtime > ADVISORY_SECONDS:
-        try:
-            result = subprocess.run(["cargo", "update", "--dry-run"], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=False, timeout=300)
-            if result.returncode == 0:
-                stamp.parent.mkdir(parents=True, exist_ok=True)
-                stamp.touch()
-            else:
-                warn(f"could not refresh crates.io's index; the deny check reads the last copy: {result.stderr.strip()}")
-        except (OSError, subprocess.TimeoutExpired) as error:
-            warn(f"could not refresh crates.io's index ({error}); the deny check reads the last copy")
-    caches = sorted((cargo_home() / "registry" / "index").glob("index.crates.io-*"))
-    if not caches:
-        warn("Cargo has no crates.io index cache; the deny check cannot tell a yanked release")
-        return
-    cache = caches[-1]
-    names = sorted({package["name"] for package in json.loads(metadata.read_text(encoding="utf-8"))["packages"] if package["source"] == CRATES_IO})
-    # Under `cache/`, not Cargo's `.cache/`: a Buck2 glob skips hidden files.
-    wanted = {"config.json": cache / "config.json"} | {f"cache/{index_path(name)}": cache / ".cache" / index_path(name) for name in names}
-    out = DENY / "index"
-    for relative, source in wanted.items():
-        if source.is_file():
-            write(out / relative, source.read_bytes())
-        else:
-            warn(f"no index entry for {relative} in Cargo's cache; the deny check will say so")
-    for stale in [path for path in out.rglob("*") if path.is_file() and path.relative_to(out).as_posix() not in wanted]:
-        stale.unlink()
+def drop_cargo_snapshots() -> None:
+    """What this wrote for cargo-deny before the worker's Cargo made it."""
+    for name in ["metadata.json", "key", "index-refreshed"]:
+        (DENY / name).unlink(missing_ok=True)
+    for name in ["workspace", "index"]:
+        shutil.rmtree(DENY / name, ignore_errors=True)
 
 
 def git_in(directory: Path, *args: str) -> subprocess.CompletedProcess:
@@ -332,12 +184,34 @@ def advisories() -> None:
     write(ref, head.stdout)
 
 
+# No target in these packages reads what this writes (build/BUCK's
+# `tracked`, `day`, `store-baseline`, `proto-baseline` and `deny`).
+UNREACHED = ("//crates/", "//apps/", "root//crates/", "root//apps/")
+# buck2 test's options whose value is a label, not a target pattern.
+LABEL_OPTIONS = ("--exclude", "--include")
+
+
+def reaches_checks(arguments: list[str]) -> bool:
+    patterns, label = [], False
+    for argument in arguments:
+        if argument == "--":
+            break
+        if label:
+            label = False
+        elif argument in LABEL_OPTIONS:
+            label = True
+        elif not argument.startswith("-"):
+            patterns.append(argument)
+    return not patterns or any(not pattern.startswith(UNREACHED) for pattern in patterns)
+
+
 def main() -> None:
+    if not reaches_checks(sys.argv[1:]):
+        return
     listing = tracked()
     write(OUT / "tracked", listing)
     write(OUT / "day", f"{time.strftime('%Y-%m-%d', time.gmtime())}\n".encode())
-    cargo_inputs(listing)
-    index_entries()
+    drop_cargo_snapshots()
     advisories()
     tag = release()
     store_baseline(tag)

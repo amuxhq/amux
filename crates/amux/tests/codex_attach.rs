@@ -14,7 +14,7 @@ use provider_fakes::{Ask, Step, Tool, ToolClass};
 use support::desk::{Desk, LONG_GRACE_SECS, say};
 use support::term::Term;
 use support::{chat, client, says, until};
-use wire::{CodexInput, Decision, Input, Phase, codex_input, send_input_response};
+use wire::{CodexDecision, CodexInput, Input, Phase, codex_input, send_input_response};
 
 use crate::support;
 
@@ -72,7 +72,7 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
                 .inventory()
                 .resolve_agent("coder")
                 .await
-                .map(|agent| agent.phase)
+                .map(|agent| agent.phase() as i32)
                 .map_err(|error| error.to_string())
         }
     };
@@ -127,7 +127,9 @@ async fn codex_app_attaches_to_a_fresh_agent_and_codrives_it_with_amux() {
             CodexInput {
                 of: Some(codex_input::Of::Answer(wire::CodexAnswer {
                     ask_key: request.clone(),
-                    of: Some(wire::codex_answer::Of::Approve(Decision::Approve as i32)),
+                    of: Some(wire::codex_answer::Of::Approve(
+                        CodexDecision::Approve as i32,
+                    )),
                 })),
             },
         ))

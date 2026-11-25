@@ -40,7 +40,7 @@ fn agent(kind: Kind) -> wire::Agent {
         name: "worker".into(),
         cwd: "/Users/someone/project".into(),
         lifecycle: wire::Lifecycle::Live as i32,
-        phase: wire::Phase::Working as i32,
+        status: wire::AgentStatus::in_phase(wire::Phase::Working),
         incarnation: 1,
         ..wire::Agent::default()
     }
@@ -279,9 +279,11 @@ fn blob(hash: &[u8]) -> wire::BlobRef {
 fn marked_history() -> ClientSessionHistory {
     use wire::claude_item::Kind as Claude;
     let kind = Kind::ClaudeSdk;
-    let text = |words: String| wire::ToolInput {
+    let text = |words: String| wire::ClaudeToolInput {
         subject: words,
-        of: Some(wire::tool_input::Of::OtherJson(marked().into_bytes())),
+        of: Some(wire::claude_tool_input::Of::OtherJson(
+            marked().into_bytes(),
+        )),
     };
     let item = |key: &str, order: u64, body: Claude| wire::Item {
         key: key.to_owned(),
@@ -311,7 +313,7 @@ fn marked_history() -> ClientSessionHistory {
         item(
             "tool",
             2,
-            Claude::Tool(wire::ToolCall {
+            Claude::Tool(wire::ClaudeToolCall {
                 name: marked(),
                 state: wire::ToolState::Running as i32,
                 outcome_text: marked(),
@@ -339,31 +341,27 @@ fn marked_history() -> ClientSessionHistory {
         item(
             "status",
             4,
-            Claude::Status(wire::Status {
+            Claude::Status(wire::ClaudeStatus {
                 status: wire::SdkStatus::Compacting as i32,
                 word: marked(),
             }),
         ),
     ];
     let snapshot_body = wire::ClaudeSnapshot {
-        asks: vec![wire::Ask {
+        asks: vec![wire::ClaudeAsk {
             key: "ask".into(),
             item_key: "tool".into(),
-            body: Some(wire::ask::Body::Question(wire::QuestionAsk {
+            body: Some(wire::claude_ask::Body::Question(wire::QuestionAsk {
                 ..Default::default()
             })),
             ..Default::default()
         }],
-        model: Some(marked()),
-        model_name: Some(marked()),
-        permission: Some(marked()),
-        provider_session: Some(marked()),
         running_calls: vec![wire::RunningCall {
             tool_use_id: "call".into(),
             tool_name: marked(),
             since_ms: 1,
         }],
-        active_tasks: vec![wire::Task {
+        active_tasks: vec![wire::ClaudeTask {
             task_id: "task".into(),
             description: marked(),
             state: wire::TaskState::Running as i32,
@@ -381,31 +379,41 @@ fn marked_history() -> ClientSessionHistory {
         }],
         steer: false,
         sender: None,
+        continued: false,
     };
     let snapshot = wire::Snapshot {
         revision: 5,
         queue: vec![queued],
         kind: kind as i32,
         body: snapshot_body.encode_to_vec(),
-        phase: wire::Phase::Working as i32,
-        working_on: Some(marked()),
-        title: None,
-        last_said: Some(marked()),
+        status: Some(Box::new(wire::AgentStatus {
+            phase: wire::Phase::Working as i32,
+            phase_since_ms: 1,
+            working_on: Some(marked()),
+            git: Some(wire::Git {
+                branch: Some(marked()),
+                ..Default::default()
+            }),
+            background_jobs: 0,
+            title: None,
+            last_said: Some(marked()),
+            settings: Some(wire::AgentSettings {
+                model: Some(marked()),
+                permission: Some(marked()),
+                ..Default::default()
+            }),
+        })),
         at_ms: 5,
-        phase_since_ms: 1,
-        git: Some(wire::Git {
-            branch: Some(marked()),
-            ..Default::default()
-        }),
         catalogue: Some(b"catalogue".to_vec()),
-        background_jobs: 0,
+        model_name: Some(marked()),
+        conversation: Some(marked()),
         notice: Some(Box::new(wire::Notice {
             of: Some(wire::notice::Of::Blocked(wire::BlockedNotice {
                 why: Some(wire::blocked_notice::Why::Failed(marked())),
             })),
         })),
-        capabilities: Some(wire::AgentCapabilities::claude_sdk()),
-        settings: None,
+        capabilities: Some(Box::new(wire::AgentCapabilities::claude_sdk())),
+        ..Default::default()
     };
     let prompt = wire::Input::new(
         b"sent".to_vec(),
@@ -422,8 +430,11 @@ fn marked_history() -> ClientSessionHistory {
     let mut named = agent(kind);
     named.name = marked();
     named.cwd = marked();
-    named.working_on = Some(marked());
-    named.exit_detail = Some(marked());
+    named.status_mut().working_on = Some(marked());
+    named.exit = Some(wire::IncarnationEnd {
+        cause: wire::ExitCause::Unspecified as i32,
+        detail: Some(marked()),
+    });
     let host = wire::HostEntry {
         host: Some(wire::Host {
             host_id: b"host".to_vec(),
@@ -602,9 +613,9 @@ fn every_conclusion_the_model_draws_from_a_body_survives_the_record() {
     use wire::codex_item::Kind as Codex;
     let claude = |kind: Claude| wire::ClaudeItem { kind: Some(kind) }.encode_to_vec();
     let running = wire::ToolState::Running as i32;
-    let tool = |call: wire::ToolCall| claude(Claude::Tool(call));
+    let tool = |call: wire::ClaudeToolCall| claude(Claude::Tool(call));
     let claude_rows = vec![
-        tool(wire::ToolCall {
+        tool(wire::ClaudeToolCall {
             name: "Task".into(),
             state: running,
             subagent: Some(wire::SubagentProgress {
@@ -613,22 +624,22 @@ fn every_conclusion_the_model_draws_from_a_body_survives_the_record() {
             }),
             ..Default::default()
         }),
-        tool(wire::ToolCall {
+        tool(wire::ClaudeToolCall {
             name: "Read".into(),
             state: running,
             parent_key: "row1".into(),
             ..Default::default()
         }),
-        tool(wire::ToolCall {
+        tool(wire::ClaudeToolCall {
             name: "TodoWrite".into(),
             state: wire::ToolState::Succeeded as i32,
-            input: Some(wire::ToolInput {
+            input: Some(wire::ClaudeToolInput {
                 subject: "the list".into(),
-                of: Some(wire::tool_input::Of::TaskList(wire::Empty {})),
+                of: Some(wire::claude_tool_input::Of::TaskList(wire::Empty {})),
             }),
             ..Default::default()
         }),
-        tool(wire::ToolCall {
+        tool(wire::ClaudeToolCall {
             name: "Bash".into(),
             state: wire::ToolState::Succeeded as i32,
             ..Default::default()

@@ -8,9 +8,13 @@ With no argument it reads the newest `buck2 test` log in buck-out. `just
 premerge` prints this at its end, so a landing's log says the same about
 the build host as a run on the Mac says about the Mac, without access to
 the host's buck-out. Only actions and tests that ran count; what came from
-the cache costs nothing here. A "link" is rustc building a binary, which
-compiles the binary's own crate (all of a library's code again, for its unit
-tests) before the linker runs.
+the cache costs nothing here. Each kind is counted apart by where it ran:
+`remote` on a NativeLink worker (the Mac's own, or the build host's),
+`local` in Buck2 itself, as every build action does on CI's macOS runners
+(AMUX_BUILD_HERE=1). A "link" is rustc building a binary, which compiles the
+binary's own crate (all of a library's code again, for its unit tests)
+before the linker runs; "metadata" is rustc writing a crate's .rmeta, which
+the crates after it compile against; "clippy" is a crate's lints.
 """
 
 import json
@@ -38,7 +42,18 @@ def label(owner: dict) -> str:
     return f"{name.get('package', '?').removeprefix('root//crates/').removeprefix('root//')}:{name.get('name', '?')}"
 
 
+KINDS = ("compile", "metadata", "link", "clippy", "test", "other")
+WHERE = ("remote", "local")
+
+
 def kind_of(category: str, identifier: str) -> str:
+    # The prelude names a clippy action by its category alone, and a rustc
+    # one by what it emits: `metadata [pic]` for the full .rmeta, `check` or
+    # `diag` for the fast one (prelude/rust/build.bzl, _explain).
+    if category == "clippy":
+        return "clippy"
+    if category == "rustc" and identifier.split(" ")[0] in ("metadata", "check", "diag"):
+        return "metadata"
     if category == "rustc" and "link" in identifier:
         return "link"
     if category == "rustc" and ("rlib" in identifier or "cdylib" in identifier):
@@ -47,19 +62,31 @@ def kind_of(category: str, identifier: str) -> str:
 
 
 def ran(details: dict) -> dict | None:
-    """The timings of a command that ran on the worker, not from the cache."""
-    remote = details.get("command_kind", {}).get("command", {}).get("RemoteCommand")
-    if remote is None or remote.get("cache_hit"):
+    """The timings of a command that ran, not from the cache, and where."""
+    command = details.get("command_kind", {}).get("command", {})
+    remote = command.get("RemoteCommand")
+    if remote is not None:
+        if remote.get("cache_hit"):
+            return None
+        where = "remote"
+    # Buck2 logs a command it ran itself as `OmittedLocalCommand` unless
+    # asked to keep its whole command line, and one it ran in a persistent
+    # worker as `WorkerCommand`.
+    elif any(kind in command for kind in ("LocalCommand", "OmittedLocalCommand", "WorkerCommand")):
+        where = "local"
+    else:
         return None
     meta = details.get("metadata") or {}
     start = meta.get("start_time")
     if not start:
         return None
     return {
+        "where": where,
         "start": start[0] + start[1] / 1e9,
-        "queue": meta.get("queue_duration_us", 0) / 1e6,
-        "inputs": meta.get("input_materialization_duration_us", 0) / 1e6,
-        "exec": meta.get("execution_time_us", 0) / 1e6,
+        # Null, not absent, for a local command, which waits in no queue.
+        "queue": (meta.get("queue_duration_us") or 0) / 1e6,
+        "inputs": (meta.get("input_materialization_duration_us") or 0) / 1e6,
+        "exec": (meta.get("execution_time_us") or 0) / 1e6,
     }
 
 
@@ -132,18 +159,23 @@ def main() -> int:
     if not runs:
         print("timing: everything came from the cache")
         return 0
-    by_kind: dict[str, list[tuple[float, str]]] = defaultdict(list)
+    by_kind: dict[tuple[str, str], list[tuple[float, str]]] = defaultdict(list)
     for kind, name, t in runs:
-        by_kind[kind].append((t["exec"], name))
-    print("timing: what ran afresh, by worker time")
-    for kind in ("compile", "link", "test", "other"):
-        rows = sorted(by_kind.get(kind, []), reverse=True)
-        if rows:
-            longest = ", ".join(f"{name} {seconds:.0f} s" for seconds, name in rows[:3])
-            print(f"  {kind:8} {len(rows):4} ran, {sum(s for s, _ in rows):6.0f} s in all; longest {longest}")
-    most, mean, span = concurrency(runs)
-    queued = sum(t["queue"] for _, _, t in runs)
-    print(f"  worker   {most} at once at most, {mean:.1f} on average over {span:.0f} s; {queued:.0f} s queued in all")
+        by_kind[(kind, t["where"])].append((t["exec"], name))
+    print("timing: what ran afresh, by time running (remote: on a NativeLink worker; local: in Buck2 itself)")
+    for kind in KINDS:
+        for where in WHERE:
+            rows = sorted(by_kind.get((kind, where), []), reverse=True)
+            if rows:
+                longest = ", ".join(f"{name} {seconds:.0f} s" for seconds, name in rows[:3])
+                print(f"  {kind:8} {where:6} {len(rows):4} ran, {sum(s for s, _ in rows):6.0f} s in all; longest {longest}")
+    for where in WHERE:
+        here = [run for run in runs if run[2]["where"] == where]
+        if not here:
+            continue
+        most, mean, span = concurrency(here)
+        queued = sum(t["queue"] for _, _, t in here)
+        print(f"  {where:15} {most} at once at most, {mean:.1f} on average over {span:.0f} s" + (f"; {queued:.0f} s queued in all" if where == "remote" else ""))
     steps = critical_path(log)
     if steps:
         print("  critical path: " + "; ".join(steps))

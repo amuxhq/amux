@@ -25,15 +25,20 @@ public struct SettingsAccount {
 public struct SettingsActions {
     /// Applies a change, answering why it did not take, or nil once it did.
     public var apply: @MainActor (SettingsChange) async -> String?
+    /// Pins a folder among this Mac's repositories, or unpins it, answering
+    /// why it did not take, or nil once it did.
+    public var pin: @MainActor (_ path: String, _ pinned: Bool) async -> String?
     public var signIn: @MainActor () -> Void
     public var signOut: @MainActor () -> Void
 
     public init(
         apply: @escaping @MainActor (SettingsChange) async -> String? = { _ in nil },
+        pin: @escaping @MainActor (_ path: String, _ pinned: Bool) async -> String? = { _, _ in nil },
         signIn: @escaping @MainActor () -> Void = {},
         signOut: @escaping @MainActor () -> Void = {}
     ) {
         self.apply = apply
+        self.pin = pin
         self.signIn = signIn
         self.signOut = signOut
     }
@@ -44,13 +49,17 @@ public struct SettingsActions {
 public struct SettingsScreen: View {
     let state: SettingsState
     let account: SettingsAccount
+    /// This Mac's repositories, as its entry pins them.
+    let repositories: [String]
     let actions: SettingsActions
 
     public init(
-        state: SettingsState, account: SettingsAccount, actions: SettingsActions = SettingsActions()
+        state: SettingsState, account: SettingsAccount, repositories: [String] = [],
+        actions: SettingsActions = SettingsActions()
     ) {
         self.state = state
         self.account = account
+        self.repositories = repositories
         self.actions = actions
     }
 
@@ -58,7 +67,8 @@ public struct SettingsScreen: View {
         Group {
             switch state {
             case .ready(let settings):
-                SettingsForm(settings: settings, account: account, actions: actions)
+                SettingsForm(
+                    settings: settings, account: account, repositories: repositories, actions: actions)
             case .failed(let reason):
                 VStack(spacing: 8) {
                     Text("amux isn’t running").font(.ui(.title, weight: .semibold))
@@ -88,6 +98,7 @@ public struct SettingsScreen: View {
 private struct SettingsForm: View {
     let settings: MachineSettings
     let account: SettingsAccount
+    let repositories: [String]
     let actions: SettingsActions
     @State private var name = ""
     @State private var problem: String?
@@ -124,10 +135,10 @@ private struct SettingsForm: View {
                     "Repositories", footer: "Agents work in these, whether you start them here or from your phone.",
                     trailing: { Button("Add repository…", action: addFolder) }
                 ) {
-                    if settings.repositories.isEmpty {
+                    if repositories.isEmpty {
                         SettingRow("No repositories yet") { EmptyView() }
                     }
-                    ForEach(settings.repositories, id: \.self) { path in
+                    ForEach(repositories, id: \.self) { path in
                         RepositoryLine(path: path) { remove(path) }
                     }
                 }
@@ -218,16 +229,20 @@ private struct SettingsForm: View {
         panel.allowsMultipleSelection = true
         panel.prompt = "Add"
         guard panel.runModal() == .OK else { return }
-        var paths = settings.repositories
-        for folder in panel.urls {
-            let path = folder.standardizedFileURL.path
-            if !paths.contains(path) { paths.append(path) }
+        let paths = panel.urls.map(\.standardizedFileURL.path).filter { !repositories.contains($0) }
+        Task {
+            for path in paths {
+                if let failed = await actions.pin(path, true) {
+                    problem = failed
+                    return
+                }
+            }
+            problem = nil
         }
-        apply(.with(repositories: paths))
     }
 
     private func remove(_ path: String) {
-        apply(.with(repositories: settings.repositories.filter { $0 != path }))
+        Task { problem = await actions.pin(path, false) }
     }
 }
 
@@ -385,13 +400,11 @@ extension SettingsChange {
     /// A change to only the settings named.
     public static func with(
         hostName: String? = nil, startAtLogin: Bool? = nil, keepAwake: Bool? = nil,
-        repositories: [String]? = nil, telemetry: Bool? = nil, autoReports: Bool? = nil,
-        experiments: [String]? = nil
+        telemetry: Bool? = nil, autoReports: Bool? = nil, experiments: [String]? = nil
     ) -> SettingsChange {
         SettingsChange(
             autoReports: autoReports, experiments: experiments, hostName: hostName,
-            keepAwake: keepAwake, repositories: repositories, startAtLogin: startAtLogin,
-            telemetry: telemetry)
+            keepAwake: keepAwake, startAtLogin: startAtLogin, telemetry: telemetry)
     }
 }
 

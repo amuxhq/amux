@@ -10,9 +10,8 @@ use uuid::Uuid;
 
 use crate::HostId;
 
-/// What a host's link handshake says it can do: feature flags and the agent
-/// kinds it runs.
-pub type Capabilities = wire::Capabilities;
+/// What a host's link handshake says it can do.
+pub type Capabilities = wire::HostCapabilities;
 
 /// A host as its link handshake describes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -155,14 +154,12 @@ pub fn host_to_wire(host: &Host) -> wire::Host {
         host_id: host.id.as_bytes().to_vec(),
         name: host.name.clone(),
         version: host.version.clone(),
-        capabilities: Some(host.capabilities.clone()),
+        capabilities: Some(host.capabilities),
         account_signed_in: host.signed_in,
         platform: host.platform as i32,
     }
 }
 
-/// The most agent kinds a host's handshake may say it runs.
-pub(crate) const MAX_KINDS: usize = 64;
 /// The longest version a host's handshake may name.
 pub(crate) const MAX_VERSION_BYTES: usize = 64;
 
@@ -187,9 +184,6 @@ pub(crate) fn host_from_wire(host: wire::Host) -> Result<Host, String> {
         ));
     }
     let capabilities = host.capabilities.unwrap_or_default();
-    if capabilities.kinds.len() > MAX_KINDS {
-        return Err(format!("a host runs at most {MAX_KINDS} agent kinds"));
-    }
     Ok(Host {
         id,
         name,
@@ -226,10 +220,7 @@ mod tests {
             host_id: HostId::from_u128(7).as_bytes().to_vec(),
             name: name.to_owned(),
             version: "0.9.0".to_owned(),
-            capabilities: Some(Capabilities {
-                cloud_relay: false,
-                kinds: vec![wire::Kind::ClaudeSdk as i32],
-            }),
+            capabilities: Some(Capabilities { cloud_relay: false }),
             account_signed_in: None,
             platform: wire::Platform::Macos as i32,
         }
@@ -260,13 +251,6 @@ mod tests {
                 version: "v".repeat(MAX_VERSION_BYTES + 1),
                 ..described("desk")
             },
-            wire::Host {
-                capabilities: Some(Capabilities {
-                    cloud_relay: false,
-                    kinds: vec![1; MAX_KINDS + 1],
-                }),
-                ..described("desk")
-            },
         ];
         for host in refused {
             assert!(host_from_wire(host.clone()).is_err(), "{host:?}");
@@ -275,7 +259,7 @@ mod tests {
 
     /// The first message's bound holds a Hello at every field's limit:
     /// well over a hundred neighbors, each at the longest name (in the
-    /// widest characters) and version and with every kind it may list, an
+    /// widest characters) and version, an
     /// address for every interface a machine might have, and a token four
     /// times a real one's size.
     #[test]
@@ -286,17 +270,14 @@ mod tests {
             host_id: HostId::from_u128(id).as_bytes().to_vec(),
             name: "\u{1d54f}".repeat(wire::MAX_HOST_NAME_CHARS),
             version: "9".repeat(MAX_VERSION_BYTES),
-            capabilities: Some(Capabilities {
-                cloud_relay: true,
-                kinds: vec![wire::Kind::Codex as i32; MAX_KINDS],
-            }),
+            capabilities: Some(Capabilities { cloud_relay: true }),
             account_signed_in: Some(true),
             platform: wire::Platform::Macos as i32,
         };
         host_from_wire(widest(1)).expect("a host at every bound is a host");
         let address = "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535".to_owned();
-        let hello = wire::Message {
-            body: Some(wire::message::Body::Hello(wire::Hello {
+        let hello = wire::LinkMessage {
+            body: Some(wire::link_message::Body::Hello(wire::Hello {
                 host: Some(widest(1)),
                 neighbors: (2..130).map(widest).collect(),
                 auth_token: Some("t".repeat(4 * 1024)),

@@ -1,51 +1,54 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot capabilities stops_job resumable sends_now images files passes_unknown_commands forks model=pick effort=pick permission=pick mode=-
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue 17132192 models=[opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=56 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue 17132192
-snapshot IDLE queue=[] working_on=- at=1793423938819 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+effect catalogue b0d70fe8 models=[opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=47 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue b0d70fe8
+snapshot IDLE queue=[] working_on=- at=1793423938819 conversation=? model_name=? sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 4 recorded 3: input 0xb6abf14006d34c6698d95f197546f4a5
 effect reply 0xb6abf14006d34c6698d95f197546f4a5 accepted
 effect user b6abf140-06d3-4c66-98d9-5f197546f4a5 "Delegate to the `counter` subagent, then reply with exactly what it said."
 item boundary:1 boundary final at=1793423938839 text="" BOUNDARY_KIND_STARTED
 item b6abf140-06d3-4c66-98d9-5f197546f4a5 prompt final input=0xb6abf14006d34c6698d95f197546f4a5 at=1793423938839 text="Delegate to the `counter` subagent, then reply with exactly what it said."
-snapshot WORKING queue=[] working_on=- at=1793423938839 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot WORKING queue=[] working_on=- at=1793423938839 conversation=? model_name=? sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 6 recorded 5: fact Stream type=control_response
-snapshot settings model=claude-haiku-5-5 effort=high permission=? level=?
-snapshot WORKING queue=[] working_on=- at=1793423938871 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot settings model=claude-haiku-5-5 effort=high permission=? level=? mode=?
+snapshot WORKING queue=[] working_on=- at=1793423938871 conversation=? model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 12 recorded 11: fact Stream type=system subtype=init uuid=314bdd93-5eb4-406b-a08f-35d78f090468
 item boundary:1 boundary final at=1793423938929 text="" BOUNDARY_KIND_STARTED
-snapshot settings model=claude-haiku-5-5 effort=high permission=default level=ask
-snapshot WORKING queue=[] working_on=- at=1793423938929 asks=[] session=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot settings model=claude-haiku-5-5 effort=high permission=default level=ask mode=?
+snapshot WORKING queue=[] working_on=- at=1793423938929 conversation=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 14 recorded 13: fact Stream type=system subtype=status uuid=f4e68ade-2abb-4980-9ab6-fbedd3d795d3
 item f4e68ade-2abb-4980-9ab6-fbedd3d795d3 status final at=1793423938932 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 18 recorded 17: fact Stream type=stream_event uuid=3cc83c1f-713d-4f59-87c9-66feb4f689f6
-snapshot WORKING queue=[] working_on=- at=1793423939972 asks=[] session=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20399/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot WORKING queue=[] working_on=- at=1793423939972 conversation=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=20399/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 19 recorded 18: fact Stream type=stream_event uuid=25ff6908-870f-4430-8d32-4da6a6cb3f56
 item toolu_012VXWzW2WdrKc71g3eWUc4e tool final at=1793423939972 text="" Agent TOOL_STATE_RUNNING input=subagent:""
 ## 34 recorded 33: fact Stream type=assistant uuid=ffcc70a7-30cc-462f-a498-b74d16991784
 item toolu_012VXWzW2WdrKc71g3eWUc4e tool final at=1793423939972 text="" Agent TOOL_STATE_RUNNING input=subagent:"Run counter subagent"
 ## 38 recorded 37: fact Stream type=system subtype=background_tasks_changed uuid=f5f85bb6-d520-4e9d-94d1-b83ad3abb486
-snapshot WORKING queue=[] working_on=- at=1793423940383 asks=[] session=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20399/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot WORKING queue=[] working_on=- at=1793423940383 conversation=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=20399/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 40 recorded 39: fact Stream type=system subtype=task_started uuid=bd32ecc1-e922-4493-b8dd-f3515f41230e tool_use_id=toolu_012VXWzW2WdrKc71g3eWUc4e
 item toolu_012VXWzW2WdrKc71g3eWUc4e tool final at=1793423939972 text="" Agent TOOL_STATE_RUNNING background opens=sub-df8e53a5 input=subagent:"Run counter subagent"
 agent sub-df8e53a5 start child=a4d06ab64caac045e call=host/toolu_012VXWzW2WdrKc71g3eWUc4e title="Run counter subagent"
 agent sub-df8e53a5 item prompt:toolu_012VXWzW2WdrKc71g3eWUc4e prompt final at=1793423940385 text="Count to three and report the result."
-agent sub-df8e53a5 snapshot WORKING queue=[] working_on=- at=1793423940385 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run counter subagent"@1793423940385]
+agent sub-df8e53a5 snapshot capabilities stops_job model=- effort=- permission=- mode=-
+agent sub-df8e53a5 snapshot WORKING queue=[] working_on=- at=1793423940385 conversation=? model_name=? sign_in=? background=[-:"Run counter subagent"@1793423940385] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 47 recorded 46: fact Stream type=rate_limit_event uuid=0a8f20d7-672f-43cb-9a69-45f10ca1c449
-snapshot WORKING queue=[] working_on=- at=1793423940391 asks=[] session=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20399/? tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot WORKING queue=[] working_on=- at=1793423940391 conversation=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=20399/? tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 49 recorded 48: fact Stream type=system subtype=status uuid=3c5a4d7c-f60e-4ad9-9a48-398e78f342c8
 item 3c5a4d7c-f60e-4ad9-9a48-398e78f342c8 status final at=1793423940400 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 51 recorded 50: fact Stream type=assistant uuid=c0d182fc-bb6b-4211-9d64-e4fad1a5ddbc
 agent sub-df8e53a5 item msg_011CgZkUcTgnvFgTmE99hYH6:0 message final at=1793423941555 text="ONE TWO THREE"
-agent sub-df8e53a5 snapshot WORKING queue=[] working_on=- at=1793423941555 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run counter subagent"@1793423940385]
+agent sub-df8e53a5 snapshot settings model=claude-haiku-5-5 effort=? permission=? level=? mode=?
+agent sub-df8e53a5 snapshot WORKING queue=[] working_on=- at=1793423941555 conversation=? model_name="Haiku 5.5" sign_in=? background=[-:"Run counter subagent"@1793423940385] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 54 recorded 53: fact Stream type=system subtype=task_notification uuid=6df25af8-5553-4d7a-8549-7e8ea48dda52 tool_use_id=toolu_012VXWzW2WdrKc71g3eWUc4e
 item toolu_012VXWzW2WdrKc71g3eWUc4e tool final at=1793423939972 text="" Agent TOOL_STATE_SUCCEEDED background opens=sub-df8e53a5 ended=1793423941580 input=subagent:"Run counter subagent" out="ONE TWO THREE"
-agent sub-df8e53a5 snapshot WORKING queue=[] working_on=- at=1793423941580 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+agent sub-df8e53a5 snapshot WORKING queue=[] working_on=- at=1793423941580 conversation=? model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=? tasks=? active=[] usage=? servers=[]
 agent sub-df8e53a5 end FINISHED
 ## 58 recorded 57: fact Stream type=stream_event uuid=6a0d23c8-4385-41b6-9b84-e2e66a76e2c8
-snapshot WORKING queue=[] working_on=- at=1793423941582 asks=[] session=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20917/? tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot WORKING queue=[] working_on=- at=1793423941582 conversation=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=20917/? tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 59 recorded 58: fact Stream type=stream_event uuid=330beb7e-4268-4899-b4aa-2b68800709bc
 item msg_011CgZkUceLXT9mEkW4mUDRn:0 message open at=1793423941582 text=""
 ## 60 recorded 59: fact Stream type=stream_event uuid=801e8dc0-09a5-4708-be87-4324be8c9a8b
@@ -71,7 +74,7 @@ item msg_011CgZkUceLXT9mEkW4mUDRn:0 message final at=1793423941582 text="The `co
 ## 76 recorded 75: fact Stream type=result subtype=success uuid=f49078d5-ea51-40ff-addb-80446ac59a83
 item turn:1 turn final at=1793423941587 text="" #1 TURN_OUTCOME_COMPLETED started=1793423938914
 snapshot said "The counter subagent is running in the background. I'll reply with its exact output once its completion notification arrives."
-snapshot IDLE queue=[] working_on=- at=1793423941587 asks=[] session=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=high mode=default context=20917/1000000 tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot IDLE queue=[] working_on=- at=1793423941587 conversation=79895c4f-d9bf-4336-8688-b5d2b2d1f834 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=20917/1000000 tasks=? active=[] usage=ok 5h:19%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY]
 turn_end 1 last=msg_011CgZkUceLXT9mEkW4mUDRn:0
 ## 81 recorded 80: fact Stream type=system subtype=status uuid=fb9fbbeb-d13d-45ff-95ed-9115e474e348
 item fb9fbbeb-d13d-45ff-95ed-9115e474e348 status final at=1793423941593 text="" SDK_STATUS_UNSPECIFIED requesting

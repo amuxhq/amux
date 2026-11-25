@@ -930,20 +930,6 @@ pub unsafe extern "C" fn amux_runtime_update_settings(
     })
 }
 
-/// The folders worth offering as repositories: the Git repositories Claude
-/// Code and Codex ran in lately, newest first. The ticket answers
-/// `{"Ok": [RepositorySuggestion]}` or `{"Err": ..}`.
-///
-/// # Safety
-/// `runtime` is from `amux_runtime_start`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn amux_runtime_suggest_repositories(runtime: *const AmuxRuntime) -> u64 {
-    guard(0, || {
-        // SAFETY: the caller's contract.
-        unsafe { live_runtime(runtime) }.map_or(0, |runtime| runtime.0.suggest_repositories())
-    })
-}
-
 /// A one-time link that signs the browser in to a profile's account and
 /// opens `path` on its account service (`/offer`, the page after signing
 /// in). The ticket answers `{"Ok": "<url>"}`, or `{"Err": ..}` for a

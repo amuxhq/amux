@@ -18,4 +18,9 @@ enum ErrorReason {
   // The far end of a link refused this build as too old, so it needs
   // updating, on code FAILED_PRECONDITION.
   ERROR_REASON_VERSION_MISMATCH = 3;
+  // An agent's interpreter or its host refused a message sent to the agent
+  // (SendMessage), on code FAILED_PRECONDITION; the ErrorInfo's metadata
+  // "refusal" names the Refusal value without its REFUSAL_ prefix
+  // ("AGENT_CLOSED"). A refused input is no error: SendInput answers it.
+  ERROR_REASON_REFUSED = 4;
 }

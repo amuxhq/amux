@@ -32,14 +32,15 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    AgentSpec, Ask, ClaudeItem, ClaudeSnapshot, Envelope, Input, NativeStart, PermissionAsk,
-    Refusal, Snapshot, Step, ToolCall, ToolState, Turn, TurnOutcome, claude_item, claude_sdk_input,
+    AgentSpec, ClaudeAsk, ClaudeItem, ClaudePermissionAsk, ClaudeSnapshot, ClaudeToolCall,
+    Envelope, Input, NativeStart, Refusal, Snapshot, Step, ToolState, Turn, TurnOutcome,
+    claude_item, claude_sdk_input,
 };
 
 use crate::{
     Carrier, Channel, Checkpoint, Effect, Emit, Event, Fact, FixtureInput, Interpreter, ItemDraft,
     ItemView, Shared, SnapshotView, Stepped, Subagent, agent_message_body, agent_message_key,
-    claude_sdk_input, human, is_status_tool, status_working_on, unknown,
+    claude_sdk_input, is_status_tool, person, status_working_on, unknown,
 };
 
 /// With `FORGET` set, a resume loses the model: the checkpoint property
@@ -48,7 +49,7 @@ pub struct TestKind<const FORGET: bool = false>;
 
 #[derive(Serialize, Deserialize)]
 pub struct State<const FORGET: bool> {
-    shared: Shared<Ask>,
+    shared: Shared<ClaudeAsk>,
     model: Option<String>,
     tools: BTreeMap<String, String>,
     /// A stop interrupted the turn running: its end reads as cut short.
@@ -81,10 +82,19 @@ impl<const FORGET: bool> State<FORGET> {
         self.shared.idle_wake(since, after)
     }
 
+    fn report(&mut self) {
+        self.shared.report(
+            wire::agents::CLAUDE,
+            crate::shared::Report {
+                model: self.model.as_deref(),
+                ..Default::default()
+            },
+        );
+    }
+
     fn body(&self) -> Vec<u8> {
         ClaudeSnapshot {
             asks: self.shared.asks().open_asks().to_vec(),
-            model: self.model.clone(),
             ..unknown::claude()
         }
         .encode_to_vec()
@@ -96,6 +106,7 @@ impl<const FORGET: bool> Checkpoint for State<FORGET> {
         if FORGET {
             self.model = None;
         }
+        self.report();
         let body = self.body();
         let step = self.shared.resume_step(body);
         (self, step)
@@ -174,7 +185,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
                         key: id,
                         text: text_of(&value, "text"),
                         input_id,
-                        body: body(claude_item::Kind::Prompt(wire::Prompt {})),
+                        body: body(claude_item::Kind::Prompt(wire::Prompt::default())),
                         complete: true,
                         ..Default::default()
                     },
@@ -227,7 +238,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
                     emit,
                     ItemDraft {
                         key: id,
-                        body: body(claude_item::Kind::Tool(ToolCall {
+                        body: body(claude_item::Kind::Tool(ClaudeToolCall {
                             input: Some(crate::claude_common::tool_input(
                                 &name, &server, &input, "",
                             )),
@@ -248,7 +259,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
                     emit,
                     ItemDraft {
                         key: id,
-                        body: body(claude_item::Kind::Tool(ToolCall {
+                        body: body(claude_item::Kind::Tool(ClaudeToolCall {
                             name,
                             state: ToolState::Succeeded as i32,
                             outcome_text: text_of(&value, "output"),
@@ -259,10 +270,10 @@ impl<const FORGET: bool> TestKind<FORGET> {
                     },
                 );
             }
-            "ask" => shared.open_ask(Ask {
+            "ask" => shared.open_ask(ClaudeAsk {
                 key: id,
                 item_key: text_of(&value, "tool"),
-                body: Some(wire::ask::Body::Permission(PermissionAsk {
+                body: Some(wire::claude_ask::Body::Permission(ClaudePermissionAsk {
                     tool_name: text_of(&value, "tool_name"),
                     ..Default::default()
                 })),
@@ -415,10 +426,10 @@ impl<const FORGET: bool> TestKind<FORGET> {
             "sub_ask" => {
                 let now_ms = shared.now_ms();
                 let mut sub = shared.subagent(emit, &text_of(&value, "child"));
-                sub.open_ask(Ask {
+                sub.open_ask(ClaudeAsk {
                     key: id,
                     item_key: text_of(&value, "tool"),
-                    body: Some(wire::ask::Body::Permission(PermissionAsk {
+                    body: Some(wire::claude_ask::Body::Permission(ClaudePermissionAsk {
                         tool_name: text_of(&value, "tool_name"),
                         ..Default::default()
                     })),
@@ -477,7 +488,7 @@ impl<const FORGET: bool> TestKind<FORGET> {
         };
         match arm {
             claude_sdk_input::Of::Prompt(prompt) => {
-                if let Some(entry) = shared.admit_prompt(emit, &id, prompt, human()) {
+                if let Some(entry) = shared.admit_prompt(emit, &id, prompt, person()) {
                     emit.effect(write(&entry.text));
                 }
             }
@@ -519,14 +530,24 @@ impl<const FORGET: bool> TestKind<FORGET> {
 impl<const FORGET: bool> TestKind<FORGET> {
     /// A person's answer to a running subagent's ask; anything else, or
     /// any input to a subagent not running, is refused.
-    fn child_input(state: &mut State<FORGET>, emit: &mut Emit, agent_id: &[u8], input: Input) {
+    fn child_input(
+        state: &mut State<FORGET>,
+        emit: &mut Emit,
+        agent_id: &[u8],
+        id: Vec<u8>,
+        of: wire::child_input::Of,
+    ) {
         let shared = &mut state.shared;
-        let id = input.input_id.clone();
-        let answer = match input.decode_body() {
-            Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
-                of: Some(claude_sdk_input::Of::Answer(answer)),
-            })) => answer,
-            _ => return shared.reject(emit, &id, Refusal::Unsupported),
+        let answer = match of {
+            wire::child_input::Of::Input(input) => match input.decode_body() {
+                Some(wire::KindInput::ClaudeSdk(wire::ClaudeSdkInput {
+                    of: Some(claude_sdk_input::Of::Answer(answer)),
+                })) => answer,
+                _ => return shared.reject(emit, &id, Refusal::Unsupported),
+            },
+            wire::child_input::Of::StopJob(_) => {
+                return shared.reject(emit, &id, Refusal::Unsupported);
+            }
         };
         let Some(child) = shared.subagent_child(agent_id).map(str::to_owned) else {
             return shared.reject(emit, &id, Refusal::Unsupported);
@@ -546,15 +567,18 @@ impl<const FORGET: bool> TestKind<FORGET> {
 }
 
 /// A running subagent's snapshot: its phase and its open asks.
-fn sub_snapshot(sub: &mut Subagent<'_, Ask>) {
+fn sub_snapshot(sub: &mut Subagent<'_, ClaudeAsk>) {
     let body = ClaudeSnapshot {
         asks: sub.asks().open_asks().to_vec(),
         ..unknown::claude()
     }
     .encode_to_vec();
     sub.snapshot(Snapshot {
-        phase: sub.phase() as i32,
         body,
+        status: Some(Box::new(wire::AgentStatus {
+            phase: sub.phase() as i32,
+            ..Default::default()
+        })),
         ..Default::default()
     });
 }
@@ -603,7 +627,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
                         &mut emit,
                         ItemDraft {
                             key: format!("woke:{at_ms}"),
-                            body: body(claude_item::Kind::Prompt(wire::Prompt {})),
+                            body: body(claude_item::Kind::Prompt(wire::Prompt::default())),
                             complete: true,
                             ..Default::default()
                         },
@@ -619,9 +643,11 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
             }
             Event::Fact(_) => {}
             Event::Input(input) => Self::input(state, &mut emit, input),
-            Event::ChildInput { agent_id, input } => {
-                Self::child_input(state, &mut emit, &agent_id, input)
-            }
+            Event::ChildInput {
+                agent_id,
+                input_id,
+                of,
+            } => Self::child_input(state, &mut emit, &agent_id, input_id, of),
             Event::AgentMessage(envelope) => Self::agent_message(state, &mut emit, envelope),
             Event::Rename { .. } => state.shared.renamed(),
             Event::ProviderExit { code } => {
@@ -653,6 +679,7 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
         if let Some(entry) = state.shared.next_queued() {
             emit.effect(write(&entry.text));
         }
+        state.report();
         let body = state.body();
         let notice = state.shared.notice(crate::notice::claude_ask);
         let mut stepped = state.shared.finish(emit, body, notice);
@@ -748,14 +775,13 @@ impl<const FORGET: bool> Interpreter for TestKind<FORGET> {
                 .map(|ask| (ask.key.clone(), ask.item_key.clone()))
                 .collect(),
             text: format!(
-                "asks=[{}] model={}",
+                "asks=[{}]",
                 snapshot
                     .asks
                     .iter()
                     .map(|ask| ask.key.as_str())
                     .collect::<Vec<_>>()
                     .join(","),
-                snapshot.model.as_deref().unwrap_or("?")
             ),
         }
     }
@@ -885,7 +911,7 @@ mod tests {
         use super::*;
         use crate::{Shared, checks, subagent_id};
 
-        fn shared() -> Shared<Ask> {
+        fn shared() -> Shared<ClaudeAsk> {
             Shared::new(
                 &AgentSpec {
                     agent_id: vec![1; 16],
@@ -1016,7 +1042,10 @@ mod tests {
             sub.start(start("call"));
             sub.item(message("m", false));
             let snapshot = Snapshot {
-                phase: sub.phase() as i32,
+                status: Some(Box::new(wire::AgentStatus {
+                    phase: sub.phase() as i32,
+                    ..Default::default()
+                })),
                 ..Default::default()
             };
             sub.snapshot(snapshot.clone());
@@ -1040,22 +1069,21 @@ mod tests {
             assert!(resumed.agents[0].snapshot.is_some());
         }
 
-        /// A checkpoint written before subagents were agents of their own
-        /// has no record of them and reads as none; one with none writes
-        /// none, so its bytes are as they were.
+        /// A checkpoint with no subagent running writes no record of them
+        /// and reads back as none; one with a subagent reads it back.
         #[test]
-        fn a_checkpoint_without_subagents_reads_and_writes_as_before() {
+        fn a_checkpoint_without_subagents_writes_none_and_reads_none() {
             let shared = shared();
             let bytes = serde_json::to_value(&shared).unwrap();
             assert!(bytes.get("subagents").is_none(), "{bytes}");
-            let read: Shared<Ask> = serde_json::from_value(bytes).unwrap();
+            let read: Shared<ClaudeAsk> = serde_json::from_value(bytes).unwrap();
             assert_eq!(read, shared);
 
             let mut running = shared.clone();
             let mut emit = Emit::default();
             running.subagent(&mut emit, "a").start(start("call"));
             running.finish(emit, Vec::new(), None);
-            let again: Shared<Ask> =
+            let again: Shared<ClaudeAsk> =
                 serde_json::from_value(serde_json::to_value(&running).unwrap()).unwrap();
             assert_eq!(again.running_subagents().collect::<Vec<_>>(), ["a"]);
             assert_eq!(again.subagent_child(&running.subagent_id("a")), Some("a"));
@@ -1072,7 +1100,10 @@ mod tests {
                 snapshot: Some(Snapshot {
                     kind: wire::Kind::Unspecified as i32,
                     body: TestKind::<false>::unknown_snapshot(),
-                    phase: Phase::Starting as i32,
+                    status: Some(Box::new(wire::AgentStatus {
+                        phase: Phase::Starting as i32,
+                        ..Default::default()
+                    })),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1126,13 +1157,13 @@ mod tests {
             assert!(check(&[Step::default()])[0].contains("not a Snapshot"));
             let mut known = first();
             known.snapshot.as_mut().unwrap().body = ClaudeSnapshot {
-                model: Some("opus".into()),
+                switched_away: Some(false),
                 ..unknown::claude()
             }
             .encode_to_vec();
             assert!(check(&[known])[0].contains("not every field at its unknown"));
             let mut idle = first();
-            idle.snapshot.as_mut().unwrap().phase = Phase::Idle as i32;
+            idle.snapshot.as_mut().unwrap().status_mut().phase = Phase::Idle as i32;
             assert!(check(&[idle])[0].contains("not STARTING"));
         }
 
@@ -1150,7 +1181,10 @@ mod tests {
                     ..Default::default()
                 },
                 Step {
-                    items: vec![item("k", claude_item::Kind::Prompt(wire::Prompt {}))],
+                    items: vec![item(
+                        "k",
+                        claude_item::Kind::Prompt(wire::Prompt::default()),
+                    )],
                     ..Default::default()
                 },
             ];
@@ -1198,7 +1232,7 @@ mod tests {
         fn every_open_ask_has_an_item() {
             let snapshot = Snapshot {
                 body: ClaudeSnapshot {
-                    asks: vec![Ask {
+                    asks: vec![ClaudeAsk {
                         key: "ask".into(),
                         item_key: "tool-1".into(),
                         ..Default::default()
@@ -1206,7 +1240,10 @@ mod tests {
                     ..unknown::claude()
                 }
                 .encode_to_vec(),
-                phase: Phase::NeedsYou as i32,
+                status: Some(Box::new(wire::AgentStatus {
+                    phase: Phase::NeedsYou as i32,
+                    ..Default::default()
+                })),
                 ..Default::default()
             };
             let steps = [

@@ -395,7 +395,11 @@ pub(super) fn read(format: &str, bytes: &[u8]) -> Result<Vec<Event>, String> {
                     if ours.as_ref().is_some_and(|ours| *ours != thread) && !thread.is_empty() {
                         push(Event::ChildInput {
                             agent_id: thread.into_bytes(),
-                            input: Input::new(input_id, CodexInput { of: Some(arm) }),
+                            input_id: input_id.clone(),
+                            of: wire::child_input::Of::Input(Input::new(
+                                input_id,
+                                CodexInput { of: Some(arm) },
+                            )),
                         });
                         continue;
                     }
@@ -451,19 +455,25 @@ fn answer(
             of: Some(of),
         }))
     };
-    let approve = |decision: wire::Decision| body(codex_answer::Of::Approve(decision as i32));
+    let approve = |decision: wire::CodexDecision| body(codex_answer::Of::Approve(decision as i32));
     match (request, response) {
         (
             ServerRequest::CommandApproval(_) | ServerRequest::FileChangeApproval(_),
             ClientResponse::CommandApproval(answer),
         ) => approve(match &answer.decision {
-            CommandDecision::Plain(Offered::Accept) => wire::Decision::Approve,
-            CommandDecision::Plain(Offered::AcceptForSession) => wire::Decision::ApproveSession,
-            CommandDecision::Plain(Offered::Decline) => wire::Decision::Deny,
-            CommandDecision::Plain(Offered::Cancel) => wire::Decision::Abort,
+            CommandDecision::Plain(Offered::Accept) => wire::CodexDecision::Approve,
+            CommandDecision::Plain(Offered::AcceptForSession) => {
+                wire::CodexDecision::ApproveSession
+            }
+            CommandDecision::Plain(Offered::Decline) => wire::CodexDecision::Deny,
+            CommandDecision::Plain(Offered::Cancel) => wire::CodexDecision::Abort,
             CommandDecision::Plain(Offered::Other(_)) => return None,
-            CommandDecision::AcceptWithExecpolicyAmendment { .. } => wire::Decision::ApproveSimilar,
-            CommandDecision::ApplyNetworkPolicyAmendment { .. } => wire::Decision::ApproveNetwork,
+            CommandDecision::AcceptWithExecpolicyAmendment { .. } => {
+                wire::CodexDecision::ApproveSimilar
+            }
+            CommandDecision::ApplyNetworkPolicyAmendment { .. } => {
+                wire::CodexDecision::ApproveNetwork
+            }
         }),
         (ServerRequest::PermissionsApproval(_), ClientResponse::PermissionsApproval(grant)) => {
             let files = grant.permissions.file_system.clone().flatten();
@@ -533,14 +543,14 @@ fn answer(
                     .and_then(|meta| meta.persist.as_deref());
                 approve(match action {
                     FormAction::Accept if persist == Some("session") => {
-                        wire::Decision::ApproveSession
+                        wire::CodexDecision::ApproveSession
                     }
                     FormAction::Accept if persist == Some("always") => {
-                        wire::Decision::ApproveAlways
+                        wire::CodexDecision::ApproveAlways
                     }
-                    FormAction::Accept => wire::Decision::Approve,
-                    FormAction::Decline => wire::Decision::Deny,
-                    _ => wire::Decision::Abort,
+                    FormAction::Accept => wire::CodexDecision::Approve,
+                    FormAction::Decline => wire::CodexDecision::Deny,
+                    _ => wire::CodexDecision::Abort,
                 })
             } else if params.mode == "url" {
                 body(codex_answer::Of::Link(LinkAnswer {

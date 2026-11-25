@@ -346,10 +346,7 @@ async fn a_call_for_a_host_with_no_link_never_leaves_and_says_so() {
 async fn a_call_for_a_host_that_no_longer_trusts_this_one_says_so() {
     let (pair, link) = Pair::new().await;
     let laptop = pair.laptop_runtime.host();
-    pair.desk_edge
-        .unpair(wire::HostRef::id(laptop.as_bytes().to_vec()))
-        .await
-        .unwrap();
+    pair.desk_edge.unpair(laptop.as_bytes()).await.unwrap();
     until("the laptop to read the desk as revoked", || {
         let revoked = pair
             .laptop_runtime

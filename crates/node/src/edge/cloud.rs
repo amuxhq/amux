@@ -255,10 +255,16 @@ async fn run_attempt(
             tracing::warn!(error = %msg, "cloud routing connection error, will retry");
         }
     }
-    if matches!(outcome, RelayOutcome::Closed | RelayOutcome::Lost(_)) && !*stop_rx.borrow() {
+    let retrying =
+        matches!(outcome, RelayOutcome::Closed | RelayOutcome::Lost(_)) && !*stop_rx.borrow();
+    // The core hears of the end before anyone watching the status does:
+    // what a watcher reports on seeing it, such as the device's network
+    // changing, reaches the core after the end, so the pause the end
+    // starts is there to be cut short.
+    ctx.core.report(Input::RelayEnded { attempt, outcome });
+    if retrying {
         ctx.status.report(Relay::Retrying);
     }
-    ctx.core.report(Input::RelayEnded { attempt, outcome });
 }
 
 fn relay_outcome_from_fetch(error: CloudError, status: &RuntimeStatus) -> RelayOutcome {

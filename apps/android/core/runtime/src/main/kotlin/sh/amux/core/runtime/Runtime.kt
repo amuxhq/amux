@@ -8,7 +8,6 @@ import sh.amux.values.Bearer
 import sh.amux.values.Found
 import sh.amux.values.MachineSettings
 import sh.amux.values.ProfileView
-import sh.amux.values.RepositorySuggestion
 import sh.amux.values.SettingsChange
 import sh.amux.values.StartConfig
 import sh.amux.values.UsageEvent
@@ -157,9 +156,6 @@ class Runtime private constructor(
         val changeJson = AmuxJson.json.encodeToString(change)
         return act { live -> NativeBridge.runtimeUpdateSettings(live, changeJson) }
     }
-
-    suspend fun suggestRepositories(): Result<List<RepositorySuggestion>> =
-        act { live -> NativeBridge.runtimeSuggestRepositories(live) }
 
     suspend fun webSignInLink(profileId: String, path: String): Result<String> =
         act { live -> NativeBridge.runtimeWebSignInLink(live, profileId, path) }

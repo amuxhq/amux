@@ -593,7 +593,7 @@ async fn start_with_files(
         text: text.to_owned(),
         attachments: attachments.clone(),
     };
-    let Some(input) = inputs::prompt(setup.host_kind, text, attachments) else {
+    let Some(input) = inputs::prompt(agent.kind(), text, attachments) else {
         let why = "your first message could not be sent; it is in the composer".to_owned();
         return Ok((agent, Some((why, kept))));
     };
@@ -1427,7 +1427,7 @@ impl App {
                     self.fleet.state().agent(&chat.agent),
                     &self.config.local_host,
                 )
-                .sibling(state.agent().provider_id(), self.config.chat_in);
+                .sibling(state.agent().provider.as_str(), self.config.chat_in);
                 drop(state);
                 self.close_chat();
                 self.home.new_agent(setup);
@@ -2325,7 +2325,7 @@ impl App {
             .map(|entry| entry.providers.clone())
             .unwrap_or_default();
         for offer in listed {
-            let provider = offer.provider_id.clone();
+            let provider = offer.provider.clone();
             let named = offer.catalogue.clone();
             if let Some((hash, held)) = named
                 .as_ref()

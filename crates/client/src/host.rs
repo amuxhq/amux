@@ -113,26 +113,21 @@ impl Agent {
     }
 
     /// A message to the agent from the caller, under `id` (16 bytes), so a
-    /// resend of the same message is dropped. Answers the id it is stored
-    /// under.
+    /// resend of the same message is dropped.
     pub async fn send_message(
         &self,
         id: Vec<u8>,
         context: Option<Vec<u8>>,
         message: MessageBody,
-    ) -> Result<Vec<u8>, RpcError> {
+    ) -> Result<(), RpcError> {
         let request = wire::SendMessageRequest {
             id,
             agent_id: self.id_owned(),
             context,
             message: Some(message),
         };
-        Ok(self
-            .agents()?
-            .send_message(request)
-            .await?
-            .into_inner()
-            .envelope_id)
+        self.agents()?.send_message(request).await?;
+        Ok(())
     }
 
     pub async fn rename(&self, name: &str) -> Result<wire::Agent, RpcError> {

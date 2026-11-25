@@ -185,10 +185,7 @@ impl CloudLinkServer {
         let local_host = LiveLocalHost::new(local_host(
             identity.host_id,
             wire::HostName::lossy(&identity.name).as_str(),
-            Capabilities {
-                cloud_relay: true,
-                kinds: Vec::new(),
-            },
+            Capabilities { cloud_relay: true },
             false,
         ));
         let relaying = Relaying::new(identity.host_id);
@@ -704,15 +701,7 @@ mod tests {
         carrier: Arc<QuicCarrier>,
         token: &str,
     ) -> (JoinHandle<Result<(), tonic::Status>>, watch::Sender<bool>) {
-        let host = local_host(
-            id,
-            "test-host",
-            Capabilities {
-                cloud_relay: false,
-                kinds: Vec::new(),
-            },
-            true,
-        );
+        let host = local_host(id, "test-host", Capabilities { cloud_relay: false }, true);
         let ctx = LinkCtx::new_live(LiveLocalHost::new(host), registry);
         let auth = LinkConnectorAuth::new(
             LinkConnectorToken {
@@ -1082,8 +1071,8 @@ mod tests {
             let host = local_host(HostId::new_v4(), "test-host", Capabilities::default(), true);
             write_message(
                 &mut sink,
-                &wire::Message {
-                    body: Some(wire::message::Body::Hello(wire::Hello {
+                &wire::LinkMessage {
+                    body: Some(wire::link_message::Body::Hello(wire::Hello {
                         host: Some(crate::routing::host_to_wire(&host)),
                         auth_token: Some(token.to_owned()),
                         runtime_instance_id: crate::routing::RuntimeInstance::random().to_wire(),
@@ -1093,7 +1082,7 @@ mod tests {
             )
             .await
             .unwrap();
-            let Some(wire::message::Body::HelloAck(wire::HelloAck {
+            let Some(wire::link_message::Body::HelloAck(wire::HelloAck {
                 accepted: Some(accepted),
             })) = read_message(&mut source).await.unwrap().unwrap().body
             else {
@@ -1110,7 +1099,7 @@ mod tests {
             tokio::time::timeout(patience, async {
                 loop {
                     match read_message(source).await.unwrap()?.body {
-                        Some(wire::message::Body::ObservedAddress(observed)) => {
+                        Some(wire::link_message::Body::ObservedAddress(observed)) => {
                             return Some(observed.addr);
                         }
                         _ => continue,
@@ -1131,8 +1120,10 @@ mod tests {
                 .unwrap();
             write_message(
                 sink,
-                &wire::Message {
-                    body: Some(wire::message::Body::Addresses(wire::Addresses::default())),
+                &wire::LinkMessage {
+                    body: Some(wire::link_message::Body::Addresses(
+                        wire::Addresses::default(),
+                    )),
                 },
             )
             .await

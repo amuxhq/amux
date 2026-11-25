@@ -14,7 +14,7 @@ use wire::installation_service_client::InstallationServiceClient;
 use wire::pairing_error::Reason as PairingReason;
 use wire::profile_admin_service_client::ProfileAdminServiceClient;
 use wire::{
-    BeginPairRequest, HostEntry, HostRef, PairingIdentity, PairingWindow, PendingPair, RouteKind,
+    BeginPairRequest, HostEntry, PairingIdentity, PairingWindow, PendingPair, RouteKind,
     StartPairingRequest, TrustSshPeerRequest, UnpairRequest, begin_pair_request,
     start_pairing_request,
 };
@@ -761,7 +761,7 @@ pub async fn unpair(mut admin: Admin, peer: &str, force: bool) -> Result<()> {
     }
     let removed = admin
         .unpair(UnpairRequest {
-            peer: Some(HostRef::id(entry.host_id.clone())),
+            host_id: entry.host_id.clone(),
         })
         .await
         .map_err(plain)?
@@ -990,7 +990,7 @@ mod tests {
         let online = HostEntry::trusted_host(
             vec![1; 16],
             "studio",
-            wire::trusted::Reach::Online(wire::RouteKind::Relay as i32),
+            wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Relay)),
         );
         let nearby =
             HostEntry::candidate_host(vec![2; 16], "den mac", vec!["192.168.1.9:4000".into()]);
@@ -1015,7 +1015,7 @@ mod tests {
         let away = HostEntry::trusted_host(
             vec![1; 16],
             "plap",
-            wire::trusted::Reach::Away(wire::Empty {}),
+            wire::trusted::Reach::Away(wire::Away {}),
         );
         let trusted = [wire::Peer {
             host_id: vec![1; 16],
@@ -1057,10 +1057,7 @@ mod tests {
         wire::Host {
             host_id: name.as_bytes().to_vec(),
             name: name.into(),
-            capabilities: Some(wire::Capabilities {
-                cloud_relay,
-                kinds: Vec::new(),
-            }),
+            capabilities: Some(wire::HostCapabilities { cloud_relay }),
             ..wire::Host::default()
         }
     }

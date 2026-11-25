@@ -57,7 +57,7 @@ fn item(order: u64, read: Option<&str>) -> Item {
     use wire::claude_item::Kind as K;
     let body = match read {
         Some(path) => wire::ClaudeItem {
-            kind: Some(K::Tool(wire::ToolCall {
+            kind: Some(K::Tool(wire::ClaudeToolCall {
                 name: "Read".into(),
                 state: ToolState::Succeeded as i32,
                 class: ToolClass::Read as i32,
@@ -94,10 +94,22 @@ fn snapshot(phase: Phase, body: Vec<u8>, queue: Vec<wire::QueuedInput>) -> Msg {
     event(session_event::Of::Snapshot(wire::Snapshot {
         kind: Kind::ClaudeSdk as i32,
         body,
-        phase: phase as i32,
+        status: wire::AgentStatus::in_phase(phase),
         queue,
+        capabilities: Some(Box::new(wire::AgentCapabilities::claude_sdk())),
         ..wire::Snapshot::default()
     }))
+}
+
+/// A Claude SDK snapshot in `phase` whose agent runs `jobs`.
+fn jobs_snapshot(phase: Phase, body: Vec<u8>, jobs: wire::BackgroundJobs) -> Msg {
+    let Msg::Event(mut event) = snapshot(phase, body, vec![]) else {
+        unreachable!()
+    };
+    if let Some(session_event::Of::Snapshot(snapshot)) = &mut event.of {
+        snapshot.jobs = Some(jobs);
+    }
+    Msg::Event(event)
 }
 
 /// A live Claude SDK chat holding `items`, caught up.
@@ -302,21 +314,34 @@ fn offering(kind: Kind, name: &str, pred: impl Fn(&SessionState) -> bool) -> Ses
     .0
 }
 
-/// The same chat with its Codex snapshot replaced: the settings given, the
-/// catalogue kept.
-fn codex_settings(mut state: SessionState, settings: wire::CodexSnapshot) -> SessionState {
+/// The same chat with its Codex snapshot replaced: the body and the
+/// permission and mode given, the model and catalogue kept.
+fn codex_settings(
+    mut state: SessionState,
+    body: wire::CodexSnapshot,
+    permission: &str,
+    mode: &str,
+) -> SessionState {
     let agent = state.agent_state();
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: Kind::Codex as i32,
-        body: wire::CodexSnapshot {
-            model: agent.model.clone(),
-            model_name: agent.model_name.clone(),
-            ..settings
-        }
-        .encode_to_vec(),
-        phase: Phase::Idle as i32,
+        body: body.encode_to_vec(),
+        status: Some(Box::new(wire::AgentStatus {
+            phase: Phase::Idle as i32,
+            settings: Some(wire::AgentSettings {
+                model: agent.model.clone(),
+                permission: Some(permission.into()),
+                mode: Some(mode.into()),
+                ..wire::AgentSettings::default()
+            }),
+            ..wire::AgentStatus::default()
+        })),
+        model_name: agent.model_name.clone(),
         revision: agent.revision + 1,
         catalogue: agent.catalogue.clone(),
+        capabilities: Some(Box::new(wire::AgentCapabilities::codex(
+            wire::Platform::here(),
+        ))),
         ..wire::Snapshot::default()
     })));
     state
@@ -399,11 +424,11 @@ fn codex_moves_mode_with_shift_tab_and_permission_from_the_settings_key() {
     let planning = codex_settings(
         state.clone(),
         wire::CodexSnapshot {
-            permission: Some("full-access".into()),
-            mode: Some("plan".into()),
             approval_policy: Some("never".into()),
             ..Default::default()
         },
+        "full-access",
+        "plan",
     );
     let (screen, _) = feed(&mut ChatView::new(b"agent".to_vec(), 0, false), &planning);
     assert!(screen.contains("· full access · plan"), "{screen}");
@@ -453,11 +478,13 @@ fn body_name(body: &AskBody) -> &'static str {
 /// A Claude SDK chat asking something this build cannot read.
 fn unanswerable() -> SessionState {
     let body = wire::ClaudeSnapshot {
-        asks: vec![wire::Ask {
+        asks: vec![wire::ClaudeAsk {
             key: "menu-1".into(),
-            body: Some(wire::ask::Body::Unanswerable(wire::UnanswerableAsk {
-                reason: String::new(),
-            })),
+            body: Some(wire::claude_ask::Body::Unanswerable(
+                wire::UnanswerableAsk {
+                    reason: String::new(),
+                },
+            )),
             ..Default::default()
         }],
         ..Default::default()
@@ -786,19 +813,15 @@ fn an_answer_refused_because_its_host_is_away_opens_the_card_again() {
     let mut input = ui_view::answer_input(&card, &card.choices[0].answer, "").unwrap();
     input.input_id = b"answer-1".to_vec();
     state.update(Msg::Send(input));
-    let refused = wire::SendInputResponse {
-        of: Some(wire::send_input_response::Of::Rejected(wire::Rejected {
-            refusal: wire::Refusal::HostUnreachable as i32,
-            detail: None,
-        })),
-    };
     state.update(Msg::Sent(
         b"answer-1".to_vec(),
-        InputOutcome::Reply(refused),
+        InputOutcome::NotSent { detail: None },
     ));
     assert_eq!(
         ask_card(&state).unwrap().state,
-        CardState::Rejected(ui_state::Refusal::of(wire::Refusal::HostUnreachable))
+        CardState::Rejected(ui_state::Refusal::of(
+            ui_state::RefusalReason::HostUnreachable
+        ))
     );
     let mut view = ChatView::new(b"agent".to_vec(), at, false);
     let (buffer, _) = draw(&mut view, &state, at, 80, 24, theme());
@@ -881,7 +904,10 @@ fn an_exited_entry_offers_resume_with_the_draft() {
     let mut state = chat(replies(1, 3));
     let mut exited = fixtures::agent(Kind::ClaudeSdk);
     exited.lifecycle = wire::Lifecycle::Exited as i32;
-    exited.exit_cause = wire::ExitCause::Finished as i32;
+    exited.exit = Some(wire::IncarnationEnd {
+        cause: wire::ExitCause::Finished as i32,
+        detail: None,
+    });
     state.update(Msg::Entry(exited));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
@@ -1330,7 +1356,6 @@ fn a_host_that_revoked_trust_says_so_instead_of_not_signed_in() {
                 ..Default::default()
             })),
             current: false,
-            same_network: false,
         }));
     }
     inventory(&mut fleet, desk);
@@ -1440,8 +1465,8 @@ fn host(id: &[u8], name: &str, reads: Reads) -> wire::inventory_event::Of {
         Reads::Candidate => {
             wire::HostEntry::candidate_host(id, name, vec!["192.168.1.9:4000".into()])
         }
-        Reads::Online => trusted(Reach::Online(wire::RouteKind::Direct as i32)),
-        Reads::Away => trusted(Reach::Away(wire::Empty {})),
+        Reads::Online => trusted(Reach::Online(wire::Online::via(wire::RouteKind::Direct))),
+        Reads::Away => trusted(Reach::Away(wire::Away {})),
         Reads::Offline => trusted(Reach::Offline(wire::Offline::default())),
     })
 }
@@ -1454,9 +1479,8 @@ fn announced(id: &[u8], name: &str, by: &[(&str, bool)]) -> wire::inventory_even
         .map(|(name, relay)| wire::Host {
             host_id: name.as_bytes().to_vec(),
             name: (*name).to_owned(),
-            capabilities: Some(wire::Capabilities {
+            capabilities: Some(wire::HostCapabilities {
                 cloud_relay: *relay,
-                kinds: Vec::new(),
             }),
             ..wire::Host::default()
         })
@@ -1528,9 +1552,10 @@ fn agent_row(
         agent_id: id.to_vec(),
         host_id: b"a".to_vec(),
         kind: Kind::ClaudePty as i32,
+        provider: wire::agents::CLAUDE.into(),
         name: name.into(),
         lifecycle: wire::Lifecycle::Live as i32,
-        phase: phase as i32,
+        status: wire::AgentStatus::in_phase(phase),
         parent: parent.map(|parent| wire::AgentRef {
             host_id: b"a".to_vec(),
             agent_id: parent.to_vec(),
@@ -1577,6 +1602,28 @@ fn the_fleet_says_restart_to_update_when_the_daemon_runs_another_build() {
     );
 }
 
+/// This machine, `a`, starting Claude in its own terminal, as the agents
+/// `agent_row` lists were started, and Codex.
+fn terminal_host() -> wire::inventory_event::Of {
+    wire::inventory_event::Of::Host(wire::HostEntry {
+        providers: vec![
+            crate::sessions::offered("claude", "Claude", Kind::ClaudePty),
+            crate::sessions::offered("codex", "Codex", Kind::Codex),
+        ],
+        ..wire::HostEntry::trusted_host(
+            b"a",
+            "studio",
+            wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Direct)),
+        )
+    })
+}
+
+fn terminal_fleet() -> FleetState {
+    let mut fleet = FleetState::new();
+    inventory(&mut fleet, terminal_host());
+    fleet
+}
+
 #[test]
 fn raw_attach_is_only_for_terminals_on_this_machine() {
     let config = crate::TuiConfig {
@@ -1593,9 +1640,14 @@ fn raw_attach_is_only_for_terminals_on_this_machine() {
     let agent = |host: &[u8], kind: Kind| wire::Agent {
         host_id: host.to_vec(),
         kind: kind as i32,
+        provider: match kind {
+            Kind::Codex => wire::agents::CODEX,
+            _ => wire::agents::CLAUDE,
+        }
+        .into(),
         ..Default::default()
     };
-    let fleet = home_fleet();
+    let fleet = terminal_fleet();
     let refusal = |agent: &wire::Agent| crate::app::terminal_refusal(&fleet, agent, &config);
     assert_eq!(refusal(&agent(b"a", Kind::ClaudePty)), None);
     // Codex runs over a pipe on Windows, with no terminal to attach to.
@@ -2310,7 +2362,10 @@ fn an_exited_agent_on_an_away_host_names_why_it_is_away() {
     let mut state = chat(replies(1, 3));
     let mut exited = fixtures::agent(Kind::ClaudeSdk);
     exited.lifecycle = wire::Lifecycle::Exited as i32;
-    exited.exit_cause = wire::ExitCause::Stopped as i32;
+    exited.exit = Some(wire::IncarnationEnd {
+        cause: wire::ExitCause::Stopped as i32,
+        detail: None,
+    });
     state.update(Msg::Entry(exited));
     state.update(Msg::Host(wire::HostEntry::trusted_host(
         b"host".to_vec(),
@@ -2333,7 +2388,7 @@ fn an_exited_agent_on_an_away_host_names_why_it_is_away() {
     state.update(Msg::Host(wire::HostEntry::trusted_host(
         b"host".to_vec(),
         "desk",
-        wire::trusted::Reach::Online(wire::RouteKind::Unspecified as i32),
+        wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Unspecified)),
     )));
     view.reach = ui_view::Reach::Online(wire::RouteKind::Direct);
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
@@ -2349,7 +2404,10 @@ fn an_agent_that_exited_while_the_daemon_was_away_says_exited_once() {
     let mut exited = fixtures::agent(Kind::ClaudeSdk);
     exited.lifecycle = wire::Lifecycle::Exited as i32;
     // The daemon's cause for an agent it found gone when it came back.
-    exited.exit_cause = wire::ExitCause::EndedWhileAway as i32;
+    exited.exit = Some(wire::IncarnationEnd {
+        cause: wire::ExitCause::EndedWhileAway as i32,
+        detail: None,
+    });
     state.update(Msg::Entry(exited.clone()));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
@@ -2389,7 +2447,10 @@ fn a_settled_agents_chat_says_settled_unless_it_failed() {
     let mut state = chat(replies(1, 3));
     let mut settled = fixtures::agent(Kind::ClaudeSdk);
     settled.lifecycle = wire::Lifecycle::Exited as i32;
-    settled.exit_cause = wire::ExitCause::Stopped as i32;
+    settled.exit = Some(wire::IncarnationEnd {
+        cause: wire::ExitCause::Stopped as i32,
+        detail: None,
+    });
     settled.filing = wire::Filing::Closed as i32;
     state.update(Msg::Entry(settled.clone()));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
@@ -2398,7 +2459,11 @@ fn a_settled_agents_chat_says_settled_unless_it_failed() {
     assert!(screen.contains("settled"), "{screen}");
     assert!(!screen.contains("stopped"), "{screen}");
 
-    settled.exit_cause = wire::ExitCause::CouldNotStart as i32;
+    settled.exit = Some(wire::IncarnationEnd {
+        cause: wire::ExitCause::CouldNotStart as i32,
+
+        detail: None,
+    });
     state.update(Msg::Entry(settled));
     let (buffer, _) = draw(&mut view, &state, 0, W, H, theme());
     let screen = text(&buffer);
@@ -2774,7 +2839,7 @@ fn home_agent(
 ) -> wire::inventory_event::Of {
     let mut row = agent_row(id, name, phase, parent);
     if let wire::inventory_event::Of::Agent(agent) = &mut row {
-        agent.phase_since_ms = activity_ms;
+        agent.status_mut().phase_since_ms = activity_ms;
         agent.cwd = "/work/amux".into();
     }
     row
@@ -2810,7 +2875,10 @@ fn home_fleet() -> FleetState {
     let mut archive = home_agent(b"old", "archive", Phase::Idle, None, now - 2 * 86_400_000);
     if let wire::inventory_event::Of::Agent(agent) = &mut archive {
         agent.lifecycle = wire::Lifecycle::Exited as i32;
-        agent.exit_cause = wire::ExitCause::Stopped as i32;
+        agent.exit = Some(wire::IncarnationEnd {
+            cause: wire::ExitCause::Stopped as i32,
+            detail: None,
+        });
         agent.filing = wire::Filing::Closed as i32;
     }
     inventory(&mut fleet, archive);
@@ -2991,7 +3059,7 @@ fn settling_an_agent_nothing_can_resume_asks_and_says_it_ends_for_good() {
     let mut providers = crate::sessions::offered_providers();
     for (id, name, resumable) in [("oneshot", "One Shot", false), ("again", "Again", true)] {
         let mut offer = crate::sessions::offered(id, name, Kind::Acp);
-        offer.capabilities = Some(wire::AgentCapabilities::acp(resumable, false, false));
+        offer.kinds[0].capabilities = Some(wire::AgentCapabilities::acp(resumable, false, false));
         providers.push(offer);
     }
     inventory(
@@ -3001,7 +3069,7 @@ fn settling_an_agent_nothing_can_resume_asks_and_says_it_ends_for_good() {
             ..wire::HostEntry::trusted_host(
                 b"a",
                 "studio",
-                wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+                wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Direct)),
             )
         }),
     );
@@ -3053,7 +3121,7 @@ fn settling_an_agent_nothing_can_resume_asks_and_says_it_ends_for_good() {
 fn settling_from_a_chat_highlights_the_top_of_home() {
     let now = now();
     let mut fleet = FleetState::new();
-    inventory(&mut fleet, host(b"a", "studio", Reads::Online));
+    inventory(&mut fleet, terminal_host());
     for (id, name, ago) in [
         (&b"a1"[..], "alpha", 1_000),
         (b"b1", "beta", 2_000),
@@ -3190,10 +3258,10 @@ fn a_new_claude_runs_the_kind_its_host_publishes() {
     let mut studio = wire::HostEntry::trusted_host(
         b"a",
         "studio",
-        wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+        wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Direct)),
     );
     studio.providers = vec![wire::ProviderOnHost {
-        provider_id: "claude".into(),
+        provider: "claude".into(),
         descriptor: Some(wire::ProviderDescriptor {
             name: "Claude".into(),
             kind: Kind::ClaudePty as i32,
@@ -3213,10 +3281,11 @@ fn a_new_claude_runs_the_kind_its_host_publishes() {
         panic!("{effects:?}");
     };
     assert_eq!(setup.host_kind, Kind::ClaudePty);
-    assert!(matches!(
-        setup.request(b"id".to_vec(), None).agent,
-        Some(wire::create_agent_request::Agent::ClaudePty(_))
-    ));
+    let request = setup.request(b"id".to_vec(), None);
+    assert_eq!(
+        (request.provider.as_str(), request.kind()),
+        ("claude", Kind::ClaudePty)
+    );
 }
 
 #[test]
@@ -3350,10 +3419,11 @@ fn claude_offer() -> wire::Catalogue {
         ..Default::default()
     };
     wire::Catalogue {
-        new_agent: Some(wire::NewAgentDefaults {
+        new_agent: Some(wire::AgentSettings {
             model: Some("opus".into()),
             effort: Some("high".into()),
             permission: Some("default".into()),
+            ..wire::AgentSettings::default()
         }),
         models: vec![wire::OfferedModel {
             value: "opus".into(),
@@ -3390,13 +3460,13 @@ fn codex_offer() -> wire::Catalogue {
         display_name: display_name.into(),
         normal: value == "default",
         settable: true,
-        ..Default::default()
     };
     wire::Catalogue {
-        new_agent: Some(wire::NewAgentDefaults {
+        new_agent: Some(wire::AgentSettings {
             model: Some("gpt-6.1-sol".into()),
             effort: Some("medium".into()),
             permission: Some("default".into()),
+            ..wire::AgentSettings::default()
         }),
         models: vec![
             wire::OfferedModel {
@@ -3519,9 +3589,8 @@ fn a_new_agent_offers_what_its_host_offers() {
         "{screen}"
     );
     let request = home.open_setup().unwrap().request(b"id".to_vec(), None);
-    let Some(wire::create_agent_request::Agent::Codex(config)) = request.agent else {
-        panic!("a Codex agent: {request:?}");
-    };
+    assert_eq!(request.provider, "codex", "a Codex agent: {request:?}");
+    let config = request.settings();
     // Only what the person picked is sent; the rest is the host's to decide.
     assert_eq!(
         (config.model.as_deref(), config.effort.as_deref()),
@@ -3836,7 +3905,7 @@ fn a_folded_run_keeps_a_failure_its_turn_left_unresolved() {
     let command = |order: u64, line: &str, exit: i32| {
         let mut item = item(order, Some("unused"));
         item.body = wire::ClaudeItem {
-            kind: Some(K::Tool(wire::ToolCall {
+            kind: Some(K::Tool(wire::ClaudeToolCall {
                 name: "Bash".into(),
                 state: ToolState::Succeeded as i32,
                 class: ToolClass::Consequential as i32,
@@ -3900,7 +3969,7 @@ fn tool_steps_switch_between_collapse_show_all_and_hide() {
     let command = |order: u64, line: &str, exit: i32| {
         let mut item = item(order, Some("unused"));
         item.body = wire::ClaudeItem {
-            kind: Some(K::Tool(wire::ToolCall {
+            kind: Some(K::Tool(wire::ClaudeToolCall {
                 name: "Bash".into(),
                 state: ToolState::Succeeded as i32,
                 class: ToolClass::Consequential as i32,
@@ -3995,7 +4064,7 @@ fn a_described_command_reads_as_its_description_over_the_command() {
     let described = |order: u64, line: &str, said: &str, state: ToolState, exit| {
         let mut item = item(order, Some("unused"));
         item.body = wire::ClaudeItem {
-            kind: Some(K::Tool(wire::ToolCall {
+            kind: Some(K::Tool(wire::ClaudeToolCall {
                 name: "Bash".into(),
                 state: state as i32,
                 class: ToolClass::Consequential as i32,
@@ -4156,16 +4225,14 @@ fn chat_in_git(items: Vec<Item>, base: Option<&str>) -> SessionState {
         added,
         removed,
     };
-    let agent = wire::Agent {
-        git: Some(wire::Git {
-            checkout: None,
-            branch: Some("topic".into()),
-            base_branch: base.map(str::to_owned),
-            uncommitted: Some(totals(2, 42, 7)),
-            on_branch: Some(totals(5, 120, 30)),
-        }),
-        ..fixtures::agent(Kind::ClaudeSdk)
-    };
+    let mut agent = fixtures::agent(Kind::ClaudeSdk);
+    agent.status_mut().git = Some(wire::Git {
+        checkout: None,
+        branch: Some("topic".into()),
+        base_branch: base.map(str::to_owned),
+        uncommitted: Some(totals(2, 42, 7)),
+        on_branch: Some(totals(5, 120, 30)),
+    });
     let mut state = SessionState::new(agent, crate::chat::layout::CAP as usize);
     state.update(Msg::Connection(ui_state::Connection::Live));
     state.update(snapshot(Phase::Idle, vec![], vec![]));
@@ -4237,7 +4304,7 @@ fn the_overview_fetches_its_changed_files_once_per_comparison_and_totals() {
 
     // A turn end moves the branch's totals: the list is asked for again.
     let mut agent = state.agent().clone();
-    if let Some(git) = agent.git.as_mut() {
+    if let Some(git) = agent.status_mut().git.as_mut() {
         git.on_branch = Some(wire::ChangeTotals {
             files: 6,
             added: 130,
@@ -4268,16 +4335,16 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
             used_unknown: false,
         })
     };
+    let jobs = wire::BackgroundJobs {
+        known: true,
+        jobs: vec![wire::BackgroundJob {
+            item_key: "k2".into(),
+            command: "npm run dev".into(),
+            started_at_ms: 0,
+            ..Default::default()
+        }],
+    };
     let body = wire::ClaudeSnapshot {
-        background_jobs: Some(wire::BackgroundJobs {
-            known: true,
-            jobs: vec![wire::BackgroundJob {
-                item_key: "k2".into(),
-                command: "npm run dev".into(),
-                started_at_ms: 0,
-                ..Default::default()
-            }],
-        }),
         usage: Some(wire::ClaudeUsage {
             state: wire::UsageState::NearLimit as i32,
             windows: vec![
@@ -4298,7 +4365,7 @@ fn the_overview_lists_jobs_files_by_folder_and_usage_windows() {
     }
     .encode_to_vec();
     let mut state = chat_in_git(replies(1, 2), Some("main"));
-    state.update(snapshot(Phase::Idle, body, vec![]));
+    state.update(jobs_snapshot(Phase::Idle, body, jobs));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     view.open_pane();
     let file = |path: &str| wire::ChangedFile {
@@ -4405,20 +4472,17 @@ fn the_overview_tags_a_subagent_and_a_monitor_and_shows_a_command_as_code() {
         kind: kind as i32,
         ..Default::default()
     };
-    let body = wire::ClaudeSnapshot {
-        background_jobs: Some(wire::BackgroundJobs {
-            known: true,
-            jobs: vec![
-                job("npm run dev", wire::BackgroundKind::Shell),
-                job("Review the auth module", wire::BackgroundKind::Subagent),
-                job("build log", wire::BackgroundKind::Monitor),
-            ],
-        }),
-        ..Default::default()
-    }
-    .encode_to_vec();
+    let jobs = wire::BackgroundJobs {
+        known: true,
+        jobs: vec![
+            job("npm run dev", wire::BackgroundKind::Shell),
+            job("Review the auth module", wire::BackgroundKind::Subagent),
+            job("build log", wire::BackgroundKind::Monitor),
+        ],
+    };
+    let body = wire::ClaudeSnapshot::default().encode_to_vec();
     let mut state = chat_in_git(replies(1, 2), Some("main"));
-    state.update(snapshot(Phase::Idle, body, vec![]));
+    state.update(jobs_snapshot(Phase::Idle, body, jobs));
     let mut view = ChatView::new(b"agent".to_vec(), 0, false);
     view.open_pane();
     let (buffer, _) = draw(&mut view, &state, 3 * 60_000, 140, 40, theme());
@@ -4472,7 +4536,7 @@ fn prompt_item(order: u64, words: &str) -> Item {
         text: words.into(),
         kind: Kind::ClaudeSdk as i32,
         body: wire::ClaudeItem {
-            kind: Some(K::Prompt(wire::Prompt {})),
+            kind: Some(K::Prompt(wire::Prompt::default())),
         }
         .encode_to_vec(),
         at_ms: order as i64 * 1_000,
@@ -4510,7 +4574,10 @@ fn the_keys_under_the_composer_follow_what_is_happening() {
     // Exited: Enter resumes.
     let mut exited = fixtures::agent(Kind::ClaudeSdk);
     exited.lifecycle = wire::Lifecycle::Exited as i32;
-    exited.exit_cause = wire::ExitCause::Finished as i32;
+    exited.exit = Some(wire::IncarnationEnd {
+        cause: wire::ExitCause::Finished as i32,
+        detail: None,
+    });
     state.update(Msg::Entry(exited));
     let keys = keys_of(&feed(&mut view, &state).0);
     assert!(keys.contains("enter resume"), "{keys}");
@@ -4954,13 +5021,10 @@ fn a_job_is_stopped_from_the_pane_behind_a_confirm_card() {
         ..Default::default()
     };
     let shown = |jobs: Vec<wire::BackgroundJob>| {
-        let body = wire::ClaudeSnapshot {
-            background_jobs: Some(wire::BackgroundJobs { known: true, jobs }),
-            ..Default::default()
-        }
-        .encode_to_vec();
+        let jobs = wire::BackgroundJobs { known: true, jobs };
+        let body = wire::ClaudeSnapshot::default().encode_to_vec();
         let mut state = chat(replies(1, 2));
-        state.update(snapshot(Phase::Idle, body, vec![]));
+        state.update(jobs_snapshot(Phase::Idle, body, jobs));
         let mut view = ChatView::new(b"agent".to_vec(), 0, false);
         view.open_pane();
         let _ = draw(&mut view, &state, 60_000, 140, 40, theme());

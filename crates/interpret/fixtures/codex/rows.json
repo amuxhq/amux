@@ -279,7 +279,7 @@
               "type": "mcpToolCall",
               "id": "st-1",
               "server": "amux",
-              "tool": "status",
+              "tool": "set_working_on",
               "status": "inProgress",
               "arguments": {
                 "working_on": "Splitting the lexer"
@@ -305,7 +305,7 @@
               "type": "mcpToolCall",
               "id": "st-1",
               "server": "amux",
-              "tool": "status",
+              "tool": "set_working_on",
               "status": "completed",
               "arguments": {
                 "working_on": "Splitting the lexer"

@@ -1,27 +1,28 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot capabilities stops_job resumable sends_now images files passes_unknown_commands forks model=pick effort=pick permission=pick mode=-
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue fbf247aa models=[opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=56 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue fbf247aa
-snapshot IDLE queue=[] working_on=- at=1793424641192 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+effect catalogue b0d70fe8 models=[opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=47 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue b0d70fe8
+snapshot IDLE queue=[] working_on=- at=1793424641192 conversation=? model_name=? sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 4 recorded 3: input 0xd41cadcb777a4c59bdb101be73043638
 effect reply 0xd41cadcb777a4c59bdb101be73043638 accepted
 effect user d41cadcb-777a-4c59-bdb1-01be73043638 "Think it through briefly, then answer: what is the capital of France?"
 item boundary:1 boundary final at=1793424641218 text="" BOUNDARY_KIND_STARTED
 item d41cadcb-777a-4c59-bdb1-01be73043638 prompt final input=0xd41cadcb777a4c59bdb101be73043638 at=1793424641218 text="Think it through briefly, then answer: what is the capital of France?"
-snapshot WORKING queue=[] working_on=- at=1793424641218 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot WORKING queue=[] working_on=- at=1793424641218 conversation=? model_name=? sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 6 recorded 5: fact Stream type=control_response
-snapshot settings model=claude-haiku-4-5-20251001 effort=? permission=? level=?
-snapshot WORKING queue=[] working_on=- at=1793424641529 asks=[] session=? model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot settings model=claude-haiku-4-5-20251001 effort=? permission=? level=? mode=?
+snapshot WORKING queue=[] working_on=- at=1793424641529 conversation=? model_name="Haiku 4.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 12 recorded 11: fact Stream type=system subtype=init uuid=1014c0a0-0569-44d4-bf4e-7f537e63793b
 item boundary:1 boundary final at=1793424641572 text="" BOUNDARY_KIND_STARTED
-snapshot settings model=claude-haiku-4-5-20251001 effort=? permission=default level=ask
-snapshot WORKING queue=[] working_on=- at=1793424641572 asks=[] session=9e0487ee-a75e-4fca-b03f-59f54ed80c67 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot settings model=claude-haiku-4-5-20251001 effort=? permission=default level=ask mode=?
+snapshot WORKING queue=[] working_on=- at=1793424641572 conversation=9e0487ee-a75e-4fca-b03f-59f54ed80c67 model_name="Haiku 4.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 14 recorded 13: fact Stream type=system subtype=status uuid=1e664636-6b5f-4db1-8915-34c5ccc57131
 item 1e664636-6b5f-4db1-8915-34c5ccc57131 status final at=1793424641574 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 17 recorded 16: fact Stream type=stream_event uuid=95ff3045-86ad-4f2c-a7af-ebe0d3a40556
-snapshot WORKING queue=[] working_on=- at=1793424642786 asks=[] session=9e0487ee-a75e-4fca-b03f-59f54ed80c67 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23815/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot WORKING queue=[] working_on=- at=1793424642786 conversation=9e0487ee-a75e-4fca-b03f-59f54ed80c67 model_name="Haiku 4.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=23815/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 18 recorded 17: fact Stream type=stream_event uuid=ad60f953-100d-47bc-ad85-5202ce38d3d4
 item msg_011CgZmNJpyUdndWHoftW9Hr:0 thinking open at=1793424642786 text=""
 ## 20 recorded 19: fact Stream type=stream_event uuid=c79cbc8e-158e-4ce0-b6e3-9db9abd68e7d
@@ -71,9 +72,9 @@ append msg_011CgZmNJpyUdndWHoftW9Hr:1 " Paris."
 ## 81 recorded 80: fact Stream type=assistant uuid=24e6a754-f351-4b87-a962-b8bb82622205
 item msg_011CgZmNJpyUdndWHoftW9Hr:1 message final at=1793424642951 text="The capital of France is Paris."
 ## 87 recorded 86: fact Stream type=rate_limit_event uuid=4fa4245d-50fa-4b27-bf30-c67e9bf92248
-snapshot WORKING queue=[] working_on=- at=1793424642968 asks=[] session=9e0487ee-a75e-4fca-b03f-59f54ed80c67 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23815/? tasks=? active=[] usage=ok 5h:21%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot WORKING queue=[] working_on=- at=1793424642968 conversation=9e0487ee-a75e-4fca-b03f-59f54ed80c67 model_name="Haiku 4.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=23815/? tasks=? active=[] usage=ok 5h:21%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 89 recorded 88: fact Stream type=result subtype=success uuid=93eb7fd4-822b-43f7-bdb6-5e51a27164b2
 item turn:1 turn final at=1793424642973 text="" #1 TURN_OUTCOME_COMPLETED started=1793424641556
 snapshot said "The capital of France is Paris."
-snapshot IDLE queue=[] working_on=- at=1793424642973 asks=[] session=9e0487ee-a75e-4fca-b03f-59f54ed80c67 model=claude-haiku-4-5-20251001 model_name="Haiku 4.5" effort=? mode=default context=23815/200000 tasks=? active=[] usage=ok 5h:21%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot IDLE queue=[] working_on=- at=1793424642973 conversation=9e0487ee-a75e-4fca-b03f-59f54ed80c67 model_name="Haiku 4.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=23815/200000 tasks=? active=[] usage=ok 5h:21%(ok) 7d:2%(?) servers=[amux:TOOL_SERVER_STATUS_READY]
 turn_end 1 last=msg_011CgZmNJpyUdndWHoftW9Hr:1

@@ -344,7 +344,7 @@ impl Machine for Replication {
         let first = Step {
             snapshot: Some(Snapshot {
                 kind: wire::Kind::Codex as i32,
-                phase: Phase::Working as i32,
+                status: wire::AgentStatus::in_phase(Phase::Working),
                 ..Default::default()
             }),
             ..Default::default()

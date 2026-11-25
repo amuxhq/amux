@@ -87,6 +87,9 @@ enum ClientInputState {
   CLIENT_INPUT_STATE_SETTLED = 2;
   CLIENT_INPUT_STATE_REJECTED = 3;
   CLIENT_INPUT_STATE_UNCERTAIN = 4;
+  // Never left this client: the agent's host could not be reached. Its
+  // Rejected carries only the detail.
+  CLIENT_INPUT_STATE_NOT_SENT = 5;
 }
 
 // An attachment's bytes in the client's cache.
@@ -159,7 +162,15 @@ message ClientSent {
     amux.v1.SendInputResponse reply = 2;
     // The transport failed before a reply.
     ClientLost lost = 3;
+    // The input never left for the agent's host, which could not be
+    // reached.
+    ClientNotSent not_sent = 4;
   }
 }
 
 message ClientLost {}
+
+message ClientNotSent {
+  // Why, in the client's own words: a lapsed relay plan says so.
+  optional string detail = 1;
+}

@@ -45,9 +45,9 @@ use serde::de::DeserializeOwned;
 pub use serde_pb::{from_hex, to_hex};
 pub use shared::{
     AMUX_TOOL_SERVER, Asks, Emit, ItemDraft, OUTPUT_CAP, OpenAsk, OpenTurn, Output, Queue,
-    SendOutcome, Shared, TurnCounter, Wakeup, agent_message_body, agent_message_key, human,
-    is_attach_tool, is_send_tool, is_status_tool, output_cut, sent_message, status_working_on,
-    without_terminal_codes,
+    SendOutcome, Shared, TurnCounter, Wakeup, agent_message_body, agent_message_key,
+    is_attach_tool, is_send_tool, is_status_tool, output_cut, person, sent_message,
+    status_working_on, without_terminal_codes,
 };
 pub use subagent::{Subagent, subagent_id};
 use wire::{AgentSpec, Envelope, Input, SendInputResponse, Step};
@@ -214,13 +214,15 @@ pub enum Event {
     Input(Input),
     /// A person's input to one of the provider subagents this agent's
     /// provider runs, named by the subagent's agent id
-    /// ([`subagent_id`]): an answer to one of its asks, or a stop of its
-    /// own job. The body is of this agent's kind, which is the subagent's.
-    /// The interpreter answers the provider for the subagent; the reply is
-    /// keyed by the input id, as for [`Event::Input`].
+    /// ([`subagent_id`]): an input of this agent's kind, which is the
+    /// subagent's (an answer to one of its asks, or a stop of one of its
+    /// jobs from its chat), or the daemon's kind-neutral stop of one of its
+    /// jobs. The interpreter answers the provider for the subagent; the
+    /// reply is keyed by `input_id`, as for [`Event::Input`].
     ChildInput {
         agent_id: Vec<u8>,
-        input: Input,
+        input_id: Vec<u8>,
+        of: wire::child_input::Of,
     },
     /// An agent message with the envelope its daemon set: who it is from
     /// is the daemon's word, never a client's. The reply is keyed by the
@@ -293,7 +295,7 @@ pub enum Channel {
     /// subagent its Agent tool started. Each row names its subagent
     /// (`agentId`), so the fact needs no more than the row. Apart from
     /// `Transcript` because the rows are a subagent's conversation, not the
-    /// agent's own. A facts ring from before this channel has none.
+    /// agent's own.
     SubagentTranscript,
     /// A hook payload on private/hooks.sock.
     Hook,

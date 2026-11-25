@@ -584,7 +584,7 @@ fn a_drag_over_an_opened_edit_copies_its_code_and_not_its_gutter() {
     use wire::claude_item::Kind as K;
     let mut write = item(2, Some("unused"));
     write.body = wire::ClaudeItem {
-        kind: Some(K::Tool(wire::ToolCall {
+        kind: Some(K::Tool(wire::ClaudeToolCall {
             name: "Write".into(),
             state: ToolState::Succeeded as i32,
             class: ToolClass::Consequential as i32,

@@ -79,14 +79,14 @@
     },
     {
       "tool": {
-        "name": "mcp__amux__spawn",
+        "name": "mcp__amux__start_subagent",
         "class": "consequential",
         "input": {
-          "kind": "codex",
+          "agent": "codex",
           "name": "payment-tests",
           "host": "build",
           "cwd": "{home}/tally",
-          "prompt": "Write integration tests for crates/payments: saved cards, declined cards and 3-D Secure retries. Run them and tell me what fails."
+          "task": "Write integration tests for crates/payments: saved cards, declined cards and 3-D Secure retries. Run them and tell me what fails."
         },
         "outcome": {
           "output": ""
@@ -100,12 +100,12 @@
     },
     {
       "tool": {
-        "name": "mcp__amux__spawn",
+        "name": "mcp__amux__start_subagent",
         "class": "consequential",
         "input": {
-          "kind": "claude",
+          "agent": "claude",
           "name": "copy-pass",
-          "prompt": "Rewrite the checkout error messages in web/src/checkout/messages.ts: short, specific, and say what to do next."
+          "task": "Rewrite the checkout error messages in web/src/checkout/messages.ts: short, specific, and say what to do next."
         },
         "outcome": {
           "output": ""

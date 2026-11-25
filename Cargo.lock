@@ -2832,6 +2832,7 @@ name = "os"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "portable-pty",
  "tempfile",
  "tokio",
  "windows-sys 0.61.2",

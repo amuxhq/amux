@@ -151,8 +151,10 @@ pub fn exec_or_spawn(cmd: std::process::Command) -> io::Result<Replaced> {
 /// the pipe this process was given (std duplicates a stream it passes on
 /// as inherited, so nothing a child is meant to have is lost), and sets
 /// `SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX`, so a hidden process
-/// never blocks on a system dialog no one can see. Unix: nothing, which is
-/// right: std closes every descriptor but the three on exec.
+/// never blocks on a system dialog no one can see. Unix: opens `/dev/null`
+/// onto any of descriptors 0, 1 and 2 that is closed, so no file opened
+/// later becomes a standard stream by accident; descriptors need no more,
+/// since std closes every one but the three on exec.
 pub fn harden_start() {
     imp::harden_start();
 }
@@ -161,7 +163,10 @@ pub fn harden_start() {
 /// afterwards. Unix: `dup2` onto descriptor 2. Windows: the process's
 /// standard error handle (what Rust's `eprintln!` and a panic write to,
 /// and what a child inheriting standard error gets) and the C runtime's
-/// descriptor 2, both onto a non-inheritable duplicate of `file`.
+/// descriptor 2, both onto non-inheritable duplicates of `file`; a later
+/// redirect closes the duplicates an earlier one made. Unix refuses
+/// (`InvalidInput`) a `file` that is descriptor 2 itself, which a file
+/// opened while standard error was closed is: [`harden_start`] first.
 pub fn redirect_stderr(file: &File) -> io::Result<()> {
     imp::redirect_stderr(file)
 }
@@ -186,10 +191,20 @@ pub fn raw_for_child(file: &File) -> u64 {
 /// starter's [`raw_for_child`] said), and marks it not to be inherited
 /// further.
 ///
-/// The caller must know that `raw` names a file this process was handed
-/// and that nothing else in it owns.
-pub fn file_from_inherited(raw: u64) -> io::Result<File> {
-    imp::file_from_inherited(raw)
+/// `raw` is checked to name an open descriptor or handle (`InvalidInput`
+/// when it doesn't, or when it is one of the three standard streams), but
+/// whether anything else in this process already owns it can't be checked.
+///
+/// # Safety
+///
+/// `raw` must name a descriptor (Unix) or handle (Windows) that this
+/// process inherited, that is open, and that nothing else in this process
+/// owns or will close: the returned `File` becomes its only owner and
+/// closes it on drop. Call this once per value, at the start, before
+/// anything else could have opened (and so been given) the same number.
+pub unsafe fn file_from_inherited(raw: u64) -> io::Result<File> {
+    // SAFETY: the caller's contract above.
+    unsafe { imp::file_from_inherited(raw) }
 }
 
 /// The calling process and everything it starts, contained.
@@ -238,13 +253,18 @@ impl Family {
 
     /// Ends every member but this process, at once (SIGKILL,
     /// `TerminateProcess`), each checked to still be the process it was.
+    /// `Ok` only once no member is left: a census that can't be read, a
+    /// member that can't be opened or ended (Windows: its DACL denies
+    /// `PROCESS_TERMINATE`), or one still running after ten seconds is an
+    /// error.
     pub fn kill_others(&self) -> io::Result<()> {
         self.inner.kill_others()
     }
 
     /// Every process in the family but this one, as it stands now. A
-    /// process that has exited but not been reaped is not a member.
-    pub fn members(&self) -> Vec<Pid> {
+    /// process that has exited but not been reaped is not a member; one
+    /// that can't be asked after is.
+    pub fn members(&self) -> io::Result<Vec<Pid>> {
         self.inner.members()
     }
 }
@@ -274,12 +294,12 @@ impl Member {
 /// to serve, and headless Claude finishes its turn after its input closes,
 /// running tools for no one. The tether is a shell in the provider's process
 /// group, reading a pipe only the agent holds: when the agent dies, however
-/// it dies, the pipe closes and the shell sends the group SIGTERM. A
-/// provider still running [`TETHER_GRACE_SECS`] later (Codex with an
-/// approval open ignores SIGTERM, and would hold its thread from every
-/// later client) has its group killed. Being in the group, the shell keeps
-/// the group's id, and so the provider's pid, from being reused while it
-/// waits.
+/// it dies, the pipe closes and the shell sends the group SIGTERM. If
+/// anything of the group, the provider or a process it left, still runs
+/// [`TETHER_GRACE_SECS`] later (Codex with an approval open ignores
+/// SIGTERM, and would hold its thread from every later client), the group
+/// is killed. Being in the group, the shell keeps the group's id, and so
+/// the provider's pid, from being reused while it waits.
 ///
 /// Windows has no process groups to tether: [`Tether::new`] returns
 /// `Unsupported`, and [`Family`]'s job is the tether there.

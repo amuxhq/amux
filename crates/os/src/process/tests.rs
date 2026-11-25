@@ -10,6 +10,9 @@ use std::time::{Duration, Instant};
 use super::*;
 
 const ROLE: &str = "OS_TEST_ROLE";
+/// A path a role is given, which may hold spaces the role's words can't.
+pub(crate) const PATH: &str = "OS_TEST_PATH";
+const PATH2: &str = "OS_TEST_PATH2";
 const WAIT: Duration = Duration::from_secs(20);
 
 /// Not a test: the entry of every role. Does nothing in a plain run.
@@ -184,9 +187,17 @@ fn run_role(name: &str, rest: &[&str]) {
             }
         }
         "stderr" => {
+            if rest.first() == Some(&"vacant") {
+                // A process started with standard error closed. Unix:
+                // harden_start fills descriptor 2, so the log can't land on
+                // it. Windows: it leaves the C runtime's 2 vacant, for the
+                // redirect to fill.
+                close_fd2();
+                harden_start();
+            }
             let file = std::fs::OpenOptions::new()
                 .append(true)
-                .open(rest[0])
+                .open(std::env::var_os(PATH).expect("a path"))
                 .expect("the log opens");
             redirect_stderr(&file).expect("stderr moves");
             drop(file);
@@ -202,9 +213,43 @@ fn run_role(name: &str, rest: &[&str]) {
             say("done");
         }
         "say-stderr" => eprintln!("from a child"),
+        "stderr-twice" => {
+            for path in [PATH, PATH2] {
+                let file = std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(std::env::var_os(path).expect("a path"))
+                    .expect("the log opens");
+                redirect_stderr(&file).expect("stderr moves");
+            }
+            say(format!("first held {}", held(&std::env::var_os(PATH).unwrap())));
+        }
+        #[cfg(windows)]
+        "protected" => {
+            protect_self();
+            say("protected");
+            std::thread::sleep(Duration::from_secs(60));
+        }
+        #[cfg(windows)]
+        "jailed-twice" => {
+            jail_self();
+            let mut command = helper("sleep");
+            background(&mut command, Detach::Session, &std::env::temp_dir());
+            let first = spawn_background(&mut command).expect("the first starts");
+            let second = spawn_background(&mut command).expect("the second starts");
+            say(format!(
+                "refused {} {}",
+                first.breakaway_refused, second.breakaway_refused
+            ));
+            for mut spawned in [first, second] {
+                let _ = spawned.child.kill();
+                let _ = spawned.child.wait();
+            }
+        }
         "inherit" => {
             let raw: u64 = rest[0].parse().expect("a number");
-            let mut file = file_from_inherited(raw).expect("the file was handed over");
+            // SAFETY: the test handed this handle over, and nothing else
+            // in this process has it.
+            let mut file = unsafe { file_from_inherited(raw) }.expect("the file was handed over");
             file.write_all(b"handed over").expect("the file takes it");
             say("wrote");
         }
@@ -216,6 +261,69 @@ fn run_role(name: &str, rest: &[&str]) {
         #[cfg(feature = "async")]
         "signal" => crate::signal::tests::signal_role(rest),
         other => panic!("no role {other:?}"),
+    }
+}
+
+#[cfg(unix)]
+fn close_fd2() {
+    // SAFETY: closes this role's descriptor 2, which nothing else uses.
+    unsafe {
+        libc::close(2);
+    }
+}
+
+#[cfg(windows)]
+fn close_fd2() {
+    unsafe extern "C" {
+        fn _close(fd: i32) -> i32;
+    }
+    // SAFETY: closes the C runtime's descriptor 2, which nothing else in
+    // this role uses.
+    unsafe {
+        _close(2);
+    }
+}
+
+/// Whether some handle still holds `path` open: one that can't be opened
+/// with no sharing at all. Unix has no such probe, and dup2 closes what it
+/// replaces.
+#[cfg(windows)]
+fn held(path: &std::ffi::OsStr) -> bool {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(path)
+        .is_err()
+}
+
+#[cfg(unix)]
+fn held(_path: &std::ffi::OsStr) -> bool {
+    false
+}
+
+/// Gives this process an empty DACL, so nothing of the same user can open
+/// it to terminate it; its job can still end it.
+#[cfg(windows)]
+fn protect_self() {
+    use windows_sys::Win32::Security::Authorization::{SE_KERNEL_OBJECT, SetSecurityInfo};
+    use windows_sys::Win32::Security::{ACL, ACL_REVISION, DACL_SECURITY_INFORMATION, InitializeAcl};
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    // SAFETY: an ACL in a buffer that outlives the call, set on this
+    // process only.
+    unsafe {
+        let mut acl: ACL = std::mem::zeroed();
+        assert!(InitializeAcl(&mut acl, size_of::<ACL>() as u32, ACL_REVISION) != 0);
+        let set = SetSecurityInfo(
+            GetCurrentProcess(),
+            SE_KERNEL_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &acl,
+            std::ptr::null(),
+        );
+        assert_eq!(set, 0, "the DACL is set");
     }
 }
 
@@ -301,9 +409,31 @@ fn contained() {
                     say(said);
                 }
             } else if command == "members" {
-                let members: Vec<String> =
-                    family.members().iter().map(ToString::to_string).collect();
+                let members: Vec<String> = family
+                    .members()
+                    .expect("the census reads")
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect();
                 say(format!("members {}", members.join(" ")));
+            } else if command == "protected" {
+                let mut member = tokio::process::Command::from(helper("protected"));
+                member
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::inherit());
+                family.prepare(&mut member);
+                let mut child = member.spawn().expect("the member starts");
+                let joined = family.join(&child).expect("the member joins");
+                let id = child.id().unwrap();
+                let mut out = tokio::io::BufReader::new(child.stdout.take().unwrap()).lines();
+                while let Some(line) = out.next_line().await.unwrap() {
+                    if line == "@os protected" {
+                        break;
+                    }
+                }
+                say(format!("pid {id}"));
+                kept.push((child, joined));
             } else if command == "kill" {
                 match family.kill_others() {
                     Ok(()) => say("killed ok"),
@@ -318,6 +448,21 @@ fn contained() {
 /// its own streams.
 #[cfg(windows)]
 fn jailer() {
+    jail_self();
+    say("jailed");
+    let status = helper("contained")
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .expect("contained runs");
+    std::process::exit(status.code().unwrap_or(1));
+}
+
+/// Puts this process in a new job that kills on close and forbids
+/// breakaway; its handle lives as long as the process.
+#[cfg(windows)]
+fn jail_self() {
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
@@ -341,14 +486,6 @@ fn jailer() {
         );
         assert!(AssignProcessToJobObject(job, GetCurrentProcess()) != 0);
     }
-    say("jailed");
-    let status = helper("contained")
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .expect("contained runs");
-    std::process::exit(status.code().unwrap_or(1));
 }
 
 /// Starts `contained` and its tree; the member's pid, the sleeper's.
@@ -648,7 +785,9 @@ fn redirect_stderr_moves_rust_the_c_runtime_and_children() {
     let folder = tempfile::tempdir().unwrap();
     let log = folder.path().join("log");
     std::fs::write(&log, "").unwrap();
-    let driven = Driven::start(helper(&format!("stderr {}", log.display())));
+    let mut command = helper("stderr");
+    command.env(PATH, &log);
+    let driven = Driven::start(command);
     assert_eq!(driven.expect("done"), "");
     drop(driven);
     let written = std::fs::read_to_string(&log).unwrap();
@@ -702,4 +841,79 @@ fn the_census_finds_a_childs_children() {
         ProcessRef::open(sleeper).unwrap().kill().unwrap();
     }
     driven.child.kill().unwrap();
+}
+
+/// A descriptor 2 the C runtime had closed is filled, not closed again.
+#[test]
+fn redirect_stderr_fills_a_vacant_descriptor_2() {
+    let folder = tempfile::tempdir().unwrap();
+    let log = folder.path().join("with a space");
+    std::fs::write(&log, "").unwrap();
+    let mut command = helper("stderr vacant");
+    command.env(PATH, &log);
+    let driven = Driven::start(command);
+    assert_eq!(driven.expect("done"), "");
+    drop(driven);
+    let written = std::fs::read_to_string(&log).unwrap();
+    for line in ["from rust", "from the c runtime", "from a child"] {
+        assert!(written.contains(line), "{line:?} in {written:?}");
+    }
+}
+
+/// A second redirect lets go of the first log.
+#[test]
+fn a_second_redirect_closes_the_first_log() {
+    let folder = tempfile::tempdir().unwrap();
+    let (first, second) = (folder.path().join("first"), folder.path().join("second"));
+    std::fs::write(&first, "").unwrap();
+    std::fs::write(&second, "").unwrap();
+    let mut command = helper("stderr-twice");
+    command.env(PATH, &first).env(PATH2, &second);
+    let driven = Driven::start(command);
+    assert_eq!(driven.expect("first held"), "false");
+}
+
+#[test]
+fn file_from_inherited_refuses_what_is_no_inherited_file() {
+    for raw in [u64::MAX, 2] {
+        // SAFETY: neither value is taken: both are refused before a File
+        // is made.
+        let error = unsafe { file_from_inherited(raw) }.unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput, "{raw}");
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle as _;
+        let stderr = std::io::stderr().as_raw_handle() as u64;
+        // SAFETY: refused, as one of our standard handles, or as null
+        // where there is none.
+        let error = unsafe { file_from_inherited(stderr) }.unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+}
+
+/// A member that can't be opened to be ended is an error, not "done".
+#[cfg(all(windows, feature = "async"))]
+#[test]
+fn kill_others_reports_a_member_it_cannot_end() {
+    let mut driven = Driven::start(helper("contained"));
+    assert_eq!(driven.expect("contained"), "ok");
+    driven.tell("protected");
+    let protected = pid(&driven.expect("pid"));
+    assert!(members(&mut driven).contains(&protected));
+    driven.tell("kill");
+    let said = driven.expect("killed");
+    assert!(said.starts_with("err "), "{said}");
+    // Its job still ends it.
+    driven.child.kill().unwrap();
+    driven.child.wait().unwrap();
+}
+
+/// A breakaway the job refused is asked for again on the command's next
+/// start, and reported again.
+#[cfg(windows)]
+#[test]
+fn a_refused_breakaway_is_tried_again_on_the_next_start() {
+    let driven = Driven::start(helper("jailed-twice"));
+    assert_eq!(driven.expect("refused"), "true true");
 }

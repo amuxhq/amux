@@ -28,5 +28,10 @@ windows-sys = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 
+# A real console to close under a test: a pseudo-console is one with no
+# window.
+[target.'cfg(windows)'.dev-dependencies]
+portable-pty = { workspace = true }
+
 [lints]
 workspace = true

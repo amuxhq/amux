@@ -7,7 +7,7 @@ use std::os::windows::io::{AsRawHandle as _, FromRawHandle as _, OwnedHandle, Ra
 use std::os::windows::process::CommandExt as _;
 
 use windows_sys::Win32::Foundation::{
-    CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_ACCESS_DENIED,
+    CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_ACCESS_DENIED, GetHandleInformation,
     ERROR_INVALID_PARAMETER, ERROR_MORE_DATA, HANDLE, HANDLE_FLAG_INHERIT, SetHandleInformation,
     WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
@@ -52,8 +52,12 @@ pub(super) fn spawn_background<C: Spawnable>(cmd: &mut C) -> io::Result<Spawned<
         Err(error) if error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
             cmd.std_command()
                 .creation_flags(BACKGROUND & !CREATE_BREAKAWAY_FROM_JOB);
+            let retried = cmd.spawn_child();
+            // The command asks for breakaway again, so its next start tries
+            // (and reports) afresh.
+            cmd.std_command().creation_flags(BACKGROUND);
             Ok(Spawned {
-                child: cmd.spawn_child()?,
+                child: retried?,
                 breakaway_refused: true,
             })
         }
@@ -99,24 +103,37 @@ unsafe extern "C" {
 /// `_O_APPEND`, `_O_BINARY`.
 const CRT_FLAGS: i32 = 0x0008 | 0x8000;
 
+/// The standard error handle the last redirect installed, which it owns
+/// and the next one closes.
+static INSTALLED: std::sync::Mutex<Option<usize>> = std::sync::Mutex::new(None);
+
 pub(super) fn redirect_stderr(file: &File) -> io::Result<()> {
+    let mut installed = INSTALLED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // No Rust write to stderr runs while the handle under it changes: std
+    // reads the standard handle afresh under this lock on every write.
+    let _writers = std::io::stderr().lock();
     // The C runtime's descriptor 2 first: its _dup2 onto a standard
     // descriptor may set the standard handle too, which ours then replaces.
     let crt = duplicate(file.as_raw_handle() as HANDLE)?;
     // SAFETY: _open_osfhandle takes ownership of the fresh duplicate; the
-    // descriptor it returns is closed once copied onto 2.
+    // descriptor it returns is closed once copied onto 2, unless it is 2
+    // itself (2 was vacant), which keeps it.
     unsafe {
         let fd = _open_osfhandle(crt as isize, CRT_FLAGS);
         if fd == -1 {
             CloseHandle(crt);
             return Err(io::Error::other("the C runtime refused the handle"));
         }
-        let copied = _dup2(fd, 2);
-        _close(fd);
-        if copied == -1 {
-            return Err(io::Error::other(
-                "the C runtime couldn't copy onto descriptor 2",
-            ));
+        if fd != 2 {
+            let copied = _dup2(fd, 2);
+            _close(fd);
+            if copied == -1 {
+                return Err(io::Error::other(
+                    "the C runtime couldn't copy onto descriptor 2",
+                ));
+            }
         }
         // _dup2 duplicates inheritably; nothing should inherit it.
         let two = _get_osfhandle(2);
@@ -126,12 +143,17 @@ pub(super) fn redirect_stderr(file: &File) -> io::Result<()> {
     }
     let ours = duplicate(file.as_raw_handle() as HANDLE)?;
     // SAFETY: the standard handle takes the fresh duplicate, which this
-    // process then holds for its life.
+    // process then holds until the next redirect.
     if unsafe { SetStdHandle(STD_ERROR_HANDLE, ours) } == 0 {
         let error = io::Error::last_os_error();
         // SAFETY: the duplicate is ours and nothing took it.
         unsafe { CloseHandle(ours) };
         return Err(error);
+    }
+    if let Some(previous) = installed.replace(ours as usize) {
+        // SAFETY: the duplicate the last redirect made, which nothing but
+        // the standard handle held, and that has just been replaced.
+        unsafe { CloseHandle(previous as HANDLE) };
     }
     Ok(())
 }
@@ -172,10 +194,37 @@ pub(super) fn raw_for_child(file: &File) -> u64 {
     file.as_raw_handle() as u64
 }
 
-pub(super) fn file_from_inherited(raw: u64) -> io::Result<File> {
-    // SAFETY: the caller vouches that the process that started this one
-    // handed the handle over and nothing else here owns it.
-    let file = unsafe { File::from_raw_handle(raw as RawHandle) };
+/// # Safety
+///
+/// As [`crate::process::file_from_inherited`].
+pub(super) unsafe fn file_from_inherited(raw: u64) -> io::Result<File> {
+    let invalid = || {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{raw:#x} names no inherited handle"),
+        )
+    };
+    let handle = usize::try_from(raw).map_err(|_| invalid())? as HANDLE;
+    if handle.is_null() || handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+        return Err(invalid());
+    }
+    // One of our standard handles has an owner already: the process.
+    for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: reading our own standard handle.
+        if unsafe { GetStdHandle(which) } == handle {
+            return Err(invalid());
+        }
+    }
+    // An open handle answers GetHandleInformation; a closed one fails.
+    let mut flags = 0;
+    // SAFETY: a query on a handle value, which touches nothing if it isn't
+    // open.
+    if unsafe { GetHandleInformation(handle, &mut flags) } == 0 {
+        return Err(invalid());
+    }
+    // SAFETY: open, checked above; the caller vouches that the process
+    // that started this one handed it over and nothing else here owns it.
+    let file = unsafe { File::from_raw_handle(handle as RawHandle) };
     set_inheritable(&file, false)?;
     Ok(file)
 }
@@ -275,77 +324,128 @@ impl Family {
         }
     }
 
-    /// Each member but us, opened, checked to be in our job (so not a
-    /// process that took the id of one that has left it) and running. The
-    /// job's list can still name a member that has just exited.
-    fn live_members(&self) -> Vec<(Pid, OwnedHandle)> {
+    /// Each process the job lists but us: running, or one we can't reach.
+    /// An entry is left out only once it is shown to be no member any more:
+    /// its id names no process, or a process outside our job (the member
+    /// left and its id was reused), or one that has exited (the job's list
+    /// can still name a member that has just exited).
+    fn census(&self) -> io::Result<Vec<Seen>> {
         let me = std::process::id();
-        let ids = self.ids().unwrap_or_default();
-        ids.into_iter()
-            .filter(|&pid| pid != me)
-            .filter_map(|pid| {
-                // SAFETY: opening a process by id; a null handle means it
-                // has gone (or isn't ours to touch, which no member is).
-                let handle = unsafe {
-                    OpenProcess(
-                        PROCESS_TERMINATE | PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
-                        0,
-                        pid,
-                    )
-                };
-                if handle.is_null() {
-                    return None;
+        let mut seen = Vec::new();
+        for pid in self.ids()? {
+            if pid == me {
+                continue;
+            }
+            // SAFETY: opening a process by id; a null handle is an error.
+            let handle = unsafe {
+                OpenProcess(
+                    PROCESS_TERMINATE | PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+                    0,
+                    pid,
+                )
+            };
+            if handle.is_null() {
+                let error = io::Error::last_os_error();
+                if error.raw_os_error() != Some(ERROR_INVALID_PARAMETER as i32) {
+                    seen.push(Seen::Unreachable(pid, error));
                 }
-                // SAFETY: a fresh handle this process owns.
-                let handle = unsafe { OwnedHandle::from_raw_handle(handle as RawHandle) };
-                let raw = handle.as_raw_handle() as HANDLE;
-                let mut inside = 0;
-                // SAFETY: queries of a handle we own and of our job.
-                let ours = unsafe {
-                    IsProcessInJob(raw, self.job.0, &mut inside) != 0
-                        && inside != 0
-                        && WaitForSingleObject(raw, 0) == WAIT_TIMEOUT
-                };
-                ours.then_some((pid, handle))
-            })
-            .collect()
+                continue;
+            }
+            // SAFETY: a fresh handle this process owns.
+            let handle = unsafe { OwnedHandle::from_raw_handle(handle as RawHandle) };
+            let raw = handle.as_raw_handle() as HANDLE;
+            let mut inside = 0;
+            // SAFETY: a query of a handle we own against our job.
+            if unsafe { IsProcessInJob(raw, self.job.0, &mut inside) } == 0 {
+                seen.push(Seen::Unreachable(pid, io::Error::last_os_error()));
+                continue;
+            }
+            if inside == 0 {
+                continue;
+            }
+            // SAFETY: a zero-timeout wait on a handle we own.
+            match unsafe { WaitForSingleObject(raw, 0) } {
+                WAIT_OBJECT_0 => {}
+                WAIT_TIMEOUT => seen.push(Seen::Live(pid, handle)),
+                _ => seen.push(Seen::Unreachable(pid, io::Error::last_os_error())),
+            }
+        }
+        Ok(seen)
     }
 
-    pub(super) fn members(&self) -> Vec<Pid> {
-        self.live_members()
-            .into_iter()
-            .map(|(pid, _)| pid)
-            .collect()
+    pub(super) fn members(&self) -> io::Result<Vec<Pid>> {
+        Ok(self.census()?.iter().map(Seen::pid).collect())
     }
 
     pub(super) fn kill_others(&self) -> io::Result<()> {
         // A member may start another while the last is killed: go round
-        // until none is left.
+        // until none is left, within one deadline for all of it.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut refused: Option<(Pid, io::Error)> = None;
         loop {
-            let others = self.live_members();
-            if others.is_empty() {
-                return Ok(());
+            let mut live = Vec::new();
+            let mut unreachable = Vec::new();
+            for seen in self.census()? {
+                match seen {
+                    Seen::Live(pid, handle) => live.push((pid, handle)),
+                    Seen::Unreachable(pid, error) => unreachable.push((pid, error)),
+                }
+            }
+            if live.is_empty() {
+                return match unreachable.into_iter().next().or(refused) {
+                    None => Ok(()),
+                    Some((pid, error)) => Err(io::Error::new(
+                        error.kind(),
+                        format!("member {pid} can't be ended: {error}"),
+                    )),
+                };
             }
             if std::time::Instant::now() >= deadline {
-                let left: Vec<Pid> = others.iter().map(|(pid, _)| *pid).collect();
+                let left: Vec<Pid> = live.iter().map(|(pid, _)| *pid).collect();
+                let why = refused
+                    .map(|(pid, error)| format!("; ending {pid}: {error}"))
+                    .unwrap_or_default();
                 return Err(io::Error::other(format!(
-                    "{} members still run after being killed: {left:?}",
+                    "{} members still run after being killed: {left:?}{why}",
                     left.len()
                 )));
             }
-            for (_, handle) in &others {
-                // SAFETY: terminating a member whose handle we own.
+            for (pid, handle) in &live {
+                let raw = handle.as_raw_handle() as HANDLE;
+                // SAFETY: terminating, then asking after, a member whose
+                // handle we own.
                 unsafe {
-                    TerminateProcess(handle.as_raw_handle() as HANDLE, 1);
+                    if TerminateProcess(raw, 1) == 0 && WaitForSingleObject(raw, 0) != WAIT_OBJECT_0
+                    {
+                        refused = Some((*pid, io::Error::last_os_error()));
+                    }
                 }
             }
-            for (_, handle) in &others {
+            for (_, handle) in &live {
+                let left = deadline.saturating_duration_since(std::time::Instant::now());
                 // SAFETY: waiting on a process handle we own.
                 unsafe {
-                    WaitForSingleObject(handle.as_raw_handle() as HANDLE, 1_000);
+                    WaitForSingleObject(
+                        handle.as_raw_handle() as HANDLE,
+                        u32::try_from(left.as_millis()).unwrap_or(u32::MAX),
+                    );
                 }
             }
+        }
+    }
+}
+
+/// One entry of the job's list, as [`Family::census`] found it.
+enum Seen {
+    Live(Pid, OwnedHandle),
+    /// It may still run, and can't be opened or asked after.
+    Unreachable(Pid, io::Error),
+}
+
+impl Seen {
+    fn pid(&self) -> Pid {
+        match self {
+            Seen::Live(pid, _) | Seen::Unreachable(pid, _) => *pid,
         }
     }
 }

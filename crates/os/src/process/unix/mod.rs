@@ -46,9 +46,32 @@ pub(super) fn exec_or_spawn(mut cmd: std::process::Command) -> io::Result<Replac
     Err(cmd.exec())
 }
 
-pub(super) fn harden_start() {}
+pub(super) fn harden_start() {
+    for fd in [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO] {
+        // SAFETY: a flag query, then, for a closed standard descriptor,
+        // /dev/null opened into the lowest free number, which is it.
+        unsafe {
+            if libc::fcntl(fd, libc::F_GETFD) == -1 {
+                let null = libc::open(c"/dev/null".as_ptr(), libc::O_RDWR);
+                if null != -1 && null != fd {
+                    libc::dup2(null, fd);
+                    libc::close(null);
+                }
+            }
+        }
+    }
+}
 
 pub(super) fn redirect_stderr(file: &File) -> io::Result<()> {
+    if file.as_raw_fd() == libc::STDERR_FILENO {
+        // Opened while descriptor 2 was closed: the file is standard error
+        // already, and dropping it would close standard error.
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "the file is descriptor 2 itself (opened while standard error was closed; \
+             harden_start first)",
+        ));
+    }
     // SAFETY: both descriptors are open for the call's length, and dup2
     // only replaces descriptor 2 with a copy of ours.
     if unsafe { libc::dup2(file.as_raw_fd(), libc::STDERR_FILENO) } < 0 {
@@ -84,11 +107,29 @@ pub(super) fn raw_for_child(file: &File) -> u64 {
     file.as_raw_fd() as u64
 }
 
-pub(super) fn file_from_inherited(raw: u64) -> io::Result<File> {
-    let fd = RawFd::try_from(raw).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+/// # Safety
+///
+/// As [`crate::process::file_from_inherited`].
+pub(super) unsafe fn file_from_inherited(raw: u64) -> io::Result<File> {
+    let invalid = || {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{raw} names no inherited descriptor"),
+        )
+    };
+    let fd = RawFd::try_from(raw).map_err(|_| invalid())?;
+    if fd <= libc::STDERR_FILENO {
+        return Err(invalid());
+    }
+    // An open descriptor answers F_GETFD; a closed one is EBADF.
+    // SAFETY: a flag query on a number, which touches nothing if it isn't
+    // open.
+    if unsafe { libc::fcntl(fd, libc::F_GETFD) } == -1 {
+        return Err(invalid());
+    }
     set_cloexec(fd, true)?;
-    // SAFETY: the caller vouches that the process that started this one
-    // handed the descriptor over and nothing else here owns it.
+    // SAFETY: open, checked above; the caller vouches that nothing else
+    // here owns it.
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
@@ -135,16 +176,35 @@ pub(super) fn kill_descendants(census: &[Descendant]) {
     }
 }
 
-/// The groups this process's members lead, each with its tether's pid,
-/// while the tether holds the group's id from reuse.
+/// A member's group, joined: its leader's pid (the group's id) and the
+/// tether in it. The family holds the tether's child unreaped for as long
+/// as the entry stands, and a process group's id isn't reused while any
+/// process of the group, a zombie among them, is unreaped. So every group
+/// listed here can be signalled without reaching a stranger, and
+/// `Member::release` takes its entry out before it reaps the tether.
+#[derive(Debug)]
+struct Joined {
+    leader: Pid,
+    #[cfg(feature = "async")]
+    tether: Tether,
+}
+
 #[derive(Debug, Default)]
-struct Groups(std::sync::Mutex<Vec<(Pid, Option<Pid>)>>);
+struct Groups(std::sync::Mutex<Vec<Joined>>);
 
 impl Groups {
-    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<(Pid, Option<Pid>)>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<Joined>> {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Takes the entry for `leader` out, so nothing signals its group again.
+    #[cfg(feature = "async")]
+    fn remove(&self, leader: Pid) -> Option<Joined> {
+        let mut groups = self.lock();
+        let at = groups.iter().position(|joined| joined.leader == leader)?;
+        Some(groups.swap_remove(at))
     }
 }
 
@@ -173,13 +233,12 @@ impl Family {
 
     #[cfg(feature = "async")]
     pub(super) fn join(&self, child: &tokio::process::Child) -> io::Result<Member> {
-        let tether = Tether::new(child)?;
         let leader = child
             .id()
             .ok_or_else(|| io::Error::other("the member has already been reaped"))?;
-        self.groups.lock().push((leader, tether.pid()));
+        let tether = Tether::new(child)?;
+        self.groups.lock().push(Joined { leader, tether });
         Ok(Member {
-            tether: Some(tether),
             leader,
             groups: self.groups.clone(),
         })
@@ -190,11 +249,11 @@ impl Family {
         // The census first, while everything still runs: once a parent is
         // killed its children belong to init and are no longer below us.
         let census = descendants(me);
-        for (leader, _) in self.groups.lock().iter() {
+        for joined in self.groups.lock().iter() {
             // SAFETY: killpg only sends a signal, to a group whose id the
-            // tether in it keeps from reuse.
+            // unreaped tether in it keeps from reuse (see Joined).
             unsafe {
-                libc::killpg(*leader as libc::pid_t, libc::SIGKILL);
+                libc::killpg(joined.leader as libc::pid_t, libc::SIGKILL);
             }
         }
         kill_descendants(&census);
@@ -203,16 +262,19 @@ impl Family {
         Ok(())
     }
 
-    pub(super) fn members(&self) -> Vec<Pid> {
+    pub(super) fn members(&self) -> io::Result<Vec<Pid>> {
         let me = std::process::id() as i32;
         let table = table::table();
+        #[cfg(feature = "async")]
         let tethers: Vec<Pid> = self
             .groups
             .lock()
             .iter()
-            .filter_map(|(_, tether)| *tether)
+            .filter_map(|joined| joined.tether.pid())
             .collect();
-        below(me, &table)
+        #[cfg(not(feature = "async"))]
+        let tethers: Vec<Pid> = Vec::new();
+        Ok(below(me, &table)
             .into_iter()
             .filter(|found| !tethers.contains(&found.pid))
             .filter(|found| {
@@ -221,23 +283,24 @@ impl Family {
                     .any(|row| row.pid as Pid == found.pid && !row.zombie)
             })
             .map(|found| found.pid)
-            .collect()
+            .collect())
     }
 }
 
 #[cfg(feature = "async")]
 #[derive(Debug)]
 pub(super) struct Member {
-    tether: Option<Tether>,
     leader: Pid,
     groups: std::sync::Arc<Groups>,
 }
 
 #[cfg(feature = "async")]
 impl Member {
-    pub(super) async fn release(mut self) {
-        if let Some(tether) = self.tether.take() {
-            tether.release().await;
+    pub(super) async fn release(self) {
+        // Out of the family first, so no kill reaches the group once the
+        // tether is reaped and the group's id is free.
+        if let Some(joined) = self.groups.remove(self.leader) {
+            joined.tether.release().await;
         }
     }
 }
@@ -245,9 +308,9 @@ impl Member {
 #[cfg(feature = "async")]
 impl Drop for Member {
     fn drop(&mut self) {
-        // Once the tether has gone nothing holds the group's id.
-        let leader = self.leader;
-        self.groups.lock().retain(|(group, _)| *group != leader);
+        // Unreleased: the tether is dropped, its pipe closes and it asks
+        // the group to finish; tokio reaps it later, out of the family.
+        self.groups.remove(self.leader);
     }
 }
 

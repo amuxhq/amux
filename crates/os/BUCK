@@ -6,7 +6,7 @@ DEPS = [
 
 TEST_DEPS = [
     "//third-party/rust:tempfile",
-]
+] + select({"DEFAULT": [], "prelude//os:windows": ["//third-party/rust:portable-pty"]})
 
 # Buck builds one configuration of the crate for every dependent, so the
 # tokio parts are always on; the test hooks only for tests and tools.

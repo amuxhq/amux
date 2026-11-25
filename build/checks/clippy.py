@@ -27,7 +27,10 @@ def main() -> int:
         stderr=subprocess.DEVNULL,
     ).split()
     built = subprocess.run(
-        [BUCK2, "build", *sys.argv[1:], "--show-full-output", *[t + "[clippy.txt]" for t in targets]],
+        # A denied lint fails its target's clippy action
+        # (build/toolchains/bootstrap-guard.py), so every target is built
+        # whatever fails, to report them all.
+        [BUCK2, "build", "--keep-going", *sys.argv[1:], "--show-full-output", *[t + "[clippy.txt]" for t in targets]],
         cwd=ROOT,
         capture_output=True,
         text=True,

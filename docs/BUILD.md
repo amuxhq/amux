@@ -171,6 +171,16 @@ ended after three. A test that leaves a process running behind it fails.
 Tests labelled `live` (the live provider lanes) are never cached and never
 run by `just test`.
 
+A compile that fails is never kept. The prelude builds a library's
+`[check]` output and its `[diag.*]` and `[clippy.*]` subtargets in a mode
+where rustc's failure still exits 0, its errors recorded for a later step
+that fails the build; a worker stores anything that exits 0, so a compile
+that failed because the machine did (a full disk) was replayed from the
+cache until its crate changed. Every prelude tool written in Python runs
+through [`build/toolchains/bootstrap-guard.py`](../build/toolchains/bootstrap-guard.py),
+which fails such a compile where it ran instead, with rustc's errors in its
+output, so it runs again next time.
+
 A golden test writes its file into the sandbox, where nothing reaches the
 checkout, so `just goldens` re-records them instead: it runs the golden
 tests here, with every update switch on. The next `just test` reruns only
@@ -227,15 +237,19 @@ inputs, and again as an output it refers to nears the end of the three
 hours it assumes one lives; answered by the host alone, the outputs the
 Mac's own worker built were called gone, and a daemon up for hours failed
 the next action that needed one ("an artifact that has expired in the RE
-CAS"). The cost of counting the Mac's layer is that Buck2 never uploads a
-blob only the Mac holds, so a Linux target can't take an output built on
-the Mac: its action fails on the host's worker for a missing input. A blob
-the host has evicted while the Mac kept it fails a Linux action the same
-way; removing it from the Mac's layer
-(`~/Library/Caches/amux/nativelink/cas/d2/<hash>-*`) and restarting
-NativeLink (`scripts/nativelink.py install`) has Buck2 upload it again.
-Sending what the Mac builds to the host as well would lift that, at the
-price of uploading every Mac build over the tailnet.
+CAS"). Counting the Mac's layer means Buck2 never uploads a blob only the
+Mac holds: an output built on the Mac, one the host has evicted while the
+Mac kept it, one uploaded while the host was out of reach. So the host's
+worker reads such a blob from the Mac when an action of the Mac's needs
+it, over the port it registers at, and writes it into the host's cache as
+it passes (the build host's worker configuration does this, one store per
+Mac it serves). A Linux target can take an output built on the Mac.
+
+NativeLink has no store that copies a blob to the host when it is asked
+whether it holds one, so the copy happens when the host's worker reads it
+instead. Uploading everything the Mac builds to the host as well would
+also close the gap for the Mac's own outputs, but not for what the host
+evicts, and at the price of sending every Mac build over the tailnet.
 
 When the host doesn't answer (or the tailnet is down), `scripts/buck2`
 says so, restarts NativeLink without it and turns Linux off for the tree:
@@ -244,9 +258,8 @@ Linux actions fail at once rather than wait, and tests marked `linux_only`
 minutes) are skipped, which `just test` names at the end. When the host
 answers again it switches back. Each switch restarts NativeLink, which
 interrupts any build another tree has running at that moment. What the
-Mac's layer gained in between never reached the host, so NativeLink drops
-it as it starts in front of the host again: Buck2 uploads the sources
-afresh, and what the Mac built in the meantime is built again once.
+Mac's layer gained in between never reached the host; the host's worker
+reads it from the Mac when a Linux action needs it.
 
 A Linux machine sends its actions to the NativeLink on its own loopback,
 as the build host's trees do, or to the one `AMUX_NATIVELINK` names

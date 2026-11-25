@@ -227,6 +227,7 @@ amux_script_tests(
     srcs = glob(["scripts/**"], exclude = ["**/__pycache__/**"]),
     extra = {
         "client_kind_check": {"deps": _CLIENT_KIND_SOURCES},
+        "bootstrap_guard": {"deps": ["toolchains//:bootstrap-guard.py"]},
         "env": {"deps": [":environments"]},
         "icon": {"deps": ["//apps/apple:release-files"]},
         "nativelink": {"deps": ["//build:nativelink"]},

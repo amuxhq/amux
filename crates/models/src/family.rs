@@ -164,13 +164,35 @@ impl FamilyDeliveries {
         }
     }
 
-    /// The larger bounds a nightly run explores.
+    /// The larger bounds a nightly run explores, sized to about three hours
+    /// on the nightly's four-core runner (some 20 million states at about
+    /// 2,000 a second), well inside its watchdog of under six.
+    ///
+    /// The parent's later life is the point: the person resumes it and it
+    /// messages its child, which may have exited first, so the message
+    /// resumes the child and the child's report must reach the life that
+    /// sent it. Each of those two actions alone multiplies the states five-
+    /// to sixfold, so the other faults are kept to those the bounds `just
+    /// test` runs never explore:
+    ///
+    /// - both processes' unasked exits: an exited parent is the family
+    ///   rule's Exited case, where the person's stop is its Closed one, and
+    ///   the child's exit is what the message resumes;
+    /// - one timer firing (the outbox's retry, the follower's backoff or a
+    ///   message's patience), which no CI bound fires.
+    ///
+    /// Left to the CI bounds: the daemon crash, which the CI bound explores
+    /// with a link down and a turn end, and which beside the parent's
+    /// later life multiplies the states more than tenfold; a second link
+    /// down after the first comes back, which nearly doubles them; and a
+    /// second timer firing, which doubles them again.
     pub const fn nightly() -> Self {
         Self {
             parent_exits: 1,
             child_exits: 1,
-            downs: 2,
-            waits: 2,
+            downs: 1,
+            crashes: 0,
+            waits: 1,
             resumes: 1,
             messages: 1,
             ..Self::ci()

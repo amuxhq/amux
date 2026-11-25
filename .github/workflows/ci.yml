@@ -483,12 +483,14 @@ jobs:
           just ios simulator golden
           udid=$(scripts/py apps/apple/Tools/ios_simulators.py udid golden)
           echo "AMUX_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+      # Beside the freshly booted simulator NativeLink reads its store far
+      # slower than at the job's start: under 3 s then, 31 to 68 s here.
       - name: Start NativeLink again with the simulator
         if: env.JOB_KEY == 'iphone'
         run: |
           nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --cas-gib "${{ env.JOB_CAS_GIB }}" \
             >> "$RUNNER_TEMP/nativelink.log" 2>&1 &
-          for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
+          for _ in $(seq 300); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/nativelink.log"; exit 1
       # Bounded below the job's timeout, so a run that runs out of time
       # still keeps what it finished: a job stopped by its own timeout or

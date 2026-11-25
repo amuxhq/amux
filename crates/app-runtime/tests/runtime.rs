@@ -2,8 +2,6 @@
 //! fake provider: the host is woken once per turn, hears what moved as a
 //! delta, reads rows by key and acts on the chat.
 
-#![cfg(unix)]
-
 use std::sync::Arc;
 use std::time::Duration;
 

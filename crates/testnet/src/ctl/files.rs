@@ -153,16 +153,15 @@ mod tests {
     #[test]
     fn a_name_that_leads_out_of_the_folder_is_refused() {
         let dir = tempfile::tempdir().unwrap();
-        #[cfg(unix)]
         let outside = tempfile::tempdir().unwrap();
         for name in ["../x", "/tmp/x", "a/../../x", ""] {
             assert!(inside(dir.path(), Path::new(name)).is_err(), "{name}");
         }
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(outside.path(), dir.path().join("out")).unwrap();
-            assert!(inside(dir.path(), Path::new("out/x")).is_err());
-        }
+        // A folder inside that leads out: a symbolic link, or on Windows a
+        // junction, which takes no privilege.
+        provider_fakes::faults::link_dir(outside.path(), &dir.path().join("out")).unwrap();
+        assert!(inside(dir.path(), Path::new("out/x")).is_err());
+        provider_fakes::faults::remove_link(&dir.path().join("out")).unwrap();
         assert!(inside(dir.path(), Path::new("files/big.bin")).is_ok());
         assert!(inside(dir.path(), Path::new("ünïcode name.txt")).is_ok());
     }

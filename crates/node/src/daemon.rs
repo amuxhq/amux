@@ -786,11 +786,15 @@ pub async fn start(
         sweep.insert(profile, report);
         swept.push((entry, runtime));
     }
-    // This installation's lock is held, so a front door that answers
-    // belongs to another installation's daemon, whose config names the same
-    // socket; taking it would strand that daemon's clients.
+    // This installation's lock is held, so a front door that answers, or
+    // is too busy to (every instance taken, a full backlog), belongs to
+    // another installation's daemon, whose config names the same socket;
+    // taking it would strand that daemon's clients.
     if let Some(path) = &installation.front_door
-        && local_socket::connect(path).await.is_ok()
+        && match local_socket::connect(path).await {
+            Ok(_) => true,
+            Err(error) => error.kind() == std::io::ErrorKind::ResourceBusy,
+        }
     {
         return Err(StartError::FrontDoorTaken(path.clone()));
     }

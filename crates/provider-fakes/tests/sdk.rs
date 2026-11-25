@@ -386,6 +386,7 @@ async fn exit_ends_the_process_with_its_code_mid_turn() {
 
 #[tokio::test]
 async fn a_script_asking_for_an_ask_headless_claude_cannot_raise_fails_to_start() {
+    crate::support::ready();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("script.json");
     std::fs::write(

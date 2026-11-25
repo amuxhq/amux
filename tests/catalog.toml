@@ -308,7 +308,7 @@ evidence = ""
 update = ""
 cargo = [
   { package = "provider-fakes", kind = "lib", targets = ["provider_fakes"], features = [] },
-  { package = "provider-fakes", kind = "bin", targets = ["fake-acp", "fake-claude-pty", "fake-claude-sdk", "fake-codex"], features = [] },
+  { package = "provider-fakes", kind = "bin", targets = ["fake-acp", "fake-claude-pty", "fake-claude-sdk", "fake-codex", "fake-provider"], features = [] },
   { package = "provider-fakes", modules = ["acp", "codex", "pty", "scripts", "sdk"], features = [] },
 ]
 
@@ -327,6 +327,22 @@ lane = "fast"
 evidence = "crates/interpret/fixtures/claude_sdk/live, crates/interpret/fixtures/claude_pty/live, crates/interpret/fixtures/codex/live"
 update = ""
 cargo = [{ package = "provider-fakes", modules = ["conformance", "scripted"], features = [] }]
+
+[[suite]]
+name = "os-primitives"
+contract = "Each operating-system primitive amux shares (a process pinned, contained, suspended or ended; a stop event; a private, durable or patient file operation; a process-lifetime lock; a path or program found) does what its doc comment says on the OS the test runs on, and each filesystem fault a test injects (a denied permission, a read-only file, a file held so no other open succeeds, a directory link, a symbolic link) happens and is undone when its guard drops; where the OS will not let this user make a symbolic link, or has no share modes, the test skips saying why."
+paths = ["crates/os/src"]
+recipe = "just suite os-primitives"
+boundary = "System composition"
+oracle = "What each primitive returns and what the OS then shows: process liveness, a lock's holder, file contents and ACLs, and the error each faulted operation returns."
+real = ["processes and Job Objects", "the filesystem", "file modes and ACLs", "share modes", "junctions and symbolic links", "consoles"]
+substituted = []
+time = "real"
+capabilities = ["Rust toolchain"]
+lane = "fast"
+evidence = ""
+update = ""
+cargo = [{ package = "os", kind = "lib", targets = ["os"], features = ["async", "testing"] }]
 
 [[suite]]
 name = "interpreter-emissions"

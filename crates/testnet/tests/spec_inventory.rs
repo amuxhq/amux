@@ -8,8 +8,6 @@
 //! close; an origin whose generation changed has every replica dropped and
 //! rebuilt from a fresh tail, and nothing of another host's is touched.
 
-#![cfg(unix)]
-
 use std::time::Duration;
 
 use provider_fakes::script::Step;

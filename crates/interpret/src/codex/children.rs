@@ -827,7 +827,7 @@ impl State {
             conversation: Some(thread.to_owned()),
             jobs: Some(wire::BackgroundJobs { known: true, jobs }),
             capabilities: Some(Box::new(crate::shared::subagent_capabilities(
-                wire::AgentCapabilities::codex().stops_job,
+                wire::AgentCapabilities::codex(wire::Platform::here()).stops_job,
             ))),
             ..Snapshot::default()
         });

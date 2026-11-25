@@ -3,8 +3,6 @@
 //! memory, as the phone calls it, and gRPC over the profile socket the
 //! terminal dials.
 
-#![cfg(unix)]
-
 use std::time::Duration;
 
 use client::{Client, Surface, SystemClock};

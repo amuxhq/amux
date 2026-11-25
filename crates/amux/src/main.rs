@@ -368,6 +368,10 @@ fn unblock_signals() {
 fn unblock_signals() {}
 
 fn main() -> ExitCode {
+    // First, before anything can start a child: the supervisor, daemon and
+    // agents this process starts must not inherit its standard handles, or
+    // a caller reading this process's output to its end waits on them.
+    os::process::harden_start();
     unblock_signals();
     let cli = Cli::parse();
     let Some(command) = cli.command else {

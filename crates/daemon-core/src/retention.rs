@@ -188,6 +188,7 @@ mod tests {
             store,
             StartOptions {
                 agents: "/agents".into(),
+                budget: crate::StepBudget::UNLIMITED,
                 ..StartOptions::default()
             },
         )

@@ -10,12 +10,10 @@ publish = false
 anyhow = { workspace = true }
 bytes = { workspace = true }
 libc = { workspace = true }
+os = { workspace = true, features = ["async"] }
 portable-pty = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

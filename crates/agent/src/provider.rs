@@ -952,7 +952,7 @@ impl Provider {
         dir: &Path,
         events: mpsc::Sender<ProviderEvent>,
     ) -> Result<Self, ProviderError> {
-        if cfg!(windows) {
+        if !wire::Kind::ClaudePty.hosted_on(wire::Platform::here()) {
             return Err(ProviderError::TerminalOnWindows);
         }
         let (session, resume) = claude_session(spec, dir)?;
@@ -1954,17 +1954,15 @@ fn terminate(child: &tokio::process::Child) {
 }
 
 /// Where this agent's Codex server listens: a socket in its private
-/// folder, which Codex's own app joins to attach; stdio on Windows.
+/// folder, which Codex's own app joins to attach, where this platform's
+/// Codex is attachable ([`wire::AgentCapabilities::codex`]); stdio on
+/// Windows, where it is not.
 pub fn codex_listen(dir: &Path) -> io::Result<crate::codex::Listen> {
-    #[cfg(unix)]
-    {
+    if wire::AgentCapabilities::codex(wire::Platform::here()).attachable {
         Ok(crate::codex::Listen::Unix(socket_address(
             &dir.join(dir::PRIVATE).join(dir::CODEX_SOCK),
         )?))
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = dir;
+    } else {
         Ok(crate::codex::Listen::Stdio)
     }
 }
@@ -2494,21 +2492,19 @@ mod tests {
     /// path's drive becomes its first folder and its separators slashes.
     #[test]
     fn a_rule_names_a_path_as_claude_matches_it() {
-        #[cfg(unix)]
-        assert_eq!(
-            super::rule_path(Path::new("/agents/a/blobs")),
-            "/agents/a/blobs"
-        );
-        #[cfg(windows)]
-        {
-            assert_eq!(
-                super::rule_path(Path::new(r"C:\Users\RUNNER~1\AppData\blobs")),
-                "/c/Users/RUNNER~1/AppData/blobs"
-            );
-            assert_eq!(
-                super::rule_path(Path::new(r"\\?\D:\agents\a\blobs")),
-                "/d/agents/a/blobs"
-            );
+        let cases: &[(&str, &str)] = if cfg!(windows) {
+            &[
+                (
+                    r"C:\Users\RUNNER~1\AppData\blobs",
+                    "/c/Users/RUNNER~1/AppData/blobs",
+                ),
+                (r"\\?\D:\agents\a\blobs", "/d/agents/a/blobs"),
+            ]
+        } else {
+            &[("/agents/a/blobs", "/agents/a/blobs")]
+        };
+        for (path, rule) in cases {
+            assert_eq!(super::rule_path(Path::new(path)), *rule, "{path}");
         }
     }
 }

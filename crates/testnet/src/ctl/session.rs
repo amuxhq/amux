@@ -85,8 +85,8 @@ impl Folder {
         Ok(Self { dir, cwd })
     }
 
-    /// A session in `dir`, run from there.
-    #[cfg(all(test, unix))]
+    /// A session in `dir`, run from there, for the paste test's tmux.
+    #[cfg(all(test, not(windows)))] // out of scope on Windows: the TUI (the terminal client in tmux)
     pub(crate) fn at(dir: &Path) -> Self {
         Self {
             dir: dir.to_path_buf(),
@@ -417,35 +417,45 @@ pub(crate) fn down(folder: &Folder) -> Result<Outcome, String> {
     super::tui::close_all(folder);
     super::phone::close(folder);
     stop_pairings(folder);
-    match door::call(record.control, &json!("Shutdown"), Duration::from_secs(180)) {
-        Ok(_) => said.push("net shut down".to_owned()),
-        Err(error) => said.push(format!("the door did not shut the net down ({error})")),
-    }
+    // Pinned before the door is asked: a serve that answers it was alive
+    // when this was opened, so the pid was still its own.
+    let serve = os::process::ProcessRef::open(record.pid).ok();
+    let serve = match door::call(record.control, &json!("Shutdown"), Duration::from_secs(180)) {
+        Ok(_) => {
+            said.push("net shut down".to_owned());
+            serve
+        }
+        Err(error) => {
+            said.push(format!("the door did not shut the net down ({error})"));
+            // A serve that crashed leaves its pid in net.json, and the
+            // system may since have given it to any other process, which
+            // must never be killed for it.
+            serve.filter(|_| serving(record.pid, &folder.net_dir()))
+        }
+    };
     // Wait for serve to exit; it removes the net's root on its way out.
-    let net_dir = folder.net_dir();
-    let deadline = Instant::now() + Duration::from_secs(60);
-    while serving(record.pid, &net_dir) && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(100));
+    if let Some(serve) = serve {
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while serve.alive() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        if serve.alive() {
+            let census = os::process::descendants(serve.pid());
+            let _ = serve.kill();
+            os::process::kill_descendants(&census);
+            said.push("testnet serve did not exit, so it was killed".to_owned());
+        }
     }
-    if serving(record.pid, &net_dir) {
-        let _ = std::process::Command::new("kill")
-            .arg("-KILL")
-            .arg(record.pid.to_string())
-            .status();
-        said.push("testnet serve did not exit, so it was killed".to_owned());
-    }
-    // Agents a killed net leaves behind die with their folders' net.
-    let _ = std::process::Command::new("pkill")
-        .args(["-KILL", "-f"])
-        .arg(&record.root)
-        .status();
+    // Agents a killed net leaves behind die with their folders' net: those
+    // its hosts keep, and no other installation's kept among its files.
+    kill_agents_of(&record.root);
     let _ = std::fs::remove_file(folder.net_dir().join("net.json"));
     Ok(Outcome::new(said.join("; "), json!({"down": true})))
 }
 
-/// Whether `pid` is still this folder's `testnet serve`. A serve that
-/// crashed leaves its pid in net.json, and the system may since have given
-/// that pid to any other process, which must never be killed for it.
+/// Whether `pid` is this folder's `testnet serve`, by its command line,
+/// where `ps` can say (not Windows, where only a serve that answered its
+/// door is known to be one).
 fn serving(pid: u32, net_dir: &Path) -> bool {
     std::process::Command::new("ps")
         .args(["-o", "command=", "-p", &pid.to_string()])
@@ -456,13 +466,32 @@ fn serving(pid: u32, net_dir: &Path) -> bool {
         })
 }
 
+/// Kills every agent process still holding the lock of an agent directory
+/// of the net whose root is `root`, where its teardown looks for them
+/// ([`crate::net::agent_dirs_of_net`]), and what each started that it can
+/// find ([`os::process::descendants`]).
+fn kill_agents_of(root: &Path) {
+    for dir in crate::net::agent_dirs_of_net(root) {
+        if !os::lock::FileLock::held(&dir.join(agent_dir::LOCK)).unwrap_or(false) {
+            continue;
+        }
+        if let Ok(agent) = crate::Net::agent_process_in(&dir) {
+            let census = os::process::descendants(agent.pid());
+            let _ = agent.kill();
+            os::process::kill_descendants(&census);
+        }
+    }
+}
+
 pub(crate) fn alive(pid: u32) -> bool {
-    std::process::Command::new("kill")
-        .arg("-0")
-        .arg(pid.to_string())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
+    os::process::ProcessRef::open(pid).is_ok_and(|process| process.alive())
+}
+
+/// Ends the process `pid` names, if one does.
+fn end(pid: u32) {
+    if let Ok(process) = os::process::ProcessRef::open(pid) {
+        let _ = process.kill();
+    }
 }
 
 /// The real `amux` CLI against a host's installation config.
@@ -637,13 +666,12 @@ pub(crate) fn pin_in(text: &str) -> Option<String> {
 pub(crate) fn close_pairing(folder: &Folder, host: &str, config: &str) {
     let pid_file = folder.net_dir().join("pairing").join(format!("{host}.pid"));
     if let Ok(pid) = std::fs::read_to_string(&pid_file) {
-        let pid = pid.trim().to_owned();
-        let _ = std::process::Command::new("kill")
-            .arg(&pid)
-            .stderr(std::process::Stdio::null())
-            .status();
+        let pid: Option<u32> = pid.trim().parse().ok();
+        if let Some(pid) = pid {
+            end(pid);
+        }
         let deadline = Instant::now() + Duration::from_secs(5);
-        while pid.parse().is_ok_and(alive) && Instant::now() < deadline {
+        while pid.is_some_and(alive) && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(100));
         }
         let _ = std::fs::remove_file(&pid_file);
@@ -662,11 +690,9 @@ fn stop_pairings(folder: &Folder) {
     for entry in entries.flatten() {
         if entry.path().extension().is_some_and(|ext| ext == "pid")
             && let Ok(pid) = std::fs::read_to_string(entry.path())
+            && let Ok(pid) = pid.trim().parse()
         {
-            let _ = std::process::Command::new("kill")
-                .arg(pid.trim())
-                .stderr(std::process::Stdio::null())
-                .status();
+            end(pid);
         }
     }
 }

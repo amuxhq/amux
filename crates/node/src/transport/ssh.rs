@@ -281,8 +281,8 @@ mod tests {
 
     /// A stand-in for ssh that drops its options and target and runs the
     /// command as sshd does: as one string, through a shell, with nothing
-    /// but HOME and the system's default PATH.
-    #[cfg(unix)]
+    /// but HOME and the system's default PATH: a Unix far end, here.
+    #[cfg(not(windows))] // out of scope on Windows: SSH with a Windows far end
     fn fake_ssh(dir: &std::path::Path, home: &std::path::Path) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt as _;
         let ssh = dir.join("ssh");
@@ -299,7 +299,7 @@ mod tests {
         ssh
     }
 
-    #[cfg(unix)]
+    #[cfg(not(windows))] // out of scope on Windows: SSH with a Windows far end
     #[tokio::test]
     async fn amux_in_the_installers_directory_runs_though_it_is_off_the_path() {
         use std::os::unix::fs::PermissionsExt as _;
@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(out, "installed amux internal ssh-pair\n");
     }
 
-    #[cfg(unix)]
+    #[cfg(not(windows))] // out of scope on Windows: SSH with a Windows far end
     #[tokio::test]
     async fn a_far_end_without_amux_says_where_it_looked() {
         let dir = tempfile::tempdir().unwrap();

@@ -22,11 +22,6 @@ pub(crate) struct Feed {
     task: JoinHandle<()>,
 }
 
-/// The script a broken build is: it exits at once, so a supervisor that
-/// installs it never sees it come up and rolls back after its failed
-/// starts, as it would for any build that cannot run on the machine.
-const BROKEN: &str = "#!/bin/sh\necho \"this build is broken on purpose\" >&2\nexit 3\n";
-
 impl Feed {
     pub(crate) fn start(dir: PathBuf) -> std::io::Result<Self> {
         std::fs::create_dir_all(&dir)?;
@@ -56,8 +51,14 @@ impl Feed {
     }
 
     /// Lists `build` on `channel` as `version`, signed with the test key,
-    /// to the rollout given (every host when none). A broken build is a
-    /// script that exits at once. Answers the path of the build listed.
+    /// to the rollout given (every host when none). Answers the path of the
+    /// build listed.
+    ///
+    /// A broken build is the `fake-provider` binary alone: with no plan
+    /// beside it, it says it is broken on purpose and exits at once with
+    /// status 3, so a supervisor that installs it never sees it come up and
+    /// rolls back after its failed starts, as it would for any build that
+    /// cannot run on the machine.
     pub(crate) fn publish(
         &self,
         build: &Path,
@@ -69,13 +70,9 @@ impl Feed {
         let file = format!("amux-{version}");
         let listed = self.dir.join(&file);
         if broken {
-            std::fs::write(&listed, BROKEN).map_err(|error| error.to_string())?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt as _;
-                std::fs::set_permissions(&listed, std::fs::Permissions::from_mode(0o755))
-                    .map_err(|error| error.to_string())?;
-            }
+            let broken = crate::binaries::Binaries::built().fake_provider();
+            std::fs::copy(&broken, &listed)
+                .map_err(|error| format!("copying {}: {error}", broken.display()))?;
         } else {
             release::restamp(build, &listed, version)
                 .map_err(|error| format!("stamping the build as {version}: {error}"))?;

@@ -30,7 +30,7 @@ provider children, and how it ends.
 |---|---|
 | [`crates/agent`](../crates/agent/src/lib.rs) | The process: `run` and `main` in `lib.rs`; the driver that runs the agent core over the provider child, the sockets and the journal in `host.rs`; provider children in `provider.rs`; typing into terminal Claude in `terminal.rs`; reading terminal Claude's first screen in `ready.rs`; the facts ring in `crates/core-ring`; raw attach on `pty.sock` in `attach.rs`; the tool server in `tools.rs`; the agent's end of the socket its tool server asks on in `spawns.rs`; the agent's part of a dump in `dump.rs`; directory helpers in `dir.rs` |
 | [`crates/agent-core`](../crates/agent-core/src/lib.rs) | The lifecycle as a state machine around the interpreter: one step per input (a provider fact, a daemon dialling in or leaving, a control frame, a timer, a failed write, a job's result), asking for journal steps, provider writes, frames, timers, jobs and the exit; how the next incarnation starts from the facts ring |
-| [`crates/agent-dir`](../crates/agent-dir/src/lib.rs) | What the agent and the daemon must agree on: the file and socket names, the directory lock, the frame format on `ctl.sock` and `pty.sock` (`ctl.rs`), the socket its tool server asks the agent on, `private/agent.sock` (`agent_sock.rs`), local sockets (`local_socket.rs`) and the injectable clock (`clock.rs`) |
+| [`crates/agent-dir`](../crates/agent-dir/src/lib.rs) | What the agent and the daemon must agree on: the file and socket names, the directory lock, the frame format on `ctl.sock` and `pty.sock` (`ctl.rs`), the socket its tool server asks the agent on, `private/agent.sock` (`agent_sock.rs`), local sockets (`local_socket/`) and the injectable clock (`clock.rs`) |
 | [`crates/journal`](../crates/journal/src/lib.rs) | The segmented, append-only journal writer and reader |
 | [`crates/pty-host`](../crates/pty-host/src/lib.rs) | Provider-neutral pseudo-terminal hosting: spawn in a process group, output stream, input, resize, signals |
 | [`crates/interpret`](../crates/interpret/src/lib.rs) | The per-kind interpreters the process runs |
@@ -53,12 +53,14 @@ session id.
 ```text
 agents/<agent id>/
   spec.1, spec.2, …      one immutable spec per incarnation, written by the daemon
-  lock                   held by the agent process for its lifetime
+  lock                   held by the agent process for its lifetime; holds its pid
   ctl.sock               the agent listens; the daemon is its only client
   pty.sock               the agent listens; local terminal clients connect
                          (terminal Claude and Codex only)
   tools.sock             the daemon listens; its clients are the agent's tool server
                          and, for a spawn, the agent process itself
+  <name>.sock.lock       Unix: locked for a moment by each bind and unbind of
+                         that socket, in any process; it stays
   journal/0000000000 …   steps, in segments named by the offset of their first byte
   pty/0000000000 …       terminal Claude's raw terminal bytes, named the same way
   blobs/<sha256>         bytes items refer to, and what the agent offers as an

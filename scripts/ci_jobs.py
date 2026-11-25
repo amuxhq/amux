@@ -474,7 +474,7 @@ def graph_check(linux: list[str], android: list[str]) -> int:
         print("ci_jobs graph-check: skipped: the Apple apps' graphs configure only on a Mac")
         return 0
     table = load_table()
-    buck2 = subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "scripts/buck-tools.py"), "path", "buck2"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+    buck2 = subprocess.run([*([sys.executable] if os.name == "nt" else [str(ROOT / "scripts/py")]), str(ROOT / "scripts/buck-tools.py"), "path", "buck2"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
     tracked = set(git("ls-files").stdout.splitlines())
     data = "^(_files|_amux_check|export_file)$"
 

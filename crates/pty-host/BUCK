@@ -1,6 +1,7 @@
 load("//build:rust.bzl", "amux_rust_library")
 
 DEPS = [
+    "//crates/os:os",
     "//third-party/rust:anyhow",
     "//third-party/rust:bytes",
     "//third-party/rust:libc",
@@ -9,12 +10,7 @@ DEPS = [
     "//third-party/rust:tokio",
 ]
 
-TEST_DEPS = [
-    "//third-party/rust:tempfile",
-]
-
 amux_rust_library(
     version = "0.1.0",
     deps = DEPS,
-    test_deps = TEST_DEPS,
 )

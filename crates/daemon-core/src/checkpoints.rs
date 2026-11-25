@@ -395,6 +395,7 @@ mod tests {
             Sqlite::open_in_memory(OWN).expect("a store opens"),
             StartOptions {
                 agents: dir.path().to_path_buf(),
+                budget: crate::StepBudget::UNLIMITED,
                 ..StartOptions::default()
             },
         );
@@ -455,6 +456,7 @@ mod tests {
             store,
             StartOptions {
                 agents: dir.path().join("agents"),
+                budget: crate::StepBudget::UNLIMITED,
                 ..StartOptions::default()
             },
         );
@@ -555,6 +557,7 @@ mod tests {
             Sqlite::open_in_memory(OWN).expect("a store opens"),
             StartOptions {
                 agents: dir.path().to_path_buf(),
+                budget: crate::StepBudget::UNLIMITED,
                 ..StartOptions::default()
             },
         );

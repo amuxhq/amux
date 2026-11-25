@@ -40,6 +40,7 @@ fn daemon(store: Sqlite, on: bool, dir: &tempfile::TempDir) -> Daemon {
             generation: 1,
             agents: dir.path().to_path_buf(),
             workspaces: on,
+            budget: crate::StepBudget::UNLIMITED,
             ..StartOptions::default()
         },
     )

@@ -12,6 +12,7 @@ DEPS = [
     "//crates/interpret:interpret",
     "//crates/journal:journal",
     "//crates/log-file:log-file",
+    "//crates/os:os",
     "//crates/pty-host:pty-host",
     "//crates/wire:wire",
     "//third-party/rust:anyhow",

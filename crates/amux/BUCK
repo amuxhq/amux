@@ -7,6 +7,7 @@ DEPS = [
     "//crates/client:client",
     "//crates/log-file:log-file",
     "//crates/node:node",
+    "//crates/os:os",
     "//crates/settings:settings",
     "//crates/tui:tui",
     "//crates/wire:wire",

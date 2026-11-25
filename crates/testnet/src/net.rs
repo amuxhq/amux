@@ -196,6 +196,8 @@ const REPOSITORIES: &str = "repositories";
 /// The home below a host's directory: where its repository suggestions read
 /// Claude Code's and Codex's session logs.
 pub const HOME: &str = "home";
+/// The installation below a host's directory: its `data_dir`.
+const DATA: &str = "data";
 
 /// Everything a host is on disk and in process.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -425,8 +427,16 @@ pub struct Net {
 }
 
 impl Net {
-    /// Starts `topology` on a driven clock.
+    /// Starts `topology` on a driven clock: the tests' net.
+    ///
+    /// On Windows, refuses outside Buck's test runner
+    /// ([`os::testing::require_test_runner`]): a test run by hand there
+    /// would open the net's processes' windows on the desktop. The shared
+    /// start ([`Net::start_with`]) leaves that to its callers, so
+    /// `testnet serve` and `testnet ctl up`, which a person drives by hand,
+    /// run anywhere.
     pub async fn start(topology: Topology) -> Result<Self, NetError> {
+        os::testing::require_test_runner("starting a net");
         Self::start_with(topology, NetOptions::default()).await
     }
 
@@ -435,6 +445,11 @@ impl Net {
     /// in order, each returning once its process has said hello. When this
     /// returns the net is ready.
     pub async fn start_with(topology: Topology, options: NetOptions) -> Result<Self, NetError> {
+        // Before any host starts a child: on Windows a child otherwise
+        // inherits this process's standard handles, whatever its `Stdio`
+        // says. Every amux `main` does this first, testnet's among them;
+        // a test that starts a net has no `main` of its own.
+        os::process::harden_start();
         topology.check()?;
         crate::link_log::install();
         crate::ssh::install();
@@ -583,7 +598,7 @@ impl Net {
             }
         }
         let dir = self.hosts[name].dir.clone();
-        kill_agents_under(&dir).await?;
+        kill_agents_in(&agents_folders(&self.hosts[name].info.data_dir)).await?;
         if process.is_some() {
             // A daemon or supervisor that outlived its stop dies here with
             // the agents: its command line names the host's folder. Nothing
@@ -1589,42 +1604,89 @@ impl Net {
 
     /// Stops `name`'s process where it stands, as a machine too busy to
     /// schedule it would: it keeps its lock and its connection and answers
-    /// nothing until thawed.
+    /// nothing until thawed. Only the agent process stops; its provider
+    /// runs on (SIGSTOP on Unix, `NtSuspendProcess` on Windows).
     pub fn freeze(&self, name: &str) -> Result<Ack, NetError> {
-        self.signal(name, "-STOP")?;
+        let dir = self.agent_dir(name)?;
+        let process = self.agent_process(name)?;
+        process
+            .suspend()
+            .map_err(|error| self.process_error(name, &error.to_string()))?;
+        Self::frozen().push((dir, process));
         Ok(self.ack(format!("{name} frozen")))
     }
 
     /// Lets a frozen process run again.
     pub fn thaw(&self, name: &str) -> Result<Ack, NetError> {
-        self.signal(name, "-CONT")?;
+        let dir = self.agent_dir(name)?;
+        let held = {
+            let mut frozen = Self::frozen();
+            let at = frozen.iter().position(|(frozen, _)| *frozen == dir);
+            at.map(|at| frozen.swap_remove(at).1)
+        };
+        // One this net did not freeze is found as freeze finds one.
+        let process = match held {
+            Some(process) => process,
+            None => self.agent_process(name)?,
+        };
+        process
+            .resume()
+            .map_err(|error| self.process_error(name, &error.to_string()))?;
         Ok(self.ack(format!("{name} thawed")))
     }
 
-    fn signal(&self, name: &str, signal: &str) -> Result<(), NetError> {
-        let dir = self.agent_dir(name)?;
-        #[cfg(unix)]
-        {
-            // `amux agent <dir>`: the directory is on its command line.
-            let status = std::process::Command::new("pkill")
-                .arg(signal)
-                .arg("-f")
-                .arg(format!("agent {}", dir.display()))
-                .status()?;
-            if status.success() {
-                Ok(())
-            } else {
-                Err(NetError::Host {
-                    host: self.agent(name)?.host.clone(),
-                    error: format!("no process of {name} to signal"),
+    /// `name`'s agent process, pinned: the one serving its directory's
+    /// `private/agent.sock`.
+    pub fn agent_process(&self, name: &str) -> Result<os::process::ProcessRef, NetError> {
+        Self::agent_process_in(&self.agent_dir(name)?)
+            .map_err(|error| self.process_error(name, &error.to_string()))
+    }
+
+    fn process_error(&self, name: &str, why: &str) -> NetError {
+        match self.agent(name) {
+            Ok(agent) => NetError::Host {
+                host: agent.host.clone(),
+                error: format!("no process of {name} to reach: {why}"),
+            },
+            Err(error) => error,
+        }
+    }
+
+    /// The agent process of the agent directory `dir`, pinned: the process
+    /// serving its `private/agent.sock`, as the operating system names that
+    /// socket's server. The dial is one its tool server could make, closed
+    /// before it asks anything, which the agent shrugs off.
+    pub(crate) fn agent_process_in(dir: &Path) -> std::io::Result<os::process::ProcessRef> {
+        let socket = agent_dir::agent_sock::path(dir);
+        // Callers are synchronous and may hold a runtime's only thread, so the
+        // dial runs on a thread and a runtime of its own.
+        let pid = std::thread::scope(|scope| {
+            scope
+                .spawn(|| -> std::io::Result<Option<u32>> {
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()?
+                        .block_on(async {
+                            let (stream, pid) =
+                                agent_dir::local_socket::connect_to_process(&socket).await?;
+                            stream.close();
+                            Ok(pid)
+                        })
                 })
-            }
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = (dir, signal);
-            Err(NetError::Unsupported("signalling agent processes"))
-        }
+                .join()
+                .unwrap_or_else(|_| Err(std::io::Error::other("the dial panicked")))
+        })?
+        .ok_or_else(|| std::io::Error::other("its socket does not say who serves it"))?;
+        os::process::ProcessRef::open(pid)
+    }
+
+    /// The agent processes [`Net::freeze`] stopped and [`Net::thaw`] has not
+    /// let go, by agent directory: a thaw then needs no dial, which on Windows
+    /// a suspended process's pipe might not have an instance ready for.
+    fn frozen() -> std::sync::MutexGuard<'static, Vec<(PathBuf, os::process::ProcessRef)>> {
+        static FROZEN: std::sync::Mutex<Vec<(PathBuf, os::process::ProcessRef)>> =
+            std::sync::Mutex::new(Vec::new());
+        FROZEN.lock().unwrap_or_else(|poison| poison.into_inner())
     }
 
     fn write_script(&self, name: &str, mut script: Script) -> Result<PathBuf, NetError> {
@@ -1827,7 +1889,7 @@ impl Net {
             dir = self.root.path().join(format!("{}-{n}", decl.name));
             n += 1;
         }
-        let data_dir = dir.join("data");
+        let data_dir = dir.join(DATA);
         let work = dir.join("work");
         std::fs::create_dir_all(&work)?;
         std::fs::create_dir_all(dir.join(HOME))?;
@@ -2003,7 +2065,7 @@ impl Net {
                 .join(format!("{}.json", configured_script(&decl.name, id)));
             text.push_str(&format!(
                 "[agents.{id}]\ncommand = {}\nargs = [\"acp\"]\nenv = {{ {} = {} }}\n",
-                quoted(&dir.join("bin").join("acp")),
+                quoted(&provider_fakes::dispatch::program(&dir.join("bin"), "acp")),
                 providers::AGENT_SCRIPT_ENV,
                 quoted(&script),
             ));
@@ -3290,7 +3352,7 @@ impl Net {
         }
         let info = self.host(host)?.clone();
         let profile_dir = node::profile_dir(&info.data_dir, info.profile);
-        kill_agents_under(&profile_dir.join(node::AGENTS)).await?;
+        kill_agents_in(&[profile_dir.join(node::AGENTS)]).await?;
 
         let db = profile_dir.join(node::STORE);
         std::fs::write(&db, checkpoint)?;
@@ -3942,20 +4004,29 @@ impl Net {
                     let _ = process.stop().await;
                     // A supervised host whose daemon was killed may still be
                     // starting it again; its supervisor goes with the stop.
-                    if let Some(pid) = process.daemon_pid() {
-                        let _ = crate::process::signal(pid, "-KILL");
+                    if let Some(pid) = process.daemon_pid()
+                        && let Ok(daemon) = os::process::ProcessRef::open(pid)
+                    {
+                        let _ = daemon.kill();
                     }
                 }
                 None => self.take_down(name, true).await?,
             }
         }
         // Agents of hosts that were down at the end have no daemon to
-        // stop them. Only Unix finds them by command line; elsewhere the
-        // daemons' own kills above are all there is, and an agent that
-        // outlives the net is reported by the test runner as a leak.
-        #[cfg(unix)]
-        kill_agents_under(self.root.path()).await?;
+        // stop them, and a daemon's own kill may not have finished: every
+        // agent of the net is found by its lock and ended here.
+        kill_agents_in(&self.agents_folders()).await?;
         Ok(())
+    }
+
+    /// Every agents folder of the net's hosts ([`agents_folders`]): where
+    /// teardown looks for the agents it ends, and nowhere else.
+    fn agents_folders(&self) -> Vec<PathBuf> {
+        self.hosts
+            .values()
+            .flat_map(|host| agents_folders(&host.info.data_dir))
+            .collect()
     }
 }
 
@@ -3964,6 +4035,9 @@ impl Drop for Net {
         for host in self.hosts.values_mut() {
             drop(host.daemon.take());
         }
+        // A panicking test's net: its agents killed, without waiting, so
+        // none outlives it.
+        kill_holders(&agent_dirs(&self.agents_folders()), &mut Vec::new());
         #[cfg(unix)]
         let _ = std::process::Command::new("pkill")
             .args(["-KILL", "-f"])
@@ -4120,58 +4194,120 @@ fn processes_under(dir: &Path) -> Vec<u32> {
 #[cfg(unix)]
 fn kill_pids(pids: &[u32]) {
     for pid in pids {
-        let _ = crate::process::signal(*pid, "-KILL");
-    }
-}
-
-/// SIGKILLs every agent process whose directory lies under `dir`, and
-/// waits until each has released its directory's lock.
-async fn kill_agents_under(dir: &Path) -> Result<(), NetError> {
-    #[cfg(unix)]
-    {
-        // `amux agent <dir>`: the agent's own directory is on its command
-        // line, and every agent of the net lives under its root.
-        kill_pids(&processes_under(dir));
-        let locked: Vec<PathBuf> = agent_dirs(dir);
-        observe::until("the killed agents to release their locks", || {
-            let held: Vec<&PathBuf> = locked.iter().filter(|dir| agent_dir::locked(dir)).collect();
-            async move {
-                held.is_empty()
-                    .then_some(())
-                    .ok_or_else(|| format!("locks still held: {held:?}"))
-            }
-        })
-        .await?;
-        Ok(())
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = dir;
-        Err(NetError::Unsupported("killing agent processes"))
-    }
-}
-
-/// Every directory under `dir` that holds an agent's lock file.
-#[cfg(unix)]
-fn agent_dirs(dir: &Path) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    let mut pending = vec![dir.to_owned()];
-    while let Some(next) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(&next) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if path.join(agent_dir::LOCK).exists() {
-                    found.push(path);
-                } else {
-                    pending.push(path);
-                }
-            }
+        if let Ok(process) = os::process::ProcessRef::open(*pid) {
+            let _ = process.kill();
         }
     }
-    found
+}
+
+/// Kills every agent process whose directory is in one of the agents
+/// folders `agents` ([`agent_dirs`]), found by the lock it holds
+/// ([`agent_dir::lock_holder`]), and waits until each has exited and every
+/// lock is free. On every OS, and whether or not the agent's daemon still
+/// runs: an agent of a host that was down at the end has no daemon to stop
+/// it.
+async fn kill_agents_in(agents: &[PathBuf]) -> Result<(), NetError> {
+    let dirs = agent_dirs(agents);
+    let mut killed = Vec::new();
+    observe::until("the killed agents to release their locks", || {
+        let held = kill_holders(&dirs, &mut killed);
+        async move {
+            held.is_empty()
+                .then_some(())
+                .ok_or_else(|| format!("locks still held: {held:?}"))
+        }
+    })
+    .await?;
+    for process in killed {
+        tokio::time::timeout(PATIENCE, process.exited())
+            .await
+            .map_err(|_| Stuck::Deadline {
+                what: format!("killed agent {} to exit", process.pid()),
+                waited: PATIENCE,
+                seen: "it still runs, its lock released".to_owned(),
+            })??;
+    }
+    Ok(())
+}
+
+/// Kills the holder of each of `dirs`' locks, keeping each killed process
+/// in `killed`, and answers the directories still held: a killed holder
+/// until the kernel lets go of its lock, and a holder not yet confirmed
+/// ([`agent_dir::Holder::Unconfirmed`]): an agent a moment into its start,
+/// which a later look names and kills.
+fn kill_holders(dirs: &[PathBuf], killed: &mut Vec<os::process::ProcessRef>) -> Vec<String> {
+    let mut held = Vec::new();
+    for dir in dirs {
+        match agent_dir::lock_holder(dir) {
+            Ok(agent_dir::Holder::Free) => {}
+            Ok(agent_dir::Holder::Process(process)) => {
+                let _ = process.kill();
+                held.push(format!("{} (pid {})", dir.display(), process.pid()));
+                killed.push(process);
+            }
+            Ok(holder) => held.push(format!("{} ({holder:?})", dir.display())),
+            Err(error) => held.push(format!("{} ({error})", dir.display())),
+        }
+    }
+    held
+}
+
+/// The agents folders of the installation in `data_dir`: `agents/` in each
+/// of its profiles' folders.
+fn agents_folders(data_dir: &Path) -> Vec<PathBuf> {
+    real_dirs(&data_dir.join(node::PROFILES))
+        .into_iter()
+        .map(|profile| profile.join(node::AGENTS))
+        .collect()
+}
+
+/// The agent directories of the net whose root is `root`, found from its
+/// files alone, as `testnet ctl down` finds them once the net's process is
+/// gone: each host's installation is the [`DATA`] folder of a folder in the
+/// root, and its agents are where [`Net::shutdown`] ends them
+/// ([`agents_folders`], [`agent_dirs`]), following no link. Another
+/// installation kept anywhere else in the net's files, such as in a
+/// workspace, is not the net's.
+pub(crate) fn agent_dirs_of_net(root: &Path) -> Vec<PathBuf> {
+    let agents: Vec<PathBuf> = real_dirs(root)
+        .iter()
+        .flat_map(|host| agents_folders(&host.join(DATA)))
+        .collect();
+    agent_dirs(&agents)
+}
+
+/// The agent directories in the agents folders `agents`: each entry that
+/// holds a lock file.
+///
+/// Nothing here follows a link. A folder that is a symbolic link or (on
+/// Windows) a junction, whether an agents folder or an entry in one, may
+/// lead to another installation, whose agents are not the net's to end, so
+/// it is skipped; so is everything outside the agents folders, such as a
+/// workspace, which may hold such a link.
+fn agent_dirs(agents: &[PathBuf]) -> Vec<PathBuf> {
+    agents
+        .iter()
+        .flat_map(|folder| real_dirs(folder))
+        .filter(|dir| dir.join(agent_dir::LOCK).exists())
+        .collect()
+}
+
+/// The folders in `dir`, itself a folder and not a link to one, that are
+/// folders themselves: a link (a symbolic link, or a junction on Windows,
+/// both of which `symlink_metadata` and `DirEntry::file_type` see as one
+/// rather than following) is left out.
+fn real_dirs(dir: &Path) -> Vec<PathBuf> {
+    if !std::fs::symlink_metadata(dir).is_ok_and(|meta| meta.is_dir()) {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .map(|entry| entry.path())
+        .collect()
 }
 
 /// Runs git in `dir` for `host`'s setup.
@@ -4366,5 +4502,130 @@ mod config_agent_tests {
             built_in: false,
         };
         assert!(offered_from_config(&added, &BTreeSet::new()));
+    }
+}
+
+#[cfg(test)]
+mod teardown_tests {
+    use super::*;
+
+    /// `name`'s agent process, pinned by its lock once it holds it.
+    async fn agent_process(net: &Net, name: &str) -> os::process::ProcessRef {
+        let dir = net.agent_dir(name).unwrap();
+        observe::until(&format!("{name}'s agent to hold its lock"), || {
+            let holder = agent_dir::lock_holder(&dir);
+            async move {
+                match holder {
+                    Ok(agent_dir::Holder::Process(process)) => Ok(process),
+                    other => Err(format!("{other:?}")),
+                }
+            }
+        })
+        .await
+        .unwrap()
+    }
+
+    /// A crashed daemon's agents keep running, waiting for the next one;
+    /// when the net ends first, no daemon is left to stop them, and the
+    /// net ends them itself.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn shutdown_ends_the_agents_of_a_host_whose_daemon_is_down() {
+        let mut net = Net::start(
+            Topology::new()
+                .host("desk")
+                .agent(AgentDecl::new("worker", "desk")),
+        )
+        .await
+        .unwrap();
+        let worker = agent_process(&net, "worker").await;
+        net.kill_daemon("desk").await.unwrap();
+        assert!(worker.alive(), "the agent outlives its daemon");
+        net.shutdown().await.unwrap();
+        assert!(
+            !worker.alive(),
+            "agent process {} outlived the net",
+            worker.pid()
+        );
+    }
+
+    /// Names the agent directory [`helper_holds_a_strangers_lock`] holds.
+    const STRANGER_ENV: &str = "TESTNET_TEST_STRANGER_AGENT";
+    /// What it prints once it holds the lock and serves the socket.
+    const STRANGER_HELD: &str = "testnet-test: the stranger holds its lock";
+
+    /// Not a test of its own: the process the test below starts, an agent
+    /// of another installation as its lock and socket show it. It takes the
+    /// lock of the directory [`STRANGER_ENV`] names, serves the directory's
+    /// agent socket, says so, and waits for its input to close. Run without
+    /// that variable, it does nothing.
+    #[test]
+    fn helper_holds_a_strangers_lock() {
+        use std::io::Write as _;
+        let Some(dir) = std::env::var_os(STRANGER_ENV) else {
+            return;
+        };
+        let dir = Path::new(&dir);
+        let _lock = agent_dir::lock(dir).unwrap().expect("the lock is free");
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        std::fs::create_dir_all(dir.join(agent_dir::PRIVATE)).unwrap();
+        let mut listener = {
+            let _entered = runtime.enter();
+            agent_dir::local_socket::LocalListener::bind(&agent_dir::agent_sock::path(dir)).unwrap()
+        };
+        runtime.spawn(async move {
+            while let Ok(stream) = listener.accept().await {
+                drop(stream);
+            }
+        });
+        println!("{STRANGER_HELD}");
+        std::io::stdout().flush().unwrap();
+        let _ = std::io::Read::read_to_end(&mut std::io::stdin(), &mut Vec::new());
+    }
+
+    /// A link inside the net to another installation's agents, as a
+    /// workspace or an agents folder might hold, leads teardown nowhere: the
+    /// net ends only the agents in its own hosts' agent folders, and
+    /// follows no symbolic link or junction to find them.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn teardown_follows_no_link_out_of_the_net() {
+        use std::io::BufRead as _;
+        let net = Net::start(Topology::new().host("desk")).await.unwrap();
+        let stranger = tempfile::tempdir().unwrap();
+        let agents = stranger.path().join(node::AGENTS);
+        let theirs = agents.join("theirs");
+        std::fs::create_dir_all(&theirs).unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "net::teardown_tests::helper_holds_a_strangers_lock",
+                "--nocapture",
+            ])
+            .env(STRANGER_ENV, &theirs)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut said = std::io::BufReader::new(child.stdout.take().unwrap()).lines();
+        assert!(
+            said.by_ref()
+                .map_while(Result::ok)
+                .any(|line| line.trim() == STRANGER_HELD),
+            "the stranger ended without taking its lock: {:?}",
+            child.wait()
+        );
+        std::thread::spawn(move || said.for_each(drop));
+        let desk = net.host("desk").unwrap().clone();
+        std::fs::create_dir_all(&desk.work).unwrap();
+        os::testing::faults::link_dir(stranger.path(), &desk.work.join("elsewhere")).unwrap();
+        let own = node::profile_dir(&desk.data_dir, desk.profile).join(node::AGENTS);
+        std::fs::create_dir_all(&own).unwrap();
+        os::testing::faults::link_dir(&theirs, &own.join("linked")).unwrap();
+
+        net.shutdown().await.unwrap();
+        let alive = child.try_wait().unwrap().is_none();
+        drop(child.stdin.take());
+        let _ = child.wait();
+        assert!(alive, "teardown ended another installation's agent");
     }
 }

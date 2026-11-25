@@ -3820,7 +3820,7 @@ fn story_snapshot(kind: wire::Kind, snapshot: wire::Snapshot) -> wire::Snapshot 
         kind: kind as i32,
         capabilities: snapshot.capabilities.clone().or(Some(Box::new(match kind {
             wire::Kind::ClaudePty => wire::AgentCapabilities::claude_pty(),
-            wire::Kind::Codex => wire::AgentCapabilities::codex(),
+            wire::Kind::Codex => wire::AgentCapabilities::codex(wire::Platform::here()),
             wire::Kind::Acp => wire::AgentCapabilities::acp(true, true, false),
             _ => wire::AgentCapabilities::claude_sdk(),
         }))),

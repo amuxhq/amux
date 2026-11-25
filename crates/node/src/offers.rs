@@ -94,10 +94,12 @@ pub const OWN: [&str; 2] = [CLAUDE, CODEX];
 
 /// The kinds amux's own provider runs as on this host: Claude in its own
 /// terminal, except on Windows, which hosts no terminal Claude, and
-/// headless; Codex as Codex.
+/// headless; Codex as Codex ([`wire::Kind::hosted_on`] this platform).
 pub fn own_kinds(provider: &str) -> &'static [wire::Kind] {
     match provider {
-        CLAUDE if cfg!(windows) => &[wire::Kind::ClaudeSdk],
+        CLAUDE if !wire::Kind::ClaudePty.hosted_on(wire::Platform::here()) => {
+            &[wire::Kind::ClaudeSdk]
+        }
         CLAUDE => &[wire::Kind::ClaudePty, wire::Kind::ClaudeSdk],
         _ => &[wire::Kind::Codex],
     }
@@ -348,7 +350,7 @@ impl Offers {
                         capabilities: Some(match kind {
                             wire::Kind::ClaudePty => AgentCapabilities::claude_pty(),
                             wire::Kind::ClaudeSdk => AgentCapabilities::claude_sdk(),
-                            _ => AgentCapabilities::codex(),
+                            _ => AgentCapabilities::codex(wire::Platform::here()),
                         }),
                     })
                     .collect(),

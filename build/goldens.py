@@ -21,7 +21,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BUCK2 = str(ROOT / "scripts/buck2")
+# scripts/buck2 is a shell script, which Windows can't start itself.
+BUCK2 = (["sh"] if os.name == "nt" else []) + [str(ROOT / "scripts/buck2")]
 
 # Each crate's switch; setting them all is harmless, since each test reads
 # only its own.
@@ -47,7 +48,7 @@ def main() -> int:
     failed = []
     for target in targets:
         print(f"goldens: {target}", flush=True)
-        if subprocess.run([BUCK2, "run", target], cwd=ROOT, env=env).returncode != 0:
+        if subprocess.run([*BUCK2, "run", target], cwd=ROOT, env=env).returncode != 0:
             failed.append(target)
     changed = subprocess.run(
         ["git", "status", "--short", "--", "crates"], cwd=ROOT, capture_output=True, text=True

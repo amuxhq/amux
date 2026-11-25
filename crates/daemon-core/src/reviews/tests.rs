@@ -48,6 +48,7 @@ fn rig(on: bool, agents: &[(AgentId, &str)]) -> Rig {
             generation: 1,
             agents: dir.path().to_path_buf(),
             reviews: on,
+            budget: crate::StepBudget::UNLIMITED,
             ..StartOptions::default()
         },
     );

@@ -59,7 +59,7 @@ pub fn offered(id: &str, name: &str, kind: Kind) -> wire::ProviderOnHost {
             capabilities: Some(match kind {
                 Kind::ClaudePty => wire::AgentCapabilities::claude_pty(),
                 Kind::ClaudeSdk => wire::AgentCapabilities::claude_sdk(),
-                Kind::Codex => wire::AgentCapabilities::codex(),
+                Kind::Codex => wire::AgentCapabilities::codex(wire::Platform::here()),
                 _ => wire::AgentCapabilities::acp(true, true, false),
             }),
         })

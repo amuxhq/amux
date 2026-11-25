@@ -2551,12 +2551,13 @@ pub(crate) fn subagent_capabilities(stops_job: bool) -> wire::AgentCapabilities 
 
 /// What every agent of `kind` can do, for the kinds whose agents are all
 /// alike: Claude's two and Codex. None for an ACP agent, whose interpreter
-/// says it from its program's handshake.
+/// says it from its program's handshake. The interpreter runs on the
+/// agent's own host, so it says what the agent can do there.
 fn fixed_capabilities(kind: wire::Kind) -> Option<wire::AgentCapabilities> {
     match kind {
         wire::Kind::ClaudePty => Some(wire::AgentCapabilities::claude_pty()),
         wire::Kind::ClaudeSdk => Some(wire::AgentCapabilities::claude_sdk()),
-        wire::Kind::Codex => Some(wire::AgentCapabilities::codex()),
+        wire::Kind::Codex => Some(wire::AgentCapabilities::codex(wire::Platform::here())),
         wire::Kind::Acp | wire::Kind::Unspecified => None,
     }
 }

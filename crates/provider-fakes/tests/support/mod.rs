@@ -16,6 +16,12 @@ use tokio::process::{Child, ChildStdin, ChildStdout};
 
 pub const DEADLINE: Duration = Duration::from_secs(20);
 
+/// Readies a test that starts a fake: on Windows only under Buck's test
+/// runner, where its console stays off the desktop.
+pub fn ready() {
+    os::testing::require_test_runner("this test starts fake providers");
+}
+
 /// The recorded corpus a kind's composed frames are held to.
 pub fn corpus(kind: Kind) -> &'static Corpus {
     static SDK: OnceLock<Corpus> = OnceLock::new();
@@ -78,6 +84,7 @@ impl Host {
         exempt: &'static [&'static str],
         env: &[(&str, &std::ffi::OsStr)],
     ) -> Self {
+        ready();
         let dir = tempfile::tempdir().unwrap();
         let path = script_file(dir.path(), script);
         let mut child = tokio::process::Command::new(binary)
@@ -174,6 +181,8 @@ impl Host {
 }
 
 /// A fake serving `app-server --listen unix://…`, for its clients to share.
+// out of scope on Windows: raw attach, which Codex's app-server socket is
+// for; a Windows host speaks to Codex over stdio.
 #[cfg(unix)]
 pub struct Server {
     child: Child,
@@ -182,9 +191,11 @@ pub struct Server {
     _dir: tempfile::TempDir,
 }
 
+// out of scope on Windows: raw attach (Codex's app-server socket).
 #[cfg(unix)]
 impl Server {
     pub fn start(binary: &str, script: Value) -> Self {
+        ready();
         let dir = tempfile::tempdir().unwrap();
         let path = script_file(dir.path(), script);
         let socket = dir.path().join("codex.sock");
@@ -226,6 +237,7 @@ impl Server {
 }
 
 /// One client of a [`Server`], speaking WebSocket text frames.
+// out of scope on Windows: raw attach (Codex's app-server socket).
 #[cfg(unix)]
 pub struct Client {
     kind: Kind,
@@ -235,6 +247,7 @@ pub struct Client {
     pub frames: Vec<Value>,
 }
 
+// out of scope on Windows: raw attach (Codex's app-server socket).
 #[cfg(unix)]
 impl Client {
     pub async fn send(&mut self, frame: Value) {

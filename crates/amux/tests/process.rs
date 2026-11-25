@@ -8,8 +8,6 @@
 //! meanwhile; an agent that exited while no daemon was running is found
 //! exited; and resuming either loses nothing of what came before.
 
-#![cfg(unix)]
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
@@ -17,7 +15,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt as _;
 use patience::{PATIENCE, holds_for, until, until_within};
-use provider_fakes::{SCRIPT_ENV, Script, Step};
+use provider_fakes::{SCRIPT_ENV, Script, Step, dispatch};
 use tokio::io::AsyncBufReadExt as _;
 use tokio::process::{Child, Command};
 use tonic::transport::{Channel, Endpoint};
@@ -61,7 +59,11 @@ impl Install {
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::create_dir_all(&work).unwrap();
         for (name, fake) in [("claude", "fake-claude-sdk"), ("codex", "fake-codex")] {
-            std::os::unix::fs::symlink(binaries().join(fake), bin.join(name)).unwrap();
+            dispatch::link(
+                &dispatch::program(binaries(), fake),
+                &dispatch::program(&bin, name),
+            )
+            .unwrap();
         }
         // The built-in ACP agents' commands, shadowed by a program that
         // fails at once: a daemon whose config file is removed under it
@@ -69,7 +71,17 @@ impl Install {
         // PATH would start the Antigravity, OpenCode or Grok installed
         // there (see `support::NO_REAL_AGENTS`).
         for name in ["agy", "opencode", "grok"] {
-            std::os::unix::fs::symlink("/usr/bin/false", bin.join(name)).unwrap();
+            dispatch::install(
+                &dispatch::program(binaries(), dispatch::BINARY),
+                &dispatch::program(&bin, name),
+                &dispatch::Plan::Answer {
+                    lines: 0,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    code: 1,
+                },
+            )
+            .unwrap();
         }
         let script = root.path().join("script.json");
         std::fs::write(
@@ -107,11 +119,12 @@ impl Install {
 
     /// A command for the amux binary in this installation's environment.
     fn command(&self, args: &[&str]) -> Command {
-        let path = format!(
-            "{}:{}",
-            self.root.path().join("bin").display(),
-            std::env::var("PATH").unwrap_or_default()
-        );
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let path = std::env::join_paths(
+            std::iter::once(self.root.path().join("bin")).chain(std::env::split_paths(&path)),
+        )
+        .unwrap();
+        os::testing::require_test_runner("this test runs amux");
         let mut command = Command::new(source_tree::bin!("amux"));
         command
             .args(args)
@@ -523,6 +536,10 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux profile rm office` fails: the file is being used by another process (os error 32)"
+)]
 async fn the_cli_verbs_work_against_a_started_daemon() {
     let gate = tempfile::tempdir().unwrap();
     let gate = gate.path().join("gate");
@@ -704,6 +721,45 @@ async fn a_root_too_deep_for_a_socket_address_still_serves() {
     assert!(install.front_door().await.is_none());
 }
 
+/// An install with no supervisor whose config is the default file under a
+/// relative `XDG_CONFIG_HOME`: the CLI reads it from where it runs, and the
+/// daemon it starts, which runs in the installation's root, reads that same
+/// file and serves the root the CLI waits on.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_daemon_started_under_a_relative_config_home_serves_the_callers_root() {
+    use crate::support::desk::{Desk, LONG_GRACE_SECS};
+    let desk = Desk::new(
+        false,
+        LONG_GRACE_SECS,
+        node::version(),
+        "http://127.0.0.1:9/",
+        Vec::new(),
+    );
+    let home = desk.root.path().join("cfg").join("amux");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::copy(&desk.config, home.join("config.toml")).unwrap();
+    let mut start = desk.command(&["server", "start"]);
+    start
+        .env_remove("AMUX_CONFIG")
+        .env("XDG_CONFIG_HOME", "cfg")
+        // Where a daemon that missed the file would put its root: in the
+        // test's own folder, whatever this machine's home holds.
+        .env("XDG_DATA_HOME", desk.root.path().join("elsewhere"))
+        .env("HOME", desk.root.path().join("home"))
+        .current_dir(desk.root.path());
+    let started = tokio::time::timeout(PATIENCE, start.output())
+        .await
+        .expect("amux server start finishes")
+        .unwrap();
+    assert!(
+        started.status.success(),
+        "amux server start failed: {}{}",
+        String::from_utf8_lossy(&started.stdout),
+        String::from_utf8_lossy(&started.stderr)
+    );
+    assert!(desk.socket.exists(), "the daemon serves the config's root");
+}
+
 /// The `serving` lines of the daemon's log: one per start.
 fn serving_lines(install: &Install) -> Vec<String> {
     std::fs::read_to_string(install.data.join("daemon.log"))
@@ -739,6 +795,10 @@ fn zombies_of(pid: u32) -> Vec<String> {
 /// restart, and a name this build does not have restarts nothing. The agent
 /// the old image started is reaped by the new one once it exits.
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: the daemon the service manager started is still running after the experiment switch"
+)]
 async fn switching_an_experiment_restarts_the_daemon_in_place_once() {
     let gate = tempfile::tempdir().unwrap();
     let gate = gate.path().join("gate");
@@ -892,6 +952,9 @@ async fn switching_an_experiment_restarts_the_daemon_in_place_once() {
 /// hand, reads as the default it runs already, and a key it does not read is
 /// nothing, so neither restarts; a new delay set with `amux config` is one
 /// restart, and the next serving line runs it.
+// On Windows, which has no exec, the restarted daemon is a new process the
+// test doesn't hold, and it outlives the test: Buck's runner ends it with
+// the test's job, and a cargo run leaves it running.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_running_experiments_setting_restarts_the_daemon_once() {
     let mut install = Install::new(Vec::new());

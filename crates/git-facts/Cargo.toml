@@ -13,6 +13,9 @@ tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 
+[dev-dependencies]
+os = { workspace = true, features = ["testing"] }
+
 [[test]]
 name = "integration"
 path = "tests/integration.rs"

@@ -33,6 +33,7 @@ from pathlib import Path
 import argparse
 import datetime
 import json
+import os
 import plistlib
 import re
 import subprocess
@@ -428,8 +429,9 @@ def build_app(version: str, build_number: int) -> Path:
     sake: it builds the would-be release with the tree untouched. A real run
     has written the same numbers into the tree already, so the two agree."""
     print(f"building {version} ({build_number})", flush=True)
+    # scripts/buck2 is a shell script, which Windows can't start itself.
     built = subprocess.run([
-        "scripts/buck2", "build", TARGET, f"{TARGET}[dsyms]", "--target-platforms", PLATFORM,
+        *(["sh"] if os.name == "nt" else []), "scripts/buck2", "build", TARGET, f"{TARGET}[dsyms]", "--target-platforms", PLATFORM,
         "-c", f"apple.marketing_version={version}",
         "-c", f"apple.build_number={build_number}",
         "--show-full-json-output",

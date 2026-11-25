@@ -339,7 +339,9 @@ fn codex_settings(
         model_name: agent.model_name.clone(),
         revision: agent.revision + 1,
         catalogue: agent.catalogue.clone(),
-        capabilities: Some(Box::new(wire::AgentCapabilities::codex())),
+        capabilities: Some(Box::new(wire::AgentCapabilities::codex(
+            wire::Platform::here(),
+        ))),
         ..wire::Snapshot::default()
     })));
     state

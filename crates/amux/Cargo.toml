@@ -25,6 +25,7 @@ crossterm = { workspace = true }
 futures-util = { workspace = true }
 hyper-util = { workspace = true }
 node = { workspace = true }
+os = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_ignored = { workspace = true }

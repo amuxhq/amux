@@ -3,10 +3,10 @@
 //! and on the hook commands, and every row and payload has a recorded
 //! shape.
 
-// Unix only: Windows does not host terminal Claude. ConPTY re-renders the
-// child's output in its own escape sequences, and Claude's messaging socket and
-// the fake's raw console mode are Unix-only in this build; see
-// docs/ARCHITECTURE.md, "Windows, as a stated cost".
+// ConPTY re-renders the child's output in its own escape sequences, and
+// Claude's messaging socket and the fake's raw console mode are Unix-only in
+// this build; see docs/ARCHITECTURE.md, "Windows, as a stated cost".
+// out of scope on Windows: terminal Claude.
 #![cfg(unix)]
 
 use std::ffi::OsString;

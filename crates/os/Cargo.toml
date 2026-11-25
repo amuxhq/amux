@@ -1,0 +1,37 @@
+[package]
+name = "os"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The operating-system primitives several amux crates share, one API with an implementation per OS"
+publish = false
+
+[features]
+# The parts that take tokio: spawning a tokio Command into a family, a
+# ProcessRef of a tokio Child and waiting on it, and os::signal.
+async = ["dep:tokio"]
+# Hooks that let a test deliver each stop event in-process (os::signal::testing).
+testing = []
+
+# Only libc and windows-sys, plus tokio behind `async` (docs/ARCHITECTURE.md,
+# "The crate map").
+[dependencies]
+tokio = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true }
+
+# A real console to close under a test: a pseudo-console is one with no
+# window.
+[target.'cfg(windows)'.dev-dependencies]
+portable-pty = { workspace = true }
+
+[lints]
+workspace = true

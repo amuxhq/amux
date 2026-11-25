@@ -1,8 +1,6 @@
 //! `amux new --worktree`: an agent started from the shell in a new worktree
 //! of its folder's repository, with the workspaces experiment on and off.
 
-#![cfg(unix)]
-
 use std::path::{Path, PathBuf};
 
 use support::desk::{Desk, LONG_GRACE_SECS, say};
@@ -73,6 +71,10 @@ async fn desk(workspaces: bool) -> Desk {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: git can't make the worktree under the verbatim data path amux hands it (`//?/C:/...`): could not create leading directories"
+)]
 async fn amux_new_with_worktree_starts_its_agent_in_a_new_worktree() {
     for workspaces in [true, false] {
         say(format!(

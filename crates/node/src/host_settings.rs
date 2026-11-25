@@ -637,10 +637,8 @@ mod tests {
         std::fs::create_dir_all(&app).unwrap();
         std::fs::create_dir_all(&lib).unwrap();
         let linked = dir.path().join("lib-link");
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(&lib, &linked).unwrap();
-        #[cfg(windows)]
-        std::os::windows::fs::symlink_dir(&lib, &linked).unwrap();
+        // A junction on Windows, which takes no privilege.
+        provider_fakes::faults::link_dir(&lib, &linked).unwrap();
         let gone = dir.path().join("gone");
         std::fs::write(
             &path,

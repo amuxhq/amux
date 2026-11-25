@@ -74,14 +74,6 @@ start = "echo started >> .wt/ran"
 stop = "echo stopped >> .wt/ran"
 "#;
 
-/// A stop hook slow enough to delete the tree's agent while it runs, which
-/// says when it begins.
-const SLOW_STOP_CONFIG: &str = r#"
-[lifecycle]
-start = "echo started >> .wt/ran"
-stop = "echo stopping >> .wt/ran; sleep 3; echo stopped >> .wt/ran"
-"#;
-
 /// A repository named `shop` on `main`, configured for wt, with a bare
 /// `origin` whose default branch is `main`.
 fn wt_repository(install: &Install) -> PathBuf {
@@ -212,13 +204,13 @@ async fn gone(path: &Path) {
 }
 
 /// What the tree's hooks have recorded.
-#[cfg(unix)]
+#[cfg(not(windows))] // out of scope on Windows: wt
 fn ran(tree: &Path) -> String {
     std::fs::read_to_string(tree.join(".wt/ran")).unwrap_or_default()
 }
 
 /// Waits for the tree's hooks to have recorded `what` `times` times.
-#[cfg(unix)]
+#[cfg(not(windows))] // out of scope on Windows: wt
 async fn hook_ran(tree: &Path, what: &str, times: usize) {
     until(&format!("{what} to run {times} times"), || async {
         let ran = ran(tree);
@@ -379,7 +371,7 @@ async fn a_dirty_worktree_stays_nobodys_without_consent_and_goes_with_it() {
 }
 
 // wt and its backend are Unix-only.
-#[cfg(unix)]
+#[cfg(not(windows))] // out of scope on Windows: wt
 #[tokio::test(flavor = "multi_thread")]
 async fn a_new_wt_tree_runs_its_agent_in_its_environment_and_its_hooks_with_its_agents() {
     let install = Install::new();
@@ -447,10 +439,7 @@ async fn a_new_wt_tree_runs_its_agent_in_its_environment_and_its_hooks_with_its_
 /// The `shop` repository with a checkout hook that holds every worktree
 /// git adds until the gate exists, and a daemon on it running the
 /// workspaces experiment as its settings, in memory, switch on.
-#[cfg(unix)]
 async fn slow_checkouts(install: &Install) -> (PathBuf, PathBuf, node::Daemon) {
-    use std::os::unix::fs::PermissionsExt as _;
-
     let repo = repository(install);
     let gate = install.path("checkout-gate");
     let hook = repo.join(".git/hooks/post-checkout");
@@ -466,7 +455,8 @@ async fn slow_checkouts(install: &Install) -> (PathBuf, PathBuf, node::Daemon) {
         ),
     )
     .unwrap();
-    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // Git for Windows runs a hook with its own sh, executable bit or not.
+    os::fs::make_executable(&hook).unwrap();
     let mut options = install.options("boot-1", launch(install, true));
     // Started with what its settings switch on, as `amux daemon` is.
     options.settings.initial =
@@ -477,7 +467,6 @@ async fn slow_checkouts(install: &Install) -> (PathBuf, PathBuf, node::Daemon) {
 }
 
 /// Switches the daemon's experiments to `names` through its front door.
-#[cfg(unix)]
 async fn switch(daemon: &node::Daemon, names: &[&str]) {
     use wire::installation_service_server::InstallationService as _;
     daemon
@@ -496,7 +485,6 @@ async fn switch(daemon: &node::Daemon, names: &[&str]) {
 /// is making is made: cut off by the restart, the agent would end as could
 /// not start. git's checkout hook holds the make here until the test opens
 /// its gate; the restart is wanted only after, with the row made.
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_restart_for_an_experiment_switch_waits_for_a_workspace_being_made() {
     let install = Install::new();
@@ -554,7 +542,6 @@ async fn a_restart_for_an_experiment_switch_waits_for_a_workspace_being_made() {
 /// The restart is one decision made again whenever anything moves: a
 /// config that stopped reading holds it, and once the file reads again a
 /// workspace begun meanwhile is waited for like any other.
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_restart_held_by_an_unreadable_config_still_waits_for_work_begun_meanwhile() {
     use std::sync::Arc;
@@ -603,7 +590,6 @@ async fn a_restart_held_by_an_unreadable_config_still_waits_for_work_begun_meanw
 /// A switch made while the restart waits for work restarts the quiet: once
 /// the work is done the restart still waits until the latest switch has
 /// stayed put, so switches in a row stay one restart.
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_switch_made_while_work_settles_restarts_the_quiet() {
     let install = Install::new();
@@ -647,9 +633,17 @@ async fn a_switch_made_while_work_settles_restarts_the_quiet() {
 /// agent whose process just ended does: wt refuses a removal under the
 /// hook's exclusive hold, so the delete waits for the stop, and the tree
 /// goes rather than staying on disk, nobody's.
-#[cfg(unix)]
+#[cfg(not(windows))] // out of scope on Windows: wt
 #[tokio::test(flavor = "multi_thread")]
 async fn a_wt_tree_deleted_while_its_stop_hook_runs_goes_once_the_stop_ends() {
+    /// A stop hook slow enough to delete the tree's agent while it runs,
+    /// which says when it begins.
+    const SLOW_STOP_CONFIG: &str = r#"
+[lifecycle]
+start = "echo started >> .wt/ran"
+stop = "echo stopping >> .wt/ran; sleep 3; echo stopped >> .wt/ran"
+"#;
+
     let install = Install::new();
     let repo = wt_repository_with(&install, SLOW_STOP_CONFIG);
     let wt_home = place(&install, "wt-home");

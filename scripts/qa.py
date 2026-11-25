@@ -39,6 +39,8 @@ import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
+# The repository's sh scripts, which Windows can't start itself.
+SH = ["sh"] if os.name == "nt" else []
 QA = ROOT / "qa"
 TARGET = ROOT / "target" / "debug"
 APP = ROOT / "target" / "ios" / "Debug-iphonesimulator" / "Amux.app"
@@ -48,7 +50,7 @@ SEVERITIES = ["data loss", "broken flow", "wrong state", "visual", "wording"]
 # `testnet serve` to exit; past this, the launcher kills what is left.
 DOWN_PATIENCE = 300
 BINARIES = ["amux", "testnet", "dump-show", "claude-probe", "codex-probe",
-            "fake-claude-sdk", "fake-claude-pty", "fake-codex", "fake-acp"]
+            "fake-claude-sdk", "fake-claude-pty", "fake-codex", "fake-acp", "fake-provider"]
 
 
 def say(text: str) -> None:
@@ -59,7 +61,7 @@ def build(phone: bool) -> None:
     """One debug build with fixed features, so no net ever rebuilds."""
     say("building the binaries")
     subprocess.run(
-        [str(ROOT / "scripts" / "bounded"), "1800", "cargo", "build", "--locked",
+        [*SH, str(ROOT / "scripts" / "bounded"), "1800", "cargo", "build", "--locked",
          "-p", "amux", "-p", "provider-fakes", "-p", "testnet", "-p", "qualification",
          "-p", "replay-support", "--bins"],
         cwd=ROOT, check=True,
@@ -227,7 +229,7 @@ class Tester:
             # `ctl phone` it runs uses the one simulator it was given.
             # `wt exec` runs in the tree's root; the tester goes back to its
             # own folder, outside the repository, before it starts.
-            command = ["wt", "exec", self.tree, "--", str(ROOT / "scripts" / "with"), "iphone", "--",
+            command = ["wt", "exec", self.tree, "--", *SH, str(ROOT / "scripts" / "with"), "iphone", "--",
                        "sh", "-c", 'cd "$0" && exec "$@"', str(self.folder), *command]
         self.started = time.monotonic()
         self.process = subprocess.Popen(

@@ -22,6 +22,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 JUST = os.environ.get("JUST", "just")
+# The repository's Python (scripts/py picks one), for its other scripts;
+# scripts/py is a sh script, which Windows can't start directly.
+PY = [sys.executable] if os.name == "nt" else [str(ROOT / "scripts/py")]
 
 # The checks that stay scripts, each a recipe of the root justfile, and why
 # none is a Buck2 test: each queries Buck2's own graph, which no action of
@@ -72,13 +75,13 @@ def main(patterns: list[str]) -> int:
     # asking again: one that found the host gone mid-run would switch the
     # mode and restart Buck2's daemon under the rest (scripts/buck-config.py).
     mode = subprocess.run(
-        [str(ROOT / "scripts/py"), str(ROOT / "scripts/buck-config.py"), "decide"],
+        [*PY, str(ROOT / "scripts/buck-config.py"), "decide"],
         cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, check=True,
     ).stdout.strip()
     env = dict(os.environ, AMUX_BUCK_MODE=mode)
     if patterns[:1] == ["--without-windows"]:
         patterns = patterns[1:]
-    elif subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "scripts/buck-config.py"), "linux"], cwd=ROOT, env=env, stdin=subprocess.DEVNULL).returncode == 0:
+    elif subprocess.run([*PY, str(ROOT / "scripts/buck-config.py"), "linux"], cwd=ROOT, env=env, stdin=subprocess.DEVNULL).returncode == 0:
         scripts.append(WINDOWS)
     else:
         print(f"premerge: {WINDOWS} skipped: no Linux worker is in reach to build Windows on", flush=True)
@@ -93,7 +96,7 @@ def main(patterns: list[str]) -> int:
     # too, finds nothing left to change. Buck2's daemon runs two commands at
     # once only while they see the same files: a write after clippy's build
     # has started holds the tests until that build ends.
-    subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "build/checks/inputs.py")], cwd=ROOT, env=env, check=True, stdin=subprocess.DEVNULL)
+    subprocess.run([*PY, str(ROOT / "build/checks/inputs.py")], cwd=ROOT, env=env, check=True, stdin=subprocess.DEVNULL)
     logs = Path(tempfile.mkdtemp(prefix="premerge-"))
     running: dict[str, tuple[subprocess.Popen, Path, float]] = {}
     for name in scripts:
@@ -133,7 +136,7 @@ def main(patterns: list[str]) -> int:
     if ours:
         newest = max(ours, key=lambda log: log.stat().st_mtime)
         try:
-            subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "build/checks/timing.py"), str(newest)], cwd=ROOT, env=env, stdin=subprocess.DEVNULL, timeout=300)
+            subprocess.run([*PY, str(ROOT / "build/checks/timing.py"), str(newest)], cwd=ROOT, env=env, stdin=subprocess.DEVNULL, timeout=300)
         except subprocess.TimeoutExpired:
             print("timing: no summary (it took over five minutes)", flush=True)
 

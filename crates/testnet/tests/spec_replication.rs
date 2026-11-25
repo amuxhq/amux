@@ -11,8 +11,6 @@
 //! they hold the markers in sequence with the rows they cover. The stories
 //! that hold on either net are in `replication_stories`.
 
-#![cfg(unix)]
-
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -661,10 +659,13 @@ async fn a_dump_of_a_replica_holds_only_this_hosts_side() {
     let files: Vec<String> = walk(&bundle)
         .iter()
         .map(|path| {
+            // Named with `/` on every OS, as the checks below spell them.
             path.strip_prefix(&bundle)
                 .unwrap()
-                .to_string_lossy()
-                .into_owned()
+                .components()
+                .map(|part| part.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/")
         })
         .collect();
     let has = |prefix: &str| files.iter().any(|file| file.starts_with(prefix));

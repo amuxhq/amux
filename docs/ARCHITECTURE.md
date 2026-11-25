@@ -294,7 +294,7 @@ link for the contract; neither links the other.
 ```text
 agents/<agent_id>/            the agent's UUID; ours, never the provider's
   spec.1, spec.2 …            one AgentSpec per incarnation, written by the daemon before that spawn, never rewritten
-  lock                        held by the agent process for its life; the kernel releases it on death
+  lock                        held by the agent process for its life; the kernel releases it on death; holds its pid
   ctl.sock                    the agent listens; the daemon is its only client
   pty.sock                    the agent listens; local terminal clients connect (terminal Claude and Codex only)
   tools.sock                  the daemon listens; the agent's tool server and, for a spawn, the agent process are its only clients
@@ -328,7 +328,7 @@ the agent's directory.
 | Path | Created by | Written by | Read by | Deleted by |
 |---|---|---|---|---|
 | the directory, `spec.<n>` | daemon | daemon, one file per incarnation | agent at start | daemon, on delete, a parent's delete, or retention; never on exit, because resume uses the directory again |
-| `lock` | daemon | — | held by the agent; the daemon try-locks it to probe liveness | with the directory |
+| `lock` | daemon | the agent, its pid, as it takes the lock; emptied as it lets go | held by the agent; the daemon try-locks it to probe liveness; `agent_dir::lock_holder` reads the pid of a holder, believed only when that process also serves `private/agent.sock` | with the directory |
 | `ctl.sock`, `pty.sock` | agent | — | the daemon dials `ctl.sock`; terminal clients dial `pty.sock` | agent, at exit |
 | `tools.sock` | daemon | — | the agent's tool server; the agent process, for a spawn | daemon, when the agent exits; bound again at resume |
 | `journal/*` | agent | agent | daemon, from its cursor | daemon: segments wholly below a cursor that has reached the drive, keeping the newest two for debug bundles |
@@ -576,11 +576,21 @@ nicer in several places, and Windows pays for each:
   pipe and writes its name into the file at the socket's path, because a pipe
   lives on while any connection to it is open and a successor could not take
   its name
-  ([`agent_dir::local_socket`](../crates/agent-dir/src/local_socket.rs)).
-  Pipe names are predictable and the pipe namespace is shared by every user,
-  where a Unix socket sits in a private folder: so each pipe is created with
-  a security descriptor that admits only the user who made it, and a client
-  refuses a pipe whose serving process runs as anyone else.
+  ([`agent_dir::local_socket`](../crates/agent-dir/src/local_socket/mod.rs)).
+  The pipe namespace is shared by every user, where a Unix socket sits in a
+  private folder, so: a pipe's name is `\\.\pipe\amux-` and 128 random bits,
+  which nobody can take first; it is created owned by its user, admitting
+  that user alone and local clients only; and a client opens only a name of
+  exactly that form, whatever the file says (never another host's pipe or a
+  device), then refuses a pipe its own user doesn't own. The owner, not the
+  serving process's token, is what's checked, so a client accepts an
+  elevated daemon of the same user. The name file is read on a blocking thread
+  within the connect's deadline, at most 256 bytes of it. A server keeps four instances
+  listening, and a client finding them all busy, or the file naming a pipe
+  that has gone, tries again with the file read afresh until a deadline (two
+  seconds unless the caller chooses). Shutting down a pipe's write half does
+  nothing, so a connection is ended by closing it
+  (`LocalStream::close`, or a `Closer` for a split one).
 - **Process groups.** Agents start with `CREATE_NEW_PROCESS_GROUP` and
   `DETACHED_PROCESS`; a kill ends the process tree with `taskkill /F /T`.
 - **Terminals.** Pseudo-terminals are ConPTY, through `portable-pty` in
@@ -621,6 +631,7 @@ every message a provider sends or is sent.
 | [`settings`](../crates/settings/src/lib.rs) | Installation, profile and UI settings, and where their files live. |
 | [`redaction`](../crates/redaction/src/lib.rs) | The structural redactor for free text and JSON in reports, logs and captures. |
 | [`log-file`](../crates/log-file/src/lib.rs) | The capped log file every process writes, rotated to one `.1`, and the tail a dump reads. |
+| [`os`](../crates/os/src/lib.rs) | The operating-system primitives several crates share, each one API with an implementation per OS, so callers write no `cfg`: starting a process in the background (no window, detached, breaking away from the starter's job), handle hygiene at start, an agent's `Family` (a Job Object on Windows; process groups, the tether and the census on Unix), a `ProcessRef` that a reused pid can't fool, handing files to a successor, and `signal::terminated` (the OS asking a process to stop, a session's end included). Its `testing` feature adds what only tests use: in-process stop events and `testing::faults`, the filesystem faults a test injects. Depends only on `libc` and `windows-sys`, plus tokio behind its `async` feature, and builds for every target, iOS and Android too. Agent-dir, agent, pty-host, node, amux, installer, log-file, git-facts, settings, tui, the launcher and test crates may depend on it; no core, nor wire, interpret, the UI library, client or browser-core. |
 | [`release`](../crates/release/src/lib.rs) | A release channel's signed manifest: signing, verification and the build a host installs, shared by the daemon, the installer and the release tool; the keys a build trusts and the target it was built for; and the version stamp in a built binary, with re-stamping a copy ([`version_stamp`](../crates/release/src/version_stamp.rs)). |
 | [`installer`](../crates/installer/src/lib.rs) | What every client calls first: finds amux at the front door, downloads the channel's build and checks it against the signed manifest when it is missing, and starts it. Does not link the daemon. |
 | [`highlight`](../crates/highlight/src/lib.rs) | Syntax highlighting over tree-sitter's grammars: code and its language in, lines of runs tagged with a kind of token out, which each client maps to its own palette. Grammars are built in the background on first use, and a block still streaming is passed over at a bounded rate. The same grammars give a file's definitions, from which a diff says where a hunk sits and what a change touches. The view layer colours chat code and edit cards through it, and the agent's host a review's diffs. See [highlighting](HIGHLIGHTING.md). |
@@ -735,8 +746,10 @@ The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `log-file`, `release`, `analytics`, `git-facts`, `highlight`, `acp-protocol`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code |
-| `journal`, `store`, `agent-dir`, `attachments`, `redaction`, `settings` | `wire` | `settings` names each experiment's version by the wire's entry for it |
+| `wire`, `log-file`, `os`, `release`, `analytics`, `git-facts`, `highlight`, `acp-protocol`, `claude-protocol`, `codex-protocol` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code |
+| `pty-host` | `os` | the tether is part of an agent's family, which `os` holds |
+| `journal`, `store`, `attachments`, `redaction`, `settings` | `wire` | `settings` names each experiment's version by the wire's entry for it |
+| `agent-dir` | `os`, `wire` | `os` on Windows alone: the pipe name file's patient rename, and the user's SID a pipe is owned by |
 | `preview` | `attachments`, `wire` | |
 | `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
 | `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `preview`, `redaction`, `wire` | the pure step, the checks every kind's steps meet, the agent's record built from its facts ring, and the walker that writes a protocol message as its structure alone |
@@ -747,8 +760,8 @@ The allowed sets encode the layering above:
 | `agent-core` | at most `core-ring`, `interpret`, `journal`, `wire` | wraps the interpreter |
 | `supervisor-core` | at most `core-ring`, `release` | reads release manifests and version stamps, and shares the cores' step budget and dump reasons from the ring's crate |
 | `workspace-core` | nothing in the workspace | the daemon core composes it and runs it inside its own step, so it needs no budget or dump reason of its own |
-| `agent` | `agent-core`, `agent-dir`, `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `pty-host`, `wire` | the agent core's driver with each provider's host inside it, and the only production crate that reads a provider |
-| `node` | `agent-dir`, `analytics`, `attachments`, `core-ring`, `daemon-core`, `git-facts`, `highlight`, `journal`, `log-file`, `path-core`, `redaction`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` or `interpret` crates, so the phone hosts a runtime with no interpreter or provider-protocol crates in its graph (only the cross-boundary provider types and Codex permission preset table in `wire`); `highlight` to colour a review's files and name each changed file's language by the rule the clients colour it by |
+| `agent` | `agent-core`, `agent-dir`, `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `git-facts`, `interpret`, `journal`, `log-file`, `os`, `pty-host`, `wire` | the agent core's driver with each provider's host inside it, and the only production crate that reads a provider |
+| `node` | `agent-dir`, `analytics`, `attachments`, `core-ring`, `daemon-core`, `git-facts`, `highlight`, `journal`, `log-file`, `os`, `path-core`, `redaction`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` or `interpret` crates, so the phone hosts a runtime with no interpreter or provider-protocol crates in its graph (only the cross-boundary provider types and Codex permission preset table in `wire`); `highlight` to colour a review's files and name each changed file's language by the rule the clients colour it by |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
 | `ui-state` → `wire`; `ui-view` → `attachments`, `preview`, `ui-state`, `wire`; `ui-code` → `highlight`, `ui-view`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library; `ui-view` holds no highlighter, since tree-sitter's grammars are C and the browser extension builds the views to WebAssembly without a C compiler; each client that draws code colours what it parses out of a chat through `ui-code` |
 | `tui` | `attachments`, `client`, `settings`, `ui-code`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |

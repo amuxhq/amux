@@ -20,10 +20,16 @@ ALLOWED_LOCAL = {
     "preview": {"attachments", "wire"},
     "journal": {"wire"},
     "store": {"wire"},
-    "agent-dir": {"wire"},
+    # os on Windows: the pipe name file's patient rename and the user's SID
+    # a pipe is owned by.
+    "agent-dir": {"os", "wire"},
     "redaction": {"wire"},
     # The capped log file every process writes and a dump reads the tail of.
     "log-file": set(),
+    # The operating-system primitives several crates share: a leaf, taking
+    # only libc, windows-sys and (behind `async`) tokio. Cores, wire,
+    # interpret, the UI library, client and browser-core never take it.
+    "os": set(),
     # Reads an agent folder's branch and change totals by running git; the
     # agent process and the daemon share it.
     "git-facts": set(),
@@ -41,22 +47,23 @@ ALLOWED_LOCAL = {
     # and the provider hosts, each in a module of its own (`acp`, `claude`, `codex`).
     "agent": {
         "acp-protocol", "agent-core", "agent-dir", "attachments", "claude-protocol", "codex-protocol", "core-ring",
-        "git-facts", "interpret", "journal", "log-file", "pty-host", "wire",
+        "git-facts", "interpret", "journal", "log-file", "os", "pty-host", "wire",
     },
     # Each provider's messages as types: pure, so the interpreter the phone
     # links can read them. PURE_EXTERNAL below bounds what they may pull in.
     "acp-protocol": set(),
     "claude-protocol": set(),
     "codex-protocol": set(),
-    "pty-host": set(),
+    # The tether lives in os, beside the family it is part of.
+    "pty-host": {"os"},
     # The daemon reaches agent processes only through the directory contract,
     # never the agent or interpret crates, so the phone hosts a runtime with
     # no interpreter or provider-protocol crates in its graph. redaction walks
     # wire descriptors and redacts free text without touching interpret.
     # highlight for the language of each file an agent changed, named by the
     # same rule the clients colour it by.
-    "node": {"agent-dir", "analytics", "attachments", "core-ring", "daemon-core", "git-facts", "highlight", "journal", "log-file", "path-core", "redaction", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
-    "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "settings", "tui", "wire"},
+    "node": {"agent-dir", "analytics", "attachments", "core-ring", "daemon-core", "git-facts", "highlight", "journal", "log-file", "os", "path-core", "redaction", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
+    "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "os", "settings", "tui", "wire"},
     # The release manifest the tool signs and the daemon verifies, and the
     # version stamp a release tool can rewrite in a built binary; the xtask
     # shares both without building the daemon.
@@ -176,7 +183,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # on hosts through the client library, as a person's client and an
     # agent's tools do.
     "testnet": {
-        "agent-dir", "client", "daemon-core", "interpret", "journal", "models", "node", "patience",
+        "agent-dir", "client", "daemon-core", "interpret", "journal", "models", "node", "os", "patience",
         "provider-fakes", "release", "settings", "shot", "source-tree", "store", "tui", "wire",
     },
     # Qualification owns environment-dependent provider and performance
@@ -188,7 +195,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # The fake providers speak each protocol from its recordings, and check
     # what they compose against the protocol crates' types. They never use
     # the host crates, so a host bug cannot hide behind shared host code.
-    "provider-fakes": {"acp-protocol", "claude-protocol", "codex-protocol", "pty-host"},
+    "provider-fakes": {"acp-protocol", "claude-protocol", "codex-protocol", "os", "pty-host"},
     # A stand-in amux binary that runs the real supervisor, so the
     # supervisor tests exec and roll back the shipped code.
     "fake-amux": {"agent-dir", "node"},

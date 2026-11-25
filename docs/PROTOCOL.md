@@ -820,7 +820,7 @@ The front door is `amux.sock` in the installation's root (default
 `~/.local/share/amux`, or `$XDG_DATA_HOME/amux`); the config's `root` moves it,
 and nothing else does, so whoever finds the root finds the daemon. Local
 sockets are Unix domain sockets on Unix and named pipes on Windows
-(`crates/agent-dir/src/local_socket.rs`). A path too long for a Unix socket
+(`crates/agent-dir/src/local_socket/`). A path too long for a Unix socket
 address is reached through a short symbolic link in the per-user runtime
 directory, and on Windows the file at the path holds the name of the pipe the
 daemon listens on, so both ends derive the same address from the same path.

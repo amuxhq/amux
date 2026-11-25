@@ -10,10 +10,12 @@ DEPS = [
 amux_rust_library(
     version = "0.1.0",
     deps = DEPS,
+    # Cargo's [dev-dependencies] serve unit and integration tests alike.
+    test_deps = ["//crates/os:os"],
 )
 
 amux_rust_test(
     name = "integration",
     version = "0.1.0",
-    deps = DEPS,
+    deps = DEPS + ["//crates/os:os"],
 )

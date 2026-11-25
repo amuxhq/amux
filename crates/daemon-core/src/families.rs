@@ -2563,6 +2563,7 @@ mod tests {
             StartOptions {
                 generation: 1,
                 agents: dir.path().to_path_buf(),
+                budget: crate::StepBudget::UNLIMITED,
                 ..StartOptions::default()
             },
         );
@@ -2620,6 +2621,7 @@ mod tests {
                 agents: dir.path().to_path_buf(),
                 suspension: true,
                 rebooted,
+                budget: crate::StepBudget::UNLIMITED,
                 ..StartOptions::default()
             },
         );
@@ -2654,7 +2656,9 @@ mod tests {
             row.snapshot = Some(wire::Snapshot {
                 kind: wire::Kind::Codex as i32,
                 status: wire::AgentStatus::in_phase(phase),
-                capabilities: Some(Box::new(wire::AgentCapabilities::codex())),
+                capabilities: Some(Box::new(wire::AgentCapabilities::codex(
+                    wire::Platform::here(),
+                ))),
                 ..wire::Snapshot::default()
             });
             self.daemon.store.put_agent(&row).unwrap();

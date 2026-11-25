@@ -4,9 +4,6 @@
 //! reaching an amux started with its stop signals blocked, the sleep
 //! assertion, `amux update` and `amux config channel`.
 
-#![cfg(unix)]
-
-use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::Duration;
@@ -14,7 +11,7 @@ use std::time::Duration;
 use node::release;
 use node::supervisor::SUPERVISOR_LOCK;
 use patience::{holds_for, until_within};
-use support::{Channel, PATIENCE, amux_binary};
+use support::{Channel, PATIENCE, agent_pid, amux_binary};
 
 use crate::support;
 
@@ -67,6 +64,10 @@ impl Install {
             .args(args)
             .env("AMUX_CONFIG", &self.config)
             .env("HOME", self.root.path().join("home"))
+            // Windows' homes, so nothing a test runs reaches the person's.
+            .env("USERPROFILE", self.root.path().join("home"))
+            .env("APPDATA", self.root.path().join("home").join("AppData"))
+            .env("LOCALAPPDATA", self.root.path().join("home").join("Local"))
             .env(support::NO_DISCOVERY.0, support::NO_DISCOVERY.1)
             .env_remove("AMUX_LOG")
             .env_remove("XDG_CONFIG_HOME")
@@ -100,8 +101,14 @@ impl Install {
         locked(&self.data.join(node::INSTALLATION_LOCK))
     }
 
+    /// Whether the daemon answers on its socket. The tests' runtimes have
+    /// threads to spare, so this one blocks for the dial.
     fn answers(&self) -> bool {
-        std::os::unix::net::UnixStream::connect(&self.socket).is_ok()
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(agent_dir::local_socket::connect(&self.socket))
+                .is_ok()
+        })
     }
 }
 
@@ -114,15 +121,11 @@ impl Drop for Install {
 }
 
 fn locked(path: &Path) -> bool {
-    let Ok(file) = OpenOptions::new().write(true).open(path) else {
-        return false;
-    };
-    matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock))
+    os::lock::FileLock::held(path).unwrap_or(false)
 }
 
 fn alive(pid: u32) -> bool {
-    // SAFETY: signal 0 only probes.
-    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    os::process::ProcessRef::open(pid).is_ok_and(|process| process.alive())
 }
 
 fn stdout(output: &Output) -> String {
@@ -138,7 +141,72 @@ async fn until(what: &str, done: impl Fn() -> bool) {
     .unwrap();
 }
 
+/// `amux server start` with its output piped ends when `start` does: the
+/// supervisor and daemon it leaves running hold no end of the caller's
+/// pipes, so a caller reading to the end (a desktop app's installer,
+/// `amux server start | cat`) isn't kept waiting on them. On Windows, std
+/// starts every child inheriting every inheritable handle, the explicit
+/// `Stdio::null` notwithstanding, so this holds only because `main` clears
+/// inheritance on its own standard handles first.
+#[test]
+fn a_piped_server_start_ends_when_start_does() {
+    use std::io::Read as _;
+
+    let install = Install::new(true, "start_at_login = false");
+    let temp = install.root.path().join("temp");
+    std::fs::create_dir_all(&temp).unwrap();
+    let mut start = install
+        .command(&["server", "start"])
+        .env("TEMP", &temp)
+        .env("TMP", &temp)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let to_the_end = |mut pipe: Box<dyn std::io::Read + Send>| {
+        let (sent, read) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut text = String::new();
+            let _ = pipe.read_to_string(&mut text);
+            let _ = sent.send(text);
+        });
+        read
+    };
+    let out = to_the_end(Box::new(start.stdout.take().unwrap()));
+    let err = to_the_end(Box::new(start.stderr.take().unwrap()));
+    let bound = std::time::Instant::now() + Duration::from_secs(10);
+    let within = || bound.saturating_duration_since(std::time::Instant::now());
+    let said = out.recv_timeout(within());
+    let complained = err.recv_timeout(within());
+    let status = start.wait().unwrap();
+    // What it left running shows no window either: each says so as it
+    // starts, the daemon too, which on Windows a console-less supervisor
+    // would otherwise start with a console of its own, and a visible one.
+    let logs: Vec<(&str, String)> = ["supervisor.log", "daemon.log"]
+        .into_iter()
+        .map(|log| {
+            let text = std::fs::read_to_string(install.data.join(log)).unwrap_or_default();
+            (log, text)
+        })
+        .collect();
+    // Stopped before any assertion, so a failure leaves nothing running;
+    // the pipes' readers end once what held them is gone.
+    let stopped = install.command(&["server", "stop"]).output().unwrap();
+    let said = said.expect("stdout reached its end within 10 s of `server start`");
+    let complained = complained.expect("stderr reached its end within 10 s of `server start`");
+    assert!(status.success(), "{status}: {said}{complained}");
+    assert!(said.contains("Started amux."), "{said}{complained}");
+    assert!(stopped.status.success(), "{}", stdout(&stopped));
+    for (log, text) in logs {
+        assert!(text.contains("console window=false"), "{log}:\n{text}");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
+)]
 async fn stop_goes_to_the_supervisor_first_where_the_install_has_one() {
     let install = Install::new(true, "");
     let started = install.amux(&["server", "start"]);
@@ -172,6 +240,10 @@ async fn stop_goes_to_the_supervisor_first_where_the_install_has_one() {
     .unwrap();
 }
 
+// Unix's own behaviour: a launcher's blocked signal mask is inherited, and
+// the stop is a signal. Windows stops amux through supervisor.sock, which
+// no mask reaches, and `stop_goes_to_the_supervisor_first_...` drives it.
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn stop_reaches_an_amux_started_with_its_stop_signals_blocked() {
     use std::os::unix::process::CommandExt;
@@ -226,6 +298,10 @@ async fn stop_goes_to_the_daemon_where_the_install_has_no_supervisor() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
+)]
 async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
     let with = Install::new(true, "");
     let listed = with.command(&["ls"]).output().unwrap();
@@ -269,11 +345,12 @@ async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
     );
 }
 
-// Built on every Unix so the test listing names it wherever the contracts
+// Built everywhere so the test listing names it wherever the contracts
 // are checked; only macOS has the assertion to look for.
+#[cfg_attr(target_os = "linux", ignore = "only macOS holds a sleep assertion")]
 #[cfg_attr(
-    not(target_os = "macos"),
-    ignore = "only macOS holds a sleep assertion"
+    windows,
+    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
 )]
 #[tokio::test(flavor = "multi_thread")]
 async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
@@ -359,8 +436,14 @@ fn login_item(install: &Install) -> PathBuf {
 /// `start_at_login` writes the login item for the next login and removes
 /// it, with amux stopped; an install without a supervisor has none.
 #[cfg_attr(
-    not(target_os = "macos"),
+    target_os = "linux",
     ignore = "registering the systemd unit needs a user session"
+)]
+// Not run on Windows: there `start_at_login` registers the scheduled task
+// `amux` in the person's own Task Scheduler, which no test home keeps apart.
+#[cfg_attr(
+    windows,
+    ignore = "windows: not run: it would register the real scheduled task `amux`"
 )]
 #[test]
 fn start_at_login_writes_and_removes_the_login_item() {
@@ -436,6 +519,10 @@ async fn update_says_updates_are_deploys_without_a_supervisor() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
+)]
 async fn update_retry_installs_the_channel_build_now_even_one_rolled_back_here() {
     let builds = tempfile::tempdir().unwrap();
     let bin = builds.path().join("bin");
@@ -485,6 +572,10 @@ async fn update_retry_installs_the_channel_build_now_even_one_rolled_back_here()
 /// update` says so and fails, rather than leaving the person to read the
 /// log, and a later `amux update` leaves that build alone unless retried.
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
+)]
 async fn update_reports_a_build_that_never_started_and_then_leaves_it_alone() {
     let builds = tempfile::tempdir().unwrap();
     let bin = builds.path().join("bin");
@@ -539,6 +630,10 @@ async fn update_reports_a_build_that_never_started_and_then_leaves_it_alone() {
 /// serves the experiments switched on, says so to clients, and the agent in
 /// the middle of a turn keeps its process across it.
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
+)]
 async fn under_a_supervisor_an_experiment_switch_restarts_the_daemon_through_it() {
     use support::desk::{Desk, LONG_GRACE_SECS};
 
@@ -667,20 +762,4 @@ async fn under_a_supervisor_an_experiment_switch_restarts_the_daemon_through_it(
     .await
     .expect("one restart");
     desk.run(&["settle", "sdk"]).await;
-}
-
-/// The agent process hosting the directory `dir`, found by the agent id
-/// its command line ends with.
-fn agent_pid(dir: &Path) -> Option<u32> {
-    let id = dir.file_name()?.to_string_lossy().into_owned();
-    let output = Command::new("pgrep")
-        .args(["-f", &format!(" agent .*{id}$")])
-        .output()
-        .ok()?;
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .next()?
-        .trim()
-        .parse()
-        .ok()
 }

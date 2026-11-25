@@ -29,6 +29,7 @@ interpret = { workspace = true, features = ["testkind"] }
 journal = { workspace = true, features = ["synthetic"] }
 models = { workspace = true }
 node = { workspace = true }
+os = { workspace = true, features = ["async"] }
 patience = { workspace = true }
 prost = { workspace = true }
 provider-fakes = { workspace = true }

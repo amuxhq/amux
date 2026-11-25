@@ -628,9 +628,6 @@ async fn a_stop_and_a_kill_end_the_process_and_record_why() {
 /// was marked with the daemon's own when its process went, and a cause on
 /// the step would land on the new, live incarnation's row and stand in for
 /// how that one ends.
-// On Windows a process it starts can outlive it, which fails it as a leak
-// (FOX-356).
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_resumed_agent_ends_with_its_own_cause_not_the_one_its_repair_boundary_names() {
     let install = Install::new();
@@ -1379,8 +1376,6 @@ async fn a_restarted_daemon_adopts_live_agents_and_sweeps_exited_ones() {
 /// known only by its directory and its Hello, so the daemon that adopted it
 /// must still be able to end it, or the person is told the stop failed and
 /// the live process refuses every resume as still holding the directory.
-// Freezing the agent so it cannot answer the stop is POSIX.
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn the_stop_deadline_kills_an_agent_adopted_from_an_earlier_daemon() {
     let install = Install::new();
@@ -1411,17 +1406,11 @@ async fn the_stop_deadline_kills_an_agent_adopted_from_an_earlier_daemon() {
 
     // A frozen agent cannot answer the stop, so it overruns its deadline
     // and the kill, asked of the agent and then done from outside, ends it.
-    let dir = install.agent_dir(id);
-    let frozen = std::process::Command::new("pkill")
-        .args(["-STOP", "-f", &format!("agent {}", dir.display())])
-        .status()
-        .unwrap();
-    assert!(frozen.success(), "the agent process is frozen");
+    let agent = support::agent_process(&install.agent_dir(id)).await;
+    agent.suspend().expect("the agent process is frozen");
     let stopped = runtime.file(id, Filing::Closed).await;
     // Let a process the kill missed run, finish its turn and go.
-    let _ = std::process::Command::new("pkill")
-        .args(["-CONT", "-f", &format!("agent {}", dir.display())])
-        .status();
+    let _ = agent.resume();
     std::fs::write(&never, "").unwrap();
     let stopped = stopped.expect("the deadline's kill ends the adopted agent");
     assert_eq!(stopped.lifecycle, Lifecycle::Exited as i32);
@@ -1702,7 +1691,6 @@ async fn a_host_offers_its_repositories_and_where_its_agents_ran_to_paired_hosts
 /// its prompt and comes to rest. Real Codex refuses the racing resume with
 /// "thread … already has an active writer", and the agent then sat at
 /// starting forever.
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_codex_resume_after_a_kill_waits_for_the_old_server_instead_of_racing_it() {
     let install = Install::new();
@@ -1770,11 +1758,10 @@ async fn a_codex_resume_after_a_kill_waits_for_the_old_server_instead_of_racing_
 
     // A frozen agent cannot answer the stop, so the deadline's kill ends
     // it, as when a stop overruns; its Codex server is told to finish.
-    let frozen = std::process::Command::new("pkill")
-        .args(["-STOP", "-f", &format!("agent {}", dir.display())])
-        .status()
-        .unwrap();
-    assert!(frozen.success(), "the agent process is frozen");
+    support::agent_process(&dir)
+        .await
+        .suspend()
+        .expect("the agent process is frozen");
     let stopped = runtime.file(id, Filing::Closed).await.unwrap();
     assert_eq!(stopped.exit_cause(), ExitCause::Killed);
 
@@ -1823,7 +1810,6 @@ async fn a_codex_resume_after_a_kill_waits_for_the_old_server_instead_of_racing_
 /// its prompt and comes to rest. Real Codex refuses the racing resume with
 /// "thread … already has an active writer", and the agent then sat at
 /// starting forever.
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_codex_server_that_ignores_terminate_does_not_hold_its_thread_from_the_next_incarnation()
 {
@@ -1893,11 +1879,10 @@ async fn a_codex_server_that_ignores_terminate_does_not_hold_its_thread_from_the
 
     // A frozen agent cannot answer the stop, so the deadline's kill ends
     // it, as when a stop overruns; its Codex server is told to finish.
-    let frozen = std::process::Command::new("pkill")
-        .args(["-STOP", "-f", &format!("agent {}", dir.display())])
-        .status()
-        .unwrap();
-    assert!(frozen.success(), "the agent process is frozen");
+    support::agent_process(&dir)
+        .await
+        .suspend()
+        .expect("the agent process is frozen");
     let stopped = runtime.file(id, Filing::Closed).await.unwrap();
     assert_eq!(stopped.exit_cause(), ExitCause::Killed);
 
@@ -2052,7 +2037,6 @@ async fn a_restarted_daemon_serves_the_tools_of_the_agents_it_adopts() {
     );
 }
 
-#[cfg(unix)]
 fn sdk_input(of: wire::claude_sdk_input::Of) -> wire::Input {
     wire::Input::new(
         uuid::Uuid::new_v4().as_bytes().to_vec(),
@@ -2116,9 +2100,6 @@ async fn a_persons_stop_ends_a_working_agent_as_stopped_within_seconds() {
 /// ones it was created with: a permission and an effort chosen in the chat
 /// survive a stop and a resume (QA: a resume silently went back to plan
 /// mode and to the creation model).
-// On Windows a process it starts can outlive it, which fails it as a leak
-// (FOX-356).
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_resume_keeps_the_permission_and_effort_the_agent_last_ran_with() {
     let install = Install::new();

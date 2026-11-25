@@ -11,11 +11,16 @@ asked, as before there was a worker to ask.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PY = str(ROOT / "scripts/py")
+# The repository's Python, and how to start its sh scripts: Windows can't
+# start a sh script itself, so it gets this interpreter and `sh`.
+PY = [sys.executable] if os.name == "nt" else [str(ROOT / "scripts/py")]
+SH = ["sh"] if os.name == "nt" else []
 
 
 def read(path: Path) -> dict:
@@ -27,7 +32,7 @@ def read(path: Path) -> dict:
 
 def load() -> dict:
     linux = subprocess.run(
-        [PY, str(ROOT / "scripts/buck-config.py"), "linux"], cwd=ROOT, stdin=subprocess.DEVNULL
+        [*PY, str(ROOT / "scripts/buck-config.py"), "linux"], cwd=ROOT, stdin=subprocess.DEVNULL
     ).returncode == 0
     if not linux:
         return json.loads(
@@ -36,7 +41,7 @@ def load() -> dict:
             )
         )
     built = subprocess.run(
-        [str(ROOT / "scripts/built"), "//:cargo-metadata"],
+        [*SH, str(ROOT / "scripts/built"), "//:cargo-metadata"],
         cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True, text=True,
     )
     if built.returncode != 0:

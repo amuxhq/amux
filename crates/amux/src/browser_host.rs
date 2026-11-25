@@ -205,8 +205,8 @@ pub fn installed(config: Option<&Path>) -> Option<Hosts> {
     })
 }
 
-// The host script is a POSIX shell script and Windows registers nothing yet.
-#[cfg(all(test, unix))]
+// The host script is a POSIX shell script and Windows registers nothing.
+#[cfg(all(test, not(windows)))] // out of scope on Windows: the browser extension's native host
 mod tests {
     use super::*;
 

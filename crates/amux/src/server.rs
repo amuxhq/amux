@@ -125,6 +125,9 @@ pub fn run_daemon(
 ) -> Result<()> {
     let log = daemon_log(config);
     log_to(&log)?;
+    // Whether this process shows a console window: never, when it was
+    // started in the background (§2.2 of the Windows design, P1).
+    tracing::info!(window = os::process::console_window(), "console");
     #[cfg(unix)]
     crate::relaunch::reap_inherited();
     for key in &config.ignored {
@@ -434,17 +437,19 @@ pub async fn start(config: &InstallationConfig, config_path: Option<&Path>) -> R
         let stderr =
             File::create(&startup).with_context(|| format!("creating {}", startup.display()))?;
         let mut command = std::process::Command::new(std::env::current_exe()?);
-        if let Some(path) = config_path {
-            command.arg("--config").arg(path);
+        if let Some(path) = config_path.or(config.path.as_deref()) {
+            // The file this process read, named whether or not the caller
+            // named it, and absolute: the daemon runs in the root, not
+            // here, and would resolve a default under a relative
+            // `XDG_CONFIG_HOME` from there.
+            command.arg("--config").arg(std::path::absolute(path)?);
         }
-        command
-            .arg("daemon")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(stderr);
-        detach(&mut command);
+        command.arg("daemon");
         (
-            Some(command.spawn().context("starting amux daemon")?),
+            Some(
+                spawn_detached(&mut command, &config.root, stderr)
+                    .context("starting amux daemon")?,
+            ),
             startup,
         )
     };
@@ -496,38 +501,52 @@ pub(crate) fn spawn_supervisor(
         .with_context(|| format!("opening {}", log.display()))?;
     let mut command = std::process::Command::new(std::env::current_exe()?);
     if let Some(path) = config_path.or(config.path.as_deref()) {
-        command.arg("--config").arg(path);
+        // Absolute: the supervisor runs in the root, not here.
+        command.arg("--config").arg(std::path::absolute(path)?);
     }
+    command.arg("supervise");
+    spawn_detached(&mut command, &config.root, stderr).context("starting amux supervise")
+}
+
+/// Starts `command` in the background, in its own session with no window
+/// (`os::process::Detach::Session`), so it outlives the terminal that
+/// started it, in `root`, with no standard input or output and `stderr` as
+/// its standard error. A job that keeps it (Windows) is said in that log.
+fn spawn_detached(
+    command: &mut std::process::Command,
+    root: &Path,
+    stderr: File,
+) -> std::io::Result<std::process::Child> {
+    use std::io::Write as _;
+    let mut note = stderr.try_clone()?;
+    // The child runs in `root`, not here: a relative XDG folder, which
+    // this process found its default config and root from, is made
+    // absolute for it, so it finds the same ones when no file names them.
+    for name in ["XDG_CONFIG_HOME", "XDG_DATA_HOME"] {
+        if let Some(value) = std::env::var_os(name)
+            && !Path::new(&value).is_absolute()
+        {
+            let here = if value.is_empty() {
+                std::env::current_dir()?
+            } else {
+                std::path::absolute(&value)?
+            };
+            command.env(name, here);
+        }
+    }
+    os::process::background(command, os::process::Detach::Session, root);
     command
-        .arg("supervise")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(stderr);
-    detach(&mut command);
-    command.spawn().context("starting amux supervise")
-}
-
-/// Its own session, so the daemon outlives the terminal that started it.
-#[cfg(unix)]
-fn detach(command: &mut std::process::Command) {
-    use std::os::unix::process::CommandExt as _;
-    // SAFETY: setsid is async-signal-safe and touches no parent state.
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() == -1 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
+    let spawned = os::process::spawn_background(command)?;
+    if spawned.breakaway_refused {
+        let _ = writeln!(
+            note,
+            "amux: the job this was started in forbids leaving it, so it ends when that job does"
+        );
     }
-}
-
-#[cfg(windows)]
-fn detach(command: &mut std::process::Command) {
-    use std::os::windows::process::CommandExt as _;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    Ok(spawned.child)
 }
 
 /// Stops amux: its owner first. A running supervisor is stopped, which

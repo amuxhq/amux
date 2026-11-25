@@ -48,6 +48,7 @@ dependencies = [
  "libc",
  "log-file",
  "notify",
+ "os",
  "patience",
  "prost",
  "provider-fakes",
@@ -85,9 +86,11 @@ name = "agent-dir"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "os",
  "prost",
  "tempfile",
  "tokio",
+ "tracing",
  "windows-sys 0.61.2",
  "wire",
 ]
@@ -141,6 +144,7 @@ dependencies = [
  "libc",
  "log-file",
  "node",
+ "os",
  "patience",
  "prost",
  "provider-fakes",
@@ -1571,6 +1575,7 @@ dependencies = [
 name = "git-facts"
 version = "0.1.0"
 dependencies = [
+ "os",
  "sha2",
  "tempfile",
  "thiserror 2.0.20",
@@ -2582,6 +2587,7 @@ dependencies = [
  "libc",
  "log-file",
  "mdns-sd",
+ "os",
  "path-core",
  "patience",
  "prost",
@@ -2821,6 +2827,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f59006ce1e204c30956638535b74d317bca99477b9356dfaec54c37f6f600ab"
 dependencies = [
  "num-traits",
+]
+
+[[package]]
+name = "os"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "portable-pty",
+ "tempfile",
+ "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3225,6 +3242,7 @@ dependencies = [
  "futures-util",
  "jiff",
  "libc",
+ "os",
  "patience",
  "pty-host",
  "serde",
@@ -3245,8 +3263,8 @@ dependencies = [
  "anyhow",
  "bytes",
  "libc",
+ "os",
  "portable-pty",
- "tempfile",
  "thiserror 2.0.20",
  "tokio",
 ]
@@ -3322,6 +3340,7 @@ dependencies = [
  "unicode-width 0.2.2",
  "uuid",
  "vt100",
+ "windows-sys 0.61.2",
  "wire",
 ]
 
@@ -4455,6 +4474,7 @@ dependencies = [
  "journal",
  "models",
  "node",
+ "os",
  "patience",
  "prost",
  "provider-fakes",

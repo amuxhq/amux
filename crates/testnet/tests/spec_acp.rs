@@ -6,8 +6,6 @@
 //! The desk runs the fake ACP agent, playing the desk's script. A host also
 //! lists the ACP agents it offers, for a paired host's client to read.
 
-#![cfg(unix)]
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 

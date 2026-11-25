@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import fcntl
 import os
 import re
 import socket
@@ -89,14 +88,42 @@ def worktree() -> Path:
     return tree
 
 
+def try_lock(lock) -> bool:
+    """Takes the landing lock without waiting; false if another landing holds it."""
+    if os.name == "nt":
+        import msvcrt
+
+        try:
+            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            return False
+    import fcntl
+
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except BlockingIOError:
+        return False
+
+
+def wait_lock(lock) -> None:
+    """Waits for the landing lock."""
+    if os.name == "nt":
+        while not try_lock(lock):
+            time.sleep(2)
+        return
+    import fcntl
+
+    fcntl.flock(lock, fcntl.LOCK_EX)
+
+
 def land_here(commit: str, message: str) -> int:
     STATE.mkdir(parents=True, exist_ok=True)
     with open(STATE / "lock", "w") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+        if not try_lock(lock):
             step("another landing is running; waiting for it")
-            fcntl.flock(lock, fcntl.LOCK_EX)
+            wait_lock(lock)
         gate = Gate(run=lambda argv, cwd: subprocess.run(list(argv), cwd=cwd).returncode)
         try:
             landed = land(worktree(), commit, message, gate, step)
@@ -126,15 +153,21 @@ def request_tag(commit: str, rid: str, message: str) -> str:
     landing's message, so the two arrive together."""
     ident = git("var", "GIT_COMMITTER_IDENT", cwd=CHECKOUT, capture=True)
     body = f"object {commit}\ntype commit\ntag land/{rid}\ntagger {ident}\n\n{message.rstrip()}\n"
+    # Bytes, not text: on Windows text mode writes each newline as CRLF, and
+    # mktag's strict check refuses the tag ("invalid 'object' line format").
     return subprocess.run(
-        ["git", "mktag"], cwd=CHECKOUT, input=body, text=True, capture_output=True, check=True
-    ).stdout.strip()
+        ["git", "mktag"], cwd=CHECKOUT, input=body.encode("utf-8"), capture_output=True, check=True
+    ).stdout.decode().strip()
 
 
 def inbox_env() -> dict[str, str]:
     """One SSH connection for the push and every poll after it."""
-    control = Path.home() / ".ssh" / "amux-land-%C"
     ssh = os.environ.get("GIT_SSH_COMMAND", "ssh")
+    if os.name == "nt":
+        # Windows' ssh has no working connection sharing ("Failed to connect to
+        # new control master"), so each push and poll makes its own.
+        return dict(os.environ)
+    control = Path.home() / ".ssh" / "amux-land-%C"
     return {
         **os.environ,
         "GIT_SSH_COMMAND": f"{ssh} -o ControlMaster=auto -o ControlPath={control} -o ControlPersist=120",

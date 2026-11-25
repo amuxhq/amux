@@ -1356,24 +1356,35 @@ async fn attach_refuses_a_file_over_the_attachment_limit() {
 
 /// Only a regular file is attached, its links followed first: a pipe
 /// would block the call until something wrote to it, and a device such as
-/// `/dev/zero` never ends, so neither is read.
-#[cfg(unix)]
+/// `/dev/zero` (`NUL` on Windows) never ends, so neither is read. The pipe
+/// is a local socket's: the socket itself on Unix, and on Windows the named
+/// pipe (`\\.\pipe\…`) that the file at its path names.
+#[cfg_attr(
+    windows,
+    ignore = "windows: refused, but not as not a regular file: a named pipe with reading the pipe: Incorrect function (os error 1), NUL with The parameter is incorrect (os error 87), a link to NUL with The system cannot find the file specified (os error 2)"
+)]
 #[tokio::test(flavor = "multi_thread")]
 async fn attach_reads_only_a_regular_file() {
     let mut mcp = Mcp::start().await;
-    let made = std::process::Command::new("mkfifo")
-        .arg(mcp.cwd.join("pipe"))
-        .status()
-        .unwrap();
-    assert!(made.success());
-    std::os::unix::fs::symlink("/dev/zero", mcp.cwd.join("zeros.bin")).unwrap();
-    for name in ["pipe", "zeros.bin"] {
-        let refused = mcp.refused("attach_file", json!({ "path": name })).await;
-        assert!(
-            refused.ends_with("is not a regular file"),
-            "{name}: {refused}"
-        );
+    let socket = LocalListener::bind(&mcp.cwd.join("pipe")).unwrap();
+    let pipe = match std::fs::metadata(socket.path()) {
+        Ok(found) if found.is_file() => std::fs::read_to_string(socket.path()).unwrap(),
+        _ => "pipe".to_owned(),
+    };
+    let device = if cfg!(windows) { "NUL" } else { "/dev/zero" };
+    let mut names = vec![pipe, device.to_owned()];
+    match provider_fakes::faults::symlink(Path::new(device), &mcp.cwd.join("zeros.bin")).unwrap() {
+        provider_fakes::faults::Linked::Made => names.push("zeros.bin".to_owned()),
+        provider_fakes::faults::Linked::Skipped(why) => eprintln!("no link to {device}: {why}"),
     }
+    let mut misworded = Vec::new();
+    for name in &names {
+        let refused = mcp.refused("attach_file", json!({ "path": name })).await;
+        if !refused.ends_with("is not a regular file") {
+            misworded.push(format!("{name}: {refused}"));
+        }
+    }
+    assert!(misworded.is_empty(), "{misworded:#?}");
     let stored = std::fs::read_dir(mcp.dir.join(agent::BLOBS))
         .map(|blobs| blobs.count())
         .unwrap_or(0);
@@ -1728,7 +1739,7 @@ async fn codex_runs_amuxs_tools_through_the_install_path() {
     the_harness_runs_the_tool_server_from_the_install_path(Kind::Codex).await;
 }
 
-// Unix only: Windows does not host terminal Claude (ConPTY re-renders its output; see
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output; see
 // docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]

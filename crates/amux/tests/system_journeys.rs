@@ -2,8 +2,6 @@
 //! and the machine run them, each printing its transcript. `just journey
 //! system <id>` runs one; the ids are declared in journeys/manifest.json.
 
-#![cfg(unix)]
-
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -21,6 +19,10 @@ use crate::support;
 /// activated, and every finished turn is in the store; resuming the exited
 /// agents loses nothing.
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux new claude --in native` is refused: this host does not run terminal Claude agents"
+)]
 async fn survive_daemon() {
     let running = node::version();
     let previous =

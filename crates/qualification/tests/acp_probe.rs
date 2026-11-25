@@ -2,21 +2,33 @@
 //! unchanged and records it, and a capture spanning two agent processes
 //! joins the corpus sanitized, each line naming its process.
 
-#![cfg(unix)]
-
 use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+use provider_fakes::dispatch::{self, Plan};
 use qualification::recording::{acp, load_recording};
 use serde_json::{Value, json};
 
-/// Answers one request with the id it was sent, says something on stderr
-/// and exits as its stdin closes.
-const AGENT: &str = r#"read line
-echo "agent noise" >&2
-echo '{"jsonrpc":"2.0","id":1,"result":{"agentInfo":{"name":"Stand-in","version":"2.3.4"}}}'
-"#;
+/// A stand-in agent in `dir` that answers one request with the id it was
+/// sent, says something on stderr and exits: the `fake-provider` binary
+/// playing an answer.
+fn agent(dir: &Path) -> std::path::PathBuf {
+    let agent = dispatch::program(dir, "agent");
+    dispatch::install(
+        &dispatch::program(provider_fakes::binaries::dir(), dispatch::BINARY),
+        &agent,
+        &Plan::Answer {
+            lines: 1,
+            stdout: "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"agentInfo\":{\"name\":\"Stand-in\",\"version\":\"2.3.4\"}}}\n"
+                .to_owned(),
+            stderr: "agent noise\n".to_owned(),
+            code: 0,
+        },
+    )
+    .unwrap();
+    agent
+}
 
 fn rows(path: &Path) -> Vec<Value> {
     std::fs::read_to_string(path)
@@ -30,13 +42,12 @@ fn rows(path: &Path) -> Vec<Value> {
 fn the_probe_carries_an_agents_stdio_through_and_records_it() {
     let root = tempfile::tempdir().unwrap();
     let capture = root.path().join("capture");
-    let agent = root.path().join("agent.sh");
-    std::fs::write(&agent, AGENT).unwrap();
+    let agent = agent(root.path());
     let request =
         r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}"#;
 
     let mut child = Command::new(source_tree::bin!("acp-probe"))
-        .args(["--", "sh"])
+        .arg("--")
         .arg(&agent)
         .current_dir(root.path())
         .env("ACP_CAPTURE_DIR", &capture)
@@ -62,7 +73,7 @@ fn the_probe_carries_an_agents_stdio_through_and_records_it() {
     assert_eq!(io[0]["line"], request, "lines are recorded as they crossed");
     let spawn = rows(&capture.join("spawn.jsonl"));
     assert_eq!(spawn.len(), 1);
-    assert_eq!(spawn[0]["command"], "sh");
+    assert_eq!(spawn[0]["command"], agent.to_string_lossy().as_ref());
     assert!(io.iter().all(|row| row["process"] == spawn[0]["process"]));
     let errors = rows(&capture.join("stderr.jsonl"));
     assert_eq!(errors[0]["line"], "agent noise");

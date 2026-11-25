@@ -7,7 +7,7 @@ use std::time::Duration;
 use agent::ExitCause;
 use provider_fakes::{Ask, Outcome, Step, Tool, ToolClass};
 use support::*;
-use wire::{Kind, Phase};
+use wire::Phase;
 
 use crate::support;
 
@@ -168,8 +168,8 @@ async fn a_stop_cancels_the_turn_under_an_open_ask_and_exits_stopped() {
     agent.assert_released();
 }
 
-// Process groups and the tools that observe them are POSIX.
-#[cfg(unix)]
+/// A kill ends the provider at once (its process group on Unix, its process
+/// on Windows) and the agent writes no boundary for it.
 #[tokio::test(flavor = "multi_thread")]
 async fn kill_ends_the_process_group_at_once_and_writes_nothing() {
     let marker = format!("kill-{}", uuid::Uuid::new_v4().simple());
@@ -204,11 +204,12 @@ async fn kill_ends_the_process_group_at_once_and_writes_nothing() {
 
 // A directory the agent may not write stands in for a full disk: both fail
 // the same write, and permissions are what a test can set.
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_journal_write_that_fails_ends_the_incarnation_and_the_next_writes_its_boundary() {
-    use std::os::unix::fs::PermissionsExt as _;
-
+    if let Some(why) = provider_fakes::faults::unenforced() {
+        eprintln!("skipped: {why}");
+        return;
+    }
     // One frame per segment: every append after the first creates a file.
     let agent = Agent::start(Setup {
         initial_prompt: Some("go"),
@@ -228,14 +229,15 @@ async fn a_journal_write_that_fails_ends_the_incarnation_and_the_next_writes_its
         .wait("the turn is under way", |log| log.has_text("recorded"))
         .await;
     let journal = agent.dir.join(agent::JOURNAL);
-    std::fs::set_permissions(&journal, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let denied =
+        provider_fakes::faults::deny(&journal, provider_fakes::faults::Deny::Write).unwrap();
     // Read once no segment can be added: frames the turn writes after the
     // text, before it waits, may still be landing until then.
     let end = agent.journal_end();
 
     agent.release();
     let cause = agent.exit().await;
-    std::fs::set_permissions(&journal, std::fs::Permissions::from_mode(0o700)).unwrap();
+    denied.undo().unwrap();
     assert!(
         matches!(cause, ExitCause::WriteFailed(_)),
         "the incarnation ends on the failed write, not with the turn: {cause:?}"
@@ -264,9 +266,9 @@ async fn a_journal_write_that_fails_ends_the_incarnation_and_the_next_writes_its
 
 // The transcript position is what a resumed session reads on from; an
 // incarnation that cannot keep it ends the same way as one whose journal
-// write failed. A read-only cursor file stands in for the full disk. Unix
-// only: terminal Claude, the provider whose transcript is followed, is not
-// hosted on Windows.
+// write failed. A read-only cursor file stands in for the full disk.
+// out of scope on Windows: terminal Claude, the provider whose transcript
+// is followed.
 #[cfg(unix)]
 #[test]
 fn a_transcript_position_that_cannot_be_kept_ends_the_incarnation() {
@@ -274,7 +276,7 @@ fn a_transcript_position_that_cannot_be_kept_ends_the_incarnation() {
 
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: Kind::ClaudePty,
+            kind: wire::Kind::ClaudePty,
             steps: vec![
                 text("recorded"),
                 Step::WaitFor {
@@ -314,8 +316,9 @@ fn a_transcript_position_that_cannot_be_kept_ends_the_incarnation() {
     });
 }
 
-// Unix only: the straggler is started by a POSIX shell, and Windows does not host terminal
-// Claude (ConPTY re-renders its output; see docs/ARCHITECTURE.md, "Windows, as a stated cost").
+// The straggler is started by a POSIX shell.
+// out of scope on Windows: terminal Claude (ConPTY re-renders its output;
+// see docs/ARCHITECTURE.md, "Windows, as a stated cost").
 #[cfg(unix)]
 #[test]
 fn the_agent_exits_on_its_child_exit_while_a_straggler_holds_the_terminal() {
@@ -326,7 +329,7 @@ fn the_agent_exits_on_its_child_exit_while_a_straggler_holds_the_terminal() {
         .unwrap();
     let outcome = runtime.block_on(async {
         let agent = Agent::start(Setup {
-            kind: Kind::ClaudePty,
+            kind: wire::Kind::ClaudePty,
             command: Some("/bin/sh".into()),
             provider_args: vec!["-c".into(), format!("{straggler} & printf started; exit 3")],
             ..Setup::sdk()
@@ -357,7 +360,10 @@ fn the_agent_exits_on_its_child_exit_while_a_straggler_holds_the_terminal() {
 /// kill of the provider's process group misses them: QA saw a stopped
 /// headless Claude's command run on for its whole 90 seconds, writing
 /// files, and the stop itself take 30 seconds to report a kill.
-#[cfg(unix)]
+#[cfg_attr(
+    windows,
+    ignore = "windows: the stopped agent's command (`sleep`, started by the fake's shell) is still running after the stop, and the test runs past its 180 s limit"
+)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stop_mid_command_ends_stopped_at_once_and_leaves_no_command_running() {
     let marker = format!("600.{}", uuid::Uuid::new_v4().as_u128() % 1_000_000_000);
@@ -391,9 +397,7 @@ async fn a_stop_mid_command_ends_stopped_at_once_and_leaves_no_command_running()
     daemon.stop().await;
     let cause = agent.exit().await;
     let left = running(&format!("sleep {marker}"));
-    let _ = std::process::Command::new("pkill")
-        .args(["-f", &format!("sleep {marker}")])
-        .status();
+    kill_mentioning(&format!("sleep {marker}"));
     assert!(
         !left,
         "the stopped agent's command is still running: a session leader of its own escapes the provider's process group"
@@ -410,12 +414,13 @@ async fn a_stop_mid_command_ends_stopped_at_once_and_leaves_no_command_running()
 /// and until Claude records that prompt the agent reads idle with nothing
 /// queued. The prompt is still in flight: the child runs it before it
 /// exits, rather than ending finished with the prompt lost.
+// out of scope on Windows: terminal Claude.
 #[cfg(unix)]
 #[test]
 fn a_one_shot_terminal_child_runs_the_follow_up_it_typed_as_its_turn_ended() {
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: Kind::ClaudePty,
+            kind: wire::Kind::ClaudePty,
             parent: true,
             initial_prompt: Some("first"),
             steps: vec![

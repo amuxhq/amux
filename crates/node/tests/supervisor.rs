@@ -4,8 +4,6 @@
 //! of one build, and releases are signed with the test key debug builds
 //! trust.
 
-#![cfg(unix)]
-
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
@@ -14,12 +12,12 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use ::release::TEST_SEED;
 use node::release::{self, Choice, Manifest, Release, Skip, VerifyError};
-use node::supervisor::SUPERVISOR_LOCK;
+use node::supervisor::{Files, Request, SUPERVISOR_LOCK};
 use semver::Version;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use uuid::Uuid;
 const OTHER_SEED: [u8; 32] = [7; 32];
-use patience::until;
+use patience::{PATIENCE, until};
 
 /// Tests in this binary write executables and start processes on parallel
 /// threads. A process forked while another thread holds a freshly written
@@ -148,6 +146,11 @@ impl Server {
     }
 }
 
+/// `name` as an executable is named here: `amux.exe` on Windows.
+fn exe(name: &str) -> String {
+    os::paths::exe_name(name)
+}
+
 /// An install with fake-amux 1.0.0 at `<dir>/bin/amux`.
 struct Fixture {
     _root: tempfile::TempDir,
@@ -167,7 +170,7 @@ impl Fixture {
         std::fs::create_dir_all(dir.join("bin")).unwrap();
         std::fs::create_dir_all(dir.join("builds")).unwrap();
         let fixture = Self {
-            bin: dir.join("bin").join("amux"),
+            bin: dir.join("bin").join(exe("amux")),
             dir,
             _root: root,
             server: Server::start().await,
@@ -183,7 +186,7 @@ impl Fixture {
     fn build(&self, version: &str) -> PathBuf {
         let path = self.dir.join("builds").join(format!("amux-{version}"));
         if !path.exists() {
-            let fake = binaries().join("fake-amux");
+            let fake = binaries().join(exe("fake-amux"));
             write_executable(|| release::restamp(&fake, &path, version)).unwrap();
         }
         path
@@ -202,12 +205,17 @@ impl Fixture {
         std::fs::write(self.dir.join(format!("behave-{version}")), behaviour).unwrap();
     }
 
+    /// The files the supervisor keeps beside the binary.
+    fn beside(&self) -> Files {
+        Files::beside(&self.bin)
+    }
+
     fn prev(&self) -> PathBuf {
-        self.dir.join("bin").join("amux.prev")
+        self.beside().prev
     }
 
     fn rejected(&self) -> Option<String> {
-        std::fs::read_to_string(self.dir.join("bin").join("amux.rejected")).ok()
+        std::fs::read_to_string(self.beside().rejected).ok()
     }
 
     /// The version stamped into the binary at the path.
@@ -342,11 +350,15 @@ impl Fixture {
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         names.sort();
+        let file_name = |path: &Path| path.file_name().unwrap().to_string_lossy().into_owned();
+        let (binary, rejected) = (file_name(&self.bin), file_name(&self.beside().rejected));
         for name in names {
-            let detail = match name.as_str() {
-                "amux" => format!("version {}", self.installed()),
-                "amux.rejected" => format!("names {}", self.rejected().unwrap_or_default()),
-                _ => String::new(),
+            let detail = if name == binary {
+                format!("version {}", self.installed())
+            } else if name == rejected {
+                format!("names {}", self.rejected().unwrap_or_default())
+            } else {
+                String::new()
             };
             println!("  {name} {detail}");
         }
@@ -371,8 +383,34 @@ impl Fixture {
         self.supervisor.as_ref().unwrap().id()
     }
 
-    fn signal_supervisor(&self, signal: libc::c_int) {
-        kill(self.supervisor_pid(), signal);
+    /// Asks the supervisor to stop over its control socket, as `amux
+    /// server stop` does on Windows (on Unix the CLI sends SIGTERM, which
+    /// `amux`'s own supervise_cli tests drive).
+    async fn stop_supervisor(&self) {
+        let answer = node::supervisor::ask(&self.dir.join("data"), Request::Stop, PATIENCE)
+            .await
+            .expect("the supervisor answers on its control socket");
+        println!("asked the supervisor to stop: {answer}");
+    }
+
+    /// Ends the supervisor at once, as a crash or a kill does.
+    fn kill_supervisor(&mut self) {
+        self.supervisor.as_mut().unwrap().kill().unwrap();
+    }
+
+    /// Waits for the `n`-th time a daemon of `version` was asked to stop:
+    /// SIGTERM on Unix (`term`), the pipe closing on Windows (`eof`), which
+    /// has no signals.
+    async fn nth_stop(&self, n: usize, version: &str) -> Event {
+        let asked = |event: &Event| {
+            (event.what == "term" || event.what == "eof") && event.version == version
+        };
+        let events = self
+            .until(&format!("a stop of {version} #{n}"), |events| {
+                events.iter().filter(|event| asked(event)).count() >= n
+            })
+            .await;
+        events.into_iter().filter(asked).nth(n - 1).unwrap()
     }
 
     /// Waits for the supervisor process to exit.
@@ -393,21 +431,30 @@ impl Drop for Fixture {
             let _ = child.wait();
         }
         for event in self.events() {
-            kill(event.pid, libc::SIGKILL);
+            kill(event.pid);
         }
     }
 }
 
-fn kill(pid: u32, signal: libc::c_int) {
-    // SAFETY: a signal to a test's own process.
-    unsafe {
-        libc::kill(pid as libc::pid_t, signal);
+/// Ends the process `pid` names at once, if it still runs.
+fn kill(pid: u32) {
+    if let Ok(process) = os::process::ProcessRef::open(pid) {
+        let _ = process.kill();
     }
 }
 
 fn alive(pid: u32) -> bool {
-    // SAFETY: signal 0 only probes.
-    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    os::process::ProcessRef::open(pid).is_ok_and(|process| process.alive())
+}
+
+/// Whether something answers on the local socket at `path`. The test's
+/// runtime has threads to spare, so this one blocks for the dial.
+fn answers(path: &Path) -> bool {
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current()
+            .block_on(agent_dir::local_socket::connect(path))
+            .is_ok()
+    })
 }
 
 async fn until_dead(pid: u32) {
@@ -419,11 +466,15 @@ async fn until_dead(pid: u32) {
 }
 
 fn locked(path: &Path) -> bool {
-    let file = OpenOptions::new().write(true).open(path).unwrap();
-    matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock))
+    assert!(path.exists(), "no lock file at {}", path.display());
+    os::lock::FileLock::held(path).unwrap()
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: reading the supervisor lock file while it is held fails: another process has locked a portion of the file (os error 33)"
+)]
 async fn restarts_the_daemon_whenever_it_exits_and_stops_it_when_asked() {
     let mut fixture = Fixture::new().await;
     let supervisor = fixture.start();
@@ -437,18 +488,18 @@ async fn restarts_the_daemon_whenever_it_exits_and_stops_it_when_asked() {
         "the lock names the supervisor's pid"
     );
 
-    kill(first.pid, libc::SIGKILL);
+    kill(first.pid);
     let second = fixture.nth(2, "go", "1.0.0").await;
     assert_ne!(second.pid, first.pid);
 
     // A crash right after go is restarted too, after a backoff.
     fixture.behave("1.0.0", "crash-after-go");
-    kill(second.pid, libc::SIGKILL);
+    kill(second.pid);
     fixture.nth(1, "crash", "1.0.0").await;
     let fourth = fixture.nth(4, "go", "1.0.0").await;
 
-    fixture.signal_supervisor(libc::SIGTERM);
-    fixture.nth(1, "term", "1.0.0").await;
+    fixture.stop_supervisor().await;
+    fixture.nth_stop(1, "1.0.0").await;
     assert!(fixture.supervisor_exit().await.success());
     assert!(!alive(fourth.pid));
     assert!(!locked(&lock), "a stopped supervisor releases its lock");
@@ -492,13 +543,17 @@ async fn a_step_over_its_budget_leaves_the_supervisors_state_and_inputs_file() {
     );
     assert_eq!(written["core"], "supervisor", "{text}");
     assert!(written["now"]["params"].is_object(), "{text}");
-    fixture.signal_supervisor(libc::SIGTERM);
+    fixture.stop_supervisor().await;
     assert!(fixture.supervisor_exit().await.success());
     // Every step ran over, and the file stayed one.
     assert_eq!(std::fs::read_dir(&reports).unwrap().count(), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: supervise-inherited comes from a new pid, not the supervisor that was started"
+)]
 async fn installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and_lock() {
     let mut fixture = Fixture::new().await;
     let supervisor = fixture.start();
@@ -526,7 +581,7 @@ async fn installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and
     assert!(at("go", "2.0.0", new.pid) < at("supervise-inherited", "2.0.0", supervisor));
     assert_eq!(fixture.installed(), "2.0.0");
     assert!(!fixture.prev().exists(), "activation deleted prev");
-    assert!(!fixture.dir.join("bin/amux.staged").exists());
+    assert!(!fixture.beside().staged.exists());
     let lock = fixture.dir.join("data").join(SUPERVISOR_LOCK);
     assert!(locked(&lock), "the lock crossed the exec");
     assert_eq!(
@@ -544,14 +599,14 @@ async fn installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and
     );
 
     // The exec'd supervisor still waits on and restarts the child.
-    kill(new.pid, libc::SIGKILL);
+    kill(new.pid);
     let restarted = fixture.nth(2, "go", "2.0.0").await;
     assert_ne!(restarted.pid, new.pid);
     fixture.transcript("an update to 2.0.0, activated, then a crash of the new daemon");
 
     // Killed, the supervisor takes its daemon with it: end of file on the
     // pipe.
-    fixture.signal_supervisor(libc::SIGKILL);
+    fixture.kill_supervisor();
     fixture.supervisor_exit().await;
     let eof = fixture.nth(1, "eof", "2.0.0").await;
     assert_eq!(eof.pid, restarted.pid);
@@ -585,7 +640,7 @@ async fn a_release_with_a_bad_signature_or_hash_is_not_installed() {
     assert_eq!(fixture.count("start", "2.0.0"), 0);
     assert_eq!(fixture.installed(), "1.0.0");
     assert!(!fixture.prev().exists());
-    assert!(!fixture.dir.join("bin/amux.staged").exists());
+    assert!(!fixture.beside().staged.exists());
     assert_eq!(
         fixture.count("start", "1.0.0"),
         1,
@@ -653,6 +708,10 @@ async fn a_child_that_hangs_before_prepared_is_stopped_at_the_start_deadline_and
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: no ignored-term event: the daemon told to ignore the stop never records one"
+)]
 async fn a_daemon_that_ignores_the_stop_signal_is_killed_at_the_stop_deadline() {
     let mut fixture = Fixture::new().await;
     fixture.start();
@@ -666,6 +725,10 @@ async fn a_daemon_that_ignores_the_stop_signal_is_killed_at_the_stop_deadline() 
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: supervise-inherited comes from a new pid, not the supervisor that was started"
+)]
 async fn a_starting_supervisor_counts_failed_starts_against_prev_and_rolls_back() {
     // A reboot in the middle of an update: 2.0.0 at the path, 1.0.0 as prev.
     let mut fixture = Fixture::new().await;
@@ -688,6 +751,10 @@ async fn a_starting_supervisor_counts_failed_starts_against_prev_and_rolls_back(
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: supervise-inherited comes from a new pid, not the supervisor that was started"
+)]
 async fn a_starting_supervisor_finishes_a_recorded_rollback() {
     // A crash between recording the rejected build and renaming prev back.
     let mut fixture = Fixture::new().await;
@@ -696,7 +763,7 @@ async fn a_starting_supervisor_finishes_a_recorded_rollback() {
     std::fs::remove_file(&fixture.bin).unwrap();
     let build = fixture.build("2.0.0");
     write_executable(|| std::fs::copy(build, &fixture.bin)).unwrap();
-    std::fs::write(fixture.dir.join("bin/amux.rejected"), "2.0.0").unwrap();
+    std::fs::write(fixture.beside().rejected, "2.0.0").unwrap();
     let supervisor = fixture.start();
 
     fixture.nth(1, "go", "1.0.0").await;
@@ -742,7 +809,7 @@ async fn the_amux_daemon_exits_when_its_supervisor_dies() {
         ),
     )
     .unwrap();
-    let mut command = Command::new(binaries().join("amux"));
+    let mut command = Command::new(binaries().join(exe("amux")));
     command
         .arg("supervise")
         .env("AMUX_CONFIG", &config)
@@ -751,7 +818,7 @@ async fn the_amux_daemon_exits_when_its_supervisor_dies() {
     let mut supervisor = start(|| command.spawn()).unwrap();
     let lock = data.join(node::INSTALLATION_LOCK);
     until("the daemon to answer on its socket", || {
-        let answered = std::os::unix::net::UnixStream::connect(&socket).is_ok();
+        let answered = answers(&socket);
         let exited = supervisor.try_wait().unwrap();
         std::future::ready(match (answered, exited) {
             (true, _) => Ok(()),
@@ -991,7 +1058,7 @@ fn the_manifest_is_verified_whole_and_the_artifact_against_its_entry() {
 fn restamping_a_build_changes_the_version_it_reports() {
     let dir = tempfile::tempdir().unwrap();
     let copy = dir.path().join("amux");
-    let amux = binaries().join("amux");
+    let amux = binaries().join(exe("amux"));
     write_executable(|| release::restamp(&amux, &copy, "0.0.1-previous")).unwrap();
     let output = start(|| {
         Command::new(&copy)

@@ -8,41 +8,19 @@
 //! exiting when its supervisor dies) are driven in the node crate's
 //! supervisor tests.
 
-#![cfg(unix)]
-
 use std::collections::BTreeMap;
 use std::io::BufRead as _;
-use std::path::Path;
 
-use provider_fakes::Step;
 use support::desk::{Desk, LONG_GRACE_SECS, lock_held, say};
-use support::term::Term;
 use support::{
-    Channel, amux_binary, chat, client, count, created_id, gated_turn, says, texts, turns_ended,
-    until,
+    Channel, agent_pid, amux_binary, chat, client, count, created_id, gated_turn, says, texts,
+    turns_ended, until,
 };
 
 use crate::support;
 
-/// The agent process hosting the directory `dir`, found by the agent id
-/// its command line ends with.
-fn agent_pid(dir: &Path) -> Option<u32> {
-    let id = dir.file_name()?.to_string_lossy().into_owned();
-    let output = std::process::Command::new("pgrep")
-        .args(["-f", &format!(" agent .*{id}$")])
-        .output()
-        .ok()?;
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .next()?
-        .trim()
-        .parse()
-        .ok()
-}
-
 fn alive(pid: u32) -> bool {
-    // SAFETY: signal 0 only probes.
-    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    os::process::ProcessRef::open(pid).is_ok_and(|process| process.alive())
 }
 
 /// Agents the previous build started keep their process, and their inode,
@@ -62,11 +40,11 @@ async fn agents_of_the_previous_build_work_on_after_an_update() {
     desk.run(&["server", "start"]).await;
 
     let mut agents: BTreeMap<&str, Vec<u8>> = BTreeMap::new();
-    for (name, agent, interface) in [
-        ("terminal", "claude", "native"),
-        ("headless", "claude", "amux"),
-        ("codex", "codex", "amux"),
-    ] {
+    let mut kinds = Vec::new();
+    #[cfg(not(windows))] // out of scope on Windows: terminal Claude
+    kinds.push(("terminal", "claude", "native"));
+    kinds.extend([("headless", "claude", "amux"), ("codex", "codex", "amux")]);
+    for (name, agent, interface) in kinds {
         let created = desk
             .run(&[
                 "new",
@@ -129,8 +107,12 @@ async fn agents_of_the_previous_build_work_on_after_an_update() {
 /// the build under test: it reconnects to the new daemon on its own, keeps
 /// the chat it had open with the turn that was running, says the running
 /// daemon is newer, and a prompt typed into it afterwards is answered.
+#[cfg(not(windows))] // out of scope on Windows: the TUI
 #[tokio::test(flavor = "multi_thread")]
 async fn a_tui_of_the_previous_build_works_on_after_an_update() {
+    use provider_fakes::Step;
+    use support::term::Term;
+
     let running = node::version();
     let previous = release::version_stamp::previous(running).unwrap();
     let channel = Channel::serve().await;
@@ -226,9 +208,6 @@ async fn a_tui_of_the_previous_build_works_on_after_an_update() {
 /// the store again and does real work in it.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_previous_build_reopens_a_store_the_new_one_opened_before_prepared() {
-    use std::os::fd::AsRawFd as _;
-    use std::os::unix::process::CommandExt as _;
-
     let running = node::version();
     let previous = release::version_stamp::previous(running).unwrap();
     let gate_dir = tempfile::tempdir().unwrap();
@@ -268,9 +247,12 @@ async fn the_previous_build_reopens_a_store_the_new_one_opened_before_prepared()
 
     // The build under test starts on the same store as a supervisor would
     // start it, opens it, looks, says prepared, and dies before go.
-    let (daemon_reads, go) = std::io::pipe().unwrap();
-    let (prepared, daemon_writes) = std::io::pipe().unwrap();
-    let ends = [daemon_reads.as_raw_fd(), daemon_writes.as_raw_fd()];
+    let (daemon_reads, go) = os::testing::pipe::pipe().unwrap();
+    let (prepared, daemon_writes) = os::testing::pipe::pipe().unwrap();
+    let ends = [
+        os::process::raw_for_child(&daemon_reads),
+        os::process::raw_for_child(&daemon_writes),
+    ];
     let mut command = std::process::Command::new(amux_binary());
     command
         .arg("daemon")
@@ -279,16 +261,10 @@ async fn the_previous_build_reopens_a_store_the_new_one_opened_before_prepared()
         .env(support::NO_DISCOVERY.0, support::NO_DISCOVERY.1)
         .env_remove("AMUX_LOG")
         .stdin(std::process::Stdio::null());
-    // SAFETY: fcntl in the child before exec touches only its descriptors.
-    unsafe {
-        command.pre_exec(move || {
-            for fd in ends {
-                let flags = libc::fcntl(fd, libc::F_GETFD);
-                libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC);
-            }
-            Ok(())
-        });
-    }
+    // The daemon's two ends, inherited by this one start: the
+    // supervisor's hand-over.
+    os::process::set_inheritable(&daemon_reads, true).unwrap();
+    os::process::set_inheritable(&daemon_writes, true).unwrap();
     let mut daemon = command.spawn().unwrap();
     drop((daemon_reads, daemon_writes));
     let said = tokio::task::spawn_blocking(move || {
@@ -401,8 +377,8 @@ async fn restarting_the_launch_agent_leaves_the_agent_running() {
     std::fs::create_dir_all(&desk.data).unwrap();
     let file = desk.root.path().join(format!("{label}.plist"));
     std::fs::write(&file, plist).unwrap();
-    // SAFETY: getuid cannot fail.
-    let uid = unsafe { libc::getuid() };
+    let uid = std::process::Command::new("id").arg("-u").output().unwrap();
+    let uid = String::from_utf8_lossy(&uid.stdout).trim().to_owned();
     let status = std::process::Command::new("launchctl")
         .args(["bootstrap", &format!("gui/{uid}")])
         .arg(&file)
@@ -420,7 +396,8 @@ async fn restarting_the_launch_agent_leaves_the_agent_running() {
         .unwrap();
     assert!(status.success(), "launchctl kickstart failed");
     until("launchd's amux answers", || async {
-        std::os::unix::net::UnixStream::connect(&desk.socket)
+        agent_dir::local_socket::connect(&desk.socket)
+            .await
             .map(|_| ())
             .map_err(|error| error.to_string())
     })
@@ -479,7 +456,8 @@ async fn restarting_the_launch_agent_leaves_the_agent_running() {
 
     std::fs::write(&gate, b"").unwrap();
     until("the daemon answers again", || async {
-        std::os::unix::net::UnixStream::connect(&desk.socket)
+        agent_dir::local_socket::connect(&desk.socket)
+            .await
             .map(|_| ())
             .map_err(|error| error.to_string())
     })

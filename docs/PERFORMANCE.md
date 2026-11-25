@@ -81,8 +81,9 @@ commits nothing until the journals hold a fixed backlog; then the writers pause 
 priced over seven equal shares of the frames it commits. That isolates ingest's own cost from how busy writers share
 the cores with it.
 
-Memory is the platform's own measure: physical footprint on macOS, resident set size on Linux. The two are not
-interchangeable and the report names which it used.
+Memory is the platform's own measure: physical footprint on macOS, resident set size on Linux, private bytes on
+Windows (the working set, which Windows trims under pressure and from an idle process, would drift with the
+machine rather than with the process). They are not interchangeable and the report names which it used.
 
 ### The smoke
 

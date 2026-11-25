@@ -12,8 +12,6 @@
 //! Each story reads top to bottom as the promises it holds, each printed as
 //! it is shown, so a run's output is the evidence.
 
-#![cfg(unix)]
-
 use std::sync::Arc;
 
 use app_runtime::{AppRuntime, Chat, DEFAULT_TAIL, Wake};

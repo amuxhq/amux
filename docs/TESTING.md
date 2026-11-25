@@ -141,6 +141,71 @@ just sim --seeds 2000            # thousands of seeds per story, as the nightly 
 Under `cargo nextest run` the same switch is the environment: `TESTNET_MODE=simulated`, with `TESTNET_SEEDS=N` or
 `TESTNET_SEED=N`.
 
+## Holding a test back on Windows
+
+A test runs on every desktop platform. Windows leaves out a short list of features by choice: terminal Claude
+(`claude_pty`) and raw attach, the wt workspace backend, the browser extension's native host, SSH with a Windows
+machine at the far end, Arm64 release artifacts, and the terminal client beyond its free fixes. A test of one of
+those may be compiled out on Windows, and its gate says which:
+
+```rust
+#[cfg(not(windows))] // out of scope on Windows: wt
+mod wt;
+```
+
+The comment goes on the gate's line or in the comment lines directly above it, and must name one of those
+features; a whole file is gated the same way with `#![cfg(not(windows))]`. Nothing else compiles a test out on
+Windows. A test that fails there while its fix is being made stays compiled and is ignored, with what fails (not a
+guessed cause):
+
+```rust
+#[cfg_attr(windows, ignore = "windows: the second daemon never answers on the pipe")]
+```
+
+A runtime skip, with its reason, is only for a missing privilege, such as the right to make symbolic links.
+
+So that a test needs no gate, the harness does each platform-shaped thing one way on every OS:
+
+| A test that | Uses |
+| --- | --- |
+| checks, kills, freezes or thaws a process | `os::process::ProcessRef` (`open`, `alive`, `kill`, `suspend`, `resume`), never `kill -0`, `pkill`, `libc::kill` or `taskkill`; an agent's process is the one serving its `private/agent.sock` (`Net::agent_process`, node's `support::agent_process`) |
+| kills an agent the way the daemon does, with everything it started, or asks whether any process naming a directory still runs | amux's `support::kill_group` (`taskkill /T` where there is one, else SIGKILL to the process group) and `support::running_mentioning` (`pgrep -f` where there is one, else the CIM process table): the one place a test asks the OS's own tools, since what they answer is the process tree and command lines, which `ProcessRef` does not see |
+| hands a child the activation pipe, as a supervisor does | `os::testing::pipe::pipe`, whose ends are files for `os::process::set_inheritable` and `raw_for_child` |
+| asks whether a lock is held | `os::lock::FileLock::held` |
+| dials or serves a local socket | `agent_dir::local_socket`, never a Unix socket type, since the socket is a named pipe on Windows |
+| needs a write refused or a file unreadable, a file held open by another program, or a link to a directory | `os::testing::faults` (the `os` crate's `testing` feature; `provider_fakes::faults` re-exports it): `deny` (a mode on Unix, a deny entry in the DACL on Windows), `read_only`, `hold_exclusively` (a share mode, Windows only), `link_dir` (a junction on Windows) and `symlink`, which says why it skipped where the user may not make one; a permission fault checks `faults::unenforced()` first, which is `Some` for a process running as root |
+
+A test that needs a program where a command is expected (a provider on the PATH, an SSH login, a wrapper, a
+stand-in agent, a build that cannot run) writes no `#!/bin/sh` script, which Windows cannot run, and makes no file
+executable or symlinked: it links a fake provider (`fake-claude-sdk`, `fake-codex`, `fake-acp`) under the command's
+name, or installs `fake-provider` with a plan beside it (`provider_fakes::dispatch::install`), which runs another
+program, answers and exits, runs the next program of its name on the PATH, or is a testnet host's provider command.
+Names carry the platform's suffix (`dispatch::program`, `os::paths::exe_name`) and a PATH is built with
+`std::env::join_paths`.
+
+The same rule holds the code: desktop-platform conditionals (`cfg(unix)`, `cfg(windows)`, a desktop `target_os`,
+`target_family`, `std::os::unix`, `std::os::windows`, `libc::`, `windows_sys::`) live in the homes named for
+platform code: `crates/os`, agent-dir's `local_socket`, `crates/pty-host`, node's `platform` and the supervisor's
+`login` and `keep_awake`, the terminal client's `platform`, the phone bridges (`app-ffi`, `app-jni`) and the
+launcher. A home's tests are held like any other test, since they test the API callers use without `cfg`; only a home's file for one OS (`process/unix.rs`) may gate the tests of its own code. So a home's shared `tests.rs` holds what is true on every OS, with no gate, and a test of one OS's mechanism (a Job Object, a reused pid) sits in that OS's own module beside its code, declared there with `#[cfg(test)] mod tests;` (`process/windows/tests.rs`, or `signal/windows_tests.rs` named by `#[path]` from `signal/windows.rs`), with the roles and helpers only that OS has, which the shared tests reach through `imp::tests`. Elsewhere, a module gated whole for a feature Windows leaves out carries the same comment, on a gate that leaves it out of a Windows build (`cfg(not(windows))`, never `cfg(windows)`). The mobile
+axis (`target_os = "ios"`, `target_os = "android"`) is a product choice and may appear anywhere, and so may
+`cfg!(windows)` read as a value, such as a default editor or a path separator, rather than as the condition of a
+statement.
+
+`just platform-check` holds both rules ([`build/checks/platform_check.py`](../build/checks/platform_check.py) says
+exactly what it counts, and what it takes for test code and for `cfg!` read as data). What the tree held when the
+check arrived is listed in [`build/checks/platform-allowlist.txt`](../build/checks/platform-allowlist.txt), a
+count per file: a file may hold no more than its count, and a file not listed none. A change that moves code into a
+home passes with a note that the file's entry can be lowered; the allowlist is lowered when the change lands
+(`just platform-check --write-allowlist`), never raised. Every `ignore = "windows: ..."` is counted, and
+`just platform-check --strict` fails while the allowlist holds anything or any test is ignored on Windows.
+
+```sh
+just platform-check                    # the check, through Buck2
+just platform-check --list             # every conditional it counts, file and line
+just platform-check --strict           # an empty allowlist and nothing ignored on Windows
+```
+
 ## The catalogue
 
 `tests/catalog.toml` lists every suite once: its contract in a sentence, paths, focused recipe, boundary, oracle,
@@ -168,8 +233,25 @@ shares a global, an environment variable or a once-built fixture with another, w
 `HOME` and `TMPDIR` of its own, made empty for it, so none reads the machine's. No test builds a binary: a test that
 starts `amux`, a fake provider, `fake-amux` or the agent's install-path stand-in is given the directory Buck2 built
 them into as `TESTNET_BINARIES`. A test is reported slow after a minute and ended after three; a test that ends while
-a process it started still holds its output fails, since that process would outlive it. The C ABI's pointer checks
-(`just miri`) and the sanitizers run under `cargo test`.
+a process it started still holds its output fails, since that process would outlive it. Whatever a test started ends
+with it: on Unix its process group is killed, and on Windows the test runs in a Job Object of its own (kill on close,
+no breakaway), joined before it runs, so even an orphan, which no walk of the process tree finds, is ended with the
+test; a test its job can't take (an enclosing job that forbids nesting) is killed before it runs and fails with the
+reason, never run uncontained. Within a test, the test net ends its agents itself, at `shutdown`, `remove_host` and `rewind_host`, by the
+process each agent's lock names (`agent_dir::lock_holder`), whether or not their daemon still runs. It looks only in
+its hosts' agents folders (`profiles/*/agents/*` of each host's data directory) and follows no symbolic link or
+junction there, so a link in a workspace to another installation never leads it to that installation's agents.
+`testnet ctl down`, ending the agents of a net whose process has crashed, looks in the same folders of each host in
+the net's root, so another installation kept in a workspace is never taken for the net's. The
+C ABI's pointer checks (`just miri`) and the sanitizers run under `cargo test`.
+
+The runner sets `AMUX_TEST_RUNNER=1` for every test. On Windows, test support that starts amux processes (the
+`amux` suites' `support::amux_binary`, and `testnet::Net::start`, the tests' net) calls
+`os::testing::require_test_runner` and refuses to run without it: run by hand on a desktop, those processes would
+open windows there, where Buck runs tests in a non-interactive task. The test net's shared start
+(`Net::start_with`) and its process hosts do not, since `testnet serve` and `testnet ctl up` start them for a person
+driving a net by hand. CI's nextest lanes set it too
+(`scripts/test-binaries.sh`, when `CI` is set). Run them with `just test-windows`.
 
 CI's Linux gate runs them through Buck2 on the build host. Its macOS and Windows runners have no Buck2 yet, so they
 run the same tests under [cargo-nextest](https://nexte.st), configured in

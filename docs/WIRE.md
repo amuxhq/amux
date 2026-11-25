@@ -524,7 +524,11 @@ decides what to offer from `AgentCapabilities` and never from the agent's
 kind or provider id. The interpreter fills them on the agent's snapshot, from
 what the agent's program said; a host fills them for each kind of each `ProviderOnHost` it
 lists, for an agent of that kind started there now, and a client reads the
-ones for an agent's own kind until its first snapshot says its own. False and unspecified are the safe
+ones for an agent's own kind until its first snapshot says its own. Both are
+said on the agent's own host, for that host's platform (Codex attaches
+everywhere but Windows), so a client never works them out from its own: a
+Mac shows a Windows host's Codex as not attachable because that host said
+so. False and unspecified are the safe
 reading of each: a client that leaves a control out loses only that control.
 
 | Field | Means | Terminal Claude | Headless Claude | Codex | An ACP agent |

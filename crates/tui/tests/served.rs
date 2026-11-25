@@ -2,12 +2,9 @@
 //! agent processes on the fake providers, observed through a client
 //! service the way a terminal subscribes. Drafts across leaving a chat and
 //! the client closing, and chats on agents a far host deleted or stopped
-//! linking.
-//!
-//! Unix only: every served host here runs terminal Claude agents, which
-//! Windows does not host (see docs/ARCHITECTURE.md, "Windows, as a stated
-//! cost").
-#![cfg(unix)]
+//! linking. The agents are headless Claude, which every platform hosts;
+//! only raw attach's case needs terminal Claude, which Windows does not
+//! host (see docs/ARCHITECTURE.md, "Windows, as a stated cost").
 
 use std::time::Duration;
 
@@ -552,6 +549,7 @@ fn screen_text(buffer: &Buffer) -> String {
 /// Raw attach asked for from inside a chat on another host's agent says
 /// why in words that fit the chat: the notice was home's ("enter opens
 /// its chat"), and in the chat Enter sends the draft.
+#[cfg(not(windows))] // out of scope on Windows: raw attach, on a terminal Claude (claude_pty) agent
 #[tokio::test(flavor = "multi_thread")]
 async fn raw_attach_from_a_far_agents_chat_does_not_say_enter_opens_its_chat() {
     let net = Net::start(

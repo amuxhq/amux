@@ -88,14 +88,16 @@ def check_platform(linux_only = False) -> str:
         return LINUX_PLATFORM
     return host_platform(purpose = "testing")
 
-def amux_check(name, command, srcs = [], deps = [], env = {}, labels = [], linux_only = False, host = False, **kwargs):
+def amux_check(name, command, srcs = [], deps = [], env = {}, labels = [], linux_only = False, host = False, target_compatible_with = [], **kwargs):
     """A repository check: `command` run from the checkout's root over
     `srcs` (this package's files) and `deps` (other targets' outputs),
     failing when the command does. `linux_only = True` for a check whose
     tools only the Linux toolchain has: it is skipped, and named, when no
     Linux worker is in reach. `host = True` for one that checks how amux
     behaves on the machine it runs on, which builds in that machine's
-    configuration as the Rust tests do (the terminal journeys)."""
+    configuration as the Rust tests do (the terminal journeys).
+    `target_compatible_with` adds to what `linux_only` asks: a host check
+    of a feature one OS leaves out is skipped there."""
     _amux_check(
         name = name,
         command = command,
@@ -104,7 +106,7 @@ def amux_check(name, command, srcs = [], deps = [], env = {}, labels = [], linux
         env = env,
         labels = ["check"] + labels + (["linux-only"] if linux_only else []),
         default_target_platform = host_platform(purpose = "testing") if host else check_platform(linux_only),
-        target_compatible_with = ["root//build/constraints:linux-workers"] if linux_only else [],
+        target_compatible_with = (["root//build/constraints:linux-workers"] if linux_only else []) + target_compatible_with,
         **kwargs
     )
 

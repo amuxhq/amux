@@ -397,6 +397,31 @@ fewer than the six a Windows test that takes the whole worker asks for
 alone when the build host is out of reach: a Windows machine can't compile
 anything itself, so Linux actions wait for it instead.
 
+Two steps need an elevated shell, because the task runs as you without your
+signing in (an S4U task), which Windows lets only an administrator set up:
+`install` itself, and stopping a running NativeLink, since its
+`nativelink.exe` belongs to that task (`Stop-Process -Name nativelink -Force`
+in an elevated PowerShell). Everything else, the recipes included, runs
+unelevated.
+
+A build that fails with "CAS blob(s) … missing" (or "not found in either
+fast or slow store") after the build host's cache was wiped is a stale Buck2
+daemon: it remembers the blobs it uploaded before the wipe as already there,
+and so never uploads them again. `scripts/buck2 kill` ends it, and the next
+build starts a daemon that knows nothing and uploads what's missing.
+
+Windows can't start a sh script itself, so a Python script that runs
+`scripts/buck2` or `scripts/bounded` runs it with `sh`, and one that runs
+another Python script runs it with its own Python rather than `scripts/py`.
+On Windows the justfile sets, for every recipe, `MSYS2_ARG_CONV_EXCL=//`
+(and `MSYS2_ENV_CONV_EXCL`, which keeps that value whole through a Python
+script to the next `sh`): Git's `sh` rewrites an argument that looks like a
+path as it starts a native program, and took `//js:` for an escaped `/js:`;
+an argument starting `//`, a Buck2 pattern, is now left alone. It sets
+`PYTHONUTF8=1` too, so the scripts read and write UTF-8 there as they do
+elsewhere. Running `scripts/buck2` by hand from Git Bash with a `//` pattern
+needs `export MSYS2_ARG_CONV_EXCL=//` first.
+
 On Windows on Arm (a Windows VM on an Apple Silicon Mac), `just
 check-windows` and `just test-windows` build and run Arm64 binaries, natively;
 `AMUX_WINDOWS_PLATFORM=windows` runs the x64 ones instead, under Windows'
@@ -404,7 +429,11 @@ emulation, which matches what CI tests but is slower. The worker says it is
 Arm (its `cpu` property), and an Arm64 test asks for that
 (`exec-windows-arm64`), so it never reaches CI's x64 runner; an x64 test asks
 for no `cpu` and may run on either. Buck2 and NativeLink themselves are their
-x64 builds, under emulation: the pins name no Arm build for Windows.
+x64 builds, under emulation: the pins name no Arm build for Windows. So
+Buck2's own `host_info()` says x64 there, and the machine's platform comes
+from `scripts/buck-config.py` instead, which writes it as `amux.host`; every
+target that defaults to this machine's platform (the Rust tests, so `just
+test`, `just premerge` and `just goldens`) is built for Arm64 there.
 
 ### Repository checks
 
@@ -415,8 +444,9 @@ script run over exactly the files its target declares
 ([`build/checks.bzl`](../build/checks.bzl)):
 
 - in the root [`BUCK`](../BUCK) file: `docs-check`, `store-check`,
-  `proto-compat`, `cores-check` (the sources half), `typed-provider-check`,
-  `client-kind-check`, `codegen-check`, the checks that run Cargo
+  `proto-compat`, `cores-check` (the sources half), `platform-check`,
+  `typed-provider-check`, `client-kind-check`, `codegen-check`, the checks
+  that run Cargo
   (`fmt-check`, `dependency-policy`, `shear`, `cores-graph-check` and
   `deny`, below), and the unit tests of the repository's scripts, one test
   per file (`//:script-tests-land_queue`);
@@ -428,7 +458,8 @@ script run over exactly the files its target declares
   `//crates/ios-tools:unit`;
 - in [`js/BUCK`](../js/BUCK): the browser extension's Biome, type checks,
   unit tests, end-to-end test and npm audit ([Browser extension](BROWSER.md#building-and-testing));
-- the terminal journeys, `//crates/testnet:terminal-journeys`.
+- the terminal journeys, `//crates/testnet:terminal-journeys`, which a
+  Windows build skips: the terminal client is out of scope there.
 
 ```sh
 just checks                    # the repository's and the JavaScript's checks
@@ -446,6 +477,12 @@ Node for the JavaScript's checks is the release `//build:node` pins, the
 version the Linux toolchain's is. A check finds nothing it didn't declare:
 a test that reads a file outside its inputs fails, rather than passing on
 whatever the checkout holds.
+
+A check starts a script through its interpreter (`sh script.sh`,
+`python3 script.py`), and so does a script that runs another of the
+checkout's (`sh scripts/py`): Windows has no executable bit, so a file Buck2
+uploads from a Windows checkout reaches the Linux worker without one, and a
+script started by its path alone is refused there.
 
 A check that needs more than the checkout's files gets it from
 [`build/checks/inputs.py`](../build/checks/inputs.py), which `just test`

@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 
 use prost::Message as _;
-use provider_fakes::script::{INPUT_LOG_ENV, OfferedCommand, OfferedModel, SCRIPT_ENV, Script};
+use provider_fakes::script::{INPUT_LOG_ENV, OfferedModel, SCRIPT_ENV, Script};
 use sha2::{Digest as _, Sha256};
 use support::synthetic::*;
 use support::*;
@@ -31,8 +31,10 @@ fn model(value: &str) -> OfferedModel {
     }
 }
 
-fn command(name: &str) -> OfferedCommand {
-    OfferedCommand {
+// Only terminal Claude's tests offer commands.
+#[cfg(not(windows))] // out of scope on Windows: terminal Claude
+fn command(name: &str) -> provider_fakes::script::OfferedCommand {
+    provider_fakes::script::OfferedCommand {
         name: name.to_owned(),
         description: format!("{name}, scripted"),
         argument_hint: String::new(),
@@ -217,7 +219,7 @@ fn on_host(provider: &str, asked: &Asked, signed_in: bool) -> ProviderOnHost {
                 capabilities: Some(match kind {
                     wire::Kind::ClaudePty => wire::AgentCapabilities::claude_pty(),
                     wire::Kind::ClaudeSdk => wire::AgentCapabilities::claude_sdk(),
-                    _ => wire::AgentCapabilities::codex(),
+                    _ => wire::AgentCapabilities::codex(wire::Platform::here()),
                 }),
             })
             .collect(),
@@ -570,10 +572,8 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
         "{args:?}"
     );
 
-    // Claude in its own terminal keeps to Claude's settings. Windows does not
-    // host terminal Claude (see docs/ARCHITECTURE.md, "Windows, as a stated
-    // cost").
-    #[cfg(unix)]
+    // Claude in its own terminal keeps to Claude's settings.
+    #[cfg(not(windows))] // out of scope on Windows: terminal Claude
     {
         let terminal = runtime
             .spawn(
@@ -595,9 +595,7 @@ async fn a_persons_pick_is_what_later_agents_start_with() {
     daemon.shutdown().await.unwrap();
 }
 
-// Unix only: Windows does not host terminal Claude (see docs/ARCHITECTURE.md,
-// "Windows, as a stated cost").
-#[cfg(unix)]
+#[cfg(not(windows))] // out of scope on Windows: terminal Claude
 #[tokio::test(flavor = "multi_thread")]
 async fn terminal_claude_offers_what_its_hosts_claude_offers() {
     use wire::session_event;
@@ -677,7 +675,7 @@ async fn terminal_claude_offers_what_its_hosts_claude_offers() {
 /// script when asked from inside the project.
 /// QA: a project's own slash commands never appeared in terminal Claude's
 /// command list.
-#[cfg(unix)]
+#[cfg(not(windows))] // out of scope on Windows: terminal Claude
 #[tokio::test(flavor = "multi_thread")]
 async fn terminal_claude_offers_the_commands_of_the_project_it_runs_in() {
     use std::os::unix::fs::PermissionsExt as _;

@@ -40,6 +40,7 @@ it can't place, and no pattern at all, writes everything.
 
 import io
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -68,9 +69,30 @@ def write(path: Path, content: bytes) -> None:
     if path.is_file() and path.read_bytes() == content:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_bytes(content)
-    os.replace(temporary, path)
+    # A name of this run's own, as two runs can write at once (premerge's
+    # and its `just test`'s), hidden so a Buck2 glob over the directory
+    # never takes one left behind.
+    temporary = path.with_name(f".{path.name}.{os.getpid()}-{secrets.token_hex(4)}.tmp")
+    try:
+        with temporary.open("xb") as out:
+            out.write(content)
+        replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def replace(source: Path, target: Path) -> None:
+    """os.replace, waiting out Windows' sharing violations: a scanner
+    (Defender) or a reader holding the target open refuses it for a moment."""
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if os.name != "nt" or time.monotonic() > deadline:
+                raise
+            time.sleep(0.1)
 
 
 def tracked() -> bytes:
@@ -99,7 +121,7 @@ def store_baseline(tag: str) -> None:
 def proto_baseline(tag: str) -> None:
     out = OUT / "proto-baseline"
     ref = out / "ref"
-    if ref.is_file() and ref.read_text() == f"{tag}\n" and ((out / "proto").is_dir() or not tag):
+    if ref.is_file() and ref.read_text(encoding="utf-8") == f"{tag}\n" and ((out / "proto").is_dir() or not tag):
         return
     shutil.rmtree(out / "proto", ignore_errors=True)
     archive = git("archive", "--format=tar", tag, "proto", binary=True) if tag else None

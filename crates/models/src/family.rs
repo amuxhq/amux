@@ -1847,7 +1847,9 @@ impl<'a> Transition<'a> {
                     snapshot: Some(wire::Snapshot {
                         kind: wire::Kind::Codex as i32,
                         // As its interpreter writes it: Codex resumes its thread.
-                        capabilities: Some(Box::new(wire::AgentCapabilities::codex())),
+                        capabilities: Some(Box::new(wire::AgentCapabilities::codex(
+                            wire::Platform::here(),
+                        ))),
                         status: wire::AgentStatus::in_phase(if last == Last::Busy {
                             wire::Phase::Working
                         } else {
@@ -1869,7 +1871,9 @@ impl<'a> Transition<'a> {
                     snapshot: Some(wire::Snapshot {
                         kind: wire::Kind::Codex as i32,
                         // As its interpreter writes it: Codex resumes its thread.
-                        capabilities: Some(Box::new(wire::AgentCapabilities::codex())),
+                        capabilities: Some(Box::new(wire::AgentCapabilities::codex(
+                            wire::Platform::here(),
+                        ))),
                         status: wire::AgentStatus::in_phase(wire::Phase::Idle),
                         ..Default::default()
                     }),

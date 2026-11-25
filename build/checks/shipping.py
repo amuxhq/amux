@@ -15,12 +15,14 @@ building it), and fails when that graph holds
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-BUCK2 = str(ROOT / "scripts/buck2")
+# scripts/buck2 is a shell script, which Windows can't start itself.
+BUCK2 = (["sh"] if os.name == "nt" else []) + [str(ROOT / "scripts/buck2")]
 
 # Each product as it ships: its root target and its configuration.
 PRODUCTS = {
@@ -32,13 +34,13 @@ PRODUCTS = {
 TEST_CRATES = {"models", "patience", "provider-fakes", "fake-amux", "qualification", "replay-support", "shot", "testnet", "source-tree"}
 
 # Each workspace crate's features that exist for tests and tools.
-TEST_FEATURES = {"debug-tools", "explore", "fixtures", "schema", "synthetic", "test-key", "testkind"}
+TEST_FEATURES = {"debug-tools", "explore", "fixtures", "schema", "synthetic", "test-key", "testing", "testkind"}
 
 
 def graph(root: str, platform: str) -> dict:
     out = subprocess.run(
         [
-            BUCK2,
+            *BUCK2,
             "cquery",
             f"deps({root}, 100000, target_deps())",
             "--target-platforms",

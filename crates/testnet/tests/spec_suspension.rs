@@ -4,8 +4,6 @@
 //! power cut of the parent's machine leaves each agent
 //! as it was, idle ones suspended and one caught in its turn continued.
 
-#![cfg(unix)]
-
 use std::sync::Arc;
 use std::time::Duration;
 

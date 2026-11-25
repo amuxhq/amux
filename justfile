@@ -4,6 +4,19 @@ set positional-arguments
 
 export AMUX_GIT_SHA := `git rev-parse HEAD`
 
+# On Windows, Git's sh rewrites an argument that looks like a path as it
+# starts a native program, and takes a leading `//` as an escaped `/`:
+# `//js:` reached Buck2 as `/js:`. An argument starting `//` is left alone,
+# while `/c/...` paths still become `C:/...`. The second variable keeps the
+# first's `//` from being rewritten too, to `/`, on its way through a native
+# program (Python) to a nested sh. Neither means anything elsewhere.
+export MSYS2_ARG_CONV_EXCL := if os_family() == "windows" { "//" } else { env("MSYS2_ARG_CONV_EXCL", "") }
+export MSYS2_ENV_CONV_EXCL := if os_family() == "windows" { "MSYS2_ARG_CONV_EXCL" } else { env("MSYS2_ENV_CONV_EXCL", "") }
+# The repository's scripts read and write text as UTF-8, which Python on
+# Windows takes only in its UTF-8 mode (elsewhere the locale's is UTF-8
+# already); an empty value is Python's default.
+export PYTHONUTF8 := if os_family() == "windows" { "1" } else { env("PYTHONUTF8", "") }
+
 # Wall-clock bound for every recipe; portable where GNU timeout is absent.
 bounded := "scripts/bounded"
 # The pinned Buck2, which builds and tests through NativeLink (docs/BUILD.md).
@@ -113,7 +126,7 @@ apple-build:
 # nightly's), the simulated stories, the linux-only tests and the live lanes.
 # Run the workspace's tests for Windows on a Windows worker.
 test-windows *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --target-platforms root//build/platforms:{{windows_platform}}-cli-testing-dev --exclude live --exclude nightly --exclude simulated --exclude linux-only --exclude journey -- --timeout 3600
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --target-platforms root//build/platforms:{{windows_platform}}-cli-testing-dev --exclude live --exclude nightly --exclude linux-only --exclude journey --skip-incompatible-targets -- --timeout 3600
 
 # Every test runs in a process of its own (build/test-runner.py), and a
 # passing result is cached in NativeLink, so only tests whose inputs changed
@@ -124,10 +137,11 @@ test-windows *ARGS:
 # which the nightly workflow runs (`just models-nightly`), unless a target
 # names them. With no Linux worker in reach, the `linux-only` tests are
 # skipped, and the run ends by naming them. The Android app's tests are among
-# them (every Android target is linux-only).
+# them (every Android target is linux-only). A target this machine can't run
+# is skipped even when named (the terminal journeys on Windows).
 # Run the workspace's and the Android app's tests through Buck2.
 test *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py "$@"; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live --exclude nightly -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py "$@"; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live --exclude nightly --skip-incompatible-targets -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
 
 # The repository's checks (the root BUCK file, and the apps' script tests and
 # lints beside their scripts) and the JavaScript's (js/BUCK) as Buck2 tests,
@@ -136,7 +150,7 @@ test *ARGS:
 # same names (`just docs-check`, `just deny`) run each one's test.
 # Run the repository's and the JavaScript's checks through Buck2.
 checks:
-    {{just_executable()}} test //: //js: //apps/apple/Tools: //apps/android/tools:
+    "{{just_executable()}}" test //: //js: //apps/apple/Tools: //apps/android/tools:
 
 # Run tests for one named workspace crate.
 test-crate CRATE:
@@ -204,7 +218,7 @@ shipping-check:
 # agrees with its manifest.
 buckify:
     {{bounded}} 600 sh -c '"$(scripts/py scripts/buck-tools.py path reindeer)" buckify'
-    {{just_executable()}} parity
+    "{{just_executable()}}" parity
 
 # Format all Rust sources with the pinned nightly toolchain.
 fmt:
@@ -214,7 +228,7 @@ fmt:
 # toolchain's dated nightly, over every member's Rust files.
 # Check Rust formatting with the pinned nightly toolchain.
 fmt-check:
-    {{just_executable()}} test //:fmt-check
+    "{{just_executable()}}" test //:fmt-check
 
 # Regenerate the committed protobuf bindings.
 protobuf:
@@ -222,7 +236,7 @@ protobuf:
 
 # Check that committed protobuf bindings match their sources.
 codegen-check:
-    {{just_executable()}} test //:codegen-check
+    "{{just_executable()}}" test //:codegen-check
 
 # Lint amux.v1, and check it still reads what the latest release wrote; with
 # a ref, check against that ref instead. Needs buf (docs/BUILD.md).
@@ -359,11 +373,24 @@ sanitize KIND *CRATES:
 # Fail when any state-machine core's dependency graph contains tokio, or any
 # core source contains a lock, a spawned task, an async fn or an await.
 cores-check:
-    {{just_executable()}} test //:cores-check //:cores-graph-check
+    "{{just_executable()}}" test //:cores-check //:cores-graph-check
+
+# A desktop-platform conditional (`cfg(unix)`, `cfg(windows)`, a desktop
+# `target_os`, `std::os::unix`, `libc::`, ...) belongs in the homes named for
+# platform code; elsewhere a file may hold no more than
+# build/checks/platform-allowlist.txt allows it, and a test gated off Windows
+# must name a feature Windows leaves out (docs/TESTING.md, "Holding a test
+# back on Windows"). With no options it is the Buck2 check
+# `//:platform-check`; with any it runs the script here: `--strict` also
+# wants the allowlist empty and no test ignored on Windows, `--list` prints
+# every conditional counted, `--write-allowlist` writes the allowlist.
+# Fail on desktop-platform code outside its homes, beyond the allowlist.
+platform-check *ARGS:
+    if [ $# -eq 0 ]; then "{{just_executable()}}" test //:platform-check; else {{bounded}} 120 scripts/py -B build/checks/platform_check.py "$@"; fi
 
 # Enforce production and test-infrastructure dependency boundaries.
 dependency-policy:
-    {{just_executable()}} test //:dependency-policy
+    "{{just_executable()}}" test //:dependency-policy
 
 # Check every dependency against deny.toml with cargo-deny: no open security
 # advisory or yanked release, only the licences it lists, and only crates.io
@@ -373,14 +400,14 @@ dependency-policy:
 # (//:cargo-registry) and the snapshot of the advisory database that
 # build/checks/inputs.py takes at most once a day.
 deny:
-    {{just_executable()}} test //:deny
+    "{{just_executable()}}" test //:deny
 
 # Fail on any dependency no crate's code uses, so unused ones do not pile up
 # again. A crate lists what the code cannot show it needs under
 # `[package.metadata.cargo-shear]`. A Buck2 check (`//:shear`), with the
 # Linux toolchain's cargo-shear over the fetched registry.
 shear:
-    {{just_executable()}} test //:shear
+    "{{just_executable()}}" test //:shear
 
 # `just suite desktop-cli-system` runs exactly the Cargo tests that suite of
 # tests/catalog.toml lists, on `just test`'s build; anything after the
@@ -405,7 +432,7 @@ tests-check:
 # test file (the root BUCK). The phone's scripts have theirs in `just ios
 # script-tests` and `just android script-tests`.
 script-tests:
-    {{just_executable()}} test //: --include script-tests
+    "{{just_executable()}}" test //: --include script-tests
 
 # Check the protocol models: each model's tests at its CI bounds and at its
 # nightly bounds (the ignored ones), one after another, every core each.
@@ -433,17 +460,17 @@ coverage: nextest
 # Fail when a docs link or image does not resolve, a figure is unreferenced
 # or not standalone, or docs/README.md does not list every page once.
 docs-check:
-    {{just_executable()}} test //:docs-check
+    "{{just_executable()}}" test //:docs-check
 
 # Fail if an interpreter or the agent's provider handshake builds or reads
 # provider JSON by hand instead of through the protocol crates.
 typed-provider-check:
-    {{just_executable()}} test //:typed-provider-check
+    "{{just_executable()}}" test //:typed-provider-check
 
 # Fail if a client crate decides something by an agent's kind or a
 # provider's name outside the places its list allows.
 client-kind-check:
-    {{just_executable()}} test //:client-kind-check
+    "{{just_executable()}}" test //:client-kind-check
 
 # Refuse fixture-regeneration flags before any asserted CI check runs.
 [private]
@@ -470,7 +497,7 @@ premerge_android := "//apps/android/..."
 # verify` and CI (docs/CI.md, "`just premerge`").
 # Run the checks a change passes before it reaches main.
 premerge: no-update-flags
-    JUST={{just_executable()}} scripts/py -B build/checks/premerge.py {{premerge_tests}} {{premerge_android}}
+    JUST="{{just_executable()}}" scripts/py -B build/checks/premerge.py {{premerge_tests}} {{premerge_android}}
 
 # `just premerge` in two halves, which together run all of it: `workspace`
 # is everything but the Android app, `android` the Android app's tests,
@@ -484,12 +511,12 @@ premerge-half HALF:
     set -eu
     case "{{HALF}}" in
         workspace)
-            {{just_executable()}} no-update-flags
-            JUST={{just_executable()}} scripts/py -B build/checks/premerge.py --without-windows {{premerge_tests}}
+            "{{just_executable()}}" no-update-flags
+            JUST="{{just_executable()}}" scripts/py -B build/checks/premerge.py --without-windows {{premerge_tests}}
             ;;
         android)
-            {{just_executable()}} no-update-flags
-            {{just_executable()}} test {{premerge_android}}
+            "{{just_executable()}}" no-update-flags
+            "{{just_executable()}}" test {{premerge_android}}
             ;;
         *) echo "premerge-half: workspace or android, not {{HALF}}" >&2; exit 2 ;;
     esac

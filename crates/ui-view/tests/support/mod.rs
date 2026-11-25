@@ -43,7 +43,7 @@ pub fn capabilities(kind: Kind) -> wire::AgentCapabilities {
     match kind {
         Kind::ClaudePty => wire::AgentCapabilities::claude_pty(),
         Kind::ClaudeSdk => wire::AgentCapabilities::claude_sdk(),
-        Kind::Codex => wire::AgentCapabilities::codex(),
+        Kind::Codex => wire::AgentCapabilities::codex(wire::Platform::here()),
         _ => wire::AgentCapabilities::acp(false, false, false),
     }
 }

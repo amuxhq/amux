@@ -1755,6 +1755,7 @@ mod tests {
             Sqlite::open_in_memory(OWN).expect("a store opens"),
             StartOptions {
                 generation: 1,
+                budget: crate::StepBudget::UNLIMITED,
                 ..StartOptions::default()
             },
         )
@@ -2381,7 +2382,10 @@ mod tests {
         let judge = |page| {
             let mut daemon = Daemon::new(
                 Sqlite::open_in_memory(OWN).expect("a store opens"),
-                StartOptions::default(),
+                StartOptions {
+                    budget: crate::StepBudget::UNLIMITED,
+                    ..StartOptions::default()
+                },
             );
             daemon.touched.paged.push(page);
             daemon.check_step_invariants().err().map(|v| v.invariant)

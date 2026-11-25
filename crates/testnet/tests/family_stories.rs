@@ -5,8 +5,6 @@
 //! Each runs on the real net by default, and under
 //! `TESTNET_MODE=simulated` on the simulated one by seed (`just sim`).
 
-#![cfg(unix)]
-
 use testnet::modes::run_story;
 
 #[tokio::test(flavor = "multi_thread")]

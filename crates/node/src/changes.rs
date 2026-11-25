@@ -316,24 +316,24 @@ fn first_line(path: &Path) -> Option<String> {
 mod tests {
     use super::*;
 
-    fn created(path: &str) -> git_facts::ChangedFile {
-        git_facts::ChangedFile {
-            path: path.to_owned(),
-            old_path: None,
-            status: git_facts::Status::Created,
-            added: 1,
-            removed: 0,
-            binary: false,
-            flags: git_facts::Flags::default(),
-        }
-    }
-
     /// A script's `#!` names its language, but only a regular file is read
     /// for it: a link to a script outside the checkout, or to a pipe that
     /// would hold an open forever, names none and returns at once.
     #[cfg(unix)]
     #[test]
     fn only_a_regular_file_is_read_for_its_language() {
+        fn created(path: &str) -> git_facts::ChangedFile {
+            git_facts::ChangedFile {
+                path: path.to_owned(),
+                old_path: None,
+                status: git_facts::Status::Created,
+                added: 1,
+                removed: 0,
+                binary: false,
+                flags: git_facts::Flags::default(),
+            }
+        }
+
         let checkout = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         let root = checkout.path().to_owned();

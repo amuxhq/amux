@@ -281,7 +281,16 @@ Details:
   to the same file, such as a symbolic link of the client's own to its
   directory, as amux itself makes under `$TMPDIR/amux-<uid>/`.
 - On Windows, `<root>\amux.sock` is a small file holding the name of the
-  named pipe the daemon listens on. Read it and connect to that pipe.
+  named pipe the daemon listens on. Read it and connect to that pipe, after
+  two checks: open the name only if it is exactly `\\.\pipe\amux-` followed
+  by 32 lowercase hex digits (anything else, such as another machine's
+  pipe, could hand your credentials to someone else), and once it's open,
+  make sure the pipe's owner is your own user (`GetSecurityInfo` with
+  `OWNER_SECURITY_INFORMATION`); it is, even when the daemon runs
+  elevated. If the pipe is busy,
+  the file is briefly locked, or the pipe is not there yet, read
+  the file again and retry for a couple of seconds: the daemon may be
+  restarting.
 - Every other amux socket, each profile's included, follows the same rules.
 
 ### 2. Install or start amux

@@ -295,7 +295,7 @@ link for the contract; neither links the other.
 ```text
 agents/<agent_id>/            the agent's UUID; ours, never the provider's
   spec.1, spec.2 …            one AgentSpec per incarnation, written by the daemon before that spawn, never rewritten
-  lock                        held by the agent process for its life; the kernel releases it on death
+  lock                        held by the agent process for its life; the kernel releases it on death; holds its pid
   ctl.sock                    the agent listens; the daemon is its only client
   pty.sock                    the agent listens; local terminal clients connect (terminal Claude and Codex only)
   tools.sock                  the daemon listens; the agent's tool server and, for a spawn, the agent process are its only clients
@@ -329,7 +329,7 @@ the agent's directory.
 | Path | Created by | Written by | Read by | Deleted by |
 |---|---|---|---|---|
 | the directory, `spec.<n>` | daemon | daemon, one file per incarnation | agent at start | daemon, on delete, a parent's delete, or retention; never on exit, because resume uses the directory again |
-| `lock` | daemon | — | held by the agent; the daemon try-locks it to probe liveness | with the directory |
+| `lock` | daemon | the agent, its pid, as it takes the lock; emptied as it lets go (an older build's agent writes none) | held by the agent; the daemon try-locks it to probe liveness; `agent_dir::lock_holder` reads the pid of a holder | with the directory |
 | `ctl.sock`, `pty.sock` | agent | — | the daemon dials `ctl.sock`; terminal clients dial `pty.sock` | agent, at exit |
 | `tools.sock` | daemon | — | the agent's tool server; the agent process, for a spawn | daemon, when the agent exits; bound again at resume |
 | `journal/*` | agent | agent | daemon, from its cursor | daemon: segments wholly below a cursor that has reached the drive, keeping the newest two for debug bundles |

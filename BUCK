@@ -258,6 +258,7 @@ amux_script_tests(
         "qa_sandbox_purchase": {"srcs": [".gitignore"], "deps": ["//apps/apple:release-files"]},
         "release": {"srcs": [".gitignore"], "deps": ["//apps/apple:release-files"]},
         "store_check": {"deps": ["//crates/store:src/schema.rs"]},
+        "test_runner": {"deps": ["//build:test-runner"]},
         "tests_catalog": {"srcs": ["tests/catalog.toml"], "deps": ["//crates/testnet:suites"]},
         "typed_provider_check": {"deps": ["//crates/agent:files", "//crates/interpret:files"]},
     },

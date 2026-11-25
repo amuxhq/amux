@@ -286,6 +286,27 @@ pub fn tier(net: &Net, host: &str) -> Option<node::Tier> {
     }
 }
 
+/// Shuts the net down and asserts that no agent process it ran is left:
+/// each is pinned by its lock first, so a pid reused afterwards can't pass
+/// for it.
+pub async fn shutdown_leaving_no_agent(net: Net) {
+    let agents: Vec<os::process::ProcessRef> = net
+        .agents()
+        .map(|agent| {
+            let dir = net.agent_dir(&agent.name).unwrap();
+            match agent_dir::lock_holder(&dir).unwrap() {
+                agent_dir::Holder::Process(process) => process,
+                other => panic!("{}'s agent process, named by its lock: {other:?}", agent.name),
+            }
+        })
+        .collect();
+    assert!(!agents.is_empty(), "the net ran agents");
+    net.shutdown().await.unwrap();
+    for agent in &agents {
+        assert!(!agent.alive(), "agent process {} outlived the net", agent.pid());
+    }
+}
+
 /// Reads a session until an item with `text` arrives, failing on Lagged,
 /// on the stream's end, or after the patience.
 pub async fn until_item(stream: &mut tonic::Streaming<wire::FollowSessionResponse>, text: &str) {

@@ -206,7 +206,7 @@ async fn pairing_counts_on_both_sides_and_a_prompt_counts_on_the_agents_host() {
         ]
     );
 
-    net.shutdown().await.unwrap();
+    shutdown_leaving_no_agent(net).await;
 }
 
 /// `amux internal browser` for one host, as a browser starts it, driven

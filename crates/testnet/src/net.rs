@@ -3887,18 +3887,18 @@ impl Net {
                     let _ = process.stop().await;
                     // A supervised host whose daemon was killed may still be
                     // starting it again; its supervisor goes with the stop.
-                    if let Some(pid) = process.daemon_pid() {
-                        let _ = crate::process::signal(pid, "-KILL");
+                    if let Some(pid) = process.daemon_pid()
+                        && let Ok(daemon) = os::process::ProcessRef::open(pid)
+                    {
+                        let _ = daemon.kill();
                     }
                 }
                 None => self.take_down(name, true).await?,
             }
         }
         // Agents of hosts that were down at the end have no daemon to
-        // stop them. Only Unix finds them by command line; elsewhere the
-        // daemons' own kills above are all there is, and an agent that
-        // outlives the net is reported by the test runner as a leak.
-        #[cfg(unix)]
+        // stop them, and a daemon's own kill may not have finished: every
+        // agent of the net is found by its lock and ended here.
         kill_agents_under(self.root.path()).await?;
         Ok(())
     }
@@ -3909,6 +3909,9 @@ impl Drop for Net {
         for host in self.hosts.values_mut() {
             drop(host.daemon.take());
         }
+        // A panicking test's net: its agents killed, without waiting, so
+        // none outlives it.
+        kill_holders(&agent_dirs(self.root.path()), &mut Vec::new());
         #[cfg(unix)]
         let _ = std::process::Command::new("pkill")
             .args(["-KILL", "-f"])
@@ -4064,39 +4067,64 @@ fn processes_under(dir: &Path) -> Vec<u32> {
 #[cfg(unix)]
 fn kill_pids(pids: &[u32]) {
     for pid in pids {
-        let _ = crate::process::signal(*pid, "-KILL");
+        if let Ok(process) = os::process::ProcessRef::open(*pid) {
+            let _ = process.kill();
+        }
     }
 }
 
-/// SIGKILLs every agent process whose directory lies under `dir`, and
-/// waits until each has released its directory's lock.
+/// Kills every agent process whose directory lies under `dir`, found by the
+/// lock it holds ([`agent_dir::lock_holder`]), and waits until each has
+/// exited and every lock is free. On every OS, and whether or not the
+/// agent's daemon still runs: an agent of a host that was down at the end
+/// has no daemon to stop it.
 async fn kill_agents_under(dir: &Path) -> Result<(), NetError> {
-    #[cfg(unix)]
-    {
-        // `amux agent <dir>`: the agent's own directory is on its command
-        // line, and every agent of the net lives under its root.
-        kill_pids(&processes_under(dir));
-        let locked: Vec<PathBuf> = agent_dirs(dir);
-        observe::until("the killed agents to release their locks", || {
-            let held: Vec<&PathBuf> = locked.iter().filter(|dir| agent_dir::locked(dir)).collect();
-            async move {
-                held.is_empty()
-                    .then_some(())
-                    .ok_or_else(|| format!("locks still held: {held:?}"))
+    let dirs = agent_dirs(dir);
+    let mut killed = Vec::new();
+    observe::until("the killed agents to release their locks", || {
+        let held = kill_holders(&dirs, &mut killed);
+        async move {
+            held.is_empty()
+                .then_some(())
+                .ok_or_else(|| format!("locks still held: {held:?}"))
+        }
+    })
+    .await?;
+    for process in killed {
+        tokio::time::timeout(PATIENCE, process.exited())
+            .await
+            .map_err(|_| Stuck::Deadline {
+                what: format!("killed agent {} to exit", process.pid()),
+                waited: PATIENCE,
+                seen: "it still runs, its lock released".to_owned(),
+            })??;
+    }
+    Ok(())
+}
+
+/// Kills the holder of each of `dirs`' locks, keeping each killed process
+/// in `killed`, and answers the directories still held: a killed holder
+/// until the kernel lets go of its lock, and a holder the lock file names
+/// no process for, which only an older build or an agent a moment into its
+/// start leaves.
+fn kill_holders(dirs: &[PathBuf], killed: &mut Vec<os::process::ProcessRef>) -> Vec<String> {
+    let mut held = Vec::new();
+    for dir in dirs {
+        match agent_dir::lock_holder(dir) {
+            Ok(agent_dir::Holder::Free) => {}
+            Ok(agent_dir::Holder::Process(process)) => {
+                let _ = process.kill();
+                held.push(format!("{} (pid {})", dir.display(), process.pid()));
+                killed.push(process);
             }
-        })
-        .await?;
-        Ok(())
+            Ok(holder) => held.push(format!("{} ({holder:?})", dir.display())),
+            Err(error) => held.push(format!("{} ({error})", dir.display())),
+        }
     }
-    #[cfg(not(unix))]
-    {
-        let _ = dir;
-        Err(NetError::Unsupported("killing agent processes"))
-    }
+    held
 }
 
 /// Every directory under `dir` that holds an agent's lock file.
-#[cfg(unix)]
 fn agent_dirs(dir: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let mut pending = vec![dir.to_owned()];
@@ -4310,5 +4338,45 @@ mod config_agent_tests {
             built_in: false,
         };
         assert!(offered_from_config(&added, &BTreeSet::new()));
+    }
+}
+
+#[cfg(test)]
+mod teardown_tests {
+    use super::*;
+
+    /// `name`'s agent process, pinned by its lock once it holds it.
+    async fn agent_process(net: &Net, name: &str) -> os::process::ProcessRef {
+        let dir = net.agent_dir(name).unwrap();
+        observe::until(&format!("{name}'s agent to hold its lock"), || {
+            let holder = agent_dir::lock_holder(&dir);
+            async move {
+                match holder {
+                    Ok(agent_dir::Holder::Process(process)) => Ok(process),
+                    other => Err(format!("{other:?}")),
+                }
+            }
+        })
+        .await
+        .unwrap()
+    }
+
+    /// A crashed daemon's agents keep running, waiting for the next one;
+    /// when the net ends first, no daemon is left to stop them, and the
+    /// net ends them itself.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn shutdown_ends_the_agents_of_a_host_whose_daemon_is_down() {
+        let mut net = Net::start(
+            Topology::new()
+                .host("desk")
+                .agent(AgentDecl::new("worker", "desk")),
+        )
+        .await
+        .unwrap();
+        let worker = agent_process(&net, "worker").await;
+        net.kill_daemon("desk").await.unwrap();
+        assert!(worker.alive(), "the agent outlives its daemon");
+        net.shutdown().await.unwrap();
+        assert!(!worker.alive(), "agent process {} outlived the net", worker.pid());
     }
 }

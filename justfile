@@ -340,6 +340,19 @@ cores-check: cores-graph-check
 cores-graph-check:
     {{bounded}} 120 scripts/py scripts/cores-check.py --graph
 
+# A desktop-platform conditional (`cfg(unix)`, `cfg(windows)`, a desktop
+# `target_os`, `std::os::unix`, `libc::`, ...) belongs in the homes named for
+# platform code; elsewhere a file may hold no more than
+# build/checks/platform-allowlist.txt allows it, and a test gated off Windows
+# must name a feature Windows leaves out (docs/TESTING.md, "Holding a test
+# back on Windows"). With no options it is the Buck2 check
+# `//:platform-check`; with any it runs the script here: `--strict` also
+# wants the allowlist empty and no test ignored on Windows, `--list` prints
+# every conditional counted, `--write-allowlist` writes the allowlist.
+# Fail on desktop-platform code outside its homes, beyond the allowlist.
+platform-check *ARGS:
+    if [ $# -eq 0 ]; then "{{just_executable()}}" test //:platform-check; else {{bounded}} 120 scripts/py -B build/checks/platform_check.py "$@"; fi
+
 # Enforce production and test-infrastructure dependency boundaries.
 dependency-policy:
     {{bounded}} 60 scripts/py scripts/check-dependency-policy.py

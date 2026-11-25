@@ -358,8 +358,9 @@ script run over exactly the files its target declares
 ([`build/checks.bzl`](../build/checks.bzl)):
 
 - in the root [`BUCK`](../BUCK) file: `docs-check`, `store-check`,
-  `proto-compat`, `cores-check` (the sources half), `typed-provider-check`,
-  `client-kind-check`, `codegen-check`, `deny`, and the unit tests of the
+  `proto-compat`, `cores-check` (the sources half), `platform-check`,
+  `typed-provider-check`, `client-kind-check`, `codegen-check`, `deny`, and
+  the unit tests of the
   repository's scripts, one test per file (`//:script-tests-land_queue`);
 - beside the apps' scripts: the Apple apps' writing lints and their recipe
   scripts' tests ([`apps/apple/Tools/BUCK`](../apps/apple/Tools/BUCK)), and

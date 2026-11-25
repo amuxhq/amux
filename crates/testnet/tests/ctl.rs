@@ -395,10 +395,6 @@ fn a_finding_that_skips_the_template_is_refused_with_what_it_lacks() {
 const STRANGER: &str = "TESTNET_CTL_STRANGER";
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "windows: `ctl up` with its output piped never returns: the testnet serve it starts holds the pipe open"
-)]
 fn down_never_kills_a_process_that_took_a_crashed_nets_pid() {
     if std::env::var_os(STRANGER).is_some() {
         std::thread::sleep(std::time::Duration::from_secs(120));

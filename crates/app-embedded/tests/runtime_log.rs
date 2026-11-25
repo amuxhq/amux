@@ -2,8 +2,6 @@
 //! process's one global trace subscriber, which a test net started first
 //! in the same process would own instead, leaving the log empty.
 
-#![cfg(unix)]
-
 use std::sync::{Arc, Condvar, Mutex};
 
 use app_embedded::{Cores, EdgeOverrides, EmbeddedRuntime, ProfileId, StartConfig};

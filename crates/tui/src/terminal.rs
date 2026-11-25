@@ -693,7 +693,7 @@ fn parse_x_color(spec: &str) -> Option<(u8, u8, u8)> {
     Some(rgb)
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -701,6 +701,10 @@ mod tests {
     /// what the orderly restore path (crossterm) actually emits: the
     /// keyboard-enhancement pop, then `write_restore`.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "windows: writing PopKeyboardEnhancementFlags to a Vec fails, Unsupported: keyboard progressive enhancement not implemented for the legacy Windows API"
+    )]
     fn signal_restore_bytes_match_mouse_aware_write_restore() {
         let mut out: Vec<u8> = Vec::new();
         crossterm::execute!(out, PopKeyboardEnhancementFlags).expect("write to vec");
@@ -760,6 +764,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "windows: write_enter_chrome writes no mouse-capture sequences (?1000h to ?1006h) to a Vec"
+    )]
     fn enter_chrome_enables_mouse_capture() {
         let mut out = Vec::new();
         write_enter_chrome(&mut out).expect("write to vec");

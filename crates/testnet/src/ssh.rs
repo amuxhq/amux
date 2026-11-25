@@ -7,17 +7,17 @@
 //! far daemon's link socket. No real SSH runs, and no network is crossed
 //! beyond the two sockets.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Once;
 
 /// The directory in a target that the stand-in puts first on the PATH of the
 /// command it runs, holding the login as `amux`.
 const LOGIN_DIR: &str = "ssh-path";
 
-/// Where the stand-in lives: beside this crate's sources.
-fn stand_in_dir() -> PathBuf {
-    source_tree::crate_dir!().join("stand-in")
-}
+/// The stand-in, `stand-in/ssh` beside this crate's sources, compiled in:
+/// under Buck a test of another crate that starts a net runs with only its
+/// own crate's files beside it, not this one's.
+const STAND_IN: &str = include_str!("../stand-in/ssh");
 
 /// Puts the stand-in first on this process's PATH, once: daemons in the
 /// net's process and the processes it starts all find it there.
@@ -32,7 +32,7 @@ pub(crate) fn install() {
     INSTALL.call_once(|| {
         let dir = std::env::temp_dir().join(format!("testnet-ssh-{}", std::process::id()));
         let copied = std::fs::create_dir_all(&dir)
-            .and_then(|()| std::fs::copy(stand_in_dir().join("ssh"), dir.join("ssh")))
+            .and_then(|()| std::fs::write(dir.join("ssh"), STAND_IN))
             .and_then(|_| os::fs::make_executable(&dir.join("ssh")));
         if let Err(error) = copied {
             panic!("copying the ssh stand-in into {}: {error}", dir.display());

@@ -15,5 +15,5 @@ amux_rust_library(
 amux_rust_test(
     name = "integration",
     version = "0.1.0",
-    deps = DEPS,
+    deps = DEPS + ["//crates/os:os"],
 )

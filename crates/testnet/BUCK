@@ -58,6 +58,8 @@ TEST_DEPS = [
 
 amux_rust_library(
     version = "0.1.0",
+    # The SSH stand-in beside the sources, which src/ssh.rs compiles in.
+    srcs = glob(["src/**"]) + ["stand-in/ssh"],
     tool = True,
     deps = DEPS,
     test_deps = TEST_DEPS,

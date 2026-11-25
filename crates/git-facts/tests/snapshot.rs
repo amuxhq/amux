@@ -813,10 +813,13 @@ async fn a_left_out_file_moves_the_tree_once_it_would_be_taken() {
 /// snapshot. It is left out and named as a file over the cap is, a tracked
 /// one keeping what the index holds; the tree has not moved while it stays
 /// unreadable, and has once a snapshot could take it.
-#[cfg(unix)]
 #[tokio::test]
 async fn an_unreadable_file_is_left_out_and_named() {
-    use std::os::unix::fs::PermissionsExt as _;
+    use os::testing::faults::{Deny, deny, unenforced};
+    if let Some(why) = unenforced() {
+        eprintln!("skipped: {why}");
+        return;
+    }
     let repo = repository();
     let root = repo.path();
     write(root, "tracked.txt", "committed\n");
@@ -825,15 +828,9 @@ async fn an_unreadable_file_is_left_out_and_named() {
     write(root, "tracked.txt", "edited\n");
     write(root, "locked.txt", "locked\n");
     write(root, "base.txt", "edited\n");
-    let lock = |path: &str, mode: u32| {
-        std::fs::set_permissions(root.join(path), std::fs::Permissions::from_mode(mode)).unwrap();
-    };
-    lock("tracked.txt", 0o000);
-    lock("locked.txt", 0o000);
-    if std::fs::read(root.join("locked.txt")).is_ok() {
-        // Run as root, every file reads.
-        return;
-    }
+    let lock = |path: &str| deny(&root.join(path), Deny::Read).unwrap();
+    let tracked = lock("tracked.txt");
+    let locked = lock("locked.txt");
 
     let store = store();
     let snapshot = take(root, &store.store).await;
@@ -866,9 +863,9 @@ async fn an_unreadable_file_is_left_out_and_named() {
         )
     };
     assert!(!moved().await.unwrap());
-    lock("locked.txt", 0o644);
+    locked.undo().unwrap();
     assert!(moved().await.unwrap(), "readable again");
-    lock("tracked.txt", 0o644);
+    tracked.undo().unwrap();
 }
 
 /// More changed and untracked paths than the cap refuse the snapshot,
@@ -1152,11 +1149,11 @@ async fn in_a_partial_clone_nothing_is_fetched() {
     let work = origin.path();
     for round in ["first", "second"] {
         write(work, "base.txt", &format!("{round}\n"));
-        #[cfg(unix)]
-        {
-            let _ = std::fs::remove_file(work.join("link"));
-            std::os::unix::fs::symlink(format!("{round}-target"), work.join("link")).unwrap();
-        }
+        let link = work.join("link");
+        let _ = os::testing::faults::remove_link(&link);
+        // Where this user may not make a link, the case runs without one.
+        let target = format!("{round}-target");
+        let _ = os::testing::faults::symlink(Path::new(&target), &link).unwrap();
         git(work, &["add", "--all"]);
         git(work, &["commit", "-q", "-m", round]);
     }
@@ -1196,10 +1193,12 @@ async fn in_a_partial_clone_nothing_is_fetched() {
     write(root, "new.txt", "new\n");
     // The same link made again: its times and inode differ from the
     // index's, so git compares it by its blob.
-    #[cfg(unix)]
-    {
-        std::fs::remove_file(root.join("link")).unwrap();
-        std::os::unix::fs::symlink("second-target", root.join("link")).unwrap();
+    // Only where the checkout made a link: on Windows a checkout may write
+    // one as a file naming its target instead.
+    let link = root.join("link").symlink_metadata();
+    if link.is_ok_and(|link| link.file_type().is_symlink()) {
+        os::testing::faults::remove_link(&root.join("link")).unwrap();
+        os::testing::faults::symlink(Path::new("second-target"), &root.join("link")).unwrap();
     }
     std::thread::sleep(Duration::from_millis(1100));
 
@@ -1247,11 +1246,7 @@ async fn the_persons_hooks_never_run() {
     // platform.
     let marked = marker.to_string_lossy().replace('\\', "/");
     std::fs::write(&hook, format!("#!/bin/sh\necho ran >> \"{marked}\"\n")).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    os::fs::make_executable(&hook).unwrap();
     write(root, "base.txt", "one\nTWO\nthree\n");
     write(root, "new.txt", "new\n");
 
@@ -1409,13 +1404,17 @@ async fn a_file_past_windows_path_limit_is_taken() {
 
 /// A link is stored as a link, its target as written, whether or not
 /// anything is there.
-#[cfg(unix)]
 #[tokio::test]
 async fn a_link_is_stored_as_a_link() {
+    use os::testing::faults::{Linked, symlink};
     let repo = repository();
     let root = repo.path();
-    std::os::unix::fs::symlink("../outside/secret", root.join("dangling")).unwrap();
-    std::os::unix::fs::symlink("base.txt", root.join("to-base")).unwrap();
+    for (target, link) in [("../outside/secret", "dangling"), ("base.txt", "to-base")] {
+        if let Linked::Skipped(why) = symlink(Path::new(target), &root.join(link)).unwrap() {
+            eprintln!("skipped: {why}");
+            return;
+        }
+    }
     let store = store();
     let snapshot = take(root, &store.store).await;
     let files = tree(root, &store.store, &snapshot.commit).await;
@@ -1497,7 +1496,6 @@ async fn a_folder_outside_a_repository_has_no_snapshot() {
 /// cleaned bytes too, and a snapshot of the raw ones would show every line
 /// of such a file changed. The snapshot's diff from HEAD is the person's
 /// own `git diff HEAD`, and the tree has not moved right after it.
-#[cfg(unix)]
 #[tokio::test]
 async fn a_clean_filter_runs_so_the_snapshot_holds_what_a_commit_would() {
     let repo = repository();
@@ -1655,20 +1653,14 @@ async fn a_changed_lfs_file_is_stored_as_its_pointer_without_lfs() {
     assert!(!mark.exists(), "an LFS filter ran");
     // Made executable, its content as it was: its pointer is the
     // snapshot's, its mode is not, and a snapshot now would store the new
-    // mode.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        let set = |mode: u32| {
-            std::fs::set_permissions(
-                root.join("model.bin"),
-                std::fs::Permissions::from_mode(mode),
-            )
-            .unwrap();
-        };
-        set(0o755);
+    // mode. Only where a file has a mode to change: Windows runs a file by
+    // its extension, and has no execute bit.
+    let model = root.join("model.bin");
+    let was = std::fs::metadata(&model).unwrap().permissions();
+    os::fs::make_executable(&model).unwrap();
+    if os::fs::is_executable(&model, &std::fs::metadata(&model).unwrap()) {
         assert!(moved().await.unwrap(), "a mode changed alone");
-        set(0o644);
+        std::fs::set_permissions(&model, was).unwrap();
         assert!(!moved().await.unwrap());
     }
     write(root, "model.bin", "weights v3\n");

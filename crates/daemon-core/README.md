@@ -94,4 +94,6 @@ constant time per row it touched:
 A step that takes longer than its budget (`StartOptions::budget`, 100 ms by
 default) is logged and appends `Output::Dump` too, one per step that ran
 over. A checker, simulator or replay runs the core with
-`StepBudget::UNLIMITED`, so its outputs depend on its inputs alone.
+`StepBudget::UNLIMITED`, so its outputs depend on its inputs alone, and so
+does every test rig here: a step's time on a loaded machine is not what
+they test (`core-ring`'s own tests hold the budget itself).

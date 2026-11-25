@@ -1154,6 +1154,7 @@ mod tests {
             StartOptions {
                 generation: 1,
                 agents: dir.path().to_path_buf(),
+                budget: crate::StepBudget::UNLIMITED,
                 ..StartOptions::default()
             },
         )
@@ -1522,6 +1523,7 @@ mod tests {
                 generation: 1,
                 agents: dir.path().to_path_buf(),
                 suspension: true,
+                budget: crate::StepBudget::UNLIMITED,
                 ..StartOptions::default()
             },
         )

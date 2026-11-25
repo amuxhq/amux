@@ -4,9 +4,10 @@
 //! answering is left alone.
 //!
 //! Each case points `HOME` at its own directory, which the amux it starts
-//! inherits; nextest runs every case in a process of its own.
-
-#![cfg(unix)]
+//! inherits; nextest runs every case in a process of its own. Windows
+//! reads a home from `USERPROFILE`, not `HOME`, so there a case would
+//! install into the real profile until the installer takes a home of its
+//! own (WP3.4).
 
 use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
@@ -72,6 +73,10 @@ fn amux() -> PathBuf {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: needs the installer's home override (WP3.4)"
+)]
 async fn a_download_is_installed_only_once_its_signature_and_hash_check_out() {
     let binary = std::fs::read(amux()).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

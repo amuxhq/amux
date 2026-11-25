@@ -297,8 +297,6 @@ mod platform {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn sampler_names_and_reads_the_current_process_measure() {
         let sample = super::sample_memory(std::process::id()).expect("sample this process");

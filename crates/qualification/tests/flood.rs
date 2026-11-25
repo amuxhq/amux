@@ -3,8 +3,6 @@
 //! checks the workload measures everything it reports, not the budgets:
 //! those hold only for release builds on an enrolled machine.
 
-#![cfg(unix)]
-
 use qualification::perf::flood::{self, FloodOptions};
 
 #[tokio::test(flavor = "multi_thread")]

@@ -205,7 +205,13 @@ mod tests {
     }
 
     fn daemon() -> Daemon {
-        Daemon::new(store(), StartOptions::default())
+        Daemon::new(
+            store(),
+            StartOptions {
+                budget: crate::StepBudget::UNLIMITED,
+                ..StartOptions::default()
+            },
+        )
     }
 
     fn step(daemon: &mut Daemon, input: Input) -> Vec<Output> {

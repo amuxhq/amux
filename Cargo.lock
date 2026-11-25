@@ -1575,6 +1575,7 @@ dependencies = [
 name = "git-facts"
 version = "0.1.0"
 dependencies = [
+ "os",
  "sha2",
  "tempfile",
  "thiserror 2.0.20",

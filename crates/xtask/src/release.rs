@@ -152,6 +152,7 @@ fn cut(version: &str) -> Result<(), Box<dyn std::error::Error>> {
     // for the operator a second time; the deploy reads it and checks it
     // against them.
     trusted_keys(&std::fs::read_to_string(root.join(WORKFLOW))?)?;
+    ci_covered(&root, &["macos-tests", "macos-journeys", "windows-tests"])?;
     if !credentials::configured() {
         return Err(
             "this machine has no credential command to hold the release key, so the release \
@@ -618,6 +619,36 @@ pub(crate) fn gh(args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
         .into());
     }
     Ok(String::from_utf8(output.stdout)?)
+}
+
+/// Refuse unless CI's last pass of each gated job on main covers HEAD.
+/// CI runs its macOS and Windows jobs only for changes that reach what only
+/// they test (build/ci-jobs.toml), so a release asks that each job it ships
+/// on judged everything since (scripts/ci_jobs.py says how to get there).
+pub(crate) fn ci_covered(root: &Path, jobs: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut refused = Vec::new();
+    for job in jobs {
+        let output = Command::new(root.join("scripts/py"))
+            .arg(root.join("scripts/ci_jobs.py"))
+            .args(["--covered", job, "HEAD"])
+            .current_dir(root)
+            .output()?;
+        let said = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if output.status.success() {
+            print!("{said}");
+        } else {
+            refused.push(said.trim().to_owned());
+        }
+    }
+    if refused.is_empty() {
+        Ok(())
+    } else {
+        Err(refused.join("\n").into())
+    }
 }
 
 pub(crate) fn repository_root() -> PathBuf {

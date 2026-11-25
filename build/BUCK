@@ -113,3 +113,10 @@ amux_files(
     name = "nativelink",
     srcs = glob(["nativelink/**"]),
 )
+
+# Which gated CI job each file runs (scripts/ci_jobs.py), which its test
+# holds every tracked file to.
+amux_files(
+    name = "ci-jobs",
+    srcs = ["ci-jobs.toml"],
+)

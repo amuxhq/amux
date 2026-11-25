@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run `just premerge`: the Buck2 tests and, beside them, the checks that stay scripts.
 
-    premerge.py PATTERN...
+    premerge.py [--without-windows] PATTERN...
 
 `just test PATTERN...` runs every test and repository check in the graph,
 each from the cache unless its inputs changed, and its output goes straight
@@ -45,10 +45,28 @@ SCRIPTS = [
     # Clippy: Buck2 actions, cached like the tests, but a build of every
     # target's clippy output, which `buck2 test` doesn't build.
     "lint",
+    # Which gated CI job a change runs: that the Apple apps' graphs read
+    # nothing only they test outside their globs in build/ci-jobs.toml.
+    "ci-jobs-check",
 ]
+
+# Every Windows binary, built on a Linux worker with nothing fetched back:
+# CI runs Windows' tests only when a change reaches what only Windows tests
+# (build/ci-jobs.toml), so a change that stops Windows compiling is caught
+# here instead, for every change. A build of the configured graph, which
+# `buck2 test` over the Linux targets doesn't build; with no Linux worker in
+# reach it is skipped and says so, as the linux-only tests are.
+WINDOWS = "check-windows"
 
 
 def main(patterns: list[str]) -> int:
+    scripts = list(SCRIPTS)
+    if patterns[:1] == ["--without-windows"]:
+        patterns = patterns[1:]
+    elif subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "scripts/buck-config.py"), "linux"], cwd=ROOT, stdin=subprocess.DEVNULL).returncode == 0:
+        scripts.append(WINDOWS)
+    else:
+        print(f"premerge: {WINDOWS} skipped: no Linux worker is in reach to build Windows on", flush=True)
     started = time.monotonic()
     wall_start = time.time()
     # What the check targets read from outside the checkout is written now,
@@ -59,7 +77,7 @@ def main(patterns: list[str]) -> int:
     subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "build/checks/inputs.py")], cwd=ROOT, check=True, stdin=subprocess.DEVNULL)
     logs = Path(tempfile.mkdtemp(prefix="premerge-"))
     running: dict[str, tuple[subprocess.Popen, Path, float]] = {}
-    for name in SCRIPTS:
+    for name in scripts:
         log = logs / f"{name}.log"
         with log.open("wb") as out:
             child = subprocess.Popen([JUST, name], cwd=ROOT, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)

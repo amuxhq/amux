@@ -38,6 +38,39 @@ env:
   BUILD_HOST: ${{ vars.BUILD_HOST }}
 
 jobs:
+  # Which of the gated jobs below this change runs (scripts/ci_jobs.py,
+  # build/ci-jobs.toml; docs/CI.md, "Which jobs a change runs"). The macOS
+  # and Windows jobs run only when the change touches what they alone test;
+  # each judges everything changed since its last successful run on main, so
+  # a commit a newer push took the place of is still judged. A run started by
+  # hand runs every job, and so does a decision that failed: each gated job
+  # runs unless this job said `false`. The reasons are in the run's summary.
+  changes:
+    name: Which jobs this change runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      iphone: ${{ steps.decide.outputs.iphone }}
+      mac_app: ${{ steps.decide.outputs.mac_app }}
+      macos_tests: ${{ steps.decide.outputs.macos_tests }}
+      macos_journeys: ${{ steps.decide.outputs.macos_journeys }}
+      windows_tests: ${{ steps.decide.outputs.windows_tests }}
+    steps:
+      # The history back to each job's last pass, without the files of every
+      # commit: the decision reads only the files the change touched.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - name: Decide
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/py scripts/ci_jobs.py decide
+
   linux:
     name: Linux gate
     # One running and one waiting per job on main: a newer push takes the
@@ -191,11 +224,14 @@ jobs:
         run: nix develop --command just premerge-half android
 
   # The workspace's tests on Windows (docs/CI.md, "The Windows job"). The
-  # build host's Linux worker compiles and links every Windows binary; then
-  # a NativeLink on this runner, in front of the build host's cache, runs
-  # the tests on a Windows worker of its own, so the runner compiles
-  # nothing and a test whose inputs haven't changed is a cache hit. A
-  # fork's pull request, with no tailnet, tests under Cargo on the runner.
+  # build host's Linux worker compiles and links every Windows binary, which
+  # the landing gate already built (`just premerge` runs `just
+  # check-windows`), so that step is cache hits; then a NativeLink on this
+  # runner, in front of the build host's cache, runs the tests on a Windows
+  # worker of its own, so the runner compiles nothing and a test whose
+  # inputs haven't changed is a cache hit. It runs only when the change
+  # reaches what only Windows tests (the `changes` job). A fork's pull
+  # request, with no tailnet, tests under Cargo on the runner.
   windows:
     name: Windows
     # One running and one waiting per job on main: a newer push takes the
@@ -205,6 +241,8 @@ jobs:
       cancel-in-progress: false
     runs-on: windows-latest
     timeout-minutes: 60
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.windows_tests != 'false' }}
     env:
       REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && vars.BUILD_HOST != '' && inputs.without-build-host != true }}
     defaults:
@@ -327,92 +365,81 @@ jobs:
   # store, every output and result, is kept in GitHub's cache between runs,
   # so an action whose inputs haven't changed is a hit. The build host isn't
   # used: it can't run a Mac's actions, and across the ~100 ms between it
-  # and GitHub's runners its CAS cost more than building did. Three jobs side by side, one per Rust graph a
-  # cold run compiles: the iPhone app's bridge for the simulator, the Mac
-  # app's bridge for the Mac, and the workspace's tests for this Mac.
-  macos:
-    name: ${{ matrix.name }}
+  # and GitHub's runners its CAS cost more than building did. Four jobs side
+  # by side, one per Rust graph a cold run compiles: the iPhone app's bridge
+  # for the simulator, the Mac app's bridge for the Mac, the workspace's
+  # tests for this Mac, and the part of them the terminal journeys start.
+  #
+  # Each runs only when the change reaches what it alone tests (the
+  # `changes` job, build/ci-jobs.toml), so they are four jobs rather than a
+  # matrix, whose entries a job's `if` cannot see; they share their steps
+  # through the YAML anchor `macos-steps`, and each sets what the matrix
+  # did as JOB_* variables.
+  #
+  # Both app jobs build in `dev`, the bridge unoptimised (apps/apple/defs.bzl's
+  # bridge()): its Rust then shares the development workspace's third-party
+  # graph, and a cold build of it took half the time phone-dev's did (iPhone
+  # app: 1,323 s of first-party compiles against 3,274; Mac app 937 s
+  # against 1,177 s in all). A developer's builds keep phone-dev.
+  #
+  # Everything under apps/apple but the Mac app builds first; then the
+  # golden simulator is made and booted, and the package suites and the
+  # hosted app suite run on it. A booted simulator is some 240 processes
+  # holding about 3 GB of the runner's 7 GB and a load of 150 to 350 on its
+  # three cores: compiling beside it took the job to 21 minutes on a deep
+  # change, and stalled every process for 20 s at a time, long enough for
+  # NativeLink to give up on reading a blob and fail the build. The phone's
+  # shipping build is left to `just ios release` on the Mac: its bridge is a
+  # fat-LTO link of the whole Rust graph for one more target, and it reruns
+  # on every Rust change.
+  iphone:
+    name: iPhone app
     runs-on: macos-26
     timeout-minutes: 100
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.iphone != 'false' }}
     # One running and one waiting, as every job here: the organisation has
-    # five macOS runners and a run takes three, so a burst of landings had
+    # five macOS runners and a run takes four, so a burst of landings had
     # queued nine macOS jobs, each behind the last. A running job finishes
     # and keeps its store.
     concurrency:
-      group: macos-${{ matrix.key }}-${{ github.event_name }}-${{ github.ref }}
+      group: macos-iphone-${{ github.event_name }}-${{ github.ref }}
       cancel-in-progress: false
     permissions:
       contents: read
       actions: write
     env:
       AMUX_BUILD_HERE: "1"
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Both app jobs build in `dev`, the bridge unoptimised
-          # (apps/apple/defs.bzl's bridge()): its Rust then shares the
-          # development workspace's third-party graph, and a cold build of
-          # it took half the time phone-dev's did (iPhone app: 1,323 s of
-          # first-party compiles against 3,274; Mac app 937 s against
-          # 1,177 s in all). A developer's builds keep phone-dev.
-          #
-          # The phone's suites run on the golden simulator, which a step
-          # before NativeLink starts makes; then everything under apps/apple
-          # but the Mac app builds, and the package suites and the hosted
-          # app suite run on the simulator, in one Buck2 command, so a suite
-          # starts as soon as what it needs is built rather than after
-          # everything is. The phone's shipping build is left to `just ios
-          # release` on the Mac: its bridge is a fat-LTO link of the whole
-          # Rust graph for one more target, and it reruns on every Rust
-          # change.
-          - name: iPhone app
-            key: iphone
-            # The most the job's CAS holds, so the three jobs' stores and
-            # the other jobs' caches fit in GitHub's 10 GB for the
-            # repository; compressed, a store is about a fifth of this.
-            cas_gib: 6
-            run: >-
-              scripts/buck2 test --build-default-info --target-platforms root//build/platforms:ios-sim-app-shipping-dev
-              $(scripts/buck2 uquery "attrregexfilter(default_target_platform, ios-sim, //apps/apple/...)")
-              --exclude mac
-          # The Mac app, its storybook and screens built, and its tests run
-          # on the runner, the same way.
-          - name: Mac app
-            key: mac
-            cas_gib: 6
-            run: >-
-              scripts/buck2 test --build-default-info --target-platforms root//build/platforms:macos-app-shipping-dev
-              $(scripts/buck2 uquery "attrregexfilter(default_target_platform, macos, //apps/apple/...)")
-          # Every workspace test that isn't Linux-only but the terminal
-          # journeys: the macOS half of what the Linux gate runs.
-          - name: macOS tests
-            key: tests
-            # Every test binary of the workspace: a cold run's outputs are
-            # 9.5 GB on disk, 1.9 GB compressed.
-            cas_gib: 12
-            run: just test //crates/... --exclude journey
-          # The terminal journeys, which take the whole worker and miss
-          # their waits beside compiles, so in the tests job they ran last,
-          # after everything else had built: 642 s of a cold run's 28
-          # minutes. Before Buck2 they were a job of their own too.
-          - name: macOS journeys
-            key: journeys
-            cas_gib: 8
-            # With no store of its own yet, the tests job's, which holds
-            # everything the journeys build.
-            fallback: macos-tests-store-
-            run: just test //crates/testnet:terminal-journeys
-    steps:
+      JOB_KEY: iphone
+      JOB_NAME: iPhone app
+      # The most the job's CAS holds, so the four jobs' stores and the other
+      # jobs' caches fit in GitHub's 10 GB for the repository; compressed, a
+      # store is about a fifth of this.
+      JOB_CAS_GIB: "6"
+      JOB_BUILD: >-
+        scripts/buck2 build --target-platforms root//build/platforms:ios-sim-app-shipping-dev
+        $(scripts/buck2 uquery "attrregexfilter(default_target_platform, ios-sim, //apps/apple/...)")
+      JOB_RUN: >-
+        scripts/buck2 test --build-default-info --target-platforms root//build/platforms:ios-sim-app-shipping-dev
+        $(scripts/buck2 uquery "attrregexfilter(default_target_platform, ios-sim, //apps/apple/...)")
+        --exclude mac
+    steps: &macos-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Refuse fixture update flags
         run: scripts/no-update-flags.sh
+      # What the runner does every ten seconds, kept with Buck2's logs.
+      - name: Sample the runner's load and memory
+        run: nohup scripts/ci-sample-system.sh > "$RUNNER_TEMP/system.log" 2>&1 &
+      # Spotlight indexed every output Buck2 wrote and every blob NativeLink
+      # stored, on the runner's three cores.
+      - name: Turn Spotlight off
+        run: sudo mdutil -a -i off
       - name: Select Xcode 26.6
         run: |
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version | grep -Fx 'Xcode 26.6'
       - name: Assert simulator runtime and device type
-        if: matrix.key == 'iphone'
+        if: env.JOB_KEY == 'iphone'
         run: |
           xcrun simctl list runtimes --json | jq -e '.runtimes[] | select(.identifier == "com.apple.CoreSimulator.SimRuntime.iOS-26-5" and .isAvailable == true)'
           xcrun simctl list devicetypes --json | jq -e '.devicetypes[] | select(.identifier == "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro")'
@@ -441,36 +468,54 @@ jobs:
             ${{ runner.temp }}/nativelink/cas.exec
             ${{ runner.temp }}/nativelink/ac
             ${{ runner.temp }}/nativelink/ac.exec
-          key: macos-${{ matrix.key }}-store-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: macos-${{ env.JOB_KEY }}-store-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            macos-${{ matrix.key }}-store-${{ github.sha }}-
-            macos-${{ matrix.key }}-store-
-            ${{ matrix.fallback || format('macos-{0}-store-', matrix.key) }}
-      # Made before NativeLink starts, so its worker can hand every test the
-      # device's udid (AMUX_SIMULATOR_UDID, scripts/nativelink.py): a test
-      # that looked it up itself asked CoreSimulator while the runner
+            macos-${{ env.JOB_KEY }}-store-${{ github.sha }}-
+            macos-${{ env.JOB_KEY }}-store-
+            ${{ env.JOB_FALLBACK || format('macos-{0}-store-', env.JOB_KEY) }}
+      - name: Start a NativeLink on the runner
+        run: |
+          nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --cas-gib "${{ env.JOB_CAS_GIB }}" \
+            > "$RUNNER_TEMP/nativelink.log" 2>&1 &
+          for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/nativelink.log"; exit 1
+      - name: Build ${{ env.JOB_NAME }}
+        if: env.JOB_BUILD
+        timeout-minutes: 60
+        env:
+          AMUX_NATIVELINK: grpc://127.0.0.1:50051
+        run: scripts/rerun-on-cache-timeout.sh '${{ env.JOB_BUILD }}'
+      # Made once everything is built (the iPhone job says why), with Buck2 and
+      # NativeLink stopped so the booting device has their memory too; then
+      # NativeLink starts again so its worker hands every test the device's
+      # udid (AMUX_SIMULATOR_UDID, scripts/nativelink.py): a test that
+      # looked the device up itself asked CoreSimulator while the runner
       # compiled on every core, and `simctl list` took over three minutes.
       - name: Make the golden simulator
-        if: matrix.key == 'iphone'
+        if: env.JOB_KEY == 'iphone'
         run: |
+          scripts/buck2 kill
+          pkill -f "$RUNNER_TEMP/nativelink/config.json5" || true
+          for _ in $(seq 30); do pgrep -f "$RUNNER_TEMP/nativelink/config.json5" > /dev/null || break; sleep 1; done
           just ios simulator golden
           udid=$(scripts/py apps/apple/Tools/ios_simulators.py udid golden)
           echo "AMUX_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
-      - name: Start a NativeLink on the runner
+      - name: Start NativeLink again with the simulator
+        if: env.JOB_KEY == 'iphone'
         run: |
-          nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --cas-gib "${{ matrix.cas_gib }}" \
-            > "$RUNNER_TEMP/nativelink.log" 2>&1 &
+          nohup scripts/py scripts/nativelink.py macos "$RUNNER_TEMP/nativelink" --cas-gib "${{ env.JOB_CAS_GIB }}" \
+            >> "$RUNNER_TEMP/nativelink.log" 2>&1 &
           for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/nativelink.log"; exit 1
       # Bounded below the job's timeout, so a run that runs out of time
       # still keeps what it finished: a job stopped by its own timeout or
       # cancelled doesn't get to save the results, and every run after it
       # started cold again.
-      - name: Run ${{ matrix.name }}
+      - name: Run ${{ env.JOB_NAME }}
         timeout-minutes: 75
         env:
           AMUX_NATIVELINK: grpc://127.0.0.1:50051
-        run: ${{ matrix.run }}
+        run: scripts/rerun-on-cache-timeout.sh '${{ env.JOB_RUN }}'
       - name: Say what Buck2 ran and what came from the cache
         if: always()
         run: |
@@ -488,11 +533,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: buck2-logs-${{ matrix.key }}
+          name: buck2-logs-${{ env.JOB_KEY }}
           path: |
             buck-out/v2/log/*_build_*.pb.zst
             buck-out/v2/log/*_test_*.pb.zst
             ${{ runner.temp }}/nativelink.log
+            ${{ runner.temp }}/system.log
           retention-days: 7
           if-no-files-found: ignore
       # NativeLink is still running, and stopped mid-action (a cancelled
@@ -514,7 +560,7 @@ jobs:
             ${{ runner.temp }}/nativelink/cas.exec
             ${{ runner.temp }}/nativelink/ac
             ${{ runner.temp }}/nativelink/ac.exec
-          key: macos-${{ matrix.key }}-store-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: macos-${{ env.JOB_KEY }}-store-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
       # Only the newest store of each job is worth keeping, and GitHub's
       # cache evicts the least recently used past 10 GB for the whole
       # repository: an older store, read by the run that restored it, can
@@ -525,5 +571,101 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          scripts/py scripts/ci_cache.py prune macos-${{ matrix.key }}-store-
-          --except macos-${{ matrix.key }}-store-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          scripts/py scripts/ci_cache.py prune macos-${{ env.JOB_KEY }}-store-
+          --except macos-${{ env.JOB_KEY }}-store-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+  # The Mac app, its storybook and screens built, and its tests run on the
+  # runner, the same way.
+  mac-app:
+    name: Mac app
+    runs-on: macos-26
+    timeout-minutes: 100
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.mac_app != 'false' }}
+    # One running and one waiting, as every job here: the organisation has
+    # five macOS runners and a run takes four, so a burst of landings had
+    # queued nine macOS jobs, each behind the last. A running job finishes
+    # and keeps its store.
+    concurrency:
+      group: macos-mac-${{ github.event_name }}-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: write
+    env:
+      AMUX_BUILD_HERE: "1"
+      JOB_KEY: mac
+      JOB_NAME: Mac app
+      JOB_CAS_GIB: "6"
+      JOB_RUN: >-
+        scripts/buck2 test --build-default-info --target-platforms root//build/platforms:macos-app-shipping-dev
+        $(scripts/buck2 uquery "attrregexfilter(default_target_platform, macos, //apps/apple/...)")
+    steps: *macos-steps
+
+  # Every workspace test that isn't Linux-only but the terminal journeys:
+  # the macOS half of what the Linux gate runs. Its CAS holds every test
+  # binary of the workspace: a cold run's outputs are 9.5 GB on disk, 1.9 GB
+  # compressed. Every test binary is built before any test runs: run beside
+  # the compiles of a deep change, on three cores, the system suites crawled
+  # (the built `amux` binary's suite took 9 minutes, a dozen of its tests
+  # over a minute and one past its three) and testnet's failed on timing.
+  macos-tests:
+    name: macOS tests
+    runs-on: macos-26
+    timeout-minutes: 100
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.macos_tests != 'false' }}
+    # One running and one waiting, as every job here: the organisation has
+    # five macOS runners and a run takes four, so a burst of landings had
+    # queued nine macOS jobs, each behind the last. A running job finishes
+    # and keeps its store.
+    concurrency:
+      group: macos-tests-${{ github.event_name }}-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: write
+    env:
+      AMUX_BUILD_HERE: "1"
+      JOB_KEY: tests
+      JOB_NAME: macOS tests
+      JOB_CAS_GIB: "12"
+      JOB_BUILD: >-
+        scripts/py build/checks/inputs.py && scripts/buck2 build $(scripts/buck2 uquery "kind(_amux_test, //crates/...)
+        - attrfilter(labels, journey, //crates/...) - attrfilter(labels, live, //crates/...)
+        - attrfilter(labels, nightly, //crates/...) - attrfilter(labels, linux-only, //crates/...)")
+      JOB_RUN: >-
+        just test //crates/... --exclude journey
+    steps: *macos-steps
+
+  # The terminal journeys, which take the whole worker and miss their waits
+  # beside compiles, so in the tests job they ran last, after everything
+  # else had built: 642 s of a cold run's 28 minutes. Before Buck2 they were
+  # a job of their own too.
+  macos-journeys:
+    name: macOS journeys
+    runs-on: macos-26
+    timeout-minutes: 100
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.macos_journeys != 'false' }}
+    # One running and one waiting, as every job here: the organisation has
+    # five macOS runners and a run takes four, so a burst of landings had
+    # queued nine macOS jobs, each behind the last. A running job finishes
+    # and keeps its store.
+    concurrency:
+      group: macos-journeys-${{ github.event_name }}-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: write
+    env:
+      AMUX_BUILD_HERE: "1"
+      JOB_KEY: journeys
+      JOB_NAME: macOS journeys
+      JOB_CAS_GIB: "8"
+      # With no store of its own yet, the tests job's, which holds
+      # everything the journeys build.
+      JOB_FALLBACK: macos-tests-store-
+      JOB_RUN: >-
+        just test //crates/testnet:terminal-journeys
+    steps: *macos-steps

@@ -124,6 +124,7 @@ impl Install {
             std::iter::once(self.root.path().join("bin")).chain(std::env::split_paths(&path)),
         )
         .unwrap();
+        os::testing::require_test_runner("this test runs amux");
         let mut command = Command::new(source_tree::bin!("amux"));
         command
             .args(args)

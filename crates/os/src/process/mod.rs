@@ -159,6 +159,14 @@ pub fn harden_start() {
     imp::harden_start();
 }
 
+/// Whether this process shows a console window: what a log says, so a
+/// background process that would put one on the desktop is seen to.
+/// Windows: whether its console (if any) has a window, which no process
+/// [`background`] started has. Unix has no console windows: always false.
+pub fn console_window() -> bool {
+    imp::console_window()
+}
+
 /// Points this process's standard error at `file`, which may be dropped
 /// afterwards. Unix: `dup2` onto descriptor 2. Windows: the process's
 /// standard error handle (what Rust's `eprintln!` and a panic write to,

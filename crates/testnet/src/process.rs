@@ -37,6 +37,7 @@ const START: Duration = Duration::from_secs(90);
 
 impl ProcessHost {
     fn command(&self) -> tokio::process::Command {
+        os::testing::require_test_runner("starting a process host");
         let mut command = tokio::process::Command::new(&self.amux);
         command.arg("--config").arg(&self.config);
         let path = std::env::var_os("PATH").unwrap_or_default();

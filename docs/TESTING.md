@@ -240,6 +240,12 @@ test. Within a test, the test net ends its agents itself, at `shutdown`, `remove
 process each agent's lock names (`agent_dir::lock_holder`), whether or not their daemon still runs. The documentation tests,
 the C ABI's pointer checks (`just miri`) and the sanitizers run under `cargo test`.
 
+The runner sets `AMUX_TEST_RUNNER=1` for every test. On Windows, test support that starts amux processes (the
+`amux` suites' `support::amux_binary`, the test net's start and its process hosts) calls
+`os::testing::require_test_runner` and refuses to run without it: run by hand on a desktop, those processes would
+open windows there, where Buck runs tests in a non-interactive task. CI's nextest lanes set it too
+(`scripts/test-binaries.sh`, when `CI` is set). Run them with `just test-windows`.
+
 CI's Linux gate runs them through Buck2 on the build host. Its macOS and Windows runners have no Buck2 yet, so they
 run the same tests under [cargo-nextest](https://nexte.st), configured in
 [`.config/nextest.toml`](../.config/nextest.toml) to the same bounds, through `just cargo-test` (`brew install

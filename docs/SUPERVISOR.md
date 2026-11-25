@@ -64,7 +64,12 @@ Nothing ever starts a daemon beside a supervisor.
   end when `start` exits: every `amux` first makes its own standard handles
   uninheritable (`os::process::harden_start`; on Windows a child otherwise
   inherits every inheritable handle, whatever its `Stdio` says), and the
-  supervisor, daemon and agent spawns name all three streams.
+  supervisor, daemon and agent spawns name all three streams. Each of the
+  three starts through `os::process::background`: in its own session (an
+  agent in its own group), in the root (an agent in its folder) and, on
+  Windows, with a console that has no window, so none ever shows one; the
+  supervisor and the daemon log `console window=false` as they start. A job that forbids leaving it
+  keeps the process in it, which the starter logs.
 - Any other CLI verb that finds no daemon on the front door starts the
   supervisor if the install has one and none is running, then waits for the
   daemon. Without a supervisor it starts nothing: the daemon belongs to

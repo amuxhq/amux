@@ -40,8 +40,10 @@ pub const PATIENCE: Duration = Duration::from_secs(60);
 
 pub use ::release::TEST_SEED;
 
-/// The amux binary cargo built for these tests.
+/// The amux binary cargo built for these tests, for a test that runs it,
+/// which on Windows only Buck's test runner may do.
 pub fn amux_binary() -> &'static Path {
+    os::testing::require_test_runner("this test runs amux");
     Path::new(source_tree::bin!("amux"))
 }
 

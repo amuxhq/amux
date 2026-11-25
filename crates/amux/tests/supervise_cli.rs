@@ -179,6 +179,16 @@ fn a_piped_server_start_ends_when_start_does() {
     let said = out.recv_timeout(within());
     let complained = err.recv_timeout(within());
     let status = start.wait().unwrap();
+    // What it left running shows no window either: each says so as it
+    // starts, the daemon too, which on Windows a console-less supervisor
+    // would otherwise start with a console of its own, and a visible one.
+    let logs: Vec<(&str, String)> = ["supervisor.log", "daemon.log"]
+        .into_iter()
+        .map(|log| {
+            let text = std::fs::read_to_string(install.data.join(log)).unwrap_or_default();
+            (log, text)
+        })
+        .collect();
     // Stopped before any assertion, so a failure leaves nothing running;
     // the pipes' readers end once what held them is gone.
     let stopped = install.command(&["server", "stop"]).output().unwrap();
@@ -187,6 +197,9 @@ fn a_piped_server_start_ends_when_start_does() {
     assert!(status.success(), "{status}: {said}{complained}");
     assert!(said.contains("Started amux."), "{said}{complained}");
     assert!(stopped.status.success(), "{}", stdout(&stopped));
+    for (log, text) in logs {
+        assert!(text.contains("console window=false"), "{log}:\n{text}");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

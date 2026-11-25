@@ -102,6 +102,16 @@ def _execution_platform_impl(ctx):
         # in buck-out with no staging. Tests still run on the worker (their
         # executor is the test toolchain's), so their results are cached as
         # before.
+        #
+        # An action run here is keyed apart from the same action run on a
+        # worker (`built_in`, part of every action's key, not a property a
+        # worker matches): here it sees all of buck-out, not only its
+        # declared inputs, and that can change what it makes. A Rust crate's
+        # hash depends on whether its dependencies' sources are on disk
+        # (rust-lang/rust#153898, build/third_party.bzl), which in buck-out
+        # they can be, and a C compile can find a header it never declared.
+        # So a result made here never answers for a Mac's worker, or the
+        # other way round, should the two ever share a cache.
         return [DefaultInfo(), ExecutionPlatformInfo(
             label = ctx.label.raw_target(),
             configuration = configuration,
@@ -110,7 +120,7 @@ def _execution_platform_impl(ctx):
                 remote_enabled = False,
                 remote_cache_enabled = True,
                 allow_cache_uploads = True,
-                remote_execution_properties = ctx.attrs.properties,
+                remote_execution_properties = ctx.attrs.properties | {"built_in": "buck2"},
                 remote_execution_use_case = "buck2-default",
                 remote_output_paths = "output_paths",
             ),

@@ -1319,6 +1319,24 @@ async fn relaunch_after_a_kill_links_every_time() {
         tokio::time::sleep(Duration::from_secs(3)).await;
     }
     carried_by(&net, "laptop", "desk", PathKind::Punched).await;
+    // The desk holds each killed process's link until it times out, and
+    // the one path to the laptop carries them all: the dead links going
+    // down, here the first after the punch, leave the live one punched.
+    let laptop = host_id(&net, "laptop");
+    until("a dead process's link to time out at the desk", || async {
+        let last = net
+            .link_log("desk")
+            .unwrap()
+            .into_iter()
+            .rev()
+            .find(|line| line.peer == laptop && line.event != LinkTransition::CaughtUp);
+        match last {
+            Some(line) if line.event == LinkTransition::Down => Ok(()),
+            other => Err(format!("{other:?}")),
+        }
+    })
+    .await
+    .unwrap();
     carried_by(&net, "desk", "laptop", PathKind::Punched).await;
     streams_live(&net, &["laptop"], "worker", "said to the phone").await;
     net.shutdown().await.unwrap();
@@ -2145,6 +2163,16 @@ async fn punch_lapse_keeps_the_punched_path_until_the_link_leaves_it() {
     println!("both links still punched 12 s after the lapse");
 
     net.stop_daemon("laptop").await.unwrap();
+    // The laptop's goodbye reaches the desk on its own time: the window
+    // below opens once the desk has let the stopped laptop's link go.
+    until("the desk to let the stopped laptop's link go", || async {
+        match net.carrying_path("desk", "laptop") {
+            Ok(None) => Ok(()),
+            other => Err(format!("{other:?}")),
+        }
+    })
+    .await
+    .unwrap();
     net.restart_daemon("laptop").await.unwrap();
     let never_punched_again = || async {
         [("laptop", "desk"), ("desk", "laptop")]

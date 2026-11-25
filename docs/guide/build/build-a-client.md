@@ -288,7 +288,11 @@ Details:
   after a `-` (anything else, such as another machine's pipe, could hand
   your credentials to someone else), and once it's open, make
   sure the pipe's owner is your own user (`GetSecurityInfo` with
-  `OWNER_SECURITY_INFORMATION`). If the pipe is busy or not there yet, read
+  `OWNER_SECURITY_INFORMATION`). An earlier release's pipe, one with the
+  older name, is owned by Administrators when its daemon runs elevated;
+  accept that one only if the process serving it
+  (`GetNamedPipeServerProcessId`) runs as your user. If the pipe is busy,
+  the file is briefly locked, or the pipe is not there yet, read
   the file again and retry for a couple of seconds: the daemon may be
   restarting.
 - Every other amux socket, each profile's included, follows the same rules.

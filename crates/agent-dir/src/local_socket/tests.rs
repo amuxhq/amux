@@ -212,8 +212,10 @@ async fn a_closer_does_not_hold_its_connection_open() {
 }
 
 /// Terminal Claude binds its messaging socket itself and refuses a
-/// directory reached through a symbolic link.
-#[cfg(unix)]
+/// directory reached through a symbolic link. (The short links and the
+/// inode unbinding checks, Unix's own machinery, are tested beside it in
+/// `unix.rs`; Windows' counterparts are in `windows_tests.rs`.)
+#[cfg(not(windows))] // out of scope on Windows: terminal Claude (claude_pty), whose messaging socket this is
 #[test]
 fn a_socket_another_program_binds_gets_a_real_private_directory() {
     use std::os::unix::fs::PermissionsExt as _;
@@ -233,40 +235,4 @@ fn a_socket_another_program_binds_gets_a_real_private_directory() {
 
     let short = root.path().join("m.sock");
     assert_eq!(unix_private_address(&short).unwrap(), short);
-}
-
-#[cfg(unix)]
-#[test]
-fn an_agents_short_addresses_go_with_its_directory() {
-    let root = tempfile::tempdir().unwrap();
-    let agent = root.path().join("d".repeat(60)).join("e".repeat(60));
-    let private = agent.join(crate::PRIVATE);
-    std::fs::create_dir_all(&private).unwrap();
-    let link = unix_address(&agent.join("ctl.sock")).unwrap();
-    let link = link.parent().unwrap().to_owned();
-    let real = unix_private_address(&private.join("messaging.sock")).unwrap();
-    let real = real.parent().unwrap().to_owned();
-    assert!(std::fs::symlink_metadata(&link).is_ok());
-    assert!(real.is_dir());
-
-    forget_short_addresses(&agent);
-    assert!(
-        std::fs::symlink_metadata(&link).is_err(),
-        "the link is gone"
-    );
-    assert!(!real.exists(), "the private directory is gone");
-}
-
-/// On Unix the socket file is the socket: a file a successor bound at the
-/// path is another inode, and the predecessor's unbind leaves it.
-#[cfg(unix)]
-#[tokio::test]
-async fn unbinding_leaves_a_file_that_is_not_this_listeners() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("ctl.sock");
-    let first = LocalListener::bind(&path).unwrap();
-    std::fs::remove_file(&path).unwrap();
-    std::fs::write(&path, b"someone else's").unwrap();
-    drop(first);
-    assert_eq!(std::fs::read(&path).unwrap(), b"someone else's");
 }

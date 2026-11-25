@@ -22,8 +22,12 @@ pub struct Listener {
 }
 
 impl Listener {
+    /// Binds under the directory's lock, which [`Listener::unbind`] takes
+    /// too, so a predecessor's unbind can't fall between this bind and
+    /// its check of what is at the path.
     pub fn bind(path: &Path) -> io::Result<Self> {
         let address = address(path)?;
+        let _locked = lock_dir(path)?;
         match fs::remove_file(&address) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -57,10 +61,46 @@ impl Listener {
     }
 
     /// Removes the socket file at `path` if it is still the one this
-    /// listener bound; a successor's stays.
+    /// listener bound; a successor's stays. The check and the removal hold
+    /// the directory's lock, as a bind does, so no successor binds between
+    /// them, in this process or another.
     pub fn unbind(&self, path: &Path) {
+        self.unbind_between(path, || {});
+    }
+
+    /// [`Listener::unbind`], running `between` after the check and before
+    /// the removal: a test's way in.
+    fn unbind_between(&self, path: &Path, between: impl FnOnce()) {
+        // A directory that can't be locked (it has gone) has nothing in
+        // it to keep.
+        let Ok(_locked) = lock_dir(path) else { return };
         if fs::symlink_metadata(path).is_ok_and(|meta| (meta.dev(), meta.ino()) == self.file) {
+            between();
             let _ = fs::remove_file(path);
+        }
+    }
+}
+
+/// The lock of the directory holding the socket `path`, held while the
+/// returned file is open: `flock` on the directory itself, which every
+/// bind and unbind there takes, in any process. Each holds it only for a
+/// removal and a bind.
+fn lock_dir(path: &Path) -> io::Result<fs::File> {
+    use std::os::fd::AsRawFd;
+
+    let dir = match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => Path::new("."),
+    };
+    let file = fs::File::open(dir)?;
+    loop {
+        // SAFETY: the descriptor is `file`'s, open for the call.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0 {
+            return Ok(file);
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() != io::ErrorKind::Interrupted {
+            return Err(error);
         }
     }
 }
@@ -206,4 +246,78 @@ fn private_dir(dir: &Path) -> io::Result<()> {
         ));
     }
     Ok(())
+}
+
+/// Unix's own machinery: the short links a long path is reached through,
+/// and the inode unbinding checks. The promises they keep are tested on
+/// every OS in `tests.rs`.
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::local_socket::unix_private_address;
+    use crate::local_socket::{LocalListener, connect, forget_short_addresses, unix_address};
+
+    #[test]
+    fn an_agents_short_addresses_go_with_its_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let agent = root.path().join("d".repeat(60)).join("e".repeat(60));
+        let private = agent.join(crate::PRIVATE);
+        fs::create_dir_all(&private).unwrap();
+        let link = unix_address(&agent.join("ctl.sock")).unwrap();
+        let link = link.parent().unwrap().to_owned();
+        let real = unix_private_address(&private.join("messaging.sock")).unwrap();
+        let real = real.parent().unwrap().to_owned();
+        assert!(fs::symlink_metadata(&link).is_ok());
+        assert!(real.is_dir());
+
+        forget_short_addresses(&agent);
+        assert!(fs::symlink_metadata(&link).is_err(), "the link is gone");
+        assert!(!real.exists(), "the private directory is gone");
+    }
+
+    /// The socket file is the socket: a file put at the path since is
+    /// another inode, and the predecessor's unbind leaves it.
+    #[tokio::test]
+    async fn unbinding_leaves_a_file_that_is_not_this_listeners() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("ctl.sock");
+        let first = LocalListener::bind(&path).unwrap();
+        fs::remove_file(&path).unwrap();
+        fs::write(&path, b"someone else's").unwrap();
+        drop(first);
+        assert_eq!(fs::read(&path).unwrap(), b"someone else's");
+    }
+
+    /// The race: the predecessor checks that the file is its own, a
+    /// successor binds, and only then does the predecessor remove what is
+    /// at the path. The directory's lock holds the successor's bind back
+    /// until the removal is done, so the successor's socket survives.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_successor_binding_inside_an_unbind_keeps_its_socket() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("ctl.sock");
+        let first = Listener::bind(&path).unwrap();
+        let runtime = tokio::runtime::Handle::current();
+        let mut successor = None;
+        first.unbind_between(&path, || {
+            let path = path.clone();
+            successor = Some(std::thread::spawn(move || {
+                let _entered = runtime.enter();
+                Listener::bind(&path).unwrap()
+            }));
+            // Time for the successor to bind, were it not held back.
+            std::thread::sleep(Duration::from_millis(200));
+        });
+        let mut second = successor.unwrap().join().unwrap();
+        assert!(
+            fs::symlink_metadata(&path).is_ok(),
+            "the successor's socket is at the path"
+        );
+        let (served, client) = tokio::join!(second.accept(), connect(&path));
+        drop(served);
+        client.expect("the successor answers");
+        drop(first);
+    }
 }

@@ -1,9 +1,12 @@
 //! What named pipes add: names nobody can guess or redirect, an owner
 //! checked, patience with a busy or rebinding server.
 //!
-//! Not here: an elevated daemon with a normal client. It needs an elevated
-//! process, which the test environment does not allow; the owner check it
-//! rests on is tested (`a_pipe_is_checked_by_its_owner_not_its_server`).
+//! Not here: an elevated daemon with a normal client, which needs two
+//! processes at two integrity levels. (Under Buck the tests run in the
+//! build worker's elevated process, where a pipe left to the token's
+//! default owner is owned by Administrators: that is how the legacy tests
+//! below see an elevated earlier build.) The owner check a normal client
+//! makes is tested (`a_pipe_is_checked_by_its_owner_not_its_server`).
 
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::AsRawHandle;
@@ -16,6 +19,13 @@ use super::windows::{INSTANCES, Listener, is_amux_pipe, owned_by_me, random_name
 use super::*;
 
 const HEX32: &str = "0123456789abcdef0123456789abcdef";
+
+/// Within a few seconds, or the test fails rather than hangs.
+async fn soon<T>(what: &str, future: impl std::future::Future<Output = T>) -> T {
+    tokio::time::timeout(Duration::from_secs(5), future)
+        .await
+        .unwrap_or_else(|_| panic!("{what} did not happen within 5s"))
+}
 
 #[test]
 fn only_an_amux_pipe_name_is_opened() {
@@ -274,4 +284,163 @@ async fn the_file_names_the_listening_pipe() {
     assert!(is_amux_pipe(&name) && name.len() == 14 + 32, "{name}");
     let client = ClientOptions::new().open(&name).unwrap();
     assert!(owned_by_me(client.as_raw_handle()).unwrap());
+}
+
+/// A name file a scanner holds without sharing reads is waited for within
+/// the deadline, not failed at once.
+#[tokio::test]
+async fn a_name_file_held_a_moment_is_waited_for() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("ctl.sock");
+    let mut listener = LocalListener::bind(&path).unwrap();
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(&path)
+        .unwrap();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        drop(held);
+    });
+    let started = Instant::now();
+    let accepting = tokio::spawn(async move {
+        let served = listener.accept().await;
+        (listener, served)
+    });
+    let client = soon("an answer", connect(&path)).await;
+    client.expect("connected once the file was let go");
+    assert!(started.elapsed() >= Duration::from_millis(250));
+    release.join().unwrap();
+    let (_listener, served) = accepting.await.unwrap();
+    served.unwrap();
+
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(&path)
+        .unwrap();
+    let patience = Duration::from_millis(200);
+    let started = Instant::now();
+    let error = connect_within(&path, patience)
+        .await
+        .err()
+        .expect("held throughout");
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut, "{error}");
+    assert!(
+        started.elapsed() < CONNECT_PATIENCE,
+        "{:?}",
+        started.elapsed()
+    );
+    drop(held);
+}
+
+/// A client reads no more of the file than a name could be.
+#[tokio::test]
+async fn a_name_file_too_long_for_a_name_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("ctl.sock");
+    std::fs::write(&path, format!(r"\\.\pipe\amux-{}", "a".repeat(1 << 20))).unwrap();
+    let error = connect(&path).await.err().expect("refused");
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData, "{error}");
+}
+
+/// A pipe server end made as earlier builds made it: the old name form, and
+/// a DACL admitting this user but no owner named, so the owner is the
+/// token's default (Administrators, for an elevated process).
+fn legacy_pipe(name: &str) -> tokio::net::windows::named_pipe::NamedPipeServer {
+    use windows_sys::Win32::Security::Authorization::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    };
+    use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
+
+    let sid = os::fs::current_user_sid().unwrap();
+    let sddl: Vec<u16> = format!("D:P(A;;GA;;;{sid})")
+        .encode_utf16()
+        .chain([0])
+        .collect();
+    let mut descriptor = std::ptr::null_mut();
+    // SAFETY: `sddl` is NUL-terminated; the descriptor is leaked, as the
+    // old builds' was.
+    assert_ne!(
+        unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl.as_ptr(),
+                SDDL_REVISION_1,
+                &mut descriptor,
+                std::ptr::null_mut(),
+            )
+        },
+        0
+    );
+    let mut attributes = SECURITY_ATTRIBUTES {
+        nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: descriptor,
+        bInheritHandle: 0,
+    };
+    // SAFETY: the attributes and their descriptor outlive the call.
+    unsafe {
+        ServerOptions::new()
+            .first_pipe_instance(true)
+            .reject_remote_clients(true)
+            .create_with_security_attributes_raw(name, (&raw mut attributes).cast())
+    }
+    .unwrap()
+}
+
+/// A daemon adopting an agent an earlier build started opens that agent's
+/// pipe, whoever the token made its owner, as long as the process serving
+/// it runs as this user. (Under Buck the tests run elevated, so the owner
+/// here is Administrators: the elevated case, not only the plain one.)
+#[tokio::test]
+async fn an_earlier_builds_pipe_is_reached() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("ctl.sock");
+    let name = format!(
+        r"\\.\pipe\amux-{}-{}-0",
+        &random_name()[14..30],
+        std::process::id()
+    );
+    assert!(is_amux_pipe(&name), "{name}");
+    let server = legacy_pipe(&name);
+    std::fs::write(&path, &name).unwrap();
+    let probe = ClientOptions::new().open(&name).unwrap();
+    let owner = super::windows::owner_of(probe.as_raw_handle()).unwrap();
+    eprintln!("an earlier build's pipe is owned here by {owner}");
+    drop(probe);
+    server.disconnect().unwrap();
+
+    let accepted = async {
+        server.connect().await.unwrap();
+        server
+    };
+    let ((_client, pid), _server) =
+        tokio::join!(async { connect_to_process(&path).await.unwrap() }, accepted);
+    assert_eq!(pid, Some(std::process::id()));
+}
+
+/// The same old descriptor under a name of this build's form is held to
+/// the strict rule: only an owner that is this user passes.
+#[tokio::test]
+async fn a_new_name_is_held_to_its_owner() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("ctl.sock");
+    let name = random_name();
+    let server = legacy_pipe(&name);
+    std::fs::write(&path, &name).unwrap();
+    let probe = ClientOptions::new().open(&name).unwrap();
+    let mine = owned_by_me(probe.as_raw_handle()).unwrap();
+    drop(probe);
+    server.disconnect().unwrap();
+    let accepting = tokio::spawn(async move {
+        let _ = server.connect().await;
+        server
+    });
+    let reached = soon("an answer", connect(&path)).await;
+    accepting.abort();
+    if mine {
+        eprintln!("the default owner here is the user: nothing to refuse");
+    } else {
+        let error = reached.err().expect("refused: not owned by this user");
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "{error}");
+    }
 }

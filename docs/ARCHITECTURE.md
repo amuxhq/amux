@@ -585,7 +585,13 @@ nicer in several places, and Windows pays for each:
   exactly that form, whatever the file says (never another host's pipe or a
   device), then refuses a pipe its own user doesn't own. The owner, not the
   serving process's token, is what's checked, so a client accepts an
-  elevated daemon of the same user. A server keeps four instances
+  elevated daemon of the same user. Earlier builds named their pipes
+  `amux-<16 hex>-<pid>-<count>` and left the owner to the token's default
+  (Administrators, when elevated); a pipe of that form is also accepted
+  when Administrators own it and its serving process runs as the user, the
+  check those builds made, so a daemon still adopts an agent an elevated
+  earlier build started. The name file is read on a blocking thread
+  within the connect's deadline, at most 256 bytes of it. A server keeps four instances
   listening, and a client finding them all busy, or the file naming a pipe
   that has gone, tries again with the file read afresh until a deadline (two
   seconds unless the caller chooses). Shutting down a pipe's write half does

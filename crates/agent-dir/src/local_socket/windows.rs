@@ -1,15 +1,14 @@
 //! Named pipes: a fresh, randomly named pipe per bind, its name in the file
 //! at the socket's path, admitting this user alone.
 
-use std::ffi::OsString;
 use std::fs::OpenOptions;
 use std::future::Future;
 use std::io::{self, Read};
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::{AsRawHandle, RawHandle};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -19,8 +18,8 @@ use tokio::net::windows::named_pipe::{
     ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions,
 };
 use windows_sys::Win32::Foundation::{
-    ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_NO_DATA, ERROR_PIPE_BUSY,
-    ERROR_SHARING_VIOLATION, GENERIC_READ, LocalFree,
+    ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_LOCK_VIOLATION, ERROR_NO_DATA,
+    ERROR_PIPE_BUSY, ERROR_SHARING_VIOLATION, GENERIC_READ, LocalFree,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo,
@@ -29,8 +28,8 @@ use windows_sys::Win32::Security::Authorization::{
 use windows_sys::Win32::Security::{OWNER_SECURITY_INFORMATION, SECURITY_ATTRIBUTES};
 use windows_sys::Win32::Storage::FileSystem::{
     DELETE, FILE_DISPOSITION_FLAG_DELETE, FILE_DISPOSITION_FLAG_POSIX_SEMANTICS,
-    FILE_DISPOSITION_INFO, FILE_DISPOSITION_INFO_EX, FILE_SHARE_READ, FileDispositionInfo,
-    FileDispositionInfoEx, SetFileInformationByHandle,
+    FILE_DISPOSITION_INFO, FILE_DISPOSITION_INFO_EX, FILE_SHARE_DELETE, FILE_SHARE_READ,
+    FILE_SHARE_WRITE, FileDispositionInfo, FileDispositionInfoEx, SetFileInformationByHandle,
 };
 use windows_sys::Win32::System::IO::CancelIoEx;
 use windows_sys::Win32::System::Pipes::GetNamedPipeServerProcessId;
@@ -178,21 +177,10 @@ impl Listener {
             }
         }
         // Named once the pipe listens, and replaced whole, so a client
-        // reads either the old name or this one.
-        static STAGED: AtomicU64 = AtomicU64::new(0);
-        let mut staged = OsString::from(path.as_os_str());
-        staged.push(format!(
-            ".{}-{}.tmp",
-            std::process::id(),
-            STAGED.fetch_add(1, Ordering::Relaxed)
-        ));
-        let staged = PathBuf::from(staged);
-        let published =
-            std::fs::write(&staged, &name).and_then(|()| os::fs::rename_patiently(&staged, path));
-        if let Err(error) = published {
-            let _ = std::fs::remove_file(&staged);
-            return Err(error);
-        }
+        // reads either the old name or this one. The staging, the patient
+        // rename and the cleanup of a stage are os::fs's, shared with every
+        // whole-file write.
+        os::fs::replace_atomically(path, name.as_bytes())?;
         Ok(Self {
             name,
             listening: Mutex::new(listening),
@@ -342,50 +330,159 @@ pub async fn connect(path: &Path, patience: Duration) -> io::Result<(Stream, Opt
     let mut pause = Duration::from_millis(5);
     let mut tried = false;
     loop {
-        let waiting = match std::fs::read_to_string(path) {
-            Ok(name) => {
-                if !is_amux_pipe(&name) {
+        let waiting = match read_name(path, until).await? {
+            Named::Name(name) => {
+                let Some(form) = pipe_form(&name) else {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
                         format!("{} names {name:?}, which is no amux pipe", path.display()),
                     ));
-                }
+                };
                 match ClientOptions::new().open(&name) {
                     Ok(client) => {
-                        let pid = check(&client, &name)?;
+                        let pid = check(&client, &name, form)?;
                         return Ok((Stream::Client(client), Some(pid)));
                     }
                     Err(error) if error.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => {
-                        io::ErrorKind::TimedOut
+                        Waiting::Busy
                     }
                     Err(error) if error.raw_os_error() == Some(ERROR_FILE_NOT_FOUND as i32) => {
-                        io::ErrorKind::ConnectionRefused
+                        Waiting::Gone
                     }
                     Err(error) => return Err(error),
                 }
             }
             // No socket at all is no socket, unless one was there a moment
             // ago: a predecessor unbinding before its successor binds.
-            Err(error) if error.kind() == io::ErrorKind::NotFound && tried => {
-                io::ErrorKind::ConnectionRefused
+            Named::Missing if tried => Waiting::Gone,
+            Named::Missing => {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("no socket at {}", path.display()),
+                ));
             }
-            Err(error) => return Err(error),
+            // A scanner or an indexer holding it a moment.
+            Named::Held => Waiting::Held,
         };
         tried = true;
         let now = Instant::now();
         if now >= until {
-            let what = match waiting {
-                io::ErrorKind::TimedOut => "every pipe instance stayed busy",
-                _ => "no pipe answered",
+            let (kind, what) = match waiting {
+                Waiting::Busy => (io::ErrorKind::TimedOut, "every pipe instance stayed busy"),
+                Waiting::Held => (io::ErrorKind::TimedOut, "the name file stayed held"),
+                Waiting::Gone => (io::ErrorKind::ConnectionRefused, "no pipe answered"),
             };
             return Err(io::Error::new(
-                waiting,
+                kind,
                 format!("{}: {what} for {patience:?}", path.display()),
             ));
         }
         tokio::time::sleep(pause.min(until - now)).await;
         pause = (pause * 2).min(MOST_PAUSE);
     }
+}
+
+/// Why a connect tries again.
+enum Waiting {
+    Busy,
+    Held,
+    Gone,
+}
+
+/// What reading a name file came to.
+enum Named {
+    Name(String),
+    Missing,
+    /// Something else has it open without sharing reads: a moment's wait.
+    Held,
+}
+
+/// The most of a name file a client reads: a name is 46 bytes, one an
+/// earlier build wrote at most 70.
+const MOST_NAME: u64 = 256;
+
+/// The least a read of the name file is given, whatever is left of the
+/// caller's patience, so a deadline of zero is one try, not none.
+const LEAST_READ: Duration = Duration::from_millis(100);
+
+/// Reads of name files that may be outstanding at once. A read is
+/// abandoned at its deadline but its thread waits on, on a stalled disk
+/// (a network share gone quiet), so past this many a connect fails at once
+/// instead of tying up more threads.
+const MOST_READING: usize = 4;
+
+static READING: AtomicUsize = AtomicUsize::new(0);
+
+/// Reads the name file at `path` on a blocking thread, giving up at
+/// `until` (or [`LEAST_READ`] from now, if later).
+async fn read_name(path: &Path, until: Instant) -> io::Result<Named> {
+    struct Read;
+    impl Drop for Read {
+        fn drop(&mut self) {
+            READING.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    if READING.fetch_add(1, Ordering::SeqCst) >= MOST_READING {
+        READING.fetch_sub(1, Ordering::SeqCst);
+        return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            format!(
+                "{}: earlier reads of socket files have not finished",
+                path.display()
+            ),
+        ));
+    }
+    let read = Read;
+    let file = path.to_owned();
+    let reading = tokio::task::spawn_blocking(move || {
+        let _read = read;
+        read_name_now(&file)
+    });
+    let until = until.max(Instant::now() + LEAST_READ);
+    match tokio::time::timeout_at(until.into(), reading).await {
+        Ok(Ok(named)) => named,
+        Ok(Err(error)) => Err(io::Error::other(error)),
+        Err(_) => Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            format!("{}: reading it did not finish in time", path.display()),
+        )),
+    }
+}
+
+fn read_name_now(path: &Path) -> io::Result<Named> {
+    let held = |error: &io::Error| {
+        [ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION]
+            .iter()
+            .any(|&code| error.raw_os_error() == Some(code as i32))
+    };
+    let file = match OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Named::Missing),
+        Err(error) if held(&error) => return Ok(Named::Held),
+        Err(error) => return Err(error),
+    };
+    let mut bytes = Vec::new();
+    match file.take(MOST_NAME + 1).read_to_end(&mut bytes) {
+        Ok(_) => {}
+        Err(error) if held(&error) => return Ok(Named::Held),
+        Err(error) => return Err(error),
+    }
+    if bytes.len() as u64 > MOST_NAME {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{} is too long to name a pipe", path.display()),
+        ));
+    }
+    String::from_utf8(bytes).map(Named::Name).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{} names no pipe: it is not text", path.display()),
+        )
+    })
 }
 
 /// Whether `name` is a pipe an amux bind makes: `\\.\pipe\amux-` and 32
@@ -395,22 +492,34 @@ pub async fn connect(path: &Path, patience: Duration) -> io::Result<(Stream, Opt
 /// name would hand this user's credentials to it), no device, no other
 /// pipe.
 pub(super) fn is_amux_pipe(name: &str) -> bool {
+    pipe_form(name).is_some()
+}
+
+/// Which of the two forms of amux pipe name `name` is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Form {
+    /// `amux-<32 hex>`, made by this build and later ones.
+    Random,
+    /// `amux-<16 hex>-<pid>-<count>`, made by earlier builds.
+    Legacy,
+}
+
+pub(super) fn pipe_form(name: &str) -> Option<Form> {
     let hex = |part: &str, length: usize| {
         part.len() == length && part.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
     };
     let number =
         |part: &str| (1..=20).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit());
-    let Some(rest) = name.strip_prefix(PREFIX) else {
-        return false;
-    };
+    let rest = name.strip_prefix(PREFIX)?;
     if hex(rest, 32) {
-        return true;
+        return Some(Form::Random);
     }
     let mut parts = rest.split('-');
     matches!(
         (parts.next(), parts.next(), parts.next(), parts.next()),
         (Some(hash), Some(pid), Some(count), None) if hex(hash, 16) && number(pid) && number(count)
     )
+    .then_some(Form::Legacy)
 }
 
 /// `\\.\pipe\amux-` and 128 bits no other process can guess, so nobody can
@@ -440,32 +549,129 @@ pub(super) fn random_name() -> String {
     format!("{PREFIX}{:016x}{:016x}", half(0), half(1))
 }
 
-/// The pipe a client opened is owned by this user, and the id of the
-/// process serving it.
+/// The pipe a client opened is this user's, and the id of the process
+/// serving it.
 ///
-/// The owner is what a server can't fake: another user can't create a pipe
-/// owned by this one, while this user's own daemon, elevated or not, makes
-/// every pipe owned by this user (its SDDL names the owner). The server's
-/// process token is no test: an elevated daemon's pipes would fail it.
-fn check(client: &NamedPipeClient, name: &str) -> io::Result<u32> {
-    if !owned_by_me(client.as_raw_handle())? {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            format!("{name} is owned by another user"),
-        ));
-    }
+/// A pipe this build or a later one made names this user as its owner
+/// (its SDDL does), elevated or not, and the owner is what a server can't
+/// fake: another user can't create a pipe owned by this one. So for a
+/// pipe of the [`Form::Random`] form the owner alone decides.
+///
+/// A pipe an earlier build made ([`Form::Legacy`]) left its owner to the
+/// token's default: this user for a normal process, Administrators for an
+/// elevated one. Such a pipe is admitted when this user owns it, or when
+/// Administrators do and the process serving it runs as this user, which
+/// is the check those builds made themselves. So a daemon adopting an
+/// agent an elevated earlier build started still reaches it.
+fn check(client: &NamedPipeClient, name: &str, form: Form) -> io::Result<u32> {
     let mut pid = 0u32;
     // SAFETY: the handle is the open pipe client's, and `pid` outlives
     // the call.
     if unsafe { GetNamedPipeServerProcessId(client.as_raw_handle() as _, &mut pid) } == 0 {
         return Err(io::Error::last_os_error());
     }
-    Ok(pid)
+    let owner = owner_of(client.as_raw_handle())?;
+    let me = os::fs::current_user_sid()?;
+    if owner == me
+        || form == Form::Legacy
+            && owner == ADMINISTRATORS
+            && user_of(pid).is_ok_and(|user| user == me)
+    {
+        return Ok(pid);
+    }
+    Err(io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        format!("{name} is owned by {owner}, not by this user ({me})"),
+    ))
 }
+
+/// BUILTIN\Administrators: the default owner of what an elevated process
+/// creates.
+const ADMINISTRATORS: &str = "S-1-5-32-544";
 
 /// Whether the object open at `handle` (with `READ_CONTROL`) is owned by
 /// this user.
 pub(super) fn owned_by_me(handle: RawHandle) -> io::Result<bool> {
+    Ok(owner_of(handle)? == os::fs::current_user_sid()?)
+}
+
+/// The user process `pid` runs as, as a SID string.
+fn user_of(pid: u32) -> io::Result<String> {
+    use std::os::windows::io::{FromRawHandle, OwnedHandle};
+
+    use windows_sys::Win32::Security::{GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    // SAFETY: a failed open returns null, checked; an opened handle is
+    // owned below.
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if process.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: a handle this function owns from here.
+    let process = unsafe { OwnedHandle::from_raw_handle(process) };
+    let mut token = std::ptr::null_mut();
+    // SAFETY: `token` outlives the call and is owned below once opened.
+    if unsafe { OpenProcessToken(process.as_raw_handle(), TOKEN_QUERY, &mut token) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: a handle this function owns from here.
+    let token = unsafe { OwnedHandle::from_raw_handle(token) };
+    let mut needed = 0u32;
+    // SAFETY: a size query: no buffer, the size written to `needed`.
+    unsafe {
+        GetTokenInformation(
+            token.as_raw_handle(),
+            TokenUser,
+            std::ptr::null_mut(),
+            0,
+            &mut needed,
+        )
+    };
+    // u64s, so the TOKEN_USER read out of it is aligned.
+    let mut buffer = vec![0u64; (needed as usize).div_ceil(8).max(1)];
+    // SAFETY: the buffer holds at least `needed` bytes.
+    if unsafe {
+        GetTokenInformation(
+            token.as_raw_handle(),
+            TokenUser,
+            buffer.as_mut_ptr().cast(),
+            needed,
+            &mut needed,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: the call wrote a TOKEN_USER at the buffer's start, and the
+    // SID it points at lies within the buffer, which lives on.
+    let sid = unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
+    sid_text(sid)
+}
+
+/// A SID as its string form.
+fn sid_text(sid: *mut std::ffi::c_void) -> io::Result<String> {
+    let mut text = std::ptr::null_mut();
+    // SAFETY: `sid` is a valid SID; the string is allocated by the call and
+    // freed below once copied.
+    if unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: the call wrote a NUL-terminated UTF-16 string.
+    let string = unsafe {
+        let length = (0..).take_while(|&at| *text.add(at) != 0).count();
+        String::from_utf16_lossy(std::slice::from_raw_parts(text, length))
+    };
+    // SAFETY: allocated by ConvertSidToStringSidW, not used again.
+    unsafe { LocalFree(text.cast()) };
+    Ok(string)
+}
+
+/// The owner of the object open at `handle` (with `READ_CONTROL`), as a
+/// SID string.
+pub(super) fn owner_of(handle: RawHandle) -> io::Result<String> {
     let mut owner = std::ptr::null_mut();
     let mut descriptor = std::ptr::null_mut();
     // SAFETY: the handle is open; the call allocates the descriptor `owner`
@@ -485,25 +691,11 @@ pub(super) fn owned_by_me(handle: RawHandle) -> io::Result<bool> {
     if status != 0 {
         return Err(io::Error::from_raw_os_error(status as i32));
     }
-    let mut text = std::ptr::null_mut();
-    // SAFETY: `owner` points into the live descriptor; the string is
-    // allocated by the call and freed below once copied.
-    let converted = unsafe { ConvertSidToStringSidW(owner, &mut text) } != 0;
-    let owner = if converted {
-        // SAFETY: the call wrote a NUL-terminated UTF-16 string.
-        let owner = unsafe {
-            let length = (0..).take_while(|&at| *text.add(at) != 0).count();
-            String::from_utf16_lossy(std::slice::from_raw_parts(text, length))
-        };
-        // SAFETY: allocated by ConvertSidToStringSidW, not used again.
-        unsafe { LocalFree(text.cast()) };
-        Ok(owner)
-    } else {
-        Err(io::Error::last_os_error())
-    };
+    // `owner` points into the live descriptor.
+    let text = sid_text(owner);
     // SAFETY: allocated by GetSecurityInfo; `owner` is not read again.
     unsafe { LocalFree(descriptor) };
-    Ok(owner? == os::fs::current_user_sid()?)
+    text
 }
 
 /// A server end that admits this user alone, local clients only.

@@ -13,6 +13,13 @@
 
 set -eu
 
+# A CI runner has no desktop for the amux processes a test starts to open
+# windows on, so there, as under Buck's test runner, Windows' tests that
+# start them may run (os::testing::require_test_runner).
+if [ -n "${CI-}" ]; then
+    echo "AMUX_TEST_RUNNER=1" >> "$NEXTEST_ENV"
+fi
+
 if [ -n "${TESTNET_BINARIES-}" ] || [ "${TESTNET_MODE-}" = simulated ]; then
     exit 0
 fi

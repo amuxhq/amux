@@ -73,7 +73,7 @@ async fn desk(workspaces: bool) -> Desk {
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(
     windows,
-    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
+    ignore = "windows: git can't make the worktree under the verbatim data path amux hands it (`//?/C:/...`): could not create leading directories"
 )]
 async fn amux_new_with_worktree_starts_its_agent_in_a_new_worktree() {
     for workspaces in [true, false] {

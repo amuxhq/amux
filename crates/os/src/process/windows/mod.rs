@@ -76,6 +76,11 @@ pub(super) fn exec_or_spawn(mut cmd: std::process::Command) -> io::Result<Replac
     })
 }
 
+pub(super) fn console_window() -> bool {
+    // SAFETY: a plain query of this process's console.
+    !unsafe { windows_sys::Win32::System::Console::GetConsoleWindow() }.is_null()
+}
+
 pub(super) fn harden_start() {
     for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
         // SAFETY: reading our own standard handle and clearing a flag on

@@ -124,6 +124,7 @@ impl Install {
             std::iter::once(self.root.path().join("bin")).chain(std::env::split_paths(&path)),
         )
         .unwrap();
+        os::testing::require_test_runner("this test runs amux");
         let mut command = Command::new(source_tree::bin!("amux"));
         command
             .args(args)
@@ -537,7 +538,7 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(
     windows,
-    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
+    ignore = "windows: `amux profile rm office` fails: the file is being used by another process (os error 32)"
 )]
 async fn the_cli_verbs_work_against_a_started_daemon() {
     let gate = tempfile::tempdir().unwrap();
@@ -707,10 +708,6 @@ async fn uninstall_stops_agents_and_the_daemon_and_deletes_the_installation() {
 /// A root too deep for a Unix socket's address still has its front door
 /// there, and the CLI finds it, as it finds the profile's socket beside it.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
-)]
 async fn a_root_too_deep_for_a_socket_address_still_serves() {
     let mut install = Install::rooted_at(Vec::new(), &"deep".repeat(30));
     assert!(install.socket.as_os_str().len() > 108);
@@ -916,13 +913,10 @@ async fn switching_an_experiment_restarts_the_daemon_in_place_once() {
 /// hand, reads as the default it runs already, and a key it does not read is
 /// nothing, so neither restarts; a new delay set with `amux config` is one
 /// restart, and the next serving line runs it.
-// Under Buck on Windows it passes, then the runner reports LEAK: "ended
-// while a process it started still held its output", S1's cause.
+// On Windows, which has no exec, the restarted daemon is a new process the
+// test doesn't hold, and it outlives the test: Buck's runner ends it with
+// the test's job, and a cargo run leaves it running.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
-)]
 async fn a_running_experiments_setting_restarts_the_daemon_once() {
     let mut install = Install::new(Vec::new());
     let mut text = std::fs::read_to_string(&install.config).unwrap();

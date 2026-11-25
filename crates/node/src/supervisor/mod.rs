@@ -474,19 +474,21 @@ impl Driver {
     fn execute(&mut self, out: Vec<Output>) -> Result<Option<Done>, SuperviseError> {
         for output in out {
             match output {
-                Output::Spawn { daemon } => match Child::spawn(&self.binary, &self.args) {
-                    Ok(spawned) => {
-                        tracing::info!(pid = spawned.pid, "started the daemon");
-                        self.daemons.insert(daemon, spawned);
+                Output::Spawn { daemon } => {
+                    match Child::spawn(&self.binary, &self.args, &self.data_dir) {
+                        Ok(spawned) => {
+                            tracing::info!(pid = spawned.pid, "started the daemon");
+                            self.daemons.insert(daemon, spawned);
+                        }
+                        Err(error) => {
+                            tracing::warn!(%error, "could not start the daemon");
+                            self.pending.push_back(core::Input::StartFailed {
+                                daemon,
+                                why: error.to_string(),
+                            });
+                        }
                     }
-                    Err(error) => {
-                        tracing::warn!(%error, "could not start the daemon");
-                        self.pending.push_back(core::Input::StartFailed {
-                            daemon,
-                            why: error.to_string(),
-                        });
-                    }
-                },
+                }
                 Output::Go { daemon } => {
                     let Some(child) = self.daemons.get_mut(&daemon) else {
                         continue;

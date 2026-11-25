@@ -70,17 +70,27 @@ pub struct Child {
 }
 
 impl Child {
-    /// Starts `<binary> <args> daemon` with the pipe.
-    pub fn spawn(binary: &Path, args: &[std::ffi::OsString]) -> io::Result<Self> {
+    /// Starts `<binary> <args> daemon` with the pipe, in the background in
+    /// `root`.
+    pub fn spawn(binary: &Path, args: &[std::ffi::OsString], root: &Path) -> io::Result<Self> {
         let (child_reads, go) = io::pipe()?;
         let (prepared_end, child_writes) = io::pipe()?;
         let (child_reads, child_writes) = (file(child_reads), file(child_writes));
         let (go, prepared_end) = (file(go), file(prepared_end));
         let mut command = Command::new(binary);
-        command.args(args).arg("daemon").stdin(Stdio::null()).env(
-            PIPE_ENV,
-            format!("{},{}", raw(&child_reads), raw(&child_writes)),
-        );
+        os::process::background(&mut command, os::process::Detach::Session, root);
+        command
+            .args(args)
+            .arg("daemon")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            // The supervisor's own standard error, its log: where the
+            // daemon's early errors go.
+            .stderr(Stdio::inherit())
+            .env(
+                PIPE_ENV,
+                format!("{},{}", raw(&child_reads), raw(&child_writes)),
+            );
         let child = platform::spawn(&mut command, &child_reads, &child_writes)?;
         drop((child_reads, child_writes));
         let pid = child.id();
@@ -276,8 +286,23 @@ pub fn spawn_supervisor(
         .arg("--inherit")
         .arg(inherited.to_arg())
         .stdin(Stdio::null())
+        // Kept, as an exec keeps them.
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
         .spawn()
         .map(drop)
+}
+
+/// Starts the daemon [`os::process::spawn_background`]; a job that keeps it
+/// (Windows) is logged.
+fn start(command: &mut Command) -> io::Result<std::process::Child> {
+    let spawned = os::process::spawn_background(command)?;
+    if spawned.breakaway_refused {
+        tracing::warn!(
+            "the job the supervisor runs in forbids leaving it: the daemon ends when that job does"
+        );
+    }
+    Ok(spawned.child)
 }
 
 #[cfg(unix)]
@@ -318,7 +343,7 @@ mod platform {
                 Ok(())
             });
         }
-        command.spawn()
+        super::start(command)
     }
 
     fn set_cloexec(fd: RawFd, on: bool) -> io::Result<()> {
@@ -415,7 +440,7 @@ mod platform {
         // the child's two ends, spawn, and the caller drops them.
         inheritable(child_reads, true)?;
         inheritable(child_writes, true)?;
-        command.spawn()
+        super::start(command)
     }
 
     pub fn inheritable(file: &File, on: bool) -> io::Result<()> {

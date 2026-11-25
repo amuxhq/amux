@@ -1,7 +1,7 @@
 //! `amux supervise`: the daemon's parent under a desktop install.
 
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, bail};
@@ -55,6 +55,8 @@ pub fn run(
         .map(|state| Inherited::parse(state).context("--inherit is not a handed-over state"))
         .transpose()?;
     crate::server::log_to(&config.root.join(SUPERVISOR_LOG))?;
+    // As the daemon says it: a background supervisor shows no window.
+    tracing::info!(window = os::process::console_window(), "console");
     register_browsers(config_path);
     let started = policy(config)?;
     if started.source.is_none() {
@@ -77,7 +79,8 @@ pub fn run(
     let mut args: Vec<OsString> = Vec::new();
     if let Some(path) = config_path {
         args.push("--config".into());
-        args.push(PathBuf::from(path).into_os_string());
+        // Absolute: the daemon runs in the root, not here.
+        args.push(std::path::absolute(path)?.into_os_string());
     }
     let options = SuperviseOptions {
         binary: std::env::current_exe().context("finding the amux binary")?,

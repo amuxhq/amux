@@ -106,6 +106,7 @@ impl Fixture {
     /// agent is ([`os::process::Detach::Group`]: a process group of its
     /// own on Unix), away from the test's terminal.
     fn spawn(&self, n: u32) -> Child {
+        os::testing::require_test_runner("this test runs amux internal agent");
         let log = std::fs::File::create(self.root.path().join(format!("agent.{n}.log"))).unwrap();
         let mut command = Command::new(source_tree::bin!("amux"));
         command.args(["internal", "agent"]).arg(&self.dir);

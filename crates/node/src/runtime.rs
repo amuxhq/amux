@@ -2326,15 +2326,17 @@ async fn dial(dir: &Path) -> Option<Connected> {
     }
 }
 
-/// Starts `amux agent <dir>` detached from the daemon: its own process
-/// group, so the daemon's terminal and death do not reach it, and no pipe
-/// to the daemon, which would break when the daemon goes.
+/// Starts `amux agent <dir>` detached from the daemon, in its folder: its
+/// own process group (on Windows its own console, with no window), so the
+/// daemon's terminal and death do not reach it, and no pipe to the daemon,
+/// which would break when the daemon goes.
 fn spawn_agent(install_path: &Path, dir: &Path) -> io::Result<tokio::process::Child> {
     let log = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(dir.join(AGENT_LOG))?;
     let mut command = tokio::process::Command::new(install_path);
+    os::process::background(&mut command, os::process::Detach::Group, dir);
     command
         .args(["internal", "agent"])
         .arg(dir)
@@ -2342,15 +2344,14 @@ fn spawn_agent(install_path: &Path, dir: &Path) -> io::Result<tokio::process::Ch
         .stdout(std::process::Stdio::null())
         .stderr(log)
         .kill_on_drop(false);
-    #[cfg(unix)]
-    command.process_group(0);
-    #[cfg(windows)]
-    {
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        command.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS);
+    let spawned = os::process::spawn_background(&mut command)?;
+    if spawned.breakaway_refused {
+        tracing::warn!(
+            dir = %dir.display(),
+            "the job the daemon runs in forbids leaving it: the agent ends when that job does"
+        );
     }
-    command.spawn()
+    Ok(spawned.child)
 }
 
 pub use agent_dir::AGENT_LOG;

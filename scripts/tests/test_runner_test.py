@@ -32,6 +32,8 @@ FAKE = textwrap.dedent(
         sys.exit(0)
     if name == "fails":
         sys.exit(1)
+    if name == "in-the-runner":
+        sys.exit(0 if os.environ.get("AMUX_TEST_RUNNER") == "1" else 1)
     if name == "orphan":
         # A child that starts a grandchild and exits at once, so the
         # grandchild's parent is gone: an orphan, which no walk of the
@@ -130,6 +132,10 @@ class TestRunnerTest(unittest.TestCase):
     def test_a_test_passes_or_fails_by_its_exit_status(self):
         self.assertEqual(self.run_test("passes")[0], "pass")
         self.assertEqual(self.run_test("fails")[0], "fail")
+
+    def test_a_test_is_told_it_runs_in_the_runner(self):
+        # What os::testing::require_test_runner looks for.
+        self.assertEqual(self.run_test("in-the-runner")[0], "pass")
 
     @unittest.skipUnless(WINDOWS, "the job is how Windows contains a test")
     def test_an_orphan_a_test_leaves_dies_when_the_test_ends(self):

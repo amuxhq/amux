@@ -432,6 +432,7 @@ impl Net {
     /// in order, each returning once its process has said hello. When this
     /// returns the net is ready.
     pub async fn start_with(topology: Topology, options: NetOptions) -> Result<Self, NetError> {
+        os::testing::require_test_runner("starting a net");
         topology.check()?;
         crate::link_log::install();
         crate::ssh::install();

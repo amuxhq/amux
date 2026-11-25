@@ -60,10 +60,6 @@ async fn assert_refused(desk: &Desk) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
-)]
 async fn a_second_amux_pair_is_refused_while_one_holds_pairing_mode_open() {
     let desk = desk();
     desk.run(&["server", "start"]).await;

@@ -48,6 +48,10 @@ pub(super) fn exec_or_spawn(mut cmd: std::process::Command) -> io::Result<Replac
     Err(cmd.exec())
 }
 
+pub(super) fn console_window() -> bool {
+    false
+}
+
 pub(super) fn harden_start() {
     for fd in [libc::STDIN_FILENO, libc::STDOUT_FILENO, libc::STDERR_FILENO] {
         // SAFETY: a flag query, then, for a closed standard descriptor,

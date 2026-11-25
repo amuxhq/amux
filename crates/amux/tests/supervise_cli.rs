@@ -141,10 +141,71 @@ async fn until(what: &str, done: impl Fn() -> bool) {
     .unwrap();
 }
 
+/// `amux server start` with its output piped ends when `start` does: the
+/// supervisor and daemon it leaves running hold no end of the caller's
+/// pipes, so a caller reading to the end (a desktop app's installer,
+/// `amux server start | cat`) isn't kept waiting on them. On Windows, std
+/// starts every child inheriting every inheritable handle, the explicit
+/// `Stdio::null` notwithstanding, so this holds only because `main` clears
+/// inheritance on its own standard handles first.
+#[test]
+fn a_piped_server_start_ends_when_start_does() {
+    use std::io::Read as _;
+
+    let install = Install::new(true, "start_at_login = false");
+    let temp = install.root.path().join("temp");
+    std::fs::create_dir_all(&temp).unwrap();
+    let mut start = install
+        .command(&["server", "start"])
+        .env("TEMP", &temp)
+        .env("TMP", &temp)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let to_the_end = |mut pipe: Box<dyn std::io::Read + Send>| {
+        let (sent, read) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut text = String::new();
+            let _ = pipe.read_to_string(&mut text);
+            let _ = sent.send(text);
+        });
+        read
+    };
+    let out = to_the_end(Box::new(start.stdout.take().unwrap()));
+    let err = to_the_end(Box::new(start.stderr.take().unwrap()));
+    let bound = std::time::Instant::now() + Duration::from_secs(10);
+    let within = || bound.saturating_duration_since(std::time::Instant::now());
+    let said = out.recv_timeout(within());
+    let complained = err.recv_timeout(within());
+    let status = start.wait().unwrap();
+    // What it left running shows no window either: each says so as it
+    // starts, the daemon too, which on Windows a console-less supervisor
+    // would otherwise start with a console of its own, and a visible one.
+    let logs: Vec<(&str, String)> = ["supervisor.log", "daemon.log"]
+        .into_iter()
+        .map(|log| {
+            let text = std::fs::read_to_string(install.data.join(log)).unwrap_or_default();
+            (log, text)
+        })
+        .collect();
+    // Stopped before any assertion, so a failure leaves nothing running;
+    // the pipes' readers end once what held them is gone.
+    let stopped = install.command(&["server", "stop"]).output().unwrap();
+    let said = said.expect("stdout reached its end within 10 s of `server start`");
+    let complained = complained.expect("stderr reached its end within 10 s of `server start`");
+    assert!(status.success(), "{status}: {said}{complained}");
+    assert!(said.contains("Started amux."), "{said}{complained}");
+    assert!(stopped.status.success(), "{}", stdout(&stopped));
+    for (log, text) in logs {
+        assert!(text.contains("console window=false"), "{log}:\n{text}");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(
     windows,
-    ignore = "windows: `amux server start` run to its end never returns: the test hangs until killed at 200 s"
+    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
 )]
 async fn stop_goes_to_the_supervisor_first_where_the_install_has_one() {
     let install = Install::new(true, "");
@@ -218,10 +279,6 @@ async fn stop_reaches_an_amux_started_with_its_stop_signals_blocked() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: `amux server start` run to its end never returns: the test hangs until killed at 200 s"
-)]
 async fn stop_goes_to_the_daemon_where_the_install_has_no_supervisor() {
     let install = Install::new(false, "");
     install.amux(&["server", "start"]);
@@ -243,7 +300,7 @@ async fn stop_goes_to_the_daemon_where_the_install_has_no_supervisor() {
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(
     windows,
-    ignore = "windows: `amux ls`, which starts the supervisor, never returns: the test hangs until killed at 200 s"
+    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
 )]
 async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
     let with = Install::new(true, "");
@@ -293,7 +350,7 @@ async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
 #[cfg_attr(target_os = "linux", ignore = "only macOS holds a sleep assertion")]
 #[cfg_attr(
     windows,
-    ignore = "windows: `amux server start` run to its end never returns: the test hangs until killed at 200 s"
+    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
 )]
 #[tokio::test(flavor = "multi_thread")]
 async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
@@ -464,7 +521,7 @@ async fn update_says_updates_are_deploys_without_a_supervisor() {
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(
     windows,
-    ignore = "windows: `amux server start` run to its end never returns: the test hangs until killed at 200 s"
+    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
 )]
 async fn update_retry_installs_the_channel_build_now_even_one_rolled_back_here() {
     let builds = tempfile::tempdir().unwrap();
@@ -517,7 +574,7 @@ async fn update_retry_installs_the_channel_build_now_even_one_rolled_back_here()
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(
     windows,
-    ignore = "windows: `amux server start` run to its end never returns: the test hangs until killed at 200 s"
+    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
 )]
 async fn update_reports_a_build_that_never_started_and_then_leaves_it_alone() {
     let builds = tempfile::tempdir().unwrap();
@@ -575,7 +632,7 @@ async fn update_reports_a_build_that_never_started_and_then_leaves_it_alone() {
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(
     windows,
-    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
+    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
 )]
 async fn under_a_supervisor_an_experiment_switch_restarts_the_daemon_through_it() {
     use support::desk::{Desk, LONG_GRACE_SECS};

@@ -25,8 +25,10 @@ and it holds them to what cargo-nextest holds them to under Cargo
   then starts amux's agents inside the job, as under test they should).
 - Ignored tests are not run.
 
-Each test also runs with AMUX_SOURCE_ROOT naming the checkout the test runs
-in, where the source-tree crate finds the crate's files whatever working
+Each test also runs with AMUX_TEST_RUNNER=1, which tells test support that
+starts amux processes it runs here (on Windows it refuses to run without
+it: run by hand, those processes open windows on the desktop), with
+AMUX_SOURCE_ROOT naming the checkout the test runs in, where the source-tree crate finds the crate's files whatever working
 directory a process the test starts is given, and with a HOME and TMPDIR of
 its own, made empty for it and removed after. No test then reads the
 machine's real home, which would be an input Buck can't see, and both are
@@ -64,6 +66,8 @@ import threading
 import time
 
 LEAK_TIMEOUT = 1.0
+# os::testing::TEST_RUNNER_ENV: set for every test this runs.
+TEST_RUNNER_ENV = "AMUX_TEST_RUNNER"
 WINDOWS = sys.platform == "win32"
 # How long an ended job's processes have to be gone.
 JOB_END_PATIENCE = 10.0
@@ -324,6 +328,7 @@ def run_one(
     start = time.monotonic()
     scratch = None
     env = dict(os.environ)
+    env[TEST_RUNNER_ENV] = "1"
     if not local:
         # Resolved: macOS's /tmp is a link to /private/tmp, and a path a test
         # compares against a canonical one must be canonical already.

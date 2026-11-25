@@ -19,14 +19,12 @@ pub(crate) fn run_role(name: &str, _rest: &[&str]) {
     match name {
         "jailer" => jailer(),
         "console" => {
-            use windows_sys::Win32::System::Console::{GetConsoleProcessList, GetConsoleWindow};
-            // SAFETY: plain queries of this process's console.
-            let (window, attached) = unsafe {
+            use windows_sys::Win32::System::Console::GetConsoleProcessList;
+            let window = crate::process::console_window();
+            // SAFETY: a plain query of this process's console.
+            let attached = unsafe {
                 let mut list = [0u32; 64];
-                (
-                    !GetConsoleWindow().is_null(),
-                    GetConsoleProcessList(list.as_mut_ptr(), list.len() as u32),
-                )
+                GetConsoleProcessList(list.as_mut_ptr(), list.len() as u32)
             };
             say(format!("window {window} attached {attached}"));
         }

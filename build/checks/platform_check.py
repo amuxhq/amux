@@ -285,8 +285,9 @@ def item_end(code: str, at: int) -> int:
 def member_end(code: str, at: int) -> int:
     """Where the field, variant, parameter or arm starting at `at` ends: at
     its comma outside brackets, the bracket closing the list, or the brace
-    closing a block that nothing continues (a match arm `=> { .. }` may
-    leave out its comma)."""
+    closing a block that nothing continues (a match arm `=> { .. }` or
+    `=> if .. { .. } else { .. }` may leave out its comma; `.`, `?`, `as`
+    and `else` continue it)."""
     depth = 0
     for i in range(at, len(code)):
         c = code[i]
@@ -297,10 +298,10 @@ def member_end(code: str, at: int) -> int:
             if depth < 0:
                 return i
             if c == "}" and depth == 0:
-                after = code[i + 1 :].lstrip()
+                after = code[i + 1 : i + 200].lstrip()
                 if after.startswith(","):
-                    return len(code) - len(after) + 1
-                if not after.startswith((".", "?")) and not re.match(r"as\b", after):
+                    return code.index(",", i + 1) + 1
+                if not after.startswith((".", "?")) and not re.match(r"(?:as|else)\b", after):
                     return i + 1
         elif c == "," and depth == 0:
             return i + 1

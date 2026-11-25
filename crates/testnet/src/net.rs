@@ -3486,13 +3486,19 @@ impl Net {
     /// one contiguous block ending at the origin's newest row, at the
     /// origin's revisions.
     pub async fn assert_block_invariant(&self, host: &str, agent: &str) -> Result<(), NetError> {
-        self.in_process(host, "the block invariant reads both stores and")?;
-        self.in_process(
-            &self.agent(agent)?.host,
-            "the block invariant reads both stores and",
-        )?;
         let agent = self.agent(agent)?.clone();
-        let key = agent.key();
+        self.block_invariant_at(host, &agent.host, &agent.key())
+            .await
+    }
+
+    async fn block_invariant_at(
+        &self,
+        host: &str,
+        origin: &str,
+        key: &AgentKey,
+    ) -> Result<(), NetError> {
+        self.in_process(host, "the block invariant reads both stores and")?;
+        self.in_process(origin, "the block invariant reads both stores and")?;
         let block = |host: String| {
             let key = key.clone();
             async move {
@@ -3506,7 +3512,7 @@ impl Net {
             }
         };
         let replica = block(host.to_owned()).await?;
-        let origin = block(agent.host.clone()).await?;
+        let origin = block(origin.to_owned()).await?;
         invariant::check(&replica, &origin)?;
         Ok(())
     }
@@ -3779,11 +3785,38 @@ impl Net {
     /// on one host's writes.
     pub async fn current(&self, host: &str, agent: &str) -> Result<(), NetError> {
         let at = self.agent(agent)?.clone();
-        let key = at.key();
+        self.current_at(host, &at.host, at.key(), agent).await
+    }
+
+    /// [`Net::current`] for an agent the net did not declare, as a fleet
+    /// lists it: a provider's subagent, which its parent's provider
+    /// starts.
+    pub async fn current_listed(&self, host: &str, agent: &wire::Agent) -> Result<(), NetError> {
+        let origin = self.host_of(&agent.host_id)?;
+        let key = AgentKey::new(agent.host_id.clone(), agent.agent_id.clone());
+        self.current_at(host, &origin, key, &agent.name).await
+    }
+
+    /// The name of the host whose id is `host_id`.
+    fn host_of(&self, host_id: &[u8]) -> Result<String, NetError> {
+        self.hosts
+            .values()
+            .find(|host| host.info.host_id.as_bytes() == host_id)
+            .map(|host| host.info.name.clone())
+            .ok_or_else(|| NetError::NoHost(hex(host_id)))
+    }
+
+    async fn current_at(
+        &self,
+        host: &str,
+        origin: &str,
+        key: AgentKey,
+        agent: &str,
+    ) -> Result<(), NetError> {
         let what = format!("{agent}'s replica at {host} to be current");
         observe::until(&what, || async {
             let newest = {
-                let runtime = self.runtime(&at.host).map_err(|error| error.to_string())?;
+                let runtime = self.runtime(origin).map_err(|error| error.to_string())?;
                 let key = key.clone();
                 runtime
                     .read_store(move |store| probes::origin_newest(store, &key))
@@ -3798,7 +3831,7 @@ impl Net {
                     .await
                     .map_err(|error| error.to_string())??;
             }
-            self.assert_block_invariant(host, agent)
+            self.block_invariant_at(host, origin, &key)
                 .await
                 .map_err(|error| error.to_string())
         })

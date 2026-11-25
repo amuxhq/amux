@@ -398,7 +398,7 @@ The harness owns resources, verbs and observations, never scenarios. Scenarios l
 | `turn_ended(name, k)` | Wait until the agent's `k`th turn has ended on its own host; returns the order of the row that ended it. |
 | `input_settled(name, input_id)` | Wait until the input the agent accepted under that id has its reflecting row; returns its order. A rejected input never settles: rejection is the answer `send` and `input` return. |
 | `fence(host, name, order)` | Wait until the host holds the agent's row at that order, on the origin or a replica. After it, what the host holds through that order is what its store reports. |
-| `current(host, name)` | Wait until the host holds what the origin holds: caught up through the origin's newest revision, with the block intact. |
+| `current(host, name)` | Wait until the host holds what the origin holds: caught up through the origin's newest revision, with the block intact. `current_listed(host, agent)` does the same for an agent the net did not declare, such as a provider's subagent, as the fleet lists it. |
 | `send(name, text)`, `input(...)` | Send a prompt, or any input (an answer, a withdrawal, an interrupt), through the agent's own host. |
 | `stop(name)` | Stop the agent on its own host, as a person does; it can be resumed. |
 | `delete(name)` | Delete an agent on its own host, as a person does. Its children follow on their own hosts by the family rule, after the call returns. |

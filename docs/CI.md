@@ -551,8 +551,9 @@ something it reads changed since it last passed, in this tree or any other on
 the machine. The few checks that stay scripts, because they read the whole
 workspace or query the build graph itself (`fmt-check`, `dependency-policy`,
 `shear`, the tokio half of `cores-check`, `tests-check`, `parity`,
-`shipping-check` and `ci-jobs-check`), Clippy, and the build of every Windows
-binary (`check-windows`), each a Buck2 build of its own, run at the same time
+`shipping-check` and `ci-jobs-check`), Clippy, the build of every Windows
+binary (`check-windows`) and, on a Mac, the compile of the Apple apps'
+Swift (`apple-build`), each a Buck2 build of its own, run at the same time
 as the tests ([`build/checks/premerge.py`](../build/checks/premerge.py)); each
 one's output is kept and printed at the end if it fails. With nothing
 changed, premerge takes a few seconds; a change to a leaf crate or a document
@@ -560,11 +561,22 @@ reruns a handful of tests; a change to a crate most of the workspace depends
 on, such as `wire`, reruns most of the suite, about a quarter of an hour on a
 laptop.
 
-It leaves out the Apple apps: any change to a core crate rebuilds the
-bridge for three platforms and reruns the simulator suites, which is not a
-load every premerge on a laptop should carry. Whoever changes Apple code
-runs `just ios verify` and `just mac test`, on the same cache, and CI's
-iPhone app and Mac app jobs run them after every push. It leaves out the
+On a Mac it compiles every Swift module of the Apple apps, and links and
+runs none of them: the iPhone app's, the Mac app's, every package's and
+every test bundle's, in the configurations CI's two Apple jobs build, with
+no simulator booted. CI runs those jobs only for a change it judges theirs,
+and a change to the Rust, the bridge or the protocol beneath them breaks
+their Swift without touching a file of theirs; the build graph, not the
+paths, is what catches that. The Swift reads only the bridge's generated
+header and values, never its compiled library, so a change to `wire` costs
+about half a minute here, where building the bridge for both apps and
+linking them took three minutes on a quiet Mac and over ten on a busy one.
+Linking, bundling, asset catalogues, strings and Info.plist are left to
+CI's Apple jobs: they break from changes under `apps/apple`, which those
+jobs already run for. The Apple graphs configure only on a Mac, so on the
+landing host it is skipped and says so. The apps' tests, which need the
+simulator, stay with `just ios verify` and `just mac test`, on the same
+cache, and CI's iPhone app and Mac app jobs. It leaves out the
 protocol models, the C ABI's pointer checks, the sanitizers and the
 release build too, which run in the nightly ([Nightlies](#nightlies)), and
 Windows' tests, which run only in CI. It does build every Windows binary, on
@@ -596,6 +608,7 @@ The checks, by the recipe that runs each alone:
 | `shipping-check` | No crate that exists for tests and no test feature is in the desktop binary's or the browser extension's graph as they ship ([`build/checks/shipping.py`](../build/checks/shipping.py)) |
 | `parity` | Every crate's `BUCK` file and `Cargo.toml` agree on its targets and dependencies ([`build/checks/parity.py`](../build/checks/parity.py)) |
 | `check-windows` | Every workspace library, binary and test compiles and links for Windows, on a Linux worker with the Windows toolchain (`--materializations none`: nothing comes back); skipped, and named, with no Linux worker in reach |
+| `apple-build` | Every Swift module of the iPhone app, the Mac app, their packages and their test bundles compiles, in the configurations CI's Apple jobs build, with nothing linked or run (`--materializations none`: nothing comes back); linking, bundling, assets, strings and Info.plist stay with CI's Apple jobs; on a Mac only, skipped and named elsewhere |
 | `ci-jobs-check` | What the Apple apps' build graphs read that no Linux target compiles is inside their territory in [`build/ci-jobs.toml`](../build/ci-jobs.toml) ([Which jobs a change runs](#which-jobs-a-change-runs)); on a Mac only |
 | `test` | Every workspace test, through Buck2: only the tests whose inputs changed since a passing run, in any tree on the machine, run again |
 

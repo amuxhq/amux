@@ -79,6 +79,33 @@ windows_platform := env("AMUX_WINDOWS_PLATFORM", if os() == "windows" { `scripts
 check-windows:
     {{bounded}} 3600 {{buck2}} build //crates/... --target-platforms root//build/platforms:{{windows_platform}}-cli-testing-dev --materializations none
 
+# Compile every Swift module of the iPhone app and the Mac app, their
+# packages' and their test bundles', in the configurations CI's two Apple
+# jobs build: nothing is linked or run, so no simulator boots, and nothing
+# comes back but the result. A change to the Rust, the bridge's header, its
+# generated Swift or the protocol that breaks the Swift fails here, on a
+# Mac, before it lands. The Swift reads only the bridge's generated header
+# and values, never its compiled library, so a deep Rust change costs a
+# small rebuild of the tools that write them, not the bridge. Linking,
+# bundling, assets, strings and Info.plist are left to CI's Apple jobs:
+# they break from changes under apps/apple, which those jobs already run
+# for. Off a Mac the Apple targets don't configure. `just premerge` runs it
+# on a Mac. Each build runs once more if the Mac's NativeLink only gave up
+# on a blob, as it does under a machine loaded past its cores
+# (scripts/rerun-on-cache-timeout.sh).
+apple-build:
+    #!/bin/sh
+    set -u
+    query() { {{buck2}} uquery "kind(_swift_library, attrregexfilter(default_target_platform, $1, //apps/apple/...))"; }
+    iphone=$(query ios-sim) && mac=$(query macos) || exit 1
+    build() { scripts/rerun-on-cache-timeout.sh "{{bounded}} 3600 {{buck2}} build --materializations none --target-platforms root//build/platforms:$1 $2"; }
+    build ios-sim-app-shipping-dev "$(echo $iphone)" & first=$!
+    build macos-app-shipping-dev "$(echo $mac)" & second=$!
+    status=0
+    wait $first || status=1
+    wait $second || status=1
+    exit $status
+
 # The workspace's tests for Windows, as CI's Windows job runs them after
 # `just check-windows` (docs/CI.md, "The Windows job"): only a Windows
 # worker runs them, which CI's Windows job has, and so does a Windows
@@ -436,10 +463,11 @@ premerge_android := "//apps/android/..."
 # any other), and beside them the checks that stay scripts, because they read
 # the whole workspace or query the build graph itself (build/checks/premerge.py
 # names them and says why), among them the build of every Windows binary on
-# a Linux worker (`check-windows`). A failing one fails the run and its
-# output is printed at the end. The Apple apps' builds and tests and the
-# tests on macOS and Windows stay with `just ios verify` and CI (docs/CI.md,
-# "`just premerge`").
+# a Linux worker (`check-windows`) and, on a Mac, the compile of every
+# Swift module of the Apple apps and their tests (`apple-build`). A failing
+# one fails the run and its output is printed at the end. Linking the Apple
+# apps, their tests and the tests on macOS and Windows stay with `just ios
+# verify` and CI (docs/CI.md, "`just premerge`").
 # Run the checks a change passes before it reaches main.
 premerge: no-update-flags
     JUST={{just_executable()}} scripts/py -B build/checks/premerge.py {{premerge_tests}} {{premerge_android}}

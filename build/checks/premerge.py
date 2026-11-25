@@ -58,6 +58,16 @@ SCRIPTS = [
 # reach it is skipped and says so, as the linux-only tests are.
 WINDOWS = "check-windows"
 
+# Every Swift module of the iPhone app and the Mac app, their packages and
+# their test bundles, compiled but not linked or run (`just apple-build`):
+# CI builds the apps only for a change it judges theirs (build/ci-jobs.toml),
+# and a change to the Rust or the protocol beneath them can break their
+# Swift without touching a file of theirs. A build of the Apple graphs,
+# through the Mac's own cache, so what nothing changed under is cache hits.
+# Those graphs configure only on a Mac, so anywhere else it is skipped and
+# says so.
+APPLE = "apple-build"
+
 
 def main(patterns: list[str]) -> int:
     scripts = list(SCRIPTS)
@@ -76,6 +86,10 @@ def main(patterns: list[str]) -> int:
         scripts.append(WINDOWS)
     else:
         print(f"premerge: {WINDOWS} skipped: no Linux worker is in reach to build Windows on", flush=True)
+    if sys.platform == "darwin":
+        scripts.append(APPLE)
+    else:
+        print(f"premerge: {APPLE} skipped: the Apple apps' Swift compiles only on a Mac", flush=True)
     started = time.monotonic()
     wall_start = time.time()
     # What the check targets read from outside the checkout is written now,

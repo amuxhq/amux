@@ -573,6 +573,18 @@ jobs:
         run: >-
           scripts/py scripts/ci_cache.py prune macos-${{ env.JOB_KEY }}-store-
           --except macos-${{ env.JOB_KEY }}-store-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      # The runner ends what a job leaves running one process at a time,
+      # waiting for each to go. In the iPhone job Buck2's daemon took 14 s
+      # to two minutes to go on that signal, against a second or two in the
+      # others. By now the logs and the store are kept, so nothing depends
+      # on how the daemon exits: it gets a short `buck2 kill` and then a
+      # hard kill, and the sampler goes too.
+      - name: Stop Buck2 and the sampler
+        if: always()
+        run: |
+          pkill -f scripts/ci-sample-system.sh || true
+          scripts/bounded 15 "$(scripts/py scripts/buck-tools.py path buck2)" kill || true
+          pkill -9 -x buck2 || true
 
   # The Mac app, its storybook and screens built, and its tests run on the
   # runner, the same way.

@@ -842,7 +842,10 @@ async fn a_process_host_pairs_for_real_through_gates_that_cut_it_and_survives_a_
     )
     .await
     .unwrap();
-    net.turn_ended("worker", 1).await.unwrap();
+    let ended = net.turn_ended("worker", 1).await.unwrap();
+    // The desk serves the session only once it holds the agent's row;
+    // asked before that row arrives, it answers that it has no such agent.
+    net.fence("desk", "worker", ended).await.unwrap();
     let mut replica = net.observe("desk", "worker", 50).await.unwrap();
     replica
         .observe_until(|events| says(events, "from a process"), PATIENCE)

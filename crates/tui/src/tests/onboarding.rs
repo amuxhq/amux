@@ -292,7 +292,6 @@ fn signing_in_offers_the_phone_just_paired_the_account_when_ticked() {
         [
             SetupEffect::OfferSignIn(b"phone".to_vec()),
             shown(SetupStep::Repositories),
-            SetupEffect::Suggest,
         ]
     );
     // Unticked, the phone is not offered the account.
@@ -382,14 +381,11 @@ fn the_shown_offer_is_counted_for_the_side_it_is_on() {
 }
 
 #[test]
-fn repositories_keep_the_ticked_folders_and_the_ones_typed_with_those_chosen_before() {
+fn repositories_pin_the_ticked_folders_and_the_ones_typed() {
     let mut scene = scenes::repositories();
     let drawn = screen(&mut scene, 110, 34);
     assert!(drawn.contains("[ ] "), "one is unticked: {drawn}");
     assert!(drawn.contains("+ Add a repository…"), "{drawn}");
-    let mut chosen = scenes::settings();
-    chosen.repositories = vec!["/srv/kept".into()];
-    scene.onboarding.settings_changed(chosen);
     for _ in 0..4 {
         press(&mut scene, KeyCode::Down);
     }
@@ -399,19 +395,17 @@ fn repositories_keep_the_ticked_folders_and_the_ones_typed_with_those_chosen_bef
     }
     press(&mut scene, KeyCode::Enter);
     let effects = press(&mut scene, KeyCode::Enter);
-    let SetupEffect::Confirm { settings, step } = &effects[0] else {
-        panic!("{effects:?}");
-    };
-    assert_eq!(*step, Some(SetupStep::Repositories));
     assert_eq!(
-        settings.repositories.as_ref().unwrap().paths,
-        [
-            "/srv/kept",
-            "/Users/jordan/src/amux",
-            "/Users/jordan/src/amuxcloud",
-            "/Users/jordan/notes",
-            "/srv/typed",
-        ]
+        effects,
+        [SetupEffect::Pin {
+            paths: vec![
+                "/Users/jordan/src/amux".into(),
+                "/Users/jordan/src/amuxcloud".into(),
+                "/Users/jordan/notes".into(),
+                "/srv/typed".into(),
+            ],
+            step: SetupStep::Repositories,
+        }]
     );
     // A folder the daemon refuses keeps the screen, saying why.
     scene
@@ -421,6 +415,61 @@ fn repositories_keep_the_ticked_folders_and_the_ones_typed_with_those_chosen_bef
     let fleet = scene.fleet.clone();
     let effects = scene.onboarding.confirmed(SetupStep::Repositories, &fleet);
     assert_eq!(effects, [shown(SetupStep::Improve)]);
+}
+
+fn folder(path: &str, kind: wire::FolderKind) -> wire::Folder {
+    wire::Folder {
+        path: path.to_owned(),
+        name: path.rsplit('/').next().unwrap_or(path).to_owned(),
+        kind: kind as i32,
+        ..Default::default()
+    }
+}
+
+/// A folder already pinned is not asked about again, nor pinned twice.
+#[test]
+fn a_pinned_folder_is_not_asked_about_again() {
+    let mut scene = scenes::repositories_offered(vec![
+        folder("/srv/kept", wire::FolderKind::Pinned),
+        folder("/srv/recent", wire::FolderKind::Recent),
+        folder("/srv/ran", wire::FolderKind::History),
+    ]);
+    let drawn = screen(&mut scene, 110, 34);
+    assert!(drawn.contains("/srv/ran"), "{drawn}");
+    assert!(
+        !drawn.contains("/srv/kept") && !drawn.contains("/srv/recent"),
+        "{drawn}"
+    );
+    let effects = press(&mut scene, KeyCode::Enter);
+    assert_eq!(
+        effects,
+        [SetupEffect::Pin {
+            paths: vec!["/srv/ran".into()],
+            step: SetupStep::Repositories,
+        }]
+    );
+}
+
+/// Folders the desk finds after the step opened join it, ticked, and a
+/// folder already listed keeps the person's tick: a first run's daemon
+/// reads where Claude Code and Codex ran only once it has started.
+#[test]
+fn folders_found_after_the_step_opened_join_it() {
+    let mut scene =
+        scenes::repositories_offered(vec![folder("/srv/first", wire::FolderKind::History)]);
+    // Unticked by the person.
+    press(&mut scene, KeyCode::Char(' '));
+    scenes::desk_offering(
+        &mut scene.fleet,
+        vec![
+            folder("/srv/first", wire::FolderKind::History),
+            folder("/srv/later", wire::FolderKind::History),
+        ],
+    );
+    scene.onboarding.fleet_changed(&scene.fleet);
+    let drawn = screen(&mut scene, 110, 34);
+    assert!(drawn.contains("[ ] /srv/first"), "{drawn}");
+    assert!(drawn.contains("[x] /srv/later"), "{drawn}");
 }
 
 /// The step asks only about reports; usage counts are said once, under it,
@@ -489,10 +538,7 @@ fn a_step_done_elsewhere_moves_the_screen_on() {
     let mut steps = scenes::steps([StepState::Needed; 6]);
     steps.steps[2].state = StepState::Done as i32;
     let effects = scene.onboarding.steps_changed(steps, &fleet);
-    assert_eq!(
-        effects,
-        [shown(SetupStep::Repositories), SetupEffect::Suggest]
-    );
+    assert_eq!(effects, [shown(SetupStep::Repositories)]);
 }
 
 #[test]
@@ -629,12 +675,10 @@ fn every_setting_changes_at_once() {
     page.key(key(KeyCode::Down));
     assert_eq!(
         page.key(key(KeyCode::Char('x'))),
-        [update(wire::UpdateSettingsRequest {
-            repositories: Some(wire::RepositoryList {
-                paths: vec!["/Users/jordan/src/amuxcloud".into()],
-            }),
-            ..Default::default()
-        })]
+        [SettingsEffect::Pin {
+            path: "/Users/jordan/src/amux".into(),
+            pinned: false,
+        }]
     );
     // A folder added to the list.
     page.key(key(KeyCode::Down));
@@ -645,16 +689,10 @@ fn every_setting_changes_at_once() {
     }
     assert_eq!(
         page.key(key(KeyCode::Enter)),
-        [update(wire::UpdateSettingsRequest {
-            repositories: Some(wire::RepositoryList {
-                paths: vec![
-                    "/Users/jordan/src/amux".into(),
-                    "/Users/jordan/src/amuxcloud".into(),
-                    "/srv/new".into(),
-                ],
-            }),
-            ..Default::default()
-        })]
+        [SettingsEffect::Pin {
+            path: "/srv/new".into(),
+            pinned: true,
+        }]
     );
     page.key(key(KeyCode::Down));
     assert_eq!(

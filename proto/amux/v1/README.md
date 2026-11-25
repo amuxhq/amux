@@ -5,7 +5,7 @@ committed under `crates/wire/src/generated/`; regenerate it with
 `just protobuf` after editing any file here (CI fails on stale output).
 
 The runtime uses gRPC services for application calls. Host-to-host links
-exchange length-prefixed `Message` values on their control stream and carry
+exchange length-prefixed `LinkMessage` values on their control stream and carry
 application channels on separate native streams.
 
 | File | Holds |
@@ -42,8 +42,10 @@ A `Kind` is an interpreter; which agent program it runs is a provider id, a
 plain string: `claude` (both Claude kinds), `codex`, or an ACP agent's
 (`antigravity`, `opencode`, `grok`, or one a person added in a host's
 config). Ids are strings rather than an enum because a person can add an
-agent no build knows. `ProviderOnHost`, `GetCatalogueRequest`, `Agent` and
-`AgentSpec` name a provider by its id. What a client offers for an agent it
+agent no build knows. `CreateAgentRequest`, `ProviderOnHost`,
+`GetCatalogueRequest`, `Agent` and `AgentSpec` name a provider by its id; a
+create names a kind only to pick terminal or headless Claude, and otherwise
+the host picks it from the provider. What a client offers for an agent it
 reads from `AgentCapabilities` and the host's `ProviderDescriptor`, never
 from the kind or the id, so an agent no client knows by name gets the same
 chat as the ones it does.
@@ -73,7 +75,7 @@ decoding as it meant:
 - New meaning goes in the per-kind body where it fits: bodies pass through a
   daemon byte for byte, and a new envelope field is lost at any older daemon.
 
-A host-to-host control message (`link.proto`'s `Message.body`) may be added
+A host-to-host control message (`link.proto`'s `LinkMessage.body`) may be added
 only if a peer that predates it can ignore it and lose nothing it needs: a
 receiver drops a control message it does not know once the handshake is
 done, so the link carries on.
@@ -96,10 +98,11 @@ since a client in any language builds them:
   gRPC encodes a binary header. A client never sends it: the node it is
   attached to replaces it.
 
-The services took their present shape in 0.11.0. Builds before it served an
-earlier `AgentService` and `SessionService` at the same paths, and do not
-work with later builds: hosts, clients and apps on either side of that
-release are updated together.
+`amux.v1` took its present shape in 0.11.0, and these promises start there.
+Builds before it spoke an earlier shape of the same package and do not work
+with later builds: hosts, clients and apps on either side of that release
+are updated together, and a later build does not read what a build before
+it left on disk.
 
 `just proto-compat`, which CI runs, lints these files with buf and checks them
 against the newest release from 0.11.0 on; until that release is tagged there

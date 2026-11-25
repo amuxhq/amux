@@ -191,6 +191,7 @@ async fn a_real_agent_runs_on_each_fake_and_its_stream_opens_with_a_snapshot() {
                 |events| {
                     events.iter().any(|event| match &event.of {
                         Some(session_event::Of::Snapshot(snapshot)) => snapshot
+                            .status()
                             .git
                             .as_ref()
                             .is_some_and(|git| git.branch.as_deref() == Some(branch.as_str())),

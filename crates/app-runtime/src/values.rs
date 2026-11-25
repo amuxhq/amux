@@ -523,12 +523,12 @@ impl From<&wire::ProviderOnHost> for HostProvider {
     fn from(offer: &wire::ProviderOnHost) -> Self {
         let descriptor = offer.descriptor.clone().unwrap_or_default();
         HostProvider {
-            provider: offer.provider_id.clone(),
+            provider: offer.provider.clone(),
             name: offer.name().to_owned(),
             sign_in_hint: descriptor.sign_in_hint,
             version: descriptor.version,
             signed_in: offer.signed_in(),
-            capabilities: offer.capabilities.unwrap_or_default().into(),
+            capabilities: offer.capabilities().cloned().unwrap_or_default().into(),
         }
     }
 }
@@ -897,8 +897,6 @@ pub struct MachineSettings {
     /// On power the machine stays awake while amux runs; on battery only
     /// while an agent works.
     pub keep_awake: bool,
-    /// The folders new-agent pickers offer first, as absolute paths.
-    pub repositories: Vec<String>,
     /// Usage counts are sent.
     pub telemetry: bool,
     /// A report is sent on its own when something goes wrong.
@@ -933,7 +931,6 @@ impl From<&wire::Settings> for MachineSettings {
             host_name: settings.host_name.clone(),
             start_at_login: settings.start_at_login,
             keep_awake: settings.keep_awake,
-            repositories: settings.repositories.clone(),
             telemetry: settings.telemetry,
             auto_reports: settings.auto_reports,
             experiments: settings
@@ -963,9 +960,6 @@ pub struct SettingsChange {
     pub start_at_login: Option<bool>,
     #[serde(default)]
     pub keep_awake: Option<bool>,
-    /// The whole new list.
-    #[serde(default)]
-    pub repositories: Option<Vec<String>>,
     #[serde(default)]
     pub telemetry: Option<bool>,
     #[serde(default)]
@@ -982,9 +976,6 @@ impl From<SettingsChange> for wire::UpdateSettingsRequest {
             host_name: change.host_name,
             start_at_login: change.start_at_login,
             keep_awake: change.keep_awake,
-            repositories: change
-                .repositories
-                .map(|paths| wire::RepositoryList { paths }),
             telemetry: change.telemetry,
             auto_reports: change.auto_reports,
             experiments: change
@@ -993,17 +984,6 @@ impl From<SettingsChange> for wire::UpdateSettingsRequest {
             ..wire::UpdateSettingsRequest::default()
         }
     }
-}
-
-/// A folder worth offering as a repository: where Claude Code or Codex ran
-/// lately.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct RepositorySuggestion {
-    pub path: String,
-    pub name: String,
-    /// Marked as [`Directory::repository`] is.
-    pub repository: Option<Repository>,
 }
 
 /// Where one step of setting up stands, as the daemon keeps it.

@@ -14,35 +14,6 @@ use serde::{Deserialize, Serialize};
 use ui_state::SessionState;
 use wire::Kind;
 
-/// Claude commands that open an interactive screen of Claude's own
-/// terminal, or change a setting this view offers directly: typed into a
-/// headless agent they do nothing useful.
-const TERMINAL_ONLY_COMMANDS: &[&str] = &[
-    "agents",
-    "auto-mode-setup",
-    "color",
-    "config",
-    "doctor",
-    "effort",
-    "exit",
-    "heapdump",
-    "hooks",
-    "ide",
-    "keybindings",
-    "login",
-    "logout",
-    "mcp",
-    "memory",
-    "model",
-    "permissions",
-    "plugin",
-    "resume",
-    "statusline",
-    "terminal-setup",
-    "theme",
-    "vim",
-];
-
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SettingsView {
@@ -241,14 +212,7 @@ impl ClientCommand {
 /// running model, or for any model while the running one is unknown), and
 /// rename always. Terminal Claude has none of the model or effort inputs, so
 /// there its picks are typed as Claude's own commands.
-fn clients_commands(
-    models: &[ModelChoice],
-    current: Option<&ModelChoice>,
-    kind: Kind,
-) -> Vec<ClientCommand> {
-    if kind == Kind::Unspecified {
-        return Vec::new();
-    }
+fn clients_commands(models: &[ModelChoice], current: Option<&ModelChoice>) -> Vec<ClientCommand> {
     let listed = || models.iter().filter(|model| !model.unlisted);
     let mut own = Vec::new();
     if listed().count() >= 2 {
@@ -368,7 +332,7 @@ pub fn slash(state: &SessionState, text: &str) -> Slash {
             };
             match setting_input(kind, &change) {
                 Some(input) => Slash::Set(input),
-                None => typed_setting(&change).map_or(Slash::Prompt, Slash::Typed),
+                None => typed_setting(state, &change).map_or(Slash::Prompt, Slash::Typed),
             }
         }
         // An agent that refuses a command it does not list (Codex) is
@@ -399,13 +363,20 @@ pub fn slash(state: &SessionState, text: &str) -> Slash {
     }
 }
 
-/// A model or effort pick as the agent's own command, for an agent that
-/// changes them only by typing that (terminal Claude); None for any other
-/// setting.
-pub fn typed_setting(change: &SettingChange) -> Option<String> {
-    match change {
-        SettingChange::Model(value) => Some(format!("/model {value}")),
-        SettingChange::Effort(value) => Some(format!("/effort {value}")),
+/// A pick as the agent's own command, typed as any prompt, for a setting
+/// its capabilities say changes only by typing that command (terminal
+/// Claude's model and effort); None for any other.
+pub fn typed_setting(state: &SessionState, change: &SettingChange) -> Option<String> {
+    let changeable = settings(state).changeable;
+    let (by, value) = match change {
+        SettingChange::Model(value) => (changeable.model, value),
+        SettingChange::Effort(value) => (changeable.effort, value),
+        SettingChange::Permission(value) => (changeable.permission, value),
+        SettingChange::Mode(value) => (changeable.mode, value),
+        SettingChange::CyclePermission => return None,
+    };
+    match by {
+        Changeable::ByTyping(command) => Some(format!("{command} {value}")),
         _ => None,
     }
 }
@@ -471,7 +442,6 @@ fn model_name(agent: &ui_state::AgentState) -> Option<String> {
 }
 
 pub fn settings(state: &SessionState) -> SettingsView {
-    let kind = state.kind();
     let agent = state.agent_state();
     let models = model_choices(&agent.models, agent.model.as_deref(), || {
         model_name(agent).unwrap_or_default()
@@ -491,9 +461,7 @@ pub fn settings(state: &SessionState) -> SettingsView {
         current_model.map(|model| model.value.as_str()),
     );
     let modes = mode_choices(agent.modes.iter(), agent.mode.as_deref());
-    let terminal_only =
-        |name: &str| kind == Kind::ClaudeSdk && TERMINAL_ONLY_COMMANDS.contains(&name);
-    let own = clients_commands(&models, current_model, kind);
+    let own = clients_commands(&models, current_model);
     let commands = own
         .iter()
         .map(|command| command.view())
@@ -501,7 +469,6 @@ pub fn settings(state: &SessionState) -> SettingsView {
             agent
                 .commands
                 .iter()
-                .filter(|command| !terminal_only(&command.name))
                 // The client's own command of a name wins over the agent's.
                 .filter(|command| !own.iter().any(|own| own.name() == command.name))
                 .map(|command| CommandView {
@@ -522,23 +489,21 @@ pub fn settings(state: &SessionState) -> SettingsView {
             anywhere: true,
         }))
         .collect();
-    let changeable = match kind {
-        // A provider subagent runs on its parent's settings and takes no
-        // input that would change them, nor a typed command.
-        _ if state.native() => Changeability::default(),
-        // Terminal Claude lists no models or efforts and takes no model,
-        // effort or permission input: it runs its own commands, typed as
-        // any prompt, and steps its permission with its own cycle key.
-        Kind::ClaudePty => Changeability {
-            model: Changeable::ByTyping("/model".to_owned()),
-            effort: Changeable::ByTyping("/effort".to_owned()),
-            permission: Changeable::Cycle,
-            mode: Changeable::NotOffered,
-        },
-        // Every other kind takes a pick of whatever its catalogue lists:
-        // headless Claude lists no modes, an ACP agent no permissions.
-        Kind::ClaudeSdk | Kind::Codex | Kind::Acp => picks(&models, &efforts, &permissions, &modes),
-        Kind::Unspecified => Changeability::default(),
+    // A provider subagent runs on its parent's settings and takes no
+    // input that would change them, nor a typed command. Otherwise the
+    // agent's capabilities say how each setting changes, and a pick is
+    // offered only where its list has something to pick.
+    let changeable = if state.native() {
+        Changeability::default()
+    } else {
+        let capabilities = state.capabilities();
+        let listed = picks(&models, &efforts, &permissions, &modes);
+        Changeability {
+            model: changeable(capabilities.model.as_ref(), listed.model),
+            effort: changeable(capabilities.effort.as_ref(), listed.effort),
+            permission: changeable(capabilities.permission.as_ref(), listed.permission),
+            mode: changeable(capabilities.mode.as_ref(), listed.mode),
+        }
     };
     SettingsView {
         models,
@@ -641,7 +606,7 @@ pub fn new_agent_settings(catalogue: &wire::Catalogue, chosen: &NewAgentChoices)
 /// The effort a new agent on `model` starts with when none is chosen: the
 /// host's, when the model takes it, else the model's own.
 fn starting_effort<'a>(
-    starting: &'a wire::NewAgentDefaults,
+    starting: &'a wire::AgentSettings,
     model: Option<&'a ModelChoice>,
 ) -> Option<&'a str> {
     let Some(model) = model else {
@@ -735,6 +700,23 @@ pub fn new_agent_pick(
     next
 }
 
+/// How a setting changes, as the agent's capabilities say: a pick where
+/// they say pick and the list offers one (`listed`), the agent's own step
+/// or typed command, else not at all.
+fn changeable(change: Option<&wire::SettingChange>, listed: Changeable) -> Changeable {
+    let Some(change) = change else {
+        return Changeable::NotOffered;
+    };
+    match change.control() {
+        wire::SettingControl::Pick => listed,
+        wire::SettingControl::Step => Changeable::Cycle,
+        wire::SettingControl::Command if !change.command.is_empty() => {
+            Changeable::ByTyping(change.command.clone())
+        }
+        wire::SettingControl::Command | wire::SettingControl::Unspecified => Changeable::NotOffered,
+    }
+}
+
 /// Which settings a pick changes, from the lists: a model whenever the
 /// catalogue offers any, an effort when the current model takes some, a
 /// permission when one is settable, and a mode when there are two to
@@ -823,6 +805,13 @@ pub fn setting_input(kind: Kind, change: &SettingChange) -> Option<wire::Input> 
                 effort: Some(effort.clone()),
             })),
         }),
+        (Kind::Acp, SettingChange::Permission(value)) if !value.is_empty() => {
+            KindInput::Acp(AcpInput {
+                of: Some(acp_input::Of::Permission(SetPermission {
+                    value: value.clone(),
+                })),
+            })
+        }
         (Kind::Acp, SettingChange::Mode(value)) if !value.is_empty() => KindInput::Acp(AcpInput {
             of: Some(acp_input::Of::Mode(SetMode {
                 value: value.clone(),

@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ui_state::{Fold, Held, ItemBody, Key, PhaseView, SessionState};
 use wire::{
-    Attachment, BlobRef, BoundaryKind, DecisionOutcome, EnvelopeKind, FileChangeKind, SendState,
-    ToolCall, ToolState, TurnOutcome, tool_input,
+    Attachment, BlobRef, BoundaryKind, ClaudeToolCall, DecisionOutcome, EnvelopeKind,
+    FileChangeKind, SendState, ToolState, TurnOutcome, claude_tool_input,
 };
 
 pub(crate) mod acp;
@@ -773,7 +773,7 @@ fn duration(started: i64, ended: Option<i64>) -> Option<i64> {
 
 /// When a Claude call started running: after any wait for the person's
 /// approval, where the provider says, else when its item was written.
-fn claude_started(held: &Held, tool: &ToolCall) -> i64 {
+fn claude_started(held: &Held, tool: &ClaudeToolCall) -> i64 {
     tool.started_at_ms.unwrap_or(held.item.at_ms)
 }
 
@@ -786,7 +786,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
     let plain = |kind| (kind, None, false);
     match &held.body {
         ItemBody::Claude(kind) => match kind {
-            Claude::Prompt(_) if wire::is_continued_input(&item.input_id) => plain(continued()),
+            Claude::Prompt(prompt) if prompt.continued => plain(continued()),
             Claude::Prompt(_) => plain(RowKind::Prompt {
                 text: text(),
                 steered: false,
@@ -814,7 +814,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             }),
             Claude::Turn(turn) => plain(turn_row(state, held, turn)),
             Claude::Status(_) => plain(RowKind::Hidden),
-            Claude::Boundary(b) => plain(boundary(b, false)),
+            Claude::Boundary(b) => plain(boundary(b)),
             Claude::AgentMessage(m) => plain(agent_message(held, m)),
             Claude::ApiError(e) => error(e),
             Claude::Slash(s) => plain(slash(held, s)),
@@ -827,7 +827,7 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
         ItemBody::Codex(kind) => match kind {
             Codex::CommandOutput(s) => plain(slash(held, s)),
             Codex::SafetyCheck(_) => plain(RowKind::Hidden),
-            Codex::Prompt(_) if wire::is_continued_input(&item.input_id) => plain(continued()),
+            Codex::Prompt(prompt) if prompt.continued => plain(continued()),
             Codex::Prompt(_) => plain(RowKind::Prompt {
                 text: text(),
                 steered: false,
@@ -853,7 +853,8 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             }
             Codex::Work(work) => codex_work(state, held, work),
             Codex::Turn(turn) => plain(turn_row(state, held, turn)),
-            Codex::Boundary(b) => plain(boundary(b, true)),
+            Codex::Boundary(b) => plain(boundary(b)),
+            Codex::Compaction(c) => plain(compaction(c)),
             Codex::AgentMessage(m) => plain(agent_message(held, m)),
             // Codex telling a client it will stop supporting something the
             // client sends: words for amux's developers, which the agent
@@ -1172,21 +1173,15 @@ fn error(e: &wire::ApiError) -> (RowKind, Option<Decision>, bool) {
 /// after which the agent remembers none of it, and a lost daemon. A start, a
 /// resume, a restart, a fork or an exit carries on the same conversation, and
 /// a rule across it for each said nothing the person acts on; how an exited
-/// agent ended is the composer's to say. Claude writes its compaction as a
-/// row of its own beside the boundary, with the counts; Codex writes only the
-/// boundary, so its compaction is drawn as that row without counts: for it
-/// `compaction_unsaid` holds.
-fn boundary(b: &wire::Boundary, compaction_unsaid: bool) -> RowKind {
+/// agent ended is the composer's to say. A compaction is drawn from its own
+/// row beside the boundary.
+fn boundary(b: &wire::Boundary) -> RowKind {
     match b.kind() {
         BoundaryKind::Cleared | BoundaryKind::DaemonLost => RowKind::Boundary {
             kind: b.kind(),
-            cause: ui_state::exit_words(b.cause, b.cause_detail.as_deref()),
-        },
-        BoundaryKind::Compacted if compaction_unsaid => RowKind::Compaction {
-            tokens_before: None,
-            tokens_after: None,
-            automatic: false,
-            idle: b.idle,
+            cause: b.exit.as_ref().map_or_else(String::new, |exit| {
+                ui_state::exit_words(exit.cause, exit.detail.as_deref())
+            }),
         },
         BoundaryKind::Unspecified
         | BoundaryKind::Started
@@ -1215,7 +1210,7 @@ pub const CONTINUED_WORDS: &str = "after the device restarted";
 fn agent_message(held: &Held, m: &wire::AgentMessage) -> RowKind {
     let from = match m.from.as_ref().and_then(|from| from.value.as_ref()) {
         Some(wire::sender::Value::Agent(agent)) => agent.name.clone(),
-        Some(wire::sender::Value::Human(_)) | None => String::new(),
+        Some(wire::sender::Value::Person(_)) | None => String::new(),
     };
     RowKind::AgentMessage {
         from,
@@ -1259,7 +1254,7 @@ fn lines(text: &str) -> u32 {
 
 /// What the interpreter read from a call's input: what it names, and the
 /// arm the views draw it by.
-fn read_input(tool: &ToolCall) -> (&str, Option<&tool_input::Of>) {
+fn read_input(tool: &ClaudeToolCall) -> (&str, Option<&claude_tool_input::Of>) {
     tool.input.as_ref().map_or(("", None), |input| {
         (input.subject.as_str(), input.of.as_ref())
     })
@@ -1307,7 +1302,7 @@ fn image_of(attachments: &[Attachment]) -> Option<BlobRef> {
 fn claude_tool(
     state: &SessionState,
     held: &Held,
-    tool: &ToolCall,
+    tool: &ClaudeToolCall,
 ) -> (RowKind, Option<Decision>, bool) {
     let decision = decision_view(tool.decision.as_ref(), &state.agent_state().permissions);
     let view = call_phase(state, held, tool.state, decision.as_ref());
@@ -1326,7 +1321,7 @@ fn claude_tool(
         // Any other tool's input is Claude's own JSON, which amux's calls
         // are read from.
         let input = match of {
-            Some(tool_input::Of::OtherJson(json)) => {
+            Some(claude_tool_input::Of::OtherJson(json)) => {
                 serde_json::from_slice(json).unwrap_or(Value::Null)
             }
             _ => Value::Null,
@@ -1355,13 +1350,13 @@ fn claude_tool(
         }
     } else {
         match of {
-            Some(tool_input::Of::Shell(shell)) if tool.background => RowKind::Background {
+            Some(claude_tool_input::Of::Shell(shell)) if tool.background => RowKind::Background {
                 command: named.to_owned(),
                 description: shell.description.clone(),
                 running: view.in_flight(),
                 duration_ms,
             },
-            Some(tool_input::Of::Shell(shell)) => {
+            Some(claude_tool_input::Of::Shell(shell)) => {
                 let output = terminal_text(&tool.outcome_text);
                 let (output_head, more_lines) = output_head(&output);
                 RowKind::Command {
@@ -1376,7 +1371,7 @@ fn claude_tool(
                     duration_ms,
                 }
             }
-            Some(tool_input::Of::Edit(edit)) if edit.write => {
+            Some(claude_tool_input::Of::Edit(edit)) if edit.write => {
                 let content = edit
                     .replacements
                     .first()
@@ -1397,7 +1392,7 @@ fn claude_tool(
                     state: view,
                 }
             }
-            Some(tool_input::Of::Edit(edit)) => {
+            Some(claude_tool_input::Of::Edit(edit)) => {
                 let (added, removed) = claude_counts(tool, edit);
                 RowKind::FileChange {
                     files: vec![FileRow {
@@ -1410,14 +1405,14 @@ fn claude_tool(
                     state: view,
                 }
             }
-            Some(tool_input::Of::Subagent(_)) => RowKind::Subagent {
+            Some(claude_tool_input::Of::Subagent(_)) => RowKind::Subagent {
                 description: named.to_owned(),
                 continued: false,
                 state: view,
                 answer: tool.outcome_text.clone(),
                 duration_ms,
             },
-            Some(tool_input::Of::TaskList(_)) => RowKind::Hidden,
+            Some(claude_tool_input::Of::TaskList(_)) => RowKind::Hidden,
             // A SendMessage to a subagent it started: the call that
             // continues it, opening the same chat.
             _ if !tool.child_agent_id.is_empty() => RowKind::Subagent {
@@ -1463,7 +1458,7 @@ fn amux_call(
         return None;
     }
     // Each by its name now and by the one a release before 0.11 gave it,
-    // which a resumed agent's history still holds.
+    // which the recorded sessions the views are tested against hold.
     use wire::former_tools;
     let action = match tool {
         wire::AGENTS_TOOL
@@ -1520,7 +1515,7 @@ fn amux_call(
 
 /// Added and removed lines: from the patch Claude reported when it gave
 /// one, else from the replaced and replacing text.
-fn claude_counts(tool: &ToolCall, edit: &wire::EditInput) -> (u32, u32) {
+fn claude_counts(tool: &ClaudeToolCall, edit: &wire::EditInput) -> (u32, u32) {
     if !tool.patch.is_empty() {
         let mut added = 0;
         let mut removed = 0;
@@ -1886,8 +1881,8 @@ pub fn patch_head(state: &SessionState, key: &Key, max: usize) -> Option<PatchHe
     })
 }
 
-fn claude_patch(tool: &ToolCall) -> Option<Vec<PatchHunk>> {
-    let (_, Some(tool_input::Of::Edit(edit))) = read_input(tool) else {
+fn claude_patch(tool: &ClaudeToolCall) -> Option<Vec<PatchHunk>> {
+    let (_, Some(claude_tool_input::Of::Edit(edit))) = read_input(tool) else {
         return None;
     };
     if !tool.patch.is_empty() {

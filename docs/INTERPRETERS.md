@@ -116,8 +116,8 @@ amux's, whose result ends it; Codex's is `thread/compact/start`, whose turn
 is recognised by id and swallowed, with agent messages held until it
 completes. Neither holds the queue for ever: one with no result after ten
 minutes (headless Claude), or no turn started after two (Codex), stops
-holding it. The row says so: `Compaction.idle` for headless Claude,
-`Boundary.idle` on Codex's compacted boundary. Terminal Claude compacts on
+holding it. The row says so: `Compaction.idle`, on headless Claude's
+compaction item and on Codex's. Terminal Claude compacts on
 its own, and its transcript is not known to mark an idle compaction apart.
 
 ## Notices
@@ -217,9 +217,9 @@ amux's own tools are recognised in the provider's record, never drawn as tool
 calls: a `set_working_on` call sets `working_on` in the next snapshot, and a
 `message_agent` call becomes the agent message it sent. Both are recognised by
 their names before 0.11 too (`status` and `send`), which a resumed agent's
-history holds. Each snapshot's envelope carries the agent's settings (model,
-effort, permission and its level), which the daemon copies onto the
-inventory row.
+history holds. Each snapshot's envelope carries the agent's status, its
+settings among them (model, effort, permission and its level, mode), which
+the daemon copies onto the inventory row whole.
 
 ## Checkpoints
 
@@ -300,8 +300,8 @@ sub.end(IncarnationEnd { cause: ExitCause::Finished as i32, detail: None });
   [step rule](#the-step-rule) within the subagent's own chat: its keys are
   its own, apart from the host's.
 - `snapshot` takes what the interpreter knows (phase, the kind's body, the
-  subagent's own stoppable job in `background_jobs` and the body's job list,
-  a notice) and stamps the kind, the clock and when the phase began; the step
+  subagent's own stoppable job in the envelope's `jobs` and its count in
+  `status.background_jobs`, a notice) and stamps the kind, the clock and when the phase began; the step
   carries it only when it changed. `phase` is needs-you while one of its asks
   is open, working otherwise: a running subagent takes no prompts. It leaves
   the title out: the start carries it, and the daemon keeps it from there.
@@ -337,9 +337,10 @@ finished subagent's record, and a window only moves the growth's limit.
 
 **A person's input to a subagent.** The daemon passes it to the host's
 process as `CtlFrame.child_input`, and the interpreter gets
-`Event::ChildInput { agent_id, input }`: an answer to one of the subagent's
-asks, or `StopJob { key }` for the subagent's own job. The body is of the
-agent's own kind. The interpreter answers the provider the provider's way
+`Event::ChildInput { agent_id, input_id, of }`: either an `Input` answering
+one of the subagent's asks, whose body is of the agent's own kind, or the
+shared `StopJob { key }` for the subagent's own job, which the daemon sends
+the same way for every kind. The interpreter answers the provider the provider's way
 for that subagent, and replies by the input id with a `Reply` effect, as it
 does an `Input`. An interpreter that does not run its provider's subagents
 as agents yet refuses every one as `REFUSAL_UNSUPPORTED`; so does one whose
@@ -530,7 +531,9 @@ bytes with SHA-256, and when the hash differs from the last one emits
 `Snapshot.catalogue`. The agent process writes the bytes to
 `blobs/<hex of hash>` in the agent's directory before it journals the step,
 so a snapshot never names a catalogue that is not on disk, and a client
-reads it with `GetBlob` like any other blob. An unchanged list writes
+reads it with `GetBlob` like any other blob. What a new agent on the host
+starts with, `Catalogue.new_agent`, is the host's to fill; an agent's own
+catalogue leaves it out. An unchanged list writes
 nothing.
 
 - **Headless Claude** offers what its `initialize` answer lists; a plugin
@@ -1231,7 +1234,7 @@ One interpreter serves every agent that speaks the
 agent's stdio, one session per agent. Its envelope (`AcpItem`,
 `AcpSnapshot`, `AcpInput`, in `proto/amux/v1/acp.proto`) is its own and is
 shared by no other kind. Which agent runs is a plain string id
-(`AcpCreateConfig.agent`, the spec's `provider`), never a closed list.
+(`CreateAgentRequest.provider`, the spec's `provider`), never a closed list.
 [ACP agents](ACP.md) ties this interpreter to the protocol crate, the host
 and the registry, and says how to add a built-in.
 
@@ -1568,7 +1571,9 @@ golden line must match. The test enforces that:
 - the file holds all 31 catalogue rows, in order;
 - a row a kind can show (`full` or `partial`) names at least one carrier, as
   `item:<arm>[.<field>…]` in the kind's item body, `snapshot:<field>` in its
-  snapshot body or `ask:<arm>` in its ask, and each carrier is a real field,
+  snapshot body, `envelope:<field>[.<field>…]` in the `Snapshot` envelope
+  every kind shares (`envelope:jobs`, `envelope:status.settings.model`) or
+  `ask:<arm>` in its ask, and each carrier is a real field,
   checked against the wire schema's descriptors;
 - such a row has a golden pattern, and some line of some golden under
   `fixtures/<kind>/` contains every string in it and none of the strings

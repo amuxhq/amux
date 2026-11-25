@@ -26,7 +26,7 @@ pub(super) fn kind_of(
     use acp_item::Kind as Acp;
     let plain = |kind| (kind, None, false);
     match kind {
-        Acp::Prompt(_) if wire::is_continued_input(&held.item.input_id) => plain(continued()),
+        Acp::Prompt(prompt) if prompt.continued => plain(continued()),
         Acp::Prompt(_) => plain(RowKind::Prompt {
             text: chat_text(held, false),
             steered: false,
@@ -57,7 +57,7 @@ pub(super) fn kind_of(
             }
             plain(row)
         }
-        Acp::Boundary(b) => plain(boundary(b, false)),
+        Acp::Boundary(b) => plain(boundary(b)),
         Acp::Unrecognized(u) => plain(unrecognized(u)),
     }
 }
@@ -351,7 +351,7 @@ fn amux_tool(tool: &wire::AcpTool, input: &Value) -> Option<(&'static str, Value
     let named = |name: &str| {
         let name = name.strip_prefix("Run ").unwrap_or(name);
         // Each by its name now and by the one a release before 0.11 gave
-        // it, which a resumed agent's history still holds.
+        // it, which the recorded sessions the views are tested against hold.
         [
             (wire::START_TOOL, wire::former_tools::SPAWN_TOOL),
             (wire::STOP_TOOL, wire::former_tools::STOP_TOOL),

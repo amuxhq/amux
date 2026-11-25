@@ -45,11 +45,11 @@ fn body(kind: Kind, tool: Option<(&str, bool)>, text: bool) -> Vec<u8> {
         }
         .encode_to_vec(),
         (Kind::Codex, None) => wire::CodexItem {
-            kind: Some(codex::Kind::Prompt(wire::Prompt {})),
+            kind: Some(codex::Kind::Prompt(wire::Prompt { continued: false })),
         }
         .encode_to_vec(),
         (_, Some((name, explore))) => {
-            let tool = wire::ToolCall {
+            let tool = wire::ClaudeToolCall {
                 name: name.into(),
                 state: ToolState::Succeeded as i32,
                 class: class(explore),
@@ -78,7 +78,7 @@ fn body(kind: Kind, tool: Option<(&str, bool)>, text: bool) -> Vec<u8> {
         }
         .encode_to_vec(),
         (Kind::ClaudePty, None) => wire::ClaudeItem {
-            kind: Some(pty::Kind::Prompt(wire::Prompt {})),
+            kind: Some(pty::Kind::Prompt(wire::Prompt { continued: false })),
         }
         .encode_to_vec(),
         (_, None) if text => wire::ClaudeItem {
@@ -86,7 +86,7 @@ fn body(kind: Kind, tool: Option<(&str, bool)>, text: bool) -> Vec<u8> {
         }
         .encode_to_vec(),
         (_, None) => wire::ClaudeItem {
-            kind: Some(sdk::Kind::Prompt(wire::Prompt {})),
+            kind: Some(sdk::Kind::Prompt(wire::Prompt { continued: false })),
         }
         .encode_to_vec(),
     }
@@ -114,13 +114,72 @@ fn read(kind: Kind, order: u64, revision: u64) -> Item {
 }
 
 fn snapshot(kind: Kind, phase: Phase, body: Vec<u8>, queue: Vec<wire::QueuedInput>) -> Msg {
-    event(session_event::Of::Snapshot(wire::Snapshot {
-        kind: kind as i32,
-        body,
-        phase: phase as i32,
+    snapshot_of(
+        kind,
+        phase,
+        wire::Snapshot {
+            body,
+            ..wire::Snapshot::default()
+        },
         queue,
+    )
+}
+
+/// `envelope` as the interpreter of `kind` sends it in `phase`: with the
+/// kind's capabilities unless it states its own.
+fn snapshot_of(
+    kind: Kind,
+    phase: Phase,
+    envelope: wire::Snapshot,
+    queue: Vec<wire::QueuedInput>,
+) -> Msg {
+    event(session_event::Of::Snapshot(filled(
+        kind, phase, envelope, queue,
+    )))
+}
+
+fn filled(
+    kind: Kind,
+    phase: Phase,
+    mut envelope: wire::Snapshot,
+    queue: Vec<wire::QueuedInput>,
+) -> wire::Snapshot {
+    envelope.kind = kind as i32;
+    envelope.queue = queue;
+    let status = envelope.status.get_or_insert_default();
+    status.phase = phase as i32;
+    envelope
+        .capabilities
+        .get_or_insert_with(|| Box::new(crate::support::capabilities(kind)));
+    envelope
+}
+
+/// A snapshot envelope holding `settings` and the body `body`.
+fn with_settings(body: Vec<u8>, settings: wire::AgentSettings) -> wire::Snapshot {
+    wire::Snapshot {
+        body,
+        status: Some(Box::new(wire::AgentStatus {
+            settings: Some(settings),
+            ..wire::AgentStatus::default()
+        })),
         ..wire::Snapshot::default()
-    }))
+    }
+}
+
+/// Settings with these values.
+fn picked(
+    model: Option<&str>,
+    effort: Option<&str>,
+    permission: Option<&str>,
+    mode: Option<&str>,
+) -> wire::AgentSettings {
+    wire::AgentSettings {
+        model: model.map(Into::into),
+        effort: effort.map(Into::into),
+        permission: permission.map(Into::into),
+        mode: mode.map(Into::into),
+        ..wire::AgentSettings::default()
+    }
 }
 
 fn caught_up() -> Msg {
@@ -440,16 +499,26 @@ fn fleet_entry(
         agent_id: id.as_bytes().to_vec(),
         host_id: host.as_bytes().to_vec(),
         kind: Kind::ClaudeSdk as i32,
+        provider: wire::agents::CLAUDE.into(),
         name: id.into(),
         lifecycle: wire::Lifecycle::Live as i32,
-        phase: phase as i32,
+        status: Some(Box::new(wire::AgentStatus {
+            phase: phase as i32,
+            phase_since_ms: since,
+            ..wire::AgentStatus::default()
+        })),
         parent: parent.map(|parent| wire::AgentRef {
             host_id: host.as_bytes().to_vec(),
             agent_id: parent.as_bytes().to_vec(),
         }),
-        phase_since_ms: since,
         ..wire::Agent::default()
     }
+}
+
+/// `agent` with its record holding `said` as what it last said.
+fn last_said_on(mut agent: wire::Agent, said: Option<String>) -> wire::Agent {
+    agent.status_mut().last_said = said;
+    agent
 }
 
 fn listed(agent: wire::Agent) -> FleetMsg {
@@ -674,7 +743,7 @@ fn a_fleet_filter_keeps_what_a_row_says_narrowed_to_a_state_or_a_host() {
     assert_eq!(
         names(words("Claude")).len(),
         3,
-        "the agent's kind is matched too"
+        "the agent's provider is matched too"
     );
     assert!(names(words("nothing like this")).is_empty());
     // A chip narrows to one state or one machine, and words narrow it more.
@@ -693,7 +762,11 @@ fn a_fleet_filter_keeps_what_a_row_says_narrowed_to_a_state_or_a_host() {
     assert!(names(both).is_empty());
 }
 
-fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAsk>) -> Vec<u8> {
+fn full_snapshot(
+    kind: Kind,
+    asks: Vec<wire::ClaudeAsk>,
+    codex_asks: Vec<wire::CodexAsk>,
+) -> wire::Snapshot {
     let meter = Some(wire::UsageMeter {
         used_percent: 91.0,
         resets_at_ms: Some(5),
@@ -780,48 +853,48 @@ fn full_snapshot(kind: Kind, asks: Vec<wire::Ask>, codex_asks: Vec<wire::CodexAs
         used_tokens: 171_000,
         window_tokens: Some(200_000),
     };
-    match kind {
-        Kind::ClaudePty => wire::ClaudeSnapshot {
-            asks,
-            tasks: Some(tasks),
-            context: Some(context),
-            model: Some("opus".into()),
-            permission: Some("default".into()),
-            usage: Some(claude_usage.clone()),
-            servers,
-            sign_in: Some(sign_in),
-            background_jobs: Some(background.clone()),
-            ..Default::default()
-        }
-        .encode_to_vec(),
-        Kind::ClaudeSdk => wire::ClaudeSnapshot {
-            asks,
-            tasks: Some(tasks),
-            context: Some(context),
-            model: Some("opus".into()),
-            effort: Some("high".into()),
-            permission: Some("default".into()),
-            usage: Some(claude_usage),
-            servers,
-            sign_in: Some(sign_in),
-            background_jobs: Some(background.clone()),
-            ..Default::default()
-        }
-        .encode_to_vec(),
-        _ => wire::CodexSnapshot {
-            asks: codex_asks,
-            plan: Some(tasks),
-            context: Some(context),
-            model: Some("gpt".into()),
-            effort: Some("high".into()),
-            approval_policy: Some("on-request".into()),
-            usage: Some(codex_usage),
-            servers,
-            sign_in: Some(sign_in),
-            background_jobs: Some(background.clone()),
-            ..Default::default()
-        }
-        .encode_to_vec(),
+    let (body, settings) = match kind {
+        Kind::ClaudePty => (
+            wire::ClaudeSnapshot {
+                asks,
+                tasks: Some(tasks),
+                context: Some(context),
+                usage: Some(claude_usage.clone()),
+                servers,
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            picked(Some("opus"), None, Some("default"), None),
+        ),
+        Kind::ClaudeSdk => (
+            wire::ClaudeSnapshot {
+                asks,
+                tasks: Some(tasks),
+                context: Some(context),
+                usage: Some(claude_usage),
+                servers,
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            picked(Some("opus"), Some("high"), Some("default"), None),
+        ),
+        _ => (
+            wire::CodexSnapshot {
+                asks: codex_asks,
+                plan: Some(tasks),
+                context: Some(context),
+                approval_policy: Some("on-request".into()),
+                usage: Some(codex_usage),
+                servers,
+            }
+            .encode_to_vec(),
+            picked(Some("gpt"), Some("high"), None, None),
+        ),
+    };
+    wire::Snapshot {
+        sign_in: Some(sign_in),
+        jobs: Some(background),
+        ..with_settings(body, settings)
     }
 }
 
@@ -864,11 +937,13 @@ fn queued(id: &[u8], steer: bool, from_agent: Option<&str>) -> wire::QueuedInput
 fn authored(kind: Kind) -> String {
     let mut out = String::new();
     let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
-    let unanswerable = wire::Ask {
+    let unanswerable = wire::ClaudeAsk {
         key: "menu-1".into(),
-        body: Some(wire::ask::Body::Unanswerable(wire::UnanswerableAsk {
-            reason: "a menu this build can't read".into(),
-        })),
+        body: Some(wire::claude_ask::Body::Unanswerable(
+            wire::UnanswerableAsk {
+                reason: "a menu this build can't read".into(),
+            },
+        )),
         ..Default::default()
     };
     let codex_question = wire::CodexAsk {
@@ -933,7 +1008,7 @@ fn authored(kind: Kind) -> String {
             sign_in(state)
         );
     };
-    state.update(snapshot(
+    state.update(snapshot_of(
         kind,
         Phase::NeedsYou,
         body.clone(),
@@ -943,7 +1018,7 @@ fn authored(kind: Kind) -> String {
         ],
     ));
     state.update(Msg::Entry(wire::Agent {
-        phase: Phase::NeedsYou as i32,
+        status: wire::AgentStatus::in_phase(Phase::NeedsYou),
         ..agent(kind, Phase::Working)
     }));
     state.update(caught_up());
@@ -966,7 +1041,7 @@ fn authored(kind: Kind) -> String {
         queued(b"m1", false, Some("reviewer")),
         queued(b"q2", false, None),
     ];
-    state.update(snapshot(kind, Phase::NeedsYou, body.clone(), queue));
+    state.update(snapshot_of(kind, Phase::NeedsYou, body.clone(), queue));
     show(
         "q1 sent now: it reads steered; my own prompt queued behind",
         &state,
@@ -992,7 +1067,10 @@ fn authored(kind: Kind) -> String {
 
     state.update(Msg::Entry(wire::Agent {
         lifecycle: wire::Lifecycle::Exited as i32,
-        exit_cause: wire::ExitCause::Killed as i32,
+        exit: Some(wire::IncarnationEnd {
+            cause: wire::ExitCause::Killed as i32,
+            detail: None,
+        }),
         ..agent(kind, Phase::Working)
     }));
     show(
@@ -1117,7 +1195,7 @@ fn a_sign_in_problem_leaves_the_composer_sending() {
     for kind in KINDS {
         let mut state = SessionState::new(agent(kind, Phase::Idle), CAP);
         state.update(Msg::Connection(ui_state::Connection::Live));
-        state.update(snapshot(
+        state.update(snapshot_of(
             kind,
             Phase::Idle,
             full_snapshot(kind, vec![], vec![]),
@@ -1154,11 +1232,10 @@ fn host_entry(host: &str, signed_in: Option<bool>) -> FleetMsg {
                 ..Default::default()
             }),
             standing: Some(wire::host_entry::Standing::Trusted(wire::Trusted {
-                reach: Some(wire::trusted::Reach::Online(
-                    wire::RouteKind::Unspecified as i32,
-                )),
+                reach: Some(wire::trusted::Reach::Online(wire::Online::via(
+                    wire::RouteKind::Unspecified,
+                ))),
                 current: false,
-                same_network: false,
             })),
             ..Default::default()
         })),
@@ -1170,7 +1247,6 @@ fn reads(entry: &mut wire::HostEntry, reach: wire::trusted::Reach) {
     entry.standing = Some(wire::host_entry::Standing::Trusted(wire::Trusted {
         reach: Some(reach),
         current: false,
-        same_network: false,
     }));
 }
 
@@ -1196,7 +1272,7 @@ fn a_host_is_reached_by_its_route_or_away_for_the_plan_or_offline_for_what_this_
     set_host(&mut fleet, "desk", |entry| {
         reads(
             entry,
-            wire::trusted::Reach::Online(wire::RouteKind::Relay as i32),
+            wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Relay)),
         )
     });
     assert_eq!(
@@ -1222,7 +1298,7 @@ fn a_host_is_reached_by_its_route_or_away_for_the_plan_or_offline_for_what_this_
         Reach::Offline(Offline::Plain)
     );
     set_host(&mut fleet, "desk", |entry| {
-        reads(entry, wire::trusted::Reach::Away(wire::Empty {}))
+        reads(entry, wire::trusted::Reach::Away(wire::Away {}))
     });
     assert_eq!(reach(&fleet, b"laptop", b"desk"), Reach::Away);
 
@@ -1248,7 +1324,7 @@ fn a_host_is_reached_by_its_route_or_away_for_the_plan_or_offline_for_what_this_
     set_host(&mut fleet, "desk", |entry| {
         reads(
             entry,
-            wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+            wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Direct)),
         )
     });
     assert_eq!(
@@ -1273,22 +1349,22 @@ fn a_host_is_reached_by_its_route_or_away_for_the_plan_or_offline_for_what_this_
     );
 }
 
-fn settings_of(kind: Kind, body: Vec<u8>) -> SettingsView {
-    settings_offering(kind, body, Vec::new(), Vec::new())
+fn settings_of(kind: Kind, envelope: wire::Snapshot) -> SettingsView {
+    settings_offering(kind, envelope, Vec::new(), Vec::new())
 }
 
 /// Settings for an agent whose fetched catalogue offers `models` and
 /// `commands`, and the permissions and modes its kind's interpreter offers.
 fn settings_offering(
     kind: Kind,
-    body: Vec<u8>,
+    envelope: wire::Snapshot,
     models: Vec<wire::OfferedModel>,
     commands: Vec<wire::OfferedCommand>,
 ) -> SettingsView {
     let (permissions, modes) = offered_controls(kind);
     settings_with(
         kind,
-        body,
+        envelope,
         wire::Catalogue {
             new_agent: None,
             models,
@@ -1300,16 +1376,18 @@ fn settings_offering(
     )
 }
 
-fn settings_with(kind: Kind, body: Vec<u8>, catalogue: wire::Catalogue) -> SettingsView {
+fn settings_with(kind: Kind, envelope: wire::Snapshot, catalogue: wire::Catalogue) -> SettingsView {
     let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
     state.set_catalogue(b"offered".to_vec(), catalogue);
-    state.update(event(session_event::Of::Snapshot(wire::Snapshot {
-        kind: kind as i32,
-        body,
-        phase: Phase::Idle as i32,
-        catalogue: Some(b"offered".to_vec()),
-        ..wire::Snapshot::default()
-    })));
+    state.update(snapshot_of(
+        kind,
+        Phase::Idle,
+        wire::Snapshot {
+            catalogue: Some(b"offered".to_vec()),
+            ..envelope
+        },
+        vec![],
+    ));
     settings(&state)
 }
 
@@ -1341,14 +1419,12 @@ fn offered_controls(kind: Kind) -> (Vec<wire::OfferedPermission>, Vec<wire::Offe
                     display_name: "Default".into(),
                     normal: true,
                     settable: true,
-                    ..Default::default()
                 },
                 wire::OfferedMode {
                     value: "plan".into(),
                     display_name: "Plan".into(),
                     normal: false,
                     settable: true,
-                    ..Default::default()
                 },
             ],
         ),
@@ -1389,22 +1465,15 @@ fn command(name: &str) -> wire::OfferedCommand {
 fn settings_mark_the_current_model_effort_and_permission() {
     let view = settings_offering(
         Kind::ClaudeSdk,
-        wire::ClaudeSnapshot {
-            model: Some("sonnet".into()),
-            effort: Some("high".into()),
-            permission: Some("plan".into()),
-            ..Default::default()
-        }
-        .encode_to_vec(),
+        with_settings(
+            vec![],
+            picked(Some("sonnet"), Some("high"), Some("plan"), None),
+        ),
         vec![
             offered("default", &["low", "high"], None),
             offered("sonnet", &["low", "medium", "high"], None),
         ],
-        vec![
-            command("compact"),
-            command("config"),
-            command("stripe:test-cards"),
-        ],
+        vec![command("compact"), command("stripe:test-cards")],
     );
     let current: Vec<&str> = view
         .models
@@ -1449,7 +1518,7 @@ fn settings_mark_the_current_model_effort_and_permission() {
             .map(|command| command.name.as_str())
             .collect::<Vec<_>>(),
         ["model", "effort", "rename", "compact", "stripe:test-cards"],
-        "the client's own commands first; a terminal-only command is dropped"
+        "the client's own commands first, then the catalogue's"
     );
     assert_eq!(
         view.changeable,
@@ -1467,13 +1536,15 @@ fn settings_mark_the_current_model_effort_and_permission() {
 fn a_reported_value_outside_the_offer_is_shown_as_current() {
     let view = settings_offering(
         Kind::ClaudeSdk,
-        wire::ClaudeSnapshot {
-            model: Some("claude-haiku-4-5-20251001".into()),
-            effort: Some("max".into()),
-            permission: Some("dontAsk".into()),
-            ..Default::default()
-        }
-        .encode_to_vec(),
+        with_settings(
+            vec![],
+            picked(
+                Some("claude-haiku-4-5-20251001"),
+                Some("max"),
+                Some("dontAsk"),
+                None,
+            ),
+        ),
         vec![offered("haiku", &[], None)],
         Vec::new(),
     );
@@ -1503,31 +1574,34 @@ fn a_reported_value_outside_the_offer_is_shown_as_current() {
         "auto names sonnet, and haiku runs"
     );
 
-    let nothing = settings_of(Kind::ClaudeSdk, Vec::new());
+    let nothing = settings_of(Kind::ClaudeSdk, wire::Snapshot::default());
     assert!(nothing.models.is_empty() && nothing.efforts.is_empty());
     assert!(nothing.permissions.iter().all(|mode| !mode.current));
 }
 
 #[test]
 fn codex_offers_permissions_and_modes_and_settings_outside_them_read_custom() {
-    let codex = |snapshot: wire::CodexSnapshot| {
+    let codex = |snapshot: wire::CodexSnapshot, settings: wire::AgentSettings| {
         settings_offering(
             Kind::Codex,
-            wire::CodexSnapshot {
-                model: Some("gpt-a".into()),
-                ..snapshot
-            }
-            .encode_to_vec(),
+            with_settings(
+                snapshot.encode_to_vec(),
+                wire::AgentSettings {
+                    model: Some("gpt-a".into()),
+                    ..settings
+                },
+            ),
             vec![offered("gpt-a", &["low", "medium"], Some("medium"))],
             vec![command("config")],
         )
     };
-    let view = codex(wire::CodexSnapshot {
-        permission: Some("full-access".into()),
-        mode: Some("plan".into()),
-        approval_policy: Some("never".into()),
-        ..Default::default()
-    });
+    let view = codex(
+        wire::CodexSnapshot {
+            approval_policy: Some("never".into()),
+            ..Default::default()
+        },
+        picked(None, None, Some("full-access"), Some("plan")),
+    );
     let permissions: Vec<(&str, bool, bool)> = view
         .permissions
         .iter()
@@ -1581,10 +1655,13 @@ fn codex_offers_permissions_and_modes_and_settings_outside_them_read_custom() {
         }
     );
 
-    let view = codex(wire::CodexSnapshot {
-        approval_policy: Some("untrusted".into()),
-        ..Default::default()
-    });
+    let view = codex(
+        wire::CodexSnapshot {
+            approval_policy: Some("untrusted".into()),
+            ..Default::default()
+        },
+        wire::AgentSettings::default(),
+    );
     let custom = view.permissions.last().unwrap();
     assert_eq!(custom.value, "", "settings that match no name");
     assert!(custom.custom && custom.current && custom.unlisted && !custom.settable);
@@ -1594,7 +1671,10 @@ fn codex_offers_permissions_and_modes_and_settings_outside_them_read_custom() {
         None
     );
 
-    let unsaid = codex(wire::CodexSnapshot::default());
+    let unsaid = codex(
+        wire::CodexSnapshot::default(),
+        wire::AgentSettings::default(),
+    );
     assert!(
         unsaid
             .permissions
@@ -1608,11 +1688,7 @@ fn codex_offers_permissions_and_modes_and_settings_outside_them_read_custom() {
 fn an_offered_alias_is_marked_for_the_model_id_it_resolves_to() {
     let view = settings_offering(
         Kind::ClaudeSdk,
-        wire::ClaudeSnapshot {
-            model: Some("id-sonnet".into()),
-            ..Default::default()
-        }
-        .encode_to_vec(),
+        with_settings(vec![], picked(Some("id-sonnet"), None, None, None)),
         vec![
             offered("default", &["low", "high"], None),
             offered("sonnet", &["low", "medium", "high"], None),
@@ -1637,12 +1713,10 @@ fn terminal_claude_shows_what_it_reports_and_says_how_to_type_a_change() {
     let (permissions, _) = offered_controls(Kind::ClaudePty);
     let view = settings_with(
         Kind::ClaudePty,
-        wire::ClaudeSnapshot {
-            model: Some("claude-sonnet-5".into()),
-            permission: Some("acceptEdits".into()),
-            ..Default::default()
-        }
-        .encode_to_vec(),
+        with_settings(
+            vec![],
+            picked(Some("claude-sonnet-5"), None, Some("acceptEdits"), None),
+        ),
         wire::Catalogue {
             permissions,
             ..Default::default()
@@ -1692,7 +1766,7 @@ fn terminal_claude_shows_what_it_reports_and_says_how_to_type_a_change() {
         }
     );
 
-    let sdk = settings_of(Kind::ClaudeSdk, Vec::new());
+    let sdk = settings_of(Kind::ClaudeSdk, wire::Snapshot::default());
     assert_eq!(
         sdk.changeable,
         Changeability {
@@ -1717,19 +1791,19 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
         };
         let mut state = SessionState::new(agent(Kind::ClaudeSdk, Phase::Working), CAP);
         state.set_catalogue(b"offered".to_vec(), catalogue);
-        state.update(event(session_event::Of::Snapshot(wire::Snapshot {
-            kind: Kind::ClaudeSdk as i32,
-            body: wire::ClaudeSnapshot {
-                model: Some("id-sonnet".into()),
+        state.update(snapshot_of(
+            Kind::ClaudeSdk,
+            Phase::Idle,
+            wire::Snapshot {
                 model_name: Some("Sonnet 5".into()),
-                permission: Some(permission.into()),
-                ..Default::default()
-            }
-            .encode_to_vec(),
-            phase: Phase::Idle as i32,
-            catalogue: Some(b"offered".to_vec()),
-            ..wire::Snapshot::default()
-        })));
+                catalogue: Some(b"offered".to_vec()),
+                ..with_settings(
+                    vec![],
+                    picked(Some("id-sonnet"), None, Some(permission), None),
+                )
+            },
+            vec![],
+        ));
         state
     };
     let normal = controls(&claude("default"));
@@ -1750,7 +1824,7 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
         Some("Plan".to_owned())
     );
 
-    let custom = |snapshot: wire::CodexSnapshot| {
+    let custom = |snapshot: wire::CodexSnapshot, settings: wire::AgentSettings| {
         let mut state = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
         let (permissions, modes) = offered_controls(Kind::Codex);
         state.set_catalogue(
@@ -1761,44 +1835,47 @@ fn the_running_model_has_one_name_and_only_unusual_controls_are_summarised() {
                 ..Default::default()
             },
         );
-        state.update(event(session_event::Of::Snapshot(wire::Snapshot {
-            kind: Kind::Codex as i32,
-            body: snapshot.encode_to_vec(),
-            phase: Phase::Idle as i32,
-            catalogue: Some(b"offered".to_vec()),
-            ..wire::Snapshot::default()
-        })));
+        state.update(snapshot_of(
+            Kind::Codex,
+            Phase::Idle,
+            wire::Snapshot {
+                catalogue: Some(b"offered".to_vec()),
+                ..with_settings(snapshot.encode_to_vec(), settings)
+            },
+            vec![],
+        ));
         controls(&state)
     };
-    let codex = custom(wire::CodexSnapshot {
-        approval_policy: Some("untrusted".into()),
-        mode: Some("plan".into()),
-        ..Default::default()
-    });
+    let codex = custom(
+        wire::CodexSnapshot {
+            approval_policy: Some("untrusted".into()),
+            ..Default::default()
+        },
+        picked(None, None, None, Some("plan")),
+    );
     assert!(codex.permission.is_some_and(|permission| permission.custom));
     assert_eq!(codex.mode.map(|mode| mode.value), Some("plan".to_owned()));
-    let unsaid = custom(wire::CodexSnapshot {
-        permission: Some("default".into()),
-        mode: Some("default".into()),
-        ..Default::default()
-    });
+    let unsaid = custom(
+        wire::CodexSnapshot::default(),
+        picked(None, None, Some("default"), Some("default")),
+    );
     assert_eq!((unsaid.permission, unsaid.mode), (None, None));
 
     // Terminal Claude offers no models: the interpreter's tidied name names
     // the reported one, in the list as beside the composer.
     let mut state = SessionState::new(agent(Kind::ClaudePty, Phase::Working), CAP);
-    state.update(event(session_event::Of::Snapshot(wire::Snapshot {
-        kind: Kind::ClaudePty as i32,
-        body: wire::ClaudeSnapshot {
-            model: Some("claude-sonnet-5".into()),
+    state.update(snapshot_of(
+        Kind::ClaudePty,
+        Phase::Idle,
+        wire::Snapshot {
             model_name: Some("Sonnet 5".into()),
-            permission: Some("plan".into()),
-            ..Default::default()
-        }
-        .encode_to_vec(),
-        phase: Phase::Idle as i32,
-        ..wire::Snapshot::default()
-    })));
+            ..with_settings(
+                vec![],
+                picked(Some("claude-sonnet-5"), None, Some("plan"), None),
+            )
+        },
+        vec![],
+    ));
     assert_eq!(settings(&state).models[0].display_name, "Sonnet 5");
     let pty = controls(&state);
     assert_eq!(pty.model.as_deref(), Some("Sonnet 5"));
@@ -1972,10 +2049,11 @@ fn a_new_agents_pick_keeps_its_choices_consistent() {
 #[test]
 fn a_new_agent_with_nothing_picked_shows_what_it_will_start_with() {
     let catalogue = wire::Catalogue {
-        new_agent: Some(wire::NewAgentDefaults {
+        new_agent: Some(wire::AgentSettings {
             model: Some("astra".into()),
             effort: Some("high".into()),
             permission: Some("auto".into()),
+            ..wire::AgentSettings::default()
         }),
         ..new_agent_catalogue()
     };
@@ -2030,10 +2108,11 @@ fn a_new_agent_with_nothing_picked_shows_what_it_will_start_with() {
 #[test]
 fn picking_what_is_already_in_force_is_no_pick() {
     let catalogue = wire::Catalogue {
-        new_agent: Some(wire::NewAgentDefaults {
+        new_agent: Some(wire::AgentSettings {
             model: Some("astra".into()),
             effort: Some("high".into()),
             permission: None,
+            ..wire::AgentSettings::default()
         }),
         ..new_agent_catalogue()
     };
@@ -2067,7 +2146,7 @@ fn tool_item(
         revision: order,
         kind: Kind::ClaudeSdk as i32,
         body: wire::ClaudeItem {
-            kind: Some(wire::claude_item::Kind::Tool(wire::ToolCall {
+            kind: Some(wire::claude_item::Kind::Tool(wire::ClaudeToolCall {
                 name: name.into(),
                 input: Some(interpret::tool_input(name, "", &input, "")),
                 patch: interpret::file_step(name, "", &outcome.to_string()).patch,
@@ -2288,7 +2367,7 @@ fn running(order: u64, revision: u64, command: &str) -> Item {
     sdk_item(
         order,
         revision,
-        wire::claude_item::Kind::Tool(wire::ToolCall {
+        wire::claude_item::Kind::Tool(wire::ClaudeToolCall {
             name: "Bash".into(),
             state: ToolState::Running as i32,
             class: ToolClass::Consequential as i32,
@@ -2330,7 +2409,7 @@ fn session_saying(
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: Kind::ClaudeSdk as i32,
         body: wire::ClaudeSnapshot::default().encode_to_vec(),
-        phase: entry.phase,
+        status: wire::AgentStatus::in_phase(entry.phase()),
         notice: notice.map(Box::new),
         ..wire::Snapshot::default()
     })));
@@ -2450,12 +2529,14 @@ fn each_row_says_what_its_state_calls_for() {
     let entry = |id: &str, phase| fleet_entry("a", id, phase, None, 1);
     let ended = |id: &str, cause: wire::ExitCause, detail: Option<&str>| wire::Agent {
         lifecycle: wire::Lifecycle::Exited as i32,
-        exit_cause: cause as i32,
-        exit_detail: detail.map(str::to_owned),
+        exit: Some(wire::IncarnationEnd {
+            cause: cause as i32,
+            detail: detail.map(str::to_owned),
+        }),
         ..entry(id, Phase::Idle)
     };
     let mut branched = entry("idle", Phase::Idle);
-    branched.git = Some(wire::Git {
+    branched.status_mut().git = Some(wire::Git {
         branch: Some("fix-login".into()),
         ..Default::default()
     });
@@ -2543,39 +2624,45 @@ fn each_row_says_what_its_state_calls_for() {
         Some("its words"),
     )));
     fleet.update(listed(wire::Agent {
-        exit_cause: 99,
+        exit: Some(wire::IncarnationEnd {
+            cause: 99,
+            detail: None,
+        }),
         ..ended("newer-value", wire::ExitCause::Unspecified, None)
     }));
     // A live agent whose session has not opened says nothing yet, unless
     // it is idle and its record holds what it last said.
     fleet.update(listed(entry("unopened", Phase::Idle)));
     let recorded = Some("Merged the fix.".to_owned());
-    fleet.update(listed(wire::Agent {
-        last_said: recorded.clone(),
-        ..entry("unopened-said", Phase::Idle)
-    }));
-    fleet.update(listed(wire::Agent {
-        last_said: recorded.clone(),
-        ..entry("unopened-working", Phase::Working)
-    }));
+    fleet.update(listed(last_said_on(
+        entry("unopened-said", Phase::Idle),
+        recorded.clone(),
+    )));
+    fleet.update(listed(last_said_on(
+        entry("unopened-working", Phase::Working),
+        recorded.clone(),
+    )));
     // A stopped agent keeps no stream: its record says what it last said,
     // and a failure still comes first.
-    fleet.update(listed(wire::Agent {
-        last_said: recorded.clone(),
-        ..ended("settled", wire::ExitCause::Stopped, None)
-    }));
-    fleet.update(listed(wire::Agent {
-        last_said: recorded.clone(),
-        ..ended(
+    fleet.update(listed(last_said_on(
+        ended("settled", wire::ExitCause::Stopped, None),
+        recorded.clone(),
+    )));
+    fleet.update(listed(last_said_on(
+        ended(
             "crashed-said",
             wire::ExitCause::ProviderExited,
             Some("exit code 1"),
-        )
-    }));
+        ),
+        recorded.clone(),
+    )));
     // An exited agent's row is history: how it ended, whatever its host.
     fleet.update(listed(wire::Agent {
         lifecycle: wire::Lifecycle::Exited as i32,
-        exit_cause: wire::ExitCause::Unspecified as i32,
+        exit: Some(wire::IncarnationEnd {
+            cause: wire::ExitCause::Unspecified as i32,
+            detail: None,
+        }),
         ..fleet_entry("b", "far-done", Phase::Idle, None, 1)
     }));
 
@@ -2705,8 +2792,11 @@ fn rows_hold_their_order_while_an_agent_streams() {
 
     // When the agent's state changes, since-when moves and so does the row.
     fleet.update(listed(wire::Agent {
-        phase: Phase::Idle as i32,
-        phase_since_ms: 400,
+        status: Some(Box::new(wire::AgentStatus {
+            phase: Phase::Idle as i32,
+            phase_since_ms: 400,
+            ..wire::AgentStatus::default()
+        })),
         ..streamer.clone()
     }));
     let after = home(&view(&fleet, &state, 30_000));
@@ -2811,7 +2901,7 @@ fn the_overview_leaves_the_branchs_base_to_the_host() {
     assert_eq!(Comparison::OnBranch.base(), None);
 
     let mut row = agent(Kind::Codex, Phase::Working);
-    row.git = Some(wire::Git {
+    row.status_mut().git = Some(wire::Git {
         branch: Some("main".into()),
         base_branch: Some("main".into()),
         ..Default::default()
@@ -2862,12 +2952,7 @@ fn prompts_on_their_way_follow_the_sending_rules() {
     state.update(Msg::Send(prompt_input(kind, b"p3", "third")));
     state.update(Msg::Sent(
         b"p3".to_vec(),
-        InputOutcome::Reply(wire::SendInputResponse {
-            of: Some(wire::send_input_response::Of::Rejected(wire::Rejected {
-                refusal: wire::Refusal::HostUnreachable as i32,
-                detail: None,
-            })),
-        }),
+        InputOutcome::NotSent { detail: None },
     ));
     assert!(
         !prompts_underway(&state)
@@ -2879,7 +2964,7 @@ fn prompts_on_their_way_follow_the_sending_rules() {
         refused_prompts(&state),
         vec![RefusedPrompt {
             input_id: b"p3".to_vec(),
-            reason: ui_state::Refusal::of(wire::Refusal::HostUnreachable),
+            reason: ui_state::Refusal::of(ui_state::RefusalReason::HostUnreachable),
         }],
         "one its host could not take is refused"
     );
@@ -3253,23 +3338,25 @@ fn edit_ask_path(kind: Kind, cwd: &str, file: &str) -> String {
         },
         CAP,
     );
-    let claude = wire::Ask {
+    let claude = wire::ClaudeAsk {
         key: "edit-1".into(),
         item_key: "t1".into(),
-        body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
-            tool_name: "Edit".into(),
-            input: Some(interpret::tool_input(
-                "Edit",
-                "",
-                &serde_json::json!({
-                    "file_path": file,
-                    "old_string": "CURRENT",
-                    "new_string": "UPDATED",
-                }),
-                "",
-            )),
-            ..Default::default()
-        })),
+        body: Some(wire::claude_ask::Body::Permission(
+            wire::ClaudePermissionAsk {
+                tool_name: "Edit".into(),
+                input: Some(interpret::tool_input(
+                    "Edit",
+                    "",
+                    &serde_json::json!({
+                        "file_path": file,
+                        "old_string": "CURRENT",
+                        "new_string": "UPDATED",
+                    }),
+                    "",
+                )),
+                ..Default::default()
+            },
+        )),
         ..Default::default()
     };
     let codex = wire::CodexAsk {
@@ -3288,7 +3375,7 @@ fn edit_ask_path(kind: Kind, cwd: &str, file: &str) -> String {
         )),
         ..Default::default()
     };
-    state.update(snapshot(
+    state.update(snapshot_of(
         kind,
         Phase::NeedsYou,
         full_snapshot(kind, vec![claude], vec![codex]),
@@ -3332,7 +3419,7 @@ fn an_edit_asks_path_is_relative_to_the_agents_folder_when_the_file_is_inside_it
 const QA_CWD: &str = "/Users/ada/.local/state/amux-qa/20261012-025539/t1/.testnet/net/desk/work";
 
 /// The head ask's card on a caught-up session of `kind` in `QA_CWD`.
-fn card_of(kind: Kind, claude: Vec<wire::Ask>, codex: Vec<wire::CodexAsk>) -> AskCard {
+fn card_of(kind: Kind, claude: Vec<wire::ClaudeAsk>, codex: Vec<wire::CodexAsk>) -> AskCard {
     let mut state = SessionState::new(
         wire::Agent {
             cwd: QA_CWD.into(),
@@ -3340,7 +3427,7 @@ fn card_of(kind: Kind, claude: Vec<wire::Ask>, codex: Vec<wire::CodexAsk>) -> As
         },
         CAP,
     );
-    state.update(snapshot(
+    state.update(snapshot_of(
         kind,
         Phase::NeedsYou,
         full_snapshot(kind, claude, codex),
@@ -3350,15 +3437,17 @@ fn card_of(kind: Kind, claude: Vec<wire::Ask>, codex: Vec<wire::CodexAsk>) -> As
     ask_card(&state).expect("the ask is open")
 }
 
-fn claude_permission(tool: &str, input: serde_json::Value) -> wire::Ask {
-    wire::Ask {
+fn claude_permission(tool: &str, input: serde_json::Value) -> wire::ClaudeAsk {
+    wire::ClaudeAsk {
         key: "ask-1".into(),
         item_key: "t1".into(),
-        body: Some(wire::ask::Body::Permission(wire::PermissionAsk {
-            tool_name: tool.into(),
-            input: Some(interpret::tool_input(tool, "", &input, "")),
-            ..Default::default()
-        })),
+        body: Some(wire::claude_ask::Body::Permission(
+            wire::ClaudePermissionAsk {
+                tool_name: tool.into(),
+                input: Some(interpret::tool_input(tool, "", &input, "")),
+                ..Default::default()
+            },
+        )),
         ..Default::default()
     }
 }
@@ -3561,7 +3650,7 @@ fn header_counts_leave_out_agents_whose_host_is_out_of_reach() {
     fleet.update(host_entry("desk", None));
     fleet.update(host_entry("laptop", None));
     set_host(&mut fleet, "laptop", |entry| {
-        reads(entry, wire::trusted::Reach::Away(wire::Empty {}));
+        reads(entry, wire::trusted::Reach::Away(wire::Away {}));
     });
     fleet.update(fleet_row("desk", "here", Phase::Working, None, 1));
     fleet.update(fleet_row("laptop", "far-working", Phase::Working, None, 2));
@@ -3634,7 +3723,10 @@ fn an_exited_agents_unfinished_step_is_not_drawn_running() {
     let mut state = SessionState::new(
         wire::Agent {
             lifecycle: wire::Lifecycle::Exited as i32,
-            exit_cause: wire::ExitCause::Stopped as i32,
+            exit: Some(wire::IncarnationEnd {
+                cause: wire::ExitCause::Stopped as i32,
+                detail: None,
+            }),
             ..agent(Kind::ClaudeSdk, Phase::Working)
         },
         CAP,
@@ -3757,7 +3849,7 @@ fn codex_session(phase: Phase, items: Vec<Item>) -> SessionState {
     let mut state = SessionState::new(
         wire::Agent {
             cwd: QA_CWD.into(),
-            phase: phase as i32,
+            status: wire::AgentStatus::in_phase(phase),
             ..agent(Kind::Codex, Phase::Working)
         },
         CAP,
@@ -3998,9 +4090,9 @@ fn codexs_dont_ask_again_on_a_patch_names_the_files_it_covers() {
             },
         )),
         decisions: vec![
-            wire::Decision::Approve as i32,
-            wire::Decision::ApproveSession as i32,
-            wire::Decision::Deny as i32,
+            wire::CodexDecision::Approve as i32,
+            wire::CodexDecision::ApproveSession as i32,
+            wire::CodexDecision::Deny as i32,
         ],
     };
     let card = card_of(Kind::Codex, vec![], vec![ask]);
@@ -4030,9 +4122,9 @@ fn codexs_always_on_a_tool_call_reads_as_every_project() {
             ..Default::default()
         })),
         decisions: vec![
-            wire::Decision::Approve as i32,
-            wire::Decision::ApproveAlways as i32,
-            wire::Decision::Deny as i32,
+            wire::CodexDecision::Approve as i32,
+            wire::CodexDecision::ApproveAlways as i32,
+            wire::CodexDecision::Deny as i32,
         ],
     };
     let card = card_of(Kind::Codex, vec![], vec![ask]);
@@ -4098,7 +4190,7 @@ fn the_clients_own_commands_are_listed_once_for_every_kind() {
         (Kind::ClaudePty, vec![providers_command("compact")]),
         (Kind::Codex, vec![providers_command("compact")]),
     ] {
-        let view = settings_offering(kind, vec![], models(), provider);
+        let view = settings_offering(kind, wire::Snapshot::default(), models(), provider);
         let counts = command_counts(&view);
         let clients: Vec<(&str, usize, bool)> = ["model", "effort", "rename"]
             .into_iter()
@@ -4126,7 +4218,12 @@ fn the_clients_own_commands_are_listed_once_for_every_kind() {
 #[test]
 fn model_and_effort_are_listed_only_when_there_is_a_choice() {
     for kind in [Kind::ClaudeSdk, Kind::ClaudePty, Kind::Codex] {
-        let view = settings_offering(kind, vec![], vec![offered("opus", &[], None)], vec![]);
+        let view = settings_offering(
+            kind,
+            wire::Snapshot::default(),
+            vec![offered("opus", &[], None)],
+            vec![],
+        );
         let counts = command_counts(&view);
         let listed: Vec<(&str, usize)> = ["model", "effort", "rename"]
             .into_iter()
@@ -4150,7 +4247,7 @@ fn codexs_commands_are_amuxs_table_its_skills_and_the_clients_own() {
         .collect();
     let view = settings_offering(
         Kind::Codex,
-        vec![],
+        wire::Snapshot::default(),
         vec![
             offered("gpt-6", &["low", "high"], Some("low")),
             offered("gpt-6-mini", &["low"], Some("low")),
@@ -4219,17 +4316,19 @@ fn a_steps_time_leaves_out_the_wait_for_approval() {
 #[test]
 fn terminal_claude_switched_to_another_conversation_says_so_until_it_is_back() {
     let snapshot = |switched_away: bool| {
-        event(session_event::Of::Snapshot(wire::Snapshot {
-            kind: Kind::ClaudePty as i32,
-            body: wire::ClaudeSnapshot {
-                effort: Some("high".into()),
-                switched_away: Some(switched_away),
-                ..Default::default()
-            }
-            .encode_to_vec(),
-            phase: Phase::Idle as i32,
-            ..wire::Snapshot::default()
-        }))
+        snapshot_of(
+            Kind::ClaudePty,
+            Phase::Idle,
+            with_settings(
+                wire::ClaudeSnapshot {
+                    switched_away: Some(switched_away),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+                picked(None, Some("high"), None, None),
+            ),
+            vec![],
+        )
     };
     let mut state = SessionState::new(agent(Kind::ClaudePty, Phase::Working), CAP);
     state.update(snapshot(true));
@@ -4254,7 +4353,7 @@ fn a_chat_whose_host_is_away_counts_no_working_time() {
     let mut state = SessionState::new(agent(Kind::Codex, Phase::Working), CAP);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: Kind::Codex as i32,
-        phase: Phase::Working as i32,
+        status: wire::AgentStatus::in_phase(Phase::Working),
         ..wire::Snapshot::default()
     })));
     state.update(caught_up());
@@ -4271,7 +4370,7 @@ fn session_offering(kind: Kind, catalogue: wire::Catalogue) -> SessionState {
     state.set_catalogue(b"offered".to_vec(), catalogue);
     state.update(event(session_event::Of::Snapshot(wire::Snapshot {
         kind: kind as i32,
-        phase: Phase::Idle as i32,
+        status: wire::AgentStatus::in_phase(Phase::Idle),
         catalogue: Some(b"offered".to_vec()),
         ..wire::Snapshot::default()
     })));
@@ -4461,25 +4560,16 @@ fn a_job_offers_its_own_stop_where_the_kind_can_stop_one() {
         ],
     };
     let stops = |kind: Kind| {
-        let body = match kind {
-            Kind::ClaudeSdk => wire::ClaudeSnapshot {
-                background_jobs: Some(jobs.clone()),
-                ..Default::default()
-            }
-            .encode_to_vec(),
-            Kind::ClaudePty => wire::ClaudeSnapshot {
-                background_jobs: Some(jobs.clone()),
-                ..Default::default()
-            }
-            .encode_to_vec(),
-            _ => wire::CodexSnapshot {
-                background_jobs: Some(jobs.clone()),
-                ..Default::default()
-            }
-            .encode_to_vec(),
-        };
         let mut state = SessionState::new(agent(kind, Phase::Working), CAP);
-        state.update(snapshot(kind, Phase::Idle, body, vec![]));
+        state.update(snapshot_of(
+            kind,
+            Phase::Idle,
+            wire::Snapshot {
+                jobs: Some(jobs.clone()),
+                ..wire::Snapshot::default()
+            },
+            vec![],
+        ));
         overview(&state, None)
             .jobs
             .into_iter()

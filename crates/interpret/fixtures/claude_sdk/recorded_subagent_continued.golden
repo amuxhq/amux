@@ -1,51 +1,54 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot capabilities stops_job resumable sends_now images files passes_unknown_commands forks model=pick effort=pick permission=pick mode=-
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 2 recorded 1: fact Stream type=control_response
 effect write "{\"request\":{\"subtype\":\"get_settings\"},\"request_id\":\"amux-1\",\"type\":\"control_request\"}"
-effect catalogue 41307201 models=[opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-fable-5-1{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=56 permissions=[default,acceptEdits,plan,auto] modes=[]
-snapshot catalogue 41307201
-snapshot IDLE queue=[] working_on=- at=1794788084788 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+effect catalogue 64621eb6 models=[opus{low/medium/high/xhigh/max},fable{low/medium/high/xhigh/max},sonnet{low/medium/high/xhigh/max},haiku{low/medium/high/xhigh/max},claude-fable-5-1{low/medium/high/xhigh/max},claude-haiku-4-5-20251001,claude-sonnet-5{low/medium/high/xhigh/max},claude-opus-5{low/medium/high/xhigh/max},claude-fable-5{low/medium/high/xhigh/max},claude-opus-4-8{low/medium/high/xhigh/max},claude-opus-4-7{low/medium/high/xhigh/max},claude-opus-4-6{low/medium/high/max},claude-sonnet-4-6{low/medium/high/max}] commands=47 permissions=[default,acceptEdits,plan,auto] modes=[]
+snapshot catalogue 64621eb6
+snapshot IDLE queue=[] working_on=- at=1794788084788 conversation=? model_name=? sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 4 recorded 3: fact Stream type=control_response
-snapshot settings model=claude-haiku-5-5 effort=medium permission=? level=?
-snapshot IDLE queue=[] working_on=- at=1794788084812 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot settings model=claude-haiku-5-5 effort=medium permission=? level=? mode=?
+snapshot IDLE queue=[] working_on=- at=1794788084812 conversation=? model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 6 recorded 5: input 0x269ba7bebb28493d8a52c1a08a011c98
 effect reply 0x269ba7bebb28493d8a52c1a08a011c98 accepted
 effect user 269ba7be-bb28-493d-8a52-c1a08a011c98 "Use the Agent tool (subagent_type general-purpose) to start one subagent whose task is: use Bash to run exactly `echo ALPHA` and report what it printed. When it has reported back, use the SendMessage tool to send that same subagent, by its agent id, this message: use Bash to run exactly `echo BETA` and report what it printed. When it has reported again, reply with the single word DONE."
 item boundary:1 boundary final at=1794788084911 text="" BOUNDARY_KIND_STARTED
 item 269ba7be-bb28-493d-8a52-c1a08a011c98 prompt final input=0x269ba7bebb28493d8a52c1a08a011c98 at=1794788084911 text="Use the Agent tool (subagent_type general-purpose) to start one subagent whose task is: use Bash to run exactly `echo ALPHA` and report what it printed. When it has reported back, use the SendMessage tool to send that same subagent, by its agent id, this message: use Bash to run exactly `echo BETA` and report what it printed. When it has reported again, reply with the single word DONE."
-snapshot WORKING queue=[] working_on=- at=1794788084911 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot WORKING queue=[] working_on=- at=1794788084911 conversation=? model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 12 recorded 11: fact Stream type=system subtype=init uuid=f4be3807-8cdc-4093-90f3-0dc3e71491cd
 item boundary:1 boundary final at=1794788085127 text="" BOUNDARY_KIND_STARTED
-snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask
-snapshot WORKING queue=[] working_on=- at=1794788085127 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask mode=?
+snapshot WORKING queue=[] working_on=- at=1794788085127 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 14 recorded 13: fact Stream type=system subtype=status uuid=9f5eb887-0280-4eee-b04e-ca10d870821c
 item 9f5eb887-0280-4eee-b04e-ca10d870821c status final at=1794788085130 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 17 recorded 16: fact Stream type=stream_event uuid=137caf4b-3f7b-446e-ad4a-bec3420c365d
-snapshot WORKING queue=[] working_on=- at=1794788086993 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=20660/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=?
+snapshot WORKING queue=[] working_on=- at=1794788086993 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=? asks=[] context=20660/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 18 recorded 17: fact Stream type=stream_event uuid=0fe62f5d-7068-4c13-a2f0-7ca421ba4269
 item toolu_01F8e5YXiBSZPM3CvjhngKPs tool final at=1794788086993 text="" Agent TOOL_STATE_RUNNING input=subagent:""
 ## 45 recorded 44: fact Stream type=assistant uuid=78dcbf79-744b-4cde-99f2-be6c70584bcd
 item toolu_01F8e5YXiBSZPM3CvjhngKPs tool final at=1794788086993 text="" Agent TOOL_STATE_RUNNING input=subagent:"Run echo ALPHA"
 ## 49 recorded 48: fact Stream type=system subtype=background_tasks_changed uuid=16236812-205d-48a2-9d23-fe8ae4ed45b6
-snapshot WORKING queue=[] working_on=- at=1794788087570 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=20660/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot WORKING queue=[] working_on=- at=1794788087570 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=20660/? tasks=? active=[] usage=? servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 51 recorded 50: fact Stream type=system subtype=task_started uuid=228675b6-fa6a-4db8-98c6-8616571e5a7c tool_use_id=toolu_01F8e5YXiBSZPM3CvjhngKPs
 item toolu_01F8e5YXiBSZPM3CvjhngKPs tool final at=1794788086993 text="" Agent TOOL_STATE_RUNNING background opens=sub-8b600219 input=subagent:"Run echo ALPHA"
 agent sub-8b600219 start child=aa8b33460d86493fd call=host/toolu_01F8e5YXiBSZPM3CvjhngKPs title="Run echo ALPHA"
 agent sub-8b600219 item prompt:toolu_01F8e5YXiBSZPM3CvjhngKPs prompt final at=1794788087583 text="Use the Bash tool to run exactly this command: echo ALPHA\nThen report back exactly what it printed."
-agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788087583 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run echo ALPHA"@1794788087583]
+agent sub-8b600219 snapshot capabilities stops_job model=- effort=- permission=- mode=-
+agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788087583 conversation=? model_name=? sign_in=? background=[-:"Run echo ALPHA"@1794788087583] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 59 recorded 58: fact Stream type=rate_limit_event uuid=7cfb925d-d029-4983-b529-387ddd7bf444
-snapshot WORKING queue=[] working_on=- at=1794788087596 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=20660/? tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot WORKING queue=[] working_on=- at=1794788087596 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=20660/? tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 61 recorded 60: fact Stream type=system subtype=status uuid=eb1fea10-69be-4a13-aa11-584929807d27
 item eb1fea10-69be-4a13-aa11-584929807d27 status final at=1794788087603 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 63 recorded 62: fact Stream type=stream_event uuid=7c51bf70-da49-498d-8f6c-93afb5e4ce9e
-snapshot WORKING queue=[] working_on=- at=1794788088929 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=21207/? tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot WORKING queue=[] working_on=- at=1794788088929 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=21207/? tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 65 recorded 64: fact Stream type=stream_event uuid=9d87df8b-6463-453b-9551-7d821d9bbe2e
 item msg_011Ch5eDr8CUf53fjKZ8tSgL:0 thinking open at=1794788088930 text=""
 ## 68 recorded 67: fact Stream type=stream_event uuid=211a1a67-545b-44d2-9f92-a2f1b48f6ba8
 append msg_011Ch5eDr8CUf53fjKZ8tSgL:0 ""
 ## 70 recorded 69: fact Stream type=assistant uuid=3b132ddf-8955-48f0-b2d8-bd7f9647f275
 agent sub-8b600219 item toolu_01AU9XgB9WTSHZGvborQZ6cn tool final at=1794788089256 text="" Bash TOOL_STATE_RUNNING input=shell:"echo ALPHA"
-agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788089256 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run echo ALPHA"@1794788087583]
+agent sub-8b600219 snapshot settings model=claude-haiku-5-5 effort=? permission=? level=? mode=?
+agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788089256 conversation=? model_name="Haiku 5.5" sign_in=? background=[-:"Run echo ALPHA"@1794788087583] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 74 recorded 73: fact Stream type=user uuid=010bf834-edbc-4ab2-8ca2-e377e78e090e
 agent sub-8b600219 item toolu_01AU9XgB9WTSHZGvborQZ6cn tool final at=1794788089256 text="" Bash TOOL_STATE_SUCCEEDED ended=1794788089471 input=shell:"echo ALPHA" out="ALPHA"
 ## 76 recorded 75: fact Stream type=stream_event uuid=1dfc9984-978f-4132-8235-8581e43909ca
@@ -83,7 +86,7 @@ item msg_011Ch5eDr8CUf53fjKZ8tSgL:1 message final at=1794788089766 text="I've st
 ## 113 recorded 112: fact Stream type=result subtype=success uuid=ed292500-8a8e-4c7e-b759-97b832fadbf2
 item turn:1 turn final at=1794788090026 text="" #1 TURN_OUTCOME_COMPLETED started=1794788084987
 snapshot said "I've started the subagent (it's running in the background) and asked it to run echo ALPHA. I'll send it the echo BETA request once it reports back, then reply DONE."
-snapshot IDLE queue=[] working_on=- at=1794788090026 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=21207/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot IDLE queue=[] working_on=- at=1794788090026 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=21207/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY]
 turn_end 1 last=msg_011Ch5eDr8CUf53fjKZ8tSgL:1
 ## 117 recorded 116: fact Stream type=assistant uuid=f9fba80c-20c7-4827-ba5c-375c81be16f5
 agent sub-8b600219 item msg_011Ch5eDyYBkhU47eVtr35Ts:0 thinking final at=1794788090985 text=""
@@ -91,13 +94,13 @@ agent sub-8b600219 item msg_011Ch5eDyYBkhU47eVtr35Ts:0 thinking final at=1794788
 agent sub-8b600219 item msg_011Ch5eDyYBkhU47eVtr35Ts:1 message final at=1794788091128 text="The command `echo ALPHA` printed exactly:\n\n```\nALPHA\n```"
 ## 122 recorded 121: fact Stream type=system subtype=task_notification uuid=22ddcf05-9872-474a-82cd-2495c764a299 tool_use_id=toolu_01F8e5YXiBSZPM3CvjhngKPs
 item toolu_01F8e5YXiBSZPM3CvjhngKPs tool final at=1794788086993 text="" Agent TOOL_STATE_SUCCEEDED background opens=sub-8b600219 ended=1794788091154 input=subagent:"Run echo ALPHA" out="The command `echo ALPHA` printed exactly:\n\n```\nALPHA\n```"
-snapshot WORKING queue=[] working_on=- at=1794788091154 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=21207/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
-agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788091154 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794788091154 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=21207/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY]
+agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788091154 conversation=? model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=? tasks=? active=[] usage=? servers=[]
 agent sub-8b600219 end FINISHED
 ## 128 recorded 127: fact Stream type=system subtype=status uuid=edfacd6c-e36a-4171-a285-e13d623e22d3
 item edfacd6c-e36a-4171-a285-e13d623e22d3 status final at=1794788091244 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 130 recorded 129: fact Stream type=stream_event uuid=4078ddbd-6392-49c1-9698-fab9b19ad142
-snapshot WORKING queue=[] working_on=- at=1794788092537 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=21977/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot WORKING queue=[] working_on=- at=1794788092537 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=21977/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 132 recorded 131: fact Stream type=stream_event uuid=a121f653-4a02-4afc-aa25-533f7cf468a0
 item toolu_01YWgPxfcyw1fNKdg5mCbdgD tool final at=1794788092538 text="" ToolSearch TOOL_STATE_RUNNING search input="null"
 ## 141 recorded 140: fact Stream type=assistant uuid=45cd9553-8735-40e1-9ebf-62194a2a6ec5
@@ -107,7 +110,7 @@ item toolu_01YWgPxfcyw1fNKdg5mCbdgD tool final at=1794788092538 text="" ToolSear
 ## 150 recorded 149: fact Stream type=system subtype=status uuid=f6416025-3732-457b-aff3-472dba841c17
 item f6416025-3732-457b-aff3-472dba841c17 status final at=1794788092912 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 152 recorded 151: fact Stream type=stream_event uuid=c90ef45a-3427-4e72-a8c9-2916e97e5056
-snapshot WORKING queue=[] working_on=- at=1794788094295 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=24097/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot WORKING queue=[] working_on=- at=1794788094295 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=24097/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 153 recorded 152: fact Stream type=stream_event uuid=12b4b0ef-003b-4708-96de-b870139ad688
 item toolu_0115dPdfaNpQp5uZ4Cdj5n7t tool final at=1794788094295 text="" SendMessage TOOL_STATE_RUNNING input="null"
 ## 174 recorded 173: fact Stream type=assistant uuid=81787eb2-6d00-435c-b007-7290ea39dfbb
@@ -116,11 +119,12 @@ item toolu_0115dPdfaNpQp5uZ4Cdj5n7t tool final at=1794788094295 text="" SendMess
 item toolu_0115dPdfaNpQp5uZ4Cdj5n7t tool final at=1794788094295 text="" SendMessage TOOL_STATE_RUNNING background opens=sub-8b600219 input="{\"content\":\"Use Bash to run exactly this command: echo BETA\\…"
 agent sub-8b600219 start child=aa8b33460d86493fd call=host/toolu_0115dPdfaNpQp5uZ4Cdj5n7t title="Run echo ALPHA"
 agent sub-8b600219 item prompt:toolu_0115dPdfaNpQp5uZ4Cdj5n7t prompt final at=1794788094623 text="Use Bash to run exactly this command: echo BETA\nThen report back exactly what it printed."
-agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788094623 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run echo ALPHA"@1794788094623]
+agent sub-8b600219 snapshot settings none
+agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788094623 conversation=? model_name=? sign_in=? background=[-:"Run echo ALPHA"@1794788094623] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 187 recorded 186: fact Stream type=system subtype=status uuid=93a66e57-0bc3-4465-95c9-e8b3b65f1346
 item 93a66e57-0bc3-4465-95c9-e8b3b65f1346 status final at=1794788094635 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 189 recorded 188: fact Stream type=stream_event uuid=c58a50c2-a5b5-4d81-9e0b-a2c48938c5c1
-snapshot WORKING queue=[] working_on=- at=1794788095810 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=24354/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot WORKING queue=[] working_on=- at=1794788095810 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=24354/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 191 recorded 190: fact Stream type=stream_event uuid=1a78ec56-19cc-4bc6-99c7-3c72cb58ef5a
 item msg_011Ch5eEMVHvSmowzgNSzANq:0 message open at=1794788095815 text=""
 ## 193 recorded 192: fact Stream type=stream_event uuid=8d4b6cbb-737e-4149-839d-8c9185525ca5
@@ -150,24 +154,25 @@ item msg_011Ch5eEMVHvSmowzgNSzANq:0 message final at=1794788095815 text="The ALP
 ## 216 recorded 215: fact Stream type=result subtype=success uuid=e62e3529-4eab-41d4-b922-1f4e37576c3a
 item turn:2 turn final at=1794788096052 text="" #2 TURN_OUTCOME_COMPLETED started=1794788091232
 snapshot said "The ALPHA subagent reported ALPHA. I've sent it the echo BETA request and am waiting for its reply before I answer DONE."
-snapshot IDLE queue=[] working_on=- at=1794788096052 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=24354/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot IDLE queue=[] working_on=- at=1794788096052 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=24354/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY]
 turn_end 2 last=msg_011Ch5eEMVHvSmowzgNSzANq:0
 ## 218 recorded 217: fact Stream type=assistant uuid=68b82405-3429-4a04-bed2-c548ff46704c
 agent sub-8b600219 item toolu_01M9Jnn7H9bt486EAP8wVk7L tool final at=1794788096217 text="" Bash TOOL_STATE_RUNNING input=shell:"echo BETA"
-agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788096217 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[-:"Run echo ALPHA"@1794788094623]
+agent sub-8b600219 snapshot settings model=claude-haiku-5-5 effort=? permission=? level=? mode=?
+agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788096217 conversation=? model_name="Haiku 5.5" sign_in=? background=[-:"Run echo ALPHA"@1794788094623] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 222 recorded 221: fact Stream type=user uuid=2f13083f-2bb5-4185-86cf-0800e95e90f3
 agent sub-8b600219 item toolu_01M9Jnn7H9bt486EAP8wVk7L tool final at=1794788096217 text="" Bash TOOL_STATE_SUCCEEDED ended=1794788096233 input=shell:"echo BETA" out="BETA"
 ## 224 recorded 223: fact Stream type=assistant uuid=8363a342-7279-4e6a-a6ea-eef17dd4da17
 agent sub-8b600219 item msg_011Ch5eEUM3uim5t5yGsut2L:0 message final at=1794788097497 text="The command `echo BETA` printed exactly:\n\n```\nBETA\n```"
 ## 227 recorded 226: fact Stream type=system subtype=task_notification uuid=c79ecc46-cb70-4a98-af2a-c887c5c2a904 tool_use_id=toolu_0115dPdfaNpQp5uZ4Cdj5n7t
 item toolu_0115dPdfaNpQp5uZ4Cdj5n7t tool final at=1794788094295 text="" SendMessage TOOL_STATE_SUCCEEDED background opens=sub-8b600219 ended=1794788097509 input="{\"content\":\"Use Bash to run exactly this command: echo BETA\\…" out="The command `echo BETA` printed exactly:\n\n```\nBETA\n```"
-snapshot WORKING queue=[] working_on=- at=1794788097509 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=24354/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
-agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788097509 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794788097509 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=24354/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY]
+agent sub-8b600219 snapshot WORKING queue=[] working_on=- at=1794788097509 conversation=? model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=? tasks=? active=[] usage=? servers=[]
 agent sub-8b600219 end FINISHED
 ## 232 recorded 231: fact Stream type=system subtype=status uuid=f3b791f8-246f-4e50-a26d-3d35a76278a6
 item f3b791f8-246f-4e50-a26d-3d35a76278a6 status final at=1794788097567 text="" SDK_STATUS_UNSPECIFIED requesting
 ## 234 recorded 233: fact Stream type=stream_event uuid=21ddcd28-b4ee-4758-b181-2ce173680aae
-snapshot WORKING queue=[] working_on=- at=1794788098996 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=24925/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot WORKING queue=[] working_on=- at=1794788098996 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=24925/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY]
 ## 235 recorded 234: fact Stream type=stream_event uuid=1ac3266f-61b8-46e4-a1c0-236c1ef37d17
 item msg_011Ch5eEa5q3FVdCon6aqkhp:0 message open at=1794788098996 text=""
 ## 236 recorded 235: fact Stream type=stream_event uuid=83957b80-493f-47f0-a579-afd8751aacf1
@@ -177,5 +182,5 @@ item msg_011Ch5eEa5q3FVdCon6aqkhp:0 message final at=1794788098996 text="DONE"
 ## 245 recorded 244: fact Stream type=result subtype=success uuid=a06e9883-17ac-41bc-8f2d-8b6bdab063c3
 item turn:3 turn final at=1794788099009 text="" #3 TURN_OUTCOME_COMPLETED started=1794788097559
 snapshot said "DONE"
-snapshot IDLE queue=[] working_on=- at=1794788099009 asks=[] session=81f8d83b-9624-4905-9fea-b57e666cd544 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=24925/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN <REDACTED_IDENTIFIER> background=[]
+snapshot IDLE queue=[] working_on=- at=1794788099009 conversation=81f8d83b-9624-4905-9fea-b57e666cd544 model_name="Haiku 5.5" sign_in=SIGNED_IN <REDACTED_IDENTIFIER> background=[] asks=[] context=24925/1000000 tasks=? active=[] usage=ok 7d:17%(ok) servers=[amux:TOOL_SERVER_STATUS_READY]
 turn_end 3 last=msg_011Ch5eEa5q3FVdCon6aqkhp:0

@@ -584,7 +584,7 @@ pub struct Ingested {
     /// The model or effort a person picked that the agent's program took
     /// in these frames, the newest of each, for the host to keep. The kind
     /// and provider are read with it.
-    pub picked: Option<wire::PickTaken>,
+    pub picked: Option<wire::AgentSettings>,
     /// An ACP agent's provider id and the sign-in its newest snapshot in
     /// these frames says, where it says one: the host's word on whether the
     /// provider is signed in follows what its agents meet.
@@ -739,12 +739,12 @@ pub enum Job {
     /// Hand the push to the profile's sender.
     SendPush(Push),
     /// Build the exited agent's next spec from its newest, carrying the
-    /// settings its newest `snapshot` body says it last ran with, its queue
+    /// settings its newest `snapshot` says it last ran with, its queue
     /// seeded by `bootstrap`; answered as [`JobResult::Spec`].
     NextSpec {
         agent: AgentId,
         bootstrap: Option<wire::Bootstrap>,
-        snapshot: Option<Vec<u8>>,
+        snapshot: Option<Box<wire::Snapshot>>,
     },
     /// Kill the agent's process group from outside: the process this
     /// daemon started, or the one on the other end of its control socket.
@@ -791,8 +791,8 @@ mod tests {
             },
             Input::LinkControl {
                 link: LinkId(1),
-                frame: wire::Message {
-                    body: Some(wire::message::Body::NeighborDown(wire::NeighborDown {
+                frame: wire::LinkMessage {
+                    body: Some(wire::link_message::Body::NeighborDown(wire::NeighborDown {
                         host_id: vec![2; 16],
                     })),
                 },

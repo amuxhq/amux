@@ -13,9 +13,9 @@ use tonic::service::RoutesBuilder;
 use tonic::{Request, Response, Status};
 use wire::peer_service_server::PeerService;
 use wire::{
-    DeliverReportRequest, DeliverReportResponse, ErrorCode, FollowAgentsRequest,
-    FollowAgentsResponse, FollowSessionRequest, FollowSessionResponse, PeerServiceGetBlobRequest,
-    PeerServiceGetBlobResponse, PeerServiceListItemsRequest, PeerServiceListItemsResponse,
+    DeliverReportRequest, DeliverReportResponse, ErrorCode, FetchBlobRequest, FetchBlobResponse,
+    FetchItemsRequest, FetchItemsResponse, FollowAgentsRequest, FollowAgentsResponse,
+    FollowSessionRequest, FollowSessionResponse,
 };
 
 use crate::api::caller::PairedDaemon;
@@ -96,10 +96,10 @@ impl PeerService for Peer {
         Ok(Response::new(Box::pin(stream)))
     }
 
-    async fn list_items(
+    async fn fetch_items(
         &self,
-        request: Request<PeerServiceListItemsRequest>,
-    ) -> Result<Response<PeerServiceListItemsResponse>, Status> {
+        request: Request<FetchItemsRequest>,
+    ) -> Result<Response<FetchItemsResponse>, Status> {
         let PairedDaemon(from) = PairedDaemon::of(&request)?;
         let request = request.into_inner();
         agent_id(&request.agent_id)?;
@@ -115,7 +115,7 @@ impl PeerService for Peer {
             )
             .await
             .map_err(|error| status(error.to_wire()))?;
-        Ok(Response::new(PeerServiceListItemsResponse {
+        Ok(Response::new(FetchItemsResponse {
             items: page.items,
             exhausted: page.exhausted,
         }))
@@ -124,10 +124,10 @@ impl PeerService for Peer {
     /// A file in one of this host's own agents' directories. A file held
     /// here only as a copy of another host's is not found: the asking
     /// daemon fetches it from that host itself.
-    async fn get_blob(
+    async fn fetch_blob(
         &self,
-        request: Request<PeerServiceGetBlobRequest>,
-    ) -> Result<Response<PeerServiceGetBlobResponse>, Status> {
+        request: Request<FetchBlobRequest>,
+    ) -> Result<Response<FetchBlobResponse>, Status> {
         PairedDaemon::of(&request)?;
         let request = request.into_inner();
         agent_id(&request.agent_id)?;
@@ -143,7 +143,7 @@ impl PeerService for Peer {
                 hash: request.hash,
             })
             .await
-            .map(|blob| Response::new(PeerServiceGetBlobResponse { bytes: blob.bytes }))
+            .map(|blob| Response::new(FetchBlobResponse { bytes: blob.bytes }))
             .map_err(|error| status(error.to_wire()))
     }
 

@@ -321,7 +321,8 @@ fn double_underscore(name: &str, server: &str, tool: &str) -> bool {
 /// Claude: it copies any file the agent names into the agent's blob folder,
 /// which the agent then reads unasked, so a read the agent's own settings
 /// would ask about goes through them first. Each by its name now and by the
-/// one a release before 0.11 gave it, which a resumed agent may still call.
+/// one a release before 0.11 gave it, which the recorded sessions the
+/// interpreter is tested against call ([`wire::former_tools`]).
 const AMUX_TOOLS_UNASKED: [&str; 12] = [
     wire::AGENTS_TOOL,
     wire::HOSTS_TOOL,
@@ -596,30 +597,69 @@ fn offered_models(choices: &[Choice]) -> Vec<OfferedModel> {
         .unwrap_or_default()
 }
 
-/// The models and modes a session of `agent` with these choices offers:
-/// what its conversation publishes. `normal` is the mode the agent's
-/// sessions start in, its own default.
+/// The models, permissions and modes a session of `agent` with these
+/// choices offers: what its conversation publishes. `normal` is the mode the
+/// agent's sessions start in, its own default. Of its modes, those amux
+/// knows are permissions ([`wire::levels::acp_modes`]) are listed as
+/// permissions, at their levels; every other is a mode.
 fn session_catalogue(agent: &str, choices: &[Choice], normal: Option<&str>) -> Catalogue {
+    let values = choices
+        .iter()
+        .find(|choice| choice.category == Category::Mode)
+        .map_or(&[][..], |choice| &choice.values[..]);
+    let (permissions, modes): (Vec<_>, Vec<_>) = values
+        .iter()
+        .partition(|value| is_permission(agent, &value.value));
     Catalogue {
         models: offered_models(choices),
-        modes: choices
-            .iter()
-            .find(|choice| choice.category == Category::Mode)
-            .map(|choice| {
-                choice
-                    .values
-                    .iter()
-                    .map(|value| OfferedMode {
-                        value: value.value.clone(),
-                        display_name: value.name.clone(),
-                        normal: normal == Some(value.value.as_str()),
-                        settable: true,
-                        level: wire::levels::acp_mode(agent, &value.value) as i32,
-                    })
-                    .collect()
+        permissions: permissions
+            .into_iter()
+            .map(|value| {
+                offered_permission(
+                    agent,
+                    &value.value,
+                    &value.name,
+                    normal == Some(value.value.as_str()),
+                )
             })
-            .unwrap_or_default(),
+            .collect(),
+        modes: modes
+            .into_iter()
+            .map(|value| OfferedMode {
+                value: value.value.clone(),
+                display_name: value.name.clone(),
+                normal: normal == Some(value.value.as_str()),
+                settable: true,
+            })
+            .collect(),
         ..Default::default()
+    }
+}
+
+/// Whether `mode`, one of `agent`'s modes, is a permission: one amux knows
+/// the level of.
+fn is_permission(agent: &str, mode: &str) -> bool {
+    wire::levels::acp_mode(agent, mode) != wire::PermissionLevel::Unspecified
+}
+
+/// One of `agent`'s modes that is a permission, as its catalogue lists it.
+/// It is set through the same ACP call as any mode. None is said to act
+/// without asking: what even the widest does is the person's own agent
+/// config's to say.
+fn offered_permission(
+    agent: &str,
+    value: &str,
+    display_name: &str,
+    normal: bool,
+) -> wire::OfferedPermission {
+    wire::OfferedPermission {
+        value: value.to_owned(),
+        display_name: display_name.to_owned(),
+        normal,
+        never_asks: false,
+        settable: true,
+        models: Vec::new(),
+        level: wire::levels::acp_mode(agent, value) as i32,
     }
 }
 
@@ -855,11 +895,17 @@ impl State {
     }
 
     fn new(spec: &AgentSpec) -> Self {
-        let config = spec.config.clone().unwrap_or_default();
+        let settings = spec
+            .config
+            .as_ref()
+            .and_then(|config| config.settings.clone())
+            .unwrap_or_default();
+        // A permission is one of the agent's modes, so either sets the
+        // mode; a permission chosen as well wins.
         let wanted = [
-            (Category::Model, config.model),
-            (Category::Effort, config.effort),
-            (Category::Mode, config.mode),
+            (Category::Model, settings.model),
+            (Category::Effort, settings.effort),
+            (Category::Mode, settings.permission.or(settings.mode)),
         ]
         .into_iter()
         .filter_map(|(category, value)| Some((category, value?)))
@@ -952,10 +998,41 @@ impl State {
         }
     }
 
-    fn body(&self) -> Vec<u8> {
+    /// Says on the snapshot's envelope what every kind says the same way.
+    /// The agent's mode is reported as its permission when its catalogue
+    /// lists it as one, else as its mode.
+    fn report(&mut self) {
         let model = self.current(Category::Model);
+        let effort = self.current(Category::Effort);
+        let mode = self.current(Category::Mode);
+        let (permission, mode) = match mode {
+            Some(mode) if is_permission(&self.agent, &mode) => (Some(mode), None),
+            mode => (None, mode),
+        };
+        let model_name = crate::shared::model_name(
+            model.as_deref(),
+            None,
+            &self.offered_models(),
+            str::to_owned,
+        );
+        let sign_in = self.sign_in.clone();
+        let conversation = self.session_id.clone();
+        self.shared.report(
+            &self.agent.clone(),
+            crate::shared::Report {
+                model: model.as_deref(),
+                effort: effort.as_deref(),
+                permission: permission.as_deref(),
+                mode: mode.as_deref(),
+                model_name,
+                sign_in,
+                conversation: conversation.as_deref(),
+            },
+        );
+    }
+
+    fn body(&self) -> Vec<u8> {
         AcpSnapshot {
-            agent: Some(self.agent.clone()),
             asks: self.shared.asks().open_asks().to_vec(),
             context: Some(match self.context.or_else(|| self.context_from_meta()) {
                 None => unknown::context_meter(),
@@ -965,17 +1042,7 @@ impl State {
                     window_tokens: Some(window),
                 },
             }),
-            model_name: crate::shared::model_name(
-                model.as_deref(),
-                None,
-                &self.offered_models(),
-                str::to_owned,
-            ),
-            model,
-            effort: self.current(Category::Effort),
-            mode: self.current(Category::Mode),
             usage: Some(self.usage.clone().unwrap_or_else(unknown::acp_usage)),
-            sign_in: Some(self.sign_in.clone().unwrap_or_else(unknown::sign_in)),
             plan: Some(match &self.plan {
                 None => unknown::task_list(),
                 Some(entries) => TaskList {
@@ -991,18 +1058,6 @@ impl State {
                         })
                         .collect(),
                 },
-            }),
-            session_id: self.session_id.clone(),
-            // What the daemon reads to know whether a new process could
-            // carry the conversation on; resume wins, as `opening` picks.
-            reopen: self.reopens.map(|reopens| {
-                (if reopens.resume {
-                    wire::AcpReopen::Resume
-                } else if reopens.load {
-                    wire::AcpReopen::Load
-                } else {
-                    wire::AcpReopen::None
-                }) as i32
             }),
             servers: self.servers.clone(),
         }
@@ -1470,9 +1525,7 @@ impl State {
             emit,
             wire::Boundary {
                 kind: kind as i32,
-                cause: exit.cause,
-                cause_detail: exit.detail,
-                idle: false,
+                exit: (kind == wire::BoundaryKind::Exited).then_some(exit),
             },
         );
     }
@@ -1542,8 +1595,8 @@ impl State {
                 key: prompt_key(&entry.input_id),
                 text: entry.text,
                 attachments: entry.attachments,
+                body: item_body(acp_item::Kind::Prompt(self.shared.prompt(&entry.input_id))),
                 input_id: entry.input_id,
-                body: item_body(acp_item::Kind::Prompt(wire::Prompt {})),
                 complete: true,
                 ..Default::default()
             },
@@ -1674,7 +1727,7 @@ impl State {
                 }
                 if let Some(entry) =
                     self.shared
-                        .admit_prompt(emit, &id, prompt, crate::shared::human())
+                        .admit_prompt(emit, &id, prompt, crate::shared::person())
                 {
                     self.submit(emit, entry, false);
                 }
@@ -1721,7 +1774,11 @@ impl State {
                     .or_else(|| self.starting.get(&Category::Effort).cloned());
                 self.setting(emit, &id, Category::Effort, value)
             }
-            acp_input::Of::Mode(set) => self.setting(emit, &id, Category::Mode, Some(set.value)),
+            // A permission is one of the agent's modes, set as any other.
+            acp_input::Of::Mode(wire::SetMode { value })
+            | acp_input::Of::Permission(wire::SetPermission { value }) => {
+                self.setting(emit, &id, Category::Mode, Some(value))
+            }
             acp_input::Of::Answer(answer) => self.answer(emit, &id, answer),
         }
     }
@@ -1888,7 +1945,7 @@ impl State {
                 };
                 if let Some(entry) =
                     self.shared
-                        .admit_prompt(emit, id, prompt, crate::shared::human())
+                        .admit_prompt(emit, id, prompt, crate::shared::person())
                 {
                     self.submit(emit, entry, false);
                 }
@@ -2084,10 +2141,10 @@ impl Interpreter for Acp {
             Event::Input(input) => state.input(&mut emit, input),
             // An ACP agent's own subagents are not amux agents: nothing
             // addresses one.
-            Event::ChildInput { input, .. } => {
+            Event::ChildInput { input_id, .. } => {
                 state
                     .shared
-                    .reject(&mut emit, &input.input_id, Refusal::Unsupported)
+                    .reject(&mut emit, &input_id, Refusal::Unsupported)
             }
             Event::AgentMessage(envelope) => state.agent_message(&mut emit, envelope),
             // ACP has no way to name a session, so the name stays amux's.
@@ -2118,17 +2175,7 @@ impl Interpreter for Acp {
             let catalogue = state.catalogue();
             state.shared.set_catalogue(&mut emit, catalogue);
         }
-        let (model, effort, mode) = (
-            state.current(Category::Model),
-            state.current(Category::Effort),
-            state.current(Category::Mode),
-        );
-        state.shared.set_settings(
-            &state.agent,
-            model.as_deref(),
-            effort.as_deref(),
-            mode.as_deref(),
-        );
+        state.report();
         let body = state.body();
         let notice = state.shared.notice(crate::notice::acp_ask);
         state.shared.finish(emit, body, notice)
@@ -2376,8 +2423,6 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
     let snapshot = AcpSnapshot::decode(body).unwrap_or_default();
     let context = snapshot.context.unwrap_or_default();
     let usage = snapshot.usage.clone().unwrap_or_default();
-    let sign_in = snapshot.sign_in.clone().unwrap_or_default();
-    let opt = |value: &Option<String>| value.clone().unwrap_or_else(|| "?".to_owned());
     let tokens = |value: Option<u64>| value.map_or("?".to_owned(), |tokens| tokens.to_string());
     SnapshotView {
         asks: snapshot
@@ -2386,19 +2431,13 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             .map(|ask| (ask.key.clone(), ask.item_key.clone()))
             .collect(),
         text: format!(
-            "agent={} session={} asks=[{}] model={} model_name={} effort={} mode={} context={} plan={} usage=in:{}/out:{}/thought:{}/total:{} cost={} sign_in={} reopen={}",
-            opt(&snapshot.agent),
-            opt(&snapshot.session_id),
+            "asks=[{}] context={} plan={} usage=in:{}/out:{}/thought:{}/total:{} cost={}",
             snapshot
                 .asks
                 .iter()
                 .map(describe_ask)
                 .collect::<Vec<_>>()
                 .join(","),
-            opt(&snapshot.model),
-            opt(&snapshot.model_name),
-            opt(&snapshot.effort),
-            opt(&snapshot.mode),
             if context.known {
                 format!("{}/{}", context.used_tokens, tokens(context.window_tokens))
             } else {
@@ -2415,14 +2454,6 @@ fn describe_snapshot(body: &[u8]) -> SnapshotView {
             usage
                 .cost
                 .map_or("?".to_owned(), |cost| format!("{cost}{}", usage.currency)),
-            wire::SignInState::try_from(sign_in.state)
-                .map_or("?", |state| state.as_str_name())
-                .trim_start_matches("SIGN_IN_STATE_"),
-            snapshot
-                .reopen
-                .and_then(|reopen| wire::AcpReopen::try_from(reopen).ok())
-                .map_or("?", |reopen| reopen.as_str_name())
-                .trim_start_matches("ACP_REOPEN_"),
         ) + &describe_servers(&snapshot.servers),
     }
 }

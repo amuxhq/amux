@@ -217,10 +217,9 @@ to `ctl.sock`, reads a Hello, ingests the journal whenever a Nudge arrives,
 and writes inputs and stops. The agent dials the daemon only to make the
 spawns its tool server asks it for, on its own `tools.sock`.
 
-Every surface is protobuf, and none carries a version integer. From 0.9.0 the
-schemas change only by adding, and the services from 0.11.0, the release that
-gave them their present shape; [the wire](WIRE.md) has the calls, the records
-and the rule.
+Every surface is protobuf, and none carries a version integer. From 0.11.0,
+the release that gave them their present shape, the schemas change only by
+adding; [the wire](WIRE.md) has the calls, the records and the rule.
 
 ## Inside the daemon
 

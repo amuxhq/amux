@@ -60,9 +60,6 @@ pub struct HostSet {
     /// Why the last dial to each host failed, until a route to it comes up.
     dial_errors: BTreeMap<HostId, String>,
     providers: BTreeMap<HostId, Providers>,
-    /// Which Claude a new agent on each trusted host runs, as its own entry
-    /// said.
-    claude_kinds: BTreeMap<HostId, i32>,
     /// Where each trusted host offers to start an agent, as its own entry
     /// said.
     folders: BTreeMap<HostId, Folders>,
@@ -226,7 +223,6 @@ impl Daemon {
                     standing: Some(Standing::Trusted(wire::Trusted {
                         reach: Some(self.reads(host)),
                         current: self.sources.ready(host),
-                        same_network: self.same_network(host),
                     })),
                     push_key: None,
                     folders: self
@@ -235,20 +231,20 @@ impl Daemon {
                         .get(&host)
                         .map(|folders| folders.0.clone())
                         .unwrap_or_default(),
+                    experimental: Default::default(),
                 },
             );
         }
         for (id, entry) in self.candidate_entries(&own_host) {
             fresh.entry(id).or_insert(entry);
         }
-        // This host is always trusted, online and current to itself.
+        // This host is always trusted, here and current to itself.
         let mut own = self.host_set.own.clone().unwrap_or_default();
         own.host.get_or_insert_with(wire::Host::default).host_id = own_host.clone();
         own.generation = self.options.generation;
         own.standing = Some(Standing::Trusted(wire::Trusted {
-            reach: Some(trusted::Reach::Online(RouteKind::Unspecified as i32)),
+            reach: Some(trusted::Reach::Here(wire::Here {})),
             current: true,
-            same_network: false,
         }));
         fresh.insert(own_host, own);
         fresh
@@ -335,9 +331,8 @@ impl Daemon {
             host_id: relay.0.to_vec(),
             name,
             version: said.map(|said| said.version.clone()).unwrap_or_default(),
-            capabilities: Some(wire::Capabilities {
+            capabilities: Some(wire::HostCapabilities {
                 cloud_relay: self.routing.links.is_relay(relay),
-                kinds: said.map(|said| said.kinds.clone()).unwrap_or_default(),
             }),
             platform: said.map_or(wire::Platform::Unspecified, |said| said.platform) as i32,
             account_signed_in: said.and_then(|said| said.signed_in),
@@ -361,12 +356,11 @@ impl Daemon {
 
     /// Whether `host` reads online over a direct link on a network both
     /// hosts are on: the link its calls take is carried on such a path.
-    pub fn same_network(&self, host: HostId) -> bool {
-        matches!(self.reads(host), trusted::Reach::Online(_))
-            && match self.presence.view(host).route() {
-                Some(Route::Direct(link)) => self.routing.links.link(link).is_some_and(|up| up.lan),
-                _ => false,
-            }
+    pub(crate) fn same_network(&self, host: HostId) -> bool {
+        match self.presence.view(host).route() {
+            Some(Route::Direct(link)) => self.routing.links.link(link).is_some_and(|up| up.lan),
+            _ => false,
+        }
     }
 
     /// How `host` reads, as every client is told: online over the kind of
@@ -380,10 +374,13 @@ impl Daemon {
         let via = self.route_kind(host);
         match self.presence.view(host).presence {
             Presence::Online if !revoked && via != RouteKind::Unspecified => {
-                trusted::Reach::Online(via as i32)
+                trusted::Reach::Online(wire::Online {
+                    route: via as i32,
+                    same_network: via == RouteKind::Direct && self.same_network(host),
+                })
             }
             Presence::Away if !revoked && via != RouteKind::Unspecified => {
-                trusted::Reach::Away(wire::Empty {})
+                trusted::Reach::Away(wire::Away {})
             }
             _ => trusted::Reach::Offline(wire::Offline {
                 last_dial_error: self.host_set.dial_errors.get(&host).cloned(),

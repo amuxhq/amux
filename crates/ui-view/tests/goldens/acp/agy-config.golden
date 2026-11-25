@@ -25,11 +25,11 @@
   effort  low
   effort* medium
   effort  high
-  mode* "default" "Default" normal
-  mode  "accept-edits" "Accept edits"
-  mode  "auto" "Auto"
-  mode  "plan" "Plan"
-  changes: model Pick · effort Pick · permission NotOffered · mode Pick
+  permission* "default" "Default" normal
+  permission  "accept-edits" "Accept edits"
+  permission  "auto" "Auto"
+  permission  "plan" "Plan"
+  changes: model Pick · effort Pick · permission Pick · mode NotOffered
   command /model source="" hint="[model]" "Choose the model the agent runs"
   command /effort source="" hint="[effort]" "Choose how hard the model thinks"
   command /rename source="" hint="<name>" "Rename the agent"

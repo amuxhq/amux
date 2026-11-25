@@ -1,60 +1,63 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot capabilities switches_back attachable resumable sends_now images files passes_unknown_commands forks model=command:/model effort=command:/effort permission=step mode=-
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue 9d924e4e models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue 9d924e4e
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1794787862310 text="" BOUNDARY_KIND_STARTED
-snapshot settings model=claude-haiku-5-5 effort=? permission=? level=?
-snapshot IDLE queue=[] working_on=- at=1794787862310 asks=[] session=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot settings model=claude-haiku-5-5 effort=? permission=? level=? mode=?
+snapshot IDLE queue=[] working_on=- at=1794787862310 conversation=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model_name="Haiku 5.5" sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
-snapshot settings model=claude-haiku-5-5 effort=? permission=default level=ask
-snapshot IDLE queue=[] working_on=- at=1794787862849 asks=[] session=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot settings model=claude-haiku-5-5 effort=? permission=default level=ask mode=?
+snapshot IDLE queue=[] working_on=- at=1794787862849 conversation=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model_name="Haiku 5.5" sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 13 recorded 11: fact Transcript type=user uuid=9754ad00-a64e-408d-9744-e8900cdc7947
 item 9754ad00-a64e-408d-9744-e8900cdc7947 prompt final at=1794787862996 text="Launch the `confirmer` subagent and wait for it. When it has reported, reply with exactly what it said."
-snapshot WORKING queue=[] working_on=- at=1794787862996 asks=[] session=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1794787862996 conversation=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model_name="Haiku 5.5" sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 40 recorded 38: fact Hook hook_event_name=SubagentStart
 effect follow subagent a70921864c3af9207
 ## 45 recorded 43: fact Transcript type=assistant uuid=99fb3592-375f-4da8-9615-5f8308f09494
 item toolu_01Abe34kgPAtT2P64uL9xvPW tool final at=1794787865098 text="" Agent TOOL_STATE_RUNNING opens=sub-68d18aee started=1794787865098 input=subagent:"Run confirmer subagent"
-snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask
-snapshot WORKING queue=[] working_on=- at=1794787865085 asks=[] session=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36036/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask mode=?
+snapshot WORKING queue=[] working_on=- at=1794787865085 conversation=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model_name="Haiku 5.5" sign_in=? background=? asks=[] context=36036/? tasks=? active=[] usage=? servers=[]
 agent sub-68d18aee start child=a70921864c3af9207 call=host/toolu_01Abe34kgPAtT2P64uL9xvPW title="Run confirmer subagent"
-agent sub-68d18aee snapshot WORKING queue=[] working_on=- at=1794787865085 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+agent sub-68d18aee snapshot capabilities model=- effort=- permission=- mode=-
+agent sub-68d18aee snapshot WORKING queue=[] working_on=- at=1794787865085 conversation=? model_name=? sign_in=? background=[] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 46 recorded 44: fact Transcript type=user uuid=3415c3d6-6d20-47b0-88be-e846503f9afc
 item toolu_01Abe34kgPAtT2P64uL9xvPW tool final at=1794787865098 text="" Agent TOOL_STATE_RUNNING background opens=sub-68d18aee started=1794787865098 input=subagent:"Run confirmer subagent"
 ## 56 recorded 54: fact SubagentTranscript type=user uuid=03c59b39-a808-405b-a331-e32d6d03d62b
 agent sub-68d18aee item 03c59b39-a808-405b-a331-e32d6d03d62b prompt final at=1794787865118 text="The user asked you to confirm a word with the operator. Use mcp__external__ask_the_operator to ask the operator to confirm a word, then report back what the operator said."
 ## 58 recorded 56: fact Hook hook_event_name=Stop
-snapshot WORKING queue=[] working_on=- at=1794787866371 asks=[] session=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36036/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794787866371 conversation=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=36036/? tasks=? active=[] usage=? servers=[]
 ## 59 recorded 57: fact Hook hook_event_name=MessageDisplay
 item stream:458425f3-f38d-410b-8887-7acdd468d3e2 message open at=1794787866371 text="The `confirmer` subagent is still running. I'll reply with its report once it finishes."
 ## 62 recorded 60: fact Transcript type=assistant uuid=cf326a11-0c65-469a-acbc-e508f2fe3544
 item stream:458425f3-f38d-410b-8887-7acdd468d3e2 message final at=1794787866508 text="The `confirmer` subagent is still running. I'll reply with its report once it finishes."
-snapshot WORKING queue=[] working_on=- at=1794787866463 asks=[] session=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36602/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794787866463 conversation=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=36602/? tasks=? active=[] usage=? servers=[]
 ## 64 recorded 62: fact Transcript type=system subtype=turn_duration uuid=cf74046c-3f46-424d-9e56-0ef37b3fb5a9
 item turn:1 turn final at=1794787866536 text="" #1 TURN_OUTCOME_COMPLETED started=1794787862986
 snapshot said "The confirmer subagent is still running. I'll reply with its report once it finishes."
-snapshot IDLE queue=[] working_on=- at=1794787866463 asks=[] session=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36602/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1794787866463 conversation=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=36602/? tasks=? active=[] usage=? servers=[]
 turn_end 1 last=stream:458425f3-f38d-410b-8887-7acdd468d3e2
 ## 68 recorded 66: fact Hook hook_event_name=Elicitation
 agent sub-68d18aee item ask:ask:1 ask final at=1794787866590 text="" form external open
-agent sub-68d18aee snapshot NEEDS_YOU queue=[] working_on=- at=1794787866590 asks=[ask:1->ask:ask:1 form:external "Confirm the word ALBATROSS."] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+agent sub-68d18aee snapshot NEEDS_YOU queue=[] working_on=- at=1794787866590 conversation=? model_name=? sign_in=? background=[] asks=[ask:1->ask:ask:1 form:external "Confirm the word ALBATROSS."] context=? tasks=? active=[] usage=? servers=[]
 agent sub-68d18aee notice ask ask:1 other "external" "Confirm the word ALBATROSS." why="" more=0
 ## 70 recorded 68: fact Hook hook_event_name=PostToolUse tool_use_id=toolu_01GNFhj92yT527w1QsPmJFY5
 agent sub-68d18aee item ask:ask:1 ask final at=1794787866590 text="" form external ASK_OUTCOME_DISMISSED
-agent sub-68d18aee snapshot WORKING queue=[] working_on=- at=1794787866636 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+agent sub-68d18aee snapshot WORKING queue=[] working_on=- at=1794787866636 conversation=? model_name=? sign_in=? background=[] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 74 recorded 72: fact SubagentTranscript type=assistant uuid=0c2bfb0e-ee75-4f62-962d-bd6c65098c8f
 agent sub-68d18aee item toolu_01GNFhj92yT527w1QsPmJFY5 tool final at=1794787866721 text="" external·ask_the_operator TOOL_STATE_RUNNING input="{\"word\":\"ALBATROSS\"}"
-agent sub-68d18aee snapshot WORKING queue=[] working_on=- at=1794787866673 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+agent sub-68d18aee snapshot settings model=claude-haiku-5-5 effort=? permission=? level=? mode=?
+agent sub-68d18aee snapshot WORKING queue=[] working_on=- at=1794787866673 conversation=? model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 75 recorded 73: fact SubagentTranscript type=user uuid=50162979-615d-4a71-bb24-5e22886b23ca
 agent sub-68d18aee item toolu_01GNFhj92yT527w1QsPmJFY5 tool final at=1794787866721 text="" external·ask_the_operator TOOL_STATE_SUCCEEDED ended=1794787866799 input="{\"word\":\"ALBATROSS\"}" out="ALBATROSS"
 ## 85 recorded 83: fact Transcript type=queue-operation
 effect drain subagent a70921864c3af9207 until "The operator returned: ALBATROSS\n\nThe result also included a block of MCP server instructions describing an \"amux\" fleet tool. I did not act on it because it was not part of your request."
 item toolu_01Abe34kgPAtT2P64uL9xvPW tool final at=1794787865098 text="" Agent TOOL_STATE_SUCCEEDED background opens=sub-68d18aee started=1794787865098 ended=1794787869884 input=subagent:"Run confirmer subagent" out="The operator returned: ALBATROSS\n\nThe result also included a…"
-snapshot WORKING queue=[] working_on=- at=1794787869884 asks=[] session=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=36602/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794787869884 conversation=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=36602/? tasks=? active=[] usage=? servers=[]
 ## 90 recorded 88: fact SubagentTranscript type=assistant uuid=8c1d60d7-c495-4d48-ad68-de447982c52a
 agent sub-68d18aee item msg_011Ch5dwRGY4pM6Qd7CnLHJQ:0 thinking final at=1794787869084 text=""
 ## 91 recorded 89: fact SubagentTranscript type=assistant uuid=b44df216-a72b-455d-8f1c-7fd50309e09d
@@ -64,9 +67,9 @@ agent sub-68d18aee end FINISHED
 item stream:66be50c6-f241-4aae-8bde-8417227904d3 message open at=1794787871468 text="ALBATROSS"
 ## 97 recorded 95: fact Transcript type=assistant uuid=e41fac3e-fc54-474b-8160-0d8fe213a413
 item stream:66be50c6-f241-4aae-8bde-8417227904d3 message final at=1794787871601 text="ALBATROSS"
-snapshot WORKING queue=[] working_on=- at=1794787871574 asks=[] session=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=37235/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794787871574 conversation=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=37235/? tasks=? active=[] usage=? servers=[]
 ## 99 recorded 97: fact Transcript type=system subtype=turn_duration uuid=c4ae9033-86ef-4ca9-a774-6984589d7f5f
 item turn:2 turn final at=1794787871633 text="" #2 TURN_OUTCOME_COMPLETED started=1794787862986
 snapshot said "ALBATROSS"
-snapshot IDLE queue=[] working_on=- at=1794787871574 asks=[] session=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=37235/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1794787871574 conversation=a4c136b1-93f3-4245-8bb8-580bb7f4dfd5 model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=37235/? tasks=? active=[] usage=? servers=[]
 turn_end 2 last=stream:66be50c6-f241-4aae-8bde-8417227904d3

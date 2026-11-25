@@ -250,15 +250,12 @@ pub(in crate::api) fn link_peer(extensions: &http::Extensions) -> Result<HostId,
 }
 
 /// The client a person's surface word names. A word this build does not
-/// know reads as another client, so one added later still counts. The
-/// iPhone app named itself `phone` before it was `ios`, and a paired phone
-/// running such a release still writes that word in its caller header, so
-/// it reads as the iPhone app too.
+/// know reads as another client, so one added later still counts.
 pub(crate) fn surface_named(word: &str) -> Surface {
     match word {
         "terminal" => Surface::Terminal,
         "mac" => Surface::Mac,
-        "ios" | "phone" => Surface::Ios,
+        "ios" => Surface::Ios,
         "android" => Surface::Android,
         "browser" => Surface::Browser,
         _ => Surface::Other,
@@ -387,7 +384,7 @@ mod tests {
     #[test]
     fn a_surface_this_build_does_not_know_reads_as_another_client() {
         assert_eq!(surface_named("watch"), Surface::Other);
-        assert_eq!(surface_named("phone"), Surface::Ios);
+        assert_eq!(surface_named("phone"), Surface::Other);
         for surface in Surface::ALL.iter().copied() {
             assert_eq!(surface_named(analytics::Token::as_str(surface)), surface);
         }

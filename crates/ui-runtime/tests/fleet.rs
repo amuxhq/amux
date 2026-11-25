@@ -175,7 +175,6 @@ async fn the_fleet_dump_part_writes_no_names_paths_or_status_text() {
                 revoked: false,
             })),
             current: false,
-            same_network: false,
         }),
     ));
     feed.send(host(
@@ -191,14 +190,17 @@ async fn the_fleet_dump_part_writes_no_names_paths_or_status_text() {
             ..Default::default()
         }),
     ));
-    feed.send(inventory_agent(wire::Agent {
+    let mut row = wire::Agent {
         name: NAME.into(),
         cwd: CWD.into(),
-        working_on: Some(WORKING_ON.into()),
-        exit_cause: wire::ExitCause::ProviderExited as i32,
-        exit_detail: Some(EXIT.into()),
+        exit: Some(wire::IncarnationEnd {
+            cause: wire::ExitCause::ProviderExited as i32,
+            detail: Some(EXIT.into()),
+        }),
         ..named(b"a")
-    }));
+    };
+    row.status_mut().working_on = Some(WORKING_ON.into());
+    feed.send(inventory_agent(row));
     feed.send(inventory_caught_up());
     let fleet = open.await.unwrap().expect("the fleet opens");
     let part = fleet.dump_part();
@@ -454,7 +456,7 @@ async fn home_wakes_for_what_is_outside_the_rows_and_not_for_rows_that_leave_its
     // The turn ending arrives as a snapshot, which does.
     let mut idle = snapshot(Kind::Codex, 2, &[]);
     if let Some(wire::session_event::Of::Snapshot(snapshot)) = &mut idle.of {
-        snapshot.phase = wire::Phase::Idle as i32;
+        snapshot.status_mut().phase = wire::Phase::Idle as i32;
     }
     streams.feed(b"a").send(idle);
     let woke = until(fleet.changed(), || {
@@ -714,7 +716,7 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
     let open = tokio::spawn(Fleet::connect(client, clock.clone()));
     let feed = calls.inventory().await;
     feed.send(inventory_host(wire::trusted::Reach::Online(
-        wire::RouteKind::Direct as i32,
+        wire::Online::via(wire::RouteKind::Direct),
     )));
     feed.send(inventory_agent(named(b"a")));
     feed.send(inventory_caught_up());
@@ -746,9 +748,9 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
     );
 
     // The host goes and comes back: the stop goes again.
-    feed.send(inventory_host(wire::trusted::Reach::Away(wire::Empty {})));
+    feed.send(inventory_host(wire::trusted::Reach::Away(wire::Away {})));
     feed.send(inventory_host(wire::trusted::Reach::Online(
-        wire::RouteKind::Direct as i32,
+        wire::Online::via(wire::RouteKind::Direct),
     )));
     let (request, reply) = calls.close_agent().await;
     assert_eq!(request.agent_id, b"a");
@@ -774,9 +776,9 @@ async fn a_stop_its_host_could_not_take_is_held_and_sent_when_the_host_is_back()
         .ok();
     assert_eq!(stopping.await.unwrap().unwrap(), ui_runtime::Close::Held);
     fleet.cancel_close(&key);
-    feed.send(inventory_host(wire::trusted::Reach::Away(wire::Empty {})));
+    feed.send(inventory_host(wire::trusted::Reach::Away(wire::Away {})));
     feed.send(inventory_host(wire::trusted::Reach::Online(
-        wire::RouteKind::Direct as i32,
+        wire::Online::via(wire::RouteKind::Direct),
     )));
     calls.none().await;
     assert!(!fleet.state().close_held(&key));
@@ -807,7 +809,7 @@ async fn a_close_is_held_only_when_it_never_left_for_its_host() {
         let open = tokio::spawn(Fleet::connect(client, ManualClock::new(0)));
         let feed = calls.inventory().await;
         feed.send(inventory_host(wire::trusted::Reach::Online(
-            wire::RouteKind::Direct as i32,
+            wire::Online::via(wire::RouteKind::Direct),
         )));
         feed.send(inventory_agent(named(b"a")));
         feed.send(inventory_caught_up());

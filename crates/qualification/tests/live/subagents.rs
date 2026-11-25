@@ -38,14 +38,14 @@ fn sdk(of: claude_sdk_input::Of) -> wire::KindInput {
 }
 
 /// The calls that started subagents.
-fn agent_calls(log: &Log) -> Vec<wire::ToolCall> {
+fn agent_calls(log: &Log) -> Vec<wire::ClaudeToolCall> {
     tools(log)
         .into_iter()
         .filter(|call| call.name == "Agent" || call.name == "Task")
         .collect()
 }
 
-fn running(call: &wire::ToolCall) -> bool {
+fn running(call: &wire::ClaudeToolCall) -> bool {
     call.state() == wire::ToolState::Running
 }
 
@@ -246,7 +246,7 @@ impl Install {
             "the subagent's ask and its report",
             |ask| match ask {
                 OpenAsk::Claude(claude)
-                    if matches!(claude.body, Some(wire::ask::Body::Permission(_))) =>
+                    if matches!(claude.body, Some(wire::claude_ask::Body::Permission(_))) =>
                 {
                     *asked.lock().unwrap() += 1;
                     Ok(allow())
@@ -537,7 +537,7 @@ impl Install {
             "the form to be answered and the subagent to report",
             |ask| match ask {
                 OpenAsk::Claude(claude)
-                    if matches!(claude.body, Some(wire::ask::Body::Form(_))) =>
+                    if matches!(claude.body, Some(wire::claude_ask::Body::Form(_))) =>
                 {
                     *forms.lock().unwrap() += 1;
                     Ok(Answer::Claude(claude_answer::Of::Form(wire::FormAnswer {

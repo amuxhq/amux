@@ -165,7 +165,7 @@ fn a_commit_that_fails_leaves_nothing_behind() {
             2,
             Step {
                 snapshot: Some(Snapshot {
-                    phase: Phase::Working as i32,
+                    status: wire::AgentStatus::in_phase(Phase::Working),
                     ..Default::default()
                 }),
                 ..step(&["k1"])
@@ -902,49 +902,6 @@ fn a_commit_moves_a_provider_subagents_lifecycle_with_its_hosts_cursor() {
     assert_eq!(continued.exit_cause, wire::ExitCause::Unspecified as i32);
     assert!(!continued.is_closed(), "open again");
     assert_eq!(store.cursor(&host).unwrap(), 20);
-}
-
-/// Each row keeps which agent program it runs. A row written before the
-/// store kept that, as a rollback's build writes it, holds NULL, and reads
-/// as the program its kind implies.
-#[test]
-fn a_rows_provider_is_kept_and_an_older_rows_comes_from_its_kind() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("store.sqlite");
-    let mut store = Sqlite::open(&path, OWN).unwrap();
-    let mut acp = AgentRow::new(AgentKey::new(OWN, b"acp".to_vec()), wire::Kind::Acp, "/src");
-    acp.provider = "opencode".into();
-    store.put_agent(&acp).unwrap();
-    let older = AgentRow::new(
-        AgentKey::new(OWN, b"old".to_vec()),
-        wire::Kind::ClaudePty,
-        "/src",
-    );
-    store.put_agent(&older).unwrap();
-    drop(store);
-    let column = |id: &[u8]| -> Option<String> {
-        Connection::open(&path)
-            .unwrap()
-            .query_row(
-                "SELECT provider FROM agents WHERE agent_id = ?1",
-                params![id],
-                |row| row.get(0),
-            )
-            .unwrap()
-    };
-    assert_eq!(column(b"acp").as_deref(), Some("opencode"));
-    assert_eq!(column(b"old"), None, "an empty provider is stored as NULL");
-
-    let store = Sqlite::open(&path, OWN).unwrap();
-    let read = |id: &[u8]| {
-        store
-            .agent(&AgentKey::new(OWN, id.to_vec()))
-            .unwrap()
-            .unwrap()
-    };
-    assert_eq!(read(b"acp").provider_id(), "opencode");
-    assert_eq!(read(b"old").provider, "");
-    assert_eq!(read(b"old").provider_id(), "claude");
 }
 
 /// A dump's copy keeps Claude's, Codex's and the built-in agents' ids, and

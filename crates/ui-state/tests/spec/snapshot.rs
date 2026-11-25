@@ -95,12 +95,8 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
             wire::ClaudeSnapshot {
                 tasks: Some(tasks.clone()),
                 context: Some(context),
-                model: Some("opus".into()),
-                permission: Some("plan".into()),
                 usage: Some(claude_usage.clone()),
                 servers: servers.clone(),
-                sign_in: Some(sign_in.clone()),
-                background_jobs: Some(background.clone()),
                 ..Default::default()
             }
             .encode_to_vec(),
@@ -110,13 +106,8 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
             wire::ClaudeSnapshot {
                 tasks: Some(tasks.clone()),
                 context: Some(context),
-                model: Some("opus".into()),
-                effort: Some("high".into()),
-                permission: Some("plan".into()),
                 usage: Some(claude_usage.clone()),
                 servers: servers.clone(),
-                sign_in: Some(sign_in.clone()),
-                background_jobs: Some(background.clone()),
                 ..Default::default()
             }
             .encode_to_vec(),
@@ -126,21 +117,33 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
             wire::CodexSnapshot {
                 plan: Some(tasks.clone()),
                 context: Some(context),
-                model: Some("opus".into()),
-                effort: Some("high".into()),
-                permission: Some("plan".into()),
                 approval_policy: Some("on-request".into()),
                 usage: Some(codex_usage.clone()),
                 servers: servers.clone(),
-                sign_in: Some(sign_in.clone()),
-                background_jobs: Some(background.clone()),
                 ..Default::default()
             }
             .encode_to_vec(),
         ),
     ];
     for (kind, body) in bodies {
-        let state = decode_snapshot(kind, &body);
+        // What every kind says the same way rides in the envelope.
+        let envelope = wire::Snapshot {
+            kind: kind as i32,
+            body,
+            sign_in: Some(sign_in.clone()),
+            jobs: Some(background.clone()),
+            status: Some(Box::new(wire::AgentStatus {
+                settings: Some(wire::AgentSettings {
+                    model: Some("opus".into()),
+                    effort: Some("high".into()),
+                    permission: Some("plan".into()),
+                    ..Default::default()
+                }),
+                ..wire::AgentStatus::NONE
+            })),
+            ..Default::default()
+        };
+        let state = ui_state::AgentState::from_snapshot(kind, &envelope);
         assert_eq!(state.tasks, tasks);
         assert_eq!(state.context, context);
         assert_eq!(state.model.as_deref(), Some("opus"));
@@ -153,9 +156,7 @@ fn every_kind_decodes_its_snapshot_including_the_four_strip_facts() {
         assert_eq!(state.servers, servers);
         assert_eq!(state.sign_in, sign_in);
         assert_eq!(state.background, background);
-        if kind != Kind::ClaudePty {
-            assert_eq!(state.effort.as_deref(), Some("high"));
-        }
+        assert_eq!(state.effort.as_deref(), Some("high"));
     }
 }
 
@@ -363,7 +364,7 @@ fn what_the_fetched_catalogue_offers_shows_while_the_snapshot_names_it() {
 fn a_suspended_agents_chat_reads_idle_over_a_snapshot_left_starting() {
     for kind in KINDS {
         let mut suspended = agent(kind);
-        suspended.exit_cause = wire::ExitCause::Suspended as i32;
+        suspended.exit = Some(wire::IncarnationEnd::new(wire::ExitCause::Suspended, None));
         let mut state = SessionState::new(suspended, CAP);
         apply_checked(
             &mut state,

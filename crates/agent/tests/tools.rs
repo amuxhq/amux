@@ -29,7 +29,7 @@ use wire::host_service_server::HostService;
 use wire::inventory_service_server::InventoryService;
 use wire::{
     Agent as Row, AgentRef, AgentSpec, CreateAgentRequest, HostEntry, InventoryEvent, Kind,
-    Lifecycle, Phase, SendMessageRequest, SetFilingRequest, create_agent_request,
+    Lifecycle, Phase, SendMessageRequest, SetFilingRequest,
 };
 
 use crate::support;
@@ -236,7 +236,7 @@ impl HostService for Fleet {
                     ..Default::default()
                 })
                 .collect(),
-            new_agent: Some(wire::NewAgentDefaults {
+            new_agent: Some(wire::AgentSettings {
                 model: Some("gpt-6-luna".into()),
                 ..Default::default()
             }),
@@ -280,14 +280,17 @@ impl AgentService for Fleet {
         made.cwd = request.cwd.clone();
         // The settings a host fits a start's picks to: here, what was
         // asked, the level as the permission.
-        if let Some(create_agent_request::Agent::Codex(codex)) = &request.agent {
+        if request.provider == wire::agents::CODEX {
             made.kind = Kind::Codex as i32;
-            made.settings = Some(Box::new(wire::AgentSettings {
-                model: codex.model.clone(),
-                effort: codex.effort.clone(),
+            made.provider = request.provider.clone();
+            let asked = request.settings();
+            made.status_mut().settings = Some(wire::AgentSettings {
+                model: asked.model.clone(),
+                effort: asked.effort.clone(),
                 permission: None,
-                permission_level: request.permission_level,
-            }));
+                permission_level: asked.permission_level,
+                mode: None,
+            });
         }
         Ok(Response::new(wire::CreateAgentResponse {
             agent: Some(made),
@@ -355,9 +358,7 @@ impl AgentService for Fleet {
         if let Some(status) = &self.refuse_send {
             return Err(status.clone());
         }
-        Ok(Response::new(wire::SendMessageResponse {
-            envelope_id: request.id,
-        }))
+        Ok(Response::new(wire::SendMessageResponse {}))
     }
 
     async fn put_blob(
@@ -488,9 +489,10 @@ fn row(id: &[u8], host: &[u8], name: &str) -> Row {
         agent_id: id.to_vec(),
         host_id: host.to_vec(),
         kind: Kind::ClaudeSdk as i32,
+        provider: wire::agents::CLAUDE.to_owned(),
         name: name.to_owned(),
         lifecycle: Lifecycle::Live as i32,
-        phase: Phase::Idle as i32,
+        status: wire::AgentStatus::in_phase(Phase::Idle),
         incarnation: 1,
         ..Default::default()
     }
@@ -501,7 +503,7 @@ fn host(id: &[u8], name: &str, reach: wire::trusted::Reach, offers: &[&str]) -> 
     entry.providers = offers
         .iter()
         .map(|provider| wire::ProviderOnHost {
-            provider_id: (*provider).to_owned(),
+            provider: (*provider).to_owned(),
             // The host has a copy, which list_hosts asks for.
             catalogue: Some(vec![1]),
             signed_in: true,
@@ -516,23 +518,26 @@ fn host(id: &[u8], name: &str, reach: wire::trusted::Reach, offers: &[&str]) -> 
 fn fleet() -> Fleet {
     let mut me = row(&ME, &HERE, "lead");
     me.kind = Kind::ClaudePty as i32;
-    me.phase = Phase::Working as i32;
-    me.working_on = Some("Splitting the parser".into());
-    me.settings = Some(Box::new(wire::AgentSettings {
+    let status = me.status_mut();
+    status.phase = Phase::Working as i32;
+    status.working_on = Some("Splitting the parser".into());
+    status.settings = Some(wire::AgentSettings {
         model: Some("claude-haiku-5-5".into()),
         effort: Some("low".into()),
         permission: Some("acceptEdits".into()),
         permission_level: wire::PermissionLevel::Auto as i32,
-    }));
-    me.git = Some(wire::Git {
+        mode: None,
+    });
+    status.git = Some(wire::Git {
         branch: Some("parser".into()),
         ..Default::default()
     });
     let mut reviewer = row(&REVIEWER, &STUDIO, "reviewer");
     reviewer.kind = Kind::Codex as i32;
+    reviewer.provider = wire::agents::CODEX.to_owned();
     // Declared nothing: the title its provider gave the conversation
     // stands in.
-    reviewer.title = Some("Reviewing the lexer".into());
+    reviewer.status_mut().title = Some("Reviewing the lexer".into());
     // A child running an ACP agent, named by its agent's id.
     let mut child = row(&CHILD, &HERE, "helper");
     child.kind = Kind::Acp as i32;
@@ -542,19 +547,22 @@ fn fleet() -> Fleet {
         agent_id: ME.to_vec(),
     });
     child.lifecycle = Lifecycle::Exited as i32;
-    child.exit_cause = wire::ExitCause::Finished as i32;
+    child.exit = Some(wire::IncarnationEnd::new(wire::ExitCause::Finished, None));
     Fleet {
         hosts: vec![
             host(
                 &HERE,
                 "laptop",
-                wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+                wire::trusted::Reach::Online(wire::Online {
+                    route: wire::RouteKind::Direct as i32,
+                    same_network: false,
+                }),
                 &["claude", "codex", "opencode"],
             ),
             host(
                 &STUDIO,
                 "Studio",
-                wire::trusted::Reach::Away(wire::Empty {}),
+                wire::trusted::Reach::Away(wire::Away {}),
                 &["claude", "codex"],
             ),
             HostEntry::candidate_host([0x03; 16], "stranger", Vec::new()),
@@ -755,8 +763,10 @@ async fn agents_lists_the_fleet_read_to_caught_up_and_marks_you() {
     // its daemon marks it exited; the tool says none for a live agent.
     let reviewer = &mut fleet.agents[1];
     assert_eq!(reviewer.name, "reviewer");
-    reviewer.exit_cause = wire::ExitCause::ProviderExited as i32;
-    reviewer.exit_detail = Some("exit code 1".into());
+    reviewer.exit = Some(wire::IncarnationEnd::new(
+        wire::ExitCause::ProviderExited,
+        Some("exit code 1".into()),
+    ));
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
     let listed = mcp.ok("list_agents", json!({})).await;
     assert_eq!(
@@ -896,16 +906,18 @@ async fn a_start_carries_the_mind_authority_and_isolation_it_chose() {
         panic!("a create, got {calls:?}");
     };
     assert_eq!(
-        asked.agent,
-        Some(create_agent_request::Agent::Codex(
-            wire::CodexCreateConfig {
-                model: Some("gpt-6-luna".into()),
-                effort: Some("high".into()),
-                ..Default::default()
-            }
-        ))
+        (asked.provider.as_str(), asked.kind()),
+        ("codex", Kind::Unspecified)
     );
-    assert_eq!(asked.permission_level(), wire::PermissionLevel::ReadOnly);
+    assert_eq!(
+        asked.settings(),
+        &wire::AgentSettings {
+            model: Some("gpt-6-luna".into()),
+            effort: Some("high".into()),
+            permission_level: wire::PermissionLevel::ReadOnly as i32,
+            ..Default::default()
+        }
+    );
     assert!(asked.new_workspace && asked.fork);
     assert_eq!(spawned["model"], "gpt-6-luna");
     assert_eq!(spawned["effort"], "high");
@@ -966,10 +978,8 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
     );
     assert_eq!(here.cwd, mcp.cwd.display().to_string());
     assert_eq!(
-        here.agent,
-        Some(create_agent_request::Agent::Codex(
-            wire::CodexCreateConfig::default()
-        )),
+        (here.provider.as_str(), here.settings().is_none()),
+        ("codex", true),
         "Codex with its default settings"
     );
     let prompt = here.initial_prompt.clone().unwrap();
@@ -996,11 +1006,14 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
     };
     assert_eq!(name, "studio");
     assert_eq!(*addressed, to(STUDIO), "the create goes to the host's id");
-    assert_eq!(there.permission_level(), wire::PermissionLevel::Auto);
+    assert_eq!(
+        there.settings().permission_level(),
+        wire::PermissionLevel::Auto
+    );
     assert_eq!(there.cwd, "~/src/app");
     assert_eq!(
-        there.agent,
-        Some(create_agent_request::Agent::ClaudeSdk(Default::default()))
+        (there.provider.as_str(), there.kind()),
+        ("claude", Kind::ClaudeSdk)
     );
     assert_eq!(spawned["name"], "quiet-otter", "{spawned}");
 
@@ -1054,11 +1067,8 @@ async fn spawn_places_the_child_by_host_name_defaulting_to_the_parents_host() {
         "no host named: the daemon that took the call makes it"
     );
     assert_eq!(
-        acp.agent,
-        Some(create_agent_request::Agent::Acp(wire::AcpCreateConfig {
-            agent: "opencode".into(),
-            ..Default::default()
-        })),
+        (acp.provider.as_str(), acp.kind(), acp.settings().is_none()),
+        ("opencode", Kind::Unspecified, true),
         "the ACP agent with its own settings"
     );
     assert_eq!(
@@ -1170,32 +1180,13 @@ async fn a_spawn_whose_agent_process_is_not_listening_is_refused_plainly() {
 
 /// An ask of a kind the agent process does not know, as a later build's
 /// tool server would send an earlier agent process, is refused in words:
-/// nothing is told to the core and nothing goes to the daemon. So is a
-/// spawn from a tool server built before the create took its host from the
-/// call's address, which this build reads as an ask of no kind.
+/// nothing is told to the core and nothing goes to the daemon.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_ask_the_agent_process_does_not_know_is_refused_in_words() {
-    use prost::Message as _;
-    /// A spawn as those builds asked for it, at the field this build
-    /// leaves reserved.
-    #[derive(Clone, PartialEq, prost::Message)]
-    struct OldAsk {
-        #[prost(bytes = "vec", tag = "1")]
-        spawn: Vec<u8>,
-    }
-    let old = OldAsk {
-        spawn: CreateAgentRequest {
-            agent_id: vec![1; 16],
-            ..Default::default()
-        }
-        .encode_to_vec(),
-    };
-    let old = wire::AgentAsk::decode(old.encode_to_vec().as_slice()).unwrap();
-    assert_eq!(old.of, None);
     let mcp = Mcp::start().await;
     let fleet = fleet();
     let _daemon = Daemon::listen(&mcp.dir, fleet.clone());
-    for ask in [wire::AgentAsk::default(), old] {
+    for ask in [wire::AgentAsk::default()] {
         let answer = agent_dir::agent_sock::ask(&mcp.dir, &ask).await.unwrap();
         assert_eq!(
             answer.of,

@@ -15,7 +15,7 @@ use store::StoreError;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 use wire::{
-    AgentRef, AgentSender, Envelope, ErrorCode, Human, Lifecycle, Refusal, Rejected,
+    AgentRef, AgentSender, Envelope, ErrorCode, Lifecycle, Person, Refusal, Rejected,
     SendInputRequest, SendInputResponse, SendMessageResponse, Sender, ctl_frame, envelope,
     send_input_response, sender,
 };
@@ -61,13 +61,16 @@ pub enum RelayError {
 
 impl RelayError {
     pub fn to_wire(&self) -> wire::Error {
+        if let Self::Rejected(rejected) = self {
+            return wire::Error::refused(rejected.refusal(), self.to_string());
+        }
         let code = match self {
             Self::NoAgent => ErrorCode::NotFound,
             Self::NoInput => ErrorCode::InvalidArgument,
             Self::OtherHost => ErrorCode::Unimplemented,
             Self::Unavailable => ErrorCode::Unavailable,
             Self::Lost => ErrorCode::Aborted,
-            Self::Rejected(_) => ErrorCode::FailedPrecondition,
+            Self::Rejected(_) => unreachable!("answered above"),
             // The incarnation the message was for no longer exists, which
             // tells a sending host to drop its outbox row as surely as a
             // deleted recipient does.
@@ -122,6 +125,7 @@ fn prompt_of(input: &wire::Input) -> Option<wire::PromptSubmission> {
     Some(wire::PromptSubmission {
         input_id: input.input_id.clone(),
         prompt: Some(prompt),
+        continued: false,
     })
 }
 
@@ -174,7 +178,6 @@ fn said(rejected: &Rejected) -> String {
         Refusal::AgentClosed => {
             "the recipient is settled, done with; only the person or its parent start it again"
         }
-        Refusal::HostUnreachable => "the recipient's host cannot be reached",
         Refusal::ConversationElsewhere => {
             "Claude's own view switched to another conversation, so the recipient's \
              conversation is not the one on its screen"
@@ -255,7 +258,7 @@ impl ProfileRuntime {
         // act as picking them for a new agent, and sticks the same way: as
         // Codex accepts it, and for the kinds that ask their program, once
         // it took it.
-        let picked = crate::spec::Picked::of_input(&input, row.provider_id());
+        let picked = crate::spec::Picked::of_input(&input, row.provider.as_str());
         // A row that says suspended has no process to relay to: asked
         // first, the wake does not write to a connection its process left
         // behind for a moment, which would lose the input.
@@ -382,7 +385,8 @@ impl ProfileRuntime {
         let input_id = input.input_id.clone();
         let child = wire::ChildInput {
             agent_id: row.agent.agent.clone(),
-            input: Some(input),
+            input_id: input_id.clone(),
+            of: Some(wire::child_input::Of::Input(input)),
         };
         self.relay(host, input_id, ctl_frame::Of::ChildInput(child))
             .await
@@ -459,7 +463,7 @@ impl ProfileRuntime {
     ) -> Result<SendMessageResponse, RelayError> {
         use crate::api::Caller;
         let from = match caller {
-            Caller::Person { .. } => sender::Value::Human(Human {}),
+            Caller::Person { .. } => sender::Value::Person(Person::default()),
             Caller::Agent { agent, name } => sender::Value::Agent(AgentSender {
                 agent: Some(AgentRef {
                     host_id: agent.host.as_bytes().to_vec(),
@@ -514,7 +518,6 @@ impl ProfileRuntime {
             self.bring_attachments(id, &agent.host_id, &agent.agent_id, &envelope)
                 .await?;
         }
-        let envelope_id = envelope.id.clone();
         let request = ClientRequest::SendMessage {
             envelope: Box::new(envelope),
         };
@@ -523,7 +526,7 @@ impl ProfileRuntime {
             match answers.next().await {
                 Some(Delivered::Answer(_)) => {}
                 Some(Delivered::End(CoreStatus::Ok)) => {
-                    return Ok(SendMessageResponse { envelope_id });
+                    return Ok(SendMessageResponse {});
                 }
                 Some(Delivered::End(CoreStatus::Failed(CallError::Message(refusal)))) => {
                     return Err(refused_message(refusal));

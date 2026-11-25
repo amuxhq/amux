@@ -127,10 +127,10 @@ async fn a_dump_carries_this_hosts_records_and_our_logs_and_no_secret() {
     );
     for id in [live, stopped] {
         until("the first turn to end", || async {
-            let phase = runtime.agent(id).await.unwrap().phase;
-            (phase == Phase::Idle as i32)
+            let phase = runtime.agent(id).await.unwrap().phase();
+            (phase == Phase::Idle)
                 .then_some(())
-                .ok_or_else(|| format!("phase {phase}"))
+                .ok_or_else(|| format!("phase {phase:?}"))
         })
         .await
         .unwrap();
@@ -396,10 +396,10 @@ async fn a_conversation_reaches_no_log_amux_writes() {
             .unwrap(),
     );
     until("the first turn to end", || async {
-        let phase = runtime.agent(agent).await.unwrap().phase;
-        (phase == Phase::Idle as i32)
+        let phase = runtime.agent(agent).await.unwrap().phase();
+        (phase == Phase::Idle)
             .then_some(())
-            .ok_or_else(|| format!("phase {phase}"))
+            .ok_or_else(|| format!("phase {phase:?}"))
     })
     .await
     .unwrap();
@@ -508,10 +508,10 @@ async fn no_report_carries_a_word_and_an_agents_record_holds_what_its_interprete
             .unwrap(),
     );
     until("the first turn to end", || async {
-        let phase = runtime.agent(agent).await.unwrap().phase;
-        (phase == Phase::Idle as i32)
+        let phase = runtime.agent(agent).await.unwrap().phase();
+        (phase == Phase::Idle)
             .then_some(())
-            .ok_or_else(|| format!("phase {phase}"))
+            .ok_or_else(|| format!("phase {phase:?}"))
     })
     .await
     .unwrap();
@@ -539,7 +539,7 @@ async fn no_report_carries_a_word_and_an_agents_record_holds_what_its_interprete
     .unwrap();
     until("the folder's git facts", || async {
         let row = runtime.agent(agent).await.unwrap();
-        row.git
+        row.git()
             .as_ref()
             .and_then(|git| git.uncommitted)
             .map(|_| ())

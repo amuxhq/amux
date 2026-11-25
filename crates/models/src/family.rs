@@ -1049,9 +1049,7 @@ impl<'a> Transition<'a> {
                             }
                             self.next.written.push((envelope.id, u8::MAX));
                         }
-                        Some(wire::bootstrap::Of::Prompt(prompt))
-                            if wire::is_continued_input(&prompt.input_id) =>
-                        {
+                        Some(wire::bootstrap::Of::Prompt(prompt)) if prompt.continued => {
                             self.next.seen.continued = true;
                         }
                         _ => {}
@@ -1530,11 +1528,13 @@ impl<'a> Transition<'a> {
                 Last::Idle | Last::Busy => Step {
                     snapshot: Some(wire::Snapshot {
                         kind: wire::Kind::Codex as i32,
-                        phase: if last == Last::Busy {
+                        // As its interpreter writes it: Codex resumes its thread.
+                        capabilities: Some(Box::new(wire::AgentCapabilities::codex())),
+                        status: wire::AgentStatus::in_phase(if last == Last::Busy {
                             wire::Phase::Working
                         } else {
                             wire::Phase::Idle
-                        } as i32,
+                        }),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -1550,7 +1550,9 @@ impl<'a> Transition<'a> {
                 Last::ProviderGone => Step {
                     snapshot: Some(wire::Snapshot {
                         kind: wire::Kind::Codex as i32,
-                        phase: wire::Phase::Idle as i32,
+                        // As its interpreter writes it: Codex resumes its thread.
+                        capabilities: Some(Box::new(wire::AgentCapabilities::codex())),
+                        status: wire::AgentStatus::in_phase(wire::Phase::Idle),
                         ..Default::default()
                     }),
                     incarnation_end: Some(wire::IncarnationEnd {

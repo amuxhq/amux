@@ -7,12 +7,11 @@ use support::*;
 use crate::support;
 
 /// After a handshake, the laptop lists the desk with the version and the
-/// capabilities the desk's handshake gave, the kinds it runs among them.
+/// capabilities the desk's handshake gave.
 #[tokio::test(flavor = "multi_thread")]
 async fn remote_entry_carries_version_and_capabilities() {
     let desk = Install::new();
-    let mut options = desk.options("boot-1", quiet_launch());
-    options.edge.kinds = vec![wire::Kind::ClaudeSdk, wire::Kind::Codex];
+    let options = desk.options("boot-1", quiet_launch());
     let desk_daemon = node::start(options, None).await.unwrap();
     let desk_runtime = runtime(&desk_daemon, &desk);
     let laptop = Install::new();
@@ -25,10 +24,7 @@ async fn remote_entry_carries_version_and_capabilities() {
     let _link = laptop_edge.link_in_process(&desk_edge).unwrap();
     assert!(wait_for_route(&laptop_edge, desk_host, PATIENCE).await);
 
-    let expected = wire::Capabilities {
-        cloud_relay: false,
-        kinds: vec![wire::Kind::ClaudeSdk as i32, wire::Kind::Codex as i32],
-    };
+    let expected = wire::HostCapabilities { cloud_relay: false };
     assert_eq!(desk_edge.capabilities(), expected, "the desk's own word");
     until(
         "the laptop to list the desk's version and capabilities",
@@ -37,7 +33,7 @@ async fn remote_entry_carries_version_and_capabilities() {
                 .host_entry_of(desk_host)
                 .and_then(|entry| entry.host)
                 .map(|host| (host.version, host.capabilities));
-            let expected = (node::version().to_owned(), Some(expected.clone()));
+            let expected = (node::version().to_owned(), Some(expected));
             async move {
                 match listed {
                     Some(listed) if listed == expected => Ok(()),
@@ -97,7 +93,7 @@ async fn a_link_and_its_channels_reach_the_core_as_inputs() {
             async move {
                 let hello = inputs.iter().any(|input| {
                     matches!(input, Input::LinkControl { frame, .. }
-                        if matches!(frame.body, Some(wire::message::Body::HelloAck(_))))
+                        if matches!(frame.body, Some(wire::link_message::Body::HelloAck(_))))
                 });
                 let wanted = inputs
                     .iter()
@@ -126,7 +122,7 @@ async fn a_link_and_its_channels_reach_the_core_as_inputs() {
             input,
             Input::LinkControl { link, frame }
                 if *link == up.0
-                    && matches!(frame.body, Some(wire::message::Body::HelloAck(_)))
+                    && matches!(frame.body, Some(wire::link_message::Body::HelloAck(_)))
         )),
         "the desk's answer to the laptop's hello reached the core"
     );

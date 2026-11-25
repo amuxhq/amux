@@ -1,6 +1,6 @@
 use store::Sqlite;
-use wire::message::Body;
-use wire::{Hello, Message, NeighborUp};
+use wire::link_message::Body;
+use wire::{Hello, LinkMessage, NeighborUp};
 
 use super::*;
 use crate::io::Input;
@@ -42,9 +42,8 @@ fn host(id: HostId) -> wire::Host {
     wire::Host {
         host_id: id.0.to_vec(),
         version: "1.2.3".into(),
-        capabilities: Some(wire::Capabilities {
+        capabilities: Some(wire::HostCapabilities {
             cloud_relay: id == RELAY,
-            kinds: vec![wire::Kind::ClaudeSdk as i32],
         }),
         ..Default::default()
     }
@@ -73,7 +72,7 @@ fn linked(daemon: &mut Daemon, link: u64, peer: HostId, kind: CarrierKind, reach
         daemon,
         Input::LinkControl {
             link: LinkId(link),
-            frame: Message {
+            frame: LinkMessage {
                 body: Some(Body::Hello(Hello {
                     host: Some(host(peer)),
                     neighbors: reaches.iter().copied().map(host).collect(),
@@ -156,7 +155,7 @@ fn a_trusted_host_the_relay_claims_is_remembered_as_on_the_account() {
         &mut daemon,
         Input::LinkControl {
             link: LinkId(2),
-            frame: Message {
+            frame: LinkMessage {
                 body: Some(Body::NeighborUp(NeighborUp {
                     host: Some(host(DESK)),
                 })),
@@ -271,7 +270,7 @@ fn a_phone_a_neighbor_announces_is_no_candidate_since_it_shows_no_pairing_code()
         &mut daemon,
         Input::LinkControl {
             link: LinkId(1),
-            frame: Message {
+            frame: LinkMessage {
                 body: Some(Body::Hello(Hello {
                     host: Some(host(RELAY)),
                     neighbors: vec![
@@ -315,7 +314,7 @@ fn a_candidate_goes_when_its_last_announcer_takes_it_back() {
         &mut daemon,
         Input::LinkControl {
             link: LinkId(1),
-            frame: Message {
+            frame: LinkMessage {
                 body: Some(Body::NeighborDown(wire::NeighborDown {
                     host_id: NAS.0.to_vec(),
                 })),

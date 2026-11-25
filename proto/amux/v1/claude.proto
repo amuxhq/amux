@@ -3,20 +3,11 @@ syntax = "proto3";
 package amux.v1;
 
 import "amux/v1/chat.proto";
+import "amux/v1/records.proto";
 
 // Claude's bodies: the item and snapshot messages encoded into Item.body
 // and Snapshot.body for both kinds claude_pty and claude_sdk, the inputs
 // each kind accepts, and the answers inside them.
-
-message ClaudeCreateConfig {
-  // Extra provider arguments exactly as the person gave them.
-  repeated string args = 1;
-  optional string model = 2;
-  optional string effort = 3;
-  // A permission Claude offers ("default", "acceptEdits", "plan", "auto",
-  // "bypassPermissions").
-  optional string permission = 4;
-}
 
 // ---------------------------------------------------------------------------
 // Items and snapshots (for both Claude kinds)
@@ -27,7 +18,7 @@ message ClaudeItem {
     Prompt prompt = 1;
     Text message = 2;
     Thinking thinking = 3;
-    ToolCall tool = 4;
+    ClaudeToolCall tool = 4;
     Turn turn = 5;
     Compaction compaction = 6;
     AgentMessage agent_message = 7;
@@ -42,15 +33,15 @@ message ClaudeItem {
     AskItem ask = 13;
     // The plan Claude declared, keyed by the call that declared it.
     Plan plan = 14;
-    Task task = 15;
-    Status status = 16;
+    ClaudeTask task = 15;
+    ClaudeStatus status = 16;
     ModelSwitch model_switch = 17;
   }
 }
 
 // A task headless Claude reports whose starting call it never showed; a
 // task of a known call is progress on that call instead.
-message Task {
+message ClaudeTask {
   string task_id = 1;
   string description = 2;
   TaskState state = 3;
@@ -69,7 +60,7 @@ enum TaskState {
 
 // A status headless Claude reports as an event worth a row; drawn hidden,
 // read by the activity line until the compaction row lands.
-message Status {
+message ClaudeStatus {
   SdkStatus status = 1;
   // Claude's own word, always carried.
   string word = 2;
@@ -80,38 +71,26 @@ enum SdkStatus {
   SDK_STATUS_COMPACTING = 1;
 }
 
-// Phase lives in the Snapshot envelope, once.
+// What only Claude says about its session. Its phase, settings, sign-in,
+// conversation and background jobs are in the Snapshot envelope; what it
+// offers is in the catalogue the Snapshot names.
 message ClaudeSnapshot {
-  repeated Ask asks = 1;
+  repeated ClaudeAsk asks = 1;
   TaskList tasks = 2;
   ContextMeter context = 3;
-  optional string model = 4;
-  // The running model as a person reads it: the catalogue entry it was set
-  // from, else the entry whose value is its id, else its id tidied.
-  // Absent while the model is.
-  optional string model_name = 5;
-  optional string permission = 6;
-  // Absent until the session's start names it.
-  optional string provider_session = 7;
-  ClaudeUsage usage = 8;
-  repeated ToolServer servers = 9;
-  SignIn sign_in = 10;
-  BackgroundJobs background_jobs = 11;
+  ClaudeUsage usage = 4;
+  repeated ToolServer servers = 5;
   // Terminal Claude's calls PreToolUse hooks announced that no result has
   // ended yet, oldest first. A call's transcript row can lag its hook by
   // seconds while a background task runs, so the activity line reads the
   // call from here until then.
-  repeated RunningCall running_calls = 12;
-  // The reasoning effort Claude runs with; absent until it says. A
-  // provider string, validated against the catalogue's model levels.
-  optional string effort = 13;
+  repeated RunningCall running_calls = 6;
   // Terminal Claude's own view resumed another conversation, so it shows
   // one that is not this agent's; prompts are refused until it is back.
   // The phase is left as it is.
-  optional bool switched_away = 14;
+  optional bool switched_away = 7;
   // The subagents and tasks headless Claude reports running.
-  repeated Task active_tasks = 15;
-  // What it offers is in the catalogue the Snapshot names.
+  repeated ClaudeTask active_tasks = 8;
 }
 
 message RunningCall {

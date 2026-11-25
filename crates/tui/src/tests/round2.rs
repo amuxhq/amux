@@ -46,7 +46,7 @@ fn asked(order: u64, words: &str) -> Item {
         text: words.into(),
         kind: Kind::ClaudeSdk as i32,
         body: wire::ClaudeItem {
-            kind: Some(K::Prompt(wire::Prompt {})),
+            kind: Some(K::Prompt(wire::Prompt::default())),
         }
         .encode_to_vec(),
         at_ms: order as i64 * 1_000,
@@ -65,10 +65,10 @@ fn long_question() -> SessionState {
         ..Default::default()
     };
     let body = wire::ClaudeSnapshot {
-        asks: vec![wire::Ask {
+        asks: vec![wire::ClaudeAsk {
             key: "q-1".into(),
             item_key: "call-q".into(),
-            body: Some(wire::ask::Body::Question(wire::QuestionAsk {
+            body: Some(wire::claude_ask::Body::Question(wire::QuestionAsk {
                 questions: vec![wire::Question {
                     header: "Database".into(),
                     question: "Our small team of five needs to pick a database for an internal tool \
@@ -432,7 +432,7 @@ fn archive_in_worktree(git: wire::Git) -> FleetState {
         ..Default::default()
     };
     wire::experimental::WORKSPACE.put(&mut row.experimental, &entry);
-    row.git = Some(git);
+    row.status_mut().git = Some(git);
     inventory(&mut fleet, wire::inventory_event::Of::Agent(row));
     fleet
 }
@@ -1039,10 +1039,10 @@ fn a_slash_command_codex_does_not_offer_is_refused_in_the_composer() {
 #[test]
 fn enter_on_a_multi_select_with_nothing_ticked_submits_an_empty_pick() {
     let body = wire::ClaudeSnapshot {
-        asks: vec![wire::Ask {
+        asks: vec![wire::ClaudeAsk {
             key: "q-1".into(),
             item_key: "call-q".into(),
-            body: Some(wire::ask::Body::Question(wire::QuestionAsk {
+            body: Some(wire::claude_ask::Body::Question(wire::QuestionAsk {
                 questions: vec![wire::Question {
                     header: "Toppings".into(),
                     question: "Which toppings?".into(),
@@ -1080,10 +1080,10 @@ fn enter_on_a_multi_select_with_nothing_ticked_submits_an_empty_pick() {
 #[test]
 fn a_multi_select_sends_its_ticks_with_the_words_typed_as_something_else() {
     let body = wire::ClaudeSnapshot {
-        asks: vec![wire::Ask {
+        asks: vec![wire::ClaudeAsk {
             key: "q-1".into(),
             item_key: "call-q".into(),
-            body: Some(wire::ask::Body::Question(wire::QuestionAsk {
+            body: Some(wire::claude_ask::Body::Question(wire::QuestionAsk {
                 questions: vec![wire::Question {
                     header: "Toppings".into(),
                     question: "Which toppings?".into(),
@@ -1153,7 +1153,7 @@ fn a_conversation_switched_away_in_claudes_view_offers_switch_back() {
             ..Default::default()
         }
         .encode_to_vec(),
-        phase: Phase::Idle as i32,
+        status: wire::AgentStatus::in_phase(Phase::Idle),
         ..wire::Snapshot::default()
     })));
     state.update(caught_up(0));
@@ -1297,11 +1297,16 @@ fn raw_attach_to_a_stopped_agent_says_it_is_stopped() {
         let stopped = wire::Agent {
             host_id: b"a".to_vec(),
             kind: kind as i32,
+            provider: match kind {
+                Kind::Codex => wire::agents::CODEX,
+                _ => wire::agents::CLAUDE,
+            }
+            .into(),
             name: "pt".into(),
             lifecycle: wire::Lifecycle::Exited as i32,
             ..Default::default()
         };
-        let refusal = crate::app::terminal_refusal(&ui_state::FleetState::new(), &stopped, &config);
+        let refusal = crate::app::terminal_refusal(&super::terminal_fleet(), &stopped, &config);
         assert!(
             refusal.as_ref().is_some_and(|why| why.contains("stopped")),
             "attaching to the stopped {kind:?} agent is not refused as stopped: {refusal:?}"
@@ -1391,7 +1396,10 @@ fn deleting_the_last_row_moves_the_highlight_to_the_new_last_row() {
     let mut attic = home_agent(b"old2", "attic", Phase::Idle, None, now - 3 * 86_400_000);
     if let wire::inventory_event::Of::Agent(agent) = &mut attic {
         agent.lifecycle = wire::Lifecycle::Exited as i32;
-        agent.exit_cause = wire::ExitCause::Stopped as i32;
+        agent.exit = Some(wire::IncarnationEnd {
+            cause: wire::ExitCause::Stopped as i32,
+            detail: None,
+        });
         agent.filing = wire::Filing::Closed as i32;
     }
     inventory(&mut fleet, attic);

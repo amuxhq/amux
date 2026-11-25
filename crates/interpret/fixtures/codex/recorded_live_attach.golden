@@ -1,51 +1,53 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=? background=?
+snapshot capabilities stops_job attachable resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] approval=? context=? plan=? usage=? servers=[]
 ## 5 recorded 4: fact Rpc method=account/updated
-snapshot STARTING queue=[] working_on=- at=1794871576738 asks=[] thread=? model=? model_name=? effort=? permission=custom mode=? approval=? context=? plan=? usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot STARTING queue=[] working_on=- at=1794871576738 conversation=? model_name=? sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=? context=? plan=? usage=? servers=[]
 ## 7 recorded 6: fact Rpc "{\"id\":\"agent-thread\",\"result\":{\"activePermissionProfile\":null,\"approva…
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"
 effect write "{\"id\":\"amux-skills\",\"method\":\"skills/list\",\"params\":{}}"
 item boundary:1 boundary final at=1794871577040 text="" BOUNDARY_KIND_STARTED
-snapshot settings model=gpt-6.1-sol effort=? permission=read-only level=read-only
-snapshot IDLE queue=[] working_on=- at=1794871577040 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot settings model=gpt-6.1-sol effort=? permission=read-only level=read-only mode=?
+snapshot IDLE queue=[] working_on=- at=1794871577040 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1 Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[]
 ## 9 recorded 8: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1794871577040 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot IDLE queue=[] working_on=- at=1794871577040 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1 Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING]
 ## 10 recorded 9: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1794871577040 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1 Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot IDLE queue=[] working_on=- at=1794871577040 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1 Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING]
 ## 12 recorded 11: fact Rpc "{\"id\":\"amux-models-1\",\"result\":{\"data\":[{\"additionalSpeedTiers\":[\"fa…
 effect catalogue 51c4c098 models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low/medium*/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max}] commands=5 permissions=[read-only,default,auto,full-access] modes=[default,plan]
 snapshot catalogue 51c4c098
-snapshot IDLE queue=[] working_on=- at=1794871577045 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot IDLE queue=[] working_on=- at=1794871577045 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_STARTING]
 ## 13 recorded 12: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1794871577045 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot IDLE queue=[] working_on=- at=1794871577045 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY]
 ## 15 recorded 14: fact Rpc "{\"id\":\"amux-skills\",\"result\":{\"data\":[{\"cwd\":\"<MACHINE_PATH>\",\"err…
 effect catalogue 09b3f72e models=[gpt-6.1-sol{low*/medium/high/xhigh/max/ultra},gpt-6-astra{low/medium*/high/xhigh/max/ultra},gpt-6.1-terra{low*/medium/high/xhigh/max/ultra},gpt-6-sol{low/medium*/high/xhigh/max/ultra},gpt-6-luna{low/medium*/high/xhigh/max},gpt-5.6-sol{low*/medium/high/xhigh/max/ultra},gpt-5.6-terra{low/medium*/high/xhigh/max/ultra},gpt-5.6-luna{low/medium*/high/xhigh/max}] commands=5 skills=12 permissions=[read-only,default,auto,full-access] modes=[default,plan]
 snapshot catalogue 09b3f72e
-snapshot IDLE queue=[] working_on=- at=1794871577046 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot IDLE queue=[] working_on=- at=1794871577046 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_STARTING,amux:TOOL_SERVER_STATUS_READY]
 ## 22 recorded 21: fact Rpc method=mcpServer/startupStatus/updated
-snapshot IDLE queue=[] working_on=- at=1794871579491 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=? approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot IDLE queue=[] working_on=- at=1794871579491 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 24 recorded 23: fact Rpc method=thread/settings/updated
-snapshot IDLE queue=[] working_on=- at=1794871580203 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot settings model=gpt-6.1-sol effort=? permission=read-only level=read-only mode=default
+snapshot IDLE queue=[] working_on=- at=1794871580203 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 27 recorded 26: fact Rpc method=turn/started
-snapshot WORKING queue=[] working_on=- at=1794871580211 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1794871580211 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 31 recorded 30: fact Rpc method=item/completed
 item 01a1e6ae-d912-7eb3-a32d-e56379f7f86e prompt final at=1794871580950 text="Run exactly this shell command once, with your shell tool, and nothing else: touch attached.txt. The sandbox is read-only, so request escalated permissions for it; I will approve. Then reply with the single word done."
 ## 35 recorded 34: fact Rpc method=item/started
 item exec-2d74c8d2-f98f-433a-b917-7bc6fe9eebd6 work open at=1794871587420 text="" command "touch attached.txt" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING
 ## 36 recorded 35: fact Rpc method=item/commandExecution/requestApproval
-snapshot NEEDS_YOU queue=[] working_on=- at=1794871587425 asks=[0→exec-2d74c8d2-f98f-433a-b917-7bc6fe9eebd6 command "touch attached.txt" reason="May I create attached.txt in the read-only workspace?" prefix=["touch", "attached.txt"] decisions=[APPROVE,APPROVE_SIMILAR,DENY,ABORT]] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot NEEDS_YOU queue=[] working_on=- at=1794871587425 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[0→exec-2d74c8d2-f98f-433a-b917-7bc6fe9eebd6 command "touch attached.txt" reason="May I create attached.txt in the read-only workspace?" prefix=["touch", "attached.txt"] decisions=[APPROVE,APPROVE_SIMILAR,DENY,ABORT]] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 notice ask 0 run "touch attached.txt" why="May I create attached.txt in the read-only workspace?" more=0
 ## 38 recorded 37: input stdin-7
 effect write "{\"id\":0,\"result\":{\"decision\":\"accept\"}}"
 effect reply stdin-7 accepted
 item exec-2d74c8d2-f98f-433a-b917-7bc6fe9eebd6 work open at=1794871587420 text="" command "touch attached.txt" cwd=<MACHINE_PATH> TOOL_STATE_RUNNING decision=DECISION_OUTCOME_ALLOWED
-snapshot WORKING queue=[] working_on=- at=1794871587982 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1794871587982 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=? plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 43 recorded 42: fact Rpc method=item/completed
 item exec-2d74c8d2-f98f-433a-b917-7bc6fe9eebd6 work final at=1794871587420 text="" command "touch attached.txt" cwd=<MACHINE_PATH> exit=0 TOOL_STATE_SUCCEEDED decision=DECISION_OUTCOME_ALLOWED started=1794871588024 ended=1794871588024
 ## 45 recorded 44: fact Rpc method=thread/tokenUsage/updated
-snapshot WORKING queue=[] working_on=- at=1794871588031 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request context=15017/475000 plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1794871588031 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=15017/475000 plan=? usage=? servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 46 recorded 45: fact Rpc method=account/rateLimits/updated
-snapshot WORKING queue=[] working_on=- at=1794871588031 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request context=15017/475000 plan=? usage=ok 7d:1%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1794871588031 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=15017/475000 plan=? usage=ok 7d:1%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 48 recorded 47: fact Rpc method=item/started
 item msg_0c68d36f77b24d87016afb9128267c87d296f2bcf7fad1c49a message open at=1794871592135 text=""
 ## 49 recorded 48: fact Rpc method=item/agentMessage/delta
@@ -53,9 +55,9 @@ append msg_0c68d36f77b24d87016afb9128267c87d296f2bcf7fad1c49a "done"
 ## 51 recorded 50: fact Rpc method=item/completed
 item msg_0c68d36f77b24d87016afb9128267c87d296f2bcf7fad1c49a message final at=1794871592135 text="done"
 ## 53 recorded 52: fact Rpc method=thread/tokenUsage/updated
-snapshot WORKING queue=[] working_on=- at=1794871592253 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request context=15080/475000 plan=? usage=ok 7d:1%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=?
+snapshot WORKING queue=[] working_on=- at=1794871592253 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=? asks=[] approval=on-request context=15080/475000 plan=? usage=ok 7d:1%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 ## 57 recorded 56: fact Rpc method=turn/completed
 item turn:1 turn final at=1794871592256 text="" #1 TURN_OUTCOME_COMPLETED started=1794871580205
 snapshot said "done"
-snapshot IDLE queue=[] working_on=- at=1794871592256 asks=[] thread=01a1e6ae-c77b-7840-af48-88dab56977d1 model=gpt-6.1-sol model_name="GPT-6.1-Sol" effort=? permission=read-only mode=default approval=on-request context=15080/475000 plan=? usage=ok 7d:1%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY] sign_in=SIGN_IN_STATE_SIGNED_IN chatgpt pro background=[]
+snapshot IDLE queue=[] working_on=- at=1794871592256 conversation=01a1e6ae-c77b-7840-af48-88dab56977d1 model_name="GPT-6.1-Sol" sign_in=SIGNED_IN chatgpt pro background=[] asks=[] approval=on-request context=15080/475000 plan=? usage=ok 7d:1%(ok) credits=50424.9304125000 servers=[codex_apps:TOOL_SERVER_STATUS_READY,amux:TOOL_SERVER_STATUS_READY]
 turn_end 1 last=msg_0c68d36f77b24d87016afb9128267c87d296f2bcf7fad1c49a

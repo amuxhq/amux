@@ -124,8 +124,6 @@ ALLOWED: list[Allowed] = [
     Allowed("crates/ui-state/src/body.rs", "decode_snapshot", KIND, DECODE),
     Allowed("crates/ui-state/src/body.rs", "snapshot_structure", KIND, DECODE),
     Allowed("crates/ui-view/src/inputs.rs", "act_input", KIND, DECODE),
-    Allowed("crates/ui-view/src/inputs.rs", "create_config", KIND,
-            "builds the create request's arm for the kind the host starts the picked agent as"),
     Allowed("crates/ui-view/src/ask.rs", "answer_input", KIND, DECODE),
     Allowed("crates/ui-view/src/ask.rs", "question_answer", KIND, DECODE),
     Allowed("crates/ui-view/src/ask.rs", "reply_answer", KIND, DECODE),
@@ -133,21 +131,21 @@ ALLOWED: list[Allowed] = [
     # A recorded report keeps amux's own ids and hides a person's.
     Allowed("crates/ui-state/src/session/record.rs", "kept_provider", ID,
             "a recorded report keeps amux's own provider ids and hides an id a person chose"),
-    # Terminal Claude's own settings and commands, which no capability says.
-    Allowed("crates/ui-view/src/settings.rs", "settings", KIND,
-            "terminal Claude changes its model and effort only by typing its own commands and "
-            "steps its permission with its own key, and headless Claude cannot run the commands "
-            "that open Claude's terminal screens: Claude's own vocabulary, not a capability"),
     # The host the tests' and the storybook's agents run on.
-    Allowed("crates/tui/src/sessions.rs", "offered_providers", KIND,
-            "storybook fixtures: the host offers Claude and Codex as a daemon describes them"),
+    *(
+        Allowed("crates/tui/src/sessions.rs", function, f"{KIND}|{ID}",
+                "storybook fixtures: the host offers Claude and Codex, and lists what each kind "
+                "can do, as a daemon describes them")
+        for function in ("agent", "offered", "offered_providers")
+    ),
     # The storybook, which draws each kind's vocabulary from fixtures of it.
     *(
         Allowed("crates/tui/src/vocabulary.rs", function, f"{KIND}|{ID}",
                 "storybook fixtures: each kind's vocabulary drawn from an authored agent of that kind")
         for function in (
             "around_a_chat", "authored_agent", "authored_home", "card", "cards",
-            "components", "control_chats", "group", "native_composers",
+            "components", "control_chats", "group", "native_composers", "provider_of",
+            "story_snapshot",
         )
     ),
 ]

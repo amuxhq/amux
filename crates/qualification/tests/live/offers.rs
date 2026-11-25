@@ -6,7 +6,7 @@
 //! through the probe and replayed through the interpreter.
 
 use prost::Message as _;
-use wire::{CodexCreateConfig, CodexInput, Kind, codex_input, inventory_event};
+use wire::{AgentSettings, CodexInput, Kind, codex_input, inventory_event};
 
 use super::asks::settled;
 use super::{Install, Log, READY, SETTLE, Scenario, Verdict, expect_outcome, judge};
@@ -68,7 +68,7 @@ impl Install {
     pub(super) async fn ready_agent(
         &self,
         scenario: Scenario,
-        config: Option<CodexCreateConfig>,
+        config: Option<AgentSettings>,
     ) -> Result<Result<(Vec<u8>, super::Follow), Verdict>, String> {
         let agent = match config {
             Some(config) => self.create_codex(scenario, config).await?,
@@ -271,7 +271,7 @@ impl Install {
         want: &str,
     ) -> Result<Verdict, String> {
         let (agent, follow) = match self
-            .ready_agent(scenario, Some(CodexCreateConfig::default()))
+            .ready_agent(scenario, Some(AgentSettings::default()))
             .await?
         {
             Ok(ready) => ready,

@@ -3,19 +3,11 @@ syntax = "proto3";
 package amux.v1;
 
 import "amux/v1/chat.proto";
+import "amux/v1/records.proto";
 
 // Codex's per-kind bodies: the item and snapshot messages encoded into
 // Item.body and Snapshot.body for kind codex, the inputs it accepts, and the
 // answers inside them.
-
-message CodexCreateConfig {
-  optional string model = 1;
-  optional string effort = 2;
-  // A permission and a mode the catalogue offers: "read-only", "default",
-  // "auto", "full-access"; "default", "plan".
-  optional string permission = 3;
-  optional string mode = 4;
-}
 
 message CodexItem {
   oneof kind {
@@ -46,6 +38,8 @@ message CodexItem {
     // Codex holding the turn's answer for a slower safety check; the
     // envelope text is Codex's words.
     SafetyCheck safety_check = 16;
+    // Codex compacted the conversation.
+    Compaction compaction = 17;
   }
 }
 
@@ -177,32 +171,21 @@ enum ReviewStatus {
   REVIEW_STATUS_ABORT = 5;
 }
 
-// Phase lives in the Snapshot envelope, once.
+// What only Codex says about its thread. Its phase, settings, sign-in,
+// thread id and background jobs are in the Snapshot envelope; what it
+// offers is in the catalogue the Snapshot names. The envelope's permission
+// is the one Codex's approval policy, sandbox and reviewer name, absent
+// when they match no name.
 message CodexSnapshot {
   repeated CodexAsk asks = 1;
   ContextMeter context = 2;
-  optional string model = 3;
-  // The running model as a person reads it: the catalogue entry whose value
-  // is its id, else its id tidied. Absent while the model is.
-  optional string model_name = 4;
-  // The permission Codex's approval policy, sandbox and reviewer name;
-  // absent when they match no name, which reads as custom.
-  optional string permission = 5;
-  // The mode the collaboration mode names: "default" or "plan"; absent
-  // until Codex says, or when it names neither.
-  optional string mode = 6;
-  // Codex's own approval policy, absent until Codex says.
-  optional string approval_policy = 7;
-  repeated ToolServer servers = 8;
-  CodexUsage usage = 9;
-  SignIn sign_in = 10;
-  BackgroundJobs background_jobs = 11;
+  // Codex's own approval policy, absent until Codex says. With no named
+  // permission, a client reads the settings as custom.
+  optional string approval_policy = 3;
+  repeated ToolServer servers = 4;
+  CodexUsage usage = 5;
   // Plan steps with status.
-  TaskList plan = 12;
-  optional string effort = 13;
-  // Absent until the thread start response names it.
-  optional string thread_id = 14;
-  // What it offers is in the catalogue the Snapshot names.
+  TaskList plan = 6;
 }
 
 // Codex's usage limits.
@@ -239,7 +222,7 @@ message CodexAsk {
     PlanAsk plan = 10;
   }
   // The decisions this request offers, in the server's order.
-  repeated Decision decisions = 11;
+  repeated CodexDecision decisions = 11;
 }
 
 message CommandApproval {
@@ -279,19 +262,19 @@ message CodexInput {
   }
 }
 
-enum Decision {
-  DECISION_UNSPECIFIED = 0;
-  DECISION_APPROVE = 1;
-  DECISION_APPROVE_SESSION = 2;
-  DECISION_DENY = 3;
-  DECISION_ABORT = 4;
+enum CodexDecision {
+  CODEX_DECISION_UNSPECIFIED = 0;
+  CODEX_DECISION_APPROVE = 1;
+  CODEX_DECISION_APPROVE_SESSION = 2;
+  CODEX_DECISION_DENY = 3;
+  CODEX_DECISION_ABORT = 4;
   // Approve and add the ask's allow_prefix rule.
-  DECISION_APPROVE_SIMILAR = 5;
+  CODEX_DECISION_APPROVE_SIMILAR = 5;
   // Approve and add the ask's network rule.
-  DECISION_APPROVE_NETWORK = 6;
+  CODEX_DECISION_APPROVE_NETWORK = 6;
   // Approve and save the approval in the person's Codex config: calls like
   // this one are allowed in every session from now on.
-  DECISION_APPROVE_ALWAYS = 7;
+  CODEX_DECISION_APPROVE_ALWAYS = 7;
 }
 
 // Rejected REFUSAL_CLOSED_ASK if ask_key is not open. An approval is rejected
@@ -300,7 +283,7 @@ message CodexAnswer {
   // CodexAsk.key: the app-server request id, or amux's own key for a plan.
   string ask_key = 1;
   oneof of {
-    Decision approve = 2;
+    CodexDecision approve = 2;
     QuestionAnswer question = 3;
     FormAnswer form = 4;
     LinkAnswer link = 5;

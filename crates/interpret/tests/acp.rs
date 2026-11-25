@@ -217,7 +217,13 @@ fn opened(provider: &str, capabilities: serde_json::Value) -> interpret::acp::St
 
 /// The capabilities the snapshots in `stepped` say, newest last.
 fn said_capabilities(stepped: &interpret::Stepped) -> Option<wire::AgentCapabilities> {
-    stepped.step.snapshot.as_ref()?.capabilities
+    stepped
+        .step
+        .snapshot
+        .as_ref()?
+        .capabilities
+        .clone()
+        .map(|capabilities| *capabilities)
 }
 
 /// An ACP agent's snapshot says what its process can do: nothing it has
@@ -233,7 +239,7 @@ fn an_acp_agents_snapshot_says_what_its_process_can_do() {
             let (mut state, first) = Acp::initial(&spec(provider));
             assert_eq!(
                 first.snapshot.unwrap().capabilities,
-                Some(wire::AgentCapabilities::acp(true, false, steers)),
+                Some(Box::new(wire::AgentCapabilities::acp(true, false, steers))),
                 "{provider} before it answered"
             );
             let answered = Acp::step(
@@ -292,15 +298,15 @@ fn the_other_kinds_snapshots_say_what_their_kind_can_do() {
     use interpret::codex::Codex;
     assert_eq!(
         first(ClaudePty::initial(&spec(wire::Kind::ClaudePty)).1),
-        Some(wire::AgentCapabilities::claude_pty())
+        Some(Box::new(wire::AgentCapabilities::claude_pty()))
     );
     assert_eq!(
         first(ClaudeSdk::initial(&spec(wire::Kind::ClaudeSdk)).1),
-        Some(wire::AgentCapabilities::claude_sdk())
+        Some(Box::new(wire::AgentCapabilities::claude_sdk()))
     );
     assert_eq!(
         first(Codex::initial(&spec(wire::Kind::Codex)).1),
-        Some(wire::AgentCapabilities::codex())
+        Some(Box::new(wire::AgentCapabilities::codex()))
     );
 }
 
@@ -404,10 +410,7 @@ fn a_refused_reopening_ends_the_agent_and_starts_nothing() {
 
 /// The sign-in an ACP snapshot in `stepped` says, if it says one.
 fn said_sign_in(stepped: &interpret::Stepped) -> Option<wire::SignInState> {
-    use prost::Message as _;
-    let snapshot = stepped.step.snapshot.as_ref()?;
-    let body = wire::AcpSnapshot::decode(snapshot.body.as_slice()).ok()?;
-    Some(body.sign_in?.state())
+    Some(stepped.step.snapshot.as_ref()?.sign_in.as_ref()?.state())
 }
 
 fn reopens(effects: &[Effect]) -> usize {
@@ -656,8 +659,11 @@ fn select(id: &str, category: &str, current: &str, values: &[&str]) -> serde_jso
 fn settings_are_restored_model_first_before_the_first_prompt() {
     let mut created = spec("opencode");
     created.config = Some(wire::EffectiveConfig {
-        model: Some("big".into()),
-        effort: Some("high".into()),
+        settings: Some(wire::AgentSettings {
+            model: Some("big".into()),
+            effort: Some("high".into()),
+            ..Default::default()
+        }),
         ..Default::default()
     });
     let (mut state, _) = Acp::initial(&created);
@@ -745,9 +751,9 @@ fn a_pick_is_said_once_the_agent_took_it() {
     );
     assert_eq!(
         taken.step.picked,
-        Some(wire::PickTaken {
+        Some(wire::AgentSettings {
             model: Some("big".into()),
-            effort: None,
+            ..Default::default()
         })
     );
 
@@ -782,6 +788,117 @@ fn a_pick_is_said_once_the_agent_took_it() {
             "result": {"configOptions": options("big", "low", "code")}})),
     );
     assert_eq!(mode.step.picked, None, "a mode is never kept");
+}
+
+/// The catalogue the effects of a step published, if they published one.
+fn published_catalogue(effects: &[Effect]) -> Option<wire::Catalogue> {
+    use prost::Message as _;
+    effects.iter().rev().find_map(|effect| match effect {
+        Effect::WriteBlob { bytes, .. } => wire::Catalogue::decode(bytes.as_slice()).ok(),
+        _ => None,
+    })
+}
+
+/// A built-in agent's modes amux knows the levels of are its permissions:
+/// listed as permissions, set by a permission input through the same ACP
+/// call as a mode, and reported as the permission. Its other modes stay
+/// modes. A created agent's permission wins over a mode created with it.
+#[test]
+fn a_built_in_agents_known_modes_are_its_permissions() {
+    let options = |mode: &str| {
+        serde_json::json!([select("mode", "mode", mode, &["plan", "default", "custom"])])
+    };
+    let mut created = spec("antigravity");
+    created.config = Some(wire::EffectiveConfig {
+        settings: Some(wire::AgentSettings {
+            permission: Some("plan".into()),
+            mode: Some("custom".into()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    let (mut state, _) = Acp::initial(&created);
+    let opened = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": interpret::acp::NEW_SESSION_REQUEST,
+            "result": {"sessionId": "s1", "configOptions": options("default")}}),
+        ),
+    );
+    let catalogue = published_catalogue(&opened.effects).expect("a catalogue");
+    let permissions: Vec<(&str, wire::PermissionLevel)> = catalogue
+        .permissions
+        .iter()
+        .map(|permission| (permission.value.as_str(), permission.level()))
+        .collect();
+    assert_eq!(
+        permissions,
+        [
+            ("plan", wire::PermissionLevel::ReadOnly),
+            ("default", wire::PermissionLevel::Ask),
+        ]
+    );
+    let modes: Vec<&str> = catalogue
+        .modes
+        .iter()
+        .map(|mode| mode.value.as_str())
+        .collect();
+    assert_eq!(modes, ["custom"]);
+    let applied = writes(&opened.effects);
+    assert_eq!(applied[0]["method"], "session/set_config_option");
+    assert_eq!(applied[0]["params"]["value"], "plan");
+
+    let applied = Acp::step(
+        &mut state,
+        rpc(
+            serde_json::json!({"jsonrpc": "2.0", "id": "amux-apply-mode",
+            "result": {"configOptions": options("plan")}}),
+        ),
+    );
+    let settings = applied.step.snapshot.as_ref().unwrap().settings().clone();
+    assert_eq!(settings.permission.as_deref(), Some("plan"));
+    assert_eq!(settings.permission_level(), wire::PermissionLevel::ReadOnly);
+    assert_eq!(settings.mode, None);
+
+    let asked = Acp::step(
+        &mut state,
+        set(
+            "o",
+            wire::acp_input::Of::Mode(wire::SetMode {
+                value: "custom".into(),
+            }),
+        ),
+    );
+    assert_eq!(writes(&asked.effects)[0]["params"]["value"], "custom");
+    let moded = Acp::step(
+        &mut state,
+        rpc(serde_json::json!({"jsonrpc": "2.0", "id": "amux-set-1",
+            "result": {"configOptions": options("custom")}})),
+    );
+    let settings = moded.step.snapshot.as_ref().unwrap().settings().clone();
+    assert_eq!(settings.permission, None);
+    assert_eq!(settings.mode.as_deref(), Some("custom"));
+
+    let asked = Acp::step(
+        &mut state,
+        set(
+            "p",
+            wire::acp_input::Of::Permission(wire::SetPermission {
+                value: "default".into(),
+            }),
+        ),
+    );
+    assert!(!refused(&asked.effects, "p"));
+    assert_eq!(writes(&asked.effects)[0]["params"]["value"], "default");
+    let permitted = Acp::step(
+        &mut state,
+        rpc(serde_json::json!({"jsonrpc": "2.0", "id": "amux-set-2",
+            "result": {"configOptions": options("default")}})),
+    );
+    let settings = permitted.step.snapshot.as_ref().unwrap().settings().clone();
+    assert_eq!(settings.permission.as_deref(), Some("default"));
+    assert_eq!(settings.permission_level(), wire::PermissionLevel::Ask);
+    assert_eq!(settings.mode, None);
 }
 
 /// A send-now the agent turns down waits its turn again, with the refusal
@@ -1179,13 +1296,21 @@ fn agy_models_output_lists_antigravitys_models() {
             ("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)", efforts(&[])),
         ]
     );
-    let modes: Vec<(&str, bool, wire::PermissionLevel)> = copy
-        .modes
+    // The modes amux knows it has are its permissions.
+    assert!(copy.modes.is_empty());
+    let permissions: Vec<(&str, bool, wire::PermissionLevel)> = copy
+        .permissions
         .iter()
-        .map(|mode| (mode.value.as_str(), mode.normal, mode.level()))
+        .map(|permission| {
+            (
+                permission.value.as_str(),
+                permission.normal,
+                permission.level(),
+            )
+        })
         .collect();
     assert_eq!(
-        modes,
+        permissions,
         [
             ("plan", false, wire::PermissionLevel::ReadOnly),
             ("default", false, wire::PermissionLevel::Ask),
@@ -1212,13 +1337,21 @@ fn opencode_models_output_lists_its_models() {
         ]
     );
     assert!(copy.models.iter().all(|model| model.efforts.is_empty()));
-    let modes: Vec<(&str, bool, wire::PermissionLevel)> = copy
-        .modes
+    // The modes amux knows it has are its permissions.
+    assert!(copy.modes.is_empty());
+    let permissions: Vec<(&str, bool, wire::PermissionLevel)> = copy
+        .permissions
         .iter()
-        .map(|mode| (mode.value.as_str(), mode.normal, mode.level()))
+        .map(|permission| {
+            (
+                permission.value.as_str(),
+                permission.normal,
+                permission.level(),
+            )
+        })
         .collect();
     assert_eq!(
-        modes,
+        permissions,
         [
             ("plan", false, wire::PermissionLevel::ReadOnly),
             ("build", false, wire::PermissionLevel::Full),
@@ -1226,11 +1359,8 @@ fn opencode_models_output_lists_its_models() {
     );
     assert!(copy.commands.is_empty());
     // An agent amux knows no modes of lists its models alone.
-    assert!(
-        interpret::acp::listed_catalogue("my-agent", "m1\n")
-            .modes
-            .is_empty()
-    );
+    let added = interpret::acp::listed_catalogue("my-agent", "m1\n");
+    assert!(added.modes.is_empty() && added.permissions.is_empty());
 }
 
 /// Each built-in lists its models without a conversation its own way, and

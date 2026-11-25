@@ -3,7 +3,7 @@
 
   New agents start in a repository. These are where Claude Code and Codex ran lately:
 
-  › [x] /tmp/journey/aj-xxxxxxxx/net/desk/repositories/amux
+  › [x] /tmp/journey/aj-xxxxxxxx/net/desk/home/code/app
     + Add a repository…
 
 

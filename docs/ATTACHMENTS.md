@@ -50,8 +50,7 @@ by its version, which a build that knows none of them ignores, so the
 attachment still reads as its kind. A **sent review** is the one use today: a
 `text` attachment named `review`, holding what the agent reads, with a
 `reviews/1` entry saying which review's comments it sends
-([below](#sent-reviews)). There is no review kind; the field the kinds once
-used for a review built on a patch is reserved.
+([below](#sent-reviews)). There is no review kind.
 
 A `PageComment` is anchored on a block of the page, a `PageElement`: a CSS
 selector, its visible text cut short, and where the page says it was drawn
@@ -225,7 +224,7 @@ named by its hash, so the same bytes are one file.
 **Reading.** `GetBlob(agent, hash)` reads the file whenever a client asks, from
 the node it is attached to. On a host holding a replica, a blob fetched
 before is read from the replica directory; otherwise the node asks the
-agent's own host for it with `PeerService.GetBlob`, as itself, checks the
+agent's own host for it with `PeerService.FetchBlob`, as itself, checks the
 bytes against the hash, and keeps them under the replica for the next
 reader. The client's call is never passed on. So a blob behaves like an item: written locally by the agent side,
 readable once the reference reaches a client, and the agent can keep
@@ -293,7 +292,7 @@ attachments. The `message_agent` tool moves each element the model wrote (the
 file by its path on the sender's host. Before the recipient's daemon hands
 the message to its agent, it puts each file's bytes into the recipient's own
 blobs: copied from the sending agent's directory when both run on that host,
-else fetched with `PeerService.GetBlob` from the sender's host and checked against the
+else fetched with `PeerService.FetchBlob` from the sender's host and checked against the
 hash; a file that cannot be brought refuses the message in words. The
 recipient's interpreter hands the attachments on with the message, and its
 agent process writes each element at its place with the path of the

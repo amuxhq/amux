@@ -320,7 +320,12 @@ fn second_line(
     // A stopped agent keeps no stream, so its row says what its record
     // last said: a failure first, then its last words, and how it ended
     // only when it said nothing.
-    let recorded = || agent.last_said.clone().filter(|said| !said.is_empty());
+    let recorded = || {
+        agent
+            .last_said()
+            .map(str::to_owned)
+            .filter(|said| !said.is_empty())
+    };
     if attention == Attention::Exited {
         return match ui_state::exit_cause(agent) {
             cause @ ExitCause::Failed(_) => SecondLine::Exited(cause),
@@ -389,18 +394,18 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         name: without_direction_controls(ui_state::shown_name(agent)),
         handle: without_direction_controls(&agent.name),
         kind: agent.kind(),
-        provider: agent.provider_id().to_owned(),
+        provider: agent.provider.clone(),
         provider_name: ui_state::provider_name(fleet.host(&agent.host_id), agent),
         attachable: ui_state::offered_capabilities(fleet.host(&agent.host_id), agent).attachable,
         attention,
         exit_cause: (attention == Attention::Exited).then(|| ui_state::exit_cause(agent)),
-        branch: agent.git.as_ref().and_then(|git| git.branch.clone()),
+        branch: agent.git().and_then(|git| git.branch.clone()),
         cwd: agent.cwd.clone(),
         repository: Repository::of_checkout(
-            agent.git.as_ref().and_then(|git| git.checkout.as_deref()),
+            agent.git().and_then(|git| git.checkout.as_deref()),
             &agent.cwd,
         ),
-        phase_since_ms: agent.phase_since_ms,
+        phase_since_ms: agent.status().phase_since_ms,
         host: fleet
             .host(&agent.host_id)
             .map(|host| host.name().to_owned())
@@ -410,7 +415,7 @@ fn card(fleet: &FleetState, local_host: &[u8], agent: &Agent) -> FleetCard {
         family_attention: fleet.family_attention(&at).unwrap_or(Attention::Exited),
         members: fleet.listed_family(&at).len() as u32,
         descendants: agent.descendants,
-        background_jobs: agent.background_jobs,
+        background_jobs: agent.status().background_jobs,
         close_held: fleet.close_held(&at),
         filing: match agent.filing() {
             Filing::Unspecified => Filing::Open,
@@ -466,15 +471,15 @@ impl FleetFilter {
 /// branch, folder, host, how it ended and which agent it is.
 pub fn matches(fleet: &FleetState, agent: &Agent, needle: &str) -> bool {
     let host = fleet.host(&agent.host_id).map(|host| host.name());
-    let branch = agent.git.as_ref().and_then(|git| git.branch.as_deref());
+    let branch = agent.git().and_then(|git| git.branch.as_deref());
     // The cause as the row words it, so the filter finds what it shows.
     // Only an exited row shows one: a live row can briefly hold the cause
     // its journal ended with, until the daemon marks it exited.
     let cause = (agent.lifecycle() == Lifecycle::Exited)
-        .then(|| ui_state::exit_words(agent.exit_cause, agent.exit_detail.as_deref()));
+        .then(|| ui_state::exit_words(agent.exit_cause() as i32, agent.exit_detail()));
     [
         Some(agent.name.as_str()),
-        agent.title.as_deref(),
+        agent.title(),
         branch,
         Some(agent.cwd.as_str()),
         host,
@@ -528,7 +533,7 @@ pub fn fleet_view(
                 .iter()
                 .filter(|member| member.filing() != Filing::Closed)
                 .filter(|member| section_of(placed(fleet, local_host, member)) == section)
-                .map(|member| member.phase_since_ms)
+                .map(|member| member.status().phase_since_ms)
                 .max()?;
             Some((section, since, root))
         })
@@ -595,8 +600,9 @@ fn push(
         .filter_map(|child| fleet.agent(child))
         .collect();
     children.sort_by(|a, b| {
-        b.phase_since_ms
-            .cmp(&a.phase_since_ms)
+        b.status()
+            .phase_since_ms
+            .cmp(&a.status().phase_since_ms)
             .then_with(|| ui_state::agent_key(a).cmp(&ui_state::agent_key(b)))
     });
     let expanded = !children.is_empty() && expand.contains(&card_.agent.agent);
@@ -607,8 +613,9 @@ fn push(
                 .into_iter()
                 .filter(|member| placed(fleet, local_host, member) == Attention::NeedsYou)
                 .max_by(|a, b| {
-                    a.phase_since_ms
-                        .cmp(&b.phase_since_ms)
+                    a.status()
+                        .phase_since_ms
+                        .cmp(&b.status().phase_since_ms)
                         .then_with(|| ui_state::agent_key(b).cmp(&ui_state::agent_key(a)))
                 })
                 .map(|member| {
@@ -692,6 +699,7 @@ pub fn reach(fleet: &FleetState, local_host: &[u8], host: &[u8]) -> Reach {
         return Reach::Online(entry.and_then(HostEntry::online).unwrap_or_default());
     }
     match entry.and_then(HostEntry::reach) {
+        Some(trusted::Reach::Here(_)) => Reach::Online(RouteKind::Unspecified),
         Some(trusted::Reach::Online(_)) => {
             Reach::Online(entry.and_then(HostEntry::online).unwrap_or_default())
         }
@@ -767,7 +775,7 @@ pub fn settle_warning(fleet: &FleetState, agent: &AgentKey) -> Option<SettleWarn
     let seen = live_descendants(fleet, agent);
     Some(SettleWarning {
         turn,
-        background_jobs: entry.background_jobs,
+        background_jobs: entry.status().background_jobs,
         subagents: entry.descendants.max(seen),
         resumable: ui_state::offered_capabilities(fleet.host(&entry.host_id), entry).resumable,
         provider_subagent: entry.native.is_some(),

@@ -38,7 +38,7 @@ pub fn offered<'a>(fleet: &'a FleetState, host: &[u8]) -> Vec<&'a wire::Provider
             entry
                 .providers
                 .iter()
-                .filter(|offered| !offered.provider_id.is_empty())
+                .filter(|offered| !offered.provider.is_empty())
                 .collect()
         })
         .unwrap_or_default()
@@ -145,20 +145,20 @@ impl Setup {
     /// has a terminal of its own, as the host says them now.
     pub fn settle(&mut self, fleet: &FleetState) {
         let listed = offered(fleet, &self.host);
-        if !listed.iter().any(|offer| offer.provider_id == self.agent)
+        if !listed.iter().any(|offer| offer.provider == self.agent)
             && let Some(first) = listed.first()
         {
             let had = !self.agent.is_empty();
-            self.agent = first.provider_id.clone();
+            self.agent = first.provider.clone();
             self.offered = None;
             if had {
                 self.start_from_defaults();
             }
         }
-        let offer = listed.iter().find(|offer| offer.provider_id == self.agent);
+        let offer = listed.iter().find(|offer| offer.provider == self.agent);
         self.host_kind = offer.map_or(Kind::Unspecified, |offer| offer.kind());
         self.attachable = offer
-            .and_then(|offer| offer.capabilities)
+            .and_then(|offer| offer.capabilities())
             .is_some_and(|can| can.attachable);
     }
 
@@ -170,7 +170,7 @@ impl Setup {
         let can = fleet
             .host(&self.host)
             .and_then(|entry| entry.provider(&self.agent))
-            .and_then(|offer| offer.capabilities)?;
+            .and_then(|offer| offer.capabilities().cloned())?;
         let what = match ui_view::untaken_by(&can, attachments)? {
             ui_view::Untaken::Images => "images",
             ui_view::Untaken::Files => "files",
@@ -332,8 +332,8 @@ impl Setup {
                     caution: offer.signed_in() == Some(false),
                     ..choice(
                         offer.name().to_owned(),
-                        offer.provider_id.clone(),
-                        offer.provider_id == self.agent,
+                        offer.provider.clone(),
+                        offer.provider == self.agent,
                     )
                 })
                 .collect(),
@@ -538,12 +538,11 @@ impl Setup {
             name: self.name.clone(),
             cwd: self.folder.clone(),
             initial_prompt: prompt,
-            agent: ui_view::create_config(self.host_kind, &self.agent, &chosen),
             new_workspace: self.worktree,
             // What a chat's sibling merely copied is not the person's pick.
             remember_model: !own && self.model.is_some() && self.model != self.copied.0,
             remember_effort: !own && self.effort.is_some() && self.effort != self.copied.1,
-            ..CreateAgentRequest::default()
+            ..ui_view::create_request(&self.agent, self.host_kind, &chosen)
         }
     }
 }
@@ -1293,10 +1292,10 @@ impl Form {
                 if !listed.is_empty() {
                     let at = listed
                         .iter()
-                        .position(|offer| offer.provider_id == setup.agent)
+                        .position(|offer| offer.provider == setup.agent)
                         .unwrap_or(0) as isize;
                     let next = (at + step).rem_euclid(listed.len() as isize) as usize;
-                    let id = listed[next].provider_id.clone();
+                    let id = listed[next].provider.clone();
                     setup.pick(Item::Kind, &id);
                 }
             }
@@ -1522,9 +1521,9 @@ impl Form {
                         chip(
                             &mut line,
                             words,
-                            offer.provider_id == setup.agent,
+                            offer.provider == setup.agent,
                             false,
-                            FormHit::Agent(offer.provider_id.clone()),
+                            FormHit::Agent(offer.provider.clone()),
                         );
                     }
                 }

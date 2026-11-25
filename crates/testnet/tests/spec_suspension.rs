@@ -84,6 +84,17 @@ async fn items(net: &Net, agent: &str) -> Vec<wire::Item> {
         .unwrap()
 }
 
+/// Whether `item` is a prompt the daemon resumed its agent with.
+fn continued(item: &wire::Item) -> bool {
+    use prost::Message as _;
+    match item.kind() {
+        wire::Kind::Codex => wire::CodexItem::decode(item.body.as_slice())
+            .is_ok_and(|body| matches!(body.kind, Some(wire::codex_item::Kind::Prompt(prompt)) if prompt.continued)),
+        _ => wire::ClaudeItem::decode(item.body.as_slice())
+            .is_ok_and(|body| matches!(body.kind, Some(wire::claude_item::Kind::Prompt(prompt)) if prompt.continued)),
+    }
+}
+
 /// What `agent` accepted as an input other than its first prompt.
 async fn received(net: &Net, agent: &str) -> Vec<wire::Item> {
     items(net, agent)
@@ -109,7 +120,7 @@ async fn until_row(
             Some(row) if holds(&row) => Ok(()),
             other => Err(format!(
                 "{:?}",
-                other.map(|row| (row.lifecycle, row.exit_cause, row.phase, row.incarnation))
+                other.map(|row| (row.lifecycle, row.exit_cause, row.phase(), row.incarnation))
             )),
         }
     })
@@ -188,12 +199,12 @@ async fn a_power_cut_suspends_the_idle_and_continues_the_turn_it_cut_off() {
     net.spawn_child("lead", helper("finish")).await.unwrap();
     for agent in ["lead", "quiet"] {
         until_row(&net, "desk", agent, "idle", |row| {
-            row.phase == Phase::Idle as i32
+            row.phase() == Phase::Idle
         })
         .await;
     }
     until_row(&net, "desk", "worker", "in its turn", |row| {
-        row.phase == Phase::Working as i32
+        row.phase() == Phase::Working
     })
     .await;
 
@@ -214,7 +225,7 @@ async fn a_power_cut_suspends_the_idle_and_continues_the_turn_it_cut_off() {
             items(net, "worker")
                 .await
                 .iter()
-                .any(|item| wire::is_continued_input(&item.input_id))
+                .any(continued)
                 .then_some(())
                 .ok_or_else(|| "no continuation yet".to_owned())
         }

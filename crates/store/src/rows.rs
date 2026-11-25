@@ -19,12 +19,10 @@ use crate::{
     decode_attachments, encode_attachments,
 };
 
-const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, name, cwd, parent_host, parent_id, \
-    lifecycle, exit_cause, exit_detail, phase, working_on, phase_since_ms, git, snapshot, \
-    ingest_cursor, next_revision, source_cursor, source_generation, \
-    complete_from_order, exhausted, owes_report, created_at_ms, incarnation, background_jobs, \
-    descendants, filing, filed_at_ms, title, name_given, last_said, native, experimental, provider, \
-    settings";
+const AGENT_COLUMNS: &str = "origin_host, agent_id, kind, provider, name, cwd, parent_host, \
+    parent_id, lifecycle, exit_cause, exit_detail, status, title, snapshot, ingest_cursor, \
+    next_revision, source_cursor, source_generation, complete_from_order, exhausted, owes_report, \
+    created_at_ms, incarnation, descendants, filing, filed_at_ms, name_given, native, experimental";
 
 const ITEM_COLUMNS: &str =
     "key, position, revision, at_ms, input_id, text, kind, attachments, body";
@@ -135,15 +133,7 @@ const REGISTRY: &[&str] = &[
 
 /// What a replica's inventory row carries of its newest snapshot. Not its
 /// last activity: the inventory row does not hold it.
-const INVENTORY_ENVELOPE: &[&str] = &[
-    "phase",
-    "working_on",
-    "phase_since_ms",
-    "git",
-    "background_jobs",
-    "last_said",
-    "settings",
-];
+const INVENTORY_ENVELOPE: &[&str] = &["status"];
 
 /// What a replica's inventory row counts that its origin owns: its live
 /// descendants. An own row's count is the daemon's, written apart.
@@ -159,14 +149,8 @@ pub(crate) const EXPERIMENTAL: &[&str] = &["experimental"];
 pub(crate) const COMMITTED: &[&str] = &[
     "exit_cause",
     "exit_detail",
-    "phase",
-    "working_on",
-    "phase_since_ms",
-    "git",
-    "background_jobs",
+    "status",
     "title",
-    "last_said",
-    "settings",
     "snapshot",
     "ingest_cursor",
     "next_revision",
@@ -179,14 +163,8 @@ pub(crate) const COMMITTED: &[&str] = &[
 pub(crate) const SUBAGENT_COMMITTED: &[&str] = &[
     "exit_cause",
     "exit_detail",
-    "phase",
-    "working_on",
-    "phase_since_ms",
-    "git",
-    "background_jobs",
+    "status",
     "title",
-    "last_said",
-    "settings",
     "snapshot",
     "ingest_cursor",
     "next_revision",
@@ -199,14 +177,8 @@ pub(crate) const SUBAGENT_COMMITTED: &[&str] = &[
 /// What an absorb writes: the newest snapshot's envelope and the replica's
 /// block.
 pub(crate) const ABSORBED: &[&str] = &[
-    "phase",
-    "working_on",
-    "phase_since_ms",
-    "git",
-    "background_jobs",
+    "status",
     "title",
-    "last_said",
-    "settings",
     "snapshot",
     "source_cursor",
     "source_generation",
@@ -236,8 +208,10 @@ pub(crate) fn update_of(columns: &[&str]) -> String {
 
 /// What `put_agent` writes over a held row. An own row takes the registry
 /// columns, and one moving to a new incarnation is back in phase starting
-/// with a turn owed: the new process has said nothing yet. A replica takes
-/// the registry columns and the envelope its inventory row carries.
+/// with a turn owed: the new process has said nothing yet. Its status is
+/// then `?{STARTED}`, the held status in phase starting, which
+/// [`Rows::upsert_agent`] binds. A replica takes the registry columns and
+/// the envelope its inventory row carries.
 pub(crate) fn registry_update(own: bool) -> String {
     let registry = update_of(REGISTRY);
     if own {
@@ -245,11 +219,10 @@ pub(crate) fn registry_update(own: bool) -> String {
         // `agents.incarnation` is the old one.
         format!(
             "{registry}, \
-             phase = CASE WHEN excluded.incarnation > agents.incarnation \
-               THEN {starting} ELSE agents.phase END, \
+             status = CASE WHEN excluded.incarnation > agents.incarnation \
+               THEN ?{STARTED} ELSE agents.status END, \
              owes_report = CASE WHEN excluded.incarnation > agents.incarnation \
                THEN 1 ELSE agents.owes_report END",
-            starting = wire::Phase::Starting as i32,
         )
     } else {
         format!(
@@ -261,12 +234,15 @@ pub(crate) fn registry_update(own: bool) -> String {
     }
 }
 
-/// An agents row with its snapshot, git, native, experimental and
-/// settings columns still encoded.
+/// The parameter `registry_update` binds an own row's started status to:
+/// the one after every column of [`AGENT_COLUMNS`].
+pub(crate) const STARTED: usize = 30;
+
+/// An agents row with its status, snapshot, native and experimental
+/// columns still encoded.
 type RawAgent = (
     AgentRow,
-    Option<Vec<u8>>,
-    Option<Vec<u8>>,
+    Vec<u8>,
     Option<Vec<u8>>,
     Option<Vec<u8>>,
     Option<Vec<u8>>,
@@ -308,63 +284,53 @@ pub(crate) fn decode_experimental(
 }
 
 fn agent_row(row: &Row<'_>) -> rusqlite::Result<RawAgent> {
-    let parent_host: Option<Vec<u8>> = row.get(5)?;
-    let parent_id: Option<Vec<u8>> = row.get(6)?;
+    let parent_host: Option<Vec<u8>> = row.get(6)?;
+    let parent_id: Option<Vec<u8>> = row.get(7)?;
     Ok((
         AgentRow {
             agent: AgentKey::new(row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?),
             kind: row.get(2)?,
-            name: row.get(3)?,
-            cwd: row.get(4)?,
+            provider: row.get(3)?,
+            name: row.get(4)?,
+            cwd: row.get(5)?,
             parent: parent_id.map(|agent| AgentKey::new(parent_host.unwrap_or_default(), agent)),
-            lifecycle: row.get(7)?,
-            exit_cause: row.get(8)?,
-            exit_detail: row.get(9)?,
-            phase: row.get(10)?,
-            working_on: row.get(11)?,
-            phase_since_ms: row.get(12)?,
-            git: None,
+            lifecycle: row.get(8)?,
+            exit_cause: row.get(9)?,
+            exit_detail: row.get(10)?,
+            status: wire::AgentStatus::default(),
+            title: row.get(12)?,
             snapshot: None,
-            ingest_cursor: row.get::<_, i64>(15)? as u64,
-            next_revision: row.get::<_, i64>(16)? as u64,
-            source_cursor: row.get::<_, i64>(17)? as u64,
-            source_generation: row.get::<_, i64>(18)? as u64,
-            complete_from_order: row.get::<_, Option<i64>>(19)?.map(|order| order as u64),
-            exhausted: row.get::<_, i64>(20)? != 0,
-            owes_report: row.get::<_, i64>(21)? != 0,
-            created_at_ms: row.get(22)?,
-            incarnation: row.get(23)?,
-            background_jobs: row.get(24)?,
-            descendants: row.get(25)?,
-            filing: row.get(26)?,
-            filed_at_ms: row.get(27)?,
-            title: row.get(28)?,
-            name_given: row.get(29)?,
-            last_said: row.get(30)?,
+            ingest_cursor: row.get::<_, i64>(14)? as u64,
+            next_revision: row.get::<_, i64>(15)? as u64,
+            source_cursor: row.get::<_, i64>(16)? as u64,
+            source_generation: row.get::<_, i64>(17)? as u64,
+            complete_from_order: row.get::<_, Option<i64>>(18)?.map(|order| order as u64),
+            exhausted: row.get::<_, i64>(19)? != 0,
+            owes_report: row.get::<_, i64>(20)? != 0,
+            created_at_ms: row.get(21)?,
+            incarnation: row.get(22)?,
+            descendants: row.get(23)?,
+            filing: row.get(24)?,
+            filed_at_ms: row.get(25)?,
+            name_given: row.get(26)?,
             native: None,
             experimental: Default::default(),
-            provider: row.get::<_, Option<String>>(33)?.unwrap_or_default(),
-            settings: None,
         },
-        row.get(14)?,
+        row.get(11)?,
         row.get(13)?,
-        row.get(31)?,
-        row.get(32)?,
-        row.get(34)?,
+        row.get(27)?,
+        row.get(28)?,
     ))
 }
 
 /// Decodes the message columns `agent_row` leaves as bytes.
 fn finish_agent(
-    (mut row, snapshot, git, native, experimental, settings): RawAgent,
+    (mut row, status, snapshot, native, experimental): RawAgent,
 ) -> Result<AgentRow, StoreError> {
     let corrupt = |error: prost::DecodeError| StoreError::Corrupt(error.to_string());
+    row.status = wire::AgentStatus::decode(status.as_slice()).map_err(corrupt)?;
     row.snapshot = snapshot
         .map(|bytes| Snapshot::decode(bytes.as_slice()))
-        .transpose()
-        .map_err(corrupt)?;
-    row.git = git
-        .map(|bytes| wire::Git::decode(bytes.as_slice()))
         .transpose()
         .map_err(corrupt)?;
     row.native = native
@@ -372,10 +338,6 @@ fn finish_agent(
         .transpose()
         .map_err(corrupt)?;
     row.experimental = decode_experimental(experimental.as_deref()).map_err(corrupt)?;
-    row.settings = settings
-        .map(|bytes| wire::AgentSettings::decode(bytes.as_slice()))
-        .transpose()
-        .map_err(corrupt)?;
     Ok(row)
 }
 
@@ -524,53 +486,64 @@ impl Rows<'_> {
     /// Inserts the row whole, or writes `update` (a `DO UPDATE SET` list)
     /// over the held one.
     pub(crate) fn upsert_agent(&self, row: &AgentRow, update: &str) -> Result<(), StoreError> {
+        // What an own row moving to a new incarnation keeps of its status:
+        // all of it but its phase, which is back at starting.
+        let started = if update.contains(&format!("?{STARTED}")) {
+            let held = self.agent(&row.agent)?.map(|held| held.status);
+            Some(
+                wire::AgentStatus {
+                    phase: wire::Phase::Starting as i32,
+                    ..held.unwrap_or_else(|| row.status.clone())
+                }
+                .encode_to_vec(),
+            )
+        } else {
+            None
+        };
         self.conn
             .prepare_cached(&format!(
                 "INSERT INTO agents ({AGENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
                  ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
-                 ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
+                 ?25, ?26, ?27, ?28, ?29) ON CONFLICT (origin_host, agent_id) DO UPDATE SET {update}"
             ))?
-            .execute(params![
-                row.agent.host,
-                row.agent.agent,
-                row.kind,
-                row.name,
-                row.cwd,
-                row.parent.as_ref().map(|parent| &parent.host),
-                row.parent.as_ref().map(|parent| &parent.agent),
-                row.lifecycle,
-                row.exit_cause,
-                row.exit_detail,
-                row.phase,
-                row.working_on,
-                row.phase_since_ms,
-                row.git.as_ref().map(|git| git.encode_to_vec()),
-                row.snapshot
-                    .as_ref()
-                    .map(|snapshot| snapshot.encode_to_vec()),
-                signed(row.ingest_cursor),
-                signed(row.next_revision),
-                signed(row.source_cursor),
-                signed(row.source_generation),
-                row.complete_from_order.map(signed),
-                i64::from(row.exhausted),
-                i64::from(row.owes_report),
-                row.created_at_ms,
-                row.incarnation,
-                row.background_jobs,
-                row.descendants,
-                row.filing,
-                row.filed_at_ms,
-                row.title,
-                row.name_given,
-                row.last_said,
-                row.native.as_ref().map(|native| native.encode_to_vec()),
-                encode_experimental(&row.experimental),
-                (!row.provider.is_empty()).then_some(&row.provider),
-                row.settings
-                    .as_ref()
-                    .map(|settings| settings.encode_to_vec()),
-            ])?;
+            .execute(rusqlite::params_from_iter(
+                params![
+                    row.agent.host,
+                    row.agent.agent,
+                    row.kind,
+                    row.provider,
+                    row.name,
+                    row.cwd,
+                    row.parent.as_ref().map(|parent| &parent.host),
+                    row.parent.as_ref().map(|parent| &parent.agent),
+                    row.lifecycle,
+                    row.exit_cause,
+                    row.exit_detail,
+                    row.status.encode_to_vec(),
+                    row.title,
+                    row.snapshot
+                        .as_ref()
+                        .map(|snapshot| snapshot.encode_to_vec()),
+                    signed(row.ingest_cursor),
+                    signed(row.next_revision),
+                    signed(row.source_cursor),
+                    signed(row.source_generation),
+                    row.complete_from_order.map(signed),
+                    i64::from(row.exhausted),
+                    i64::from(row.owes_report),
+                    row.created_at_ms,
+                    row.incarnation,
+                    row.descendants,
+                    row.filing,
+                    row.filed_at_ms,
+                    row.name_given,
+                    row.native.as_ref().map(|native| native.encode_to_vec()),
+                    encode_experimental(&row.experimental),
+                ]
+                .iter()
+                .copied()
+                .chain(started.as_ref().map(|started| started as &dyn rusqlite::ToSql)),
+            ))?;
         Ok(())
     }
 

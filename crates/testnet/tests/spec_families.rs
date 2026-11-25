@@ -84,7 +84,7 @@ async fn send_as(
     label: &str,
     to: &AgentRef,
     text: &str,
-) -> Result<Vec<u8>, RpcError> {
+) -> Result<(), RpcError> {
     net.tools(from)
         .await
         .unwrap()
@@ -171,12 +171,12 @@ async fn taken(net: &Net, agent: &str, text: &str) -> usize {
                 return Err("no snapshot yet".to_owned());
             };
             let queued = snapshot.queue.len();
-            let settled =
-                row.ingest_cursor >= end && row.phase == Phase::Idle as i32 && queued == 0;
+            let settled = row.ingest_cursor >= end && row.phase() == Phase::Idle && queued == 0;
             if !settled {
                 return Err(format!(
                     "cursor {} of {end}, phase {}, {queued} queued",
-                    row.ingest_cursor, row.phase
+                    row.ingest_cursor,
+                    row.phase().as_str_name()
                 ));
             }
             let items = items(net, agent).await;
@@ -291,9 +291,8 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_carried_there(
     .unwrap();
     let tools = net.tools("lead").await.unwrap();
     let request = || wire::CreateAgentRequest {
-        agent: Some(wire::create_agent_request::Agent::ClaudeSdk(
-            Default::default(),
-        )),
+        provider: wire::agents::CLAUDE.into(),
+        kind: wire::Kind::ClaudeSdk as i32,
         ..wire::CreateAgentRequest::default()
     };
     let resolved = |name: &'static str| {
@@ -316,6 +315,7 @@ async fn a_spawn_by_host_name_resolves_among_trusted_hosts_and_is_carried_there(
                         ..Default::default()
                     }],
                 }),
+                continued: false,
             }),
             ..request()
         })
@@ -471,7 +471,9 @@ async fn stop_and_send_are_lineage_checked_across_hosts() {
     until("desk to see helper's turn running", || {
         let net = &net;
         async move {
-            let phase = row(net, "desk", "helper").await.map(|row| row.phase);
+            let phase = row(net, "desk", "helper")
+                .await
+                .map(|row| row.phase() as i32);
             (phase == Some(Phase::Working as i32))
                 .then_some(())
                 .ok_or_else(|| format!("phase {phase:?}"))
@@ -1090,7 +1092,9 @@ async fn a_child_deleted_mid_turn_tells_its_parent_it_was_stopped() {
     until("helper to be working", || {
         let net = &net;
         async move {
-            let phase = row(net, "server", "helper").await.map(|row| row.phase);
+            let phase = row(net, "server", "helper")
+                .await
+                .map(|row| row.phase() as i32);
             (phase == Some(Phase::Working as i32))
                 .then_some(())
                 .ok_or_else(|| format!("{phase:?}"))
@@ -1172,14 +1176,8 @@ async fn the_agent_row_counts_live_descendants_and_background_jobs() {
                 .unwrap();
             let jobs = cut
                 .snapshot
-                .map(|snapshot| {
-                    wire::ClaudeSnapshot::decode(snapshot.body.as_slice())
-                        .unwrap()
-                        .background_jobs
-                        .map(|jobs| jobs.jobs.len())
-                        .unwrap_or(0)
-                })
-                .unwrap_or(0);
+                .and_then(|snapshot| snapshot.jobs)
+                .map_or(0, |jobs| jobs.jobs.len());
             (jobs == 1)
                 .then_some(())
                 .ok_or_else(|| format!("{jobs} jobs"))

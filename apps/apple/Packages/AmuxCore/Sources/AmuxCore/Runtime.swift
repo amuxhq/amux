@@ -299,12 +299,6 @@ public final class Runtime: @unchecked Sendable {
         }
     }
 
-    /// The folders worth offering as repositories: where Claude Code and Codex
-    /// ran lately, newest first.
-    public func suggestRepositories() async -> Result<[RepositorySuggestion], RuntimeFailure> {
-        await act([RepositorySuggestion].self) { amux_runtime_suggest_repositories($0) }
-    }
-
     /// A one-time link that signs the browser in to a profile's account and
     /// opens `path` on its account service.
     public func webSignInLink(

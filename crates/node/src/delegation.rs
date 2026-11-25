@@ -17,7 +17,7 @@
 //! provider's catalogue, onto which it maps the level and against which it
 //! checks the model and effort.
 
-use wire::{AgentSettings, Catalogue, CreateAgentRequest, PermissionLevel, create_agent_request};
+use wire::{AgentSettings, Catalogue, CreateAgentRequest, PermissionLevel};
 
 use crate::runtime::{ProfileRuntime, RegistryError};
 
@@ -68,21 +68,13 @@ pub(crate) fn ceiling(
 /// permission or mode in the provider's own terms, and keeping the model
 /// or effort as the host's pick for later agents.
 pub(crate) fn only_picks(request: &CreateAgentRequest) -> Result<(), RegistryError> {
-    use create_agent_request::Agent;
     if request.remember_model || request.remember_effort {
         return Err(not_yours(
             "an agent's picks for a subagent are never kept as the person's",
         ));
     }
-    let persons = match &request.agent {
-        Some(Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude)) => {
-            !claude.args.is_empty() || claude.permission.is_some()
-        }
-        Some(Agent::Codex(codex)) => codex.permission.is_some() || codex.mode.is_some(),
-        Some(Agent::Acp(acp)) => acp.mode.is_some(),
-        None => false,
-    };
-    if persons {
+    let settings = request.settings();
+    if !request.args.is_empty() || settings.permission.is_some() || settings.mode.is_some() {
         return Err(not_yours(
             "a subagent's permission is asked for by level (read-only, ask, auto or full); \
              provider arguments, modes and permission values are the person's to choose",
@@ -99,7 +91,7 @@ pub(crate) struct Fitted {
 
 /// Fits a subagent's model, effort and permission level onto what its
 /// provider offers on this host, `catalogue`, writing the permission the
-/// level maps to into `agent`. A model or effort the catalogue does not
+/// level maps to into `settings`. A model or effort the catalogue does not
 /// list is refused, listing what it does; one asked of a provider whose
 /// catalogue this host has not read is refused too, since nothing can say
 /// it exists. Left out, they are the ones this host starts a new agent on,
@@ -108,22 +100,21 @@ pub(crate) struct Fitted {
 /// permissions have no level at all (an ACP agent a person added) is
 /// refused for every level but full, which its own default cannot exceed.
 pub(crate) fn fit(
-    agent: &mut create_agent_request::Agent,
+    provider: &str,
+    settings: &mut AgentSettings,
     level: PermissionLevel,
     catalogue: Option<&Catalogue>,
     host: &str,
 ) -> Result<Fitted, RegistryError> {
-    use create_agent_request::Agent;
-    let provider = agent.provider_id().to_owned();
-    let (model, effort, permission) = match agent {
-        Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => (
-            &mut claude.model,
-            &mut claude.effort,
-            &mut claude.permission,
-        ),
-        Agent::Codex(codex) => (&mut codex.model, &mut codex.effort, &mut codex.permission),
-        Agent::Acp(acp) => (&mut acp.model, &mut acp.effort, &mut acp.mode),
-    };
+    let provider = provider.to_owned();
+    let AgentSettings {
+        model,
+        effort,
+        permission,
+        permission_level,
+        ..
+    } = settings;
+    *permission_level = 0;
     let listed = |what: &str| {
         refused(format!(
             "{host} has not listed what {provider} offers yet, so its {what} cannot be checked; \
@@ -249,6 +240,7 @@ pub(crate) fn fit(
                 .as_ref()
                 .map_or(PermissionLevel::Unspecified, |mapped| mapped.level)
                 as i32,
+            mode: None,
         },
     })
 }
@@ -311,18 +303,21 @@ impl ProfileRuntime {
     /// the name passes through as given.
     pub(crate) async fn name_acp_model(
         &self,
+        kind: wire::Kind,
         request: &mut CreateAgentRequest,
     ) -> Result<(), RegistryError> {
-        let Some(create_agent_request::Agent::Acp(acp)) = request.agent.as_mut() else {
+        if kind != wire::Kind::Acp {
             return Ok(());
-        };
+        }
+        let agent = request.provider.clone();
+        let acp = request.settings.get_or_insert_with(AgentSettings::default);
         let Some(asked) = acp.model.clone() else {
             return Ok(());
         };
-        let catalogue = match self.offers().offered(&acp.agent) {
+        let catalogue = match self.offers().offered(&agent) {
             Some(held) => Some(held),
             None => self
-                .host_catalogue(&acp.agent)
+                .host_catalogue(&agent)
                 .await
                 .ok()
                 .map(|offered| offered.catalogue),
@@ -336,8 +331,7 @@ impl ProfileRuntime {
         let (model, effort) = acp_model(&catalogue, &asked).map_err(|offered| {
             let offered: Vec<&str> = offered.iter().map(String::as_str).collect();
             RegistryError::UnknownModel(format!(
-                "{} on {here} offers no model {asked:?}; it offers {}",
-                acp.agent,
+                "{agent} on {here} offers no model {asked:?}; it offers {}",
                 list(&offered)
             ))
         })?;
@@ -383,14 +377,9 @@ impl ProfileRuntime {
     ) -> Result<(Fitted, Option<wire::ForkFrom>), RegistryError> {
         only_picks(request)?;
         let parent_row = self.row_by_id(parent.agent.as_bytes()).await?;
+        let asked = request.settings().permission_level();
         let level = match &parent_row {
-            Some(row) => ceiling(
-                request.permission_level(),
-                row.settings.as_ref().map_or(
-                    PermissionLevel::Unspecified,
-                    AgentSettings::permission_level,
-                ),
-            )?,
+            Some(row) => ceiling(asked, row.status.settings().permission_level())?,
             None if parent.host == self.host() => {
                 return Err(RegistryError::NotFound(parent.agent));
             }
@@ -399,23 +388,22 @@ impl ProfileRuntime {
             // parent's own level when the parent asks for none, and a
             // paired host is trusted to keep to the protocol. Naming none,
             // the parent's level is not known, so the child is read-only.
-            None => match request.permission_level() {
+            None => match asked {
                 PermissionLevel::Unspecified => PermissionLevel::ReadOnly,
                 named => named,
             },
         };
-        request.set_permission_level(level);
         let here = self
             .edge()
             .map_or_else(|| "this host".to_owned(), |edge| edge.host_name());
-        let Some(agent) = request.agent.as_mut() else {
-            return Err(RegistryError::NoKind);
-        };
-        let provider = agent.provider_id().to_owned();
+        let provider = request.provider.clone();
+        let settings = request.settings.get_or_insert_with(AgentSettings::default);
         // What the provider offers here, asked of it now when this host
         // holds no copy, but only when the start chose something to check
         // against it.
-        let asks = level != PermissionLevel::Unspecified || chooses_mind(agent);
+        let asks = level != PermissionLevel::Unspecified
+            || settings.model.is_some()
+            || settings.effort.is_some();
         let catalogue = match self.offers().offered(&provider) {
             Some(held) => Some(held),
             None if asks => self
@@ -425,7 +413,7 @@ impl ProfileRuntime {
                 .map(|offered| offered.catalogue),
             None => None,
         };
-        let fitted = fit(agent, level, catalogue.as_ref(), &here)?;
+        let fitted = fit(&provider, settings, level, catalogue.as_ref(), &here)?;
         let fork = match request.fork {
             true => {
                 if parent.host != self.host() {
@@ -452,7 +440,7 @@ impl ProfileRuntime {
         parent: &store::AgentRow,
         provider: &str,
     ) -> Result<wire::ForkFrom, RegistryError> {
-        let theirs = parent.provider_id();
+        let theirs = parent.provider.as_str();
         if provider != theirs {
             return Err(refused(format!(
                 "fork copies your conversation, which only {} can read: start a {theirs} \
@@ -460,14 +448,21 @@ impl ProfileRuntime {
                 wire::agents::name_or_id(theirs),
             )));
         }
-        let kind = wire::Kind::try_from(parent.kind).unwrap_or(wire::Kind::Unspecified);
-        let forks = wire::AgentCapabilities::of_kind(kind)
-            .or_else(|| {
-                parent
-                    .snapshot
-                    .as_ref()
-                    .and_then(|snapshot| snapshot.capabilities)
-            })
+        let session = parent
+            .snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.conversation.clone())
+            .filter(|session| !session.is_empty())
+            .ok_or_else(|| {
+                refused(
+                    "your conversation has not started yet, so there is nothing to fork; leave \
+                     fork out",
+                )
+            })?;
+        let forks = parent
+            .snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.capabilities.as_ref())
             .is_some_and(|capabilities| capabilities.forks);
         if !forks {
             return Err(refused(format!(
@@ -475,16 +470,6 @@ impl ProfileRuntime {
                 wire::agents::name_or_id(provider)
             )));
         }
-        let session = parent
-            .snapshot
-            .as_ref()
-            .and_then(|snapshot| crate::runtime::provider_session(&snapshot.body, kind))
-            .ok_or_else(|| {
-                refused(
-                    "your conversation has not started yet, so there is nothing to fork; leave \
-                     fork out",
-                )
-            })?;
         Ok(wire::ForkFrom {
             session,
             cwd: parent.cwd.clone(),
@@ -492,22 +477,9 @@ impl ProfileRuntime {
     }
 }
 
-/// Whether a start chose its subagent's model or effort.
-fn chooses_mind(agent: &create_agent_request::Agent) -> bool {
-    use create_agent_request::Agent;
-    match agent {
-        Agent::ClaudePty(claude) | Agent::ClaudeSdk(claude) => {
-            claude.model.is_some() || claude.effort.is_some()
-        }
-        Agent::Codex(codex) => codex.model.is_some() || codex.effort.is_some(),
-        Agent::Acp(acp) => acp.model.is_some() || acp.effort.is_some(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use wire::create_agent_request::Agent;
-    use wire::{CodexCreateConfig, OfferedModel, PermissionLevel as Level};
+    use wire::{OfferedModel, PermissionLevel as Level};
 
     use super::*;
 
@@ -592,43 +564,40 @@ mod tests {
 
     /// Provider arguments, a raw permission or mode, and keeping a pick are
     /// the person's.
+    /// Settings naming a model and effort.
+    fn mind(model: Option<&str>, effort: Option<&str>) -> AgentSettings {
+        AgentSettings {
+            model: model.map(str::to_owned),
+            effort: effort.map(str::to_owned),
+            ..AgentSettings::default()
+        }
+    }
+
     #[test]
     fn only_an_agents_own_picks_pass() {
-        let codex = |config: CodexCreateConfig| CreateAgentRequest {
-            agent: Some(Agent::Codex(config)),
-            ..Default::default()
-        };
+        let codex =
+            |settings: AgentSettings| CreateAgentRequest::of("codex").with_settings(settings);
+        assert!(only_picks(&codex(mind(Some("m"), Some("low")))).is_ok());
         assert!(
-            only_picks(&codex(CodexCreateConfig {
-                model: Some("m".into()),
-                effort: Some("low".into()),
-                ..Default::default()
-            }))
-            .is_ok()
-        );
-        assert!(
-            only_picks(&codex(CodexCreateConfig {
+            only_picks(&codex(AgentSettings {
                 permission: Some("full-access".into()),
                 ..Default::default()
             }))
             .is_err()
         );
         assert!(
-            only_picks(&codex(CodexCreateConfig {
+            only_picks(&codex(AgentSettings {
                 mode: Some("plan".into()),
                 ..Default::default()
             }))
             .is_err()
         );
-        let mut remembered = codex(CodexCreateConfig::default());
+        let mut remembered = codex(AgentSettings::default());
         remembered.remember_model = true;
         assert!(only_picks(&remembered).is_err());
         let claude = CreateAgentRequest {
-            agent: Some(Agent::ClaudeSdk(wire::ClaudeCreateConfig {
-                args: vec!["--dangerously-skip-permissions".into()],
-                ..Default::default()
-            })),
-            ..Default::default()
+            args: vec!["--dangerously-skip-permissions".into()],
+            ..CreateAgentRequest::of("claude")
         };
         assert!(only_picks(&claude).is_err());
     }
@@ -658,11 +627,7 @@ mod tests {
                     ..Default::default()
                 })
                 .collect(),
-            new_agent: Some(wire::NewAgentDefaults {
-                model: Some("gpt-6-sol".into()),
-                effort: Some("medium".into()),
-                ..Default::default()
-            }),
+            new_agent: Some(mind(Some("gpt-6-sol"), Some("medium"))),
             ..Default::default()
         }
     }
@@ -673,15 +638,15 @@ mod tests {
     #[test]
     fn a_subagent_is_fitted_to_what_its_host_offers() {
         let catalogue = codex_catalogue();
-        let mut agent = Agent::Codex(CodexCreateConfig {
-            model: Some("gpt-6-luna".into()),
-            effort: Some("high".into()),
-            ..Default::default()
-        });
-        let fitted = fit(&mut agent, Level::ReadOnly, Some(&catalogue), "laptop").unwrap();
-        let Agent::Codex(config) = &agent else {
-            unreachable!()
-        };
+        let mut config = mind(Some("gpt-6-luna"), Some("high"));
+        let fitted = fit(
+            "codex",
+            &mut config,
+            Level::ReadOnly,
+            Some(&catalogue),
+            "laptop",
+        )
+        .unwrap();
         assert_eq!(config.permission.as_deref(), Some("read-only"));
         assert_eq!(
             fitted.settings,
@@ -690,41 +655,46 @@ mod tests {
                 effort: Some("high".into()),
                 permission: Some("read-only".into()),
                 permission_level: Level::ReadOnly as i32,
+                mode: None,
             }
         );
 
         // Left out, the model and effort are the host's new-agent ones,
         // named in the start rather than left to the provider.
-        let mut defaults = Agent::Codex(CodexCreateConfig::default());
-        let fitted = fit(&mut defaults, Level::Auto, Some(&catalogue), "laptop").unwrap();
-        let Agent::Codex(config) = &defaults else {
-            unreachable!()
-        };
+        let mut config = AgentSettings::default();
+        let fitted = fit(
+            "codex",
+            &mut config,
+            Level::Auto,
+            Some(&catalogue),
+            "laptop",
+        )
+        .unwrap();
         assert_eq!(
             (config.model.as_deref(), config.effort.as_deref()),
             (Some("gpt-6-sol"), Some("medium"))
         );
         assert_eq!(fitted.settings.model.as_deref(), Some("gpt-6-sol"));
 
-        let mut unknown = Agent::Codex(CodexCreateConfig {
-            model: Some("gpt-9".into()),
-            ..Default::default()
-        });
-        let refused = fit(&mut unknown, Level::Ask, Some(&catalogue), "laptop")
-            .err()
-            .unwrap()
-            .to_string();
+        let mut unknown = mind(Some("gpt-9"), None);
+        let refused = fit(
+            "codex",
+            &mut unknown,
+            Level::Ask,
+            Some(&catalogue),
+            "laptop",
+        )
+        .err()
+        .unwrap()
+        .to_string();
         assert!(
             refused.contains("offers no model \"gpt-9\"; it offers gpt-6-luna or gpt-6-sol"),
             "{refused}"
         );
 
         // The default model takes only medium.
-        let mut effort = Agent::Codex(CodexCreateConfig {
-            effort: Some("high".into()),
-            ..Default::default()
-        });
-        let refused = fit(&mut effort, Level::Ask, Some(&catalogue), "laptop")
+        let mut effort = mind(None, Some("high"));
+        let refused = fit("codex", &mut effort, Level::Ask, Some(&catalogue), "laptop")
             .err()
             .unwrap()
             .to_string();
@@ -734,32 +704,27 @@ mod tests {
         );
 
         // Unchosen, the host's defaults are what the answer reports.
-        let mut plain = Agent::Codex(CodexCreateConfig::default());
-        let fitted = fit(&mut plain, Level::Auto, Some(&catalogue), "laptop").unwrap();
+        let mut plain = AgentSettings::default();
+        let fitted = fit("codex", &mut plain, Level::Auto, Some(&catalogue), "laptop").unwrap();
         assert_eq!(fitted.settings.model.as_deref(), Some("gpt-6-sol"));
         assert_eq!(fitted.settings.permission.as_deref(), Some("auto"));
 
         // Without a catalogue a model cannot be checked, and is refused.
-        let mut blind = Agent::Codex(CodexCreateConfig {
-            model: Some("gpt-6-luna".into()),
-            ..Default::default()
-        });
-        assert!(fit(&mut blind, Level::Ask, None, "laptop").is_err());
+        let mut blind = mind(Some("gpt-6-luna"), None);
+        assert!(fit("codex", &mut blind, Level::Ask, None, "laptop").is_err());
     }
 
     /// An agent with nothing as narrow as the level is refused; one whose
     /// permissions have no level is refused below full.
     #[test]
     fn a_level_nothing_offered_fits_is_refused_and_no_levels_only_under_full() {
-        let mut opencode = Agent::Acp(wire::AcpCreateConfig {
-            agent: "opencode".into(),
-            ..Default::default()
-        });
-        let fitted = fit(&mut opencode, Level::Auto, None, "laptop").unwrap();
-        let Agent::Acp(config) = &opencode else {
-            unreachable!()
-        };
-        assert_eq!(config.mode.as_deref(), Some("plan"), "auto fits only plan");
+        let mut config = AgentSettings::default();
+        let fitted = fit("opencode", &mut config, Level::Auto, None, "laptop").unwrap();
+        assert_eq!(
+            config.permission.as_deref(),
+            Some("plan"),
+            "auto fits only plan"
+        );
         assert_eq!(fitted.settings.permission_level(), Level::ReadOnly);
 
         let claude_catalogue = Catalogue {
@@ -771,11 +736,17 @@ mod tests {
             }],
             ..Default::default()
         };
-        let mut claude = Agent::ClaudeSdk(wire::ClaudeCreateConfig::default());
-        let refused = fit(&mut claude, Level::Ask, Some(&claude_catalogue), "laptop")
-            .err()
-            .unwrap()
-            .to_string();
+        let mut claude = AgentSettings::default();
+        let refused = fit(
+            "claude",
+            &mut claude,
+            Level::Ask,
+            Some(&claude_catalogue),
+            "laptop",
+        )
+        .err()
+        .unwrap()
+        .to_string();
         assert!(
             refused.contains("no permission at or below ask; it offers full"),
             "{refused}"
@@ -784,14 +755,16 @@ mod tests {
         // An agent a person added has no levels: nothing could hold it to
         // any level below full, so only a parent at full starts it, on its
         // own default.
-        let added = || {
-            Agent::Acp(wire::AcpCreateConfig {
-                agent: "my-agent".into(),
-                ..Default::default()
-            })
-        };
         for level in [Level::ReadOnly, Level::Ask, Level::Auto] {
-            let refused = fit(&mut added(), level, None, "laptop").err().unwrap();
+            let refused = fit(
+                "my-agent",
+                &mut AgentSettings::default(),
+                level,
+                None,
+                "laptop",
+            )
+            .err()
+            .unwrap();
             assert!(matches!(refused, RegistryError::NotYours(_)), "{level:?}");
             assert!(
                 refused
@@ -800,18 +773,12 @@ mod tests {
                 "{refused}"
             );
         }
-        let mut full = added();
-        let fitted = fit(&mut full, Level::Full, None, "laptop").unwrap();
-        let Agent::Acp(config) = &full else {
-            unreachable!()
-        };
-        assert_eq!(config.mode, None);
+        let mut full = AgentSettings::default();
+        let fitted = fit("my-agent", &mut full, Level::Full, None, "laptop").unwrap();
+        assert_eq!((full.permission, full.mode), (None, None));
         assert_eq!(fitted.settings.permission_level(), Level::Unspecified);
         // Grok, a built-in whose modes are not permissions, likewise.
-        let mut grok = Agent::Acp(wire::AcpCreateConfig {
-            agent: "grok".into(),
-            ..Default::default()
-        });
-        assert!(fit(&mut grok, Level::ReadOnly, None, "laptop").is_err());
+        let mut grok = AgentSettings::default();
+        assert!(fit("grok", &mut grok, Level::ReadOnly, None, "laptop").is_err());
     }
 }

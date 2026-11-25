@@ -1,18 +1,18 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=1800000000000 agent=? session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=?
+snapshot capabilities resumable files passes_unknown_commands model=pick effort=pick permission=pick mode=pick
+snapshot STARTING queue=[] working_on=- at=1800000000000 conversation=? model_name=? sign_in=? background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 1 fact {"channel":"rpc","json":{"id":"agent-initialize","jsonrpc":"2.0","result":{"agentCapabilities":{"loadSession":true},"protocolVersion":1}}}
-snapshot STARTING queue=[] working_on=- at=1800000000000 agent=opencode session=? asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=UNSPECIFIED reopen=LOAD
 ## 2 fact {"channel":"rpc","json":{"id":"agent-session","jsonrpc":"2.0","result":{"sessionId":"s1"}}}
 effect session "s1"
 effect catalogue e3b0c442 models=[] commands=0 permissions=[] modes=[]
 item boundary:1 boundary final at=1800000000000 text="" BOUNDARY_KIND_STARTED
 snapshot catalogue e3b0c442
-snapshot IDLE queue=[] working_on=- at=1800000000000 agent=opencode session=s1 asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=LOAD
+snapshot IDLE queue=[] working_on=- at=1800000000000 conversation=s1 model_name=? sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 3 input {"id":"p1","prompt":{"text":"Show me the chart and the notes."}}
 effect reply p1 accepted
 effect write "{\"id\":\"amux-prompt-7031\",\"jsonrpc\":\"2.0\",\"method\":\"session/prompt\",\"params\":{\"prompt\":[{\"text\":\"Show me the chart and the notes.\",\"type\":\"text\"}],\"sessionId\":\"s1\"}}"
 item prompt:7031 prompt final input=p1 at=1800000000000 text="Show me the chart and the notes."
-snapshot WORKING queue=[] working_on=- at=1800000000000 agent=opencode session=s1 asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=LOAD
+snapshot WORKING queue=[] working_on=- at=1800000000000 conversation=s1 model_name=? sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 ## 4 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"text":"Here is the chart ","type":"text"},"sessionUpdate":"agent_message_chunk"}}}}
 item message:1 message open at=1800000000000 text="Here is the chart "
 ## 5 fact {"channel":"rpc","json":{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==","mimeType":"image/png","type":"image"},"sessionUpdate":"agent_message_chunk"}}}}
@@ -37,5 +37,5 @@ item tool:c2 tool final at=1800000000000 text="" READ SUCCEEDED "read_file" at=/
 ## 13 fact {"channel":"rpc","json":{"id":"amux-prompt-7031","jsonrpc":"2.0","result":{"stopReason":"end_turn"}}}
 item turn:1 turn final at=1800000000000 text="" #1 TURN_OUTCOME_COMPLETED started=1800000000000
 snapshot said "Here is the chart , the notes  and the plot plot.png. Also see the site."
-snapshot IDLE queue=[] working_on=- at=1800000000000 agent=opencode session=s1 asks=[] model=? model_name=? effort=? mode=? context=? plan=? usage=in:?/out:?/thought:?/total:? cost=? sign_in=SIGNED_IN reopen=LOAD
+snapshot IDLE queue=[] working_on=- at=1800000000000 conversation=s1 model_name=? sign_in=SIGNED_IN - background=? asks=[] context=? plan=? usage=in:?/out:?/thought:?/total:? cost=?
 turn_end 1 last=message:1

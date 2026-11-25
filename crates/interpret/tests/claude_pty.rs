@@ -309,11 +309,9 @@ fn a_queued_prompt_with_an_image_is_still_the_steer() {
 /// a new incarnation from a checkpoint that still listed it starts empty.
 #[test]
 fn the_job_list_empties_when_terminal_claude_exits() {
-    use prost::Message as _;
     let jobs = |step: &wire::Step| {
         step.snapshot.as_ref().map(|snapshot| {
-            let body = wire::ClaudeSnapshot::decode(&snapshot.body[..]).unwrap();
-            let background = body.background_jobs.unwrap_or_default();
+            let background = snapshot.jobs.clone().unwrap_or_default();
             (background.known, background.jobs.len())
         })
     };
@@ -478,7 +476,7 @@ fn plan_ask_launched(version: &str, launched: impl FnOnce(&mut wire::AgentSpec))
                 .asks
                 .into_iter()
                 .find_map(|ask| match ask.body {
-                    Some(wire::ask::Body::Plan(plan)) => Some(plan),
+                    Some(wire::claude_ask::Body::Plan(plan)) => Some(plan),
                     _ => None,
                 })
         });
@@ -769,7 +767,6 @@ fn a_prompt_typed_with_attachments_holds_them_not_their_elements() {
 /// turn's rows carry it.
 #[test]
 fn a_model_switch_shows_before_the_next_turn() {
-    use prost::Message as _;
     let spec = wire::AgentSpec {
         agent_id: b"agent".to_vec(),
         ..Default::default()
@@ -794,8 +791,11 @@ fn a_model_switch_shows_before_the_next_turn() {
         })),
     ] {
         if let Some(snapshot) = ClaudePty::step(&mut state, event).step.snapshot {
-            let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
-            named = body.model_name.or(body.model).or(named);
+            named = snapshot
+                .model_name
+                .clone()
+                .or(snapshot.settings().model.clone())
+                .or(named);
         }
     }
     assert!(
@@ -956,6 +956,13 @@ fn decoded(stepped: &interpret::Stepped) -> Option<(wire::Phase, wire::ClaudeSna
     })
 }
 
+/// The permission the snapshot in `stepped` says the agent runs with, if
+/// it has a snapshot.
+fn said_permission(stepped: &interpret::Stepped) -> Option<String> {
+    let snapshot = stepped.step.snapshot.as_ref()?;
+    Some(snapshot.settings().permission.clone().unwrap_or_default())
+}
+
 /// Terminal Claude on 2.1.296, launched by amux, its terminal live and its
 /// session s1 started: the state and the last snapshot it gave.
 fn started_claude() -> (
@@ -1038,8 +1045,8 @@ fn a_typed_prompt_starts_the_turn_on_its_transcript_row_not_on_the_keys() {
 /// prompt.
 #[test]
 fn a_permission_amux_cycles_is_in_the_snapshot_at_once() {
-    let (mut state, (_, before)) = started_claude();
-    let mut last = before;
+    let (mut state, _) = started_claude();
+    let mut last = None;
     for event in [
         transcript_row(serde_json::json!({
             "type": "permission-mode", "permissionMode": "default", "sessionId": "s1",
@@ -1053,12 +1060,10 @@ fn a_permission_amux_cycles_is_in_the_snapshot_at_once() {
             },
         )),
     ] {
-        if let Some((_, snapshot)) = decoded(&ClaudePty::step(&mut state, event)) {
-            last = snapshot;
-        }
+        last = said_permission(&ClaudePty::step(&mut state, event)).or(last);
     }
     assert_eq!(
-        last.permission.as_deref(),
+        last.as_deref(),
         Some("acceptEdits"),
         "the snapshot does not name the permission amux moved Claude to"
     );
@@ -1068,8 +1073,8 @@ fn a_permission_amux_cycles_is_in_the_snapshot_at_once() {
 /// the model asked for: the snapshot names the effort from them.
 #[test]
 fn the_effort_comes_from_claudes_assistant_rows() {
-    let (mut state, (_, before)) = started_claude();
-    let mut last = before;
+    let (mut state, _) = started_claude();
+    let mut last = None;
     for event in [
         transcript_row(typed_row("u1", "hello")),
         transcript_row(serde_json::json!({
@@ -1086,13 +1091,14 @@ fn the_effort_comes_from_claudes_assistant_rows() {
             },
         })),
     ] {
-        if let Some((_, snapshot)) = decoded(&ClaudePty::step(&mut state, event)) {
-            last = snapshot;
+        if let Some(snapshot) = ClaudePty::step(&mut state, event).step.snapshot {
+            last = snapshot.settings().effort.clone();
         }
     }
-    assert!(
-        format!("{last:?}").contains("\"high\""),
-        "the snapshot does not name the effort Claude recorded: {last:?}"
+    assert_eq!(
+        last.as_deref(),
+        Some("high"),
+        "the snapshot does not name the effort Claude recorded"
     );
 }
 
@@ -1174,15 +1180,13 @@ fn a_subagent_is_no_background_job_and_its_stop_hook_does_not_end_it() {
         ),
     ] {
         let stepped = ClaudePty::step(&mut state, event);
-        if let Some((_, snapshot)) = decoded(&stepped) {
-            listed.extend(snapshot.background_jobs.unwrap_or_default().jobs);
+        if let Some(snapshot) = &stepped.step.snapshot {
+            listed.extend(snapshot.jobs.clone().unwrap_or_default().jobs);
         }
         for part in &stepped.step.agents {
             ended |= part.end.is_some();
             if let Some(snapshot) = &part.snapshot {
-                use prost::Message as _;
-                let body = wire::ClaudeSnapshot::decode(snapshot.body.as_slice()).unwrap();
-                listed.extend(body.background_jobs.unwrap_or_default().jobs);
+                listed.extend(snapshot.jobs.clone().unwrap_or_default().jobs);
             }
         }
     }
@@ -1347,7 +1351,7 @@ fn a_permission_ask_offers_claudes_switch_to_auto_mode() {
     );
     let (_, snapshot) = decoded(&opened).expect("a snapshot");
     let ask = snapshot.asks.first().expect("the ask").clone();
-    let Some(wire::ask::Body::Permission(permission)) = &ask.body else {
+    let Some(wire::claude_ask::Body::Permission(permission)) = &ask.body else {
         panic!("a permission ask: {ask:?}");
     };
     let modes: Vec<Option<String>> = permission
@@ -1377,8 +1381,7 @@ fn a_permission_ask_offers_claudes_switch_to_auto_mode() {
             "updatedPermissions": [{"type": "setMode", "mode": "auto", "destination": "session"}],
         })
     );
-    let (_, after) = decoded(&answered).expect("a snapshot");
-    assert_eq!(after.permission.as_deref(), Some("auto"));
+    assert_eq!(said_permission(&answered).as_deref(), Some("auto"));
 }
 
 /// A plan approved with its switch, where Claude offers auto mode, hands
@@ -1400,7 +1403,7 @@ fn a_plan_approved_with_its_switch_lands_in_the_switch_it_names() {
     );
     let (_, snapshot) = decoded(&opened).expect("a snapshot");
     let ask = snapshot.asks.first().expect("the plan ask").clone();
-    let Some(wire::ask::Body::Plan(plan)) = &ask.body else {
+    let Some(wire::claude_ask::Body::Plan(plan)) = &ask.body else {
         panic!("a plan ask: {ask:?}");
     };
     assert_eq!(plan.switch_permission, "auto");
@@ -1422,9 +1425,8 @@ fn a_plan_approved_with_its_switch_lands_in_the_switch_it_names() {
             "updatedPermissions": [{"type": "setMode", "mode": "auto", "destination": "session"}],
         })
     );
-    let (_, after) = decoded(&answered).expect("a snapshot");
     assert_eq!(
-        after.permission.as_deref(),
+        said_permission(&answered).as_deref(),
         Some("auto"),
         "the permission shown is not the one the switch moved to"
     );
@@ -1449,8 +1451,7 @@ fn auto_mode_is_in_the_plan_switch_and_the_cycle_where_claude_offers_it() {
                 },
             )),
         );
-        let (_, snapshot) = decoded(&cycled).expect("a snapshot");
-        seen.push(snapshot.permission.unwrap_or_default());
+        seen.push(said_permission(&cycled).expect("a snapshot"));
     }
     assert_eq!(seen, ["acceptEdits", "plan", "auto", "default"]);
     let opened = ClaudePty::step(
@@ -1467,7 +1468,7 @@ fn auto_mode_is_in_the_plan_switch_and_the_cycle_where_claude_offers_it() {
         .asks
         .iter()
         .find_map(|ask| match &ask.body {
-            Some(wire::ask::Body::Plan(plan)) => Some(plan.clone()),
+            Some(wire::claude_ask::Body::Plan(plan)) => Some(plan.clone()),
             _ => None,
         })
         .expect("the plan ask");
@@ -1514,8 +1515,8 @@ fn before_claude_names_its_model_the_launched_one_decides_auto_mode() {
                 },
             )),
         );
-        if let Some((_, snapshot)) = decoded(&cycled) {
-            seen.push(snapshot.permission.unwrap_or_default());
+        if let Some(permission) = said_permission(&cycled) {
+            seen.push(permission);
         }
     }
     assert_eq!(seen, ["acceptEdits", "plan", "auto"]);
@@ -1772,7 +1773,7 @@ fn an_ask_claude_leaves_to_a_person_offers_no_scope() {
     );
     let (_, snapshot) = decoded(&opened).expect("a snapshot");
     let ask = snapshot.asks.first().expect("the ask");
-    let Some(wire::ask::Body::Permission(permission)) = &ask.body else {
+    let Some(wire::claude_ask::Body::Permission(permission)) = &ask.body else {
         panic!("a permission ask: {ask:?}");
     };
     assert!(permission.scopes.is_empty(), "{:?}", permission.scopes);
@@ -1906,6 +1907,7 @@ fn first_prompt_spec() -> wire::AgentSpec {
                     text: "Review the parser.".into(),
                     ..Default::default()
                 }),
+                continued: false,
             })),
         }),
         ..Default::default()

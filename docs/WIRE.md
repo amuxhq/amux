@@ -22,7 +22,7 @@ different versions talking. Host-to-host links, pairing and the relay are in
 | [`caller.proto`](../proto/amux/v1/caller.proto) | `Caller`: who a call carried to another host is for |
 | [`session.proto`](../proto/amux/v1/session.proto) | What a conversation is streamed and driven with: `SessionEvent`, `Input` and `SendInputResponse`, the composer's `Draft` |
 | [`inventory.proto`](../proto/amux/v1/inventory.proto) | Hosts and agent rows, as the inventory streams them |
-| [`records.proto`](../proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot`, `Kind`, `ExitCause`, agent messages, attachments, blobs, and the streams' `CaughtUp` and `Lagged` |
+| [`records.proto`](../proto/amux/v1/records.proto) | The kind-neutral records: `Step`, `Item`, `Append`, `Snapshot` and the `AgentStatus` the row repeats, `AgentSettings`, `AgentCapabilities`, sign-in and background jobs, `Kind`, `ExitCause`, agent messages, attachments, blobs, and the streams' `CaughtUp` and `Lagged` |
 | [`chat.proto`](../proto/amux/v1/chat.proto) | What the kinds share inside a body: item bodies, snapshot pieces, asks, input and answer pieces, the catalogue |
 | [`claude.proto`](../proto/amux/v1/claude.proto), [`codex.proto`](../proto/amux/v1/codex.proto), [`acp.proto`](../proto/amux/v1/acp.proto) | The per-kind item, snapshot and input bodies |
 | [`agent_process.proto`](../proto/amux/v1/agent_process.proto) | The agent spec and what seeds its queue, the `ctl.sock` and `pty.sock` frames, and what an agent's tool server asks its agent process on `private/agent.sock` |
@@ -107,7 +107,7 @@ the request:
 
 | Arrived on | The caller |
 | --- | --- |
-| The profile socket, or the phone's entry | A person at this machine, on the client its `amux-surface` header names (`terminal`, `mac`, `ios`, `android`, `browser`; `phone`, which iPhone apps before `ios` wrote, reads as `ios`; with none or another word, `other`) |
+| The profile socket, or the phone's entry | A person at this machine, on the client its `amux-surface` header names (`terminal`, `mac`, `ios`, `android`, `browser`; with none or another word, `other`) |
 | An agent's `tools.sock` | That agent |
 | A link, with an `amux-caller-bin` header | A person at, or an agent of, the paired host the link's handshake authenticated, as the header says |
 | A link, with none | The paired daemon itself, which only `PeerService` answers |
@@ -153,6 +153,7 @@ meets often:
 | --- | --- |
 | `NOT_FOUND` | No agent with that id or name, no item with that key, no blob with that hash. A host-service call naming an agent the addressed host holds only a copy of is `NOT_FOUND` too, naming the host that owns it |
 | `FAILED_PRECONDITION` | An ambiguous name; the message offers the forms that pick each candidate |
+| `FAILED_PRECONDITION`, reason `REFUSED` | An agent's interpreter or its host refused a message sent to the agent (`SendMessage`); a refused input is answered by `SendInput` instead, not raised; the `ErrorInfo` metadata `refusal` names the `Refusal` value without its prefix (`AGENT_CLOSED`), so a caller reads which without parsing words |
 | `FAILED_PRECONDITION`, reason `HOST_UNREACHABLE` | A carried call that never left: no link to the host, the host not trusted, or no channel within 10 seconds. Also older history on a host that cannot be reached, with nothing held locally |
 | `PERMISSION_DENIED`, reason `PAYMENT_REQUIRED` | A carried call that never left because only the relay reaches the host and the account's subscription lapsed to the free plan, which carries no calls between hosts |
 | `UNAUTHENTICATED` | A carried call that never left because the host no longer trusts this machine |
@@ -222,7 +223,7 @@ it and answers from its copy, so the caller's call is never passed on.
 | `DeleteAgent` | nothing | Stops the agent if live and removes it for good. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule). `discard_workspace_changes` agrees to lose the uncommitted changes of a workspace the delete removes ([new workspaces](PROTOCOL.md#new-workspaces)); unset, they are kept |
 | `PreviewDelete` | what the delete would take | Whether deleting the agent now removes its workspace, the branch checked out there, how many commits only that branch holds (by the rule the removal applies: zero is when the branch goes with the workspace), and the uncommitted work's totals. Changes nothing; who may ask is who may delete. Every client's delete warning is this answer |
 | `SendInput` | a verdict | The interpreter's verdict on one input |
-| `SendMessage` | the envelope id | Agent messaging: who it is from is the caller, never the request (see [Messages](#messages) and [agent tools](AGENT_TOOLS.md)) |
+| `SendMessage` | nothing | Agent messaging: who it is from is the caller, never the request (see [Messages](#messages) and [agent tools](AGENT_TOOLS.md)) |
 | `PutBlob` | `BlobRef` | Bytes into an agent's directory, for a prompt or message to reference |
 
 `service HostService` in [`host_service.proto`](../proto/amux/v1/host_service.proto):
@@ -248,13 +249,13 @@ never for its copies of others:
 | --- | --- | --- |
 | `FollowAgents` | stream of `InventoryEvent` | This host's own entry and its own agents: the current set, `CaughtUp`, then changes |
 | `FollowSession` | stream of `SessionEvent` | One of this host's conversations, from a tail or from the cursor the caller's copy holds |
-| `ListItems` | a page of items | Older items of one of this host's conversations |
-| `GetBlob` | the bytes | A file in one of this host's agents' directories |
+| `FetchItems` | a page of items | Older items of one of this host's conversations |
+| `FetchBlob` | the bytes | A file in one of this host's agents' directories |
 | `DeliverReport` | nothing | A child's report to its parent here. The child is one of the calling host's agents; the report is for one incarnation of the parent, dropped for any other, and never wakes it |
 
 Each local read has its feed here: the inventory from `FollowAgents`, a
-conversation from `FollowSession`, older pages from `ListItems` and files from
-`GetBlob`. The two follows are the only calls that may go out on a link
+conversation from `FollowSession`, older pages from `FetchItems` and files from
+`FetchBlob`. The two follows are the only calls that may go out on a link
 before its handshake finishes.
 
 A debug bundle is `ProfileAdminService.Dump(DumpRequest)`, answered with where it was written; it carries the records of the chats the asking client has on screen, and the daemon writes them into the one report beside its own records (see [debugging](DEBUGGING.md)). `SubmitReport(SubmitReportRequest)` writes a person's report around such a bundle and sends it to the profile's account. Both are served only on the profile's socket, never on an agent's.
@@ -270,19 +271,26 @@ message CreateAgentRequest {
   bytes agent_id = 1;
   optional string name = 2;
   string cwd = 3;
-  oneof agent {                               // the kind, with its settings
-    ClaudeCreateConfig claude_pty = 4;
-    ClaudeCreateConfig claude_sdk = 5;
-    CodexCreateConfig codex = 6;
-    AcpCreateConfig acp = 11;                 // an ACP agent, by its id
-  }
-  optional PromptSubmission initial_prompt = 7;
-  bool new_workspace = 8;
-  bool remember_model = 9;
-  bool remember_effort = 10;
+  string provider = 4;                        // "claude", "codex", an ACP agent's id
+  Kind kind = 5;                              // unspecified: the provider's own
+  AgentSettings settings = 6;                 // model, effort, permission, level, mode
+  repeated string args = 7;                   // a person's only
+  optional PromptSubmission initial_prompt = 8;
+  bool new_workspace = 9;
+  bool remember_model = 10;
+  bool remember_effort = 11;
+  bool fork = 12;
 }
 
-message PromptSubmission { bytes input_id = 1; PromptInput prompt = 2; }
+message AgentSettings {
+  optional string model = 1;
+  optional string effort = 2;
+  optional string permission = 3;             // a permission the catalogue lists, never a mode
+  PermissionLevel permission_level = 4;
+  optional string mode = 5;
+}
+
+message PromptSubmission { bytes input_id = 1; PromptInput prompt = 2; bool continued = 3; }
 message ResumeAgentRequest { bytes agent_id = 1; optional PromptSubmission initial_prompt = 2;
                              bool if_suspended = 3; }
 ```
@@ -295,16 +303,35 @@ already exited, or is gone, is refused `FAILED_PRECONDITION`. `cwd` is a
 folder on that host as the person typed it: the host reads `~` and a path not
 from the root as starting at its own home. One of the host's own agents that
 leaves it empty starts its child where it works itself; an agent of another
-host names one. A host runs only the kinds its handshake announces
-(`Capabilities.kinds`; a phone announces none): a create naming a kind it
-does not run is refused `FAILED_PRECONDITION` in words ("phone runs no
-agents"). The `agent` arm is the kind: both Claude kinds take
-`ClaudeCreateConfig`, Codex takes `CodexCreateConfig` and an ACP agent takes
-`AcpCreateConfig`, which names the agent by its provider id, so the settings
-are always the kind's own. A create with no arm set names no interpreter and
-fails with `INVALID_ARGUMENT`. `remember_model` and `remember_effort` say the
-config's model and effort are the person's picks, so the host starts its later
-agents of that kind on them too. `initial_prompt` is a prompt with its
+host names one.
+
+A create names the agent program by `provider`, the id the host lists it
+under (`ProviderOnHost.provider`), and the host picks the interpreter from
+that provider's descriptor. A create naming no provider is refused
+`INVALID_ARGUMENT`, and one naming a provider the host does not list
+`FAILED_PRECONDITION` in words; a host that runs no agents at all, as a
+phone, says so ("phone runs no agents"). `kind` matters only
+for Claude, the one provider with two interpreters: it picks terminal or
+headless Claude among the kinds the provider lists
+(`ProviderOnHost.kinds`), and unspecified is the descriptor's own `kind`.
+A kind the provider does not run on that host is refused
+`FAILED_PRECONDITION`; terminal Claude is not hosted on Windows.
+
+`settings` are the values to start on, as the provider's catalogue lists
+them, and each one left absent is the host's remembered pick, else the
+provider's own. A person picks the model, effort, permission and mode, and
+`args`, extra arguments for the provider's program exactly as typed; a level
+from a person is refused `INVALID_ARGUMENT`, and so are `args` for an ACP
+agent, whose command and arguments are in the host's config. A calling agent
+picks only the model and effort, and its child's permission by
+`permission_level`, which the host maps onto the widest permission the
+provider offers at or below it ([the caller](#the-caller)); a permission,
+mode or `args` from an agent is refused `PERMISSION_DENIED`.
+`remember_model` and `remember_effort` say the model and effort are the
+person's picks, so the host starts its later agents of that provider on them
+too. `fork` starts the agent from a copy of its calling parent's
+conversation, for a provider that can (`AgentCapabilities.forks`).
+`initial_prompt` is a prompt with its
 attachments and the client's input id; with nothing ahead of it, it is the
 agent's first turn, drawn at once and written to the provider when the
 provider takes input. A resume takes the same, as the new incarnation's first
@@ -440,25 +467,60 @@ message Item {
 }
 ```
 
-`Snapshot` carries the same split: kind-neutral envelope fields (`revision`,
-the `queue` of `QueuedInput`s, `phase`, `working_on`, `title`, `at_ms`,
-`phase_since_ms`, `git`, `background_jobs`) and a per-kind `body`.
-`background_jobs` is how many jobs the body's background list holds (zero
-while it is unknown), so the daemon can put the count on the inventory row
-without decoding the body. `Phase` is `PHASE_STARTING`,
-`PHASE_IDLE`, `PHASE_WORKING` or `PHASE_NEEDS_YOU`. `capabilities` says what
-this agent can do (see [capabilities](#capabilities)).
+`Snapshot` carries the same split. What every kind says the same way is in
+the envelope, once; the per-kind `body` holds only what is that kind's own
+(its asks, context meter, usage, plan and the like):
+
+```proto
+message Snapshot {
+  uint64 revision = 1;
+  repeated QueuedInput queue = 2;
+  Kind kind = 3;                         // which per-kind snapshot `body` holds
+  bytes body = 4;
+  int64 at_ms = 5;
+  AgentStatus status = 6;                // copied onto the agent row whole
+  optional bytes catalogue = 7;          // the hash of the Catalogue blob
+  optional Notice notice = 8;            // what it wants of the person now
+  AgentCapabilities capabilities = 9;
+  optional string model_name = 10;       // the running model as a person reads it
+  SignIn sign_in = 11;
+  optional string conversation = 12;     // the provider's session or thread id
+  BackgroundJobs jobs = 13;
+  map<string, bytes> experimental = 1000;
+}
+
+message AgentStatus {
+  Phase phase = 1;
+  int64 phase_since_ms = 2;
+  optional string working_on = 3;
+  optional Git git = 4;
+  uint32 background_jobs = 5;            // how many `jobs` holds; zero while unknown
+  optional string title = 6;
+  optional string last_said = 7;
+  AgentSettings settings = 8;            // what the agent runs with now
+}
+```
+
+`status` is what the inventory row repeats: the daemon copies it onto the
+row whole, so a fleet list says how every agent stands without a stream or a
+body. `Phase` is `PHASE_STARTING`, `PHASE_IDLE`, `PHASE_WORKING` or
+`PHASE_NEEDS_YOU`. `settings` are the model, effort, permission and mode the
+agent runs with, by its catalogue's values. `conversation` is the provider's
+own id for the conversation (Claude's session, Codex's thread, an ACP
+agent's session), absent until the provider names it: a fork copies it and
+a later process reopens it. `jobs` lists what the provider runs in the
+background, which a stop would cut. `capabilities` says what this agent can
+do (see [capabilities](#capabilities)).
 
 ### Capabilities
 
 What one agent can do and another cannot is said as data, so a client
 decides what to offer from `AgentCapabilities` and never from the agent's
 kind or provider id. The interpreter fills them on the agent's snapshot, from
-its kind and from what the agent's program said; a host fills them on each
-`ProviderOnHost` it lists, for an agent started there now. A snapshot an
-earlier build wrote has none, and a client then reads its host's for the
-agent's provider. False is the safe reading of each: a client that leaves a
-control out loses only that control.
+what the agent's program said; a host fills them for each kind of each `ProviderOnHost` it
+lists, for an agent of that kind started there now, and a client reads the
+ones for an agent's own kind until its first snapshot says its own. False and unspecified are the safe
+reading of each: a client that leaves a control out loses only that control.
 
 | Field | Means | Terminal Claude | Headless Claude | Codex | An ACP agent |
 | --- | --- | --- | --- | --- | --- |
@@ -470,9 +532,30 @@ control out loses only that control.
 | `images` | a prompt may carry images | yes | yes | yes | when its prompt capabilities take them |
 | `files` | a prompt may carry files | yes | yes | yes | yes |
 | `passes_unknown_commands` | a slash command it does not list goes to it as typed | yes | yes | no | yes |
+| `forks` | a create can start a child from a copy of its conversation (`CreateAgentRequest.fork`) | yes | yes | yes | where its `initialize` offered `session/fork` |
+| `model` | how a client changes the model | command `/model` | pick | pick | pick |
+| `effort` | how a client changes the effort | command `/effort` | pick | pick | pick |
+| `permission` | how a client changes the permission | step | pick | pick | pick |
+| `mode` | how a client changes the mode | not offered | not offered | pick | pick |
 
-Which model, effort, permission and mode an agent can change is said by its
-catalogue's `settable` flags, not here.
+The last four are a `SettingChange`, which says as data how a setting is
+changed, so a client never decides it by kind:
+
+```proto
+message SettingChange { SettingControl control = 1; string command = 2; }
+
+enum SettingControl {
+  SETTING_CONTROL_UNSPECIFIED = 0;   // not offered: the agent takes no change to it
+  SETTING_CONTROL_PICK = 1;          // a Set input naming a value the catalogue lists
+  SETTING_CONTROL_STEP = 2;          // one step input moves it to the next value
+  SETTING_CONTROL_COMMAND = 3;       // typed into the agent as `command` and a value
+}
+```
+
+Terminal Claude takes no setting input: it runs its own commands, typed as
+any prompt, and steps its permission with its own cycle key. The values a
+setting can take are said by the agent's catalogue, and which of them a
+person can set now by each entry's `settable` flag.
 
 `phase_since_ms` is the interpreter's clock when `phase` last changed. The
 part every interpreter shares stamps it, so streamed output and other changes
@@ -671,7 +754,7 @@ message SendInputRequest { bytes agent_id = 1; Input input = 2; }
 message Input {
   bytes input_id = 1;                    // generated by the client
   Kind kind = 2;
-  bytes body = 3;                        // ClaudePtyInput, ClaudeSdkInput or CodexInput
+  bytes body = 3;                        // ClaudePtyInput, ClaudeSdkInput, CodexInput or AcpInput
 }
 ```
 
@@ -741,7 +824,6 @@ The `Refusal` says why:
 | `REFUSAL_EXITING` | the agent | A one-shot child decided to exit |
 | `REFUSAL_EXITED` | the owning daemon | The agent has exited; the composer offers Resume |
 | `REFUSAL_AGENT_CLOSED` | the owning daemon | The agent is closed: only the person or its own parent resume it |
-| `REFUSAL_HOST_UNREACHABLE` | the shared client runtime | The agent's host cannot be reached, or only through a relay the lapsed plan will not carry, so the input never left; the composer holds it. One that left and lost its answer is `ABORTED` instead |
 | `REFUSAL_CONVERSATION_ELSEWHERE` | interpreter | Terminal Claude's own view switched to another conversation, so a prompt would land in a conversation that is not this agent's |
 | `REFUSAL_TOO_LONG` | interpreter | The prompt is longer than the agent takes: Codex takes at most 1,048,576 characters (2^20), and would refuse a longer one only after amux had taken it; the detail names the limit and the prompt's length |
 
@@ -749,6 +831,13 @@ The `Refusal` says why:
 provider rather than the protocol. A client shows the
 detail when there is one and its own words for the refusal otherwise; a
 refusal it has no words for reads as a plain refusal.
+
+No `Refusal` says the agent's host could not be reached: only a client
+knows that, so it makes the state up itself. When the agent's host cannot be
+reached, or only through a relay the lapsed plan will not carry, the shared
+client runtime reports the input as not sent, with the lapse's words when
+that was the reason, and the composer holds it. One that left and lost its
+answer is uncertain instead.
 
 ### States a client observes
 
@@ -758,6 +847,7 @@ refusal it has no words for reads as a plain refusal.
 | queued | The reply was `accepted { queued: true }`; every snapshot lists the input id in its `queue` until it is submitted. |
 | settled | The reply was `accepted`, and for a prompt an item carries the input id. |
 | rejected | The reply was `rejected`, carrying its `Refusal` and any `detail`. |
+| not sent | The input never left, because the agent's host could not be reached. The composer holds it. |
 | uncertain | The connection dropped before a reply, or the runtime answered `ABORTED`. Shown as "not confirmed". |
 
 An uncertain input is judged only at the next `CaughtUp`: found in the
@@ -805,7 +895,7 @@ directly into its directory.
 the bytes alone: the caller named the hash, and the name and mime type belong
 to the attachment that referenced the blob. For a paired host's agent the
 node reads its replica copy, or fetches the bytes from the origin's
-`PeerService.GetBlob`, checks their hash, keeps them under `replicas/` exactly
+`PeerService.FetchBlob`, checks their hash, keeps them under `replicas/` exactly
 as the origin sent them and returns them.
 
 ### Changes
@@ -865,6 +955,14 @@ the replica's current snapshot names it (see [attachments](ATTACHMENTS.md)),
 so the picker still reads with the origin away. A hash that names no blob is
 `NOT_FOUND`.
 
+A permission is how much the agent may do without asking, and only a
+permission sits on amux's scale (`OfferedPermission.level`). A mode is how
+the agent works apart from that: Codex's plan, and an ACP agent's other
+modes. An ACP agent's modes known to be permissions are listed among its
+`permissions` and set with `SetPermission`, never among its `modes`; every
+mode of an agent a person added stays a mode. `AgentSettings.permission`
+never holds a mode.
+
 `HostService.GetCatalogue(provider)`, addressed to a host, names a provider
 by its id (`claude`, `codex`, or an ACP agent's: `antigravity`, `opencode`,
 `grok`, or one a person added under `[agents.<id>]` in that host's config)
@@ -905,10 +1003,12 @@ fails answers with the copy when there is one, else
 know, is `INVALID_ARGUMENT`, and an ACP agent whose program is not found there
 `FAILED_PRECONDITION`. Each host keeps the model and effort a person last
 picked per provider id (`new_agent.<id>.model` and `.effort` in its config)
-and lays them over what a new agent starts with in the copy it serves. A pick
+and lays them over what a new agent starts with in the copy it serves
+(`Catalogue.new_agent`, an `AgentSettings`). A pick
 made in a chat is kept once it holds: Codex's as its input is accepted, and
 headless Claude's or an ACP agent's once the program took it, which the
-interpreter says on that step (`Step.picked`); a pick the program refuses is
+interpreter says on that step (`Step.picked`, an `AgentSettings` holding
+only the model and effort); a pick the program refuses is
 never kept, and a mode or permission never is.
 
 A blob lives as long as its agent's directory. See
@@ -924,7 +1024,7 @@ daemon keeps its copy from `PeerService.FollowAgents`, the same events
 carrying only the answering host's own entry and agents.
 
 A host's own entry says where it offers to start an agent, as `folders`:
-the folders its person pinned (its `repositories` setting) in their order,
+the folders its person pinned (the `repositories` key of its config) in their order,
 then those its agents started in, newest first, then those Claude Code and
 Codex ran in lately outside amux, each path once and at most 50, each with
 its `kind`. A folder in Git carries its `Checkout`: the working tree's
@@ -933,8 +1033,9 @@ its `kind`. A folder in Git carries its `Checkout`: the working tree's
 matches an agent to a folder by `root` and groups checkouts of one
 repository by `remote`, else by `main` (or `root`) on that host. A client
 searches the list itself; `HostService.PinFolder`, addressed to that host,
-changes the pinned part, and the host's entry says it. The host works the list out again when the setting
-changes, when an agent starts somewhere, and every ten minutes.
+is the only call that changes the pinned part, and the host's entry says it.
+The host works the list out again when its pins change, when an agent starts
+somewhere, and every ten minutes.
 
 A reader that falls more than the inventory ring's capacity behind is sent
 `Lagged`, and the stream closes. The reader subscribes again at once, with no
@@ -946,21 +1047,20 @@ same: on `Lagged` it follows again under the same session, and its sources
 for that host's agents keep running.
 
 `Agent` is the inventory row. It carries `kind`, `provider` (the agent
-program's id, as the host's `providers` name it; a row from a host older than
-the field names none, and its kind says which: Claude's kinds are `claude`,
-Codex's `codex`), `name` (always set, unique
-on its host), `title` (what a person reads it as when present: its provider's
-title for a conversation nobody named, or one a person gave in the provider's
-own interface; copied from the snapshot envelope and cleared by a rename),
-`cwd`, `parent` (a host and an id, since families cross hosts), `lifecycle`
-with `exit_cause` and `exit_detail`, `phase`, `working_on`, `phase_since_ms`
-(on the origin host's clock; the row's creation time until its first
-snapshot) and `git` copied from the agent's newest snapshot envelope (or,
-on its own host, the totals of a diff that just showed it out of date; see
-[git facts](AGENT_PROCESS.md#git-facts)),
-`incarnation`, and two counts of what a stop or delete would cut:
-`background_jobs`, copied from the snapshot envelope, and `descendants`, the
-live agents below it. The agent's own host counts `descendants` over the rows
+program's id, as the host's `providers` name it), `name` (always set, unique
+on its host), `cwd`, `parent` (a host and an id, since families cross hosts),
+`lifecycle` with `exit` (an `IncarnationEnd`: how the newest incarnation
+ended, absent while it runs), `incarnation`, `filing`, `native`, `status`
+and `descendants`. `status` is the `AgentStatus` of the agent's newest
+snapshot, copied whole: its phase, `phase_since_ms` (on the origin host's
+clock; the row's creation time until its first snapshot), `working_on`,
+`git` (or, on its own host, the totals of a diff that just showed it out of
+date; see [git facts](AGENT_PROCESS.md#git-facts)), `background_jobs`,
+`title` (what a person reads it as when present: its provider's title for a
+conversation nobody named, or one a person gave in the provider's own
+interface; a rename clears it on the row), `last_said` and `settings`. Two
+counts say what a stop or delete would cut: `status.background_jobs` and
+`descendants`, the live agents below it. The agent's own host counts `descendants` over the rows
 it holds, walking into its own agents and taking each paired host's agent's
 own count for what lies below it, so the count reaches every host that host
 knows of; it is best effort, and a host out of reach may be undercounted. A
@@ -974,7 +1074,7 @@ Codex child thread started inside its parent's provider process, carrying the
 provider's id for it (`NativeChild.provider_child_id`). Such an agent has no
 process, directory or composer of its own, its `parent` is always the agent
 whose process runs it, and it takes no messages. Absent on every agent amux
-started, which is every row from a host that predates it.
+started.
 
 What a client may do to one: answer its asks and send `StopJob` for the job
 its own snapshot lists (one of kind `BACKGROUND_KIND_SUBAGENT` keyed by
@@ -987,7 +1087,7 @@ lists no such job; closing it after it ended files it. Resuming, deleting,
 killing and pinning it are refused: it goes with its host. Renaming it works
 as for any agent.
 
-`exit_cause` is an `ExitCause`, and `exit_detail` the cause's own words when it
+`exit.cause` is an `ExitCause`, and `exit.detail` the cause's own words when it
 has any (a provider's exit code, why a provider could not start). Most causes
 are the agent's own, written in its journal as the last step's
 `incarnation_end` (see [the agent process](AGENT_PROCESS.md#lifecycle)):
@@ -1011,14 +1111,16 @@ exited row), and a cause a client does not know reads as an ordinary end,
 not a failure: clients draw `FINISHED` as finished,
 the stops, `SUSPENDED` and unknown causes as ended, and every other cause as a failure in
 its words followed by its own. The `Boundary` that ends an incarnation in the
-journal carries the same cause and detail.
+journal carries the same `IncarnationEnd`, and so does the `DiedNotice` a
+notification says it with.
 
 An agent the machine restarted under in its turn is resumed, under the
 `suspension` experiment, with a prompt saying so, which nobody sent: its
-input id begins with the eight bytes `amux-con` (`wire::continued_input_id`,
-`wire::is_continued_input`). A client that knows draws that prompt's item as
-a line saying the agent carried on after the restart, and leaves it out of
-the queue; an older one draws the prompt's own words.
+`PromptSubmission` is marked `continued`, and so are its item
+(`Prompt.continued`) and its queue entry (`QueuedInput.continued`). Only a
+daemon sets it, on the resume's bootstrap. A client draws that prompt's item
+as a line saying the agent carried on after the restart, and offers no
+withdraw or send-now for it in the queue.
 
 `HostEntry` carries the host's own word (its `Host`: name, version, platform,
 capabilities and whether it is signed in), its `generation`, which changes
@@ -1026,32 +1128,30 @@ only after an unclean reboot of that host (see
 [the journal and store](JOURNAL_AND_STORE.md)), and its `providers`: each
 agent program the host runs, Claude and Codex always and then each ACP agent
 it offers once it has asked it, as a `ProviderOnHost`. That names the
-provider by its id (`provider_id`, a string because a person can add an agent
-no build knows; tag 1, the enum of Claude and Codex it replaced, is reserved),
-and once asked, the hash of what it offers there and
+provider by its id (`provider`, a string because a person can add an agent
+no build knows), and once asked, the hash of what it offers there and
 whether it is signed in (`signed_in` says nothing while `catalogue` is
 absent). Its `descriptor` is what a client needs to offer it without knowing
 it: the name people call it, the kind a new agent of it starts as on that host
-(for Claude, terminal or headless as the host's settings choose; this replaced
-the entry's `claude_kind`), what a person does to sign in, and its version.
-Its `capabilities` say what an agent of it started there now can do (see
-[capabilities](#capabilities)). A paired host's come from that host's own
+(`kind`; for Claude, terminal or headless as the host's settings choose),
+what a person does to sign in, and its version. Its `kinds` are every kind
+it runs there (what a create may name), each with what an agent of that
+kind started there now can do, which a client reads until the agent's first
+snapshot (see [capabilities](#capabilities)). A paired host's come from that host's own
 entry. Its `standing` is one of two arms. A pairing candidate is `Candidate`,
 carrying the addresses discovery found it at and `announced_by`, the
 neighbors that announce it, nearest route first, each a `Host` whose
 `capabilities.cloud_relay` says whether this machine admitted that link as
 the cloud relay (which carries a pairing only for a paid account). A paired host is `Trusted`, whose
-`reach` is one of three: `online` once a channel to it has opened on a route
-still listed, naming that route; `away` while the relay refuses its channel
-because the account's free plan carries no connection between hosts; and
-`offline` otherwise, carrying the last dial error and whether the host said it
-no longer trusts this machine (`revoked`). `current` says whether this
-machine's copy of the host's agents has caught up. `same_network` says the
-`online` route is a direct path on a network both machines are on (a LAN
-path), which clients word as Local; it is a field beside `online` rather than
-a new `RouteKind` because a reader that predates it decodes an unknown route
-kind as unspecified, where it should read direct, which the path also is. A
-host whose route has just
+`reach` is one of four: `here` for this machine itself; `online` once a
+channel to it has opened on a route still listed, naming that route
+(`route`) and whether it is a direct path on a network both machines are on
+(`same_network`, a LAN path, which clients word as Local); `away` while the
+relay refuses its channel because the account's free plan carries no
+connection between hosts; and `offline` otherwise, carrying the last dial
+error and whether the host said it no longer trusts this machine
+(`revoked`). `current` says whether this machine's copy of the host's agents
+has caught up. A host whose route has just
 come up keeps its reach until the first channel on it opens or fails
 ([presence](PROTOCOL.md#chapter-3-presence)).
 
@@ -1100,14 +1200,12 @@ authority, and the [caller header](#the-caller), `amux-caller-bin` holding
 a `Caller`. So do the statuses a carried call fails with ([errors](#errors)),
 which every client reads the same way whatever the service.
 
-The services took their present shape in 0.11.0. Builds before it served an
-earlier `AgentService` and `SessionService` at the same paths, with host
-fields in their requests and calls passed between daemons by type, and they
-do not work with later builds: a link between the two comes up, and then
-neither answers what the other asks. Hosts, clients and the iPhone app on
-either side of that release are updated together. An agent that was running
-when its host updated keeps the tool server it started with, so its fleet
-tools fail until it is resumed.
+`amux.v1` took its present shape in 0.11.0, and the promise starts there.
+Builds before it spoke an earlier shape of the same package and do not work
+with later builds: a link between the two comes up, and then neither
+answers what the other asks. Hosts, clients and the iPhone app on either
+side of that release are updated together, and a later build does not read
+the stores, journals and profiles a build before it left.
 
 `just proto-compat`, which CI runs, lints the schemas with buf's `STANDARD`
 rules and checks them against the newest release tag at or after 0.11.0 (until
@@ -1202,8 +1300,9 @@ none of the promises above:
   `crates/wire/src/lib.rs`.
 - **They travel in an `experimental` map.** An amux.v1 message an
   experiment extends carries, once and for good, `map<string, bytes>
-  experimental = 1000`. `Agent`, `AgentSpec` and `Attachment` do now;
-  `Host` gets one when an experiment first needs it. Each entry is keyed by an experiment's
+  experimental = 1000`. `Agent`, `HostEntry`, `Snapshot`, `AgentSpec` and
+  `Attachment` do now; `Host` gets one when an experiment first needs it.
+  Each entry is keyed by an experiment's
   version and holds an encoded amux.experimental message:
   `Agent.experimental["workspaces/1"]` is an `AgentWorkspace`. Its values
   are bytes because a file in the buf module cannot import one outside it,

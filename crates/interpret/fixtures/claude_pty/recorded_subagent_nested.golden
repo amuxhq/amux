@@ -1,28 +1,30 @@
 ## 0 initial
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot capabilities switches_back attachable resumable sends_now images files passes_unknown_commands forks model=command:/model effort=command:/effort permission=step mode=-
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 1 fact {"channel":"agent","json":{"type":"launch"}}
 effect catalogue 9d924e4e models=[] commands=0 permissions=[default,acceptEdits,plan,auto] modes=[]
 snapshot catalogue 9d924e4e
-snapshot STARTING queue=[] working_on=- at=0 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 3 recorded 1: fact Hook hook_event_name=SessionStart
 effect follow "<TRANSCRIPT_1>"
 item boundary:1 boundary final at=1794788246050 text="" BOUNDARY_KIND_STARTED
-snapshot settings model=claude-haiku-5-5 effort=? permission=? level=?
-snapshot IDLE queue=[] working_on=- at=1794788246050 asks=[] session=48535dea-fd12-4e8c-ad15-3d18b5b101ab model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot settings model=claude-haiku-5-5 effort=? permission=? level=? mode=?
+snapshot IDLE queue=[] working_on=- at=1794788246050 conversation=48535dea-fd12-4e8c-ad15-3d18b5b101ab model_name="Haiku 5.5" sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 5 recorded 3: fact Hook hook_event_name=UserPromptSubmit
-snapshot settings model=claude-haiku-5-5 effort=? permission=default level=ask
-snapshot IDLE queue=[] working_on=- at=1794788246592 asks=[] session=48535dea-fd12-4e8c-ad15-3d18b5b101ab model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot settings model=claude-haiku-5-5 effort=? permission=default level=ask mode=?
+snapshot IDLE queue=[] working_on=- at=1794788246592 conversation=48535dea-fd12-4e8c-ad15-3d18b5b101ab model_name="Haiku 5.5" sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 14 recorded 12: fact Transcript type=user uuid=cd65cd37-e718-42a9-88f5-9cb1ffa0d373
 item cd65cd37-e718-42a9-88f5-9cb1ffa0d373 prompt final at=1794788246740 text="Launch the `outer` subagent and wait for it. When it has reported, reply with exactly what it said."
-snapshot WORKING queue=[] working_on=- at=1794788246740 asks=[] session=48535dea-fd12-4e8c-ad15-3d18b5b101ab model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=default context=? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot WORKING queue=[] working_on=- at=1794788246740 conversation=48535dea-fd12-4e8c-ad15-3d18b5b101ab model_name="Haiku 5.5" sign_in=? background=? asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 41 recorded 39: fact Hook hook_event_name=SubagentStart
 effect follow subagent a470553e252570bb0
 ## 47 recorded 45: fact Transcript type=assistant uuid=19685f17-dd4c-4c0a-8921-3741a7581492
 item toolu_01Eg8rr4FVAEoB3eHY6GGFKi tool final at=1794788248553 text="" Agent TOOL_STATE_RUNNING opens=sub-ff9065c1 started=1794788248553 input=subagent:"Run outer subagent"
-snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask
-snapshot WORKING queue=[] working_on=- at=1794788248522 asks=[] session=48535dea-fd12-4e8c-ad15-3d18b5b101ab model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=34077/? tasks=? active=[] usage=? servers=[] sign_in=? background=?
+snapshot settings model=claude-haiku-5-5 effort=medium permission=default level=ask mode=?
+snapshot WORKING queue=[] working_on=- at=1794788248522 conversation=48535dea-fd12-4e8c-ad15-3d18b5b101ab model_name="Haiku 5.5" sign_in=? background=? asks=[] context=34077/? tasks=? active=[] usage=? servers=[]
 agent sub-ff9065c1 start child=a470553e252570bb0 call=host/toolu_01Eg8rr4FVAEoB3eHY6GGFKi title="Run outer subagent"
-agent sub-ff9065c1 snapshot WORKING queue=[] working_on=- at=1794788248522 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+agent sub-ff9065c1 snapshot capabilities model=- effort=- permission=- mode=-
+agent sub-ff9065c1 snapshot WORKING queue=[] working_on=- at=1794788248522 conversation=? model_name=? sign_in=? background=[] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 49 recorded 47: fact Transcript type=user uuid=0de7626e-abed-4b9f-987b-7a4ca2472b33
 item toolu_01Eg8rr4FVAEoB3eHY6GGFKi tool final at=1794788248553 text="" Agent TOOL_STATE_RUNNING background opens=sub-ff9065c1 started=1794788248553 input=subagent:"Run outer subagent"
 ## 60 recorded 58: fact SubagentTranscript type=user uuid=617b4f8f-b873-468d-8a3e-bd507f29aa10
@@ -30,29 +32,32 @@ agent sub-ff9065c1 item 617b4f8f-b873-468d-8a3e-bd507f29aa10 prompt final at=179
 ## 62 recorded 60: fact Hook hook_event_name=MessageDisplay
 item stream:9450040c-6f2f-4aa6-9f8b-a36d5972519b message open at=1794788250055 text="The `outer` subagent is running in the background. I'll reply with its report once it finishes."
 ## 63 recorded 61: fact Hook hook_event_name=Stop
-snapshot WORKING queue=[] working_on=- at=1794788250055 asks=[] session=48535dea-fd12-4e8c-ad15-3d18b5b101ab model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=34077/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794788250055 conversation=48535dea-fd12-4e8c-ad15-3d18b5b101ab model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=34077/? tasks=? active=[] usage=? servers=[]
 ## 67 recorded 65: fact Transcript type=assistant uuid=630a6cc6-dd6a-4929-9646-7787c9c6b494
 item stream:9450040c-6f2f-4aa6-9f8b-a36d5972519b message final at=1794788250141 text="The `outer` subagent is running in the background. I'll reply with its report once it finishes."
-snapshot WORKING queue=[] working_on=- at=1794788250101 asks=[] session=48535dea-fd12-4e8c-ad15-3d18b5b101ab model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=34599/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794788250101 conversation=48535dea-fd12-4e8c-ad15-3d18b5b101ab model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=34599/? tasks=? active=[] usage=? servers=[]
 ## 69 recorded 67: fact Transcript type=system subtype=turn_duration uuid=6fd28b33-1fd6-49a6-bbde-b96d772cb36a
 item turn:1 turn final at=1794788250220 text="" #1 TURN_OUTCOME_COMPLETED started=1794788246732
 snapshot said "The outer subagent is running in the background. I'll reply with its report once it finishes."
-snapshot IDLE queue=[] working_on=- at=1794788250101 asks=[] session=48535dea-fd12-4e8c-ad15-3d18b5b101ab model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=34599/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1794788250101 conversation=48535dea-fd12-4e8c-ad15-3d18b5b101ab model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=34599/? tasks=? active=[] usage=? servers=[]
 turn_end 1 last=stream:9450040c-6f2f-4aa6-9f8b-a36d5972519b
 ## 73 recorded 71: fact Hook hook_event_name=SubagentStart
 effect follow subagent a4ae48381a397fc4b
 ## 78 recorded 76: fact SubagentTranscript type=assistant uuid=d65a396f-485b-438b-8363-53fcd8fe0c2f
 agent sub-ff9065c1 item toolu_01EQrtY2sxm9tUwe937bLkw4 tool final at=1794788250905 text="" Agent TOOL_STATE_RUNNING opens=sub-c4fe8dc9 input=subagent:"Ask inner subagent for word"
-agent sub-ff9065c1 snapshot WORKING queue=[] working_on=- at=1794788250861 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+agent sub-ff9065c1 snapshot settings model=claude-haiku-5-5 effort=? permission=? level=? mode=?
+agent sub-ff9065c1 snapshot WORKING queue=[] working_on=- at=1794788250861 conversation=? model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=? tasks=? active=[] usage=? servers=[]
 agent sub-c4fe8dc9 start child=a4ae48381a397fc4b call=sub-ff9065c1/toolu_01EQrtY2sxm9tUwe937bLkw4 title="Ask inner subagent for word"
-agent sub-c4fe8dc9 snapshot WORKING queue=[] working_on=- at=1794788250861 asks=[] session=? model=? model_name=? effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+agent sub-c4fe8dc9 snapshot capabilities model=- effort=- permission=- mode=-
+agent sub-c4fe8dc9 snapshot WORKING queue=[] working_on=- at=1794788250861 conversation=? model_name=? sign_in=? background=[] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 79 recorded 77: fact SubagentTranscript type=user uuid=d7bff7db-cc00-4bb6-9d92-565637d26a29
 agent sub-ff9065c1 item toolu_01EQrtY2sxm9tUwe937bLkw4 tool final at=1794788250905 text="" Agent TOOL_STATE_RUNNING background opens=sub-c4fe8dc9 input=subagent:"Ask inner subagent for word"
 ## 81 recorded 79: fact SubagentTranscript type=user uuid=f1a39b99-20c2-480f-b413-c4002b04f63c
 agent sub-c4fe8dc9 item f1a39b99-20c2-480f-b413-c4002b04f63c prompt final at=1794788250932 text="Please read the file a.txt and report back the word it contains. Reply with the word only. The file is located in <MACHINE_PATH> (use the absolute path to a.txt in that directory)."
 ## 90 recorded 88: fact SubagentTranscript type=assistant uuid=93f60c0a-60a2-44e8-a477-134b17efcc27
 agent sub-c4fe8dc9 item toolu_01UricQWi7EEBcsMdqdXbyjv tool final at=1794788252470 text="" Read TOOL_STATE_RUNNING read input="{\"file_path\":\"<MACHINE_PATH>\"}"
-agent sub-c4fe8dc9 snapshot WORKING queue=[] working_on=- at=1794788252442 asks=[] session=? model=claude-haiku-5-5 model_name="Haiku 5.5" effort=? mode=? context=? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+agent sub-c4fe8dc9 snapshot settings model=claude-haiku-5-5 effort=? permission=? level=? mode=?
+agent sub-c4fe8dc9 snapshot WORKING queue=[] working_on=- at=1794788252442 conversation=? model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 92 recorded 90: fact SubagentTranscript type=user uuid=a5acfeb4-4d55-44b0-8448-eec706715ffd
 agent sub-c4fe8dc9 item toolu_01UricQWi7EEBcsMdqdXbyjv tool final at=1794788252470 text="" Read TOOL_STATE_SUCCEEDED read ended=1794788252506 input="{\"file_path\":\"<MACHINE_PATH>\"}" out="1\tALPHA\n2\t"
 ## 98 recorded 96: fact SubagentTranscript type=assistant uuid=fd5c1e8a-f157-4309-a0d8-172e52875b2a
@@ -72,7 +77,7 @@ effect follow subagent a470553e252570bb0
 ## 124 recorded 122: fact Transcript type=queue-operation
 effect drain subagent a470553e252570bb0 until "OUTER ALPHA"
 item toolu_01Eg8rr4FVAEoB3eHY6GGFKi tool final at=1794788248553 text="" Agent TOOL_STATE_SUCCEEDED background opens=sub-ff9065c1 started=1794788248553 ended=1794788255770 input=subagent:"Run outer subagent" out="OUTER ALPHA"
-snapshot WORKING queue=[] working_on=- at=1794788255770 asks=[] session=48535dea-fd12-4e8c-ad15-3d18b5b101ab model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=34599/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794788255770 conversation=48535dea-fd12-4e8c-ad15-3d18b5b101ab model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=34599/? tasks=? active=[] usage=? servers=[]
 ## 129 recorded 127: fact SubagentTranscript type=assistant uuid=adef3340-16af-4d52-923e-a190eaedf1f8
 agent sub-ff9065c1 item msg_011Ch5eRzWKMjQzYhnby7nU7:0 message final at=1794788255799 text="OUTER ALPHA"
 agent sub-ff9065c1 end FINISHED
@@ -80,9 +85,9 @@ agent sub-ff9065c1 end FINISHED
 item stream:de88e9ff-2798-4a0a-afe1-12e18fc4d7f7 message open at=1794788257094 text="OUTER ALPHA"
 ## 135 recorded 133: fact Transcript type=assistant uuid=82d2def0-7087-4326-b6a6-13074455006e
 item stream:de88e9ff-2798-4a0a-afe1-12e18fc4d7f7 message final at=1794788257229 text="OUTER ALPHA"
-snapshot WORKING queue=[] working_on=- at=1794788257200 asks=[] session=48535dea-fd12-4e8c-ad15-3d18b5b101ab model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35126/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot WORKING queue=[] working_on=- at=1794788257200 conversation=48535dea-fd12-4e8c-ad15-3d18b5b101ab model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=35126/? tasks=? active=[] usage=? servers=[]
 ## 137 recorded 135: fact Transcript type=system subtype=turn_duration uuid=c13127ea-556d-4495-82f0-c190a195f2e0
 item turn:2 turn final at=1794788257264 text="" #2 TURN_OUTCOME_COMPLETED started=1794788246731
 snapshot said "OUTER ALPHA"
-snapshot IDLE queue=[] working_on=- at=1794788257200 asks=[] session=48535dea-fd12-4e8c-ad15-3d18b5b101ab model=claude-haiku-5-5 model_name="Haiku 5.5" effort=medium mode=default context=35126/? tasks=? active=[] usage=? servers=[] sign_in=? background=[]
+snapshot IDLE queue=[] working_on=- at=1794788257200 conversation=48535dea-fd12-4e8c-ad15-3d18b5b101ab model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=35126/? tasks=? active=[] usage=? servers=[]
 turn_end 2 last=stream:de88e9ff-2798-4a0a-afe1-12e18fc4d7f7

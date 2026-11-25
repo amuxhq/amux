@@ -530,11 +530,13 @@ impl ForwardLinks for RelayLinks {
         };
         // A link too far behind to take its refusal hears it again when it
         // next sends there.
-        let _ = tx.try_send(wire::Message {
-            body: Some(wire::message::Body::ForwardRefused(wire::ForwardRefused {
-                dst: dst.as_bytes().to_vec(),
-                reason: reason as i32,
-            })),
+        let _ = tx.try_send(wire::LinkMessage {
+            body: Some(wire::link_message::Body::ForwardRefused(
+                wire::ForwardRefused {
+                    dst: dst.as_bytes().to_vec(),
+                    reason: reason as i32,
+                },
+            )),
         });
     }
 

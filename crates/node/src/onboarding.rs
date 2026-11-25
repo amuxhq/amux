@@ -16,7 +16,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -109,9 +108,6 @@ pub(crate) struct Onboarding {
     stored: Mutex<Stored>,
     /// Rings whenever what is kept changes.
     changed: watch::Sender<()>,
-    /// How many folders the last suggestion offered, which the repositories
-    /// step's usage event counts what was kept against.
-    suggested: AtomicU32,
 }
 
 impl Onboarding {
@@ -123,13 +119,7 @@ impl Onboarding {
             stored: Mutex::new(read(&path)),
             path,
             changed: watch::Sender::new(()),
-            suggested: AtomicU32::new(0),
         }
-    }
-
-    pub(crate) fn suggested(&self, count: usize) {
-        self.suggested
-            .store(u32::try_from(count).unwrap_or(u32::MAX), Ordering::Relaxed);
     }
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<()> {
@@ -443,7 +433,16 @@ impl Registry {
                         .record(analytics::Event::RepositoriesChosen {
                             kept: u32::try_from(runtime.launch().repositories.len())
                                 .unwrap_or(u32::MAX),
-                            suggested: onboarding.suggested.load(Ordering::Relaxed),
+                            // What the host's entry offered to keep: the
+                            // folders Claude Code and Codex ran in lately.
+                            suggested: u32::try_from(
+                                runtime
+                                    .folders()
+                                    .iter()
+                                    .filter(|folder| folder.kind() == wire::FolderKind::History)
+                                    .count(),
+                            )
+                            .unwrap_or(u32::MAX),
                         });
                 }
             }
@@ -452,7 +451,17 @@ impl Registry {
                 kept(onboarding.skip(profile, skipped))?;
                 record(skipped, analytics::StepOutcome::Skipped);
             }
-            Some(Answer::Shown(raw)) => record(step(raw)?, analytics::StepOutcome::Shown),
+            Some(Answer::Shown(raw)) => {
+                let shown = step(raw)?;
+                record(shown, analytics::StepOutcome::Shown);
+                // The step offers where Claude Code and Codex ran lately,
+                // which the host otherwise reads again only every few
+                // minutes: read it now, so a session from moments ago is
+                // offered too. The entry tells the client when it moves.
+                if shown == Id::Repositories {
+                    runtime.refresh_folders();
+                }
+            }
             Some(Answer::SignInOfferShown(raw)) => {
                 let role = match wire::OfferRole::try_from(raw) {
                     Ok(wire::OfferRole::Offerer) => analytics::OfferRole::Offerer,

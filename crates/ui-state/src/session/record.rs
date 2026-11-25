@@ -139,7 +139,10 @@ fn message(kind: Kind, msg: ClientSessionMsg, hashes: &mut Hashes) -> ClientSess
                     client_sent::Outcome::Reply(reply) => {
                         client_sent::Outcome::Reply(reply_of(reply))
                     }
-                    lost @ client_sent::Outcome::Lost(_) => lost,
+                    // amux's own words, never the person's.
+                    kept @ (client_sent::Outcome::Lost(_) | client_sent::Outcome::NotSent(_)) => {
+                        kept
+                    }
                 }),
                 ..sent
             }),
@@ -238,19 +241,35 @@ fn snapshot(kind: Kind, snapshot: Snapshot) -> Snapshot {
         queue: snapshot.queue.into_iter().map(queued).collect(),
         kind: snapshot.kind,
         body,
-        phase: snapshot.phase,
-        working_on: None,
-        title: None,
-        last_said: None,
         at_ms: snapshot.at_ms,
-        phase_since_ms: snapshot.phase_since_ms,
-        git: None,
+        status: snapshot.status.map(|held| Box::new(status(*held))),
         catalogue: snapshot.catalogue,
-        background_jobs: snapshot.background_jobs,
         notice: None,
         capabilities: snapshot.capabilities,
-        // Catalogue values and a level: nothing of the person's.
-        settings: snapshot.settings,
+        model_name: None,
+        sign_in: None,
+        conversation: None,
+        jobs: None,
+        experimental: Default::default(),
+    }
+}
+
+/// A status by its phase, its timing, its job count and its permission's
+/// level. The settings' values go: a model or mode can be one the person
+/// typed.
+fn status(status: wire::AgentStatus) -> wire::AgentStatus {
+    wire::AgentStatus {
+        phase: status.phase,
+        phase_since_ms: status.phase_since_ms,
+        working_on: None,
+        git: None,
+        background_jobs: status.background_jobs,
+        title: None,
+        last_said: None,
+        settings: status.settings.map(|settings| wire::AgentSettings {
+            permission_level: settings.permission_level,
+            ..wire::AgentSettings::default()
+        }),
     }
 }
 
@@ -261,6 +280,7 @@ fn queued(queued: QueuedInput) -> QueuedInput {
         attachments: Vec::new(),
         steer: queued.steer,
         sender: None,
+        continued: queued.continued,
     }
 }
 
@@ -331,6 +351,7 @@ fn input(input: Input) -> Input {
                 named @ (acp::Of::Withdraw(_) | acp::Of::SendNow(_)) => named,
                 acp::Of::Interrupt(_) => acp::Of::Interrupt(Default::default()),
                 acp::Of::Mode(_) => acp::Of::Mode(Default::default()),
+                acp::Of::Permission(_) => acp::Of::Permission(Default::default()),
                 acp::Of::Model(_) => acp::Of::Model(Default::default()),
                 acp::Of::Effort(_) => acp::Of::Effort(Default::default()),
             }),
@@ -367,36 +388,31 @@ fn rejected(rejected: wire::Rejected) -> wire::Rejected {
 /// The inventory row by its ids, kind and states: no name, folder, task,
 /// branch or exit words.
 fn agent(agent: Agent) -> Agent {
-    let provider = kept_provider(agent.provider_id());
+    // A person's own agent is named by what they chose; only amux's own
+    // ids are kept.
+    let provider = kept_provider(&agent.provider);
     Agent {
         agent_id: agent.agent_id,
         host_id: agent.host_id,
         kind: agent.kind,
+        provider,
         name: String::new(),
         cwd: String::new(),
         parent: agent.parent,
         created_at_ms: agent.created_at_ms,
         lifecycle: agent.lifecycle,
-        exit_cause: agent.exit_cause,
-        exit_detail: None,
-        phase: agent.phase,
-        working_on: None,
-        title: None,
-        last_said: None,
-        phase_since_ms: agent.phase_since_ms,
+        exit: agent.exit.map(|exit| wire::IncarnationEnd {
+            cause: exit.cause,
+            detail: None,
+        }),
         incarnation: agent.incarnation,
-        git: None,
         descendants: agent.descendants,
-        background_jobs: agent.background_jobs,
         filing: agent.filing,
         filed_at_ms: agent.filed_at_ms,
         native: agent.native,
+        status: agent.status.map(|held| Box::new(status(*held))),
         // An experiment's entry may name folders; none is kept.
         experimental: Default::default(),
-        // A person's own agent is named by what they chose; only amux's
-        // own ids are kept.
-        provider,
-        settings: agent.settings,
     }
 }
 
@@ -404,8 +420,7 @@ fn agent(agent: Agent) -> Agent {
 /// agent's as it is, and any other as "custom".
 fn kept_provider(provider: &str) -> String {
     let own = [wire::agents::CLAUDE, wire::agents::CODEX].contains(&provider)
-        || wire::agents::built_in(provider).is_some()
-        || provider.is_empty();
+        || wire::agents::built_in(provider).is_some();
     if own { provider } else { "custom" }.to_owned()
 }
 
@@ -425,6 +440,7 @@ fn host(host: HostEntry) -> HostEntry {
             Standing::Candidate(_) => Standing::Candidate(Default::default()),
         }),
         push_key: None,
+        experimental: Default::default(),
     }
 }
 

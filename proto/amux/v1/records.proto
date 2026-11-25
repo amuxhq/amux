@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package amux.v1;
 
+import "amux/v1/caller.proto";
+
 // Session records: what an agent's interpreter writes to its journal, what
 // the daemon commits to the store, and what every SubscribeSession stream
 // carries.
@@ -91,7 +93,7 @@ message Exited {
 message Sender {
   oneof value {
     AgentSender agent = 1;
-    Human human = 2;
+    Person person = 2;
   }
 }
 
@@ -100,7 +102,6 @@ message AgentSender {
   string name = 2;
 }
 
-message Human {}
 
 // ---------------------------------------------------------------------------
 // Envelope
@@ -132,17 +133,12 @@ message Step {
   repeated AgentStep agents = 6;
   // Set on the step where the agent's program took a model or effort a
   // person picked in its chat, once it said it took it: what the agent's
-  // host keeps for the next new agent of the same program. A kind that
-  // takes a pick without asking its program (Codex) leaves it unset; its
-  // host keeps the pick as it accepts the input. On the step rather than in
-  // a body because the host reads it for every kind without decoding one.
-  optional PickTaken picked = 7;
-}
-
-// A person's pick an agent's program took: its model, its effort, or both.
-message PickTaken {
-  optional string model = 1;
-  optional string effort = 2;
+  // host keeps for the next new agent of the same program. Only the model
+  // and effort are ever set. A kind that takes a pick without asking its
+  // program (Codex) leaves it unset; its host keeps the pick as it accepts
+  // the input. On the step rather than in a body because the host reads it
+  // for every kind without decoding one.
+  optional AgentSettings picked = 7;
 }
 
 // One provider subagent's part of a step, filed under the subagent's own
@@ -219,81 +215,107 @@ message Append {
   string text = 4;
 }
 
-// Everything a client needs to draw the agent without items. Every field of
-// the per-kind body is present in every snapshot, at an explicit unknown
-// until the interpreter learns it.
+// Everything a client needs to draw the agent without items. What every
+// kind says the same way is here, in the envelope, once; the per-kind body
+// holds only what is that kind's own. Every field of the body is present in
+// every snapshot, at an explicit unknown until the interpreter learns it.
 message Snapshot {
   uint64 revision = 1;
   repeated QueuedInput queue = 2;
   // Which per-kind snapshot `body` holds. Before the interpreter's first
-  // snapshot is ingested, SubscribeSession answers with the kind and an empty body.
+  // snapshot is ingested, SubscribeSession answers with the kind and an
+  // empty body.
   Kind kind = 3;
   bytes body = 4;
-  // STARTING until the provider accepts input; NEEDS_YOU whenever an ask is
-  // open. The daemon copies phase and working_on onto the inventory row.
-  Phase phase = 5;
-  // What the agent declared with its set_working_on tool call; never
-  // cleared automatically, and absent until it declares something. Builds
-  // before 0.11 wrote the first line of the newest prompt here while
-  // nothing was declared.
-  optional string working_on = 6;
   // The interpreter's clock when the step that produced this snapshot ran.
-  int64 at_ms = 7;
-  // The interpreter's clock when `phase` last changed; streamed output and
-  // other changes within one phase leave it alone. The daemon copies it onto
-  // the inventory row.
-  int64 phase_since_ms = 8;
-  // The branch and change totals of the agent's folder, read by the agent
-  // process at start and at each turn end. Absent outside a repository. The
-  // daemon copies it onto the inventory row.
-  optional Git git = 9;
+  int64 at_ms = 5;
+  // What the agent's inventory row repeats. The daemon copies it onto the
+  // row whole, so a fleet list says how every agent stands without a
+  // stream or a body.
+  AgentStatus status = 6;
   // The SHA-256 of the Catalogue blob the agent offers now, in its
-  // directory; absent until its provider says what it offers. Not copied
-  // onto the row.
-  optional bytes catalogue = 10;
-  // How many jobs the body's background list holds; zero while the list is
-  // unknown. The daemon copies it onto the inventory row, so a fleet row
-  // counts what a stop would cut without decoding a body.
-  uint32 background_jobs = 11;
+  // directory; absent until its provider says what it offers.
+  optional bytes catalogue = 7;
   // What the agent wants of the person now, made small enough for a
   // notification; absent when it wants nothing. The interpreter projects it
   // from its own state, so the daemon can hold and send it without decoding
   // a body. Never an exit: a process that has gone says nothing, and its
   // daemon writes that notice itself.
-  optional Notice notice = 12;
-  // The agent's title (Agent.title). The daemon copies it onto the inventory
-  // row.
-  optional string title = 13;
-  // The line a fleet row quotes from the newest reply the agent wrote to the
-  // person, clipped short (Agent.last_said). Taken whenever the agent is not
-  // working, so a turn's own replies cost no snapshot beyond its end. The
-  // daemon copies it onto the inventory row.
-  optional string last_said = 14;
+  optional Notice notice = 8;
   // What this agent can do that differs between agents, filled by its
-  // interpreter from what its program said. Absent in a snapshot an earlier
-  // build wrote: a client then takes what the agent's host says its
-  // provider can do (ProviderOnHost.capabilities). Not copied onto the row.
-  // In the envelope rather than a body because every client reads it for
+  // interpreter from what its program said. Every client reads it, for
   // every kind, the same way, to decide which controls to offer.
-  AgentCapabilities capabilities = 15;
-  // The model, effort and permission the agent runs with, by the values its
-  // catalogue names, and the permission's level. The daemon copies it onto
-  // the inventory row, so a listing says how every agent runs without
-  // decoding a body. Absent in a snapshot an earlier build wrote.
-  optional AgentSettings settings = 16;
+  AgentCapabilities capabilities = 9;
+  // The running model as a person reads it: the catalogue entry it was set
+  // from, else the entry whose value or resolved model is its id, else its
+  // id tidied. Absent while the model is.
+  optional string model_name = 10;
+  // Whether the agent's program is signed in to its provider.
+  SignIn sign_in = 11;
+  // The provider's id for the conversation the agent runs: Claude's
+  // session, Codex's thread, an ACP agent's session. Absent until the
+  // provider names it. A fork copies it; a later process reopens it.
+  optional string conversation = 12;
+  // The jobs the provider runs in the background, which a stop would cut.
+  BackgroundJobs jobs = 13;
+  // What experiments say about the agent's session, each entry keyed by an
+  // experiment's version and holding an encoded amux.experimental message.
+  // A build reads only the entries of the versions it implements and
+  // ignores every other key. The map is promised; its entries are not.
+  // Empty outside experiments.
+  map<string, bytes> experimental = 1000;
 }
 
-// How an agent runs, as its interpreter last learned it. Each value is
-// absent while unknown.
+// What an agent's snapshot says about it that its inventory row repeats.
+message AgentStatus {
+  // STARTING until the provider accepts input; NEEDS_YOU whenever an ask is
+  // open.
+  Phase phase = 1;
+  // The interpreter's clock when `phase` last changed, on the agent's
+  // host; streamed output and other changes within one phase leave it
+  // alone.
+  int64 phase_since_ms = 2;
+  // What the agent declared with its set_working_on tool call; never
+  // cleared automatically, and absent until it declares something.
+  optional string working_on = 3;
+  // The branch and change totals of the agent's folder, read by the agent
+  // process at start and at each turn end. Absent outside a repository.
+  optional Git git = 4;
+  // How many jobs the snapshot's background list holds; zero while the
+  // list is unknown. A fleet row counts what a stop would cut from it.
+  uint32 background_jobs = 5;
+  // What a person reads this agent as, in place of the name when present:
+  // the title its provider gave a conversation nobody named, or the one a
+  // person gave inside the provider's own interface. Not unique. Renaming
+  // the agent clears it on the row.
+  optional string title = 6;
+  // The line a fleet row quotes from the newest reply the agent wrote to
+  // the person, its markdown read as words and clipped short. Taken
+  // whenever the agent is not working, so a turn's own replies cost no
+  // snapshot beyond its end.
+  optional string last_said = 7;
+  // The model, effort, permission and mode the agent runs with, by the
+  // values its catalogue names.
+  AgentSettings settings = 8;
+}
+
+// An agent's model, effort, permission and mode, by the values its
+// catalogue names; each absent while unknown or unchosen. What a create
+// asks for, what a spec starts with, what a catalogue starts a new agent
+// on, what a person's pick kept, and what an agent runs with.
 message AgentSettings {
   optional string model = 1;
   optional string effort = 2;
-  // The provider's own value: a Claude permission mode, a Codex permission,
-  // an ACP agent's mode.
+  // A permission the catalogue lists: how much the agent may do without
+  // asking. Never a mode.
   optional string permission = 3;
-  // Where that permission sits on amux's scale; unspecified when the
-  // provider's value has no level (an ACP agent a person added).
+  // Where the permission sits on amux's scale; unspecified when it has no
+  // level. In a create, what a calling agent asks for in place of a
+  // permission.
   PermissionLevel permission_level = 4;
+  // A mode the catalogue lists: how the agent works (Codex's plan), apart
+  // from how much it may do.
+  optional string mode = 5;
 }
 
 // How much an agent may do without asking, on one scale for every
@@ -318,11 +340,12 @@ enum PermissionLevel {
 
 // What an agent can do that differs between agents and kinds, as data: a
 // client offers a control when the capability says the agent takes it, and
-// never decides by the agent's kind or provider. The model, effort,
-// permission and mode an agent can change are said elsewhere, by its
-// catalogue. Filled for a running agent by its interpreter (on its
-// snapshot) and for a provider a host offers by that host (on
-// ProviderOnHost). False is the safe reading of every field: a client
+// never decides by the agent's kind or provider. The values a setting can
+// take are said by the agent's catalogue; how a client changes it is said
+// here. Filled for a running agent by its interpreter (on its snapshot)
+// and for a provider a host offers by that host (on ProviderOnHost), which
+// is what a client reads until the agent's first snapshot. False and
+// unspecified are the safe reading of every field: a client
 // that leaves out a control the agent has loses only that control, and
 // never sends an input the agent would refuse.
 message AgentCapabilities {
@@ -353,6 +376,92 @@ message AgentCapabilities {
   // (CreateAgentRequest.fork): its program copies a conversation into a
   // new one of its own.
   bool forks = 9;
+  // How a client changes each of the agent's settings.
+  SettingChange model = 10;
+  SettingChange effort = 11;
+  SettingChange permission = 12;
+  SettingChange mode = 13;
+}
+
+// How a client changes one of an agent's settings.
+message SettingChange {
+  SettingControl control = 1;
+  // For COMMAND: the command a person types, with the value after it
+  // ("/model").
+  string command = 2;
+}
+
+enum SettingControl {
+  // Not offered: the agent takes no change to it.
+  SETTING_CONTROL_UNSPECIFIED = 0;
+  // A Set input naming one of the values its catalogue lists.
+  SETTING_CONTROL_PICK = 1;
+  // One step input moves it to the next value, in the program's own order
+  // (terminal Claude's permission cycle).
+  SETTING_CONTROL_STEP = 2;
+  // Typed into the agent as a command and a value, as a prompt.
+  SETTING_CONTROL_COMMAND = 3;
+}
+
+// Session strip: sign-in state; a problem shows as a notice above the
+// composer, which still sends: sending is how to try again.
+message SignIn {
+  SignInState state = 1;
+  string account = 2;
+  string message = 3;
+}
+
+enum SignInState {
+  SIGN_IN_STATE_UNSPECIFIED = 0;
+  SIGN_IN_STATE_SIGNED_IN = 1;
+  SIGN_IN_STATE_SIGNED_OUT = 2;
+  SIGN_IN_STATE_FAILED = 3;
+}
+
+// What the provider runs in the background: commands and tasks that
+// outlive the call that started them. `known` false is the explicit
+// unknown; the list empties when the provider exits, and a new incarnation
+// starts with none.
+message BackgroundJobs {
+  bool known = 1;
+  repeated BackgroundJob jobs = 2;
+}
+
+message BackgroundJob {
+  // The key of the item whose call started the job; empty when the
+  // provider has not said which call it was.
+  string item_key = 1;
+  // The command, or what the provider calls the task.
+  string command = 2;
+  int64 started_at_ms = 3;
+  BackgroundKind kind = 4;
+  // The job's own key, which a stop names: Claude's task id or the
+  // process id Codex lists.
+  string key = 5;
+  // A stop was sent and the provider has not yet said the job ended.
+  bool stopping = 6;
+  // Why the provider refused the last stop, in its words; empty when it
+  // did not.
+  string stop_error = 7;
+}
+
+enum BackgroundKind {
+  // The provider has not said what the job is.
+  BACKGROUND_KIND_UNSPECIFIED = 0;
+  // A shell command.
+  BACKGROUND_KIND_SHELL = 1;
+  // A subagent the provider runs itself.
+  BACKGROUND_KIND_SUBAGENT = 2;
+  // A watch the provider keeps on something.
+  BACKGROUND_KIND_MONITOR = 3;
+  // A kind the provider names that amux has no word for.
+  BACKGROUND_KIND_OTHER = 4;
+}
+
+// Stops one background job by its key; the agent keeps running. Rejected
+// REFUSAL_UNSUPPORTED when no running job has the key.
+message StopJob {
+  string key = 1;
 }
 
 // What a notification says, in data rather than sentences: each client words
@@ -437,8 +546,7 @@ message UsageBlock {
 }
 
 message DiedNotice {
-  ExitCause cause = 1;
-  string detail = 2;
+  IncarnationEnd ended = 1;
 }
 
 // The kind is the interpreter.
@@ -504,11 +612,8 @@ message Git {
   // From where the branch left its base to the working tree, so uncommitted
   // work counts.
   optional ChangeTotals on_branch = 4;
-  // Where origin points; now Checkout.remote.
-  reserved 5;
-  reserved "remote";
   // The working tree the agent's directory is in.
-  optional Checkout checkout = 6;
+  optional Checkout checkout = 5;
 }
 
 // A working tree of a Git repository on one host. Two checkouts are of the
@@ -578,6 +683,10 @@ message QueuedInput {
   repeated Attachment attachments = 3;
   bool steer = 4;
   Sender sender = 5;
+  // amux's own prompt carrying the agent on after its device restarted
+  // under its turn (PromptSubmission.continued): nobody's to withdraw or
+  // send now.
+  bool continued = 6;
 }
 
 // ---------------------------------------------------------------------------
@@ -590,7 +699,7 @@ message Attachment {
     BlobRef file = 2;
     InlineText text = 3;
     // Comments a person made on a web page, sent from the browser extension.
-    PageReview page = 5;
+    PageReview page = 4;
   }
   // What experiments say about the attachment, each entry keyed by an
   // experiment's version (e.g. "reviews/1") and holding an encoded
@@ -600,10 +709,6 @@ message Attachment {
   // every other key. The map is promised; its entries are not. Empty
   // outside experiments.
   map<string, bytes> experimental = 1000;
-  // A review of a patch the host built, retired for the review service's
-  // pages.
-  reserved 4;
-  reserved "review";
 }
 
 // Content-addressed bytes in the owning agent's directory. The name belongs

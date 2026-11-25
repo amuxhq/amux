@@ -1556,7 +1556,7 @@ impl Transition<'_> {
             ..wire::HostEntry::trusted_host(
                 id.0,
                 plan.name.clone(),
-                wire::trusted::Reach::Online(wire::RouteKind::Unspecified as i32),
+                wire::trusted::Reach::Here(wire::Here {}),
             )
         };
         let trusted = plan.trusted.clone();

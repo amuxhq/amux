@@ -47,7 +47,7 @@ use serde::{Deserialize, Serialize};
 use store::{AgentKey, Delivery, StoreError};
 use wire::{
     AgentRef, AgentSender, Bootstrap, ChildReport, DeliverReportRequest, Envelope, ErrorCode,
-    Human, Lifecycle, Refusal as Refused, Rejected, SendInputResponse, Sender, bootstrap,
+    Lifecycle, Person, Refusal as Refused, Rejected, SendInputResponse, Sender, bootstrap,
     ctl_frame, envelope, send_input_response, sender,
 };
 
@@ -678,7 +678,7 @@ impl Daemon {
             }
             _ => {
                 envelope.from = Some(Sender {
-                    value: Some(sender::Value::Human(Human {})),
+                    value: Some(sender::Value::Person(Person::default())),
                 });
                 None
             }

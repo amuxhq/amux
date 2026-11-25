@@ -104,47 +104,8 @@ pub fn name_or_id(id: &str) -> &str {
     display_name(id).unwrap_or(id)
 }
 
-/// The provider id a kind implies where nothing names one: what a spec or
-/// row an earlier build wrote, before every agent named its provider, runs.
-/// Empty for an ACP agent, whose kind names no program, and for a kind this
-/// build does not know.
-pub fn implied_by(kind: crate::Kind) -> &'static str {
-    match kind {
-        crate::Kind::ClaudePty | crate::Kind::ClaudeSdk => CLAUDE,
-        crate::Kind::Codex => CODEX,
-        crate::Kind::Acp | crate::Kind::Unspecified => "",
-    }
-}
-
-/// `provider` where it names one, else the one `kind` implies.
-pub fn provider_or_implied(provider: &str, kind: crate::Kind) -> &str {
-    if provider.is_empty() {
-        implied_by(kind)
-    } else {
-        provider
-    }
-}
-
-impl crate::AgentSpec {
-    /// The agent's provider id, derived from its kind in a spec an earlier
-    /// build wrote without one.
-    pub fn provider_id(&self) -> &str {
-        provider_or_implied(&self.provider, self.kind())
-    }
-}
-
-impl crate::Agent {
-    /// The row's provider id, derived from its kind in a row an earlier
-    /// build sent without one.
-    pub fn provider_id(&self) -> &str {
-        provider_or_implied(&self.provider, self.kind())
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use prost::Message as _;
-
     /// amux's own agents and every built-in have a name people see; an id a
     /// person's config added is its own name.
     #[test]
@@ -156,20 +117,5 @@ mod tests {
         }
         assert_eq!(super::display_name("my-own-agent"), None);
         assert_eq!(super::name_or_id("my-own-agent"), "my-own-agent");
-    }
-
-    /// A released build named Claude and Codex by an enum, at a tag the
-    /// provider id does not reuse: its host entry still decodes, as a
-    /// provider with no id.
-    #[test]
-    fn a_released_builds_provider_enum_reads_as_no_id() {
-        // ProviderOnHost { provider: PROVIDER_CLAUDE, catalogue: [7],
-        // signed_in: true } as 0.10.0 wrote it.
-        let entry =
-            crate::ProviderOnHost::decode([0x08, 0x01, 0x12, 0x01, 0x07, 0x18, 0x01].as_slice())
-                .expect("the entry decodes");
-        assert_eq!(entry.provider_id, "");
-        assert_eq!(entry.catalogue, Some(vec![7]));
-        assert!(entry.signed_in);
     }
 }

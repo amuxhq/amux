@@ -1083,17 +1083,17 @@ mod tests {
                 )]))))
             }
 
-            async fn list_items(
+            async fn fetch_items(
                 &self,
-                _: Request<wire::PeerServiceListItemsRequest>,
-            ) -> Answer<wire::PeerServiceListItemsResponse> {
+                _: Request<wire::FetchItemsRequest>,
+            ) -> Answer<wire::FetchItemsResponse> {
                 unanswered()
             }
 
-            async fn get_blob(
+            async fn fetch_blob(
                 &self,
-                _: Request<wire::PeerServiceGetBlobRequest>,
-            ) -> Answer<wire::PeerServiceGetBlobResponse> {
+                _: Request<wire::FetchBlobRequest>,
+            ) -> Answer<wire::FetchBlobResponse> {
                 unanswered()
             }
 

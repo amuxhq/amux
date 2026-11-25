@@ -1029,17 +1029,17 @@ async fn fetch_and_get_are_store_reads() {
 fn describe_inventory(event: &InventoryEvent) -> String {
     match event.of.as_ref().expect("an event") {
         inventory_event::Of::Host(host) => format!(
-            "host generation={} online={}",
+            "host generation={} reachable={}",
             host.generation,
-            host.online().is_some()
+            host.reachable()
         ),
         inventory_event::Of::HostRemoved(_) => "host removed".into(),
         inventory_event::Of::Agent(agent) => format!(
             "agent {} {:?} {:?} working_on={:?}",
             agent.name,
             Lifecycle::try_from(agent.lifecycle).unwrap(),
-            Phase::try_from(agent.phase).unwrap(),
-            agent.working_on.as_deref()
+            agent.phase(),
+            agent.working_on()
         ),
         inventory_event::Of::AgentRemoved(_) => "agent removed".into(),
         inventory_event::Of::CaughtUp(_) => "caught_up".into(),
@@ -1082,9 +1082,9 @@ async fn the_inventory_streams_hosts_and_rows_then_caught_up_then_deltas() {
         }),
     };
     let mut working = snapshot(Phase::Working, &[], 5_000);
-    let envelope = working.snapshot.as_mut().unwrap();
-    envelope.phase_since_ms = 4_000;
-    envelope.git = Some(git.clone());
+    let status = working.snapshot.as_mut().unwrap().status_mut();
+    status.phase_since_ms = 4_000;
+    status.git = Some(git.clone());
     write_and_ingest(&runtime, &mut agent, &[working]).await;
     runtime.delete(agent.id).await.unwrap();
     read_inventory_until(&mut inventory, &mut seen, "the removal", |seen| {
@@ -1096,7 +1096,7 @@ async fn the_inventory_streams_hosts_and_rows_then_caught_up_then_deltas() {
     assert_eq!(
         described,
         vec![
-            "host generation=1 online=true",
+            "host generation=1 reachable=true",
             "agent alpha Exited Starting working_on=None",
             "caught_up",
             "agent beta Exited Starting working_on=None",
@@ -1106,10 +1106,11 @@ async fn the_inventory_streams_hosts_and_rows_then_caught_up_then_deltas() {
     );
     if let Some(inventory_event::Of::Agent(row)) = &seen[4].of {
         assert_eq!(
-            row.phase_since_ms, 4_000,
+            row.status().phase_since_ms,
+            4_000,
             "since when is the snapshot's phase_since_ms, not its at_ms"
         );
-        assert_eq!(row.git, Some(git), "git facts are the snapshot's");
+        assert_eq!(row.git(), Some(&git), "git facts are the snapshot's");
     }
     println!("inventory: {described:#?}");
     crash(daemon, runtime).await;
@@ -1140,7 +1141,7 @@ async fn a_lagging_inventory_subscriber_is_told_it_lagged() {
     assert_eq!(
         described,
         vec![
-            "host generation=1 online=true",
+            "host generation=1 reachable=true",
             "agent alpha Exited Starting working_on=None",
             "caught_up",
             "lagged",

@@ -1,5 +1,8 @@
 //! Snapshot totality: every field of every per-kind snapshot body has an
-//! explicit unknown, and the first frame carries exactly these values.
+//! explicit unknown, and the first frame carries exactly these values. What
+//! every kind says the same way (sign-in, background jobs, the model's
+//! name, the conversation) is the envelope's, which the shared snapshot
+//! fills at its unknowns from these too.
 //!
 //! Each constructor is an exhaustive struct literal with no `..Default`, so
 //! a field added to a snapshot body fails to compile here until someone
@@ -64,16 +67,9 @@ pub fn claude() -> ClaudeSnapshot {
         asks: Vec::new(),
         tasks: Some(task_list()),
         context: Some(context_meter()),
-        model: None,
-        model_name: None,
-        permission: None,
-        provider_session: None,
-        effort: None,
         switched_away: None,
         usage: Some(claude_usage()),
         servers: Vec::new(),
-        sign_in: Some(sign_in()),
-        background_jobs: Some(background_jobs()),
         running_calls: Vec::new(),
         active_tasks: Vec::new(),
     }
@@ -83,18 +79,10 @@ pub fn codex() -> CodexSnapshot {
     CodexSnapshot {
         asks: Vec::new(),
         context: Some(context_meter()),
-        model: None,
-        model_name: None,
-        permission: None,
-        mode: None,
         approval_policy: None,
         servers: Vec::new(),
         usage: Some(codex_usage()),
-        sign_in: Some(sign_in()),
-        background_jobs: Some(background_jobs()),
         plan: Some(task_list()),
-        effort: None,
-        thread_id: None,
     }
 }
 
@@ -113,19 +101,10 @@ pub fn acp_usage() -> AcpUsage {
 
 pub fn acp() -> AcpSnapshot {
     AcpSnapshot {
-        agent: None,
         asks: Vec::new(),
         context: Some(context_meter()),
-        model: None,
-        model_name: None,
-        effort: None,
-        mode: None,
         usage: Some(acp_usage()),
-        sign_in: Some(sign_in()),
         plan: Some(task_list()),
-        session_id: None,
-        // The agent has not answered `initialize`.
-        reopen: None,
         servers: Vec::new(),
     }
 }
@@ -196,6 +175,27 @@ mod tests {
                 ),
             }
         }
+    }
+
+    /// The envelope says what every kind says the same way at its own
+    /// unknowns until the kind reports it.
+    #[test]
+    fn the_first_envelope_says_every_shared_fact_at_its_unknown() {
+        let spec = wire::AgentSpec {
+            agent_id: b"a".to_vec(),
+            ..Default::default()
+        };
+        let mut shared: crate::Shared<wire::ClaudeAsk> =
+            crate::Shared::new(&spec, wire::Kind::ClaudeSdk);
+        let snapshot = shared
+            .initial_step(claude().encode_to_vec())
+            .snapshot
+            .expect("the first frame is a snapshot");
+        assert_eq!(snapshot.sign_in, Some(sign_in()));
+        assert_eq!(snapshot.jobs, Some(background_jobs()));
+        assert_eq!(snapshot.model_name, None);
+        assert_eq!(snapshot.conversation, None);
+        assert!(snapshot.settings().is_none());
     }
 
     #[test]

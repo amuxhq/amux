@@ -448,7 +448,7 @@ impl Inner {
             Err(error) if error.uncertain() => InputOutcome::Lost,
             // Any other refusal never reached the agent, which is a
             // rejection, never uncertain.
-            Err(error) => InputOutcome::Reply(refused(error)),
+            Err(error) => refused(error),
         };
         self.apply(Msg::Sent(id.clone(), outcome.clone()));
         Sent { id, outcome }
@@ -489,7 +489,7 @@ fn rejected(refusal: wire::Rejected) -> SendInputResponse {
 /// and the plan lapsed, is the host's being away: the composer holds it,
 /// the lapse saying its own reason. Anything else is refused in the words
 /// it came with.
-fn refused(error: RpcError) -> SendInputResponse {
+fn refused(error: RpcError) -> InputOutcome {
     let never_left = match error.not_sent() {
         Some(NotSent::Unreachable) => Some(None),
         Some(NotSent::Lapsed) => Some(Some(error.to_string())),
@@ -497,16 +497,13 @@ fn refused(error: RpcError) -> SendInputResponse {
             (error.code() == Some(wire::ErrorCode::Unavailable)).then_some(None)
         }
     };
-    rejected(match never_left {
-        Some(detail) => wire::Rejected {
-            refusal: wire::Refusal::HostUnreachable as i32,
-            detail,
-        },
-        None => wire::Rejected {
+    match never_left {
+        Some(detail) => InputOutcome::NotSent { detail },
+        None => InputOutcome::Reply(rejected(wire::Rejected {
             refusal: wire::Refusal::Unspecified as i32,
             detail: Some(error.to_string()),
-        },
-    })
+        })),
+    }
 }
 
 /// The session's state while the guard lives. Never hold it across an
@@ -985,6 +982,10 @@ impl Session {
             InputOutcome::Reply(SendInputResponse {
                 of: Some(send_input_response::Of::Rejected(rejected)),
             }) => Err(InputError::Rejected(ui_state::refusal(&rejected))),
+            InputOutcome::NotSent { detail } => Err(InputError::Rejected(ui_state::Refusal {
+                reason: ui_state::RefusalReason::HostUnreachable,
+                detail,
+            })),
             InputOutcome::Reply(SendInputResponse { of: None }) | InputOutcome::Lost => {
                 Err(InputError::Uncertain)
             }

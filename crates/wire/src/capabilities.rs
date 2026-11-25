@@ -8,20 +8,9 @@
 //! links no interpreter. Each is built on the host it describes: Codex's
 //! terminal depends on the host's platform.
 
-use crate::{AgentCapabilities, Kind};
+use crate::{AgentCapabilities, SettingChange, SettingControl};
 
 impl AgentCapabilities {
-    /// What every agent of `kind` can do; None for an ACP agent, whose
-    /// program decides, and for a kind this build does not know.
-    pub fn of_kind(kind: Kind) -> Option<Self> {
-        match kind {
-            Kind::ClaudePty => Some(Self::claude_pty()),
-            Kind::ClaudeSdk => Some(Self::claude_sdk()),
-            Kind::Codex => Some(Self::codex()),
-            Kind::Acp | Kind::Unspecified => None,
-        }
-    }
-
     /// Claude Code in its own terminal. amux types into that terminal, so
     /// a queued prompt can be typed into a running turn and a slash command
     /// amux does not know is Claude's to run; attachments go as paths
@@ -38,6 +27,13 @@ impl AgentCapabilities {
             files: true,
             passes_unknown_commands: true,
             forks: true,
+            // Terminal Claude takes no setting input: it runs its own
+            // commands, typed as any prompt, and steps its permission with
+            // its own cycle key.
+            model: Some(SettingChange::command("/model")),
+            effort: Some(SettingChange::command("/effort")),
+            permission: Some(SettingChange::step()),
+            mode: None,
         }
     }
 
@@ -54,6 +50,10 @@ impl AgentCapabilities {
             files: true,
             passes_unknown_commands: true,
             forks: true,
+            model: Some(SettingChange::pick()),
+            effort: Some(SettingChange::pick()),
+            permission: Some(SettingChange::pick()),
+            mode: None,
         }
     }
 
@@ -72,6 +72,10 @@ impl AgentCapabilities {
             files: true,
             passes_unknown_commands: false,
             forks: true,
+            model: Some(SettingChange::pick()),
+            effort: Some(SettingChange::pick()),
+            permission: Some(SettingChange::pick()),
+            mode: Some(SettingChange::pick()),
         }
     }
 
@@ -95,7 +99,66 @@ impl AgentCapabilities {
             files: true,
             passes_unknown_commands: true,
             forks: false,
+            // Each takes a pick of what the agent's catalogue lists, which
+            // may be nothing.
+            model: Some(SettingChange::pick()),
+            effort: Some(SettingChange::pick()),
+            permission: Some(SettingChange::pick()),
+            mode: Some(SettingChange::pick()),
         }
+    }
+}
+
+impl SettingChange {
+    /// A Set input naming a value the catalogue lists.
+    pub fn pick() -> Self {
+        Self {
+            control: SettingControl::Pick as i32,
+            command: String::new(),
+        }
+    }
+
+    /// One step input to the next value.
+    pub fn step() -> Self {
+        Self {
+            control: SettingControl::Step as i32,
+            command: String::new(),
+        }
+    }
+
+    /// Typed as `command` and the value.
+    pub fn command(command: &str) -> Self {
+        Self {
+            control: SettingControl::Command as i32,
+            command: command.to_owned(),
+        }
+    }
+}
+
+impl AgentCapabilities {
+    /// How a client changes each setting, unset ones as not offered.
+    pub fn model_change(&self) -> SettingControl {
+        self.model
+            .as_ref()
+            .map_or(SettingControl::Unspecified, SettingChange::control)
+    }
+
+    pub fn effort_change(&self) -> SettingControl {
+        self.effort
+            .as_ref()
+            .map_or(SettingControl::Unspecified, SettingChange::control)
+    }
+
+    pub fn permission_change(&self) -> SettingControl {
+        self.permission
+            .as_ref()
+            .map_or(SettingControl::Unspecified, SettingChange::control)
+    }
+
+    pub fn mode_change(&self) -> SettingControl {
+        self.mode
+            .as_ref()
+            .map_or(SettingControl::Unspecified, SettingChange::control)
     }
 }
 
@@ -103,24 +166,10 @@ impl AgentCapabilities {
 mod tests {
     use super::*;
 
-    /// Every kind whose agents are alike says what it can do; an ACP
-    /// agent's come from its program.
+    /// An ACP agent whose program has said nothing can do only what every
+    /// ACP agent can.
     #[test]
-    fn the_fixed_kinds_say_what_they_can_do() {
-        assert_eq!(
-            AgentCapabilities::of_kind(Kind::ClaudePty),
-            Some(AgentCapabilities::claude_pty())
-        );
-        assert_eq!(
-            AgentCapabilities::of_kind(Kind::ClaudeSdk),
-            Some(AgentCapabilities::claude_sdk())
-        );
-        assert_eq!(
-            AgentCapabilities::of_kind(Kind::Codex),
-            Some(AgentCapabilities::codex())
-        );
-        assert_eq!(AgentCapabilities::of_kind(Kind::Acp), None);
-        assert_eq!(AgentCapabilities::of_kind(Kind::Unspecified), None);
+    fn an_acp_agent_that_said_nothing_can_do_the_least() {
         let unknown = AgentCapabilities::acp(false, false, false);
         assert!(!unknown.resumable && !unknown.images && !unknown.sends_now && !unknown.forks);
         assert!(unknown.files && unknown.passes_unknown_commands);

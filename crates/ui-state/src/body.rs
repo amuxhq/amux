@@ -6,8 +6,8 @@
 
 use prost::Message;
 use wire::{
-    Ask, BackgroundJobs, ClaudeItem, ClaudeSnapshot, CodexAsk, CodexItem, CodexSnapshot,
-    ContextMeter, Kind, OfferedCommand, OfferedModel, SignIn, Task, TaskList, ToolServer,
+    BackgroundJobs, ClaudeAsk, ClaudeItem, ClaudeSnapshot, ClaudeTask, CodexAsk, CodexItem,
+    CodexSnapshot, ContextMeter, Kind, OfferedCommand, OfferedModel, SignIn, TaskList, ToolServer,
     UsageState,
 };
 
@@ -93,7 +93,9 @@ impl ItemBody {
                 Codex::Error(error) => api_error(error),
                 Codex::Boundary(_) => ItemClass::Boundary,
                 Codex::AgentMessage(_) => ItemClass::AgentMessage,
-                Codex::Unrecognized(_) | Codex::Verdict(_) => ItemClass::Other,
+                Codex::Unrecognized(_) | Codex::Verdict(_) | Codex::Compaction(_) => {
+                    ItemClass::Other
+                }
                 Codex::Ask(_) | Codex::Plan(_) => ItemClass::Ask,
             },
             ItemBody::Acp(kind) => acp_class(kind),
@@ -198,7 +200,7 @@ fn claude_structure(kind: wire::claude_item::Kind) -> wire::claude_item::Kind {
         }),
         Claude::Tool(tool) => Claude::Tool(tool_structure(tool)),
         Claude::ApiError(error) => Claude::ApiError(api_error_structure(error)),
-        Claude::Status(status) => Claude::Status(wire::Status {
+        Claude::Status(status) => Claude::Status(wire::ClaudeStatus {
             status: status.status,
             word: String::new(),
         }),
@@ -245,24 +247,25 @@ fn codex_structure(kind: wire::codex_item::Kind) -> wire::codex_item::Kind {
         Codex::Ask(_) => Codex::Ask(Default::default()),
         Codex::Plan(_) => Codex::Plan(Default::default()),
         Codex::CommandOutput(_) => Codex::CommandOutput(Default::default()),
+        Codex::Compaction(_) => Codex::Compaction(Default::default()),
     }
 }
 
-fn tool_structure(tool: wire::ToolCall) -> wire::ToolCall {
-    use wire::tool_input::Of;
+fn tool_structure(tool: wire::ClaudeToolCall) -> wire::ClaudeToolCall {
+    use wire::claude_tool_input::Of;
     let input = match tool.input.as_ref().and_then(|input| input.of.as_ref()) {
         Some(Of::TaskList(_)) => Some(Of::TaskList(wire::Empty {})),
         Some(Of::Subagent(_)) => Some(Of::Subagent(Default::default())),
         _ => None,
     };
-    wire::ToolCall {
+    wire::ClaudeToolCall {
         state: tool.state,
         parent_key: tool.parent_key,
         subagent: tool.subagent.map(|progress| wire::SubagentProgress {
             finished: progress.finished,
             ..Default::default()
         }),
-        input: input.map(|of| wire::ToolInput {
+        input: input.map(|of| wire::ClaudeToolInput {
             of: Some(of),
             ..Default::default()
         }),
@@ -399,8 +402,8 @@ fn in_flight(state: i32) -> bool {
     )
 }
 
-fn claude_tool(tool: &wire::ToolCall) -> ItemClass {
-    use wire::tool_input::Of;
+fn claude_tool(tool: &wire::ClaudeToolCall) -> ItemClass {
+    use wire::claude_tool_input::Of;
     let input = tool.input.as_ref().and_then(|input| input.of.as_ref());
     // History's background subagent outlived its call; its progress said
     // when it finished.
@@ -491,7 +494,7 @@ fn api_error(error: &wire::ApiError) -> ItemClass {
 /// An open ask in the provider's own shape; an answer names it by key.
 #[derive(Clone, Debug, PartialEq)]
 pub enum OpenAsk {
-    Claude(Ask),
+    Claude(ClaudeAsk),
     Codex(CodexAsk),
     /// Any ACP agent's: a permission with the options it offered, a form or
     /// a link.
@@ -565,7 +568,7 @@ pub struct AgentState {
     /// Claude's task list; Codex's plan.
     pub tasks: TaskList,
     pub context: ContextMeter,
-    pub active_tasks: Vec<Task>,
+    pub active_tasks: Vec<ClaudeTask>,
     /// Each provider's usage limits in its own terms.
     pub usage: Usage,
     pub servers: Vec<ToolServer>,
@@ -629,16 +632,9 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
             state.asks = snapshot.asks.into_iter().map(OpenAsk::Claude).collect();
             state.tasks = snapshot.tasks.unwrap_or_default();
             state.context = snapshot.context.unwrap_or_default();
-            state.model = snapshot.model;
-            state.model_name = snapshot.model_name;
-            state.effort = snapshot.effort;
-            state.permission = snapshot.permission;
             state.active_tasks = snapshot.active_tasks;
-            state.provider_session = snapshot.provider_session;
             state.usage = snapshot.usage.map_or(Usage::Unknown, Usage::Claude);
             state.servers = snapshot.servers;
-            state.sign_in = snapshot.sign_in.unwrap_or_default();
-            state.background = snapshot.background_jobs.unwrap_or_default();
             state.running_calls = snapshot.running_calls;
             state.switched_away = snapshot.switched_away.unwrap_or(false);
         }
@@ -649,17 +645,9 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
             state.asks = snapshot.asks.into_iter().map(OpenAsk::Codex).collect();
             state.tasks = snapshot.plan.unwrap_or_default();
             state.context = snapshot.context.unwrap_or_default();
-            state.model = snapshot.model;
-            state.model_name = snapshot.model_name;
-            state.effort = snapshot.effort;
-            state.permission = snapshot.permission;
-            state.mode = snapshot.mode;
             state.approval_policy = snapshot.approval_policy;
-            state.provider_session = snapshot.thread_id;
             state.usage = snapshot.usage.map_or(Usage::Unknown, Usage::Codex);
             state.servers = snapshot.servers;
-            state.sign_in = snapshot.sign_in.unwrap_or_default();
-            state.background = snapshot.background_jobs.unwrap_or_default();
         }
         Kind::Acp => {
             let Ok(snapshot) = wire::AcpSnapshot::decode(body) else {
@@ -669,13 +657,7 @@ pub fn decode_snapshot(kind: Kind, body: &[u8]) -> AgentState {
             state.usage = snapshot.usage.map_or(Usage::Unknown, Usage::Acp);
             state.tasks = snapshot.plan.unwrap_or_default();
             state.context = snapshot.context.unwrap_or_default();
-            state.model = snapshot.model;
-            state.model_name = snapshot.model_name;
-            state.effort = snapshot.effort;
-            state.mode = snapshot.mode;
-            state.provider_session = snapshot.session_id;
             state.servers = snapshot.servers;
-            state.sign_in = snapshot.sign_in.unwrap_or_default();
         }
         Kind::Unspecified => {}
     }
@@ -698,7 +680,7 @@ pub fn snapshot_structure(kind: Kind, body: &[u8]) -> Vec<u8> {
                 asks: snapshot
                     .asks
                     .into_iter()
-                    .map(|ask| Ask {
+                    .map(|ask| ClaudeAsk {
                         key: ask.key,
                         item_key: ask.item_key,
                         ..Default::default()
@@ -716,7 +698,7 @@ pub fn snapshot_structure(kind: Kind, body: &[u8]) -> Vec<u8> {
                 active_tasks: snapshot
                     .active_tasks
                     .into_iter()
-                    .map(|task| Task {
+                    .map(|task| ClaudeTask {
                         task_id: task.task_id,
                         state: task.state,
                         ..Default::default()
@@ -772,6 +754,7 @@ impl AgentState {
     /// wins over the caller's when it names one this build knows.
     pub fn from_snapshot(kind: Kind, snapshot: &wire::Snapshot) -> AgentState {
         let kind = named_kind(snapshot.kind).unwrap_or(kind);
+        let settings = snapshot.settings();
         AgentState {
             revision: snapshot.revision,
             phase: snapshot.phase(),
@@ -779,6 +762,14 @@ impl AgentState {
             at_ms: snapshot.at_ms,
             catalogue: snapshot.catalogue.clone(),
             notice: snapshot.notice.as_deref().cloned(),
+            model: settings.model.clone(),
+            model_name: snapshot.model_name.clone(),
+            effort: settings.effort.clone(),
+            permission: settings.permission.clone(),
+            mode: settings.mode.clone(),
+            sign_in: snapshot.sign_in.clone().unwrap_or_default(),
+            background: snapshot.jobs.clone().unwrap_or_default(),
+            provider_session: snapshot.conversation.clone(),
             ..decode_snapshot(kind, &snapshot.body)
         }
     }

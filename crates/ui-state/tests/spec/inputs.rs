@@ -329,10 +329,10 @@ fn a_host_unreachable_rejection_refuses_the_prompt_and_never_sends_it_again() {
         apply_checked(&mut state, Msg::Send(prompt_input(kind, b"p1", "go")));
         apply_checked(
             &mut state,
-            Msg::Sent(b"p1".to_vec(), rejected(wire::Refusal::HostUnreachable)),
+            Msg::Sent(b"p1".to_vec(), InputOutcome::NotSent { detail: None }),
         );
         let refused = Some(InputState::Rejected(Refusal::of(
-            wire::Refusal::HostUnreachable,
+            ui_state::RefusalReason::HostUnreachable,
         )));
         assert_eq!(state.input_state(b"p1"), refused);
         assert_eq!(state.not_confirmed().count(), 0);
@@ -342,7 +342,7 @@ fn a_host_unreachable_rejection_refuses_the_prompt_and_never_sends_it_again() {
             Msg::Host(wire::HostEntry::trusted_host(
                 b"host".to_vec(),
                 "desk",
-                wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+                wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Direct)),
             )),
         );
         apply_checked(

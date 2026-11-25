@@ -192,7 +192,7 @@ impl HostSettings {
         // that keeps names this build does not know keeps the file's.
         self.write(
             |fresh| {
-                changes(request, self.home(), fresh).map(|changes| {
+                changes(request, fresh).map(|changes| {
                     changes
                         .into_iter()
                         .map(|(key, value)| (key.to_owned(), value))
@@ -359,11 +359,6 @@ pub(crate) fn to_wire(
         host_name: host_name.to_owned(),
         start_at_login: supervised.then_some(config.start_at_login),
         keep_awake: config.keep_awake,
-        repositories: config
-            .repositories()
-            .iter()
-            .filter_map(|path| path.to_str().map(str::to_owned))
-            .collect(),
         chat_in: match config.ui.chat_in {
             ChatInSetting::Amux => wire::ChatIn::Amux,
             ChatInSetting::Native => wire::ChatIn::Native,
@@ -395,7 +390,6 @@ type OwnedChange = (String, Option<toml_edit::Value>);
 /// The file's keys a request changes, from the settings it changes.
 fn changes(
     request: &UpdateSettingsRequest,
-    home: Option<&Path>,
     current: &InstallationConfig,
 ) -> Result<Vec<Change<'static>>, SettingsError> {
     let mut changes: Vec<Change> = Vec::new();
@@ -408,17 +402,6 @@ fn changes(
     }
     if let Some(on) = request.keep_awake {
         changes.push(("keep_awake", Some(on.into())));
-    }
-    if let Some(repositories) = &request.repositories {
-        let mut array = toml_edit::Array::new();
-        let mut seen = std::collections::BTreeSet::new();
-        for path in &repositories.paths {
-            let path = repository(path, home)?;
-            if seen.insert(path.clone()) {
-                array.push(path);
-            }
-        }
-        changes.push(("repositories", Some(array.into())));
     }
     if let Some(chat_in) = request.chat_in {
         let word = match wire::ChatIn::try_from(chat_in) {
@@ -550,14 +533,8 @@ mod tests {
             login: None,
             home: Some(dir.path().to_owned()),
         });
-        let config = settings
-            .update(&UpdateSettingsRequest {
-                repositories: Some(wire::RepositoryList {
-                    paths: vec!["~/src/app".into(), " ~ ".into()],
-                }),
-                ..request()
-            })
-            .unwrap();
+        settings.pin("~/src/app", true).unwrap();
+        let config = settings.pin(" ~ ", true).unwrap().unwrap();
         assert_eq!(
             config.repositories,
             [
@@ -565,12 +542,7 @@ mod tests {
                 dir.path().canonicalize().unwrap()
             ]
         );
-        let refused = settings.update(&UpdateSettingsRequest {
-            repositories: Some(wire::RepositoryList {
-                paths: vec!["~someone/app".into()],
-            }),
-            ..request()
-        });
+        let refused = settings.pin("~someone/app", true);
         assert!(
             matches!(refused, Err(SettingsError::Invalid(_))),
             "{refused:?}"
@@ -722,8 +694,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
         std::fs::write(&path, "# mine\nchannel = \"preview\"\nkeep_awake = true\n").unwrap();
-        let repository = dir.path().join("app");
-        std::fs::create_dir(&repository).unwrap();
         let settings = HostSettings::new(SettingsOptions {
             file: Some(path.clone()),
             initial: InstallationConfig::from_file(&path).unwrap(),
@@ -733,19 +703,12 @@ mod tests {
         let config = settings
             .update(&UpdateSettingsRequest {
                 keep_awake: Some(false),
-                repositories: Some(wire::RepositoryList {
-                    paths: vec![
-                        repository.to_str().unwrap().to_owned(),
-                        repository.join("../app").to_str().unwrap().to_owned(),
-                    ],
-                }),
                 claude_kind: Some(wire::Kind::ClaudePty as i32),
                 host_name: Some("desk".into()),
                 ..request()
             })
             .unwrap();
         assert!(!config.keep_awake);
-        assert_eq!(config.repositories, [repository.canonicalize().unwrap()]);
         assert_eq!(claude_kind(&config), wire::Kind::ClaudePty);
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(
@@ -774,12 +737,6 @@ mod tests {
         assert_eq!(config.host_name, None);
 
         for refused in [
-            UpdateSettingsRequest {
-                repositories: Some(wire::RepositoryList {
-                    paths: vec!["relative/app".into()],
-                }),
-                ..request()
-            },
             UpdateSettingsRequest {
                 claude_kind: Some(wire::Kind::Codex as i32),
                 ..request()
@@ -1006,7 +963,11 @@ mod tests {
     fn picked(kind: wire::Kind, model: Option<&str>, effort: Option<&str>) -> crate::spec::Picked {
         crate::spec::Picked {
             kind,
-            provider: wire::agents::implied_by(kind).to_owned(),
+            provider: match kind {
+                wire::Kind::Codex => wire::agents::CODEX,
+                _ => wire::agents::CLAUDE,
+            }
+            .to_owned(),
             model: model.map(str::to_owned),
             effort: effort.map(str::to_owned),
         }

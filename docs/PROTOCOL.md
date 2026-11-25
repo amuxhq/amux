@@ -305,9 +305,8 @@ is up or no host claims it. A host this profile does not trust, or one that
 said it no longer trusts this one, is not dialled.
 
 Each `Host` in a handshake or neighbor message carries the host's name, its
-build version, its capabilities (whether it serves as a cloud relay, and the
-agent kinds its platform runs: terminal Claude only where there is a Unix
-terminal), whether it is signed in to an account, and `platform`, the operating
+build version, its `HostCapabilities` (whether it serves as a cloud relay),
+whether it is signed in to an account, and `platform`, the operating
 system it was built for: macOS, Linux, Windows or iOS. A host that announces
 none (`PLATFORM_UNSPECIFIED`) is shown as unknown rather than as a guess. Nothing
 routes or authorizes on these fields; they exist so a client can tell one
@@ -518,8 +517,8 @@ message is protobuf encoded after a big-endian `u32` byte length and is bounded
 by `MESSAGE_SIZE_LIMIT` (16 MiB), save the first in each direction, the `Hello`
 or the `HelloAck`, which is read before anything has checked its sender and is
 bounded by `HELLO_SIZE_LIMIT` (64 KiB). Every host a handshake or a
-`NeighborUp` describes has a non-nil id, a host name, a version of at most 64
-bytes and at most 64 kinds, or the link is closed as a protocol error. A host
+`NeighborUp` describes has a non-nil id, a host name and a version of at most
+64 bytes, or the link is closed as a protocol error. A host
 name is printable text of 1 to 64 characters, trimmed, with no control
 characters (C0, C1, DEL) and no invisible formatting ones (Unicode's category
 Cf, such as bidirectional overrides and zero-width characters); pairing and
@@ -662,7 +661,7 @@ call carried there for a client does, so a capture reads the same at both
 ends; nothing on a link routes on it. It has two channel classes:
 
 - `Calls`: one cached channel per peer and route. `FollowAgents`, the peer
-  service's one-shot calls (`ListItems`, `GetBlob`, `DeliverReport`) and
+  service's one-shot calls (`FetchItems`, `FetchBlob`, `DeliverReport`) and
   every call carried for a client ride it. A cached channel whose connection
   ended is dropped, and the next call opens a fresh stream.
 - `Session`: one cached channel per peer and route for the replica agents'
@@ -901,11 +900,11 @@ calls in full):
 | --- | --- | --- | --- |
 | Local | `InventoryService` (hosts, agent rows, names resolved), `SessionService` (conversations and their files), `DraftService` (unsent drafts) | The node the client is attached to, from what it holds, its own agents and its copies alike, whether or not any other host is reachable | The profile socket, the phone's entry in memory, an agent's tools socket; never a link |
 | Host | `AgentService` (an agent's lifecycle, the delete preview, input, messages, files put), `HostService` (catalogues, pinning folders), `ReviewService` (changes) | The host the call is addressed to, for what it owns, the same however the call arrived apart from the rules about the caller | Every entry; a client's entry carries a call addressed to another host there |
-| Peer | `PeerService` (`FollowAgents`, `FollowSession`, `ListItems`, `GetBlob`, `DeliverReport`) | A host, to a paired daemon asking for itself | Link streams only |
+| Peer | `PeerService` (`FollowAgents`, `FollowSession`, `FetchItems`, `FetchBlob`, `DeliverReport`) | A host, to a paired daemon asking for itself | Link streams only |
 
 Each local read has its feed in the peer service: a node keeps its copy of
 another host's inventory from `FollowAgents`, a conversation from
-`FollowSession`, older pages from `ListItems` and files from `GetBlob`.
+`FollowSession`, older pages from `FetchItems` and files from `FetchBlob`.
 Replication is a daemon calling the peer service of its peer. A page older
 than the copy holds, and a file not fetched yet, make the node ask the owner
 while a client waits; that is the copy filling itself, asked as the node, and
@@ -1164,19 +1163,18 @@ for an agent here and for one of a paired host.
   agents that names no folder starts its child where it works itself; on
   another host it names one. The create may choose the child's mind, its
   authority and its isolation, and nothing else:
-  - `model` and `effort` in the provider's config are checked against this
+  - `settings.model` and `settings.effort` are checked against this
     host's catalogue for the provider, refused when it does not list them
     or cannot be read, and never kept as the person's picks
     (`remember_model` and `remember_effort` are refused).
-  - `permission_level` is a level on amux's one scale, read-only < ask <
+  - `settings.permission_level` is a level on amux's one scale, read-only < ask <
     auto < full. Left unspecified it is the parent's own level, from the
     parent's row this host holds (its own, or its copy of a paired host's);
     a wider one than the parent's is refused with `PERMISSION_DENIED`,
     naming the parent's. The host maps the level onto the widest
-    permission (for an ACP agent, mode) its provider offers at or below
-    it. A permission value or mode in the provider's own terms, and
-    provider arguments, are refused with `PERMISSION_DENIED`: they are the
-    person's to choose. A paired host's agent this host holds no copy of
+    permission its provider offers at or below it. `settings.permission`,
+    `settings.mode` and `args` are refused with `PERMISSION_DENIED`: they
+    are the person's to choose. A paired host's agent this host holds no copy of
     yet is taken at the level its create names. A parent whose level is
     not known (no level for its permission, no settings yet, or a paired
     host's create naming none) gets read-only and may ask for nothing
@@ -1189,9 +1187,9 @@ for an agent here and for one of a paired host.
     provider that cannot fork (`AgentCapabilities.forks`), and a caller
     with no conversation yet. The host puts the conversation in the child's
     first spec as `AgentSpec.fork`.
-  - From a person, `fork` and `permission_level` are refused with
+  - From a person, `fork` and `settings.permission_level` are refused with
     `INVALID_ARGUMENT`: a person has no conversation to copy, and names the
-    provider's own permission in the config.
+    provider's own permission in `settings.permission`.
   [Agent tools](AGENT_TOOLS.md#start_subagent) has the mapping and how each
   provider forks.
 - `SendMessage`'s sender is the caller, and an agent may message any agent.
@@ -1216,7 +1214,7 @@ like any other. The recipient's host builds the stored envelope's sender
 from the caller (a person, or the calling agent with its host's id and its
 name), and delivers through the recipient's lane exactly as it would for a
 local sender. A message's attachments name files on the sender's host, which
-the recipient's host fetches with `PeerService.GetBlob` before it hands the
+the recipient's host fetches with `PeerService.FetchBlob` before it hands the
 message over. A child's "finished" or "failed" report to a parent on another
 host is not a message: the child's daemon calls the parent's host's
 `PeerService.DeliverReport` for itself, carrying the parent's incarnation so
@@ -1235,14 +1233,18 @@ gRPC tooling reads it. What the code alone does not say, a
 daemon is not answering, which a caller retries; another host being
 unreachable is `FAILED_PRECONDITION` with reason `HOST_UNREACHABLE`, because
 it is an answer, not an outage. A lapsed plan is `PERMISSION_DENIED` with
-reason `PAYMENT_REQUIRED`. The googleapis files are vendored under
+reason `PAYMENT_REQUIRED`. A message to an agent that the agent or its
+host refused is `FAILED_PRECONDITION` with reason `REFUSED`, its `ErrorInfo`
+metadata `refusal` naming the `Refusal` value without its prefix. A refused
+input is no error: `SendInput` answers it.
+The googleapis files are vendored under
 `proto/google/`.
 
 The protobuf files change only as
 [their README](../proto/amux/v1/README.md) and
-[the wire](WIRE.md#compatibility) allow: added to, never renumbered, with a
-removed field's number reserved; `just proto-compat` checks it against the
-latest release. No link or local socket carries a version number.
+[the wire](WIRE.md#compatibility) allow: from 0.11.0 on, added to, never
+renumbered, with a removed field's number reserved; `just proto-compat`
+checks it against the latest release. No link or local socket carries a version number.
 
 ## Chapter 8: Diagnostics
 
@@ -1266,7 +1268,7 @@ reading a report.
 `PutBlob` for another host's agent, and `GetCatalogue` of
 another host's provider, are carried calls like any other, on the `Calls`
 channel. `GetBlob` is a local read: the node answers from its copy, and
-fetches a file it does not hold yet from the owner's `PeerService.GetBlob`
+fetches a file it does not hold yet from the owner's `PeerService.FetchBlob`
 as itself, on the same channel, checks it against its hash and keeps it under
 the replica for the next reader. The bytes are content-addressed, so a relay
 never needs to understand them and the reader verifies them against the hash

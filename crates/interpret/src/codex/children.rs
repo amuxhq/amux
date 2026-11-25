@@ -58,8 +58,8 @@ use prost::Message as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{
-    ApiError, BackgroundJob, CodexSnapshot, ExitCause, IncarnationEnd, Input, KindInput,
-    NativeStart, Refusal, Snapshot, codex_input,
+    ApiError, BackgroundJob, CodexSnapshot, ExitCause, IncarnationEnd, KindInput, NativeStart,
+    Refusal, Snapshot, codex_input,
 };
 
 use super::facts::{error_kind, error_message};
@@ -247,7 +247,7 @@ impl State {
                     ItemDraft {
                         key,
                         text,
-                        body: item_body(wire::codex_item::Kind::Prompt(wire::Prompt {})),
+                        body: item_body(wire::codex_item::Kind::Prompt(wire::Prompt::default())),
                         complete: true,
                         ..Default::default()
                     },
@@ -802,25 +802,33 @@ impl State {
             .map(|head| crate::notice::codex_ask(head, asks.len() as u32 - 1, ""));
         let body = CodexSnapshot {
             asks,
+            ..crate::unknown::codex()
+        };
+        let settings = wire::AgentSettings {
             model,
             effort,
-            thread_id: Some(thread.to_owned()),
-            background_jobs: Some(wire::BackgroundJobs {
-                known: true,
-                jobs: jobs.clone(),
-            }),
-            ..crate::unknown::codex()
+            ..Default::default()
         };
         let phase = sub.phase() as i32;
         sub.snapshot(Snapshot {
-            phase,
             body: body.encode_to_vec(),
-            working_on,
-            // Its row counts the commands it runs in the background, not
-            // its own job, which its chat stops and which is the child.
-            background_jobs: child_jobs(&jobs),
+            status: Some(Box::new(wire::AgentStatus {
+                phase,
+                working_on,
+                // Its row counts the commands it runs in the background,
+                // not its own job, which its chat stops and which is the
+                // child.
+                background_jobs: child_jobs(&jobs),
+                last_said: said,
+                settings: (!settings.is_none()).then_some(settings),
+                ..Default::default()
+            })),
             notice: notice.map(Box::new),
-            last_said: said,
+            conversation: Some(thread.to_owned()),
+            jobs: Some(wire::BackgroundJobs { known: true, jobs }),
+            capabilities: Some(Box::new(crate::shared::subagent_capabilities(
+                wire::AgentCapabilities::codex().stops_job,
+            ))),
             ..Snapshot::default()
         });
     }
@@ -830,24 +838,32 @@ impl State {
     /// A person's input to one of the subagents: an answer to one of its
     /// asks, or a stop of it or of a command it left running. Nothing else
     /// reaches a subagent, which takes no messages.
-    pub(super) fn child_input(&mut self, emit: &mut Emit, agent_id: &[u8], input: Input) {
-        let id = input.input_id.clone();
+    pub(super) fn child_input(
+        &mut self,
+        emit: &mut Emit,
+        agent_id: &[u8],
+        id: Vec<u8>,
+        of: wire::child_input::Of,
+    ) {
         let Some(thread) = self.shared.subagent_child(agent_id).map(str::to_owned) else {
             return self.shared.reject(emit, &id, Refusal::Unsupported);
         };
-        let arm = match input.decode_body() {
-            Some(KindInput::Codex(wire::CodexInput { of: Some(arm) })) => arm,
-            _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
+        let stop = match of {
+            wire::child_input::Of::StopJob(stop) => stop,
+            wire::child_input::Of::Input(input) => match input.decode_body() {
+                Some(KindInput::Codex(wire::CodexInput {
+                    of: Some(codex_input::Of::Answer(answer)),
+                })) => return self.as_child(&thread, |state| state.answer(emit, &id, answer)),
+                Some(KindInput::Codex(wire::CodexInput {
+                    of: Some(codex_input::Of::StopJob(stop)),
+                })) => stop,
+                _ => return self.shared.reject(emit, &id, Refusal::Unsupported),
+            },
         };
-        match arm {
-            codex_input::Of::Answer(answer) => {
-                self.as_child(&thread, |state| state.answer(emit, &id, answer))
-            }
-            codex_input::Of::StopJob(stop) if stop.key == thread => {
-                self.stop_child(emit, &id, &thread)
-            }
-            codex_input::Of::StopJob(stop) => self.stop_child_job(emit, &id, &thread, stop.key),
-            _ => self.shared.reject(emit, &id, Refusal::Unsupported),
+        if stop.key == thread {
+            self.stop_child(emit, &id, &thread)
+        } else {
+            self.stop_child_job(emit, &id, &thread, stop.key)
         }
     }
 

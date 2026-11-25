@@ -80,6 +80,11 @@ message Input {
 message PromptSubmission {
   bytes input_id = 1;
   PromptInput prompt = 2;
+  // Nobody sent it: amux resumed the agent with it to carry on a turn its
+  // machine's restart cut short. Its item says so (Prompt.continued), and
+  // a client draws it as that, not as the person's words. Only a daemon
+  // sets it, on a bootstrap.
+  bool continued = 3;
 }
 
 // The interpreter's verdict.
@@ -112,12 +117,11 @@ enum Refusal {
   REFUSAL_DRAINING = 4;
   REFUSAL_EXITING = 5;
   REFUSAL_EXITED = 6;
-  REFUSAL_HOST_UNREACHABLE = 7;
   // Terminal Claude's own view switched to another conversation; this
   // agent's conversation is not the one on its screen.
-  REFUSAL_CONVERSATION_ELSEWHERE = 8;
+  REFUSAL_CONVERSATION_ELSEWHERE = 7;
   // The prompt is longer than the agent takes; the detail names the limit.
-  REFUSAL_TOO_LONG = 9;
+  REFUSAL_TOO_LONG = 8;
   // The agent is closed: only the person or its own parent resume it.
-  REFUSAL_AGENT_CLOSED = 10;
+  REFUSAL_AGENT_CLOSED = 9;
 }

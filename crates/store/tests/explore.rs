@@ -36,7 +36,7 @@ fn step(keys: &[&str], phase: Phase) -> Step {
             .collect(),
         snapshot: Some(Snapshot {
             kind: wire::Kind::Codex as i32,
-            phase: phase as i32,
+            status: wire::AgentStatus::in_phase(phase),
             ..Default::default()
         }),
         ..Default::default()

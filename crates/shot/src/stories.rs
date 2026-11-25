@@ -339,7 +339,7 @@ fn settle() -> Scene {
     let mut home = tui::vocabulary::authored_home();
     let key = ui_state::agent_key(home.fleet.find(b"quiet-heron").expect("listed"));
     let mut working = home.fleet.agent(&key).expect("listed").clone();
-    working.background_jobs = 2;
+    working.status_mut().background_jobs = 2;
     working.descendants = 1;
     home.fleet
         .update(FleetMsg::Event(Box::new(wire::InventoryEvent {
@@ -360,7 +360,7 @@ fn hosts() -> Scene {
         wire::HostEntry::trusted_host(
             b"laptop".as_slice(),
             "laptop",
-            wire::trusted::Reach::Online(wire::RouteKind::Relay as i32),
+            wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Relay)),
         ),
         wire::HostEntry::candidate_host(
             b"den-mini".as_slice(),
@@ -458,7 +458,10 @@ fn acp_ended() -> Scene {
     let (mut state, now) = frames.last().cloned().expect("the recording has frames");
     let mut exited = state.agent().clone();
     exited.lifecycle = wire::Lifecycle::Exited as i32;
-    exited.exit_cause = wire::ExitCause::ProviderExited as i32;
+    exited.exit = Some(wire::IncarnationEnd::new(
+        wire::ExitCause::ProviderExited,
+        None,
+    ));
     state.update(Msg::Entry(exited));
     assert_eq!(state.composer(), ui_state::Composer::Ended);
     let mut scene = ChatScene {
@@ -502,8 +505,10 @@ fn exited_with_a_draft() -> Scene {
     let mut scene = recorded(Kind::ClaudeSdk, "recorded_failing_command", Pick::Last);
     let mut exited = scene.state.agent().clone();
     exited.lifecycle = wire::Lifecycle::Exited as i32;
-    exited.exit_cause = wire::ExitCause::ProviderExited as i32;
-    exited.exit_detail = Some("exit code 1".into());
+    exited.exit = Some(wire::IncarnationEnd::new(
+        wire::ExitCause::ProviderExited,
+        Some("exit code 1".into()),
+    ));
     scene.state.update(Msg::Entry(exited));
     let theme = Theme::dark(tui::ColorMode::TrueColor);
     for c in "Carry on from the failing command.".chars() {
@@ -679,9 +684,12 @@ fn family(kind: Kind, fixture: &str) -> Vec<(SessionState, Vec<SessionState>, Fl
                         host_id: host.host_id.clone(),
                         kind: kind as i32,
                         name: format!("sub-{}", &hex[..hex.len().min(8)]),
-                        title: Some(start.title.clone()).filter(|title| !title.is_empty()),
                         lifecycle: wire::Lifecycle::Live as i32,
-                        phase: wire::Phase::Working as i32,
+                        status: Some(Box::new(wire::AgentStatus {
+                            phase: wire::Phase::Working as i32,
+                            title: Some(start.title.clone()).filter(|title| !title.is_empty()),
+                            ..wire::AgentStatus::NONE
+                        })),
                         incarnation: 1,
                         parent: Some(wire::AgentRef {
                             host_id: host.host_id.clone(),
@@ -705,12 +713,11 @@ fn family(kind: Kind, fixture: &str) -> Vec<(SessionState, Vec<SessionState>, Fl
                 sub.update(Msg::Event(event));
             }
             if let Some(snapshot) = &part.snapshot {
-                row.phase = snapshot.phase;
+                row.status_mut().phase = snapshot.phase() as i32;
             }
             if let Some(end) = &part.end {
                 row.lifecycle = wire::Lifecycle::Exited as i32;
-                row.exit_cause = end.cause;
-                row.exit_detail = end.detail.clone();
+                row.exit = Some(end.clone());
             }
             sub.update(Msg::Entry(row.clone()));
             fleet.update(listed(row));
@@ -739,7 +746,7 @@ fn first_run() -> HomeScene {
         Of::Host(wire::HostEntry::trusted_host(
             b"desk".as_slice(),
             "desk",
-            wire::trusted::Reach::Online(wire::RouteKind::Direct as i32),
+            wire::trusted::Reach::Online(wire::Online::via(wire::RouteKind::Direct)),
         )),
         Of::CaughtUp(wire::CaughtUp { revision: 0 }),
     ] {

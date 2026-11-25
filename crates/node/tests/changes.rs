@@ -521,10 +521,10 @@ async fn a_turn_end_has_the_others_in_its_checkout_read_their_facts_again() {
     }
     for agent in [&ending, &beside, &nested, &apart] {
         until("each agent's idle snapshot", || async {
-            let phase = runtime.agent(agent.id).await.unwrap().phase;
-            (phase == wire::Phase::Idle as i32)
+            let phase = runtime.agent(agent.id).await.unwrap().phase();
+            (phase == wire::Phase::Idle)
                 .then_some(())
-                .ok_or_else(|| format!("{phase}"))
+                .ok_or_else(|| format!("{phase:?}"))
         })
         .await
         .unwrap();

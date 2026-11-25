@@ -810,7 +810,7 @@ impl ChatView {
             .or_else(|| {
                 state
                     .agent()
-                    .git
+                    .git()
                     .as_ref()
                     .and_then(|git| git.base_branch.as_deref())
             })

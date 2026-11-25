@@ -19,14 +19,15 @@ service HostService {
   // snapshot instead.
   rpc GetCatalogue(GetCatalogueRequest) returns (GetCatalogueResponse);
   // Pins a folder among this host's repositories, at the end of the list,
-  // or unpins it. The list is the host's `repositories` setting, so this is
-  // a person's act, refused to an agent. The host's own entry says the
+  // or unpins it: the only way a client changes the list, which is the
+  // `repositories` key of the host's config. A person's act, refused to an
+  // agent. The host's own entry says the
   // change, as every client sees through its inventory.
   rpc PinFolder(PinFolderRequest) returns (PinFolderResponse);
 }
 
 message GetCatalogueRequest {
-  // The provider's id, as ProviderOnHost.provider_id names it: "claude",
+  // The provider's id, as ProviderOnHost.provider names it: "claude",
   // "codex", or an ACP agent's. A host refuses an id it does not offer.
   string provider = 1;
 }

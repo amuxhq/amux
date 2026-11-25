@@ -85,7 +85,7 @@ async fn reported_git(runtime: &node::ProfileRuntime, agent: &wire::Agent) -> wi
     .await
     .unwrap();
     let git = |event: &SessionEvent| match &event.of {
-        Some(session_event::Of::Snapshot(snapshot)) => snapshot.git.clone(),
+        Some(session_event::Of::Snapshot(snapshot)) => snapshot.status().git.clone(),
         _ => None,
     };
     let mut seen = Vec::new();

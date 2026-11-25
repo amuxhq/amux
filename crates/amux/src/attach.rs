@@ -109,10 +109,16 @@ impl Attacher {
                     "{name} was started for amux's chat and has no Claude Code interface; \
                      `amux attach {name} --in amux` opens its chat"
                 )),
-                Kind::Codex if cfg!(windows) => Some(format!(
-                    "Codex's own interface does not open on Windows, where {name}'s Codex has \
-                     room for amux alone; `amux attach {name} --in amux` opens its chat"
-                )),
+                // The agent runs on this machine (another host's is refused
+                // above), so this machine's platform says.
+                Kind::Codex
+                    if !wire::AgentCapabilities::codex(wire::Platform::here()).attachable =>
+                {
+                    Some(format!(
+                        "Codex's own interface does not open on Windows, where {name}'s Codex has \
+                         room for amux alone; `amux attach {name} --in amux` opens its chat"
+                    ))
+                }
                 Kind::ClaudePty | Kind::Codex => None,
                 // amux talks to it over its standard input and output, which
                 // leaves it no screen of its own to show.

@@ -43,7 +43,7 @@ pub fn offered(id: &str, name: &str, kind: Kind) -> wire::ProviderOnHost {
             ..Default::default()
         }),
         capabilities: Some(
-            wire::AgentCapabilities::of_kind(kind)
+            wire::AgentCapabilities::of_kind(kind, wire::Platform::here())
                 .unwrap_or_else(|| wire::AgentCapabilities::acp(true, true, false)),
         ),
     }

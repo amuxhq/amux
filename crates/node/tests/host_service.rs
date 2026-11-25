@@ -203,7 +203,7 @@ fn on_host(provider: &str, asked: &Asked, signed_in: bool) -> ProviderOnHost {
             "Codex",
             wire::Kind::Codex,
             "Run codex login.",
-            wire::AgentCapabilities::codex(),
+            wire::AgentCapabilities::codex(wire::Platform::here()),
         ),
     };
     ProviderOnHost {

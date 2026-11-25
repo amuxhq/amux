@@ -586,6 +586,20 @@ impl Candidate {
 }
 
 impl Platform {
+    /// The operating system this build was compiled for, and nothing more,
+    /// as a value: what an agent and its host say of themselves. A client
+    /// describing another host's agent uses that host's platform instead.
+    pub fn here() -> Self {
+        match std::env::consts::OS {
+            "macos" => Platform::Macos,
+            "linux" => Platform::Linux,
+            "windows" => Platform::Windows,
+            "ios" => Platform::Ios,
+            "android" => Platform::Android,
+            _ => Platform::Unspecified,
+        }
+    }
+
     /// A phone: iOS or Android.
     pub fn is_phone(self) -> bool {
         matches!(self, Platform::Ios | Platform::Android)

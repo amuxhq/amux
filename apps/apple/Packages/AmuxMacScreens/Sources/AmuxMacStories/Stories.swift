@@ -1051,10 +1051,10 @@ public enum Stories {
 
     // MARK: - Settings
 
-    private static let pinned = [home("/src/amux"), home("/src/website")]
+    private static let pinnedFolders = [home("/src/amux"), home("/src/website")]
 
     private static let machineSettings = MachineSettings(
-        hostName: machine, keepAwake: true, telemetry: true, autoReports: false,
+        hostName: machine, keepAwake: true, telemetry: true, autoReports: false, repositories: pinnedFolders,
         experiments: [
             ExperimentView(
                 name: "workspaces", version: "workspaces/1",
@@ -1099,17 +1099,17 @@ public enum Stories {
         Story("settings.machine", window: .settings) {
             SettingsScreen(
                 state: .ready(machineSettings), account: SettingsAccount(profile: signedIn),
-                repositories: pinned)
+                repositories: pinnedFolders)
         },
         Story("settings.machine-signed-out", window: .settings) {
             SettingsScreen(
-                state: .ready(machineSettings), account: SettingsAccount(profile: work), repositories: pinned)
+                state: .ready(machineSettings), account: SettingsAccount(profile: work), repositories: pinnedFolders)
         },
         Story("settings.experiment-applying", window: .settings) {
             // Scrolled to the experiments, at the end of the form.
             SettingsScreen(
                 state: .ready(applyingSettings), account: SettingsAccount(profile: signedIn),
-                repositories: pinned)
+                repositories: pinnedFolders)
                 .defaultScrollAnchor(.bottom)
         },
     ]

@@ -1,5 +1,5 @@
 ## 0 initial
-snapshot capabilities stops_job attachable resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
+snapshot capabilities stops_job resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
 snapshot STARTING queue=[] working_on=- at=1800000000000 conversation=? model_name=? sign_in=? background=? asks=[] approval=? context=? plan=? usage=? servers=[]
 ## 1 input {"id":"p0","prompt":{"text":"Plan it."}}
 effect reply p0 accepted

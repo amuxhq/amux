@@ -1,5 +1,5 @@
 ## 0 initial
-snapshot capabilities stops_job attachable resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
+snapshot capabilities stops_job resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
 snapshot STARTING queue=[] working_on=- at=1800000000000 conversation=? model_name=? sign_in=? background=? asks=[] approval=? context=? plan=? usage=? servers=[]
 ## 1 fact {"channel":"rpc","json":{"id":"agent-thread","result":{"approvalPolicy":"on-request","model":"gpt-6-astra","reasoningEffort":"medium","sandbox":{"type":"workspaceWrite"},"thread":{"cliVersion":"0.166.0","id":"t1","turns":[]}}}}
 effect write "{\"id\":\"amux-name-1\",\"method\":\"thread/name/set\",\"params\":{\"name\":\"quiet-otter\",\"threadId\":\"t1\"}}"

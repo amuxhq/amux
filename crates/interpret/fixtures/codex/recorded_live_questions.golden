@@ -1,5 +1,5 @@
 ## 0 initial
-snapshot capabilities stops_job attachable resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
+snapshot capabilities stops_job resumable sends_now images files forks model=pick effort=pick permission=pick mode=pick
 snapshot STARTING queue=[] working_on=- at=0 conversation=? model_name=? sign_in=? background=? asks=[] approval=? context=? plan=? usage=? servers=[]
 ## 5 recorded 4: fact Rpc "{\"id\":\"agent-thread\",\"result\":{\"activePermissionProfile\":{\"extends\":n…
 effect write "{\"id\":\"amux-models-1\",\"method\":\"model/list\",\"params\":{}}"

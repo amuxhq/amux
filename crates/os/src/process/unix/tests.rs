@@ -100,7 +100,10 @@ fn a_stat_row_is_read_past_any_name() {
     let mut stat = b"4242 (a) b\xff (c)) S 7 4242 4242 0 -1 0".to_vec();
     stat.extend_from_slice(b" 0 0 0 0 0 0 0 0 20 0 1 0 987654 0 0\n");
     let row = super::table::parse_stat(4242, &stat).expect("a row");
-    assert_eq!((row.pid, row.ppid, row.started, row.zombie), (4242, 7, 987654, false));
+    assert_eq!(
+        (row.pid, row.ppid, row.started, row.zombie),
+        (4242, 7, 987654, false)
+    );
 }
 
 #[test]

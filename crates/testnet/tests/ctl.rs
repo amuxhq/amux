@@ -440,6 +440,162 @@ fn down_never_kills_a_process_that_took_a_crashed_nets_pid() {
     drop(down);
 }
 
+/// Set in a re-run of this test binary that stands in for an agent of
+/// another installation: it names the agent directory whose lock it takes.
+const STRANGER_AGENT: &str = "TESTNET_CTL_STRANGER_AGENT";
+/// What the stand-in prints once it holds the lock and serves the socket.
+const STRANGER_HELD: &str = "testnet-ctl-test: the stranger holds its lock";
+
+/// The stand-in for another installation's agent, as its lock and socket
+/// show one: it takes the lock of `dir`, serves its agent socket, says so,
+/// and waits for its input to close.
+fn hold_a_strangers_lock(dir: &Path) {
+    use std::io::Write as _;
+    let _lock = agent_dir::lock(dir).unwrap().expect("the lock is free");
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    std::fs::create_dir_all(dir.join(agent_dir::PRIVATE)).unwrap();
+    let mut listener = {
+        let _entered = runtime.enter();
+        agent_dir::local_socket::LocalListener::bind(&agent_dir::agent_sock::path(dir)).unwrap()
+    };
+    runtime.spawn(async move {
+        while let Ok(stream) = listener.accept().await {
+            drop(stream);
+        }
+    });
+    println!("{STRANGER_HELD}");
+    std::io::stdout().flush().unwrap();
+    let _ = std::io::Read::read_to_end(&mut std::io::stdin(), &mut Vec::new());
+}
+
+/// The agents a crashed net leaves running are `ctl down`'s to end, found
+/// by their locks where the net's hosts keep their agents. Another
+/// installation kept in a host's workspace is not the net's: its agent,
+/// holding its lock and serving its socket as the net's do, lives on.
+#[test]
+fn down_ends_the_nets_agents_and_no_other_installations() {
+    use std::io::BufRead as _;
+    if let Some(dir) = std::env::var_os(STRANGER_AGENT) {
+        hold_a_strangers_lock(Path::new(&dir));
+        return;
+    }
+    let folder = tempfile::tempdir().expect("a folder");
+    let folder = folder.path();
+    std::fs::write(
+        folder.join("hello.json"),
+        r#"{"steps": [{"text": {"chunks": ["hello from the fake"]}}, "turn_end"]}"#,
+    )
+    .expect("a script");
+    ctl(folder, &["up"]);
+    let down = Down(folder);
+    ctl(folder, &["host", "add", "desk"]);
+    let spawned = said(&ctl(
+        folder,
+        &[
+            "spawn",
+            "--host",
+            "desk",
+            "--script",
+            "hello.json",
+            "--prompt",
+            "say hello",
+            "--wait",
+            "worker",
+        ],
+    ));
+    assert!(spawned.contains("at rest"), "{spawned}");
+    let status: serde_json::Value =
+        serde_json::from_slice(&ctl(folder, &["--json", "status"]).stdout).expect("the status");
+    let desk = status["hosts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|host| host["name"] == "desk")
+        .and_then(|host| host["dir"].as_str())
+        .map(std::path::PathBuf::from)
+        .expect("the desk's folder");
+
+    // The net's agent, pinned by the lock it holds in the desk's
+    // installation.
+    let agents: Vec<_> = std::fs::read_dir(desk.join("data").join("profiles"))
+        .expect("the desk's profiles")
+        .flatten()
+        .filter_map(|profile| std::fs::read_dir(profile.path().join("agents")).ok())
+        .flatten()
+        .flatten()
+        .collect();
+    let worker = agents
+        .iter()
+        .find_map(|entry| match agent_dir::lock_holder(&entry.path()) {
+            Ok(agent_dir::Holder::Process(process)) => Some(process),
+            _ => None,
+        })
+        .expect("the worker holds its lock");
+
+    // Another installation, laid out as one is, in the desk's workspace.
+    let theirs = desk
+        .join("work")
+        .join("elsewhere")
+        .join("data")
+        .join("profiles")
+        .join("theirs")
+        .join("agents")
+        .join("theirs");
+    std::fs::create_dir_all(&theirs).expect("their agent's folder");
+    let mut stranger = Command::new(std::env::current_exe().expect("this test binary"))
+        .args([
+            "ctl::down_ends_the_nets_agents_and_no_other_installations",
+            "--exact",
+            "--nocapture",
+        ])
+        .env(STRANGER_AGENT, &theirs)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("a stranger");
+    let mut lines = std::io::BufReader::new(stranger.stdout.take().expect("its output")).lines();
+    assert!(
+        lines
+            .by_ref()
+            .map_while(Result::ok)
+            .any(|line| line.trim() == STRANGER_HELD),
+        "the stranger ended without taking its lock: {:?}",
+        stranger.wait()
+    );
+    std::thread::spawn(move || lines.for_each(drop));
+
+    // Serve crashes, so its agents are down's to end: the worker outlives
+    // its daemon by the net's 20 seconds of grace.
+    let record: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(folder.join(".testnet/net.json")).expect("net.json"),
+    )
+    .expect("its record");
+    let serve = record["pid"].as_u64().expect("serve's pid") as u32;
+    os::process::ProcessRef::open(serve)
+        .expect("serve runs")
+        .kill()
+        .expect("serve is killed");
+    ctl(folder, &["down"]);
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while worker.alive() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let worker_alive = worker.alive();
+    let _ = worker.kill();
+    let stranger_alive = stranger.try_wait().expect("its status").is_none();
+    drop(stranger.stdin.take());
+    let _ = stranger.wait();
+    drop(down);
+    assert!(
+        !worker_alive,
+        "down left the net's agent {} running",
+        worker.pid()
+    );
+    assert!(stranger_alive, "down ended another installation's agent");
+}
+
 /// `testnet ctl up` and the `serve` it starts are for a person to drive by
 /// hand, as well as for tests: outside Buck's test runner, which only
 /// tests run under, an empty net still comes up, answers and goes down.

@@ -196,6 +196,8 @@ const REPOSITORIES: &str = "repositories";
 /// The home below a host's directory: where its repository suggestions read
 /// Claude Code's and Codex's session logs.
 pub const HOME: &str = "home";
+/// The installation below a host's directory: its `data_dir`.
+const DATA: &str = "data";
 
 /// Everything a host is on disk and in process.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1887,7 +1889,7 @@ impl Net {
             dir = self.root.path().join(format!("{}-{n}", decl.name));
             n += 1;
         }
-        let data_dir = dir.join("data");
+        let data_dir = dir.join(DATA);
         let work = dir.join("work");
         std::fs::create_dir_all(&work)?;
         std::fs::create_dir_all(dir.join(HOME))?;
@@ -4257,6 +4259,21 @@ fn agents_folders(data_dir: &Path) -> Vec<PathBuf> {
         .into_iter()
         .map(|profile| profile.join(node::AGENTS))
         .collect()
+}
+
+/// The agent directories of the net whose root is `root`, found from its
+/// files alone, as `testnet ctl down` finds them once the net's process is
+/// gone: each host's installation is the [`DATA`] folder of a folder in the
+/// root, and its agents are where [`Net::shutdown`] ends them
+/// ([`agents_folders`], [`agent_dirs`]), following no link. Another
+/// installation kept anywhere else in the net's files, such as in a
+/// workspace, is not the net's.
+pub(crate) fn agent_dirs_of_net(root: &Path) -> Vec<PathBuf> {
+    let agents: Vec<PathBuf> = real_dirs(root)
+        .iter()
+        .flat_map(|host| agents_folders(&host.join(DATA)))
+        .collect();
+    agent_dirs(&agents)
 }
 
 /// The agent directories in the agents folders `agents`: each entry that

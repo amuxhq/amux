@@ -374,6 +374,27 @@ fn a_grandchild_of_a_contained_process_dies_on_kill_others() {
     assert!(driven.child.try_wait().unwrap().is_none());
 }
 
+/// `kill_others` answers once nothing it killed runs, not when the kills
+/// are sent: what the caller does next (reuse the folder, start another)
+/// meets nothing of the old family.
+#[cfg(feature = "async")]
+#[test]
+fn kill_others_returns_once_no_member_runs() {
+    let (mut driven, member, sleeper) = contained_tree(helper("contained"));
+    driven.tell("tree");
+    let (second, second_sleeper) = (pid(&driven.expect("pid")), pid(&driven.expect("pid")));
+    let refs: Vec<ProcessRef> = [member, sleeper, second, second_sleeper]
+        .into_iter()
+        .map(|pid| ProcessRef::open(pid).unwrap())
+        .collect();
+    driven.tell("kill");
+    assert_eq!(driven.expect("killed"), "ok");
+    for (n, pinned) in refs.iter().enumerate() {
+        assert!(!pinned.alive(), "process {n} ({}) still runs", pinned.pid());
+    }
+    assert_eq!(members(&mut driven), Vec::<Pid>::new());
+}
+
 #[cfg(feature = "async")]
 #[test]
 fn members_die_with_the_process_that_contains_them() {

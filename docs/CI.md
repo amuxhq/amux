@@ -72,9 +72,8 @@ takes seconds shares a job.
 
 | Job | Runner | Runs |
 | --- | --- | --- |
-| Which jobs this change runs | `ubuntu-latest` | `scripts/ci_jobs.py decide`: whether each of the five jobs below the documentation tests runs, and why, in the run's summary ([Which jobs a change runs](#which-jobs-a-change-runs)) |
+| Which jobs this change runs | `ubuntu-latest` | `scripts/ci_jobs.py decide`: whether each of the last five jobs here runs, and why, in the run's summary ([Which jobs a change runs](#which-jobs-a-change-runs)) |
 | Linux gate | `ubuntu-latest`, its actions on the build host | `just premerge` through Buck2 on the build host's cache ([The Linux gate](#the-linux-gate)) |
-| Documentation tests | `ubuntu-latest` | `just doctest`, under Cargo, beside the gate |
 | Linux gate, Android app | `ubuntu-latest` | Only without the build host (a fork's pull request): `just premerge-half android`, the Android app's half of the gate, while the Linux gate runs `just premerge-half workspace`; with the build host it does nothing |
 | Windows | `windows-latest`, its builds on the build host | `just check-windows` on the build host, then `just test-windows` on a Windows worker of the runner's own ([The Windows job](#the-windows-job)); without the build host, `just cargo-test` |
 | iPhone app | `macos-26`, building in Buck2 and testing on a worker of its own | `just ios simulator golden`, then through Buck2 every target under `apps/apple` but the Mac app's built, and the package suites and the hosted app suite run on the simulator ([The macOS jobs](#the-macos-jobs)) |
@@ -126,11 +125,9 @@ eight would run such a test beside others, and the tests that measure time
 fail. Running the workflow by hand with `without-build-host` does the
 same, to check that path.
 
-The documentation tests run under Cargo (`just doctest`)
-in a job of their own beside the gate, since Cargo compiles the workspace for
-them on the runner. The C ABI's pointer checks (`just miri`) and the sanitizers run
-under Cargo too, since they rebuild the standard library under their checks,
-which Buck2's Rust rules can't, but in the nightly rather than on a push
+The C ABI's pointer checks (`just miri`) and the sanitizers run under
+Cargo, since they rebuild the standard library under their checks, which
+Buck2's Rust rules can't, and in the nightly rather than on a push
 ([Nightlies](#nightlies)).
 
 ### Which jobs a change runs
@@ -403,10 +400,9 @@ compressed, a store is about a fifth of that), so the four stores and the
 other jobs' caches fit in the 10 GB GitHub keeps for the repository; past
 the cap the least recently used outputs go, and an action whose outputs
 went runs again. After saving, a job deletes its older stores
-(`scripts/ci_cache.py`), and the documentation tests job its older Rust
-caches: GitHub evicts the least recently used entry past 10 GB, and an
-older store, just read by the run that restored it, could otherwise
-outlive another job's newer cache.
+(`scripts/ci_cache.py`): GitHub evicts the least recently used entry past
+10 GB, and an older store, just read by the run that restored it, could
+otherwise outlive another job's newer cache.
 
 The macOS jobs don't use the build host. It can't run a Mac's actions,
 and it is about 100 ms from GitHub's runners: when the runners' CAS was in

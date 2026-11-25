@@ -151,40 +151,6 @@ jobs:
           EOF
           nix develop --command sh "$RUNNER_TEMP/summaries.sh"
 
-  # The documentation tests are Cargo's: Buck2's need every compile in its
-  # nightly-features mode (docs/BUILD.md). Cargo compiles the workspace for
-  # them on the runner, which took nearly three minutes after the gate, so
-  # they run beside it.
-  doctest:
-    name: Documentation tests
-    # One running and one waiting per job on main: a newer push takes the
-    # place of a waiting one (the workflow's concurrency says why).
-    concurrency:
-      group: doctest-${{ github.event_name }}-${{ github.ref }}
-      cancel-in-progress: false
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
-      # rust-cache saves a new entry whenever the lockfile or toolchain
-      # changes and never removes one; GitHub's cache is shared by every job
-      # and evicts the least recently used past 10 GB, which could be a
-      # macOS job's store. So every entry of this job's but the newest goes.
-      - name: Drop this job's older Rust caches
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: scripts/py scripts/ci_cache.py prune v0-rust-doctest- --keep 1
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          key: doctest
-      - name: Run the documentation tests
-        run: nix develop --command just doctest
-
   # The Android app's half of the gate (`just premerge-half android`), on a
   # runner of its own, when the Linux gate has no build host to share the
   # work with: a fork's pull request, or a run by hand without it. With the

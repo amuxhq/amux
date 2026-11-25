@@ -9,9 +9,18 @@ use crate::Pid;
 use crate::process::tests::{Driven, eventually, helper, pid};
 use crate::process::{Descendant, ProcessRef, descendants, kill_descendants};
 
-/// The roles only Unix has: none.
+/// The roles only Unix has.
 pub(crate) fn run_role(name: &str, _rest: &[&str]) {
-    panic!("no role {name:?}");
+    match name {
+        // `contained`, in a process whose census can't read the process
+        // table, as one where `/proc` can't be opened.
+        #[cfg(feature = "async")]
+        "census-hidden" => {
+            super::table::BLIND.store(true, std::sync::atomic::Ordering::SeqCst);
+            crate::process::tests::contained();
+        }
+        other => panic!("no role {other:?}"),
+    }
 }
 
 pub(crate) fn close_fd2() {
@@ -36,6 +45,23 @@ pub(crate) fn held(_path: &std::ffi::OsStr) -> bool {
 
 /// Nothing on Unix explains a refused breakaway: none is ever refused.
 pub(crate) fn say_why_breakaway_is_refused(_refused: bool) {}
+
+/// A family whose census can't be taken isn't reported ended: what was
+/// below it can't be found to kill, or seen gone. Its groups are killed
+/// all the same.
+#[cfg(feature = "async")]
+#[test]
+fn kill_others_without_a_census_is_an_error() {
+    let mut driven = Driven::start(helper("census-hidden"));
+    assert_eq!(driven.expect("contained"), "ok");
+    driven.tell("tree");
+    let member = ProcessRef::open(pid(&driven.expect("pid"))).unwrap();
+    let _sleeper = driven.expect("pid");
+    driven.tell("kill");
+    let said = driven.expect("killed");
+    assert!(said.starts_with("err "), "{said}");
+    assert!(eventually(|| !member.alive()), "its group is killed");
+}
 
 #[test]
 fn a_process_ref_refuses_a_reused_pid() {

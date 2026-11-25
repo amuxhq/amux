@@ -328,9 +328,30 @@ fn delete_open(file: &std::fs::File) -> io::Result<()> {
 pub async fn connect(path: &Path, patience: Duration) -> io::Result<(Stream, Option<u32>)> {
     let until = Instant::now() + patience;
     let mut pause = Duration::from_millis(5);
-    let mut tried = false;
+    // What the last try met, once there was one.
+    let mut last: Option<Waiting> = None;
     loop {
-        let waiting = match read_name(path, until).await? {
+        let tried = last.is_some();
+        // A zero deadline is one try, whose read has LEAST_READ; any other
+        // read ends by the caller's deadline.
+        let read_until = if !tried && patience.is_zero() {
+            Instant::now() + LEAST_READ
+        } else {
+            until
+        };
+        let named = match read_name(path, read_until).await {
+            Ok(named) => named,
+            // A retry the deadline cut short: the answer is what the try
+            // before it met.
+            Err(error)
+                if error.kind() == io::ErrorKind::TimedOut
+                    && let Some(waiting) = &last =>
+            {
+                return Err(given_up(path, patience, waiting));
+            }
+            Err(error) => return Err(error),
+        };
+        let waiting = match named {
             Named::Name(name) => {
                 let Some(form) = pipe_form(&name) else {
                     return Err(io::Error::new(
@@ -364,22 +385,32 @@ pub async fn connect(path: &Path, patience: Duration) -> io::Result<(Stream, Opt
             // A scanner or an indexer holding it a moment.
             Named::Held => Waiting::Held,
         };
-        tried = true;
         let now = Instant::now();
         if now >= until {
-            let (kind, what) = match waiting {
-                Waiting::Busy => (io::ErrorKind::TimedOut, "every pipe instance stayed busy"),
-                Waiting::Held => (io::ErrorKind::TimedOut, "the name file stayed held"),
-                Waiting::Gone => (io::ErrorKind::ConnectionRefused, "no pipe answered"),
-            };
-            return Err(io::Error::new(
-                kind,
-                format!("{}: {what} for {patience:?}", path.display()),
-            ));
+            return Err(given_up(path, patience, &waiting));
         }
         tokio::time::sleep(pause.min(until - now)).await;
         pause = (pause * 2).min(MOST_PAUSE);
+        // A try that would start at the deadline is none: what this one
+        // met is the answer.
+        if Instant::now() >= until {
+            return Err(given_up(path, patience, &waiting));
+        }
+        last = Some(waiting);
     }
+}
+
+/// What a connect that ran out of patience on `waiting` says.
+fn given_up(path: &Path, patience: Duration, waiting: &Waiting) -> io::Error {
+    let (kind, what) = match waiting {
+        Waiting::Busy => (
+            io::ErrorKind::ResourceBusy,
+            "every pipe instance stayed busy",
+        ),
+        Waiting::Held => (io::ErrorKind::TimedOut, "the name file stayed held"),
+        Waiting::Gone => (io::ErrorKind::ConnectionRefused, "no pipe answered"),
+    };
+    io::Error::new(kind, format!("{}: {what} for {patience:?}", path.display()))
 }
 
 /// Why a connect tries again.
@@ -401,24 +432,26 @@ enum Named {
 /// earlier build wrote at most 70.
 const MOST_NAME: u64 = 256;
 
-/// The least a read of the name file is given, whatever is left of the
-/// caller's patience, so a deadline of zero is one try, not none.
+/// What the one read of a connect with no patience at all is given, so a
+/// deadline of zero is one try, not none. Every other read ends by the
+/// caller's deadline.
 const LEAST_READ: Duration = Duration::from_millis(100);
 
 /// Reads of name files that may be outstanding at once. A read is
 /// abandoned at its deadline but its thread waits on, on a stalled disk
 /// (a network share gone quiet), so a connect past this many waits for a
-/// slot within its own deadline instead of tying up more threads.
+/// slot within its own deadline instead of tying up more threads. The
+/// threads are our own, not tokio's blocking pool: a runtime waits for
+/// its blocking tasks when it shuts down, and a stalled read would hold
+/// `amux status` open after its connect gave up.
 const MOST_READING: usize = 4;
 
 /// One slot for each read of a name file under way, held by its thread.
 static READING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(MOST_READING);
 
-/// Reads the name file at `path` on a blocking thread, giving up at
-/// `until` (or [`LEAST_READ`] from now, if later), the wait for a slot
-/// among [`MOST_READING`] included.
+/// Reads the name file at `path` on a thread of its own, giving up at
+/// `until`, the wait for a slot among [`MOST_READING`] included.
 async fn read_name(path: &Path, until: Instant) -> io::Result<Named> {
-    let until = until.max(Instant::now() + LEAST_READ);
     let slot = match tokio::time::timeout_at(until.into(), READING.acquire()).await {
         Ok(Ok(slot)) => slot,
         Ok(Err(closed)) => return Err(io::Error::other(closed)),
@@ -433,13 +466,22 @@ async fn read_name(path: &Path, until: Instant) -> io::Result<Named> {
         }
     };
     let file = path.to_owned();
-    let reading = tokio::task::spawn_blocking(move || {
-        let _slot = slot;
-        read_name_now(&file)
-    });
+    let (answer, reading) = tokio::sync::oneshot::channel();
+    // Detached: nothing waits for it but this connect, which may stop.
+    std::thread::Builder::new()
+        .name("amux-name-file".into())
+        .spawn(move || {
+            let _slot = slot;
+            #[cfg(test)]
+            tests::stall(&file);
+            let _ = answer.send(read_name_now(&file));
+        })?;
     match tokio::time::timeout_at(until.into(), reading).await {
         Ok(Ok(named)) => named,
-        Ok(Err(error)) => Err(io::Error::other(error)),
+        Ok(Err(_)) => Err(io::Error::other(format!(
+            "{}: the read ended without an answer",
+            path.display()
+        ))),
         Err(_) => Err(io::Error::new(
             io::ErrorKind::TimedOut,
             format!("{}: reading it did not finish in time", path.display()),

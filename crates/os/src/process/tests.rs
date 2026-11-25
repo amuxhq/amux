@@ -239,7 +239,7 @@ fn run_role(name: &str, rest: &[&str]) {
 /// that starts a sleeper of its own; `breakaway` a member that starts a
 /// sleeper detached as a session and exits; `members`; `kill`.
 #[cfg(feature = "async")]
-fn contained() {
+pub(crate) fn contained() {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

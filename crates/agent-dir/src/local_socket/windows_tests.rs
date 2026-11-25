@@ -20,6 +20,71 @@ use super::{INSTANCES, Listener, is_amux_pipe, owned_by_me, random_name};
 
 const HEX32: &str = "0123456789abcdef0123456789abcdef";
 
+/// Name files whose reads stall, and for how long: a share gone quiet,
+/// for the reads of one path alone, so tests running beside are untouched.
+static STALLED: std::sync::Mutex<Vec<(std::path::PathBuf, Duration)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Called by each read of a name file before it reads.
+pub(super) fn stall(path: &Path) {
+    let stall = STALLED
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(stalled, _)| stalled == path)
+        .map(|(_, stall)| *stall);
+    if let Some(stall) = stall {
+        std::thread::sleep(stall);
+    }
+}
+
+fn stall_reads_of(path: &Path, stall: Duration) {
+    STALLED.lock().unwrap().push((path.to_owned(), stall));
+}
+
+/// A read of the name file that stalls is given up at the deadline, and
+/// the runtime that asked shuts down at once, not when the read ends.
+#[test]
+fn a_stalled_name_file_read_does_not_hold_its_runtime_open() {
+    let root = tempfile::tempdir().unwrap();
+    let path = std::path::absolute(root.path().join("ctl.sock")).unwrap();
+    std::fs::write(&path, random_name()).unwrap();
+    stall_reads_of(&path, Duration::from_secs(2));
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let error = runtime
+        .block_on(connect_within(&path, Duration::from_millis(200)))
+        .err()
+        .expect("the read stalls");
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut, "{error}");
+    let started = Instant::now();
+    drop(runtime);
+    let took = started.elapsed();
+    assert!(
+        took < Duration::from_secs(1),
+        "the runtime shut down in {took:?}"
+    );
+}
+
+/// A positive deadline shorter than a slow read is kept: the connect
+/// gives up by it, rather than reading on and answering late.
+#[tokio::test]
+async fn a_short_deadline_is_kept_through_a_slow_read() {
+    let root = tempfile::tempdir().unwrap();
+    let path = std::path::absolute(root.path().join("ctl.sock")).unwrap();
+    let _listener = LocalListener::bind(&path).unwrap();
+    stall_reads_of(&path, Duration::from_millis(50));
+    let started = Instant::now();
+    let connected = connect_within(&path, Duration::from_millis(10)).await;
+    let took = started.elapsed();
+    let error = connected
+        .err()
+        .unwrap_or_else(|| panic!("answered after {took:?}"));
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut, "{error}");
+}
+
 /// Within a few seconds, or the test fails rather than hangs.
 async fn soon<T>(what: &str, future: impl std::future::Future<Output = T>) -> T {
     tokio::time::timeout(Duration::from_secs(5), future)
@@ -193,7 +258,8 @@ async fn a_busy_server_is_given_up_on_by_the_deadline() {
     let started = Instant::now();
     let error = connect_within(&path, patience).await.err().expect("busy");
     let waited = started.elapsed();
-    assert_eq!(error.kind(), io::ErrorKind::TimedOut, "{error}");
+    // Busy, not gone: a daemon starting must not take this one's name.
+    assert_eq!(error.kind(), io::ErrorKind::ResourceBusy, "{error}");
     assert!(
         waited >= patience,
         "it tried until the deadline: {waited:?}"

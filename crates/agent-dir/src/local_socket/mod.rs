@@ -107,8 +107,11 @@ pub async fn connect(path: &Path) -> io::Result<LocalStream> {
 /// naming anything but an amux pipe, or a pipe owned by another user. A
 /// server whose every pipe instance is taken, or a file naming a pipe that
 /// is gone (a successor is binding), is tried again, the file read afresh
-/// each time, until `patience` runs out: then [`io::ErrorKind::TimedOut`]
-/// for a busy server, [`io::ErrorKind::ConnectionRefused`] for a gone one.
+/// each time, until `patience` runs out: then
+/// [`io::ErrorKind::ResourceBusy`] for a busy server,
+/// [`io::ErrorKind::ConnectionRefused`] for a gone one. A busy server is
+/// one that is there: on Linux, one whose backlog is full is
+/// `ResourceBusy` at once.
 pub async fn connect_within(path: &Path, patience: Duration) -> io::Result<LocalStream> {
     let (stream, _) = imp::connect(&std::path::absolute(path)?, patience).await?;
     Ok(LocalStream::new(stream))

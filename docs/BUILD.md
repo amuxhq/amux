@@ -105,6 +105,46 @@ Each crate describes itself twice, so the two stay in step by hand:
   which Buck2 sets to paths inside the build's sandbox. Under Cargo both
   macros give what those variables give.
 
+### The prelude
+
+Buck2's rules come from its prelude, the one bundled with the pinned buck2,
+vendored into `prelude/` by `scripts/prelude.py update` with one change.
+Run it after bumping buck2 in `build/tools.json` and commit what it
+changes; nothing else edits `prelude/`.
+
+The change is to its downloads. The prelude's Android toolchain builds
+Buck's Java tools from source against about 120 jars it downloads from Maven
+Central, Google's Maven and buck2's GitHub releases, each declared by SHA-1
+alone. Buck2 takes a download from the build cache instead of its origin
+only when the declaration gives a digest the cache uses (SHA-256) and the
+file's size; with a SHA-1 it fetches the file from the origin in every new
+daemon, even when everything built from it is a cache hit. Every fresh CI
+runner fetched all of them, many twice or three times, once for each
+configuration that reached them, and Maven Central's rate limit on GitHub's
+shared runner addresses failed the Linux gate. The vendored prelude gives
+each download its SHA-256 and size from
+`prelude/toolchains/android/tools/build_rules/digests.bzl`, which the script
+writes: it keeps the digests it recorded and fetches, once, only a jar new
+to the prelude, checked against its SHA-1. A download missing from the
+table fails loading rather than quietly going back to its origin. Every
+other download in the build (the crates, the Android app's libraries,
+`protoc`) already gives a SHA-256 and a size.
+
+A download whose blob the cache has lost is fetched from its origin again,
+and goes on being fetched until an action that misses the cache uploads it.
+
+Rejected, and why:
+
+- Pointing the prelude's `mvn:` downloads at a mirror (`http.maven_repo`):
+  one line, but every runner still fetches every jar, from a host the gate
+  then depends on.
+- Keeping `buck-out` between CI runs: Buck2 recognises a download already
+  on disk only by a declared SHA-256 and size, so with a SHA-1 alone it
+  fetches the file again regardless.
+- SHA-256 targets of our own for the jars: the prelude's Java libraries name
+  its own third-party targets, so nothing outside the prelude can stand in
+  for them.
+
 ### Configurations
 
 A target is built for a target platform named

@@ -1,0 +1,415 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is dual-licensed under either the MIT license found in the
+ * LICENSE-MIT file in the root directory of this source tree or the Apache
+ * License, Version 2.0 found in the LICENSE-APACHE file in the root directory
+ * of this source tree. You may select, at your option, one of the
+ * above-listed licenses.
+ */
+
+package com.facebook.buck.jvm.java.abi;
+
+import com.facebook.buck.cd.model.java.AbiGenerationMode;
+import com.facebook.buck.jvm.java.abi.kotlin.InlineFunctionScope;
+import com.facebook.buck.jvm.java.abi.kotlin.KotlinMetadataReader;
+import com.facebook.infer.annotation.Nullsafe;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import org.jspecify.annotations.Nullable;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.AnnotationNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.InnerClassNode;
+import org.objectweb.asm.tree.MethodNode;
+
+@Nullsafe(Nullsafe.Mode.LOCAL)
+class StubJarClassEntry extends StubJarEntry {
+  private final Set<String> referencedClassNames;
+  private final Path path;
+  private final ClassNode stub;
+  private final List<String> kotlinInlineFunctions;
+  private final boolean isWithinInlineFunctionScope;
+  private final boolean keepSynthetic;
+  private final boolean isFilePrivateKotlinClass;
+  private final boolean stripPrivateNestedMembers;
+  private final Set<String> keptJvmStaticMemberKeys;
+  @Nullable private final String scopeOuterClass;
+  private final Set<String> hiddenDeprecatedMethods;
+  private final List<String> sealedSubclasses;
+  private final Set<String> retainedBodyFieldOwners;
+
+  @Nullable
+  public static StubJarClassEntry of(
+      LibraryReader input,
+      Path path,
+      @Nullable AbiGenerationMode compatibilityMode,
+      @Nullable InlineFunctionScope inlineFunctionScope,
+      boolean keepSynthetic)
+      throws IOException {
+
+    List<String> inlineFunctions = Collections.emptyList();
+    boolean isKotlinModule = inlineFunctionScope != null;
+    boolean isKotlinClass = false;
+    boolean isWithinInlineFunctionScope = false;
+    boolean isFilePrivateKotlinClass = false;
+    boolean stripPrivateNestedMembers = false;
+    Set<String> keptJvmStaticMemberKeys = Collections.emptySet();
+    String scopeOuterClass = null;
+    Set<String> hiddenDeprecatedMethods = Collections.emptySet();
+    List<String> sealedSubclasses = Collections.emptyList();
+
+    if (isKotlinModule) {
+      // Visit the class (skipping code) without filtering, to gather its annotations and class
+      // relationships
+      ClassNode classMetadata = new ClassNode(Opcodes.ASM9);
+      input.visitClass(path, classMetadata, true);
+
+      AnnotationNode kotlinMetadataAnnotation = findKotlinMetadataAnnotation(classMetadata);
+      if (kotlinMetadataAnnotation != null) {
+        isKotlinClass = true;
+
+        KotlinMetadataReader.ParsedMetadata parsedMetadata =
+            KotlinMetadataReader.readMetadata(kotlinMetadataAnnotation);
+
+        // File-private classes are deferred: StubJar writes them only if a written class's ABI
+        // references them, transitively.
+        isFilePrivateKotlinClass = KotlinMetadataReader.isFilePrivateClass(parsedMetadata);
+        stripPrivateNestedMembers = KotlinMetadataReader.shouldStripNestedMembers(parsedMetadata);
+        if (stripPrivateNestedMembers) {
+          keptJvmStaticMemberKeys =
+              new HashSet<>(AbiFilteringClassVisitor.findJvmStaticMemberKeys(classMetadata));
+        }
+
+        isWithinInlineFunctionScope =
+            Objects.requireNonNull(inlineFunctionScope).captures(path, classMetadata);
+        scopeOuterClass = classMetadata.outerClass;
+        if (scopeOuterClass == null) {
+          // Member classes have no enclosing method, so the OuterClass attribute is absent;
+          // the InnerClasses self-entry names the outer instead. Anonymous and local
+          // classes have no outer name in either place.
+          InnerClassNode self = getInnerClassMetadata(classMetadata);
+          if (self != null) {
+            scopeOuterClass = self.outerName;
+          }
+        }
+        inlineFunctions = KotlinMetadataReader.getInlineFunctions(parsedMetadata);
+        sealedSubclasses = KotlinMetadataReader.getSealedSubclasses(parsedMetadata);
+        hiddenDeprecatedMethods =
+            new HashSet<>(AbiFilteringClassVisitor.findHiddenDeprecatedMethods(classMetadata));
+      }
+    }
+
+    // As we read the class in, we create a partial stub that removes non-ABI methods and fields
+    // but leaves the entire InnerClasses table. We record all classes that are referenced from
+    // ABI methods and fields, and will use that information later to filter the InnerClasses table.
+    //
+    // If this class is within a Kotlin inline function's scope its ABI is unfiltered, because it
+    // will be copied in its entirety in the calling context.
+    ClassNode stub = new ClassNode(Opcodes.ASM9);
+    ClassReferenceTracker referenceTracker = new ClassReferenceTracker(stub);
+    ClassVisitor visitor = referenceTracker;
+    if (!isWithinInlineFunctionScope) {
+      visitor =
+          new AbiFilteringClassVisitor(
+              visitor,
+              inlineFunctions,
+              null,
+              keepSynthetic,
+              hiddenDeprecatedMethods,
+              stripPrivateNestedMembers,
+              keptJvmStaticMemberKeys);
+    }
+
+    // If we want ABIs that are compatible with those generated from source, we add a visitor
+    // at the very start of the chain which transforms the event stream coming out of `ClassNode`
+    // to look like what ClassVisitorDriverFromElement would have produced.
+    if (compatibilityMode != null && compatibilityMode != AbiGenerationMode.CLASS) {
+      visitor = new SourceAbiCompatibleVisitor(visitor, compatibilityMode);
+    }
+
+    // Don't skip the code if this is a Kotlin Class so that (a) we have a chance to visit the the
+    // classes referenced in inline function bodies, and (b) to retain debug information that
+    // Kotlin's
+    // own jvm-abi-gen plugin would retain.
+    input.visitClass(path, visitor, /* skipCode */ !isKotlinClass);
+
+    if (stripPrivateNestedMembers) {
+      AnnotationNode stubMetadata = findKotlinMetadataAnnotation(stub);
+      if (stubMetadata != null) {
+        KotlinMetadataReader.rewriteMetadataForStrippedMembers(
+            stubMetadata, keptJvmStaticMemberKeys);
+      }
+    }
+
+    Set<String> retainedBodyFieldOwners =
+        isKotlinClass ? collectFieldOwners(stub) : Collections.emptySet();
+
+    // Kotlin top functions reside in synthetic classes, we should output ABIs for them.
+    if ((isSyntheticClass(stub) && isKotlinModule)
+        || !(isSyntheticClass(stub) || isAnonymousOrLocalClass(stub))
+        || isWithinInlineFunctionScope
+        // The synthetic package-info class is how package annotations are recorded; that one is
+        // actually used by the compiler
+        || Objects.requireNonNull(stub.name).endsWith("/package-info")) {
+      return new StubJarClassEntry(
+          path,
+          stub,
+          referenceTracker.getReferencedClassNames(),
+          inlineFunctions,
+          isWithinInlineFunctionScope,
+          keepSynthetic,
+          isFilePrivateKotlinClass,
+          stripPrivateNestedMembers,
+          keptJvmStaticMemberKeys,
+          scopeOuterClass,
+          hiddenDeprecatedMethods,
+          sealedSubclasses,
+          retainedBodyFieldOwners);
+    }
+
+    return null;
+  }
+
+  private StubJarClassEntry(
+      Path path,
+      ClassNode stub,
+      Set<String> referencedClassNames,
+      List<String> kotlinInlineFunctions,
+      boolean isWithinInlineFunctionScope,
+      boolean keepSynthetic,
+      boolean isFilePrivateKotlinClass,
+      boolean stripPrivateNestedMembers,
+      Set<String> keptJvmStaticMemberKeys,
+      @Nullable String scopeOuterClass,
+      Set<String> hiddenDeprecatedMethods,
+      List<String> sealedSubclasses,
+      Set<String> retainedBodyFieldOwners) {
+    this.path = path;
+    this.stub = stub;
+    this.referencedClassNames = referencedClassNames;
+    this.kotlinInlineFunctions = kotlinInlineFunctions;
+    this.isWithinInlineFunctionScope = isWithinInlineFunctionScope;
+    this.keepSynthetic = keepSynthetic;
+    this.isFilePrivateKotlinClass = isFilePrivateKotlinClass;
+    this.stripPrivateNestedMembers = stripPrivateNestedMembers;
+    this.keptJvmStaticMemberKeys = keptJvmStaticMemberKeys;
+    this.scopeOuterClass = scopeOuterClass;
+    this.hiddenDeprecatedMethods = hiddenDeprecatedMethods;
+    this.sealedSubclasses = sealedSubclasses;
+    this.retainedBodyFieldOwners = retainedBodyFieldOwners;
+  }
+
+  @Override
+  public void write(StubJarWriter writer) {
+    writer.writeEntry(path, this::openInputStream);
+  }
+
+  @Override
+  public List<String> getInlineFunctions() {
+    return kotlinInlineFunctions;
+  }
+
+  @Override
+  public boolean extendsInlineFunctionScope() {
+    return isWithinInlineFunctionScope;
+  }
+
+  @Override
+  public boolean isFilePrivateKotlinClass() {
+    return isFilePrivateKotlinClass;
+  }
+
+  @Override
+  @Nullable
+  public String getClassName() {
+    return stub.name;
+  }
+
+  @Override
+  public Set<String> getReferencedClassNames() {
+    return referencedClassNames;
+  }
+
+  @Override
+  public List<String> getSealedSubclasses() {
+    return sealedSubclasses;
+  }
+
+  @Override
+  public Set<String> getRetainedBodyFieldOwners() {
+    return retainedBodyFieldOwners;
+  }
+
+  @Override
+  @Nullable
+  public String getScopeOuterClass() {
+    return scopeOuterClass;
+  }
+
+  private InputStream openInputStream() {
+    ClassWriter writer = new ClassWriter(0);
+    ClassVisitor visitor = writer;
+    if (!isWithinInlineFunctionScope) {
+      visitor = new InnerClassSortingClassVisitor(Objects.requireNonNull(stub.name), visitor);
+      visitor =
+          new AbiFilteringClassVisitor(
+              visitor,
+              kotlinInlineFunctions,
+              referencedClassNames,
+              keepSynthetic,
+              hiddenDeprecatedMethods,
+              stripPrivateNestedMembers,
+              keptJvmStaticMemberKeys);
+    }
+
+    stub.accept(visitor);
+
+    return new ByteArrayInputStream(writer.toByteArray());
+  }
+
+  private static Set<String> collectFieldOwners(ClassNode stub) {
+    Set<String> owners = new HashSet<>();
+    for (MethodNode method : stub.methods) {
+      for (AbstractInsnNode insn : method.instructions) {
+        if (insn instanceof FieldInsnNode) {
+          owners.add(((FieldInsnNode) insn).owner);
+        }
+      }
+    }
+    return owners;
+  }
+
+  private static boolean isSyntheticClass(ClassNode node) {
+    return ((node.access & Opcodes.ACC_SYNTHETIC) == Opcodes.ACC_SYNTHETIC);
+  }
+
+  private static boolean isAnonymousOrLocalClass(ClassNode node) {
+    InnerClassNode innerClass = getInnerClassMetadata(node);
+    while (innerClass != null) {
+      if (innerClass.outerName == null) {
+        return true;
+      }
+      innerClass = getInnerClassMetadata(node, innerClass.outerName);
+    }
+
+    return false;
+  }
+
+  @Nullable
+  private static InnerClassNode getInnerClassMetadata(ClassNode node) {
+    String name = Objects.requireNonNull(node.name);
+    return getInnerClassMetadata(node, name);
+  }
+
+  static List<String> readInlineFunctions(LibraryReader input, Path path) throws IOException {
+    ClassNode classMetadata = new ClassNode(Opcodes.ASM9);
+    input.visitClass(path, classMetadata, true);
+    AnnotationNode kotlinMetadataAnnotation = findKotlinMetadataAnnotation(classMetadata);
+    if (kotlinMetadataAnnotation == null) {
+      return Collections.emptyList();
+    }
+    return KotlinMetadataReader.getInlineFunctions(
+        KotlinMetadataReader.readMetadata(kotlinMetadataAnnotation));
+  }
+
+  @Nullable
+  static AnnotationNode findKotlinMetadataAnnotation(ClassNode node) {
+    if (node.visibleAnnotations == null) {
+      return null;
+    }
+    return node.visibleAnnotations.stream()
+        .filter(annotation -> "Lkotlin/Metadata;".equals(annotation.desc))
+        .findFirst()
+        .orElse(null);
+  }
+
+  @Nullable
+  private static InnerClassNode getInnerClassMetadata(ClassNode node, String className) {
+    for (InnerClassNode innerClass : Objects.requireNonNull(node.innerClasses)) {
+      if (Objects.requireNonNull(innerClass.name).equals(className)) {
+        return innerClass;
+      }
+    }
+
+    return null;
+  }
+
+  private static class InnerClassSortingClassVisitor extends ClassVisitor {
+    private final String className;
+    private final List<InnerClassNode> innerClasses = new ArrayList<>();
+    private final List<String> nestMembers = new ArrayList<>();
+
+    private InnerClassSortingClassVisitor(String className, ClassVisitor cv) {
+      super(Opcodes.ASM9, cv);
+      this.className = className;
+    }
+
+    @Override
+    public void visitInnerClass(String name, String outerName, String innerName, int access) {
+      innerClasses.add(new InnerClassNode(name, outerName, innerName, access));
+    }
+
+    @Override
+    public void visitNestMember(String nestMember) {
+      nestMembers.add(nestMember);
+    }
+
+    @Override
+    public void visitEnd() {
+      innerClasses.sort(
+          (o1, o2) -> {
+            // Enclosing classes and member classes should come first, with their order preserved
+            boolean o1IsEnclosingOrMember = isEnclosingOrMember(o1);
+            boolean o2IsEnclosingOrMember = isEnclosingOrMember(o2);
+            if (o1IsEnclosingOrMember && o2IsEnclosingOrMember) {
+              // Preserve order among these
+              return 0;
+            } else if (o1IsEnclosingOrMember) {
+              return -1;
+            } else if (o2IsEnclosingOrMember) {
+              return 1;
+            }
+
+            // References to other classes get sorted.
+            return Objects.requireNonNull(o1.name).compareTo(o2.name);
+          });
+
+      ClassVisitor delegate = Objects.requireNonNull(cv);
+      for (InnerClassNode innerClass : innerClasses) {
+        innerClass.accept(delegate);
+      }
+
+      nestMembers.stream().sorted().forEach(nestMember -> delegate.visitNestMember(nestMember));
+
+      super.visitEnd();
+    }
+
+    private boolean isEnclosingOrMember(InnerClassNode innerClass) {
+      if (className.equals(innerClass.name)) {
+        // Self!
+        return true;
+      }
+
+      if (className.equals(innerClass.outerName)) {
+        // Member class
+        return true;
+      }
+
+      // Enclosing class
+      return className.startsWith(innerClass.name + "$");
+    }
+  }
+}

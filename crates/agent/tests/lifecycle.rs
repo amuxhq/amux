@@ -7,7 +7,7 @@ use std::time::Duration;
 use agent::ExitCause;
 use provider_fakes::{Ask, Outcome, Step, Tool, ToolClass};
 use support::*;
-use wire::{Kind, Phase};
+use wire::Phase;
 
 use crate::support;
 
@@ -274,7 +274,7 @@ fn a_transcript_position_that_cannot_be_kept_ends_the_incarnation() {
 
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: Kind::ClaudePty,
+            kind: wire::Kind::ClaudePty,
             steps: vec![
                 text("recorded"),
                 Step::WaitFor {
@@ -326,7 +326,7 @@ fn the_agent_exits_on_its_child_exit_while_a_straggler_holds_the_terminal() {
         .unwrap();
     let outcome = runtime.block_on(async {
         let agent = Agent::start(Setup {
-            kind: Kind::ClaudePty,
+            kind: wire::Kind::ClaudePty,
             command: Some("/bin/sh".into()),
             provider_args: vec!["-c".into(), format!("{straggler} & printf started; exit 3")],
             ..Setup::sdk()
@@ -415,7 +415,7 @@ async fn a_stop_mid_command_ends_stopped_at_once_and_leaves_no_command_running()
 fn a_one_shot_terminal_child_runs_the_follow_up_it_typed_as_its_turn_ended() {
     terminal_test(async {
         let agent = Agent::start(Setup {
-            kind: Kind::ClaudePty,
+            kind: wire::Kind::ClaudePty,
             parent: true,
             initial_prompt: Some("first"),
             steps: vec![

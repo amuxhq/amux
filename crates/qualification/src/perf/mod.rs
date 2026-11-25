@@ -216,12 +216,10 @@ mod platform {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sampler_names_and_reads_the_current_process_measure() {
-        let sample = sample_memory(std::process::id()).expect("sample this process");
+        let sample = super::sample_memory(std::process::id()).expect("sample this process");
         assert!(sample.bytes > 0);
         #[cfg(target_os = "macos")]
         assert_eq!(sample.name(), "physical footprint");
@@ -240,7 +238,7 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .expect("start sample target");
-        let result = sample_memory(child.id());
+        let result = super::sample_memory(child.id());
         let _ = child.kill();
         let _ = child.wait();
         let sample = result.expect("sample child process");

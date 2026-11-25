@@ -7,8 +7,6 @@
 //! trust through its own daemon, which validates the identity and refuses
 //! a pairing with itself.
 
-use std::path::Path;
-
 use prost::Message as _;
 use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 use wire::PairingIdentity;
@@ -101,7 +99,7 @@ where
 #[cfg(unix)]
 pub async fn relay_stdio_to_unix_socket<P>(socket_path: P) -> Result<(), SshPairingError>
 where
-    P: AsRef<Path>,
+    P: AsRef<std::path::Path>,
 {
     let mut stdio = ssh_stdio();
     // Through the short link a long path is bound under, as the listener

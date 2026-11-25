@@ -110,10 +110,11 @@ test-windows *ARGS:
 # which the nightly workflow runs (`just models-nightly`), unless a target
 # names them. With no Linux worker in reach, the `linux-only` tests are
 # skipped, and the run ends by naming them. The Android app's tests are among
-# them (every Android target is linux-only).
+# them (every Android target is linux-only). A target this machine can't run
+# is skipped even when named (the terminal journeys on Windows).
 # Run the workspace's and the Android app's tests through Buck2.
 test *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live --exclude nightly -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/... //apps/android/...; scripts/py build/checks/inputs.py; status=0; {{bounded}} 3600 {{buck2}} test "$@" --exclude live --exclude nightly --skip-incompatible-targets -- --timeout 3600 || status=$?; scripts/py scripts/buck-config.py skipped "$@"; exit $status
 
 # The repository's checks (the root BUCK file, and the apps' script tests and
 # lints beside their scripts) and the JavaScript's (js/BUCK) as Buck2 tests,

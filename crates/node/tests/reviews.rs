@@ -1650,8 +1650,6 @@ mod sent {
 /// untracked files, secrets among them, so it never goes into a dump and is
 /// removed when the daemon opens the profile with the experiment off.
 mod stores {
-    use std::collections::BTreeSet;
-
     use wire::DumpRequest;
 
     use super::*;
@@ -1659,36 +1657,36 @@ mod stores {
     const SECRET: &str = "PLANTEDreviewsecret0001";
     const WORDS: &str = "PLANTEDreviewwords0002";
 
-    fn names(dir: &Path) -> BTreeSet<String> {
-        std::fs::read_dir(dir)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect()
-    }
-
-    /// How many of the experiment's tables the profile store holds, read
-    /// from what the store says of every table it has.
-    fn review_tables(install: &Install) -> usize {
-        let dump = format!("{:?}", install.store().dump().unwrap());
-        dump.matches("name: \"exp_reviews_1_").count()
-    }
-
-    /// Stops `host`'s daemon, handing back its installation.
-    async fn stopped(host: Host) -> Install {
-        let Host {
-            install,
-            daemon,
-            runtime,
-        } = host;
-        drop(runtime);
-        daemon.unwrap().shutdown().await.unwrap();
-        install
-    }
-
     // Unix only for the link: making one on Windows takes a privilege.
     #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread")]
     async fn switched_off_the_next_open_removes_every_review_and_nothing_else() {
+        fn names(dir: &Path) -> std::collections::BTreeSet<String> {
+            std::fs::read_dir(dir)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .collect()
+        }
+
+        /// How many of the experiment's tables the profile store holds,
+        /// read from what the store says of every table it has.
+        fn review_tables(install: &Install) -> usize {
+            let dump = format!("{:?}", install.store().dump().unwrap());
+            dump.matches("name: \"exp_reviews_1_").count()
+        }
+
+        /// Stops `host`'s daemon, handing back its installation.
+        async fn stopped(host: Host) -> Install {
+            let Host {
+                install,
+                daemon,
+                runtime,
+            } = host;
+            drop(runtime);
+            daemon.unwrap().shutdown().await.unwrap();
+            install
+        }
+
         let install = Install::new();
         feature_branch(&install.work);
         let agent = agent_in(&install, &install.work, Some("main"));

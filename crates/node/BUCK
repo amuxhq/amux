@@ -64,7 +64,7 @@ TEST_DEPS = [
 ]
 
 amux_rust_library(
-    version = "0.10.1",
+    version = "0.10.2",
     deps = DEPS,
     test_deps = TEST_DEPS,
     test_srcs = native.glob(["tests/fixtures/discovery/**"]),
@@ -74,7 +74,7 @@ amux_rust_library(
 
 amux_rust_test(
     name = "integration",
-    version = "0.10.1",
+    version = "0.10.2",
     deps = DEPS + TEST_DEPS,
     binaries = True,
     # Four cases at a time everywhere, Windows too, where the default is

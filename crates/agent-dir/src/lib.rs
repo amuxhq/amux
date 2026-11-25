@@ -19,11 +19,10 @@ pub mod local_socket;
 use std::io;
 use std::path::Path;
 
-use os::lock::FileLock;
-use os::process::ProcessRef;
-
 pub use clock::{Clock, ManualClock, Sleep, SystemClock};
 pub use ctl::{MAX_FRAME_BYTES, read_frame, read_message, write_frame, write_message};
+use os::lock::FileLock;
+use os::process::ProcessRef;
 
 /// Held by the agent process for its lifetime; its data is the holder's
 /// pid ([`Lock`]).
@@ -89,9 +88,19 @@ pub fn lock(dir: &Path) -> io::Result<Option<Lock>> {
 /// and releases it at once, so a process starting at that instant can fail
 /// to take it; callers probe only directories whose process they are not
 /// starting.
+///
+/// A probe that fails is taken for a holder: the daemon treats an unlocked
+/// directory as one whose process has gone, and a live agent taken for
+/// gone would be orphaned, where one taken for live is only dialled.
 pub fn locked(dir: &Path) -> bool {
     // No lock file: no process ever started here.
-    FileLock::held(&dir.join(LOCK)).unwrap_or(false)
+    match FileLock::held(&dir.join(LOCK)) {
+        Ok(held) => held,
+        Err(error) => {
+            tracing::debug!(dir = %dir.display(), %error, "probing an agent's lock failed; taking it for held");
+            true
+        }
+    }
 }
 
 /// Who holds a directory's lock, as [`lock_holder`] finds out.
@@ -216,7 +225,10 @@ mod tests {
                 None => break,
             }
         }
-        panic!("the helper ended without taking the lock: {:?}", child.wait());
+        panic!(
+            "the helper ended without taking the lock: {:?}",
+            child.wait()
+        );
     }
 
     /// Waits for the lock to come free, as it does once its holder has
@@ -251,7 +263,10 @@ mod tests {
     #[test]
     fn a_lock_no_process_holds_is_free_whatever_its_file_names() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::Free), "no file");
+        assert!(
+            matches!(lock_holder(dir.path()).unwrap(), Holder::Free),
+            "no file"
+        );
         // What a holder that crashed leaves: its pid, now anyone's.
         std::fs::write(dir.path().join(LOCK), std::process::id().to_string()).unwrap();
         assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::Free));
@@ -298,10 +313,24 @@ mod tests {
         let old = old_style_lock(dir.path());
         assert!(locked(dir.path()));
         assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::Unnamed));
-        assert!(lock(dir.path()).unwrap().is_none(), "the two exclude each other");
+        assert!(
+            lock(dir.path()).unwrap().is_none(),
+            "the two exclude each other"
+        );
         old.unlock().unwrap();
         drop(old);
         assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::Free));
+    }
+
+    /// A probe that fails says nothing of the holder, so it is never
+    /// taken for a free lock: here the lock is a folder, which no probe can
+    /// lock, as an NFS mount refuses a probe it cannot honour.
+    #[test]
+    fn a_lock_that_cannot_be_probed_is_taken_for_held() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(LOCK)).unwrap();
+        assert!(locked(dir.path()));
+        assert!(lock_holder(dir.path()).is_err());
     }
 
     #[test]
@@ -309,7 +338,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let held = lock(dir.path()).unwrap().expect("free");
         assert!(lock(dir.path()).unwrap().is_none());
-        assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::ThisProcess));
+        assert!(matches!(
+            lock_holder(dir.path()).unwrap(),
+            Holder::ThisProcess
+        ));
         drop(held);
         assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::Free));
     }

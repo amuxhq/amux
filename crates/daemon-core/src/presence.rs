@@ -298,7 +298,10 @@ mod tests {
     fn daemon() -> Daemon {
         Daemon::new(
             Sqlite::open_in_memory(OWN).expect("a store opens"),
-            StartOptions::default(),
+            StartOptions {
+                budget: crate::StepBudget::UNLIMITED,
+                ..StartOptions::default()
+            },
         )
     }
 

@@ -5,8 +5,6 @@
 //! one installation, which the daemon's registry creates, binds and
 //! deletes.
 
-#![cfg(unix)]
-
 use std::sync::{Arc, Condvar, Mutex};
 
 use app_embedded::{Cores, EdgeOverrides, EmbeddedRuntime, PairRequest, ProfileId, StartConfig};

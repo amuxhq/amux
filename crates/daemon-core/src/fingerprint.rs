@@ -142,6 +142,7 @@ mod tests {
             Sqlite::open_in_memory(*b"own-host-0000000").expect("a store opens"),
             StartOptions {
                 generation: 1,
+                budget: crate::StepBudget::UNLIMITED,
                 ..StartOptions::default()
             },
         );

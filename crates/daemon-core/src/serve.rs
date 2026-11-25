@@ -633,6 +633,7 @@ mod tests {
             store,
             StartOptions {
                 generation: 7,
+                budget: crate::StepBudget::UNLIMITED,
                 ..StartOptions::default()
             },
         )

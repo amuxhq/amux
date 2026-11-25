@@ -67,6 +67,11 @@ enum Command {
 }
 
 fn main() -> ExitCode {
+    // First, before anything can start a child: the `serve` a `ctl up`
+    // starts, and the hosts a served net starts, must not inherit this
+    // process's standard handles, or a caller reading its output to the end
+    // (a piped `testnet ctl up`) waits on them for as long as they live.
+    os::process::harden_start();
     // ctl and journey parse their own arguments and never need a runtime of
     // their own; they are dispatched before clap sees the rest so their help
     // reads as their own.

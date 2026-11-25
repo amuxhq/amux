@@ -4,8 +4,6 @@
 //! agent is carried there by the node the client is attached to, and its
 //! failures read the same on both.
 
-#![cfg(unix)]
-
 use std::time::Duration;
 
 use client::{Client, Installation, NotSent, Surface};
@@ -168,10 +166,12 @@ async fn the_socket_and_in_memory_clients_answer_alike() {
         assert_eq!(identity.host_id, desk, "{name}");
 
         // The node's own id is an address like any other host's: unpinning
-        // a folder never pinned is answered, and changes nothing.
+        // a folder never pinned is answered, and changes nothing. Absolute
+        // on every platform: on Windows `/nowhere` is not.
+        let never = std::env::temp_dir().join("nowhere").join("never-pinned");
         client
             .host(&desk)
-            .pin_folder("/nowhere/never-pinned", false)
+            .pin_folder(&never.to_string_lossy(), false)
             .await
             .unwrap_or_else(|error| panic!("{name}: {error}"));
 

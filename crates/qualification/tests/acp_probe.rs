@@ -2,8 +2,6 @@
 //! unchanged and records it, and a capture spanning two agent processes
 //! joins the corpus sanitized, each line naming its process.
 
-#![cfg(unix)]
-
 use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, Stdio};

@@ -552,6 +552,7 @@ mod tests {
             store,
             StartOptions {
                 replicas: PathBuf::from("/home/PLANTED/replicas"),
+                budget: crate::StepBudget::UNLIMITED,
                 ..StartOptions::default()
             },
         );

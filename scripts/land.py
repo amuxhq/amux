@@ -153,9 +153,11 @@ def request_tag(commit: str, rid: str, message: str) -> str:
     landing's message, so the two arrive together."""
     ident = git("var", "GIT_COMMITTER_IDENT", cwd=CHECKOUT, capture=True)
     body = f"object {commit}\ntype commit\ntag land/{rid}\ntagger {ident}\n\n{message.rstrip()}\n"
+    # Bytes, not text: on Windows text mode writes each newline as CRLF, and
+    # mktag's strict check refuses the tag ("invalid 'object' line format").
     return subprocess.run(
-        ["git", "mktag"], cwd=CHECKOUT, input=body, text=True, capture_output=True, check=True
-    ).stdout.strip()
+        ["git", "mktag"], cwd=CHECKOUT, input=body.encode("utf-8"), capture_output=True, check=True
+    ).stdout.decode().strip()
 
 
 def inbox_env() -> dict[str, str]:

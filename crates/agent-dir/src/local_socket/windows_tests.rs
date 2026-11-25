@@ -49,7 +49,7 @@ fn a_stalled_name_file_read_does_not_hold_its_runtime_open() {
     let root = tempfile::tempdir().unwrap();
     let path = std::path::absolute(root.path().join("ctl.sock")).unwrap();
     std::fs::write(&path, random_name()).unwrap();
-    stall_reads_of(&path, Duration::from_secs(3));
+    stall_reads_of(&path, Duration::from_secs(2));
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -62,7 +62,27 @@ fn a_stalled_name_file_read_does_not_hold_its_runtime_open() {
     let started = Instant::now();
     drop(runtime);
     let took = started.elapsed();
-    assert!(took < Duration::from_secs(1), "the runtime shut down in {took:?}");
+    assert!(
+        took < Duration::from_secs(1),
+        "the runtime shut down in {took:?}"
+    );
+}
+
+/// A positive deadline shorter than a slow read is kept: the connect
+/// gives up by it, rather than reading on and answering late.
+#[tokio::test]
+async fn a_short_deadline_is_kept_through_a_slow_read() {
+    let root = tempfile::tempdir().unwrap();
+    let path = std::path::absolute(root.path().join("ctl.sock")).unwrap();
+    let _listener = LocalListener::bind(&path).unwrap();
+    stall_reads_of(&path, Duration::from_millis(50));
+    let started = Instant::now();
+    let connected = connect_within(&path, Duration::from_millis(10)).await;
+    let took = started.elapsed();
+    let error = connected
+        .err()
+        .unwrap_or_else(|| panic!("answered after {took:?}"));
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut, "{error}");
 }
 
 /// Within a few seconds, or the test fails rather than hangs.

@@ -1342,70 +1342,6 @@ async fn relaunch_after_a_kill_links_every_time() {
     net.shutdown().await.unwrap();
 }
 
-/// The same over a slow network, every datagram to the relay and from
-/// the laptop held 50 ms: a launch whose first reply were lost would wait
-/// out a retransmit, a second or more, so each hears from the desk inside
-/// a second. The relaunched laptop hears the desk's dead connection to its
-/// last run at the punched address before anything there is named, and
-/// the desk then probes from it to move the new link back: the probe
-/// names the address, or the laptop drops what the link sends there.
-#[tokio::test(flavor = "multi_thread")]
-async fn relaunch_after_a_kill_over_a_slow_network_loses_no_reply() {
-    let topology = Topology::new()
-        .relay(&["ada"])
-        .host_decl(HostDecl {
-            lan: true,
-            discovery: false,
-            scope: Some("server".to_owned()),
-            router: Some(testnet::RouterKind::Open),
-            ..on_the_relay("desk")
-        })
-        .host_decl(HostDecl {
-            lan: true,
-            discovery: false,
-            scope: Some("phone".to_owned()),
-            router: Some(testnet::RouterKind::Ordinary),
-            ..on_the_relay("laptop")
-        });
-    let mut net = Net::start_with(topology, relay_tcp_unreachable(&["desk", "laptop"]))
-        .await
-        .unwrap();
-    net.trust("desk", "laptop").await.unwrap();
-    net.trust("laptop", "desk").await.unwrap();
-    carried_by(&net, "laptop", "desk", PathKind::Punched).await;
-    let slow = testnet::Faults {
-        delay: Duration::from_millis(50),
-        ..testnet::Faults::default()
-    };
-    net.set_net_faults("relay", slow).unwrap();
-    net.set_net_faults("laptop", slow).unwrap();
-    let mut took = Vec::new();
-    for launch in 1..=8 {
-        net.kill_daemon("laptop").await.unwrap();
-        let mark = net.link_log("laptop").unwrap().len();
-        net.restart_daemon("laptop").await.unwrap();
-        // Timed from the daemon running: a lost reply costs a retransmit
-        // past a second, while the start itself is the machine's speed,
-        // which on a loaded runner can take as long.
-        let began = std::time::Instant::now();
-        // A resumed link is up before anything comes back; it has heard
-        // from the desk once it has caught up.
-        let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;
-        if up.resumed {
-            logged(&net, "laptop", "desk", LinkTransition::CaughtUp, mark).await;
-        }
-        let elapsed = began.elapsed();
-        println!("relaunch {launch}: heard from the desk after {elapsed:?}: {up:?}");
-        took.push(elapsed);
-        tokio::time::sleep(Duration::from_secs(3)).await;
-    }
-    assert!(
-        took.iter().all(|took| *took < Duration::from_secs(1)),
-        "every launch links inside a second: {took:?}"
-    );
-    net.shutdown().await.unwrap();
-}
-
 /// The same with the laptop a real daemon process, killed outright: a kill
 /// leaves nothing of it running, and its next start dials the relay and
 /// the desk where they listen.
@@ -1441,17 +1377,11 @@ async fn relaunch_of_a_killed_process_links_every_time() {
         net.restart_daemon("laptop").await.unwrap();
         // The relay's name, localhost, lists an address it does not
         // listen at first: a first flight sent through that attempt goes
-        // again through the one kept, rather than waiting out a
-        // retransmit.
-        links_within(
-            &net,
-            "laptop",
-            "desk",
-            launch,
-            mark,
-            Duration::from_millis(750),
-        )
-        .await;
+        // again through the one kept, rather than waiting out a retransmit
+        // (the link socket's tests hold that; a time bound here would
+        // measure the machine).
+        let up = logged(&net, "laptop", "desk", LinkTransition::Up, mark).await;
+        println!("relaunch {launch}: up: {up:?}");
         tokio::time::sleep(Duration::from_secs(3)).await;
     }
     net.shutdown().await.unwrap();

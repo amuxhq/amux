@@ -421,8 +421,9 @@ each run in the checkout with its output kept and printed when it fails:
 | `fmt-check` | rustfmt on the dated nightly over every Rust file: a test target would need every file of the workspace and the nightly realized on the worker, to replace a three-second run |
 | `dependency-policy`, `shear`, the tokio half of `cores-check` | They read Cargo's resolved graph (`cargo metadata`, `cargo tree`), which needs Cargo's registry, and shear every crate's code besides |
 | `tests-check` | It checks the suite catalogue against every crate's targets as Cargo sees them, every `just` recipe, and every path the catalogue names: its inputs would be the whole checkout |
-| `parity`, `shipping-check` | Queries of Buck2's own graph (`uquery`, `cquery`), which no action of that graph can make |
+| `parity`, `shipping-check`, `ci-jobs-check` | Queries of Buck2's own graph (`uquery`, `cquery`), which no action of that graph can make |
 | `lint` | Clippy is Buck2 actions, cached like the tests, but a build of each target's clippy output, which `buck2 test` doesn't build, so it is a `buck2 build` beside the test run |
+| `check-windows` | Every Windows binary is Buck2 actions on a Linux worker, cached like the tests, but in the Windows configuration, which `buck2 test` over the Linux targets doesn't build, so it is a `buck2 build --materializations none` beside the test run; with no Linux worker in reach it is skipped and named |
 
 `no-update-flags`, which refuses fixture-regeneration variables in the
 environment, runs first, before anything starts, and then

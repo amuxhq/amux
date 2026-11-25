@@ -363,6 +363,10 @@ def main() -> None:
     if sys.argv[1:2] == ["skipped"]:
         skipped(sys.argv[2:])
         return
+    if sys.argv[1:2] == ["linux"]:
+        # Exit 0 when Linux actions have a worker in reach (`just premerge`
+        # builds the Windows binaries on one).
+        sys.exit(0 if linux(mode()) else 1)
     was = current_mode()
     now = mode()
     # NativeLink serves every tree on the machine, so whichever tree sees

@@ -144,7 +144,7 @@
               {
                 "type": "tool_use",
                 "id": "t1",
-                "name": "mcp__amux__status",
+                "name": "mcp__amux__set_working_on",
                 "input": {
                   "working_on": "Fixing the parser"
                 }

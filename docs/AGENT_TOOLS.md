@@ -54,10 +54,6 @@ already; `set_working_on` has the conversation's title to fall back on; and
 ignore the metadata. The names say what each tool reaches and does, since a
 deferred tool is often known by its name alone.
 
-The tools were named `agents`, `hosts`, `send`, `spawn`, `stop`, `status` and
-`attach` before 0.11. The interpreters and views still read calls by the
-old names, which a resumed agent's provider history may hold.
-
 Its identity is its agent's directory. The daemon listens on
 `<dir>/tools.sock` for that agent alone, from the agent's start and again
 from the moment a restarted daemon adopts the still-running agent, and the
@@ -344,8 +340,7 @@ only by messaging it.
 Declares what the agent is working on, so people and other agents can find
 the right collaborator; `null` clears it. The tool server only checks the
 argument's type and answers `ok`. The call is a provider fact: the interpreter
-sees the `amux` server's `set_working_on` call (or `status`, its name before
-0.11) in the provider's record and sets `working_on` in its next snapshot,
+sees the `amux` server's `set_working_on` call in the provider's record and sets `working_on` in its next snapshot,
 and the daemon copies it onto the agent's inventory row at commit. Nothing
 else sets or clears it: an idle agent's last declared work is exactly what
 another agent may want to know. An agent that never calls it has no
@@ -372,11 +367,10 @@ blobs and the element syntax.
 ## What the interpreter makes of the calls
 
 The interpreters recognise two of amux's own tools by server and tool name
-(`interpret::is_status_tool`, `interpret::is_send_tool`), each by its name now
-and by its name before 0.11:
+(`interpret::is_status_tool`, `interpret::is_send_tool`):
 
-- `set_working_on` (`status`) becomes `working_on` in the snapshot, as above.
-- `message_agent` (`send`) is drawn as an agent-message item on the sender's
+- `set_working_on` becomes `working_on` in the snapshot, as above.
+- `message_agent` is drawn as an agent-message item on the sender's
   side, on the tool call's own key: the text sent, the recipient as the model
   named it, the context, and a send state that moves from sending to sent
   (with the envelope id) or rejected (with the reason the tool returned).

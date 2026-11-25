@@ -8,7 +8,7 @@
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 9 fact {"channel":"stream","json":{"attempt":2,"error":"server_error","error_status":529,"max_retries":10,"retry_delay_ms":4000,"subtype":"api_retry","type":"system","uuid":"ar"}}
   composer Send activity=Some(Retrying { attempt: 2, max_attempts: 10, retry_at_ms: Some(1800000005000) }) queue=[] underway=[] refused=[]
-## 10 fact {"channel":"stream","json":{"message":{"content":[{"text":"On it.","type":"text"},{"id":"t1","input":{"working_on":"Fixing the parser"},"name":"mcp__amux__status","type":"tool_use"},{"id":"s1","name":"web_search","type":"server_tool_use"}],"id":"m1","model":"claude-sonnet-5","role":"assistant"},"type":"assistant","uuid":"m1"}}
+## 10 fact {"channel":"stream","json":{"message":{"content":[{"text":"On it.","type":"text"},{"id":"t1","input":{"working_on":"Fixing the parser"},"name":"mcp__amux__set_working_on","type":"tool_use"},{"id":"s1","name":"web_search","type":"server_tool_use"}],"id":"m1","model":"claude-sonnet-5","role":"assistant"},"type":"assistant","uuid":"m1"}}
   composer Send activity=Some(Working) queue=[] underway=[] refused=[]
 ## 12 fact {"channel":"stream","json":{"duration_ms":1000,"is_error":false,"subtype":"success","total_cost_usd":0.25,"type":"result","uuid":"r1"}}
   composer Send activity=None queue=[] underway=[] refused=[]

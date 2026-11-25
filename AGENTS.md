@@ -1,8 +1,8 @@
 # Operating Rules
 
-amux is released. From 0.9.0 on, builds of different versions meet, and a
-build reads what an earlier one left on disk. Five things are promises, and
-a change keeps them:
+amux is released. From 0.11.0 on, builds of different versions meet, and a
+build reads what 0.11.0 or a later release left on disk. Five things are
+promises, and a change keeps them:
 
 - **The protocol.** From 0.11.0 on, `amux.v1` only adds, as
   `proto/amux/v1/README.md` says (reserve a retired number; never renumber,
@@ -15,8 +15,9 @@ a change keeps them:
 - **A profile on disk.** What a release wrote, a later build opens: the
   `account` and `profile` files, and each agent's spec, journal and facts.
   A new field is one an older file can lack. The upgrade test
-  (`crates/node/tests/upgrade.rs`) opens a profile left by each release
-  that changed what it writes.
+  (`crates/node/tests/upgrade.rs`) opens the profile 0.11.0 left, plus one
+  from a later release only when that release writes something 0.11.0's
+  profile can't hold.
 - **The config file.** A key a release read keeps being read; a rename
   keeps the old name working. A key no build knows is ignored with a
   warning, so a config a release accepted never stops amux starting.

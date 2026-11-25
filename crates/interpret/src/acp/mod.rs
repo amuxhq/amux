@@ -320,22 +320,14 @@ fn double_underscore(name: &str, server: &str, tool: &str) -> bool {
 /// amux's own tools that run without asking. `attach` asks, as it does in
 /// Claude: it copies any file the agent names into the agent's blob folder,
 /// which the agent then reads unasked, so a read the agent's own settings
-/// would ask about goes through them first. Each by its name now and by the
-/// one a release before 0.11 gave it, which the recorded sessions the
-/// interpreter is tested against call ([`wire::former_tools`]).
-const AMUX_TOOLS_UNASKED: [&str; 12] = [
+/// would ask about goes through them first.
+const AMUX_TOOLS_UNASKED: [&str; 6] = [
     wire::AGENTS_TOOL,
     wire::HOSTS_TOOL,
     wire::MESSAGE_TOOL,
     wire::START_TOOL,
     wire::STOP_TOOL,
     wire::WORKING_ON_TOOL,
-    wire::former_tools::AGENTS_TOOL,
-    wire::former_tools::HOSTS_TOOL,
-    wire::former_tools::SEND_TOOL,
-    wire::former_tools::SPAWN_TOOL,
-    wire::former_tools::STOP_TOOL,
-    wire::former_tools::STATUS_TOOL,
 ];
 
 /// What Antigravity's and OpenCode's programs are run with to print their
@@ -1384,10 +1376,7 @@ impl State {
         [Some(tool.title.as_str()), used.as_deref()]
             .into_iter()
             .flatten()
-            .any(|name| {
-                naming.runs_amux(name, wire::ATTACH_TOOL)
-                    || naming.runs_amux(name, wire::former_tools::ATTACH_TOOL)
-            })
+            .any(|name| naming.runs_amux(name, wire::ATTACH_TOOL))
     }
 
     /// Whether the call's row was drawn finished, after which nothing more

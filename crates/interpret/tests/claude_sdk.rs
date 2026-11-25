@@ -1258,7 +1258,7 @@ fn the_attach_tools_answer_is_an_attachment_not_its_element() {
         stream(
             json!({"type": "assistant", "uuid": "a1", "session_id": "s", "message": {
             "id": "msg_1", "role": "assistant", "model": "claude-haiku-5-5",
-            "content": [{"type": "tool_use", "id": "toolu_attach", "name": "mcp__amux__attach",
+            "content": [{"type": "tool_use", "id": "toolu_attach", "name": "mcp__amux__attach_file",
                 "input": {"path": "/w/chart.png"}}]}}),
         ),
         stream(

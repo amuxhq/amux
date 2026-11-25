@@ -648,7 +648,7 @@ async fn amuxs_own_tools_are_allowed_without_asking() {
         vec![
             Step::ToolServer(ToolServerCall {
                 server: "amux".into(),
-                tool: "status".into(),
+                tool: "set_working_on".into(),
                 input: Some(serde_json::json!({"working_on": "testing"})),
                 ask: Some(Offer::Once),
                 outcome: Outcome {

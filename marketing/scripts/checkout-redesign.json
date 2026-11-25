@@ -79,7 +79,7 @@
     },
     {
       "tool": {
-        "name": "mcp__amux__spawn",
+        "name": "mcp__amux__start_subagent",
         "class": "consequential",
         "input": {
           "kind": "codex",
@@ -100,7 +100,7 @@
     },
     {
       "tool": {
-        "name": "mcp__amux__spawn",
+        "name": "mcp__amux__start_subagent",
         "class": "consequential",
         "input": {
           "kind": "claude",

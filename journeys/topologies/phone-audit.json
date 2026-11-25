@@ -10,7 +10,7 @@
       "host": "desk",
       "kind": "claude_sdk",
       "script": {"steps": [
-        {"tool": {"name": "mcp__amux__status", "class": "exploration", "input": {"working_on": "Tracing why the pairing errors disagree"}}},
+        {"tool": {"name": "mcp__amux__set_working_on", "class": "exploration", "input": {"working_on": "Tracing why the pairing errors disagree"}}},
         {"text": {"chunks": ["Reading the pairing code first."]}},
         {"tool": {"name": "Read", "class": "exploration", "input": {"file_path": "crates/wire/src/codes.rs"}}},
         {"text": {"chunks": ["The pairing errors all come from one table in the wire crate, so they can share one string."]}},
@@ -22,7 +22,7 @@
       "host": "desk",
       "kind": "claude_sdk",
       "script": {"steps": [
-        {"tool": {"name": "mcp__amux__status", "class": "exploration", "input": {"working_on": "Keeping the recovery state safe"}}},
+        {"tool": {"name": "mcp__amux__set_working_on", "class": "exploration", "input": {"working_on": "Keeping the recovery state safe"}}},
         {"text": {"chunks": ["The recovery state is safely stored."]}},
         "turn_end"
       ]}

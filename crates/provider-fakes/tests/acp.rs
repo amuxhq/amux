@@ -772,7 +772,7 @@ async fn a_tool_server_call_names_its_server_and_asks_for_it() {
     let sessions = scratch();
     let mut agent = Agent::started(
         json!({"steps": [
-            {"tool_server": {"server": "amux", "tool": "spawn", "input": {"task": "count"}, "ask": "once",
+            {"tool_server": {"server": "amux", "tool": "start_subagent", "input": {"task": "count"}, "ask": "once",
                              "outcome": {"output": "started"}}},
             "turn_end"
         ]}),
@@ -781,11 +781,17 @@ async fn a_tool_server_call_names_its_server_and_asks_for_it() {
     .await;
     let prompt = agent.prompt("spawn a child").await;
     let call = agent.update("tool_call").await;
-    assert_eq!(call["name"], "mcp_amux_spawn");
+    assert_eq!(call["name"], "mcp_amux_start_subagent");
     assert_eq!(call["kind"], "other");
     let asked = agent.asked("session/request_permission").await;
-    assert_eq!(asked["params"]["toolCall"]["name"], "mcp_amux_spawn");
-    assert_eq!(asked["params"]["toolCall"]["title"], "Run mcp_amux_spawn");
+    assert_eq!(
+        asked["params"]["toolCall"]["name"],
+        "mcp_amux_start_subagent"
+    );
+    assert_eq!(
+        asked["params"]["toolCall"]["title"],
+        "Run mcp_amux_start_subagent"
+    );
     agent
         .reply(
             &asked,

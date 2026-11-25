@@ -2820,33 +2820,29 @@ fn an_mcp_approval_names_its_own_servers_call() {
 }
 
 /// amux's `set_working_on` called on a child's thread is the subagent
-/// saying what it works on, not the agent; so is the tool's name before
-/// 0.11, `status`, which a resumed agent's history holds.
+/// saying what it works on, not the agent.
 #[test]
 fn working_on_from_a_child_lands_on_the_subagent() {
-    for tool in ["set_working_on", "status"] {
-        let mut agent = with_a_child();
-        agent.rpc(
-            json!({"method": "item/started", "params": {"threadId": "child",
-            "turnId": "child-turn", "item": {"type": "mcpToolCall", "id": "st", "server": "amux",
-            "tool": tool, "status": "inProgress",
-            "arguments": {"working_on": "checking the child"}}}}),
-        );
-        assert_eq!(
-            agent
-                .sub("child")
-                .snapshot
-                .as_ref()
-                .unwrap()
-                .status()
-                .working_on
-                .as_deref(),
-            Some("checking the child"),
-            "{tool}"
-        );
-        let host = agent.state.shared().working_on().map(str::to_owned);
-        assert_ne!(host.as_deref(), Some("checking the child"), "{tool}");
-    }
+    let mut agent = with_a_child();
+    agent.rpc(
+        json!({"method": "item/started", "params": {"threadId": "child",
+        "turnId": "child-turn", "item": {"type": "mcpToolCall", "id": "st", "server": "amux",
+        "tool": "set_working_on", "status": "inProgress",
+        "arguments": {"working_on": "checking the child"}}}}),
+    );
+    assert_eq!(
+        agent
+            .sub("child")
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .status()
+            .working_on
+            .as_deref(),
+        Some("checking the child")
+    );
+    let host = agent.state.shared().working_on().map(str::to_owned);
+    assert_ne!(host.as_deref(), Some("checking the child"));
 }
 
 /// The person stops a subagent from its chat in Codex 0.166.0's three

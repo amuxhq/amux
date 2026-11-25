@@ -8,8 +8,8 @@ effect write "{\"text\":\"go\",\"type\":\"user\"}"
 snapshot WORKING queue=[] working_on=- at=1000 conversation=? model_name=? sign_in=? background=? asks=[]
 ## 3 fact {"channel":"stream","json":{"id":"u1","text":"go","type":"user"}}
 item u1 prompt final input=p1 at=1000 text="go"
-## 4 fact {"channel":"stream","json":{"id":"s1","input":{"working_on":"auditing the queue"},"name":"status","server":"amux","type":"tool"}}
-item s1 tool final at=1000 text="" status TOOL_STATE_RUNNING
+## 4 fact {"channel":"stream","json":{"id":"s1","input":{"working_on":"auditing the queue"},"name":"set_working_on","server":"amux","type":"tool"}}
+item s1 tool final at=1000 text="" set_working_on TOOL_STATE_RUNNING
 snapshot WORKING queue=[] working_on="auditing the queue" at=1000 conversation=? model_name=? sign_in=? background=? asks=[]
 ## 5 agent_message {"envelope":"env-1","from":"reviewer","text":"also check withdraws"}
 effect inject env-1 via Stdin
@@ -31,8 +31,8 @@ snapshot IDLE queue=[] working_on="auditing the queue" at=1000 conversation=? mo
 snapshot WORKING queue=[] working_on="auditing the queue" at=1000 conversation=? model_name=? sign_in=? background=? asks=[]
 ## 11 fact {"channel":"stream","json":{"envelope":"env-1","type":"user"}}
 pending []
-## 12 fact {"channel":"stream","json":{"id":"s2","input":{"working_on":null},"name":"status","server":"amux","type":"tool"}}
-item s2 tool final at=1000 text="" status TOOL_STATE_RUNNING
+## 12 fact {"channel":"stream","json":{"id":"s2","input":{"working_on":null},"name":"set_working_on","server":"amux","type":"tool"}}
+item s2 tool final at=1000 text="" set_working_on TOOL_STATE_RUNNING
 snapshot WORKING queue=[] working_on=- at=1000 conversation=? model_name=? sign_in=? background=? asks=[]
 ## 13 fact {"channel":"stream","json":{"type":"turn_end"}}
 item turn:2 turn final at=1000 text="" #2 started=1000

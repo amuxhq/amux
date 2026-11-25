@@ -781,25 +781,6 @@ pub const STOP_TOOL: &str = "stop_subagent";
 pub const AGENTS_TOOL: &str = "list_agents";
 pub const HOSTS_TOOL: &str = "list_hosts";
 
-/// What releases before 0.11 named the same tools. The recorded sessions
-/// interpreters are tested against were made then and call amux's tools by
-/// these names, so the interpreters and views read both.
-pub mod former_tools {
-    pub const STATUS_TOOL: &str = "status";
-    pub const SEND_TOOL: &str = "send";
-    pub const ATTACH_TOOL: &str = "attach";
-    pub const SPAWN_TOOL: &str = "spawn";
-    pub const STOP_TOOL: &str = "stop";
-    pub const AGENTS_TOOL: &str = "agents";
-    pub const HOSTS_TOOL: &str = "hosts";
-}
-
-/// Whether `tool` is amux's tool named `now`, by its name now or by the
-/// name a release before 0.11 gave it, `before`.
-pub fn is_tool(tool: &str, now: &str, before: &str) -> bool {
-    tool == now || tool == before
-}
-
 /// Why a name cannot name an agent. Each client words it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]

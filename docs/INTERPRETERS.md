@@ -215,9 +215,7 @@ snapshot body does not compile until someone decides what its unknown is.
 
 amux's own tools are recognised in the provider's record, never drawn as tool
 calls: a `set_working_on` call sets `working_on` in the next snapshot, and a
-`message_agent` call becomes the agent message it sent. Both are recognised by
-their names before 0.11 too (`status` and `send`), which a resumed agent's
-history holds. Each snapshot's envelope carries the agent's status, its
+`message_agent` call becomes the agent message it sent. Each snapshot's envelope carries the agent's status, its
 settings among them (model, effort, permission and its level, mode), which
 the daemon copies onto the inventory row whole.
 
@@ -1472,6 +1470,12 @@ its verifications), `io.jsonl` (every line in both directions, with its time)
 and `spawn.jsonl`. Captures are sanitized with the shared redaction rules:
 machine paths, credentials and personal identifiers become placeholders, while
 provider ids, timestamps, payloads and ordering are kept.
+
+A recording may be edited after it was made when amux renames something of
+its own that the provider only echoes back, such as one of amux's tools: the
+edit is a plain rename, the content hashes are taken again, and
+`provider_extra.edited` in the manifest says what changed. Anything the
+provider itself decides is only ever re-recorded.
 
 An interpreter fixture names its recording by a relative path and a format
 (`claude_pty_io`, `transcript_rows`, `claude_sdk_io`, `codex_io` or

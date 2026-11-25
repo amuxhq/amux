@@ -7,7 +7,7 @@
     "at": "2026-11-16T00:06:59.342301Z"
   },
   "content": {
-    "io.jsonl": "sha256:fd46d9b9cf56a1259f663d44f60946efba0a580450d49b644a4bccbf55c22e47",
+    "io.jsonl": "sha256:e79f8e37b10d0dac55d6701db61678198e5d715f77553388ea8c1ebd6b0259f1",
     "spawn.jsonl": "sha256:fdb080de24a6c48db6eb9735008f7afde96d56a99092810f3bca68eeab8c332c"
   },
   "redaction": {
@@ -19,6 +19,7 @@
     "01a1e1ad-2ebd-7ff2-bab0-3a9c6e81980e"
   ],
   "provider_extra": {
-    "driven_by": "amux's interpreter, in the live qualification lane"
+    "driven_by": "amux's interpreter, in the live qualification lane",
+    "edited": "amux's own tools renamed to their current names after recording"
   }
 }

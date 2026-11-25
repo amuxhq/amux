@@ -47,9 +47,9 @@ agent sub-4a624cb0 snapshot WORKING queue=[] working_on="subagent checking in" a
 agent sub-4a624cb0 snapshot settings model=claude-haiku-5-5 effort=? permission=? level=? mode=?
 agent sub-4a624cb0 snapshot WORKING queue=[] working_on="subagent checking in" at=1794787854699 conversation=? model_name="Haiku 5.5" sign_in=? background=[] asks=[] context=? tasks=? active=[] usage=? servers=[]
 ## 82 recorded 80: fact SubagentTranscript type=assistant uuid=ed7055e1-2136-46a0-bec0-99774052ea29
-agent sub-4a624cb0 item toolu_01JPMB4eyMhrJD7WQbRy2aiB tool final at=1794787854798 text="" amux·agents TOOL_STATE_RUNNING input="{}"
+agent sub-4a624cb0 item toolu_01JPMB4eyMhrJD7WQbRy2aiB tool final at=1794787854798 text="" amux·list_agents TOOL_STATE_RUNNING input="{}"
 ## 84 recorded 82: fact SubagentTranscript type=user uuid=cf6043c9-28b2-40c8-8f8b-a0c494fa46bb
-agent sub-4a624cb0 item toolu_01JPMB4eyMhrJD7WQbRy2aiB tool final at=1794787854798 text="" amux·agents TOOL_STATE_SUCCEEDED ended=1794787854865 input="{}" out="{\"agents\":[{\"host\":\"live\",\"id\":\"f2836f57f16b4d1ea0b53e295c1b…"
+agent sub-4a624cb0 item toolu_01JPMB4eyMhrJD7WQbRy2aiB tool final at=1794787854798 text="" amux·list_agents TOOL_STATE_SUCCEEDED ended=1794787854865 input="{}" out="{\"agents\":[{\"host\":\"live\",\"id\":\"f2836f57f16b4d1ea0b53e295c1b…"
 ## 94 recorded 92: fact Transcript type=queue-operation
 effect drain subagent aa0dcd9d80449ee8d until "DONE"
 item toolu_0178uDxBqXBZfv443vRkiBtq tool final at=1794787852042 text="" Agent TOOL_STATE_SUCCEEDED background opens=sub-4a624cb0 started=1794787852042 ended=1794787857948 input=subagent:"Run reporter subagent" out="DONE"

@@ -8,7 +8,7 @@
   },
   "content": {
     "io.jsonl": "sha256:e1c9700c4621dcfd9d950b5ffa05999f7545f4a2dea9c5af0acbdab2b4c12d94",
-    "spawn.jsonl": "sha256:8a151fd6b553b8fc7fb2ed982e9c32c714d08baa5543aa5f4b7be588873d03e8"
+    "spawn.jsonl": "sha256:b7c81f38f40a67b5647d49c9025ef644f7a8a702f9471d8c8c8fac09ac42025b"
   },
   "redaction": {
     "secrets": 0,
@@ -19,6 +19,7 @@
     "5d95216a-4e7b-49f6-9b08-acdb1e383b1a"
   ],
   "provider_extra": {
-    "driven_by": "amux's interpreter, in the live qualification lane"
+    "driven_by": "amux's interpreter, in the live qualification lane",
+    "edited": "amux's own tools renamed to their current names after recording"
   }
 }

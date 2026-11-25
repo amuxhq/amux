@@ -15,8 +15,7 @@ pub use wire::AMUX_TOOL_SERVER;
 use wire::{
     ATTACH_TOOL, AgentMessage, AgentSpec, Append, Attachment, Bootstrap, Envelope, Item,
     MESSAGE_TOOL, Notice, Phase, PromptInput, QueuedInput, Refusal, Rejected, Sender, Snapshot,
-    Step, TurnEnd, WORKING_ON_TOOL, bootstrap, child_report, envelope, former_tools, is_tool,
-    sender,
+    Step, TurnEnd, WORKING_ON_TOOL, bootstrap, child_report, envelope, sender,
 };
 
 use crate::checks::{self, Watch};
@@ -2055,22 +2054,18 @@ pub(crate) fn first_string(arguments: &serde_json::Value) -> String {
         .to_owned()
 }
 
-///
-/// Each of these knows the tool by the name a release before 0.11 gave it
-/// too: an agent resumed from then has calls by those names in its
-/// provider's history.
 pub fn is_status_tool(server: &str, tool: &str) -> bool {
-    server == AMUX_TOOL_SERVER && is_tool(tool, WORKING_ON_TOOL, former_tools::STATUS_TOOL)
+    server == AMUX_TOOL_SERVER && tool == WORKING_ON_TOOL
 }
 
 /// Whether a tool-server call is amux's attach tool.
 pub fn is_attach_tool(server: &str, tool: &str) -> bool {
-    server == AMUX_TOOL_SERVER && is_tool(tool, ATTACH_TOOL, former_tools::ATTACH_TOOL)
+    server == AMUX_TOOL_SERVER && tool == ATTACH_TOOL
 }
 
 /// Whether a tool-server call is amux's send tool.
 pub fn is_send_tool(server: &str, tool: &str) -> bool {
-    server == AMUX_TOOL_SERVER && is_tool(tool, MESSAGE_TOOL, former_tools::SEND_TOOL)
+    server == AMUX_TOOL_SERVER && tool == MESSAGE_TOOL
 }
 
 /// Where a send tool call has got to.
@@ -2772,12 +2767,8 @@ mod tests {
         assert_eq!(status_working_on(br#"{"working_on": null}"#), Some(None));
         assert_eq!(status_working_on(br#"{"other": 1}"#), None);
         assert!(is_status_tool("amux", "set_working_on"));
-        assert!(
-            is_status_tool("amux", "status"),
-            "the name releases before 0.11 gave it"
-        );
-        assert!(!is_status_tool("other", "status"));
-        assert!(is_send_tool("amux", "message_agent") && is_send_tool("amux", "send"));
+        assert!(!is_status_tool("other", "set_working_on"));
+        assert!(is_send_tool("amux", "message_agent"));
         let mut shared = shared();
         shared.set_working_on(Some("  ".into()));
         assert_eq!(shared.working_on(), None);

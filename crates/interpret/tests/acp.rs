@@ -969,14 +969,14 @@ fn amuxs_own_tools_are_allowed_without_asking() {
         (
             "antigravity",
             Vec::new(),
-            serde_json::json!({"toolCallId": "c1", "title": "Run mcp_amux_spawn",
-                "name": "mcp_amux_spawn", "kind": "other", "status": "pending"}),
+            serde_json::json!({"toolCallId": "c1", "title": "Run mcp_amux_start_subagent",
+                "name": "mcp_amux_start_subagent", "kind": "other", "status": "pending"}),
         ),
         (
             "opencode",
             vec![update(
                 serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c1",
-                "title": "amux_send", "kind": "other", "status": "pending", "rawInput": {}}),
+                "title": "amux_message_agent", "kind": "other", "status": "pending", "rawInput": {}}),
             )],
             serde_json::json!({"toolCallId": "c1", "title": "send a message",
                 "kind": "other", "status": "pending"}),
@@ -986,19 +986,19 @@ fn amuxs_own_tools_are_allowed_without_asking() {
             vec![update(
                 serde_json::json!({"sessionUpdate": "tool_call", "toolCallId": "c1",
                 "title": "use_tool",
-                "rawInput": {"tool_name": "amux__agents", "tool_input": {}}}),
+                "rawInput": {"tool_name": "amux__list_agents", "tool_input": {}}}),
             )],
             serde_json::json!({"toolCallId": "c1"}),
         ),
         (
             "my-own-agent",
             Vec::new(),
-            serde_json::json!({"toolCallId": "c1", "title": "amux__status"}),
+            serde_json::json!({"toolCallId": "c1", "title": "amux__set_working_on"}),
         ),
         (
             "my-own-agent",
             Vec::new(),
-            serde_json::json!({"toolCallId": "c1", "title": "Run mcp_amux_hosts"}),
+            serde_json::json!({"toolCallId": "c1", "title": "Run mcp_amux_list_hosts"}),
         ),
     ];
     for (agent, before, call) in cases {
@@ -1024,8 +1024,8 @@ fn amuxs_own_tools_ask_where_only_always_is_offered() {
         rpc(
             serde_json::json!({"jsonrpc": "2.0", "id": 7, "method": "session/request_permission",
             "params": {"sessionId": "s1",
-                "toolCall": {"toolCallId": "c1", "title": "Run mcp_amux_spawn",
-                    "name": "mcp_amux_spawn", "kind": "other", "status": "pending"},
+                "toolCall": {"toolCallId": "c1", "title": "Run mcp_amux_start_subagent",
+                    "name": "mcp_amux_start_subagent", "kind": "other", "status": "pending"},
                 "options": [{"optionId": "always", "name": "Always", "kind": "allow_always"},
                     {"optionId": "no", "name": "Deny", "kind": "reject_once"}]}}),
         ),
@@ -1047,20 +1047,20 @@ fn other_tools_and_attach_still_ask() {
         ),
         (
             "antigravity",
-            serde_json::json!({"toolCallId": "c1", "title": "amux_spawn"}),
+            serde_json::json!({"toolCallId": "c1", "title": "amux_start_subagent"}),
         ),
         (
             "opencode",
-            serde_json::json!({"toolCallId": "c1", "title": "amux__spawn"}),
+            serde_json::json!({"toolCallId": "c1", "title": "amux__start_subagent"}),
         ),
         (
             "opencode",
-            serde_json::json!({"toolCallId": "c1", "title": "amux_attach"}),
+            serde_json::json!({"toolCallId": "c1", "title": "amux_attach_file"}),
         ),
         (
             "grok",
             serde_json::json!({"toolCallId": "c1", "title": "use_tool",
-            "rawInput": {"tool_name": "amux__attach"}}),
+            "rawInput": {"tool_name": "amux__attach_file"}}),
         ),
         (
             "my-own-agent",
@@ -1887,18 +1887,18 @@ fn only_the_attach_tools_step_carries_an_attachment() {
     for (provider, title, input) in [
         (
             "opencode",
-            "amux_attach",
+            "amux_attach_file",
             serde_json::json!({"path": "dot.png"}),
         ),
         (
             "antigravity",
-            "Run mcp_amux_attach",
+            "Run mcp_amux_attach_file",
             serde_json::json!({"path": "dot.png"}),
         ),
         (
             "grok",
             "use_tool",
-            serde_json::json!({"tool_name": "amux__attach"}),
+            serde_json::json!({"tool_name": "amux__attach_file"}),
         ),
     ] {
         let mut state = opened(provider, serde_json::json!({}));

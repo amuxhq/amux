@@ -109,7 +109,7 @@ test *ARGS:
 # same names (`just docs-check`, `just deny`) run each one's test.
 # Run the repository's and the JavaScript's checks through Buck2.
 checks:
-    {{just_executable()}} test //: //js: //apps/apple/Tools: //apps/android/tools:
+    "{{just_executable()}}" test //: //js: //apps/apple/Tools: //apps/android/tools:
 
 # Run tests for one named workspace crate.
 test-crate CRATE:
@@ -181,7 +181,7 @@ shipping-check:
 # agrees with its manifest.
 buckify:
     {{bounded}} 600 sh -c '"$(scripts/py scripts/buck-tools.py path reindeer)" buckify'
-    {{just_executable()}} parity
+    "{{just_executable()}}" parity
 
 # Format all Rust sources with the pinned nightly toolchain.
 fmt:
@@ -197,7 +197,7 @@ protobuf:
 
 # Check that committed protobuf bindings match their sources.
 codegen-check:
-    {{just_executable()}} test //:codegen-check
+    "{{just_executable()}}" test //:codegen-check
 
 # Lint amux.v1, and check it still reads what the latest release wrote; with
 # a ref, check against that ref instead. Needs buf (docs/BUILD.md).
@@ -332,7 +332,7 @@ sanitize KIND *CRATES:
 # Fail when any state-machine core's dependency graph contains tokio, or any
 # core source contains a lock, a spawned task, an async fn or an await.
 cores-check: cores-graph-check
-    {{just_executable()}} test //:cores-check
+    "{{just_executable()}}" test //:cores-check
 
 # The tokio half of `cores-check`, which reads Cargo's whole graph and so
 # stays a script; `//:cores-check` checks the sources.
@@ -364,7 +364,7 @@ dependency-policy:
 # that build/checks/inputs.py takes, the last two at most once a day; it runs
 # on a Linux worker, with the Linux toolchain's cargo-deny.
 deny:
-    {{just_executable()}} test //:deny
+    "{{just_executable()}}" test //:deny
 
 # Fail on any dependency no crate's code uses, so unused ones do not pile up
 # again. A crate lists what the code cannot show it needs under
@@ -395,7 +395,7 @@ tests-check:
 # test file (the root BUCK). The phone's scripts have theirs in `just ios
 # script-tests` and `just android script-tests`.
 script-tests:
-    {{just_executable()}} test //: --include script-tests
+    "{{just_executable()}}" test //: --include script-tests
 
 # Check the protocol models: each model's tests at its CI bounds and at its
 # nightly bounds (the ignored ones), one after another, every core each.
@@ -423,17 +423,17 @@ coverage: nextest
 # Fail when a docs link or image does not resolve, a figure is unreferenced
 # or not standalone, or docs/README.md does not list every page once.
 docs-check:
-    {{just_executable()}} test //:docs-check
+    "{{just_executable()}}" test //:docs-check
 
 # Fail if an interpreter or the agent's provider handshake builds or reads
 # provider JSON by hand instead of through the protocol crates.
 typed-provider-check:
-    {{just_executable()}} test //:typed-provider-check
+    "{{just_executable()}}" test //:typed-provider-check
 
 # Fail if a client crate decides something by an agent's kind or a
 # provider's name outside the places its list allows.
 client-kind-check:
-    {{just_executable()}} test //:client-kind-check
+    "{{just_executable()}}" test //:client-kind-check
 
 # Refuse fixture-regeneration flags before any asserted CI check runs.
 [private]
@@ -457,7 +457,7 @@ premerge_android := "//apps/android/..."
 # stay with `just ios verify` and CI (docs/CI.md, "`just premerge`").
 # Run the checks a change passes before it reaches main.
 premerge: no-update-flags
-    JUST={{just_executable()}} scripts/py -B build/checks/premerge.py {{premerge_tests}} {{premerge_android}}
+    JUST="{{just_executable()}}" scripts/py -B build/checks/premerge.py {{premerge_tests}} {{premerge_android}}
 
 # `just premerge` in two halves, which together run all of it: `workspace`
 # is everything but the Android app, `android` the Android app's tests,
@@ -470,12 +470,12 @@ premerge-half HALF:
     set -eu
     case "{{HALF}}" in
         workspace)
-            {{just_executable()}} no-update-flags
-            JUST={{just_executable()}} scripts/py -B build/checks/premerge.py {{premerge_tests}}
+            "{{just_executable()}}" no-update-flags
+            JUST="{{just_executable()}}" scripts/py -B build/checks/premerge.py {{premerge_tests}}
             ;;
         android)
-            {{just_executable()}} no-update-flags
-            {{just_executable()}} test {{premerge_android}}
+            "{{just_executable()}}" no-update-flags
+            "{{just_executable()}}" test {{premerge_android}}
             ;;
         *) echo "premerge-half: workspace or android, not {{HALF}}" >&2; exit 2 ;;
     esac

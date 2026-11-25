@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import struct
 import sys
 import tempfile
 import unittest
@@ -290,6 +291,55 @@ class AndroidScopeAuditTest(unittest.TestCase):
             apk = build_fake_apk(Path(tmp) / "no-so.apk", so_bytes=None)
             with self.assertRaisesRegex(RuntimeError, "missing required native library"):
                 audit.audit_native_libraries(apk, abis=["arm64-v8a"], readelf="llvm-readelf", nm="llvm-nm")
+
+    @staticmethod
+    def _synthetic_elf64(p_align: int, *, p_offset: int = 0x4000, p_vaddr: int = 0x4000) -> bytes:
+        header = bytearray(64)
+        header[0:4] = b"\x7fELF"
+        header[4] = 2  # ELFCLASS64
+        header[5] = 1  # ELFDATA2LSB
+        struct.pack_into("<Q", header, 32, 64)  # e_phoff
+        struct.pack_into("<HH", header, 54, 56, 1)  # e_phentsize, e_phnum
+        phdr = struct.pack("<IIQQQQQQ", 1, 5, p_offset, p_vaddr, p_vaddr, 0x100, 0x100, p_align)
+        return bytes(header) + phdr
+
+    def test_audit_page_size_16kb_passes_for_16k_aligned_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            aab = Path(tmp) / "release.aab"
+            with zipfile.ZipFile(aab, "w") as zf:
+                zf.writestr("BundleConfig.pb", b"\n\x08\x12\x061.16.0\x12\x06\x12\x04\x08\x01\x10\x02")
+                zf.writestr("base/lib/arm64-v8a/libamux_app.so", self._synthetic_elf64(0x4000))
+                zf.writestr("base/lib/arm64-v8a/libother.so", self._synthetic_elf64(0x4000))
+            count, note = audit.audit_page_size_16kb(aab, abis=["arm64-v8a"])
+            self.assertEqual(count, 2)
+            self.assertEqual(note, "BundleConfig.pb=PAGE_ALIGNMENT_16K")
+
+    def test_audit_page_size_16kb_rejects_4k_aligned_so(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            aab = Path(tmp) / "release.aab"
+            with zipfile.ZipFile(aab, "w") as zf:
+                zf.writestr("BundleConfig.pb", b"\n\x08\x12\x061.16.0\x12\x06\x12\x04\x08\x01\x10\x02")
+                zf.writestr("base/lib/arm64-v8a/libbad.so", self._synthetic_elf64(0x1000))
+            with self.assertRaisesRegex(RuntimeError, r"libbad\.so is not 16 KB aligned"):
+                audit.audit_page_size_16kb(aab, abis=["arm64-v8a"])
+
+    def test_audit_page_size_16kb_rejects_bundle_missing_page_alignment_16k(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            aab = Path(tmp) / "release.aab"
+            with zipfile.ZipFile(aab, "w") as zf:
+                zf.writestr("BundleConfig.pb", b"\n\x08\x12\x061.16.0")
+                zf.writestr("base/lib/arm64-v8a/libamux_app.so", self._synthetic_elf64(0x4000))
+            with self.assertRaisesRegex(RuntimeError, "PAGE_ALIGNMENT_16K"):
+                audit.audit_page_size_16kb(aab, abis=["arm64-v8a"])
+
+    def test_audit_page_size_16kb_rejects_bundle_with_page_alignment_4k(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            aab = Path(tmp) / "release.aab"
+            with zipfile.ZipFile(aab, "w") as zf:
+                zf.writestr("BundleConfig.pb", b"\n\x08\x12\x061.16.0\x12\x06\x12\x04\x08\x01\x10\x01")
+                zf.writestr("base/lib/arm64-v8a/libamux_app.so", self._synthetic_elf64(0x4000))
+            with self.assertRaisesRegex(RuntimeError, "alignment=1"):
+                audit.audit_page_size_16kb(aab, abis=["arm64-v8a"])
 
 
 if __name__ == "__main__":

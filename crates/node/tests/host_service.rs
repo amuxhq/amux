@@ -436,9 +436,15 @@ async fn a_new_provider_version_is_asked_again() {
     let hash = until("an ask to find the new version", || async {
         let answered = ask(&socket, "claude").await;
         let entry = runtime.host_entry();
-        match entry.provider("claude").and_then(|offered| offered.catalogue.clone()) {
+        match entry
+            .provider("claude")
+            .and_then(|offered| offered.catalogue.clone())
+        {
             Some(hash) if hash != first.blob.hash => Ok(hash),
-            other => Err(format!("answered {:?}, listed {other:?}", answered.blob.hash)),
+            other => Err(format!(
+                "answered {:?}, listed {other:?}",
+                answered.blob.hash
+            )),
         }
     })
     .await

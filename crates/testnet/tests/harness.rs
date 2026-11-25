@@ -960,14 +960,17 @@ async fn a_supervised_host_takes_a_published_release_and_rolls_back_a_broken_one
         .await
         .unwrap();
     println!("a broken 0.0.3 published");
-    until("the supervisor to reject 0.0.3 and put 0.0.2 back", || async {
-        let log = std::fs::read_to_string(&supervisor_log).unwrap_or_default();
-        if !(log.contains("rejected=0.0.3") && log.contains("put prev back")) {
-            return Err("0.0.3 not rejected yet".to_owned());
-        }
-        let now = version().await;
-        now.ends_with("0.0.2").then_some(()).ok_or(now)
-    })
+    until(
+        "the supervisor to reject 0.0.3 and put 0.0.2 back",
+        || async {
+            let log = std::fs::read_to_string(&supervisor_log).unwrap_or_default();
+            if !(log.contains("rejected=0.0.3") && log.contains("put prev back")) {
+                return Err("0.0.3 not rejected yet".to_owned());
+            }
+            let now = version().await;
+            now.ends_with("0.0.2").then_some(()).ok_or(now)
+        },
+    )
     .await
     .unwrap();
     println!("0.0.3 rejected and 0.0.2 put back");

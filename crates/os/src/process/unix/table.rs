@@ -25,12 +25,20 @@ pub(super) fn table() -> Vec<Row> {
 /// Every process, or why the table couldn't be read.
 pub(super) fn try_table() -> std::io::Result<Vec<Row>> {
     #[cfg(test)]
+    READS.with(|reads| reads.set(reads.get() + 1));
+    #[cfg(test)]
     if BLIND.load(std::sync::atomic::Ordering::SeqCst) {
         return Err(std::io::Error::other(
             "the process table is hidden from this test",
         ));
     }
     read_table()
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How often this thread has read the table, for a test to count.
+    pub(super) static READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// A test's way to make this process's census fail, as an unreadable

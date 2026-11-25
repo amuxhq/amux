@@ -160,6 +160,10 @@ fn below(root: i32, table: &[table::Row]) -> Vec<Descendant> {
 }
 
 pub(super) fn kill_descendants(census: &[Descendant]) {
+    // Nothing to kill is the common stop (Provider::finish): no scan.
+    if census.is_empty() {
+        return;
+    }
     let _ = signal_descendants(census, libc::SIGKILL, &table::table());
 }
 

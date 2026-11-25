@@ -63,6 +63,15 @@ fn kill_others_without_a_census_is_an_error() {
     assert!(eventually(|| !member.alive()), "its group is killed");
 }
 
+/// A stop with nothing below it to kill (the common case, a provider
+/// that left nothing) reads no process table.
+#[test]
+fn killing_an_empty_census_reads_no_table() {
+    super::table::READS.with(|reads| reads.set(0));
+    kill_descendants(&[]);
+    assert_eq!(super::table::READS.with(std::cell::Cell::get), 0);
+}
+
 #[test]
 fn a_process_ref_refuses_a_reused_pid() {
     let mut child = helper("sleep").stdin(Stdio::null()).spawn().unwrap();

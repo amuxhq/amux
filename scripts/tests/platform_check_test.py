@@ -629,6 +629,74 @@ class PlatformCheckTest(unittest.TestCase):
         )
         self.assertEqual(self.counted(), {"crates/agent/src/lib.rs": [5]})
 
+    # The ways around it Phase 0's second codex review found, each held.
+
+    def test_a_marked_block_arm_without_its_comma_exempts_only_itself(self):
+        self.write(
+            "crates/node/src/lib.rs",
+            """\
+            fn g(x: u8) -> u8 {
+                match x {
+                    #[cfg(unix)] // out of scope on Windows: wt
+                    0 => {
+                        1
+                    }
+                    #[cfg(windows)]
+                    _ => 2,
+                }
+            }
+            """,
+        )
+        self.assertEqual(self.counted(), {"crates/node/src/lib.rs": [7]})
+
+    def test_a_test_function_in_a_homes_shared_file_is_test_code(self):
+        self.write(
+            "crates/pty-host/src/lib.rs",
+            """\
+            pub fn a() { unsafe { libc::getpid() }; }
+            #[test]
+            fn standalone() {
+                if cfg!(windows) {
+                    return;
+                }
+            }
+            #[tokio::test]
+            async fn standalone_async() {
+                let _ = unsafe { libc::getpid() };
+            }
+            """,
+        )
+        result = platform.scan(self.root)
+        self.assertEqual({f.line: f.test for f in result.violations["crates/pty-host/src/lib.rs"]}, {4: True, 10: True})
+
+    def test_a_closures_block_in_a_condition_is_not_the_statements_start(self):
+        self.write(
+            "crates/agent/src/lib.rs",
+            """\
+            fn f(items: &[u8]) {
+                if items.iter().any(|item| { check(item) }) && cfg!(windows) {
+                    return;
+                }
+                let ok = items.iter().any(|i| if *i > 0 { true } else { false }) && cfg!(windows);
+            }
+            """,
+        )
+        self.assertEqual(self.counted(), {"crates/agent/src/lib.rs": [2]})
+
+    def test_a_platform_import_through_an_imported_os_counts(self):
+        self.write(
+            "crates/agent/src/lib.rs",
+            """\
+            use std::os;
+            use os::{unix::fs::PermissionsExt};
+            use os::windows::ffi::OsStrExt;
+            use os::fd::AsRawFd;
+            """,
+        )
+        # Without `use std::os`, `os::` is something else (the os crate).
+        self.write("crates/agent/src/other.rs", "use os::process::Family;\nuse os::fs::{private_open_options};\n")
+        self.assertEqual(self.counted(), {"crates/agent/src/lib.rs": [2, 3]})
+
     # The allowlist and the inputs.
 
     def test_write_allowlist_writes_what_the_tree_holds(self):

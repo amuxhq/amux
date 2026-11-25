@@ -99,7 +99,7 @@ check-windows:
 # nightly's), the simulated stories, the linux-only tests and the live lanes.
 # Run the workspace's tests for Windows on a Windows worker.
 test-windows *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --target-platforms root//build/platforms:{{windows_platform}}-cli-testing-dev --exclude live --exclude nightly --exclude simulated --exclude linux-only --exclude journey -- --timeout 3600
+    if [ "${1-}" = -- ]; then shift; fi; [ $# -gt 0 ] || set -- //crates/...; {{bounded}} 3600 {{buck2}} test "$@" --target-platforms root//build/platforms:{{windows_platform}}-cli-testing-dev --exclude live --exclude nightly --exclude simulated --exclude linux-only --exclude journey --skip-incompatible-targets -- --timeout 3600
 
 # Every test runs in a process of its own (build/test-runner.py), and a
 # passing result is cached in NativeLink, so only tests whose inputs changed

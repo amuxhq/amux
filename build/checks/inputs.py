@@ -46,7 +46,6 @@ import subprocess
 import sys
 import tarfile
 import time
-import urllib.parse
 from pathlib import Path, PurePath, PureWindowsPath
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -175,6 +174,37 @@ def cargo_inputs(listing: bytes) -> None:
     write(stamp, key.hexdigest().encode())
 
 
+# What the url crate, which Cargo's `file://` URLs come from
+# (`Url::from_file_path`), escapes in a path segment, besides controls and
+# every byte past ASCII: its path-segment set, with `\` as a special
+# scheme's. Brackets, `@`, `!` and the like stay as they are.
+URL_ESCAPED = frozenset(b' "#%<>?`{}\\')
+
+
+def file_url_path(path: PurePath) -> str:
+    """What follows `file://` in Cargo's URL for `path`: `/home/dev/amux`,
+    `/C:/Users/dev/amux`, or for a UNC path `server/share/amux` (the
+    server is the URL's host, which the url crate writes in lower case)."""
+
+    def segment(part: str) -> str:
+        return "".join(
+            f"%{byte:02X}" if byte <= 0x20 or byte >= 0x7F or byte in URL_ESCAPED else chr(byte)
+            for byte in part.encode("utf-8")
+        )
+
+    if not isinstance(path, PureWindowsPath):
+        return "/" + "/".join(segment(part) for part in path.parts[1:])
+    drive, rest = path.drive, [segment(part) for part in path.parts[1:]]
+    if drive.upper().startswith("\\\\?\\UNC\\"):
+        drive = "\\\\" + drive[len("\\\\?\\UNC\\") :]
+    elif drive.startswith("\\\\?\\"):
+        drive = drive[len("\\\\?\\") :]
+    if drive.startswith("\\\\"):
+        server, _, share = drive[2:].partition("\\")
+        return "/".join([server.lower(), segment(share), *rest])
+    return "/" + "/".join([drive, *rest])
+
+
 def portable(metadata, workspace: PurePath, home: PurePath):
     """Cargo's graph with this checkout's path replaced by `@ROOT@` and Cargo's
     home by `/cargo`, in each of its strings.
@@ -189,8 +219,7 @@ def portable(metadata, workspace: PurePath, home: PurePath):
     swaps = [(workspace, "@ROOT@/build/checks/inputs/deny/workspace"), (home, "/cargo")]
     windows = isinstance(workspace, PureWindowsPath)
     native = [(str(path), to) for path, to in swaps]
-    # A file URL's path: `/C:/Users/...` on Windows, escaped as Cargo's are.
-    urls = [(urllib.parse.quote(("/" if windows else "") + path.as_posix(), safe="/:@!$&'()*+,;="), to) for path, to in swaps]
+    urls = [(file_url_path(path), to) for path, to in swaps]
 
     def rewrite(text: str) -> str:
         for path, to in native:

@@ -181,7 +181,11 @@ mod tests {
         tokio::time::timeout(grace, tether.release())
             .await
             .expect("released before the grace is up");
-        assert!(started.elapsed() < Duration::from_secs(2), "{:?}", started.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
     }
 
     /// Whether a process of `group` still runs (a zombie doesn't).

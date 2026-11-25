@@ -1,10 +1,11 @@
 //! `os::fs` on Windows: what only Windows can show.
 
+use std::os::windows::fs::OpenOptionsExt as _;
+use std::time::{Duration, Instant};
+
 use super::testing::dacl_sddl;
 use super::*;
 use crate::fs::{Removed, canonical, plain, remove_patiently, write_durably};
-use std::os::windows::fs::OpenOptionsExt as _;
-use std::time::{Duration, Instant};
 
 /// A folder beside the test program, which with the build's target folder
 /// outside the user profile (`C:\amux-cargo\…` here) is a root that does
@@ -251,7 +252,9 @@ fn set_dacl(path: &Path, sddl: &str) {
                 ptr::null_mut(),
             ) != 0
         );
-        assert!(GetSecurityDescriptorDacl(descriptor, &mut present, &mut dacl, &mut defaulted) != 0);
+        assert!(
+            GetSecurityDescriptorDacl(descriptor, &mut present, &mut dacl, &mut defaulted) != 0
+        );
         let status = SetNamedSecurityInfoW(
             path.as_ptr(),
             SE_FILE_OBJECT,
@@ -297,7 +300,11 @@ fn patient_removal_reports_a_deletion_an_acl_refuses() {
     for (path, took, removed) in removed {
         let error = removed.expect_err("a refused deletion is an error, not Later");
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "{error}");
-        assert!(took < patience, "{} was not waited on: {took:?}", path.display());
+        assert!(
+            took < patience,
+            "{} was not waited on: {took:?}",
+            path.display()
+        );
         assert!(path.exists());
         assert_eq!(remove_patiently(path, patience).unwrap(), Removed::Gone);
     }

@@ -7,12 +7,11 @@
 //! provide returns [`io::ErrorKind::Unsupported`], unless its doc comment
 //! names the exception.
 
-use std::fmt;
 use std::fs::{File, Metadata, OpenOptions};
-use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
+use std::{fmt, io};
 
 #[cfg(unix)]
 mod unix;

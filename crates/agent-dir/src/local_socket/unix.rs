@@ -73,7 +73,9 @@ impl Listener {
     fn unbind_between(&self, path: &Path, between: impl FnOnce()) {
         // A socket that can't be locked (its directory has gone) has
         // nothing to keep.
-        let Ok(_locked) = lock_socket(path) else { return };
+        let Ok(_locked) = lock_socket(path) else {
+            return;
+        };
         if fs::symlink_metadata(path).is_ok_and(|meta| (meta.dev(), meta.ino()) == self.file) {
             between();
             let _ = fs::remove_file(path);
@@ -263,8 +265,9 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::local_socket::unix_private_address;
-    use crate::local_socket::{LocalListener, connect, forget_short_addresses, unix_address};
+    use crate::local_socket::{
+        LocalListener, connect, forget_short_addresses, unix_address, unix_private_address,
+    };
 
     #[test]
     fn an_agents_short_addresses_go_with_its_directory() {
@@ -301,7 +304,10 @@ mod tests {
         drop(held);
         let listener = Listener::bind(&path).unwrap();
         listener.unbind(&path);
-        assert!(root.path().join("ctl.sock.lock").is_file(), "the lock stays");
+        assert!(
+            root.path().join("ctl.sock.lock").is_file(),
+            "the lock stays"
+        );
     }
 
     /// The socket file is the socket: a file put at the path since is

@@ -16,10 +16,9 @@ use windows_sys::Win32::Foundation::{
     ERROR_SHARING_VIOLATION, ERROR_USER_MAPPED_FILE, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
     LocalFree,
 };
-use windows_sys::Win32::Security::Authorization::SetSecurityInfo;
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
-    SE_FILE_OBJECT, SetNamedSecurityInfoW,
+    SE_FILE_OBJECT, SetNamedSecurityInfoW, SetSecurityInfo,
 };
 use windows_sys::Win32::Security::{
     ACL, DACL_SECURITY_INFORMATION, GetSecurityDescriptorDacl, GetTokenInformation,
@@ -684,10 +683,11 @@ unsafe fn from_wide_nul(text: *const u16) -> OsString {
 pub(super) mod testing {
     //! Reading back what this module sets.
 
-    use super::*;
     use windows_sys::Win32::Security::Authorization::{
         ConvertSecurityDescriptorToStringSecurityDescriptorW, GetNamedSecurityInfoW,
     };
+
+    use super::*;
 
     /// The DACL of `path` as SDDL (`D:PAI(A;OICI;FA;;;S-1-5-…)…`).
     pub(crate) fn dacl_sddl(path: &Path) -> io::Result<String> {

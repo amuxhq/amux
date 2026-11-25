@@ -119,8 +119,15 @@ fn a_later_call_sees_the_first_stop() {
 #[test]
 fn a_stop_between_two_waits_is_seen_by_the_next() {
     let said = says("between interrupt");
-    assert_eq!(said.first().map(String::as_str), Some("first none"), "{said:?}");
-    assert!(said.iter().any(|line| line == "again Interrupt"), "{said:?}");
+    assert_eq!(
+        said.first().map(String::as_str),
+        Some("first none"),
+        "{said:?}"
+    );
+    assert!(
+        said.iter().any(|line| line == "again Interrupt"),
+        "{said:?}"
+    );
 }
 
 /// The stop a process in the role saw for `name`, the block reason during

@@ -281,3 +281,97 @@ pub fn gated_turn(gate: &Path) -> Vec<Step> {
         Step::TurnEnd,
     ]
 }
+
+/// The agent process hosting the directory `dir`: the holder of its lock,
+/// which names its pid (`agent_dir::lock_holder`), on every OS.
+pub fn agent_pid(dir: &Path) -> Option<u32> {
+    match agent_dir::lock_holder(dir) {
+        Ok(agent_dir::Holder::Process(process)) => Some(process.pid()),
+        _ => None,
+    }
+}
+
+/// Kills every agent process whose directory lies under `root`, found by
+/// the lock it holds, and waits a while for each to go: what a failed
+/// test leaves running, since agents outlive their daemon on purpose.
+pub fn kill_agents_under(root: &Path) {
+    let mut pending = vec![root.to_owned()];
+    let mut killed = Vec::new();
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if path.join(agent_dir::LOCK).exists() {
+                if let Ok(agent_dir::Holder::Process(process)) = agent_dir::lock_holder(&path) {
+                    let _ = process.kill();
+                    killed.push(process);
+                }
+            } else {
+                pending.push(path);
+            }
+        }
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while killed.iter().any(os::process::ProcessRef::alive) && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Kills the agent `pid` leads and everything it started, as the daemon
+/// does: `taskkill /F /T` where there is one (Windows, the process tree),
+/// else SIGKILL to its process group (`pkill -KILL -g <pid>`). Says
+/// whether the kill was made.
+pub fn kill_group(pid: u32) -> bool {
+    let quiet = |command: &mut std::process::Command| {
+        command
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+    };
+    match quiet(std::process::Command::new("taskkill").args(["/F", "/T", "/PID", &pid.to_string()]))
+    {
+        Ok(status) => status.success(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            quiet(std::process::Command::new("pkill").args(["-KILL", "-g", &pid.to_string()]))
+                .is_ok_and(|status| status.success())
+        }
+        Err(error) => panic!("taskkill: {error}"),
+    }
+}
+
+/// Whether a process other than this one runs whose command line contains
+/// `text`, asking whichever process lister this machine has: `pgrep` where
+/// there is one, else the CIM process table through PowerShell (Windows).
+pub fn running_mentioning(text: &str) -> bool {
+    match std::process::Command::new("pgrep")
+        .args(["-f", text])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+    {
+        Ok(status) => status.success(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // The script names the text in single quotes, doubled within.
+            let quoted = text.replace('\'', "''");
+            let script = format!(
+                "@(Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and \
+                 $_.CommandLine -and $_.CommandLine.Contains('{quoted}') }}).Count"
+            );
+            let output = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+                .stdin(std::process::Stdio::null())
+                .output()
+                .expect("neither pgrep nor PowerShell runs here");
+            let count = String::from_utf8_lossy(&output.stdout);
+            count.trim().parse::<u32>().expect("PowerShell counts") > 0
+        }
+        Err(error) => panic!("pgrep: {error}"),
+    }
+}

@@ -282,8 +282,8 @@ mod tests {
         assert_eq!(listed[0].last_used_ms, Some(2_000));
 
         std::fs::remove_dir(&first).unwrap();
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(&second, &first).unwrap();
+        // A junction on Windows, which takes no privilege.
+        provider_fakes::faults::link_dir(&second, &first).unwrap();
         let listed = folders(&[], &recent, &[]);
         assert_eq!(named(&listed), [("second", wire::FolderKind::Recent)]);
     }

@@ -258,11 +258,8 @@ fn untracked_files_count_as_changes_whatever_the_repository_shows() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn a_worktree_that_cannot_be_marked_is_undone_with_its_branch() {
-    use std::os::unix::fs::PermissionsExt as _;
-
     let place = Place::new();
     let backends = place.backends(HOST);
     // A post-checkout hook, which `git worktree add` runs, puts a folder
@@ -276,7 +273,8 @@ fn a_worktree_that_cannot_be_marked_is_undone_with_its_branch() {
         "#!/bin/sh\nmkdir \"$(git rev-parse --absolute-git-dir)/amux-owner\"\n",
     )
     .unwrap();
-    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // Git for Windows runs a hook with its own sh, executable bit or not.
+    os::fs::make_executable(&hook).unwrap();
     run_git(
         &place.repo(),
         &["config", "core.hooksPath", &hooks.to_string_lossy()],
@@ -302,7 +300,7 @@ fn a_worktree_that_cannot_be_marked_is_undone_with_its_branch() {
 }
 
 /// The wt backend, against a wt home and trees folder of the test's own.
-#[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
+#[cfg(not(any(windows, target_os = "ios", target_os = "android")))] // out of scope on Windows: wt
 mod wt {
     use super::*;
 

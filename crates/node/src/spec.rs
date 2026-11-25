@@ -666,11 +666,7 @@ mod tests {
     fn acp_launch(dir: &Path) -> Launch {
         let program = dir.join(format!("mine-agent{}", std::env::consts::EXE_SUFFIX));
         std::fs::write(&program, "#!/bin/sh\n").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
+        os::fs::make_executable(&program).unwrap();
         Launch {
             agents: vec![crate::agents::AgentProgram {
                 id: "mine".into(),

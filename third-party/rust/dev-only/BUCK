@@ -1,0 +1,6 @@
+# This crate as Cargo reads it, for the checks that run Cargo over the
+# workspace (build/cargo.bzl): it is a workspace member like the crates,
+# and Buck2 builds nothing of it.
+load("//build:cargo.bzl", "amux_cargo_package")
+
+amux_cargo_package()

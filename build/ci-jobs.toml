@@ -82,6 +82,7 @@ paths = [
     "apps/android/**",
     "build/android.bzl",
     "build/android/**",
+    "build/cargo.bzl",
     "build/checks/**",
     "build/goldens.py",
     "build/js.bzl",

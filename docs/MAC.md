@@ -312,8 +312,9 @@ which walks them again or, dismissed, stops offering them.
 Settings (⌘,) holds the Mac's name, start at login (on an install with a
 supervisor), keep awake, the repository list, usage counts, automatic reports
 and the account. Every change is applied at once, through `UpdateSettings`,
-or for the repository list through `PinFolder`, read back from the Mac's own
-entry, so `amux config` and the terminal see it as soon as it is made. It is drawn
+or for the repository list through `PinFolder`, read back from the
+settings, which list every pin the config holds (a folder since removed
+too), so `amux config` and the terminal see it as soon as it is made. It is drawn
 on the main window's grouped cards, as the host page is, rather than as a
 system form: each setting is a title over a quiet note with its control at
 the right, and a repository is removed from a button on its line under the

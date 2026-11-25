@@ -143,6 +143,21 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
         .unwrap_err();
     assert_eq!(refused.code(), tonic::Code::InvalidArgument, "{refused:?}");
 
+    // The settings list what the config pins as it is written, a folder
+    // gone from the disk too, so a settings screen can still unpin it; the
+    // entry offers only folders that are there.
+    let pinned = repository.canonicalize().unwrap();
+    std::fs::remove_dir_all(&repository).unwrap();
+    let listed = door
+        .get_settings(Request::new(wire::GetSettingsRequest {}))
+        .await
+        .unwrap()
+        .into_inner()
+        .settings
+        .unwrap()
+        .repositories;
+    assert_eq!(listed, [pinned.to_str().unwrap()]);
+
     drop(runtime);
     daemon.shutdown().await.unwrap();
 }

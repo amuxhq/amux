@@ -901,6 +901,9 @@ pub struct MachineSettings {
     pub telemetry: bool,
     /// A report is sent on its own when something goes wrong.
     pub auto_reports: bool,
+    /// The folders the machine's config pins, as absolute paths, whether
+    /// or not each is there now; changed only by pinning.
+    pub repositories: Vec<String>,
     /// Every experiment the machine's build implements, in the order they
     /// are listed. amux restarts itself to apply a switch, and says it is
     /// being applied until it has.
@@ -933,6 +936,7 @@ impl From<&wire::Settings> for MachineSettings {
             keep_awake: settings.keep_awake,
             telemetry: settings.telemetry,
             auto_reports: settings.auto_reports,
+            repositories: settings.repositories.clone(),
             experiments: settings
                 .experiments
                 .iter()

@@ -473,7 +473,10 @@ Claude Code and Codex ran in lately outside amux. Search that list in the
 client. `HostService.PinFolder`, addressed to the machine, is the only way
 to pin or unpin one, for a person on that machine or a paired one (an agent
 is refused), and the machine's entry then says the change. The pins are
-kept in the `repositories` key of the machine's config.
+kept in the `repositories` key of the machine's config, and `GetSettings`
+lists them as `Settings.repositories`, as written there: a folder that is
+gone stays listed, so a settings screen can unpin it, while the entry
+offers only folders that are there.
 
 Onboarding is one list of steps the daemon keeps for each profile, the
 same for every client. `SubscribeOnboarding` sends them now and again on

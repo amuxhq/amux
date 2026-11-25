@@ -64,6 +64,7 @@ pub fn settings() -> wire::Settings {
         telemetry: true,
         auto_reports: false,
         experiments: Vec::new(),
+        repositories: Vec::new(),
     }
 }
 
@@ -406,13 +407,16 @@ pub fn settings_page(signed_in: bool) -> SettingsScene {
         ],
         ..settings()
     };
+    let settings = wire::Settings {
+        repositories: vec![
+            "/Users/jordan/src/amux".to_owned(),
+            "/Users/jordan/src/amuxcloud".to_owned(),
+        ],
+        ..settings
+    };
     let mut scene = SettingsScene {
         screen: SettingsScreen::new(settings, Some(profile(signed_in)), "Mac"),
     };
-    scene.screen.repositories_changed(vec![
-        "/Users/jordan/src/amux".to_owned(),
-        "/Users/jordan/src/amuxcloud".to_owned(),
-    ]);
     if !signed_in {
         for _ in 0..10 {
             scene.key(KeyCode::Down);

@@ -287,9 +287,8 @@ impl AppRuntime {
     /// Starts an agent on a host and returns it as the fleet names it: an
     /// agent of the program the person picked, of the kind the host's entry
     /// says that program starts as there, so an agent started here is the
-    /// same as one started at the host. A pick the kind takes no value of at
-    /// start is left out; what is not picked is the host's remembered pick,
-    /// else the program's own default.
+    /// same as one started at the host. What is not picked is the host's
+    /// remembered pick, else the program's own default.
     pub async fn create_agent(&self, agent: &NewAgent) -> Result<AgentKey, RpcError> {
         let kind = self
             .fleet

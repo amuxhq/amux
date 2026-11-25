@@ -877,6 +877,11 @@ impl ProfileRuntime {
         &self.onboarding
     }
 
+    /// The person's home, where Claude Code's and Codex's history is read.
+    pub(crate) fn home(&self) -> Option<&Path> {
+        self.pins.home()
+    }
+
     pub fn analytics(&self) -> &analytics::Analytics {
         &self.analytics
     }

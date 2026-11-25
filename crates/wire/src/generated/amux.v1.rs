@@ -10386,6 +10386,12 @@ pub struct Settings {
     /// lists them; empty from a build that implements none.
     #[prost(message, repeated, tag = "8")]
     pub experiments: ::prost::alloc::vec::Vec<Experiment>,
+    /// The folders the config pins, as absolute paths in its order, whether or
+    /// not each is there now: what a settings screen lists, and unpins with
+    /// PinFolder, the one way to change them. The host's entry offers only
+    /// those that exist, as places to start an agent.
+    #[prost(string, repeated, tag = "9")]
+    pub repositories: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 impl ::prost::Name for Settings {
     const NAME: &'static str = "Settings";

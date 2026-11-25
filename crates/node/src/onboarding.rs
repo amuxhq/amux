@@ -428,22 +428,25 @@ impl Registry {
                 kept(onboarding.confirm(done))?;
                 record(done, analytics::StepOutcome::Done);
                 if done == Id::Repositories {
-                    runtime
-                        .analytics()
-                        .record(analytics::Event::RepositoriesChosen {
-                            kept: u32::try_from(runtime.launch().repositories.len())
-                                .unwrap_or(u32::MAX),
-                            // What the host's entry offered to keep: the
-                            // folders Claude Code and Codex ran in lately.
-                            suggested: u32::try_from(
-                                runtime
-                                    .folders()
-                                    .iter()
-                                    .filter(|folder| folder.kind() == wire::FolderKind::History)
-                                    .count(),
-                            )
-                            .unwrap_or(u32::MAX),
+                    let kept =
+                        u32::try_from(runtime.launch().repositories.len()).unwrap_or(u32::MAX);
+                    // What the step offered to keep: the folders Claude Code
+                    // and Codex ran in lately, read from their history. The
+                    // host's entry no longer lists as history those the
+                    // step just pinned, so it cannot say how many there were.
+                    let home = runtime.home().map(Path::to_owned);
+                    let runtime = runtime.clone();
+                    tokio::task::spawn_blocking(move || {
+                        let suggested = home.map_or(0, |home| {
+                            crate::suggestions::suggest(&home, std::time::SystemTime::now()).len()
                         });
+                        runtime
+                            .analytics()
+                            .record(analytics::Event::RepositoriesChosen {
+                                kept,
+                                suggested: u32::try_from(suggested).unwrap_or(u32::MAX),
+                            });
+                    });
                 }
             }
             Some(Answer::Skip(raw)) => {

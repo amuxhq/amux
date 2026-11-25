@@ -370,6 +370,11 @@ pub(crate) fn to_wire(
         } as i32,
         telemetry: config.telemetry,
         auto_reports: config.auto_reports,
+        repositories: config
+            .repositories()
+            .iter()
+            .filter_map(|path| path.to_str().map(str::to_owned))
+            .collect(),
         experiments: settings::experiments::EXPERIMENTS
             .iter()
             .map(|experiment| wire::Experiment {

@@ -856,13 +856,6 @@ pub(crate) fn kind_of(state: &SessionState, held: &Held) -> (RowKind, Option<Dec
             Codex::Boundary(b) => plain(boundary(b)),
             Codex::Compaction(c) => plain(compaction(c)),
             Codex::AgentMessage(m) => plain(agent_message(held, m)),
-            // Codex telling a client it will stop supporting something the
-            // client sends: words for amux's developers, which the agent
-            // logs, not for the person chatting. Earlier builds kept them
-            // as error items, so a history may still hold one.
-            Codex::Error(e) if e.error_kind == ui_state::body::CODEX_DEPRECATION_NOTICE => {
-                plain(RowKind::Hidden)
-            }
             Codex::Error(e) => error(e),
             Codex::Unrecognized(u) => plain(unrecognized(u)),
             Codex::Verdict(v) => plain(RowKind::AutoReview {

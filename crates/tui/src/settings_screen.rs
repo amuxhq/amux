@@ -55,7 +55,7 @@ enum Row {
 #[derive(Debug)]
 pub struct SettingsScreen {
     settings: wire::Settings,
-    /// This machine's repositories, as its entry in the inventory pins them.
+    /// This machine's repositories, as its config pins them.
     repositories: Vec<String>,
     profile: Option<wire::Profile>,
     copy_on_select: bool,
@@ -134,8 +134,8 @@ impl SettingsScreen {
         machine: &str,
     ) -> SettingsScreen {
         SettingsScreen {
+            repositories: settings.repositories.clone(),
             settings,
-            repositories: Vec::new(),
             profile,
             copy_on_select: true,
             machine: machine.to_owned(),
@@ -184,13 +184,9 @@ impl SettingsScreen {
         &self.settings
     }
 
-    /// This machine's pinned folders, as its entry says them now.
-    pub fn repositories_changed(&mut self, repositories: Vec<String>) {
-        self.repositories = repositories;
-        self.focus = self.focus.min(self.rows().len() - 1);
-    }
-
     pub fn settings_changed(&mut self, settings: wire::Settings) {
+        self.repositories.clone_from(&settings.repositories);
+        self.focus = self.focus.min(self.rows().len() - 1);
         self.settings = settings;
         self.error = None;
     }

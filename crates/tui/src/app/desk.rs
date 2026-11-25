@@ -415,7 +415,6 @@ impl App {
             drop(fleet);
             self.setup_effects(effects);
         } else if let Some(page) = &mut desk.page {
-            page.repositories_changed(pinned(&fleet, &self.config.local_host));
             let effects = page.key(key);
             drop(fleet);
             self.settings_effects(effects);
@@ -432,7 +431,6 @@ impl App {
             drop(fleet);
             self.setup_effects(effects);
         } else if let Some(page) = &mut desk.page {
-            page.repositories_changed(pinned(&fleet, &self.config.local_host));
             let effects = page.mouse(mouse);
             drop(fleet);
             self.settings_effects(effects);
@@ -540,7 +538,6 @@ impl App {
         footer: Option<ratatui::text::Line<'static>>,
     ) -> bool {
         let theme = self.config.theme;
-        let fleet = self.fleet.state();
         let Some(desk) = &mut self.desk else {
             return false;
         };
@@ -549,7 +546,6 @@ impl App {
             return true;
         }
         if let Some(page) = &mut desk.page {
-            page.repositories_changed(pinned(&fleet, &self.config.local_host));
             page.draw(paint, area, footer, theme);
             return true;
         }
@@ -833,10 +829,22 @@ impl App {
                 SettingsEffect::Update(request) => self.update_settings(*request),
                 SettingsEffect::Pin { path, pinned } => {
                     let host = self.client.host(&self.config.local_host);
+                    let Some(installation) = self
+                        .desk
+                        .as_ref()
+                        .map(|desk| desk.config.installation.clone())
+                    else {
+                        continue;
+                    };
                     let send = self.desk_send();
                     tokio::spawn(async move {
                         if let Err(error) = host.pin_folder(&path, pinned).await {
                             send(DeskEvent::Refused(format!("not changed: {error}")));
+                            return;
+                        }
+                        // The config now pins it or not; the settings say so.
+                        if let Ok(settings) = installation.get_settings().await {
+                            send(DeskEvent::Settings(settings));
                         }
                     });
                 }
@@ -871,21 +879,6 @@ impl App {
             }
         }
     }
-}
-
-/// This machine's pinned folders, as its entry in the inventory lists them.
-fn pinned(fleet: &ui_state::FleetState, local_host: &[u8]) -> Vec<String> {
-    fleet
-        .host(local_host)
-        .map(|entry| {
-            entry
-                .folders
-                .iter()
-                .filter(|folder| folder.kind() == wire::FolderKind::Pinned)
-                .map(|folder| folder.path.clone())
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 /// Why a sign-in did not finish, as a person reads it.

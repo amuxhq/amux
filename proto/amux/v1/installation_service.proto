@@ -79,6 +79,11 @@ message Settings {
   // Every experiment this build implements, in the order a settings screen
   // lists them; empty from a build that implements none.
   repeated Experiment experiments = 8;
+  // The folders the config pins, as absolute paths in its order, whether or
+  // not each is there now: what a settings screen lists, and unpins with
+  // PinFolder, the one way to change them. The host's entry offers only
+  // those that exist, as places to start an agent.
+  repeated string repositories = 9;
 }
 
 // A feature whose shape is still moving, shipped outside amux.v1's

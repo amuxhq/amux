@@ -124,7 +124,15 @@ pub async fn connect_within(path: &Path, patience: Duration) -> io::Result<Local
 /// started it, so a daemon that adopted an agent from an earlier daemon
 /// still knows which process to end when the agent does not answer.
 pub async fn connect_to_process(path: &Path) -> io::Result<(LocalStream, Option<u32>)> {
-    let (stream, pid) = imp::connect(&std::path::absolute(path)?, CONNECT_PATIENCE).await?;
+    connect_to_process_within(path, CONNECT_PATIENCE).await
+}
+
+/// [`connect_to_process`], trying for at most `patience`.
+pub async fn connect_to_process_within(
+    path: &Path,
+    patience: Duration,
+) -> io::Result<(LocalStream, Option<u32>)> {
+    let (stream, pid) = imp::connect(&std::path::absolute(path)?, patience).await?;
     Ok((LocalStream::new(stream), pid))
 }
 

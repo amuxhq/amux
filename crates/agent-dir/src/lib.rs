@@ -18,6 +18,7 @@ pub mod local_socket;
 
 use std::io;
 use std::path::Path;
+use std::time::Duration;
 
 pub use clock::{Clock, ManualClock, Sleep, SystemClock};
 pub use ctl::{MAX_FRAME_BYTES, read_frame, read_message, write_frame, write_message};
@@ -114,7 +115,10 @@ pub enum Holder {
     /// A process holds it but the file names none that could be pinned:
     /// an older build's agent, which writes no pid (on Windows its
     /// whole-file lock keeps the file from being read at all), or one that
-    /// has taken the lock and not yet written its pid.
+    /// has taken the lock and not yet written its pid or bound its agent
+    /// socket. Or the file names a process that does not serve the
+    /// directory's agent socket: a pid a crashed holder left, which the OS
+    /// may since have given to anyone, under an older build's holder.
     Unnamed,
     /// This process holds it: an agent run inside a test's own process.
     /// Never pinned, so no caller can end itself by ending the holder.
@@ -125,15 +129,25 @@ pub enum Holder {
 /// looked.
 const HOLDER_LOOKS: usize = 3;
 
-/// Who holds `<dir>/lock`: the lock is held, the file names a pid, and the
-/// process with that pid is opened. The daemon's adoption fallback, the
-/// CLI and the test harness find an agent's process this way.
+/// How long [`lock_holder`] waits for the directory's agent socket to
+/// answer: a live agent's answers at once, and a socket that does not is
+/// reason enough not to name the holder.
+const SOCKET_PATIENCE: Duration = Duration::from_millis(500);
+
+/// Who holds `<dir>/lock`: the lock is held, the file names a pid, the
+/// process with that pid is opened, and it is the one serving the
+/// directory's agent socket ([`agent_sock`]). The CLI and the test harness
+/// find an agent's process this way, to end it.
 ///
 /// Like [`locked`], finding out takes the lock and releases it (twice), so
 /// it is for directories whose process the caller is not starting. A pid
 /// read is only believed while the lock stays held across the open and the
 /// file still names it, so a holder that exits meanwhile is reported
-/// [`Holder::Free`], never as whoever has its pid now.
+/// [`Holder::Free`], never as whoever has its pid now. That alone is not
+/// proof: an older build's agent, which writes no pid, can hold the lock
+/// over the pid a crashed newer one left, so the pid is believed only when
+/// the operating system names the same process as the agent socket's
+/// server, and is otherwise [`Holder::Unnamed`].
 pub fn lock_holder(dir: &Path) -> io::Result<Holder> {
     let path = dir.join(LOCK);
     for _ in 0..HOLDER_LOOKS {
@@ -157,13 +171,47 @@ pub fn lock_holder(dir: &Path) -> io::Result<Holder> {
             return Ok(Holder::Free);
         }
         if named_pid(&path) == Some(pid) {
-            return Ok(Holder::Process(process));
+            return Ok(if agent_socket_server(dir) == Some(pid) {
+                Holder::Process(process)
+            } else {
+                Holder::Unnamed
+            });
         }
     }
     Ok(if FileLock::held(&path)? {
         Holder::Unnamed
     } else {
         Holder::Free
+    })
+}
+
+/// The process serving `dir`'s agent socket, as the operating system names
+/// the socket's server, when it answers within [`SOCKET_PATIENCE`]. The
+/// dial is one the agent's tool server could make, closed before it asks
+/// anything, which the agent shrugs off. Callers are synchronous and may
+/// hold a runtime's only thread, so it runs on a thread and a runtime of
+/// its own.
+fn agent_socket_server(dir: &Path) -> Option<u32> {
+    let socket = agent_sock::path(dir);
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .ok()?;
+                runtime.block_on(async {
+                    let (stream, pid) =
+                        local_socket::connect_to_process_within(&socket, SOCKET_PATIENCE)
+                            .await
+                            .ok()?;
+                    stream.close();
+                    pid
+                })
+            })
+            .join()
+            .ok()
+            .flatten()
     })
 }
 
@@ -183,27 +231,66 @@ mod tests {
 
     /// Names the directory whose lock [`helper_holds_the_lock`] takes.
     const HOLD_ENV: &str = "AGENT_DIR_TEST_HOLD";
+    /// Set when the helper is to serve no agent socket.
+    const NO_SOCKET_ENV: &str = "AGENT_DIR_TEST_NO_SOCKET";
     /// What it prints once it holds the lock.
     const HELD: &str = "agent-dir-test: held";
 
     /// Not a test of its own: the process the tests below start, which
-    /// takes the lock of the directory [`HOLD_ENV`] names, says so, and
-    /// holds it until its input closes. Run without that variable, it
-    /// does nothing.
+    /// takes the lock of the directory [`HOLD_ENV`] names, serves its
+    /// agent socket as an agent process does (unless [`NO_SOCKET_ENV`] is
+    /// set), says so, and holds both until its input closes. Run without
+    /// that variable, it does nothing.
     #[test]
     fn helper_holds_the_lock() {
         let Some(dir) = std::env::var_os(HOLD_ENV) else {
             return;
         };
-        let _lock = lock(Path::new(&dir)).unwrap().expect("the lock is free");
+        let dir = Path::new(&dir);
+        let _lock = lock(dir).unwrap().expect("the lock is free");
+        let _serving = std::env::var_os(NO_SOCKET_ENV)
+            .is_none()
+            .then(|| serve_agent_socket(dir));
         println!("{HELD}");
         std::io::stdout().flush().unwrap();
         let _ = io::Read::read_to_end(&mut io::stdin(), &mut Vec::new());
     }
 
-    /// Another process holding `dir`'s lock, once it says it does.
+    /// Serves `dir`'s `private/agent.sock` from this process, accepting
+    /// and dropping every connection, until the runtime drops.
+    fn serve_agent_socket(dir: &Path) -> tokio::runtime::Runtime {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        std::fs::create_dir_all(dir.join(PRIVATE)).unwrap();
+        let mut listener = {
+            let _entered = runtime.enter();
+            local_socket::LocalListener::bind(&agent_sock::path(dir)).unwrap()
+        };
+        runtime.spawn(async move {
+            while let Ok(stream) = listener.accept().await {
+                drop(stream);
+            }
+        });
+        runtime
+    }
+
+    /// Another process holding `dir`'s lock and serving its agent socket,
+    /// once it says it does.
     fn holder(dir: &Path) -> Child {
-        let mut child = Command::new(std::env::current_exe().unwrap())
+        holder_serving(dir, true)
+    }
+
+    /// Another process holding `dir`'s lock, and serving its agent socket
+    /// when `socket`, once it says it does.
+    fn holder_serving(dir: &Path, socket: bool) -> Child {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        if !socket {
+            command.env(NO_SOCKET_ENV, "1");
+        }
+        let mut child = command
             .args(["--exact", "tests::helper_holds_the_lock", "--nocapture"])
             .env(HOLD_ENV, dir)
             .stdin(Stdio::piped())
@@ -303,6 +390,36 @@ mod tests {
         assert!(child.wait().unwrap().success());
         until_free(dir.path());
         assert_eq!(std::fs::read_to_string(dir.path().join(LOCK)).unwrap(), "");
+    }
+
+    /// The pid in a lock file is believed only when the process serving
+    /// the directory's agent socket is the same one: a pid a crashed holder
+    /// left, which a process outside amux has since taken while an older
+    /// build's agent holds the lock (writing no pid of its own), names no
+    /// process to end. Here the file names a live process that serves no
+    /// socket.
+    #[test]
+    fn a_holder_that_serves_no_agent_socket_is_not_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut child = holder_serving(dir.path(), false);
+        let holder = lock_holder(dir.path()).unwrap();
+        drop(child.stdin.take());
+        child.wait().unwrap();
+        assert!(matches!(holder, Holder::Unnamed), "{holder:?}");
+    }
+
+    /// And here the socket answers, but another process serves it: the one
+    /// the lock file names is not the directory's agent.
+    #[test]
+    fn a_holder_whose_agent_socket_another_process_serves_is_not_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut child = holder_serving(dir.path(), false);
+        let serving = serve_agent_socket(dir.path());
+        let holder = lock_holder(dir.path()).unwrap();
+        drop(serving);
+        drop(child.stdin.take());
+        child.wait().unwrap();
+        assert!(matches!(holder, Holder::Unnamed), "{holder:?}");
     }
 
     /// An older build's agent holds the lock with std's whole-file lock and

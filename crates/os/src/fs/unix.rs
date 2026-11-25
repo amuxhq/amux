@@ -5,7 +5,7 @@ use std::io::{self, Write as _};
 use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, PermissionsExt as _};
 use std::path::Path;
 
-use super::{Publish, VolumeCheck};
+use super::{Create, Flush, Publish, VolumeCheck};
 
 /// Unix paths have no verbatim form.
 pub(super) const VERBATIM_PATHS: bool = false;
@@ -40,6 +40,20 @@ pub(super) fn current_user_sid() -> io::Result<String> {
     ))
 }
 
+pub(super) fn create_private(path: &Path, how: Create) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true).mode(0o600);
+    match how {
+        Create::New => options.write(true).create_new(true),
+        Create::Truncate => options.write(true).create(true).truncate(true),
+        Create::Append => options.append(true).create(true),
+    };
+    let file = options.open(path)?;
+    // A file that was there keeps its mode through `open`.
+    file.set_permissions(Permissions::from_mode(0o600))?;
+    Ok(file)
+}
+
 pub(super) fn create_temp(temp: &Path) -> io::Result<File> {
     let mut options = private_open_options();
     options.create_new(true);
@@ -53,9 +67,12 @@ pub(super) fn finish_durably(
     path: &Path,
     bytes: &[u8],
     publish: Publish,
+    flush: Flush,
 ) -> io::Result<()> {
     file.write_all(bytes)?;
-    file.sync_all()?;
+    if flush == Flush::Yes {
+        file.sync_all()?;
+    }
     drop(file);
     match publish {
         Publish::Replace => fs::rename(temp, path),
@@ -184,5 +201,22 @@ mod tests {
         fs::set_permissions(&path, Permissions::from_mode(0o640)).unwrap();
         super::super::make_executable(&path).unwrap();
         assert_eq!(mode(&path), 0o750);
+    }
+
+    /// Unix's half of the private-file promise; Windows reads back the DACL
+    /// in `windows_tests.rs`.
+    #[test]
+    fn a_private_file_is_0600_and_an_existing_one_becomes_so() {
+        let dir = tempfile::tempdir().unwrap();
+        for how in [Create::Truncate, Create::Append] {
+            let path = dir.path().join(format!("{how:?}"));
+            fs::write(&path, b"x").unwrap();
+            fs::set_permissions(&path, Permissions::from_mode(0o644)).unwrap();
+            drop(create_private(&path, how).unwrap());
+            assert_eq!(mode(&path), 0o600, "{how:?}");
+        }
+        let new = dir.path().join("new");
+        drop(create_private(&new, Create::New).unwrap());
+        assert_eq!(mode(&new), 0o600);
     }
 }

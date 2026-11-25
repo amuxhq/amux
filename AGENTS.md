@@ -1,8 +1,8 @@
 # Operating Rules
 
-amux is released. From 0.11.0 on, builds of different versions meet, and a
-build reads what 0.11.0 or a later release left on disk. Five things are
-promises, and a change keeps them:
+amux is released. From 0.9.0 on, builds of different versions meet; from
+0.11.0 on, a build reads what 0.11.0 or a later release left on disk. Five
+things are promises, and a change keeps them:
 
 - **The protocol.** From 0.11.0 on, `amux.v1` only adds, as
   `proto/amux/v1/README.md` says (reserve a retired number; never renumber,

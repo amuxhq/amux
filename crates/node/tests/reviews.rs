@@ -1705,8 +1705,11 @@ mod stores {
         let elsewhere = install.work.with_file_name("elsewhere");
         std::fs::create_dir_all(&elsewhere).unwrap();
         std::fs::write(elsewhere.join("kept.txt"), "kept\n").unwrap();
-        provider_fakes::faults::link_dir(&elsewhere, &linked.dir.join(daemon_core::reviews::REVIEW))
-            .unwrap();
+        provider_fakes::faults::link_dir(
+            &elsewhere,
+            &linked.dir.join(daemon_core::reviews::REVIEW),
+        )
+        .unwrap();
         let mut kept = names(&agent.dir);
         kept.remove(daemon_core::reviews::REVIEW);
 

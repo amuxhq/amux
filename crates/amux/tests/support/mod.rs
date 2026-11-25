@@ -335,12 +335,8 @@ pub fn kill_group(pid: u32) -> bool {
             .stderr(std::process::Stdio::null())
             .status()
     };
-    match quiet(std::process::Command::new("taskkill").args([
-        "/F",
-        "/T",
-        "/PID",
-        &pid.to_string(),
-    ])) {
+    match quiet(std::process::Command::new("taskkill").args(["/F", "/T", "/PID", &pid.to_string()]))
+    {
         Ok(status) => status.success(),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             quiet(std::process::Command::new("pkill").args(["-KILL", "-g", &pid.to_string()]))

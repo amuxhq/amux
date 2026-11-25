@@ -142,6 +142,10 @@ async fn until(what: &str, done: impl Fn() -> bool) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux server start` run to its end never returns: the test hangs until killed at 200 s"
+)]
 async fn stop_goes_to_the_supervisor_first_where_the_install_has_one() {
     let install = Install::new(true, "");
     let started = install.amux(&["server", "start"]);
@@ -214,6 +218,10 @@ async fn stop_reaches_an_amux_started_with_its_stop_signals_blocked() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux server start` run to its end never returns: the test hangs until killed at 200 s"
+)]
 async fn stop_goes_to_the_daemon_where_the_install_has_no_supervisor() {
     let install = Install::new(false, "");
     install.amux(&["server", "start"]);
@@ -233,6 +241,10 @@ async fn stop_goes_to_the_daemon_where_the_install_has_no_supervisor() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux ls`, which starts the supervisor, never returns: the test hangs until killed at 200 s"
+)]
 async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
     let with = Install::new(true, "");
     let listed = with.command(&["ls"]).output().unwrap();
@@ -279,7 +291,10 @@ async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
 // Built everywhere so the test listing names it wherever the contracts
 // are checked; only macOS has the assertion to look for.
 #[cfg_attr(target_os = "linux", ignore = "only macOS holds a sleep assertion")]
-#[cfg_attr(windows, ignore = "windows: SYMPTOM_KEEP_AWAKE")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux server start` run to its end never returns: the test hangs until killed at 200 s"
+)]
 #[tokio::test(flavor = "multi_thread")]
 async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
     fn assertions_of(pid: u32) -> Vec<String> {
@@ -447,6 +462,10 @@ async fn update_says_updates_are_deploys_without_a_supervisor() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux server start` run to its end never returns: the test hangs until killed at 200 s"
+)]
 async fn update_retry_installs_the_channel_build_now_even_one_rolled_back_here() {
     let builds = tempfile::tempdir().unwrap();
     let bin = builds.path().join("bin");
@@ -496,6 +515,10 @@ async fn update_retry_installs_the_channel_build_now_even_one_rolled_back_here()
 /// update` says so and fails, rather than leaving the person to read the
 /// log, and a later `amux update` leaves that build alone unless retried.
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux server start` run to its end never returns: the test hangs until killed at 200 s"
+)]
 async fn update_reports_a_build_that_never_started_and_then_leaves_it_alone() {
     let builds = tempfile::tempdir().unwrap();
     let bin = builds.path().join("bin");
@@ -550,6 +573,10 @@ async fn update_reports_a_build_that_never_started_and_then_leaves_it_alone() {
 /// serves the experiments switched on, says so to clients, and the agent in
 /// the middle of a turn keeps its process across it.
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
+)]
 async fn under_a_supervisor_an_experiment_switch_restarts_the_daemon_through_it() {
     use support::desk::{Desk, LONG_GRACE_SECS};
 

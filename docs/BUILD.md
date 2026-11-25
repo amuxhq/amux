@@ -320,8 +320,9 @@ It needs:
 - rustup, with the toolchain `rust-toolchain.toml` pins and the formatting
   nightly (above), and Visual Studio's C++ build tools, whose linker
   `cargo install` needs. `just premerge`'s scripts run Cargo here (`cargo
-  metadata`, `cargo tree`, rustfmt), and `just shear` needs
-  `cargo install --locked cargo-shear@1.14.0`, which builds without clang.
+  metadata`, `cargo tree`, rustfmt), and the unused-dependency checker
+  `just shear` runs is installed once with the `cargo install` line above
+  that recipe in the justfile; it builds without clang.
 - Developer Mode (symbolic links without elevation), long paths, and
   `git config core.autocrlf false`, so a checkout's goldens and fixtures
   keep main's bytes.

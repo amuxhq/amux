@@ -408,13 +408,16 @@ const LEAST_READ: Duration = Duration::from_millis(100);
 /// Reads of name files that may be outstanding at once. A read is
 /// abandoned at its deadline but its thread waits on, on a stalled disk
 /// (a network share gone quiet), so a connect past this many waits for a
-/// slot within its own deadline instead of tying up more threads.
+/// slot within its own deadline instead of tying up more threads. The
+/// threads are our own, not tokio's blocking pool: a runtime waits for
+/// its blocking tasks when it shuts down, and a stalled read would hold
+/// `amux status` open after its connect gave up.
 const MOST_READING: usize = 4;
 
 /// One slot for each read of a name file under way, held by its thread.
 static READING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(MOST_READING);
 
-/// Reads the name file at `path` on a blocking thread, giving up at
+/// Reads the name file at `path` on a thread of its own, giving up at
 /// `until` (or [`LEAST_READ`] from now, if later), the wait for a slot
 /// among [`MOST_READING`] included.
 async fn read_name(path: &Path, until: Instant) -> io::Result<Named> {
@@ -433,13 +436,22 @@ async fn read_name(path: &Path, until: Instant) -> io::Result<Named> {
         }
     };
     let file = path.to_owned();
-    let reading = tokio::task::spawn_blocking(move || {
-        let _slot = slot;
-        read_name_now(&file)
-    });
+    let (answer, reading) = tokio::sync::oneshot::channel();
+    // Detached: nothing waits for it but this connect, which may stop.
+    std::thread::Builder::new()
+        .name("amux-name-file".into())
+        .spawn(move || {
+            let _slot = slot;
+            #[cfg(test)]
+            tests::stall(&file);
+            let _ = answer.send(read_name_now(&file));
+        })?;
     match tokio::time::timeout_at(until.into(), reading).await {
         Ok(Ok(named)) => named,
-        Ok(Err(error)) => Err(io::Error::other(error)),
+        Ok(Err(_)) => Err(io::Error::other(format!(
+            "{}: the read ended without an answer",
+            path.display()
+        ))),
         Err(_) => Err(io::Error::new(
             io::ErrorKind::TimedOut,
             format!("{}: reading it did not finish in time", path.display()),

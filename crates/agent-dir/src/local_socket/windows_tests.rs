@@ -20,6 +20,51 @@ use super::{INSTANCES, Listener, is_amux_pipe, owned_by_me, random_name};
 
 const HEX32: &str = "0123456789abcdef0123456789abcdef";
 
+/// Name files whose reads stall, and for how long: a share gone quiet,
+/// for the reads of one path alone, so tests running beside are untouched.
+static STALLED: std::sync::Mutex<Vec<(std::path::PathBuf, Duration)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Called by each read of a name file before it reads.
+pub(super) fn stall(path: &Path) {
+    let stall = STALLED
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(stalled, _)| stalled == path)
+        .map(|(_, stall)| *stall);
+    if let Some(stall) = stall {
+        std::thread::sleep(stall);
+    }
+}
+
+fn stall_reads_of(path: &Path, stall: Duration) {
+    STALLED.lock().unwrap().push((path.to_owned(), stall));
+}
+
+/// A read of the name file that stalls is given up at the deadline, and
+/// the runtime that asked shuts down at once, not when the read ends.
+#[test]
+fn a_stalled_name_file_read_does_not_hold_its_runtime_open() {
+    let root = tempfile::tempdir().unwrap();
+    let path = std::path::absolute(root.path().join("ctl.sock")).unwrap();
+    std::fs::write(&path, random_name()).unwrap();
+    stall_reads_of(&path, Duration::from_secs(3));
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let error = runtime
+        .block_on(connect_within(&path, Duration::from_millis(200)))
+        .err()
+        .expect("the read stalls");
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut, "{error}");
+    let started = Instant::now();
+    drop(runtime);
+    let took = started.elapsed();
+    assert!(took < Duration::from_secs(1), "the runtime shut down in {took:?}");
+}
+
 /// Within a few seconds, or the test fails rather than hangs.
 async fn soon<T>(what: &str, future: impl std::future::Future<Output = T>) -> T {
     tokio::time::timeout(Duration::from_secs(5), future)

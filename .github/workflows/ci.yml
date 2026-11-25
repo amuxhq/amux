@@ -90,6 +90,13 @@ jobs:
       # runner alone, slower but the same checks. So does a repository with
       # no BUILD_HOST variable set.
       REMOTE: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && vars.BUILD_HOST != '' && inputs.without-build-host != true }}
+      # With the build host, the runner only drives Buck2: every check that
+      # runs Rust's tools is an action on the build host's worker
+      # (build/cargo.bzl), so the runner needs only the flake's small `ci`
+      # shell (Python, just, git and zstd; scripts/buck-tools.py fetches the
+      # pinned buck2). Without it, the runner's own NativeLink and worker
+      # need the whole toolchain.
+      DEV_SHELL: ${{ secrets.TS_OAUTH_CLIENT_ID != '' && vars.BUILD_HOST != '' && inputs.without-build-host != true && '.#ci' || '.#default' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -114,7 +121,7 @@ jobs:
         if: env.REMOTE == 'true'
         run: echo "AMUX_NATIVELINK=grpc://$BUILD_HOST:50051" >> "$GITHUB_ENV"
       - name: Fetch the pinned tools
-        run: nix develop --command true
+        run: nix develop "$DEV_SHELL" --command scripts/py scripts/buck-tools.py path buck2
       # Without the build host, a NativeLink of the runner's own takes its
       # place, so every action still runs sandboxed through a worker. Its
       # cache goes on the runner's larger second disk. Its worker offers the
@@ -126,7 +133,7 @@ jobs:
         run: |
           sudo mkdir -p /mnt/nativelink && sudo chown "$(id -u):$(id -g)" /mnt/nativelink
           echo "AMUX_LINUX_WORKER_CORES=$(nproc)" >> "$GITHUB_ENV"
-          nohup nix develop --command scripts/py scripts/nativelink.py serve /mnt/nativelink --cores "$(nproc)" > /mnt/nativelink/log 2>&1 &
+          nohup nix develop "$DEV_SHELL" --command scripts/py scripts/nativelink.py serve /mnt/nativelink --cores "$(nproc)" > /mnt/nativelink/log 2>&1 &
           for _ in $(seq 60); do nc -z 127.0.0.1 50051 && exit 0; sleep 1; done
           cat /mnt/nativelink/log; exit 1
       # The gate every landing passes: through Buck2, every test, the
@@ -138,7 +145,7 @@ jobs:
       # job below: all of it on one four-core runner takes longer than a
       # test run's bound.
       - name: Run the gate (just premerge)
-        run: nix develop --command just ${{ env.REMOTE == 'true' && 'premerge' || 'premerge-half workspace' }}
+        run: nix develop "$DEV_SHELL" --command just ${{ env.REMOTE == 'true' && 'premerge' || 'premerge-half workspace' }}
       - name: Say what Buck2 ran and what came from the cache
         if: always()
         # Each build's log, then each test run's, each oldest first.
@@ -149,7 +156,7 @@ jobs:
             scripts/buck2 log summary "$log" | grep -E '^Showing|^- (Local|Remote|Cached|Other) actions' || true
           done
           EOF
-          nix develop --command sh "$RUNNER_TEMP/summaries.sh"
+          nix develop "$DEV_SHELL" --command sh "$RUNNER_TEMP/summaries.sh"
 
   # The Android app's half of the gate (`just premerge-half android`), on a
   # runner of its own, when the Linux gate has no build host to share the

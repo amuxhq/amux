@@ -35,6 +35,7 @@ load("@prelude//rust:sources.bzl", "RustSources", "RustSourcesTSet")
 load("@prelude//tests:re_utils.bzl", "get_re_executors_from_props")
 load("//build/platforms:defs.bzl", "EXEC_RUNS_TARGET", "MODES", "TARGETS", "host_platform")
 load("@toolchains//:nix.bzl", "NixToolchainInfo")
+load(":cargo.bzl", "amux_cargo_package")
 
 # Cargo.toml's [profile.dev.package.*]: crates the model checker runs
 # through, optimised in every build (`rustc_flags = OPTIMISED`).
@@ -367,6 +368,7 @@ def amux_rust_library(
     `tool = True` for a test harness's or build tool's library, which
     builds with test features on, as its binaries do.
     """
+    amux_cargo_package()
     crate = _crate_name()
     package = native.package_name()
     files = srcs if srcs != None else native.glob(["src/**"])
@@ -499,6 +501,7 @@ def amux_rust_binary(
     `unit_tests = True` for a binary with tests of its own, which Cargo
     runs as the binary's tests: they are the target `<name>-unit`, with
     `test_deps`, `test_resources` and `binaries` as a library's."""
+    amux_cargo_package()
     crate = _crate_name()
     package = native.package_name()
     if srcs == None:

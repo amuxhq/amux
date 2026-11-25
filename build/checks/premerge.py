@@ -24,18 +24,14 @@ ROOT = Path(__file__).resolve().parents[2]
 JUST = os.environ.get("JUST", "just")
 
 # The checks that stay scripts, each a recipe of the root justfile, and why
-# none is a Buck2 test: what each reads is the workspace as a whole, or the
-# build graph itself, which no action of that graph can be given.
+# none is a Buck2 test: each queries Buck2's own graph, which no action of
+# that graph can, or reads the checkout as a whole. None runs Cargo here:
+# what they need of Cargo they read from a Linux worker's (build/cargo.bzl),
+# and the checks that run Cargo are Buck2 tests in the root BUCK file
+# (`fmt-check`, `shear`, `deny` and the like), so this machine needs no
+# Rust toolchain for any of it.
 SCRIPTS = [
-    # rustfmt over every Rust file, with the dated nightly.
-    "fmt-check",
-    # Cargo's resolved graph: which crate may depend on which.
-    "dependency-policy",
-    # cargo-shear, over every crate's code and Cargo's graph.
-    "shear",
-    # `cargo tree` of each state-machine core: no tokio.
-    "cores-graph-check",
-    # The suite catalogue against every crate's targets (Cargo's view),
+    # The suite catalogue against every crate's targets (//:cargo-metadata),
     # every just recipe and every path the catalogue names.
     "tests-check",
     # Each crate's BUCK against its Cargo.toml: a query of Buck2's graph.

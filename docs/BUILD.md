@@ -55,11 +55,14 @@ Buck2 finds the pinned Rust. [`nix/toolchain.nix`](../nix/toolchain.nix) is the
 list, and `flake.lock` pins every tool in it, so two machines on the same
 revision get the same tools. `nix profile install .#toolchain` installs the
 same list onto the PATH of every shell, for a machine that should always have
-it.
+it. `nix develop .#ci` is a far smaller shell, Python, `just`, `git` and
+`zstd`, for a machine that only drives Buck2 while a Linux worker runs its
+actions, as CI's Linux gate does: `scripts/buck2` fetches the pinned
+`buck2` there.
 
 The shell has no rustup, so it provides the nightly's cargo as
-`cargo-nightly`, which `just fmt`, `just fmt-check`, `just miri` and `just sanitize` use
-whenever it is on the PATH. Its date in `nix/toolchain.nix` has to move with the justfile's.
+`cargo-nightly`, which `just fmt`, `just miri` and `just sanitize` use
+whenever it is on the PATH, and `//:fmt-check` runs on the Linux worker. Its date in `nix/toolchain.nix` has to move with the justfile's.
 
 The workspace has one lockfile. Build and verification recipes pass
 `--locked`, and protobuf output is committed, so the same revision selects
@@ -402,8 +405,10 @@ script run over exactly the files its target declares
 
 - in the root [`BUCK`](../BUCK) file: `docs-check`, `store-check`,
   `proto-compat`, `cores-check` (the sources half), `typed-provider-check`,
-  `client-kind-check`, `codegen-check`, `deny`, and the unit tests of the
-  repository's scripts, one test per file (`//:script-tests-land_queue`);
+  `client-kind-check`, `codegen-check`, the checks that run Cargo
+  (`fmt-check`, `dependency-policy`, `shear`, `cores-graph-check` and
+  `deny`, below), and the unit tests of the repository's scripts, one test
+  per file (`//:script-tests-land_queue`);
 - beside the apps' scripts: the Apple apps' writing lints and their recipe
   scripts' tests ([`apps/apple/Tools/BUCK`](../apps/apple/Tools/BUCK)), and
   the Android app's ([`apps/android/BUCK`](../apps/android/BUCK),
@@ -423,8 +428,9 @@ just script-tests              # a set of them, by label (`just test //: --inclu
 
 A check is sent to the Linux worker when one is in reach, so a Mac and the
 build host run the same action and share its result; with none in reach
-it runs on the Mac's own worker, except `deny`, whose dependency checker
-is the Linux toolchain's: it is skipped then, and `just test` names it. On a Mac,
+it runs on the Mac's own worker, except the checks that run Cargo, whose
+tools are the Linux toolchain's: they are skipped then, and `just test`
+names them. On a Mac,
 Node for the JavaScript's checks is the release `//build:node` pins, the
 version the Linux toolchain's is. A check finds nothing it didn't declare:
 a test that reads a file outside its inputs fails, rather than passing on
@@ -441,19 +447,14 @@ runs first and which writes `build/checks/inputs/` (not committed):
 - the newest release's store schema and protobuf schemas, which the store
   and protocol checks compare with in place of git's history. A clone
   without the release tags therefore fails those two checks.
-- what `deny` reads: Cargo's resolved graph with every feature (which needs
-  Cargo's registry, so it can't be made inside an action) and the
-  workspace's manifests, made again when a manifest or the lockfile
-  changes; a snapshot of the RustSec advisory database; and crates.io's
-  index entry for each crate in the graph, which says whether a release was
-  yanked. The last two are refreshed at most once a day, the index by
-  `cargo update --dry-run`, which writes no lockfile. `deny` itself runs
-  offline on them, so its result is a function of its inputs: it reruns
-  when the lockfile, a manifest, `deny.toml` or a day's snapshot changes.
-- today's date (UTC), for the npm audit. npm's advisories are a question
-  to its registry that no file can stand in for, so `//js:audit` asks it
-  inside the action and declares the date: its answer is kept for the rest
-  of the day and asked again on the next, or when the lockfile changes.
+- a snapshot of the RustSec advisory database, which `deny` reads,
+  refreshed at most once a day.
+- today's date (UTC), for the npm audit and the fetch of Cargo's registry.
+  npm's advisories are a question to its registry that no file can stand
+  in for, so `//js:audit` asks it inside the action and declares the date:
+  its answer is kept for the rest of the day and asked again on the next,
+  or when the lockfile changes. The fetch of Cargo's registry is kept the
+  same way ([Checks that run Cargo](#checks-that-run-cargo)).
 
 `just premerge` is `just test` over the whole graph and, at the same time,
 the checks that stay scripts ([`build/checks/premerge.py`](../build/checks/premerge.py)),
@@ -461,10 +462,8 @@ each run in the checkout with its output kept and printed when it fails:
 
 | Check | Why it isn't a Buck2 test |
 | --- | --- |
-| `fmt-check` | rustfmt on the dated nightly over every Rust file: a test target would need every file of the workspace and the nightly realized on the worker, to replace a three-second run |
-| `dependency-policy`, `shear`, the tokio half of `cores-check` | They read Cargo's resolved graph (`cargo metadata`, `cargo tree`), which needs Cargo's registry, and shear every crate's code besides |
-| `tests-check` | It checks the suite catalogue against every crate's targets as Cargo sees them, every `just` recipe, and every path the catalogue names: its inputs would be the whole checkout |
-| `parity`, `shipping-check`, `ci-jobs-check` | Queries of Buck2's own graph (`uquery`, `cquery`), which no action of that graph can make |
+| `tests-check` | It checks the suite catalogue against every `just` recipe and every path the catalogue names, so its inputs would be the whole checkout; Cargo's view of every crate's targets it reads from `//:cargo-metadata` |
+| `parity`, `shipping-check`, `ci-jobs-check` | Queries of Buck2's own graph (`uquery`, `cquery`), which no action of that graph can make; `parity` reads Cargo's side from `//:cargo-metadata` |
 | `lint` | Clippy is Buck2 actions, cached like the tests, but a build of each target's clippy output, which `buck2 test` doesn't build, so it is a `buck2 build` beside the test run |
 | `check-windows` | Every Windows binary is Buck2 actions on a Linux worker, cached like the tests, but in the Windows configuration, which `buck2 test` over the Linux targets doesn't build, so it is a `buck2 build --materializations none` beside the test run; with no Linux worker in reach it is skipped and named |
 | `apple-build` | Every Swift module of the iPhone app, the Mac app, their packages and their test bundles, compiled in the configurations CI's Apple jobs build, with nothing linked or run and no simulator booted. Buck2 actions on the Mac's worker, cached like the tests, but in the two Apple configurations, which `buck2 test` doesn't build, so it is a `buck2 build --materializations none` beside the test run. The Apple graphs configure only on a Mac, so anywhere else, as on the landing host, it is skipped and named |
@@ -484,6 +483,40 @@ time each took and the longest of each, how many ran at once in each
 place, and the critical path. A landing's log carries the same lines from the build host.
 `scripts/py build/checks/timing.py <event log>` says it for any Buck2
 command's log in `buck-out/v2/log`.
+
+#### Checks that run Cargo
+
+Cargo reads a workspace as a whole: every member's manifest, which files
+its targets are, and for anything past `--no-deps` every dependency's own
+manifest from its registry. The checks that run it are Buck2 tests on the
+Linux worker with the Linux toolchain's Cargo, rustfmt and unused-dependency
+checker, so the machine running `just premerge` needs no Rust of its own
+(CI's Linux gate has none), and each reruns only when what it reads changes
+([`build/cargo.bzl`](../build/cargo.bzl)):
+
+- each crate's `:cargo-package` is its manifest, Rust files and README,
+  and `//:cargo-sources` is every member's together, for `fmt-check`
+  (rustfmt on the dated nightly) and `shear`, which read the code;
+- `//:cargo-layout` is the members' manifests with only the paths of their
+  Rust files: the check gets an empty file for each, enough for Cargo to
+  tell the targets apart, so a check of the graph alone reruns when a
+  manifest or the lockfile changes or a file comes or goes, not on every
+  edit ([`build/checks/cargo.sh`](../build/checks/cargo.sh));
+- `//:cargo-registry` is every dependency the lockfile names, for every
+  platform, fetched as a Cargo home (`cargo fetch`): the one action that
+  reaches the network, again when the lockfile, a manifest or the day
+  changes, since crates.io's index also says which releases were yanked.
+  `shear`, `cores-graph-check` (`cargo tree` of each state-machine core:
+  no tokio) and `deny` read it offline;
+- `//:cargo-metadata` is `cargo metadata --no-deps` over the layout, with
+  `@ROOT@` for the checkout's root. `dependency-policy` reads it as a
+  test, and `parity` and `tests-check`, which stay scripts, build it and
+  read it ([`scripts/cargo_metadata.py`](../scripts/cargo_metadata.py);
+  with no Linux worker in reach they ask this machine's Cargo instead).
+
+A new workspace member goes into the root `BUCK` file's list beside them
+too; until then those checks fail, Cargo naming the manifest it can't
+find.
 
 ## Profiles
 

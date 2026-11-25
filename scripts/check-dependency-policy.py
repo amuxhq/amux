@@ -224,13 +224,18 @@ def local_edges(package: dict[str, object]) -> set[str]:
 
 
 def main() -> int:
-    metadata = json.loads(
-        subprocess.check_output(
-            ["cargo", "metadata", "--locked", "--format-version", "1", "--no-deps"],
-            cwd=ROOT,
-            text=True,
+    # `--metadata FILE` reads Cargo's metadata from FILE, as the Buck2 check
+    # (//:dependency-policy) does; without it, Cargo is asked.
+    if sys.argv[1:2] == ["--metadata"]:
+        metadata = json.loads(Path(sys.argv[2]).read_text())
+    else:
+        metadata = json.loads(
+            subprocess.check_output(
+                ["cargo", "metadata", "--locked", "--format-version", "1", "--no-deps"],
+                cwd=ROOT,
+                text=True,
+            )
         )
-    )
     members = set(metadata["workspace_members"])
     packages = {
         package["name"]: package

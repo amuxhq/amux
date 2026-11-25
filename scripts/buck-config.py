@@ -295,8 +295,12 @@ def write(mode: str) -> None:
     channel = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]["channel"]
     # A Windows machine builds nothing itself: Windows targets compile on a
     # Linux worker with the Windows toolchain (nix/windows.nix), so no
-    # action names a compiler of its own.
-    toolchain_dir = "" if platform.system() == "Windows" and mode != "local-build" else sysroot(channel)
+    # action names a compiler of its own. Nor does a Linux machine's: its
+    # actions all name the Nix toolchain's (build/toolchains/nix.bzl), as a
+    # Mac's Linux actions do, which share their keys with the build host's,
+    # so CI's Linux gate needs no Rust of its own.
+    builds_nothing = mode != "local-build" and platform.system() in ("Windows", "Linux")
+    toolchain_dir = "" if builds_nothing else sysroot(channel)
     lines = [
         "# Written by scripts/buck-config.py; not committed. It is rewritten",
         "# when the pinned toolchains change, or where actions go does.",

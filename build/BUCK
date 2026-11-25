@@ -57,6 +57,14 @@ export_file(
     visibility = ["PUBLIC"],
 )
 
+# What the checks that run Cargo run it through (build/cargo.bzl).
+export_file(
+    name = "checks/cargo.sh",
+    src = "checks/cargo.sh",
+    mode = "reference",
+    visibility = ["PUBLIC"],
+)
+
 amux_files(
     name = "tracked",
     srcs = glob(["checks/inputs/tracked"]),
@@ -80,7 +88,7 @@ amux_files(
 # The deny check's script and what it reads.
 amux_files(
     name = "deny",
-    srcs = ["checks/deny.sh"] + glob(["checks/inputs/deny/**"], exclude = ["checks/inputs/deny/key", "checks/inputs/deny/index-refreshed"]),
+    srcs = ["checks/deny.sh"] + glob(["checks/inputs/deny/advisory-db.*"]),
 )
 
 # buf for the protocol check on a Mac's own worker, when no Linux worker is

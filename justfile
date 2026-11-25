@@ -210,9 +210,11 @@ buckify:
 fmt:
     {{bounded}} 600 {{nightly_cargo}} fmt --all
 
+# A Buck2 check (`//:fmt-check`), on a Linux worker with the Linux
+# toolchain's dated nightly, over every member's Rust files.
 # Check Rust formatting with the pinned nightly toolchain.
 fmt-check:
-    {{bounded}} 600 {{nightly_cargo}} fmt --all -- --check
+    {{just_executable()}} test //:fmt-check
 
 # Regenerate the committed protobuf bindings.
 protobuf:
@@ -354,34 +356,29 @@ sanitize KIND *CRATES:
 
 # Fail when any state-machine core's dependency graph contains tokio, or any
 # core source contains a lock, a spawned task, an async fn or an await.
-cores-check: cores-graph-check
-    {{just_executable()}} test //:cores-check
-
-# The tokio half of `cores-check`, which reads Cargo's whole graph and so
-# stays a script; `//:cores-check` checks the sources.
-[private]
-cores-graph-check:
-    {{bounded}} 120 scripts/py scripts/cores-check.py --graph
+cores-check:
+    {{just_executable()}} test //:cores-check //:cores-graph-check
 
 # Enforce production and test-infrastructure dependency boundaries.
 dependency-policy:
-    {{bounded}} 60 scripts/py scripts/check-dependency-policy.py
+    {{just_executable()}} test //:dependency-policy
 
 # Check every dependency against deny.toml with cargo-deny: no open security
 # advisory or yanked release, only the licences it lists, and only crates.io
-# and the rustls patch and wt as sources. A Buck2 check (`//:deny`) on
-# snapshots of Cargo's graph, the advisory database and crates.io's index
-# that build/checks/inputs.py takes, the last two at most once a day; it runs
-# on a Linux worker, with the Linux toolchain's cargo-deny.
+# and the rustls patch and wt as sources. A Buck2 check (`//:deny`) on a
+# Linux worker, with the Linux toolchain's cargo-deny, over Cargo's graph
+# and crates.io's index as the day's fetch of the registry has them
+# (//:cargo-registry) and the snapshot of the advisory database that
+# build/checks/inputs.py takes at most once a day.
 deny:
     {{just_executable()}} test //:deny
 
 # Fail on any dependency no crate's code uses, so unused ones do not pile up
 # again. A crate lists what the code cannot show it needs under
-# `[package.metadata.cargo-shear]`. Needs
-# `cargo install --locked cargo-shear@1.14.0`.
+# `[package.metadata.cargo-shear]`. A Buck2 check (`//:shear`), with the
+# Linux toolchain's cargo-shear over the fetched registry.
 shear:
-    {{bounded}} 300 cargo shear --locked --deny-warnings
+    {{just_executable()}} test //:shear
 
 # `just suite desktop-cli-system` runs exactly the Cargo tests that suite of
 # tests/catalog.toml lists, on `just test`'s build; anything after the
@@ -396,8 +393,9 @@ tests-list:
     scripts/py -B scripts/tests-catalog.py list
 
 # Validate every catalogued recipe, target, feature, manifest and baseline.
-# A script, not a Buck2 check: it asks Cargo about every crate's targets and
-# just about every recipe, and looks for every path the catalogue names.
+# A script, not a Buck2 check: it asks just about every recipe and looks
+# for every path the catalogue names; Cargo's view of every crate's targets
+# it reads from //:cargo-metadata (scripts/cargo_metadata.py).
 tests-check:
     {{bounded}} 120 scripts/py -B scripts/tests-catalog.py check
 

@@ -107,14 +107,22 @@ with the repository's Tailscale OAuth client (`TS_OAUTH_CLIENT_ID`,
 `TS_OAUTH_SECRET`), which the tailnet's rules let reach the build cache's
 port and nothing else. The build host's name on the tailnet is the
 repository's `BUILD_HOST` Actions variable (`gh variable set BUILD_HOST
---body <host>`), which `ci.yml` reads into its environment. The pinned
-tools come from the repository's Nix flake (`nix develop`), as on the build
-host, so the runner's actions have the build host's keys.
+--body <host>`), which `ci.yml` reads into its environment. The runner only
+drives Buck2: every compile, test and check runs on the build host's
+worker, the checks that run Cargo and rustfmt among them
+([Checks that run Cargo](BUILD.md#checks-that-run-cargo)), and the
+checks that stay scripts read what they need of Cargo from there. So its
+tools are the Nix flake's small `ci` shell (`nix develop .#ci`: Python,
+`just`, `git` and `zstd`), pinned by `flake.lock`, and the `buck2`
+`build/tools.json` pins, which `scripts/buck2` fetches; the whole
+toolchain, which took most of a minute to fetch on every run, stays on the
+build host.
 
 A fork's pull request gets no secrets and so no tailnet, and a repository
 with no `BUILD_HOST` set has no build host to reach. Its gate starts a
 NativeLink on the runner (`scripts/nativelink.py serve`) and builds and
-tests everything there: slower, the same checks. All of it on one
+tests everything there, in the full dev shell (`nix develop`): slower, the
+same checks. All of it on one
 four-core runner takes longer than a test run's bound, so the gate runs in
 two halves on two runners (`just premerge-half workspace` here, `just
 premerge-half android` in the Linux gate, Android app job), which together
@@ -549,8 +557,7 @@ extension's checks and its npm audit, the repository's checks, deny among
 them, the scripts' unit tests and the phone apps' lints. Each runs only when
 something it reads changed since it last passed, in this tree or any other on
 the machine. The few checks that stay scripts, because they read the whole
-workspace or query the build graph itself (`fmt-check`, `dependency-policy`,
-`shear`, the tokio half of `cores-check`, `tests-check`, `parity`,
+checkout or query the build graph itself (`tests-check`, `parity`,
 `shipping-check` and `ci-jobs-check`), Clippy, the build of every Windows
 binary (`check-windows`) and, on a Mac, the compile of the Apple apps'
 Swift (`apple-build`), each a Buck2 build of its own, run at the same time

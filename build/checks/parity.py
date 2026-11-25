@@ -13,7 +13,9 @@ kept in step by hand (build/rust.bzl). This fails when they disagree on:
 
     parity.py [--metadata cargo-metadata.json] [--buck buck-targets.json]
 
-With no arguments it runs `cargo metadata` and `buck2 uquery` itself.
+With no arguments it asks Buck2 for both: //:cargo-metadata, Cargo's view
+from a Linux worker (scripts/cargo_metadata.py, which asks this machine's
+Cargo when no worker is in reach), and `buck2 uquery`.
 """
 
 import argparse
@@ -25,14 +27,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+sys.path.insert(0, str(ROOT / "scripts"))
+import cargo_metadata as cargo  # noqa: E402
+
+
 def cargo_metadata(path: str | None) -> dict:
     if path:
-        return json.loads(Path(path).read_text())
-    return json.loads(
-        subprocess.check_output(
-            ["cargo", "metadata", "--locked", "--format-version", "1", "--no-deps"], cwd=ROOT, text=True
-        )
-    )
+        return cargo.read(Path(path))
+    return cargo.load()
 
 
 def buck_targets(path: str | None) -> dict:

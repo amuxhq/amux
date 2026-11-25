@@ -125,7 +125,15 @@ pub async fn connect(path: &Path, patience: Duration) -> io::Result<(Stream, Opt
                 io::ErrorKind::TimedOut,
                 format!("{} did not answer within {patience:?}", path.display()),
             )
-        })??;
+        })?
+        .map_err(|error| match error.kind() {
+            // Linux: the listener's backlog is full. It is there, and busy.
+            io::ErrorKind::WouldBlock => io::Error::new(
+                io::ErrorKind::ResourceBusy,
+                format!("{} is too busy to take a connection: {error}", path.display()),
+            ),
+            _ => error,
+        })?;
     let pid = stream
         .peer_cred()
         .ok()
@@ -308,6 +316,45 @@ mod tests {
             root.path().join("ctl.sock.lock").is_file(),
             "the lock stays"
         );
+    }
+
+    /// A listener whose backlog is full is there, and busy: a connect
+    /// says so (`ResourceBusy`), not that nothing answers, so a daemon
+    /// starting doesn't take a live one's socket for free.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_listener_with_a_full_backlog_is_busy() {
+        use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("ctl.sock");
+        let address = address(&path).unwrap();
+        // SAFETY: a new socket, owned at once; bound to a path in our own
+        // folder and listening with the shortest backlog, never accepting.
+        let listener = unsafe {
+            let fd = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0);
+            assert!(fd >= 0);
+            let listener = OwnedFd::from_raw_fd(fd);
+            let mut name: libc::sockaddr_un = std::mem::zeroed();
+            name.sun_family = libc::AF_UNIX as libc::sa_family_t;
+            for (to, from) in name.sun_path.iter_mut().zip(address.as_os_str().as_bytes()) {
+                *to = *from as libc::c_char;
+            }
+            let size = size_of::<libc::sockaddr_un>() as libc::socklen_t;
+            assert_eq!(libc::bind(fd, (&raw const name).cast(), size), 0);
+            assert_eq!(libc::listen(listener.as_raw_fd(), 0), 0);
+            listener
+        };
+        let mut held = Vec::new();
+        let error = loop {
+            match crate::local_socket::connect_within(&path, Duration::from_secs(1)).await {
+                Ok(stream) => held.push(stream),
+                Err(error) => break error,
+            }
+            assert!(held.len() < 64, "the backlog never filled");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::ResourceBusy, "{error}");
+        drop(listener);
     }
 
     /// The socket file is the socket: a file put at the path since is

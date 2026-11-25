@@ -368,7 +368,7 @@ pub async fn connect(path: &Path, patience: Duration) -> io::Result<(Stream, Opt
         let now = Instant::now();
         if now >= until {
             let (kind, what) = match waiting {
-                Waiting::Busy => (io::ErrorKind::TimedOut, "every pipe instance stayed busy"),
+                Waiting::Busy => (io::ErrorKind::ResourceBusy, "every pipe instance stayed busy"),
                 Waiting::Held => (io::ErrorKind::TimedOut, "the name file stayed held"),
                 Waiting::Gone => (io::ErrorKind::ConnectionRefused, "no pipe answered"),
             };

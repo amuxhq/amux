@@ -193,7 +193,8 @@ async fn a_busy_server_is_given_up_on_by_the_deadline() {
     let started = Instant::now();
     let error = connect_within(&path, patience).await.err().expect("busy");
     let waited = started.elapsed();
-    assert_eq!(error.kind(), io::ErrorKind::TimedOut, "{error}");
+    // Busy, not gone: a daemon starting must not take this one's name.
+    assert_eq!(error.kind(), io::ErrorKind::ResourceBusy, "{error}");
     assert!(
         waited >= patience,
         "it tried until the deadline: {waited:?}"

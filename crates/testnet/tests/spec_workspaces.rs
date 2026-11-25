@@ -157,7 +157,9 @@ async fn a_new_worktree_from_another_host_is_answered_first_and_replicated_with_
     .await;
     assert_eq!(
         Path::new(&agent.cwd),
-        worktree.canonicalize().unwrap(),
+        // Canonical in its plain form, as amux writes a folder (on Windows
+        // without the `\\?\` prefix).
+        os::fs::plain(worktree.canonicalize().unwrap()),
         "answered at its final folder"
     );
     assert!(worktree.join("README.md").is_file());

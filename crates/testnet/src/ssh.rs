@@ -27,15 +27,33 @@ fn stand_in_dir() -> PathBuf {
 /// uploaded from a Windows checkout to a Linux worker has none), and a
 /// program search skips a file without one, so the system's own `ssh`
 /// would answer instead. The folder outlives every net, as the PATH does.
+///
+/// A test target that does not carry this crate's files (another crate's
+/// suite starting a net, which never dials SSH) has no stand-in to copy:
+/// then nothing goes on the PATH, and a story there that dials SSH reaches
+/// the system's own `ssh`, after the warning this prints.
 pub(crate) fn install() {
     static INSTALL: Once = Once::new();
     INSTALL.call_once(|| {
+        let stand_in = stand_in_dir().join("ssh");
+        if !stand_in.is_file() {
+            eprintln!(
+                "testnet: no ssh stand-in at {} (this target does not carry testnet's \
+                 stand-in folder), so a story dialling SSH here reaches the system's ssh",
+                stand_in.display()
+            );
+            return;
+        }
         let dir = std::env::temp_dir().join(format!("testnet-ssh-{}", std::process::id()));
         let copied = std::fs::create_dir_all(&dir)
-            .and_then(|()| std::fs::copy(stand_in_dir().join("ssh"), dir.join("ssh")))
+            .and_then(|()| std::fs::copy(&stand_in, dir.join("ssh")))
             .and_then(|_| os::fs::make_executable(&dir.join("ssh")));
         if let Err(error) = copied {
-            panic!("copying the ssh stand-in into {}: {error}", dir.display());
+            panic!(
+                "copying the ssh stand-in {} into {}: {error}",
+                stand_in.display(),
+                dir.display()
+            );
         }
         let path = std::env::var_os("PATH").unwrap_or_default();
         let path = std::env::join_paths(std::iter::once(dir).chain(std::env::split_paths(&path)))

@@ -78,3 +78,27 @@ fn a_new_holder_excludes_an_old_style_prober() {
     drop(lock);
     assert!(old_style_lock(&path).is_some());
 }
+
+/// A probe opens the file to write, as an NFS mount's exclusive lock
+/// needs, and one it cannot open or lock is an error, never a free lock:
+/// here the path is a folder.
+#[test]
+fn a_probe_that_cannot_lock_the_file_fails_rather_than_saying_free() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lock");
+    fs::create_dir(&path).unwrap();
+    assert!(FileLock::held(&path).is_err());
+}
+
+/// A lock file this user may only read is still probed, read-only.
+#[test]
+fn a_read_only_lock_file_is_still_probed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lock");
+    let lock = FileLock::try_acquire(&path).unwrap().expect("free");
+    let read_only = crate::testing::faults::read_only(&path).unwrap();
+    assert!(FileLock::held(&path).unwrap());
+    drop(lock);
+    assert!(!FileLock::held(&path).unwrap());
+    drop(read_only);
+}

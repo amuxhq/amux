@@ -721,6 +721,45 @@ async fn a_root_too_deep_for_a_socket_address_still_serves() {
     assert!(install.front_door().await.is_none());
 }
 
+/// An install with no supervisor whose config is the default file under a
+/// relative `XDG_CONFIG_HOME`: the CLI reads it from where it runs, and the
+/// daemon it starts, which runs in the installation's root, reads that same
+/// file and serves the root the CLI waits on.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_daemon_started_under_a_relative_config_home_serves_the_callers_root() {
+    use crate::support::desk::{Desk, LONG_GRACE_SECS};
+    let desk = Desk::new(
+        false,
+        LONG_GRACE_SECS,
+        node::version(),
+        "http://127.0.0.1:9/",
+        Vec::new(),
+    );
+    let home = desk.root.path().join("cfg").join("amux");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::copy(&desk.config, home.join("config.toml")).unwrap();
+    let mut start = desk.command(&["server", "start"]);
+    start
+        .env_remove("AMUX_CONFIG")
+        .env("XDG_CONFIG_HOME", "cfg")
+        // Where a daemon that missed the file would put its root: in the
+        // test's own folder, whatever this machine's home holds.
+        .env("XDG_DATA_HOME", desk.root.path().join("elsewhere"))
+        .env("HOME", desk.root.path().join("home"))
+        .current_dir(desk.root.path());
+    let started = tokio::time::timeout(PATIENCE, start.output())
+        .await
+        .expect("amux server start finishes")
+        .unwrap();
+    assert!(
+        started.status.success(),
+        "amux server start failed: {}{}",
+        String::from_utf8_lossy(&started.stdout),
+        String::from_utf8_lossy(&started.stderr)
+    );
+    assert!(desk.socket.exists(), "the daemon serves the config's root");
+}
+
 /// The `serving` lines of the daemon's log: one per start.
 fn serving_lines(install: &Install) -> Vec<String> {
     std::fs::read_to_string(install.data.join("daemon.log"))

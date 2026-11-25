@@ -440,6 +440,43 @@ fn down_never_kills_a_process_that_took_a_crashed_nets_pid() {
     drop(down);
 }
 
+/// `testnet ctl up` and the `serve` it starts are for a person to drive by
+/// hand, as well as for tests: outside Buck's test runner, which only
+/// tests run under, an empty net still comes up, answers and goes down.
+#[test]
+fn a_net_comes_up_outside_the_test_runner() {
+    let folder = tempfile::tempdir().expect("a folder");
+    let folder = folder.path();
+    let by_hand = |args: &[&str]| {
+        Command::new(source_tree::bin!("testnet"))
+            .arg("ctl")
+            .args(args)
+            .current_dir(folder)
+            .env_remove(os::testing::TEST_RUNNER_ENV)
+            .env_remove("AMUX_QA_SCOPE")
+            .env_remove("AMUX_QA_RUN")
+            .env_remove("TESTNET_FOLDER")
+            .env_remove("TMUX")
+            .output()
+            .expect("testnet runs")
+    };
+    let up = by_hand(&["up"]);
+    let down = Down(folder);
+    assert!(
+        up.status.success(),
+        "ctl up failed outside the runner:\n{}{}",
+        said(&up),
+        String::from_utf8_lossy(&up.stderr)
+    );
+    let status = by_hand(&["status"]);
+    assert!(
+        status.status.success(),
+        "{}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    drop(down);
+}
+
 #[test]
 fn a_qa_tester_is_refused_fake_agents() {
     let run = tempfile::tempdir().expect("a run folder");

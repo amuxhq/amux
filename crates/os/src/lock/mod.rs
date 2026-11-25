@@ -57,8 +57,21 @@ impl FileLock {
     /// Finding out takes the lock and releases it at once, so a process
     /// taking it at that instant can fail to; callers probe only files
     /// whose holder they are not starting.
+    ///
+    /// The probe opens the file for writing, as a holder does: on an NFS
+    /// mount that implements `flock` with byte-range locks, an exclusive
+    /// lock needs a descriptor open for writing, and one open only for
+    /// reading fails to probe. A file this user may only read is probed
+    /// read-only, which every local file system honours. A probe that
+    /// fails is an error, never "free".
     pub fn held(path: &Path) -> io::Result<bool> {
-        let file = match OpenOptions::new().read(true).open(path) {
+        let opened = match OpenOptions::new().read(true).write(true).open(path) {
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+                OpenOptions::new().read(true).open(path)
+            }
+            opened => opened,
+        };
+        let file = match opened {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
             Err(error) => return Err(error),

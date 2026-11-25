@@ -237,13 +237,17 @@ a process it started still holds its output fails, since that process would outl
 with it: on Unix its process group is killed, and on Windows the test runs in a Job Object of its own (kill on close,
 no breakaway), joined before it runs, so even an orphan, which no walk of the process tree finds, is ended with the
 test. Within a test, the test net ends its agents itself, at `shutdown`, `remove_host` and `rewind_host`, by the
-process each agent's lock names (`agent_dir::lock_holder`), whether or not their daemon still runs. The documentation tests,
+process each agent's lock names (`agent_dir::lock_holder`), whether or not their daemon still runs. It looks only in
+its hosts' agents folders (`profiles/*/agents/*` of each host's data directory) and follows no symbolic link or
+junction there, so a link in a workspace to another installation never leads it to that installation's agents. The documentation tests,
 the C ABI's pointer checks (`just miri`) and the sanitizers run under `cargo test`.
 
 The runner sets `AMUX_TEST_RUNNER=1` for every test. On Windows, test support that starts amux processes (the
-`amux` suites' `support::amux_binary`, the test net's start and its process hosts) calls
+`amux` suites' `support::amux_binary`, and `testnet::Net::start`, the tests' net) calls
 `os::testing::require_test_runner` and refuses to run without it: run by hand on a desktop, those processes would
-open windows there, where Buck runs tests in a non-interactive task. CI's nextest lanes set it too
+open windows there, where Buck runs tests in a non-interactive task. The test net's shared start
+(`Net::start_with`) and its process hosts do not, since `testnet serve` and `testnet ctl up` start them for a person
+driving a net by hand. CI's nextest lanes set it too
 (`scripts/test-binaries.sh`, when `CI` is set). Run them with `just test-windows`.
 
 CI's Linux gate runs them through Buck2 on the build host. Its macOS and Windows runners have no Buck2 yet, so they

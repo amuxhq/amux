@@ -437,8 +437,11 @@ pub async fn start(config: &InstallationConfig, config_path: Option<&Path>) -> R
         let stderr =
             File::create(&startup).with_context(|| format!("creating {}", startup.display()))?;
         let mut command = std::process::Command::new(std::env::current_exe()?);
-        if let Some(path) = config_path {
-            // Absolute: the daemon runs in the root, not here.
+        if let Some(path) = config_path.or(config.path.as_deref()) {
+            // The file this process read, named whether or not the caller
+            // named it, and absolute: the daemon runs in the root, not
+            // here, and would resolve a default under a relative
+            // `XDG_CONFIG_HOME` from there.
             command.arg("--config").arg(std::path::absolute(path)?);
         }
         command.arg("daemon");
@@ -516,6 +519,21 @@ fn spawn_detached(
 ) -> std::io::Result<std::process::Child> {
     use std::io::Write as _;
     let mut note = stderr.try_clone()?;
+    // The child runs in `root`, not here: a relative XDG folder, which
+    // this process found its default config and root from, is made
+    // absolute for it, so it finds the same ones when no file names them.
+    for name in ["XDG_CONFIG_HOME", "XDG_DATA_HOME"] {
+        if let Some(value) = std::env::var_os(name)
+            && !Path::new(&value).is_absolute()
+        {
+            let here = if value.is_empty() {
+                std::env::current_dir()?
+            } else {
+                std::path::absolute(&value)?
+            };
+            command.env(name, here);
+        }
+    }
     os::process::background(command, os::process::Detach::Session, root);
     command
         .stdin(Stdio::null())

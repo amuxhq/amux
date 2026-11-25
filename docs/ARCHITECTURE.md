@@ -329,7 +329,7 @@ the agent's directory.
 | Path | Created by | Written by | Read by | Deleted by |
 |---|---|---|---|---|
 | the directory, `spec.<n>` | daemon | daemon, one file per incarnation | agent at start | daemon, on delete, a parent's delete, or retention; never on exit, because resume uses the directory again |
-| `lock` | daemon | the agent, its pid, as it takes the lock; emptied as it lets go (an older build's agent writes none) | held by the agent; the daemon try-locks it to probe liveness; `agent_dir::lock_holder` reads the pid of a holder | with the directory |
+| `lock` | daemon | the agent, its pid, as it takes the lock; emptied as it lets go (an older build's agent writes none) | held by the agent; the daemon try-locks it to probe liveness; `agent_dir::lock_holder` reads the pid of a holder, believed only when that process also serves `private/agent.sock` | with the directory |
 | `ctl.sock`, `pty.sock` | agent | — | the daemon dials `ctl.sock`; terminal clients dial `pty.sock` | agent, at exit |
 | `tools.sock` | daemon | — | the agent's tool server; the agent process, for a spawn | daemon, when the agent exits; bound again at resume |
 | `journal/*` | agent | agent | daemon, from its cursor | daemon: segments wholly below a cursor that has reached the drive, keeping the newest two for debug bundles |

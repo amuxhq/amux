@@ -456,6 +456,170 @@ class PlatformCheckTest(unittest.TestCase):
         )
         self.assertEqual(self.counted(), {"crates/agent/src/lib.rs": [2, 8, 16]})
 
+    # The ways around it Phase 0's codex review found, each held.
+
+    def test_a_nested_cfg_exempts_only_where_every_enclosing_cfg_attr_applies_on_windows(self):
+        self.write(
+            "crates/node/src/lib.rs",
+            """\
+            #[cfg_attr(windows, cfg_attr(unix, cfg(unix)))] // out of scope on Windows: wt
+            mod built_on_windows {
+                fn f() { unsafe { libc::getpid() }; }
+            }
+            #[cfg_attr(windows, cfg_attr(windows, cfg(unix)))] // out of scope on Windows: wt
+            mod left_out {
+                fn f() { unsafe { libc::getpid() }; }
+            }
+            """,
+        )
+        self.assertEqual(self.counted(), {"crates/node/src/lib.rs": [1, 3]})
+
+    def test_paths_in_a_homes_shared_tests_count(self):
+        self.write(
+            "crates/pty-host/src/lib.rs",
+            """\
+            pub fn stop(pid: i32) { unsafe { libc::kill(pid, libc::SIGTERM) }; }
+            #[cfg(test)]
+            mod tests {
+                #[test]
+                fn stops() { super::stop(unsafe { libc::getpid() }); }
+            }
+            """,
+        )
+        self.assertEqual(self.counted(), {"crates/pty-host/src/lib.rs": [5]})
+
+    def test_a_nested_ignore_on_windows_counts_even_in_a_homes_per_os_file(self):
+        self.write(
+            "crates/os/src/process/unix.rs",
+            """\
+            #[cfg(test)]
+            mod tests {
+                #[test]
+                #[cfg_attr(test, cfg_attr(windows, ignore))]
+                fn a() {}
+                #[test]
+                #[cfg_attr(miri, ignore = "no processes under Miri")]
+                fn b() {}
+            }
+            """,
+        )
+        self.assertEqual(self.counted(), {"crates/os/src/process/unix.rs": [4]})
+        self.allow({"crates/os/src/process/unix.rs": 1})
+        self.assertEqual(self.check()[0], 0)
+        self.assertEqual(self.check(strict=True)[0], 1)
+
+    def test_a_marked_field_or_variant_exempts_only_itself(self):
+        self.write(
+            "crates/node/src/lib.rs",
+            """\
+            struct Host {
+                #[cfg(unix)] // out of scope on Windows: wt
+                wt: std::os::unix::net::UnixStream,
+                #[cfg(windows)]
+                pipe: u32,
+                name: String,
+            }
+            enum Backend {
+                #[cfg(unix)] // out of scope on Windows: wt
+                Wt { socket: std::os::unix::net::UnixStream },
+                #[cfg(windows)]
+                Pipe,
+            }
+            fn f(#[cfg(unix)] a: u8, #[cfg(windows)] b: u8) {}
+            fn g(x: u8) -> u8 {
+                match x {
+                    #[cfg(unix)] // out of scope on Windows: wt
+                    0 => 1,
+                    #[cfg(windows)]
+                    _ => 2,
+                }
+            }
+            """,
+        )
+        self.assertEqual(self.counted(), {"crates/node/src/lib.rs": [4, 11, 14, 14, 19]})
+
+    def test_only_a_bare_or_negated_cfg_macro_condition_leaves_its_block_out(self):
+        self.write(
+            "crates/node/src/lib.rs",
+            """\
+            fn f() {
+                if cfg!(unix) == false { // out of scope on Windows: wt
+                    unsafe { libc::getpid() };
+                }
+                if cfg!(unix) && ready() { // out of scope on Windows: wt
+                    unsafe { libc::getpid() };
+                }
+                if cfg!(unix) { // out of scope on Windows: wt
+                    unsafe { libc::getpid() };
+                }
+                if !cfg!(windows) { // out of scope on Windows: wt
+                    unsafe { libc::getpid() };
+                }
+            }
+            """,
+        )
+        # The first two gates count, and so does what they gate.
+        self.assertEqual(self.counted(), {"crates/node/src/lib.rs": [2, 3, 5, 6]})
+
+    def test_a_test_attribute_before_the_gate_makes_it_a_test_gate(self):
+        self.write(
+            "crates/os/src/lib.rs",
+            """\
+            #[test]
+            #[cfg(unix)]
+            fn before() {}
+            #[tokio::test]
+            #[cfg(unix)]
+            async fn tokio_before() {}
+            #[cfg_attr(test, derive(Debug))]
+            #[cfg(unix)]
+            struct NotATest;
+            """,
+        )
+        result = platform.scan(self.root)
+        self.assertEqual({f.line: f.test for f in result.violations["crates/os/src/lib.rs"]}, {2: True, 5: True})
+
+    def test_a_cfg_macro_in_a_condition_across_lines_is_a_gate(self):
+        self.write(
+            "crates/agent/src/lib.rs",
+            """\
+            fn f() {
+                if (
+                    cfg!(windows)
+                        && ready()
+                ) {
+                    go();
+                }
+                while
+                    cfg!(unix)
+                {
+                    go();
+                }
+                let caps = Caps {
+                    windows: cfg!(windows),
+                };
+                call(
+                    cfg!(windows),
+                );
+            }
+            """,
+        )
+        self.assertEqual(self.counted(), {"crates/agent/src/lib.rs": [3, 9]})
+
+    def test_comments_in_a_predicate_do_not_count(self):
+        self.write(
+            "crates/agent/src/lib.rs",
+            """\
+            #[cfg(any(test /* not unix-specific */, feature = "slow"))]
+            fn a() {}
+            #[cfg(any(feature = "unix", feature = "windows"))]
+            fn b() {}
+            #[cfg(all(/* on a Mac */ target_os = "macos"))]
+            fn c() {}
+            """,
+        )
+        self.assertEqual(self.counted(), {"crates/agent/src/lib.rs": [5]})
+
     # The allowlist and the inputs.
 
     def test_write_allowlist_writes_what_the_tree_holds(self):

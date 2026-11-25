@@ -491,6 +491,7 @@ fn read_name_now(path: &Path) -> io::Result<Named> {
 /// an agent an earlier build started. Nothing else: no other host (a UNC
 /// name would hand this user's credentials to it), no device, no other
 /// pipe.
+#[cfg(test)]
 pub(super) fn is_amux_pipe(name: &str) -> bool {
     pipe_form(name).is_some()
 }
@@ -591,6 +592,7 @@ const ADMINISTRATORS: &str = "S-1-5-32-544";
 
 /// Whether the object open at `handle` (with `READ_CONTROL`) is owned by
 /// this user.
+#[cfg(test)]
 pub(super) fn owned_by_me(handle: RawHandle) -> io::Result<bool> {
     Ok(owner_of(handle)? == os::fs::current_user_sid()?)
 }

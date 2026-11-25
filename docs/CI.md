@@ -393,8 +393,12 @@ ARM iOS targets and tmux, restores its store and starts a NativeLink on
 the runner (`scripts/nativelink.py macos`, `build/nativelink/macos.json5`).
 Buck2 runs every build action itself (`AMUX_BUILD_HERE=1`,
 `scripts/buck-config.py`), looking it up in the cache first and uploading
-what it made; NativeLink's worker runs the tests, so their results are
-cached too. The store, every output and every result, is on the runner's
+what it made, C and assembly included (`third_party_cxx_library` in
+`build/third_party.bzl`); NativeLink's worker runs the tests, so their
+results are cached too. What Buck2 builds itself is keyed apart from the
+same action on a worker (`built_in` in `build/platforms/defs.bzl`): outside
+a sandbox it sees all of `buck-out`, so its result must never answer for a
+sandboxed one. The store, every output and every result, is on the runner's
 disk, and the job keeps it in GitHub's cache between runs
 (`macos-<job>-store-*`), restoring the newest any run of that job kept.
 A push therefore rebuilds and reruns only what its change reaches. Each

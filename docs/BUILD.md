@@ -251,15 +251,18 @@ instead. Uploading everything the Mac builds to the host as well would
 also close the gap for the Mac's own outputs, but not for what the host
 evicts, and at the price of sending every Mac build over the tailnet.
 
-When the host doesn't answer (or the tailnet is down), `scripts/buck2`
-says so, restarts NativeLink without it and turns Linux off for the tree:
+When the host doesn't answer twice in a row, a second apart (or the
+tailnet is down), `scripts/buck2` says so, restarts NativeLink without it
+and turns Linux off for the tree:
 Linux actions fail at once rather than wait, and tests marked `linux_only`
 (the model checks' integration target, which takes every core for ten
 minutes) are skipped, which `just test` names at the end. When the host
 answers again it switches back. Each switch restarts NativeLink, which
-interrupts any build another tree has running at that moment. What the
-Mac's layer gained in between never reached the host; the host's worker
-reads it from the Mac when a Linux action needs it.
+interrupts any build another tree has running at that moment. `just
+premerge` asks once, before it starts its recipes side by side, and tells
+them the answer (`AMUX_BUCK_MODE`), so none of them switches under the
+others. What the Mac's layer gained in between never reached the host; the
+host's worker reads it from the Mac when a Linux action needs it.
 
 A Linux machine sends its actions to the NativeLink on its own loopback,
 as the build host's trees do, or to the one `AMUX_NATIVELINK` names

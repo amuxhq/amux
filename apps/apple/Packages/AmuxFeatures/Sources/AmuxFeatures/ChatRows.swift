@@ -1177,9 +1177,14 @@ private struct ProseBlockView: View {
                     SwiftUI.GridRow {
                         Text(markers[index])
                             .foregroundStyle(design.inkFaint.color)
+                            .fixedSize()
                             .gridColumnAlignment(.trailing)
                             .accessibilityLabel(Self.taskLabel(item.task) ?? markers[index])
+                        // The words take the rest of the row. Left flexible,
+                        // the grid shares the width out between the columns
+                        // and an item's words wrap in a column half the row.
                         ProseBlocks(blocks: item.blocks, muted: muted || item.task == true, streaming: streaming, spacing: 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }

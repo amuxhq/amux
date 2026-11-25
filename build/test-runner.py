@@ -23,6 +23,8 @@ and it holds them to what cargo-nextest holds them to under Cargo
   if the runner dies its handle closes and the job ends anyway. A start
   that asks to break away is refused (`os::process::spawn_background`
   then starts amux's agents inside the job, as under test they should).
+  A test whose job can't be made or won't take it (an enclosing job that
+  forbids nesting) is killed before it runs, and fails with the reason.
 - Ignored tests are not run.
 
 Each test also runs with AMUX_TEST_RUNNER=1, which tells test support that
@@ -255,33 +257,40 @@ def resume(pid: int) -> None:
         api.kernel32.CloseHandle(process)
 
 
+class Uncontained(Exception):
+    """A test that could not be contained, so was never run: on Windows,
+    its job could not be made or would not take it (an enclosing job that
+    forbids nesting refuses it)."""
+
+
 def start_contained(argv: list[str], **popen) -> tuple[subprocess.Popen, Job | None]:
     """Starts a test with everything it will start contained (see the
     module's docstring): on Unix in a session of its own, on Windows in a
     job of its own, joined while the test is suspended, before it runs at
-    all. Where the job can't be made, the test runs without one, as before
-    there was one, and the runner says so."""
+    all. A test whose job can't be made or joined is never let run: what
+    it started could outlive it, while it ran as if contained (with
+    AMUX_TEST_RUNNER=1). It is killed where it waits, and Uncontained says
+    why."""
     if not WINDOWS:
         return subprocess.Popen(argv, start_new_session=True, **popen), None
     create_suspended = 0x00000004
     child = subprocess.Popen(argv, creationflags=create_suspended, **popen)
     job = None
+    step = "making its job"
     try:
         job = Job()
+        step = "joining its job"
         job.assign(child.pid)
-    except OSError as error:
-        if job is not None:
-            job.close()
-            job = None
-        print(f"test-runner: {argv[0]} runs in no job of its own ({error})", file=sys.stderr, flush=True)
-    try:
+        step = "resuming it"
         resume(child.pid)
-    except OSError:
+    except OSError as error:
         child.kill()
         child.wait()
         if job is not None:
             job.close()
-        raise
+        if child.stdout is not None:
+            child.stdout.close()
+        raise Uncontained(f"test-runner: {argv[0]} was not run: {step} failed ({error})") from error
     return child, job
 
 
@@ -340,13 +349,18 @@ def run_one(
         if WINDOWS:
             # Where Windows programs look for the same two.
             env.update(USERPROFILE=env["HOME"], TEMP=env["TMPDIR"], TMP=env["TMPDIR"])
-    child, job = starting(lambda: start_contained(
-        binary + ["--exact", name, "--nocapture"],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        env=env,
-    ))
+    try:
+        child, job = starting(lambda: start_contained(
+            binary + ["--exact", name, "--nocapture"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+        ))
+    except Uncontained as error:
+        if scratch:
+            shutil.rmtree(scratch, ignore_errors=True)
+        return name, "fail", time.monotonic() - start, f"{error}\n".encode()
     output = bytearray()
     chunks = Chunks(child.stdout)
     deadline = start + slow * terminate_after
@@ -437,14 +451,9 @@ def end_tree(child: subprocess.Popen, job: Job | None) -> None:
         job.end()
         job.close()
         return
-    if WINDOWS:
-        # Every process the test started, by the parent each was started
-        # from; a process whose parent has already ended is out of reach,
-        # as one that left its group is on Unix.
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(child.pid)], capture_output=True)
-        return
-    # With nothing left but the test itself, exited and not yet reaped,
-    # macOS answers EPERM, not ESRCH.
+    # On Unix, the test's session; a Windows test always has its job. With
+    # nothing left but the test itself, exited and not yet reaped, macOS
+    # answers EPERM, not ESRCH.
     try:
         os.killpg(child.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):

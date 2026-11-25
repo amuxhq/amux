@@ -446,8 +446,9 @@ pub(crate) fn down(folder: &Folder) -> Result<Outcome, String> {
             said.push("testnet serve did not exit, so it was killed".to_owned());
         }
     }
-    // Agents a killed net leaves behind die with their folders' net.
-    kill_agents_under(&record.root);
+    // Agents a killed net leaves behind die with their folders' net: those
+    // its hosts keep, and no other installation's kept among its files.
+    kill_agents_of(&record.root);
     let _ = std::fs::remove_file(folder.net_dir().join("net.json"));
     Ok(Outcome::new(said.join("; "), json!({"down": true})))
 }
@@ -466,19 +467,11 @@ fn serving(pid: u32, net_dir: &Path) -> bool {
 }
 
 /// Kills every agent process still holding the lock of an agent directory
-/// under `root`, and what each started that it can find
-/// ([`os::process::descendants`]).
-fn kill_agents_under(root: &Path) {
-    let mut pending = vec![root.to_owned()];
-    while let Some(dir) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
-                pending.push(entry.path());
-            }
-        }
+/// of the net whose root is `root`, where its teardown looks for them
+/// ([`crate::net::agent_dirs_of_net`]), and what each started that it can
+/// find ([`os::process::descendants`]).
+fn kill_agents_of(root: &Path) {
+    for dir in crate::net::agent_dirs_of_net(root) {
         if !os::lock::FileLock::held(&dir.join(agent_dir::LOCK)).unwrap_or(false) {
             continue;
         }

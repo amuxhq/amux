@@ -15,8 +15,8 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
 
-use super::windows::{INSTANCES, Listener, is_amux_pipe, owned_by_me, random_name};
-use super::*;
+use super::super::*;
+use super::{INSTANCES, Listener, is_amux_pipe, owned_by_me, random_name};
 
 const HEX32: &str = "0123456789abcdef0123456789abcdef";
 
@@ -199,6 +199,28 @@ async fn a_busy_server_is_given_up_on_by_the_deadline() {
         "it tried until the deadline: {waited:?}"
     );
     assert!(waited < CONNECT_PATIENCE, "and not much longer: {waited:?}");
+}
+
+/// Many dials at once, each to a listener of its own: more than the
+/// reads of name files allowed at once wait for a slot within their
+/// deadline, rather than failing at once.
+#[tokio::test]
+async fn dials_past_the_reads_allowed_at_once_wait_for_a_slot() {
+    let root = tempfile::tempdir().unwrap();
+    let mut listeners = Vec::new();
+    let mut dials = tokio::task::JoinSet::new();
+    for n in 0..4 * super::MOST_READING {
+        let path = root.path().join(format!("{n}.sock"));
+        listeners.push(LocalListener::bind(&path).unwrap());
+        dials.spawn(async move { (n, connect_within(&path, CONNECT_PATIENCE).await) });
+    }
+    let mut reached = 0;
+    while let Some(dialled) = soon("every dial", dials.join_next()).await {
+        let (n, dialled) = dialled.unwrap();
+        dialled.unwrap_or_else(|error| panic!("dial {n} reaches its listener: {error}"));
+        reached += 1;
+    }
+    assert_eq!(reached, listeners.len());
 }
 
 /// A file naming a pipe that is gone (its listener ended, a successor is
@@ -404,7 +426,7 @@ async fn an_earlier_builds_pipe_is_reached() {
     let server = legacy_pipe(&name);
     std::fs::write(&path, &name).unwrap();
     let probe = ClientOptions::new().open(&name).unwrap();
-    let owner = super::windows::owner_of(probe.as_raw_handle()).unwrap();
+    let owner = super::owner_of(probe.as_raw_handle()).unwrap();
     eprintln!("an earlier build's pipe is owned here by {owner}");
     drop(probe);
     server.disconnect().unwrap();

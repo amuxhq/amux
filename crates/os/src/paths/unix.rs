@@ -26,9 +26,10 @@ pub(super) fn find_program(name: &OsStr, path: &OsStr) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs::{self, Permissions};
     use std::os::unix::fs::PermissionsExt as _;
+
+    use super::*;
 
     #[test]
     fn a_program_is_the_first_on_path_with_an_execute_bit() {

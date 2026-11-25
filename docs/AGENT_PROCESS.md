@@ -59,6 +59,8 @@ agents/<agent id>/
                          (terminal Claude and Codex only)
   tools.sock             the daemon listens; its clients are the agent's tool server
                          and, for a spawn, the agent process itself
+  <name>.sock.lock       Unix: locked for a moment by each bind and unbind of
+                         that socket, in any process; it stays
   journal/0000000000 …   steps, in segments named by the offset of their first byte
   pty/0000000000 …       terminal Claude's raw terminal bytes, named the same way
   blobs/<sha256>         bytes items refer to, and what the agent offers as an

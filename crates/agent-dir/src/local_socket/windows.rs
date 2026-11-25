@@ -8,7 +8,7 @@ use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::{AsRawHandle, RawHandle};
 use std::path::Path;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -407,38 +407,36 @@ const LEAST_READ: Duration = Duration::from_millis(100);
 
 /// Reads of name files that may be outstanding at once. A read is
 /// abandoned at its deadline but its thread waits on, on a stalled disk
-/// (a network share gone quiet), so past this many a connect fails at once
-/// instead of tying up more threads.
+/// (a network share gone quiet), so a connect past this many waits for a
+/// slot within its own deadline instead of tying up more threads.
 const MOST_READING: usize = 4;
 
-static READING: AtomicUsize = AtomicUsize::new(0);
+/// One slot for each read of a name file under way, held by its thread.
+static READING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(MOST_READING);
 
 /// Reads the name file at `path` on a blocking thread, giving up at
-/// `until` (or [`LEAST_READ`] from now, if later).
+/// `until` (or [`LEAST_READ`] from now, if later), the wait for a slot
+/// among [`MOST_READING`] included.
 async fn read_name(path: &Path, until: Instant) -> io::Result<Named> {
-    struct Read;
-    impl Drop for Read {
-        fn drop(&mut self) {
-            READING.fetch_sub(1, Ordering::SeqCst);
+    let until = until.max(Instant::now() + LEAST_READ);
+    let slot = match tokio::time::timeout_at(until.into(), READING.acquire()).await {
+        Ok(Ok(slot)) => slot,
+        Ok(Err(closed)) => return Err(io::Error::other(closed)),
+        Err(_) => {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!(
+                    "{}: earlier reads of socket files have not finished",
+                    path.display()
+                ),
+            ));
         }
-    }
-    if READING.fetch_add(1, Ordering::SeqCst) >= MOST_READING {
-        READING.fetch_sub(1, Ordering::SeqCst);
-        return Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            format!(
-                "{}: earlier reads of socket files have not finished",
-                path.display()
-            ),
-        ));
-    }
-    let read = Read;
+    };
     let file = path.to_owned();
     let reading = tokio::task::spawn_blocking(move || {
-        let _read = read;
+        let _slot = slot;
         read_name_now(&file)
     });
-    let until = until.max(Instant::now() + LEAST_READ);
     match tokio::time::timeout_at(until.into(), reading).await {
         Ok(Ok(named)) => named,
         Ok(Err(error)) => Err(io::Error::other(error)),
@@ -491,6 +489,7 @@ fn read_name_now(path: &Path) -> io::Result<Named> {
 /// an agent an earlier build started. Nothing else: no other host (a UNC
 /// name would hand this user's credentials to it), no device, no other
 /// pipe.
+#[cfg(test)]
 pub(super) fn is_amux_pipe(name: &str) -> bool {
     pipe_form(name).is_some()
 }
@@ -591,6 +590,7 @@ const ADMINISTRATORS: &str = "S-1-5-32-544";
 
 /// Whether the object open at `handle` (with `READ_CONTROL`) is owned by
 /// this user.
+#[cfg(test)]
 pub(super) fn owned_by_me(handle: RawHandle) -> io::Result<bool> {
     Ok(owner_of(handle)? == os::fs::current_user_sid()?)
 }
@@ -752,3 +752,7 @@ fn listening(listening: &mut Mutex<Vec<Listening>>) -> &mut Vec<Listening> {
         .get_mut()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
+
+#[cfg(test)]
+#[path = "windows_tests.rs"]
+mod tests;

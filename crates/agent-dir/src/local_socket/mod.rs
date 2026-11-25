@@ -53,8 +53,6 @@ use windows as imp;
 
 #[cfg(test)]
 mod tests;
-#[cfg(all(test, windows))]
-mod windows_tests;
 
 /// How long [`connect`] keeps trying a socket whose server is busy or
 /// between binds before it gives up.

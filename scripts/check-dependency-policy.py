@@ -63,7 +63,7 @@ ALLOWED_LOCAL = {
     # highlight for the language of each file an agent changed, named by the
     # same rule the clients colour it by.
     "node": {"agent-dir", "analytics", "attachments", "core-ring", "daemon-core", "git-facts", "highlight", "journal", "log-file", "os", "path-core", "redaction", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
-    "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "settings", "tui", "wire"},
+    "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "os", "settings", "tui", "wire"},
     # The release manifest the tool signs and the daemon verifies, and the
     # version stamp a release tool can rewrite in a built binary; the xtask
     # shares both without building the daemon.
@@ -183,7 +183,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # on hosts through the client library, as a person's client and an
     # agent's tools do.
     "testnet": {
-        "agent-dir", "client", "daemon-core", "interpret", "journal", "models", "node", "patience",
+        "agent-dir", "client", "daemon-core", "interpret", "journal", "models", "node", "os", "patience",
         "provider-fakes", "release", "settings", "shot", "source-tree", "store", "tui", "wire",
     },
     # Qualification owns environment-dependent provider and performance
@@ -195,7 +195,7 @@ SUPPORT_ALLOWED_LOCAL = {
     # The fake providers speak each protocol from its recordings, and check
     # what they compose against the protocol crates' types. They never use
     # the host crates, so a host bug cannot hide behind shared host code.
-    "provider-fakes": {"acp-protocol", "claude-protocol", "codex-protocol", "pty-host"},
+    "provider-fakes": {"acp-protocol", "claude-protocol", "codex-protocol", "os", "pty-host"},
     # A stand-in amux binary that runs the real supervisor, so the
     # supervisor tests exec and roll back the shipped code.
     "fake-amux": {"agent-dir", "node"},

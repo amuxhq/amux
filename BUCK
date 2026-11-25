@@ -126,6 +126,7 @@ _CARGO_PACKAGES = ["//crates/{}:cargo-package".format(name) for name in [
     "log-file",
     "models",
     "node",
+    "os",
     "path-core",
     "patience",
     "preview",

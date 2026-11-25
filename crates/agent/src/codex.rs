@@ -354,7 +354,11 @@ mod tests {
         } else {
             (
                 "/bin/sh",
-                ["-c", r#"read line; printf '%s\r\n' "$line"; printf 'two\n'"#, "sh"],
+                [
+                    "-c",
+                    r#"read line; printf '%s\r\n' "$line"; printf 'two\n'"#,
+                    "sh",
+                ],
             )
         };
         let mut command = Command::new(shell);

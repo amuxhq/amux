@@ -19,11 +19,10 @@ pub mod local_socket;
 use std::io;
 use std::path::Path;
 
-use os::lock::FileLock;
-use os::process::ProcessRef;
-
 pub use clock::{Clock, ManualClock, Sleep, SystemClock};
 pub use ctl::{MAX_FRAME_BYTES, read_frame, read_message, write_frame, write_message};
+use os::lock::FileLock;
+use os::process::ProcessRef;
 
 /// Held by the agent process for its lifetime; its data is the holder's
 /// pid ([`Lock`]).
@@ -216,7 +215,10 @@ mod tests {
                 None => break,
             }
         }
-        panic!("the helper ended without taking the lock: {:?}", child.wait());
+        panic!(
+            "the helper ended without taking the lock: {:?}",
+            child.wait()
+        );
     }
 
     /// Waits for the lock to come free, as it does once its holder has
@@ -251,7 +253,10 @@ mod tests {
     #[test]
     fn a_lock_no_process_holds_is_free_whatever_its_file_names() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::Free), "no file");
+        assert!(
+            matches!(lock_holder(dir.path()).unwrap(), Holder::Free),
+            "no file"
+        );
         // What a holder that crashed leaves: its pid, now anyone's.
         std::fs::write(dir.path().join(LOCK), std::process::id().to_string()).unwrap();
         assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::Free));
@@ -298,7 +303,10 @@ mod tests {
         let old = old_style_lock(dir.path());
         assert!(locked(dir.path()));
         assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::Unnamed));
-        assert!(lock(dir.path()).unwrap().is_none(), "the two exclude each other");
+        assert!(
+            lock(dir.path()).unwrap().is_none(),
+            "the two exclude each other"
+        );
         old.unlock().unwrap();
         drop(old);
         assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::Free));
@@ -309,7 +317,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let held = lock(dir.path()).unwrap().expect("free");
         assert!(lock(dir.path()).unwrap().is_none());
-        assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::ThisProcess));
+        assert!(matches!(
+            lock_holder(dir.path()).unwrap(),
+            Holder::ThisProcess
+        ));
         drop(held);
         assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::Free));
     }

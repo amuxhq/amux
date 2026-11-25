@@ -1,6 +1,7 @@
 load("//build:rust.bzl", "amux_rust_library")
 
 DEPS = [
+    "//crates/os:os",
     "//third-party/rust:anyhow",
     "//third-party/rust:bytes",
     "//third-party/rust:libc",

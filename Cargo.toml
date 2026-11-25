@@ -30,6 +30,7 @@ members = [
     "crates/log-file",
     "crates/models",
     "crates/node",
+    "crates/os",
     "crates/path-core",
     "crates/patience",
     "crates/provider-fakes",
@@ -72,6 +73,7 @@ agent = { path = "crates/agent" }
 agent-core = { path = "crates/agent-core" }
 core-ring = { path = "crates/core-ring" }
 log-file = { path = "crates/log-file" }
+os = { path = "crates/os" }
 daemon-core = { path = "crates/daemon-core" }
 relay-core = { path = "crates/relay-core" }
 path-core = { path = "crates/path-core" }
@@ -122,6 +124,26 @@ portable-pty = "0.9"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "sync", "time", "process", "fs", "signal"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 libc = "0.2"
+# The union of the features the workspace's crates use, which Cargo would
+# unify across the graph anyway; each crate takes it with `workspace = true`.
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_JobObjects",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Pipes",
+    "Win32_System_Power",
+    "Win32_System_Shutdown",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
 jni = { version = "0.21", default-features = false }
 signal-hook = "0.3"
 clap = { version = "4", features = ["derive", "env"] }

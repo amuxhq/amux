@@ -1,0 +1,20 @@
+load("//build:rust.bzl", "TESTING", "amux_rust_library")
+
+DEPS = [
+    "//third-party/rust:tokio",
+] + select({"DEFAULT": ["//third-party/rust:libc"], "prelude//os:windows": [], "prelude//os:none": []}) + select({"DEFAULT": [], "prelude//os:windows": ["//third-party/rust:windows-sys"]})
+
+TEST_DEPS = [
+    "//third-party/rust:tempfile",
+]
+
+# Buck builds one configuration of the crate for every dependent, so the
+# tokio parts are always on; the test hooks only for tests and tools.
+FEATURES = select({"DEFAULT": ["async"], TESTING: ["async", "testing"]})
+
+amux_rust_library(
+    version = "0.1.0",
+    deps = DEPS,
+    features = FEATURES,
+    test_deps = TEST_DEPS,
+)

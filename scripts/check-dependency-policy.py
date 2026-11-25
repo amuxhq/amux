@@ -24,6 +24,10 @@ ALLOWED_LOCAL = {
     "redaction": {"wire"},
     # The capped log file every process writes and a dump reads the tail of.
     "log-file": set(),
+    # The operating-system primitives several crates share: a leaf, taking
+    # only libc, windows-sys and (behind `async`) tokio. Cores, wire,
+    # interpret, the UI library, client and browser-core never take it.
+    "os": set(),
     # Reads an agent folder's branch and change totals by running git; the
     # agent process and the daemon share it.
     "git-facts": set(),
@@ -41,14 +45,15 @@ ALLOWED_LOCAL = {
     # and the provider hosts, each in a module of its own (`acp`, `claude`, `codex`).
     "agent": {
         "acp-protocol", "agent-core", "agent-dir", "attachments", "claude-protocol", "codex-protocol", "core-ring",
-        "git-facts", "interpret", "journal", "log-file", "pty-host", "wire",
+        "git-facts", "interpret", "journal", "log-file", "os", "pty-host", "wire",
     },
     # Each provider's messages as types: pure, so the interpreter the phone
     # links can read them. PURE_EXTERNAL below bounds what they may pull in.
     "acp-protocol": set(),
     "claude-protocol": set(),
     "codex-protocol": set(),
-    "pty-host": set(),
+    # The tether lives in os, beside the family it is part of.
+    "pty-host": {"os"},
     # The daemon reaches agent processes only through the directory contract,
     # never the agent or interpret crates, so the phone hosts a runtime with
     # no interpreter or provider-protocol crates in its graph. redaction walks

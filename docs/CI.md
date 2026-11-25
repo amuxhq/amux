@@ -351,7 +351,9 @@ at 75 minutes inside a 100-minute job, so a cold run that runs out of time
 still saves what it finished and the next run picks up from there, as a
 cancelled one does: NativeLink is stopped before the store is archived,
 since it may still be writing to it. A Buck2 command that failed only
-because NativeLink gave up on such a read runs once more
+because NativeLink gave up on reading or writing a blob in that time (the
+burst of uploads as the tests job's eighty tests start has held a write
+past it too) runs once more
 (`scripts/rerun-on-cache-timeout.sh`), taking what the first finished from
 the cache; any other failure stands. Spotlight is turned off on the
 runners, which otherwise indexed every output Buck2 wrote. Buck2's event

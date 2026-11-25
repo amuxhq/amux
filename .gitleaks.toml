@@ -40,13 +40,3 @@ regexes = ['''^(id|key|name)-[0-9a-f]{12}$''']
 [[allowlists]]
 description = "CryptoKit's private key type"
 regexes = ['''^Curve25519\.KeyAgreement\.PrivateKey$''']
-
-# Buck2's prelude, vendored as upstream ships it (scripts/prelude.py): a test
-# keystore of its own and a Kotlin constant the generic-key rule mistakes for
-# a key. These two files only, so anything else in prelude/ is still scanned.
-[[allowlists]]
-description = "Upstream test material in the vendored Buck2 prelude"
-paths = [
-    '''^prelude/toolchains/android/test/com/facebook/buck/android/manifest_digest/keystore\.p12$''',
-    '''^prelude/toolchains/android/src/com/facebook/buck/jvm/kotlin/ksp/Ksp2Step\.kt$''',
-]

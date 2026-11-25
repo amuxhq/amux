@@ -32,7 +32,7 @@ PRODUCTS = {
 TEST_CRATES = {"models", "patience", "provider-fakes", "fake-amux", "qualification", "replay-support", "shot", "testnet", "source-tree"}
 
 # Each workspace crate's features that exist for tests and tools.
-TEST_FEATURES = {"debug-tools", "explore", "fixtures", "schema", "synthetic", "test-key", "testkind"}
+TEST_FEATURES = {"debug-tools", "explore", "fixtures", "schema", "synthetic", "test-key", "testing", "testkind"}
 
 
 def graph(root: str, platform: str) -> dict:

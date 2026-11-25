@@ -24,7 +24,7 @@ tokio-tungstenite = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_System_Console"] }
+windows-sys = { workspace = true }
 
 [[bin]]
 name = "fake-claude-sdk"

@@ -48,6 +48,7 @@ dependencies = [
  "libc",
  "log-file",
  "notify",
+ "os",
  "patience",
  "prost",
  "provider-fakes",
@@ -2830,6 +2831,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "tempfile",
+ "tokio",
  "windows-sys 0.61.2",
 ]
 
@@ -3255,6 +3257,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "libc",
+ "os",
  "portable-pty",
  "tempfile",
  "thiserror 2.0.20",

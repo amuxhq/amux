@@ -52,7 +52,7 @@ libc = { workspace = true }
 signal-hook = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { workspace = true }
 
 [dev-dependencies]
 source-tree = { workspace = true }

@@ -4,6 +4,19 @@ set positional-arguments
 
 export AMUX_GIT_SHA := `git rev-parse HEAD`
 
+# On Windows, Git's sh rewrites an argument that looks like a path as it
+# starts a native program, and takes a leading `//` as an escaped `/`:
+# `//js:` reached Buck2 as `/js:`. An argument starting `//` is left alone,
+# while `/c/...` paths still become `C:/...`. The second variable keeps the
+# first's `//` from being rewritten too, to `/`, on its way through a native
+# program (Python) to a nested sh. Neither means anything elsewhere.
+export MSYS2_ARG_CONV_EXCL := if os_family() == "windows" { "//" } else { env("MSYS2_ARG_CONV_EXCL", "") }
+export MSYS2_ENV_CONV_EXCL := if os_family() == "windows" { "MSYS2_ARG_CONV_EXCL" } else { env("MSYS2_ENV_CONV_EXCL", "") }
+# The repository's scripts read and write text as UTF-8, which Python on
+# Windows takes only in its UTF-8 mode (elsewhere the locale's is UTF-8
+# already); an empty value is Python's default.
+export PYTHONUTF8 := if os_family() == "windows" { "1" } else { env("PYTHONUTF8", "") }
+
 # Wall-clock bound for every recipe; portable where GNU timeout is absent.
 bounded := "scripts/bounded"
 # The pinned Buck2, which builds and tests through NativeLink (docs/BUILD.md).

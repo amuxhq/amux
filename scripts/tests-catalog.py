@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -17,6 +18,8 @@ import suites as selections
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# scripts/buck2 is a shell script, which Windows can't start itself.
+BUCK2 = (["sh"] if os.name == "nt" else []) + [str(ROOT / "scripts/buck2")]
 CATALOG = ROOT / "tests" / "catalog.toml"
 BOUNDARIES = {
     "Interpreter",
@@ -451,13 +454,12 @@ def run_suite(suites: list[dict[str, Any]], name: str, extra: list[str]) -> int:
             file=sys.stderr,
         )
         return 2
-    buck2 = str(ROOT / "scripts/buck2")
-    tests = set(run(buck2, "uquery", "kind(amux_test, //crates/...)").split())
+    tests = set(run(*BUCK2, "uquery", "kind(amux_test, //crates/...)").split())
     status = 0
     for target, filters in selections.buck_runs(suite):
         if f"root{target}" not in tests:
             continue
-        command = [buck2, "run", target, "--", *filters]
+        command = [*BUCK2, "run", target, "--", *filters]
         print("$", shlex.join(command), flush=True)
         status = subprocess.run(command, cwd=ROOT).returncode or status
     return status

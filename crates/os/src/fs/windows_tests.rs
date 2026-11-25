@@ -86,7 +86,7 @@ fn making_an_existing_folder_private_upgrades_what_it_holds() {
     let root = OutsideProfile::new();
     let existing = root.0.join("old-root");
     fs::create_dir(&existing).unwrap();
-    // What an earlier build left: a folder anyone may use, which hands
+    // A folder already there that anyone may use, which hands
     // that down, wherever the test program happens to be built.
     set_dacl(&existing, "D:P(A;OICI;FA;;;WD)");
     fs::create_dir(existing.join("profile")).unwrap();

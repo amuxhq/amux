@@ -359,15 +359,15 @@ pub async fn connect(path: &Path, patience: Duration) -> io::Result<(Stream, Opt
         };
         let waiting = match named {
             Named::Name(name) => {
-                let Some(form) = pipe_form(&name) else {
+                if !is_amux_pipe(&name) {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
                         format!("{} names {name:?}, which is no amux pipe", path.display()),
                     ));
-                };
+                }
                 match ClientOptions::new().open(&name) {
                     Ok(client) => {
-                        let pid = check(&client, &name, form)?;
+                        let pid = check(&client, &name)?;
                         return Ok((Stream::Client(client), Some(pid)));
                     }
                     Err(error) if error.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => {
@@ -434,8 +434,8 @@ enum Named {
     Held,
 }
 
-/// The most of a name file a client reads: a name is 46 bytes, one an
-/// earlier build wrote at most 70.
+/// The most of a name file a client reads: a name is 46 bytes, and a file
+/// longer than this names no pipe.
 const MOST_NAME: u64 = 256;
 
 /// What the one read of a connect with no patience at all is given, so a
@@ -538,41 +538,12 @@ fn read_name_now(path: &Path) -> io::Result<Named> {
 }
 
 /// Whether `name` is a pipe an amux bind makes: `\\.\pipe\amux-` and 32
-/// lowercase hex digits, or the form earlier builds made,
-/// `\\.\pipe\amux-<16 hex>-<pid>-<count>`, which a daemon still meets in
-/// an agent an earlier build started. Nothing else: no other host (a UNC
-/// name would hand this user's credentials to it), no device, no other
-/// pipe.
-#[cfg(test)]
+/// lowercase hex digits. Nothing else: no other host (a UNC name would
+/// hand this user's credentials to it), no device, no other pipe.
 pub(super) fn is_amux_pipe(name: &str) -> bool {
-    pipe_form(name).is_some()
-}
-
-/// Which of the two forms of amux pipe name `name` is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Form {
-    /// `amux-<32 hex>`, made by this build and later ones.
-    Random,
-    /// `amux-<16 hex>-<pid>-<count>`, made by earlier builds.
-    Legacy,
-}
-
-pub(super) fn pipe_form(name: &str) -> Option<Form> {
-    let hex = |part: &str, length: usize| {
-        part.len() == length && part.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-    };
-    let number =
-        |part: &str| (1..=20).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit());
-    let rest = name.strip_prefix(PREFIX)?;
-    if hex(rest, 32) {
-        return Some(Form::Random);
-    }
-    let mut parts = rest.split('-');
-    matches!(
-        (parts.next(), parts.next(), parts.next(), parts.next()),
-        (Some(hash), Some(pid), Some(count), None) if hex(hash, 16) && number(pid) && number(count)
-    )
-    .then_some(Form::Legacy)
+    name.strip_prefix(PREFIX).is_some_and(|rest| {
+        rest.len() == 32 && rest.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    })
 }
 
 /// `\\.\pipe\amux-` and 128 bits no other process can guess, so nobody can
@@ -605,18 +576,10 @@ pub(super) fn random_name() -> String {
 /// The pipe a client opened is this user's, and the id of the process
 /// serving it.
 ///
-/// A pipe this build or a later one made names this user as its owner
-/// (its SDDL does), elevated or not, and the owner is what a server can't
-/// fake: another user can't create a pipe owned by this one. So for a
-/// pipe of the [`Form::Random`] form the owner alone decides.
-///
-/// A pipe an earlier build made ([`Form::Legacy`]) left its owner to the
-/// token's default: this user for a normal process, Administrators for an
-/// elevated one. Such a pipe is admitted when this user owns it, or when
-/// Administrators do and the process serving it runs as this user, which
-/// is the check those builds made themselves. So a daemon adopting an
-/// agent an elevated earlier build started still reaches it.
-fn check(client: &NamedPipeClient, name: &str, form: Form) -> io::Result<u32> {
+/// An amux pipe names this user as its owner (its SDDL does), elevated or
+/// not, and the owner is what a server can't fake: another user can't
+/// create a pipe owned by this one. So the owner alone decides.
+fn check(client: &NamedPipeClient, name: &str) -> io::Result<u32> {
     let mut pid = 0u32;
     // SAFETY: the handle is the open pipe client's, and `pid` outlives
     // the call.
@@ -625,11 +588,7 @@ fn check(client: &NamedPipeClient, name: &str, form: Form) -> io::Result<u32> {
     }
     let owner = owner_of(client.as_raw_handle())?;
     let me = os::fs::current_user_sid()?;
-    if owner == me
-        || form == Form::Legacy
-            && owner == ADMINISTRATORS
-            && user_of(pid).is_ok_and(|user| user == me)
-    {
+    if owner == me {
         return Ok(pid);
     }
     Err(io::Error::new(
@@ -638,71 +597,11 @@ fn check(client: &NamedPipeClient, name: &str, form: Form) -> io::Result<u32> {
     ))
 }
 
-/// BUILTIN\Administrators: the default owner of what an elevated process
-/// creates.
-const ADMINISTRATORS: &str = "S-1-5-32-544";
-
 /// Whether the object open at `handle` (with `READ_CONTROL`) is owned by
 /// this user.
 #[cfg(test)]
 pub(super) fn owned_by_me(handle: RawHandle) -> io::Result<bool> {
     Ok(owner_of(handle)? == os::fs::current_user_sid()?)
-}
-
-/// The user process `pid` runs as, as a SID string.
-fn user_of(pid: u32) -> io::Result<String> {
-    use std::os::windows::io::{FromRawHandle, OwnedHandle};
-
-    use windows_sys::Win32::Security::{GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser};
-    use windows_sys::Win32::System::Threading::{
-        OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
-    };
-
-    // SAFETY: a failed open returns null, checked; an opened handle is
-    // owned below.
-    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
-    if process.is_null() {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: a handle this function owns from here.
-    let process = unsafe { OwnedHandle::from_raw_handle(process) };
-    let mut token = std::ptr::null_mut();
-    // SAFETY: `token` outlives the call and is owned below once opened.
-    if unsafe { OpenProcessToken(process.as_raw_handle(), TOKEN_QUERY, &mut token) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: a handle this function owns from here.
-    let token = unsafe { OwnedHandle::from_raw_handle(token) };
-    let mut needed = 0u32;
-    // SAFETY: a size query: no buffer, the size written to `needed`.
-    unsafe {
-        GetTokenInformation(
-            token.as_raw_handle(),
-            TokenUser,
-            std::ptr::null_mut(),
-            0,
-            &mut needed,
-        )
-    };
-    // u64s, so the TOKEN_USER read out of it is aligned.
-    let mut buffer = vec![0u64; (needed as usize).div_ceil(8).max(1)];
-    // SAFETY: the buffer holds at least `needed` bytes.
-    if unsafe {
-        GetTokenInformation(
-            token.as_raw_handle(),
-            TokenUser,
-            buffer.as_mut_ptr().cast(),
-            needed,
-            &mut needed,
-        )
-    } == 0
-    {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: the call wrote a TOKEN_USER at the buffer's start, and the
-    // SID it points at lies within the buffer, which lives on.
-    let sid = unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
-    sid_text(sid)
 }
 
 /// A SID as its string form.
@@ -725,7 +624,7 @@ fn sid_text(sid: *mut std::ffi::c_void) -> io::Result<String> {
 
 /// The owner of the object open at `handle` (with `READ_CONTROL`), as a
 /// SID string.
-pub(super) fn owner_of(handle: RawHandle) -> io::Result<String> {
+fn owner_of(handle: RawHandle) -> io::Result<String> {
     let mut owner = std::ptr::null_mut();
     let mut descriptor = std::ptr::null_mut();
     // SAFETY: the handle is open; the call allocates the descriptor `owner`

@@ -57,16 +57,15 @@ pub const BLOBS: &str = "blobs";
 /// The lock file's data is the holder's pid, in decimal, so another
 /// process can find the holder ([`lock_holder`]). The lock is an
 /// [`os::lock::FileLock`], which on Windows locks one byte past any data,
-/// so the pid stays readable while it is held; that byte lies inside the
-/// range an older build's whole-file lock covers, so old and new builds
-/// exclude each other. An older build's agent writes no pid.
+/// so the pid stays readable while it is held.
 #[derive(Debug)]
 pub struct Lock(FileLock);
 
 impl Drop for Lock {
     fn drop(&mut self) {
-        // The pid goes before the lock does, so a later holder of an older
-        // build, which writes none, is never taken for this process.
+        // The pid goes before the lock does, so a file no process holds
+        // names none, and a successor a moment into its start, before it
+        // writes its own, is never taken for this process.
         let _ = self.0.write_data(b"");
     }
 }
@@ -78,7 +77,7 @@ pub fn lock(dir: &Path) -> io::Result<Option<Lock>> {
         return Ok(None);
     };
     // A holder that can't be named is still the holder: lock_holder reports
-    // it as one that names no process, as it does an older build's.
+    // it as one it cannot confirm.
     if let Err(error) = lock.write_data(std::process::id().to_string().as_bytes()) {
         tracing::warn!(dir = %dir.display(), %error, "writing this process's pid into its lock");
     }
@@ -112,14 +111,14 @@ pub enum Holder {
     /// The process named in the lock file holds it, pinned so its pid
     /// can't be reused under the caller.
     Process(ProcessRef),
-    /// A process holds it but the file names none that could be pinned:
-    /// an older build's agent, which writes no pid (on Windows its
-    /// whole-file lock keeps the file from being read at all), or one that
-    /// has taken the lock and not yet written its pid or bound its agent
-    /// socket. Or the file names a process that does not serve the
-    /// directory's agent socket: a pid a crashed holder left, which the OS
-    /// may since have given to anyone, under an older build's holder.
-    Unnamed,
+    /// A process holds it, but which one can't be confirmed: an agent a
+    /// moment into its start, which has taken the lock and not yet written
+    /// its pid or bound its agent socket (or failed to write its pid). Its
+    /// file names no pid then, or the one a crashed holder left, which the
+    /// OS may since have given to anyone, so a pid is believed only from
+    /// the process that serves the directory's agent socket. A later look
+    /// names the agent once it has written its pid and serves its socket.
+    Unconfirmed,
     /// This process holds it: an agent run inside a test's own process.
     /// Never pinned, so no caller can end itself by ending the holder.
     ThisProcess,
@@ -144,10 +143,10 @@ const SOCKET_PATIENCE: Duration = Duration::from_millis(500);
 /// read is only believed while the lock stays held across the open and the
 /// file still names it, so a holder that exits meanwhile is reported
 /// [`Holder::Free`], never as whoever has its pid now. That alone is not
-/// proof: an older build's agent, which writes no pid, can hold the lock
-/// over the pid a crashed newer one left, so the pid is believed only when
-/// the operating system names the same process as the agent socket's
-/// server, and is otherwise [`Holder::Unnamed`].
+/// proof: an agent a moment into its start holds the lock over the pid a
+/// crashed holder left, until it writes its own, so the pid is believed
+/// only when the operating system names the same process as the agent
+/// socket's server, and is otherwise [`Holder::Unconfirmed`].
 pub fn lock_holder(dir: &Path) -> io::Result<Holder> {
     let path = dir.join(LOCK);
     for _ in 0..HOLDER_LOOKS {
@@ -155,15 +154,15 @@ pub fn lock_holder(dir: &Path) -> io::Result<Holder> {
             return Ok(Holder::Free);
         }
         let Some(pid) = named_pid(&path) else {
-            return Ok(Holder::Unnamed);
+            return Ok(Holder::Unconfirmed);
         };
         if pid == std::process::id() {
             return Ok(Holder::ThisProcess);
         }
         let process = match ProcessRef::open(pid) {
             Ok(process) => process,
-            // Gone: the holder exited after the look, or the pid is one an
-            // older build's holder left in place.
+            // Gone: the holder exited after the look, or the pid is one a
+            // crashed holder left, which its successor has not yet replaced.
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
             Err(error) => return Err(error),
         };
@@ -174,12 +173,12 @@ pub fn lock_holder(dir: &Path) -> io::Result<Holder> {
             return Ok(if agent_socket_server(dir) == Some(pid) {
                 Holder::Process(process)
             } else {
-                Holder::Unnamed
+                Holder::Unconfirmed
             });
         }
     }
     Ok(if FileLock::held(&path)? {
-        Holder::Unnamed
+        Holder::Unconfirmed
     } else {
         Holder::Free
     })
@@ -222,7 +221,6 @@ fn named_pid(path: &Path) -> Option<os::Pid> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::{File, OpenOptions, TryLockError};
     use std::io::{BufRead as _, BufReader, Write as _};
     use std::process::{Child, Command, Stdio};
     use std::time::{Duration, Instant};
@@ -331,22 +329,6 @@ mod tests {
         }
     }
 
-    /// What a build before the pid did: std's whole-file lock, writing
-    /// nothing.
-    fn old_style_lock(dir: &Path) -> File {
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(dir.join(LOCK))
-            .unwrap();
-        match file.try_lock() {
-            Ok(()) => file,
-            Err(TryLockError::WouldBlock) => panic!("already held"),
-            Err(TryLockError::Error(error)) => panic!("{error}"),
-        }
-    }
-
     #[test]
     fn a_lock_no_process_holds_is_free_whatever_its_file_names() {
         let dir = tempfile::tempdir().unwrap();
@@ -394,24 +376,24 @@ mod tests {
 
     /// The pid in a lock file is believed only when the process serving
     /// the directory's agent socket is the same one: a pid a crashed holder
-    /// left, which a process outside amux has since taken while an older
-    /// build's agent holds the lock (writing no pid of its own), names no
-    /// process to end. Here the file names a live process that serves no
-    /// socket.
+    /// left, which a process outside amux has since taken while a new agent
+    /// holds the lock and has not yet written its own, names no process to
+    /// end. Here the file names a live process that serves no socket, as
+    /// an agent has yet to.
     #[test]
-    fn a_holder_that_serves_no_agent_socket_is_not_named() {
+    fn a_holder_that_serves_no_agent_socket_is_unconfirmed() {
         let dir = tempfile::tempdir().unwrap();
         let mut child = holder_serving(dir.path(), false);
         let holder = lock_holder(dir.path()).unwrap();
         drop(child.stdin.take());
         child.wait().unwrap();
-        assert!(matches!(holder, Holder::Unnamed), "{holder:?}");
+        assert!(matches!(holder, Holder::Unconfirmed), "{holder:?}");
     }
 
     /// And here the socket answers, but another process serves it: the one
     /// the lock file names is not the directory's agent.
     #[test]
-    fn a_holder_whose_agent_socket_another_process_serves_is_not_named() {
+    fn a_holder_whose_agent_socket_another_process_serves_is_unconfirmed() {
         let dir = tempfile::tempdir().unwrap();
         let mut child = holder_serving(dir.path(), false);
         let serving = serve_agent_socket(dir.path());
@@ -419,23 +401,23 @@ mod tests {
         drop(serving);
         drop(child.stdin.take());
         child.wait().unwrap();
-        assert!(matches!(holder, Holder::Unnamed), "{holder:?}");
+        assert!(matches!(holder, Holder::Unconfirmed), "{holder:?}");
     }
 
-    /// An older build's agent holds the lock with std's whole-file lock and
-    /// writes no pid: held, by no process this can name.
+    /// A holder that has taken the lock and not yet written its pid: held,
+    /// by no process this can confirm.
     #[test]
-    fn an_older_builds_holder_is_held_but_unnamed() {
+    fn a_holder_that_names_no_pid_yet_is_held_but_unconfirmed() {
         let dir = tempfile::tempdir().unwrap();
-        let old = old_style_lock(dir.path());
+        let starting = FileLock::try_acquire(&dir.path().join(LOCK))
+            .unwrap()
+            .expect("free");
         assert!(locked(dir.path()));
-        assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::Unnamed));
-        assert!(
-            lock(dir.path()).unwrap().is_none(),
-            "the two exclude each other"
-        );
-        old.unlock().unwrap();
-        drop(old);
+        assert!(matches!(
+            lock_holder(dir.path()).unwrap(),
+            Holder::Unconfirmed
+        ));
+        drop(starting);
         assert!(matches!(lock_holder(dir.path()).unwrap(), Holder::Free));
     }
 

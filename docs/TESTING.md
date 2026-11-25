@@ -237,7 +237,9 @@ a process it started still holds its output fails, since that process would outl
 with it: on Unix its process group is killed, and on Windows the test runs in a Job Object of its own (kill on close,
 no breakaway), joined before it runs, so even an orphan, which no walk of the process tree finds, is ended with the
 test. Within a test, the test net ends its agents itself, at `shutdown`, `remove_host` and `rewind_host`, by the
-process each agent's lock names (`agent_dir::lock_holder`), whether or not their daemon still runs. The documentation tests,
+process each agent's lock names (`agent_dir::lock_holder`), whether or not their daemon still runs. It looks only in
+its hosts' agents folders (`profiles/*/agents/*` of each host's data directory) and follows no symbolic link or
+junction there, so a link in a workspace to another installation never leads it to that installation's agents. The documentation tests,
 the C ABI's pointer checks (`just miri`) and the sanitizers run under `cargo test`.
 
 The runner sets `AMUX_TEST_RUNNER=1` for every test. On Windows, test support that starts amux processes (the

@@ -126,8 +126,9 @@ outside Meta that digest is SHA-256 (Meta's own cache uses SHA-1). With a
 SHA-1 alone, every new daemon fetched every jar from its origin, even when
 everything built from it was a cache hit: about 680 MiB on each fresh CI
 runner, and Maven Central's rate limit on GitHub's shared runner addresses
-failed the Linux gate. The patch is offered upstream; once a buck2 release
-carries it, `.buckconfig` goes back to `prelude = bundled` and the fork
+failed the Linux gate. The patch is offered upstream
+([meta/buck2#1654](https://github.com/meta/buck2/pull/1654)); once a buck2
+release carries it, `.buckconfig` goes back to `prelude = bundled` and the fork
 retires.
 
 Bumping buck2 until then:

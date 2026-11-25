@@ -110,37 +110,48 @@ Each crate describes itself twice, so the two stay in step by hand:
 
 ### The prelude
 
-Buck2's rules come from its prelude, the one bundled with the pinned buck2,
-vendored into `prelude/` by `scripts/prelude.py update` with one change.
-Run it after bumping buck2 in `build/tools.json` and commit what it
-changes; nothing else edits `prelude/`.
+Buck2's rules come from its prelude. Ours is the one bundled with the pinned
+buck2, plus one patch, taken from a fork:
+[`amuxhq/buck2-prelude`](https://github.com/amuxhq/buck2-prelude), a fork of
+Meta's published mirror, one branch per buck2 release (`amux/2026-11-15`),
+which `.buckconfig` names by commit. Buck2 fetches that commit itself, once
+per daemon.
 
-The change is to its downloads. The prelude's Android toolchain builds
-Buck's Java tools from source against about 120 jars it downloads from Maven
-Central, Google's Maven and buck2's GitHub releases, each declared by SHA-1
-alone. Buck2 takes a download from the build cache instead of its origin
-only when the declaration gives a digest the cache uses (SHA-256) and the
-file's size; with a SHA-1 it fetches the file from the origin in every new
-daemon, even when everything built from it is a cache hit. Every fresh CI
-runner fetched all of them, many twice or three times, once for each
-configuration that reached them, and Maven Central's rate limit on GitHub's
-shared runner addresses failed the Linux gate. The vendored prelude gives
-each download its SHA-256 and size from
-`prelude/toolchains/android/tools/build_rules/digests.bzl`, which the script
-writes: it keeps the digests it recorded and fetches, once, only a jar new
-to the prelude, checked against its SHA-1. A download missing from the
-table fails loading rather than quietly going back to its origin. Every
-other download in the build (the crates, the Android app's libraries,
-`protoc`) already gives a SHA-256 and a size.
+The patch gives the Android toolchain's downloads a SHA-256 and a size. The
+toolchain builds Buck's Java tools from source against about 120 jars from
+Maven Central, Google's Maven and buck2's GitHub releases, which upstream
+declares by SHA-1 alone. Buck2 takes a download from the build cache instead
+of its origin only with a digest the cache uses and the file's size, and
+outside Meta that digest is SHA-256 (Meta's own cache uses SHA-1). With a
+SHA-1 alone, every new daemon fetched every jar from its origin, even when
+everything built from it was a cache hit: about 680 MiB on each fresh CI
+runner, and Maven Central's rate limit on GitHub's shared runner addresses
+failed the Linux gate. The patch is offered upstream
+([meta/buck2#1654](https://github.com/meta/buck2/pull/1654)); once a buck2
+release carries it, `.buckconfig` goes back to `prelude = bundled` and the fork
+retires.
+
+Bumping buck2 until then:
+
+1. Find the mirror's commit for the new release (the same message and time
+   as the last commit under `prelude/` in buck2's release tag).
+2. Rebase the patch onto it as a new branch `amux/<release>`, and push it.
+3. Run the fork's `tools/inline_digests.py` (branch `tools`) over it with
+   `--fetch`: a jar new to the prelude gets its SHA-256 and size, checked
+   against its SHA-1. A declaration without them still builds, but is
+   fetched from its origin by every new daemon.
+4. Point `commit_hash` in `.buckconfig` at the branch's head.
 
 A download whose blob the cache has lost is fetched from its origin again,
 and goes on being fetched until an action that misses the cache uploads it.
 
 Rejected, and why:
 
-- Pointing the prelude's `mvn:` downloads at a mirror (`http.maven_repo`):
-  one line, but every runner still fetches every jar, from a host the gate
-  then depends on.
+- Vendoring the patched prelude into the repository: about 390,000 lines,
+  2,450 files, to carry a change to one `.bzl` file and five `BUCK` files.
+- Pointing the prelude's `mvn:` downloads at a caching mirror
+  (`http.maven_repo`): one line, but it covers Maven Central only, and every
+  runner still downloads every jar, now from the mirror.
 - Keeping `buck-out` between CI runs: Buck2 recognises a download already
   on disk only by a declared SHA-256 and size, so with a SHA-1 alone it
   fetches the file again regardless.

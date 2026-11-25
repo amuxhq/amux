@@ -4,5 +4,13 @@
 # pinned versions and where its actions go (scripts/buck-config.py).
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
+# The daemon checks the prelude out with git (.buckconfig's external cell)
+# under buck-out/v2/external_cells/git/<commit>/, deep enough that Git for
+# Windows refuses its longest files ("Filename too long") without
+# core.longpaths. Git elsewhere has no such limit and ignores the key. Set
+# through the environment, which the daemon inherits from the command that
+# starts it, so no one's git config is changed.
+n=${GIT_CONFIG_COUNT:-0}
+export "GIT_CONFIG_KEY_$n=core.longpaths" "GIT_CONFIG_VALUE_$n=true" "GIT_CONFIG_COUNT=$((n + 1))"
 "$here/py" "$here/buck-config.py"
 exec "$("$here/py" "$here/buck-tools.py" path buck2)" "$@"

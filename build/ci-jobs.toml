@@ -39,8 +39,6 @@ paths = [
     "reindeer.toml",
     "rust-toolchain.toml",
     "third-party/**",
-    # Buck2's prelude, vendored (scripts/prelude.py): every rule is its.
-    "prelude/**",
     "build/BUCK",
     "build/archive_tool.bzl",
     "build/rust.bzl",

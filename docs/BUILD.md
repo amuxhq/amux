@@ -435,10 +435,12 @@ build at once only while both see the same files, so what the check
 targets read is written before either starts.
 
 At the end, [`build/checks/timing.py`](../build/checks/timing.py) says
-where the test run's time went: how many compiles, links and tests ran
-rather than came from the cache, the worker time each kind took and the
-longest of each, how many actions the worker ran at once, and the critical
-path. A landing's log carries the same lines from the build host.
+where the test run's time went: how many compiles, metadata (`.rmeta`)
+builds, links, clippy runs and tests ran rather than came from the cache,
+each counted apart by whether it ran on a NativeLink worker (`remote`) or
+in Buck2 itself (`local`, as build actions do on CI's macOS runners), the
+time each took and the longest of each, how many ran at once in each
+place, and the critical path. A landing's log carries the same lines from the build host.
 `scripts/py build/checks/timing.py <event log>` says it for any Buck2
 command's log in `buck-out/v2/log`.
 

@@ -81,6 +81,9 @@ futures-util = { workspace = true }
 libc = { workspace = true }
 tokio-tungstenite = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }
+
 [dev-dependencies]
 agent-dir = { workspace = true }
 attachments = { workspace = true }

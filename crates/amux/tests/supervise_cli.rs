@@ -6,7 +6,6 @@
 
 #![cfg(unix)]
 
-use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::Duration;
@@ -100,8 +99,14 @@ impl Install {
         locked(&self.data.join(node::INSTALLATION_LOCK))
     }
 
+    /// Whether the daemon answers on its socket. The tests' runtimes have
+    /// threads to spare, so this one blocks for the dial.
     fn answers(&self) -> bool {
-        std::os::unix::net::UnixStream::connect(&self.socket).is_ok()
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(agent_dir::local_socket::connect(&self.socket))
+                .is_ok()
+        })
     }
 }
 
@@ -114,15 +119,11 @@ impl Drop for Install {
 }
 
 fn locked(path: &Path) -> bool {
-    let Ok(file) = OpenOptions::new().write(true).open(path) else {
-        return false;
-    };
-    matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock))
+    os::lock::FileLock::held(path).unwrap_or(false)
 }
 
 fn alive(pid: u32) -> bool {
-    // SAFETY: signal 0 only probes.
-    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    os::process::ProcessRef::open(pid).is_ok_and(|process| process.alive())
 }
 
 fn stdout(output: &Output) -> String {

@@ -1587,42 +1587,89 @@ impl Net {
 
     /// Stops `name`'s process where it stands, as a machine too busy to
     /// schedule it would: it keeps its lock and its connection and answers
-    /// nothing until thawed.
+    /// nothing until thawed. Only the agent process stops; its provider
+    /// runs on (SIGSTOP on Unix, `NtSuspendProcess` on Windows).
     pub fn freeze(&self, name: &str) -> Result<Ack, NetError> {
-        self.signal(name, "-STOP")?;
+        let dir = self.agent_dir(name)?;
+        let process = self.agent_process(name)?;
+        process
+            .suspend()
+            .map_err(|error| self.process_error(name, &error.to_string()))?;
+        Self::frozen().push((dir, process));
         Ok(self.ack(format!("{name} frozen")))
     }
 
     /// Lets a frozen process run again.
     pub fn thaw(&self, name: &str) -> Result<Ack, NetError> {
-        self.signal(name, "-CONT")?;
+        let dir = self.agent_dir(name)?;
+        let held = {
+            let mut frozen = Self::frozen();
+            let at = frozen.iter().position(|(frozen, _)| *frozen == dir);
+            at.map(|at| frozen.swap_remove(at).1)
+        };
+        // One this net did not freeze is found as freeze finds one.
+        let process = match held {
+            Some(process) => process,
+            None => self.agent_process(name)?,
+        };
+        process
+            .resume()
+            .map_err(|error| self.process_error(name, &error.to_string()))?;
         Ok(self.ack(format!("{name} thawed")))
     }
 
-    fn signal(&self, name: &str, signal: &str) -> Result<(), NetError> {
-        let dir = self.agent_dir(name)?;
-        #[cfg(unix)]
-        {
-            // `amux agent <dir>`: the directory is on its command line.
-            let status = std::process::Command::new("pkill")
-                .arg(signal)
-                .arg("-f")
-                .arg(format!("agent {}", dir.display()))
-                .status()?;
-            if status.success() {
-                Ok(())
-            } else {
-                Err(NetError::Host {
-                    host: self.agent(name)?.host.clone(),
-                    error: format!("no process of {name} to signal"),
+    /// `name`'s agent process, pinned: the one serving its directory's
+    /// `private/agent.sock`.
+    pub fn agent_process(&self, name: &str) -> Result<os::process::ProcessRef, NetError> {
+        Self::agent_process_in(&self.agent_dir(name)?)
+            .map_err(|error| self.process_error(name, &error.to_string()))
+    }
+
+    fn process_error(&self, name: &str, why: &str) -> NetError {
+        match self.agent(name) {
+            Ok(agent) => NetError::Host {
+                host: agent.host.clone(),
+                error: format!("no process of {name} to reach: {why}"),
+            },
+            Err(error) => error,
+        }
+    }
+
+    /// The agent process of the agent directory `dir`, pinned: the process
+    /// serving its `private/agent.sock`, as the operating system names that
+    /// socket's server. The dial is one its tool server could make, closed
+    /// before it asks anything, which the agent shrugs off.
+    pub(crate) fn agent_process_in(dir: &Path) -> std::io::Result<os::process::ProcessRef> {
+        let socket = agent_dir::agent_sock::path(dir);
+        // Callers are synchronous and may hold a runtime's only thread, so the
+        // dial runs on a thread and a runtime of its own.
+        let pid = std::thread::scope(|scope| {
+            scope
+                .spawn(|| -> std::io::Result<Option<u32>> {
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()?
+                        .block_on(async {
+                            let (stream, pid) =
+                                agent_dir::local_socket::connect_to_process(&socket).await?;
+                            stream.close();
+                            Ok(pid)
+                        })
                 })
-            }
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = (dir, signal);
-            Err(NetError::Unsupported("signalling agent processes"))
-        }
+                .join()
+                .unwrap_or_else(|_| Err(std::io::Error::other("the dial panicked")))
+        })?
+        .ok_or_else(|| std::io::Error::other("its socket does not say who serves it"))?;
+        os::process::ProcessRef::open(pid)
+    }
+
+    /// The agent processes [`Net::freeze`] stopped and [`Net::thaw`] has not
+    /// let go, by agent directory: a thaw then needs no dial, which on Windows
+    /// a suspended process's pipe might not have an instance ready for.
+    fn frozen() -> std::sync::MutexGuard<'static, Vec<(PathBuf, os::process::ProcessRef)>> {
+        static FROZEN: std::sync::Mutex<Vec<(PathBuf, os::process::ProcessRef)>> =
+            std::sync::Mutex::new(Vec::new());
+        FROZEN.lock().unwrap_or_else(|poison| poison.into_inner())
     }
 
     fn write_script(&self, name: &str, mut script: Script) -> Result<PathBuf, NetError> {

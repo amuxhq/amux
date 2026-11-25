@@ -27,6 +27,7 @@ pub mod clients;
 pub mod codex;
 pub mod codex_view;
 pub mod conformance;
+pub mod faults;
 pub mod lines;
 pub mod mcp;
 pub mod playback;

@@ -35,6 +35,7 @@ DEPS = [
 TEST_DEPS = [
     "//crates/source-tree:source-tree",
     "//crates/journal:journal",
+    "//crates/os:os",
     "//crates/patience:patience",
     "//crates/provider-fakes:provider-fakes",
     "//crates/pty-host:pty-host",

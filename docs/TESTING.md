@@ -164,6 +164,15 @@ guessed cause):
 
 A runtime skip, with its reason, is only for a missing privilege, such as the right to make symbolic links.
 
+So that a test needs no gate, the harness does each platform-shaped thing one way on every OS:
+
+| A test that | Uses |
+| --- | --- |
+| checks, kills, freezes or thaws a process | `os::process::ProcessRef` (`open`, `alive`, `kill`, `suspend`, `resume`), never `kill -0`, `pkill`, `libc::kill` or `taskkill`; an agent's process is the one serving its `private/agent.sock` (`Net::agent_process`, node's `support::agent_process`) |
+| asks whether a lock is held | `os::lock::FileLock::held` |
+| dials or serves a local socket | `agent_dir::local_socket`, never a Unix socket type, since the socket is a named pipe on Windows |
+| needs a write refused or a file unreadable, a file held open by another program, or a link to a directory | `provider_fakes::faults`: `deny` (a mode on Unix, a deny entry in the DACL on Windows), `read_only`, `hold_exclusively` (a share mode, Windows only), `link_dir` (a junction on Windows) and `symlink`, which says why it skipped where the user may not make one; a permission fault checks `faults::unenforced()` first, which is `Some` for a process running as root |
+
 The same rule holds the code: desktop-platform conditionals (`cfg(unix)`, `cfg(windows)`, a desktop `target_os`,
 `target_family`, `std::os::unix`, `std::os::windows`, `libc::`, `windows_sys::`) live in the homes named for
 platform code: `crates/os`, agent-dir's `local_socket`, `crates/pty-host`, node's `platform` and the supervisor's

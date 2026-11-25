@@ -19,6 +19,12 @@ pub enum MemoryMetric {
     PhysicalFootprint,
     /// Linux's resident set size from `/proc/<pid>/statm`.
     Rss,
+    /// Windows' private bytes (`PrivateUsage` from `GetProcessMemoryInfo`):
+    /// the memory committed to the process alone. The working set is the
+    /// closer cousin of RSS, but Windows trims it under pressure and when a
+    /// process idles, so it would drift with the machine rather than with
+    /// the process; private bytes grow only with what the process keeps.
+    PrivateBytes,
 }
 
 impl MemoryMetric {
@@ -28,6 +34,7 @@ impl MemoryMetric {
         match self {
             Self::PhysicalFootprint => "physical footprint",
             Self::Rss => "RSS",
+            Self::PrivateBytes => "private bytes",
         }
     }
 }
@@ -200,7 +207,81 @@ mod platform {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+// This per-OS code would sit in `os::process` if a second crate needed it;
+// for now flood is its only reader (the H9 row of the Windows programme).
+#[cfg(windows)]
+mod platform {
+    use std::io;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ,
+    };
+
+    use super::{MemoryMetric, MemorySample};
+
+    /// `PROCESS_MEMORY_COUNTERS_EX`, which the windows-sys features the
+    /// workspace builds don't carry (`Win32_System_ProcessStatus`).
+    #[repr(C)]
+    #[derive(Default)]
+    struct ProcessMemoryCountersEx {
+        cb: u32,
+        page_fault_count: u32,
+        peak_working_set_size: usize,
+        working_set_size: usize,
+        quota_peak_paged_pool_usage: usize,
+        quota_paged_pool_usage: usize,
+        quota_peak_non_paged_pool_usage: usize,
+        quota_non_paged_pool_usage: usize,
+        pagefile_usage: usize,
+        peak_pagefile_usage: usize,
+        private_usage: usize,
+    }
+
+    // kernel32's export of psapi's GetProcessMemoryInfo, present since
+    // Windows 7. raw-dylib needs no import library.
+    #[link(name = "kernel32.dll", kind = "raw-dylib", modifiers = "+verbatim")]
+    unsafe extern "system" {
+        fn K32GetProcessMemoryInfo(
+            process: HANDLE,
+            counters: *mut ProcessMemoryCountersEx,
+            size: u32,
+        ) -> i32;
+    }
+
+    pub(super) fn sample(pid: u32) -> io::Result<MemorySample> {
+        // SAFETY: plain call; a null handle is checked below.
+        let process = unsafe {
+            OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
+                FALSE,
+                pid,
+            )
+        };
+        if process.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let mut counters = ProcessMemoryCountersEx {
+            cb: size_of::<ProcessMemoryCountersEx>() as u32,
+            ..ProcessMemoryCountersEx::default()
+        };
+        // SAFETY: `counters` is writable storage of the size passed, and
+        // `process` is the handle opened above.
+        let read = unsafe { K32GetProcessMemoryInfo(process, &mut counters, counters.cb) };
+        let error = io::Error::last_os_error();
+        // SAFETY: closing the handle opened above, once.
+        unsafe { CloseHandle(process) };
+        if read == 0 {
+            return Err(error);
+        }
+        Ok(MemorySample {
+            bytes: counters.private_usage as u64,
+            metric: MemoryMetric::PrivateBytes,
+        })
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 mod platform {
     use std::io;
 
@@ -209,7 +290,7 @@ mod platform {
     pub(super) fn sample(_pid: u32) -> io::Result<MemorySample> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "process memory sampling is supported only on macOS and Linux",
+            "process memory sampling is supported only on macOS, Linux and Windows",
         ))
     }
 }
@@ -218,18 +299,18 @@ mod platform {
 mod tests {
     use super::*;
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sampler_names_and_reads_the_current_process_measure() {
         let sample = sample_memory(std::process::id()).expect("sample this process");
         assert!(sample.bytes > 0);
-        #[cfg(target_os = "macos")]
-        assert_eq!(sample.name(), "physical footprint");
-        #[cfg(target_os = "linux")]
-        assert_eq!(sample.name(), "RSS");
+        let expected = match std::env::consts::OS {
+            "macos" => "physical footprint",
+            "windows" => "private bytes",
+            _ => "RSS",
+        };
+        assert_eq!(sample.name(), expected);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sampler_reads_a_child_process() {
         // Use another copy of this test binary so the sampled process has a
@@ -247,7 +328,6 @@ mod tests {
         assert!(sample.bytes > 0);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     #[ignore = "spawned only by sampler_reads_a_child_process"]
     fn sampler_child_target() {

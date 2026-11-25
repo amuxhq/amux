@@ -41,8 +41,7 @@ fn agent_pid(dir: &Path) -> Option<u32> {
 }
 
 fn alive(pid: u32) -> bool {
-    // SAFETY: signal 0 only probes.
-    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    os::process::ProcessRef::open(pid).is_ok_and(|process| process.alive())
 }
 
 /// Agents the previous build started keep their process, and their inode,
@@ -420,7 +419,8 @@ async fn restarting_the_launch_agent_leaves_the_agent_running() {
         .unwrap();
     assert!(status.success(), "launchctl kickstart failed");
     until("launchd's amux answers", || async {
-        std::os::unix::net::UnixStream::connect(&desk.socket)
+        agent_dir::local_socket::connect(&desk.socket)
+            .await
             .map(|_| ())
             .map_err(|error| error.to_string())
     })
@@ -479,7 +479,8 @@ async fn restarting_the_launch_agent_leaves_the_agent_running() {
 
     std::fs::write(&gate, b"").unwrap();
     until("the daemon answers again", || async {
-        std::os::unix::net::UnixStream::connect(&desk.socket)
+        agent_dir::local_socket::connect(&desk.socket)
+            .await
             .map(|_| ())
             .map_err(|error| error.to_string())
     })

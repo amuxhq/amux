@@ -6,6 +6,7 @@ mod support;
 mod acp;
 mod codex;
 mod conformance;
+mod faults;
 mod pty;
 mod scripted;
 mod scripts;

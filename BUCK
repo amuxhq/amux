@@ -228,6 +228,7 @@ amux_script_tests(
     extra = {
         "client_kind_check": {"deps": _CLIENT_KIND_SOURCES},
         "bootstrap_guard": {"deps": ["toolchains//:bootstrap-guard.py"]},
+        "ci_jobs": {"srcs": [".github/workflows/ci.yml"], "deps": ["//build:ci-jobs", "//build:tracked"]},
         "env": {"deps": [":environments"]},
         "icon": {"deps": ["//apps/apple:release-files"]},
         "nativelink": {"deps": ["//build:nativelink"]},

@@ -439,9 +439,11 @@ premerge_android := "//apps/android/..."
 # inputs changed run; the rest come from NativeLink's cache, in this tree or
 # any other), and beside them the checks that stay scripts, because they read
 # the whole workspace or query the build graph itself (build/checks/premerge.py
-# names them and says why). A failing one fails the run and its output is
-# printed at the end. The other platforms' builds and the Apple app's tests
-# stay with `just ios verify` and CI (docs/CI.md, "`just premerge`").
+# names them and says why), among them the build of every Windows binary on
+# a Linux worker (`check-windows`). A failing one fails the run and its
+# output is printed at the end. The Apple apps' builds and tests and the
+# tests on macOS and Windows stay with `just ios verify` and CI (docs/CI.md,
+# "`just premerge`").
 # Run the checks a change passes before it reaches main.
 premerge: no-update-flags
     JUST={{just_executable()}} scripts/py -B build/checks/premerge.py {{premerge_tests}} {{premerge_android}}
@@ -451,6 +453,7 @@ premerge: no-update-flags
 # lints and script tests. A fork's pull request gets no build host, so CI
 # builds and tests everything on four-core runners, and all of it on one
 # takes longer than a test run's bound; it runs the halves side by side.
+# Neither builds Windows: a fork's Windows job compiles it under Cargo.
 # Run one half of `just premerge`: workspace or android.
 premerge-half HALF:
     #!/bin/sh
@@ -458,7 +461,7 @@ premerge-half HALF:
     case "{{HALF}}" in
         workspace)
             {{just_executable()}} no-update-flags
-            JUST={{just_executable()}} scripts/py -B build/checks/premerge.py {{premerge_tests}}
+            JUST={{just_executable()}} scripts/py -B build/checks/premerge.py --without-windows {{premerge_tests}}
             ;;
         android)
             {{just_executable()}} no-update-flags
@@ -466,6 +469,14 @@ premerge-half HALF:
             ;;
         *) echo "premerge-half: workspace or android, not {{HALF}}" >&2; exit 2 ;;
     esac
+
+# That build/ci-jobs.toml, which decides which of CI's macOS and Windows
+# jobs a change runs, names every file only the Apple apps' graphs read
+# (scripts/ci_jobs.py graph-check): a query of the configured graph, so
+# premerge runs it beside the tests.
+# Check CI's job table against the Apple apps' build graphs.
+ci-jobs-check:
+    {{bounded}} 300 scripts/py scripts/ci_jobs.py graph-check {{premerge_tests}} -- {{premerge_android}}
 
 # `just land "What the branch does"` merges this tree's HEAD onto a fresh
 # origin/main, runs `just premerge` on the merge and pushes it. With `git

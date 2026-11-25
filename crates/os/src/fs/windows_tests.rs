@@ -85,7 +85,11 @@ fn a_private_folder_outside_the_profile_reads_back_owner_only_and_passes_it_on()
 fn making_an_existing_folder_private_upgrades_what_it_holds() {
     let root = OutsideProfile::new();
     let existing = root.0.join("old-root");
-    fs::create_dir_all(existing.join("profile")).unwrap();
+    fs::create_dir(&existing).unwrap();
+    // What an earlier build left: a folder anyone may use, which hands
+    // that down, wherever the test program happens to be built.
+    set_dacl(&existing, "D:P(A;OICI;FA;;;WD)");
+    fs::create_dir(existing.join("profile")).unwrap();
     let account = existing.join("profile").join("account");
     fs::write(&account, b"x").unwrap();
     let (_, before) = parse(&dacl_sddl(&account).unwrap());

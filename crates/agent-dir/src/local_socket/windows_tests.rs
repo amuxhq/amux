@@ -15,8 +15,8 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
 
-use super::windows::{INSTANCES, Listener, is_amux_pipe, owned_by_me, random_name};
-use super::*;
+use super::super::*;
+use super::{INSTANCES, Listener, is_amux_pipe, owned_by_me, random_name};
 
 const HEX32: &str = "0123456789abcdef0123456789abcdef";
 
@@ -404,7 +404,7 @@ async fn an_earlier_builds_pipe_is_reached() {
     let server = legacy_pipe(&name);
     std::fs::write(&path, &name).unwrap();
     let probe = ClientOptions::new().open(&name).unwrap();
-    let owner = super::windows::owner_of(probe.as_raw_handle()).unwrap();
+    let owner = super::owner_of(probe.as_raw_handle()).unwrap();
     eprintln!("an earlier build's pipe is owned here by {owner}");
     drop(probe);
     server.disconnect().unwrap();

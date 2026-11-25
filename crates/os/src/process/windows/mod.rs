@@ -32,6 +32,8 @@ use windows_sys::Win32::System::Threading::{
 use super::{Descendant, Detach, Replaced, Spawnable, Spawned};
 use crate::Pid;
 
+#[cfg(test)]
+pub(super) mod tests;
 #[cfg(feature = "async")]
 mod wait;
 

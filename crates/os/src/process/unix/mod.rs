@@ -10,6 +10,8 @@ use super::{Descendant, Detach, Replaced, Spawnable, Spawned};
 use crate::Pid;
 
 mod table;
+#[cfg(test)]
+pub(super) mod tests;
 #[cfg(feature = "async")]
 mod tether;
 

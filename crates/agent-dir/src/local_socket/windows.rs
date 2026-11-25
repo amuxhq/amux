@@ -752,3 +752,7 @@ fn listening(listening: &mut Mutex<Vec<Listening>>) -> &mut Vec<Listening> {
         .get_mut()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
+
+#[cfg(test)]
+#[path = "windows_tests.rs"]
+mod tests;

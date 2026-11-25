@@ -72,3 +72,7 @@ pub(super) fn deliver(event: super::testing::Event) -> io::Result<bool> {
 pub(super) fn block_reason() -> io::Result<Option<String>> {
     Ok(None)
 }
+
+#[cfg(test)]
+#[path = "unix_tests.rs"]
+pub(super) mod tests;

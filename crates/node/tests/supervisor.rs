@@ -471,10 +471,6 @@ fn locked(path: &Path) -> bool {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: reading the supervisor lock file while it is held fails: another process has locked a portion of the file (os error 33)"
-)]
 async fn restarts_the_daemon_whenever_it_exits_and_stops_it_when_asked() {
     let mut fixture = Fixture::new().await;
     let supervisor = fixture.start();
@@ -708,10 +704,6 @@ async fn a_child_that_hangs_before_prepared_is_stopped_at_the_start_deadline_and
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: no ignored-term event: the daemon told to ignore the stop never records one"
-)]
 async fn a_daemon_that_ignores_the_stop_signal_is_killed_at_the_stop_deadline() {
     let mut fixture = Fixture::new().await;
     fixture.start();

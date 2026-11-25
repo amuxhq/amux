@@ -638,6 +638,7 @@ pub fn install_from_json(options: Option<&str>) -> Result<String, String> {
         .map_err(|error| error.to_string())?;
     let options = installer::Options {
         config: options.config,
+        ..installer::Options::default()
     };
     let outcome = runtime
         .block_on(installer::ensure(&options, |_| {}))

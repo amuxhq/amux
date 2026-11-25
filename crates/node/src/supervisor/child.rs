@@ -1,6 +1,7 @@
 //! The supervisor's side of its child: spawning `amux daemon` with the
 //! activation pipe, waiting for it, stopping it, and handing all of it to
-//! the next supervisor across an exec.
+//! the next supervisor across an exec (Unix) or a spawn-then-exit
+//! (Windows).
 //!
 //! The pipe is two anonymous pipes, one each way, named to the child in
 //! [`PIPE_ENV`] as `<read>,<write>`: descriptors on Unix, handle values on
@@ -11,21 +12,34 @@ use std::fs::File;
 use std::io::{self, BufRead as _, BufReader, Write as _};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 
+use os::process::{ProcessRef, raw_for_child, set_inheritable};
 use tokio::sync::{mpsc, watch};
 
 use crate::activation::PIPE_ENV;
 
-/// What a supervisor hands the binary it execs: its child, both ends of
-/// the pipe it keeps, and its lock.
+/// What a supervisor hands the binary it replaces itself with: its child,
+/// both ends of the pipe it keeps, its lock, and on Windows the child's
+/// process handle.
+///
+/// As `--inherit`'s argument it is `<pid>:<go>:<prepared>:<lock>`, then
+/// `:<process>` where a handle is handed over. A Unix supervisor hands
+/// over no handle, so it writes the four fields every release reads, and
+/// may exec into whichever release it installed or rolled back to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Inherited {
     pub pid: u32,
     pub go: u64,
     pub prepared: u64,
-    /// The lock's descriptor; None where the lock cannot cross (Windows),
-    /// and the next supervisor takes it again.
+    /// The lock's descriptor; None where the lock cannot cross (Windows,
+    /// where a lock goes with the process that took it), and the next
+    /// supervisor takes it again.
     pub lock: Option<u64>,
+    /// The child's process handle (Windows), which keeps its pid from being
+    /// reused until the next supervisor holds it; None on Unix, where the
+    /// child stays the exec'd image's own.
+    pub process: Option<u64>,
 }
 
 impl Inherited {
@@ -33,7 +47,11 @@ impl Inherited {
         let lock = self
             .lock
             .map_or_else(|| "-".to_owned(), |lock| lock.to_string());
-        format!("{}:{}:{}:{lock}", self.pid, self.go, self.prepared)
+        let mut arg = format!("{}:{}:{}:{lock}", self.pid, self.go, self.prepared);
+        if let Some(process) = self.process {
+            arg.push_str(&format!(":{process}"));
+        }
+        arg
     }
 
     pub fn parse(text: &str) -> Option<Self> {
@@ -45,11 +63,16 @@ impl Inherited {
             "-" => None,
             lock => Some(lock.parse().ok()?),
         };
+        let process = match parts.next() {
+            None => None,
+            Some(process) => Some(process.parse().ok()?),
+        };
         parts.next().is_none().then_some(Self {
             pid,
             go,
             prepared,
             lock,
+            process,
         })
     }
 }
@@ -59,24 +82,31 @@ pub type ExitCode = i32;
 
 pub struct Child {
     pub pid: u32,
+    /// Pinned, so its pid is never reused under a kill.
+    process: Arc<ProcessRef>,
     exit: watch::Receiver<Option<ExitCode>>,
     go: Option<File>,
     /// Kept open so the next supervisor inherits it; a duplicate feeds the
     /// reader.
     prepared_end: File,
     prepared: Option<mpsc::UnboundedReceiver<()>>,
-    #[cfg(windows)]
-    process: std::sync::Arc<std::os::windows::io::OwnedHandle>,
+}
+
+/// What [`Child::hand_over`] made inheritable, kept until the successor has
+/// started.
+pub struct HandedOver {
+    pub inherited: Inherited,
+    /// The process handle handed over (Windows): a duplicate, closed here
+    /// once the successor holds its own.
+    _process: Option<File>,
 }
 
 impl Child {
     /// Starts `<binary> <args> daemon` with the pipe, in the background in
     /// `root`.
     pub fn spawn(binary: &Path, args: &[std::ffi::OsString], root: &Path) -> io::Result<Self> {
-        let (child_reads, go) = io::pipe()?;
-        let (prepared_end, child_writes) = io::pipe()?;
-        let (child_reads, child_writes) = (file(child_reads), file(child_writes));
-        let (go, prepared_end) = (file(go), file(prepared_end));
+        let (child_reads, go) = os::process::pipe()?;
+        let (prepared_end, child_writes) = os::process::pipe()?;
         let mut command = Command::new(binary);
         os::process::background(&mut command, os::process::Detach::Session, root);
         command
@@ -89,21 +119,25 @@ impl Child {
             .stderr(Stdio::inherit())
             .env(
                 PIPE_ENV,
-                format!("{},{}", raw(&child_reads), raw(&child_writes)),
+                format!(
+                    "{},{}",
+                    raw_for_child(&child_reads),
+                    raw_for_child(&child_writes)
+                ),
             );
-        let child = platform::spawn(&mut command, &child_reads, &child_writes)?;
+        // The child's two ends are inheritable for this one spawn, from the
+        // one thread the supervisor starts processes on, and closed here
+        // right after it.
+        set_inheritable(&child_reads, true)?;
+        set_inheritable(&child_writes, true)?;
+        let child = start(&mut command)?;
         drop((child_reads, child_writes));
         let pid = child.id();
+        let process = Arc::new(ProcessRef::of_std_child(&child)?);
         let reader = prepared_end.try_clone()?;
-        #[cfg(windows)]
-        let process = platform::process_of(child)?;
         Ok(Self {
             pid,
-            #[cfg(unix)]
-            exit: platform::wait(pid),
-            #[cfg(windows)]
-            exit: platform::wait(std::sync::Arc::clone(&process)),
-            #[cfg(windows)]
+            exit: wait(Arc::clone(&process)),
             process,
             go: Some(go),
             prepared_end,
@@ -113,17 +147,20 @@ impl Child {
 
     /// Takes over a child an earlier supervisor started and activated.
     pub fn inherit(inherited: &Inherited) -> io::Result<Self> {
-        let go = platform::file_from_raw(inherited.go)?;
-        let prepared_end = platform::file_from_raw(inherited.prepared)?;
-        #[cfg(windows)]
-        let process = platform::open_process(inherited.pid)?;
+        // SAFETY: the supervisor this one replaced handed these over in
+        // `--inherit`, which is taken once, as the supervisor starts, and
+        // nothing else in this process owns them.
+        let (go, prepared_end, process) = unsafe {
+            (
+                os::process::file_from_inherited(inherited.go)?,
+                os::process::file_from_inherited(inherited.prepared)?,
+                ProcessRef::inherited(inherited.pid, inherited.process)?,
+            )
+        };
+        let process = Arc::new(process);
         Ok(Self {
             pid: inherited.pid,
-            #[cfg(unix)]
-            exit: platform::wait(inherited.pid),
-            #[cfg(windows)]
-            exit: platform::wait(std::sync::Arc::clone(&process)),
-            #[cfg(windows)]
+            exit: wait(Arc::clone(&process)),
             process,
             go: Some(go),
             prepared_end,
@@ -175,57 +212,79 @@ impl Child {
         if self.has_exited() {
             return;
         }
-        #[cfg(unix)]
-        platform::signal(self.pid, libc::SIGTERM);
-        #[cfg(windows)]
-        drop(self.go.take());
+        match self.process.ask_to_stop() {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::Unsupported => drop(self.go.take()),
+            Err(error) => {
+                tracing::warn!(%error, pid = self.pid, "could not ask the daemon to stop");
+            }
+        }
     }
 
     pub fn kill(&mut self) {
         if self.has_exited() {
             return;
         }
-        #[cfg(unix)]
-        platform::signal(self.pid, libc::SIGKILL);
-        #[cfg(windows)]
-        platform::terminate(&self.process);
+        if let Err(error) = self.process.kill() {
+            tracing::warn!(%error, pid = self.pid, "could not kill the daemon");
+        }
     }
 
     /// The state the next supervisor needs, with every handle in it made
-    /// inheritable.
-    pub fn hand_over(&self, lock: &File) -> io::Result<Inherited> {
+    /// inheritable: the pipe's ends, the child's process handle where it
+    /// has one (Windows), and otherwise the lock, which goes with its
+    /// descriptor across the exec.
+    pub fn hand_over(&self, lock: &File) -> io::Result<HandedOver> {
         let go = self
             .go
             .as_ref()
             .ok_or_else(|| io::Error::other("the pipe is closed"))?;
-        platform::inheritable(go, true)?;
-        platform::inheritable(&self.prepared_end, true)?;
-        #[cfg(unix)]
-        platform::inheritable(lock, true)?;
-        #[cfg(windows)]
-        let _ = lock;
-        Ok(Inherited {
-            pid: self.pid,
-            go: raw(go),
-            prepared: raw(&self.prepared_end),
-            #[cfg(unix)]
-            lock: Some(raw(lock)),
-            #[cfg(windows)]
-            lock: None,
+        set_inheritable(go, true)?;
+        set_inheritable(&self.prepared_end, true)?;
+        let process = self.process.for_successor()?;
+        // A lock goes with the process that took it on Windows, the one
+        // OS that hands over a process handle, so it is taken again there.
+        let lock = match &process {
+            Some(process) => {
+                set_inheritable(process, true)?;
+                None
+            }
+            None => {
+                set_inheritable(lock, true)?;
+                Some(raw_for_child(lock))
+            }
+        };
+        Ok(HandedOver {
+            inherited: Inherited {
+                pid: self.pid,
+                go: raw_for_child(go),
+                prepared: raw_for_child(&self.prepared_end),
+                lock,
+                process: process.as_ref().map(raw_for_child),
+            },
+            _process: process,
         })
     }
 
-    /// Undoes [`Child::hand_over`] when the exec failed.
+    /// Undoes [`Child::hand_over`] when the successor did not start.
     pub fn keep(&self, lock: &File) {
         if let Some(go) = &self.go {
-            let _ = platform::inheritable(go, false);
+            let _ = set_inheritable(go, false);
         }
-        let _ = platform::inheritable(&self.prepared_end, false);
-        #[cfg(unix)]
-        let _ = platform::inheritable(lock, false);
-        #[cfg(windows)]
-        let _ = lock;
+        let _ = set_inheritable(&self.prepared_end, false);
+        let _ = set_inheritable(lock, false);
     }
+}
+
+/// Reaps the child on a thread of its own, which works for a child
+/// inherited from the supervisor this one replaced too.
+fn wait(process: Arc<ProcessRef>) -> watch::Receiver<Option<ExitCode>> {
+    let (sender, receiver) = watch::channel(None);
+    std::thread::spawn(move || {
+        let code = process.reap().unwrap_or(-1);
+        sender.send_replace(Some(code));
+    });
+    receiver
 }
 
 /// A thread, not a task: a blocked pipe read must not hold up the runtime
@@ -243,56 +302,6 @@ fn read_prepared(file: File) -> mpsc::UnboundedReceiver<()> {
     receiver
 }
 
-#[cfg(unix)]
-pub fn raw(file: &File) -> u64 {
-    use std::os::fd::AsRawFd as _;
-    file.as_raw_fd() as u64
-}
-
-#[cfg(windows)]
-pub fn raw(file: &File) -> u64 {
-    use std::os::windows::io::AsRawHandle as _;
-    file.as_raw_handle() as u64
-}
-
-/// Execs `binary` in supervise mode with the handed-over state. Returns
-/// only if the exec failed.
-#[cfg(unix)]
-pub fn exec_supervisor(
-    binary: &Path,
-    args: &[std::ffi::OsString],
-    inherited: &Inherited,
-) -> io::Error {
-    use std::os::unix::process::CommandExt as _;
-    Command::new(binary)
-        .args(args)
-        .arg("supervise")
-        .arg("--inherit")
-        .arg(inherited.to_arg())
-        .exec()
-}
-
-/// Windows has no exec: starts `binary` in supervise mode with the
-/// handed-over state; the caller exits once it is running.
-#[cfg(windows)]
-pub fn spawn_supervisor(
-    binary: &Path,
-    args: &[std::ffi::OsString],
-    inherited: &Inherited,
-) -> io::Result<()> {
-    Command::new(binary)
-        .args(args)
-        .arg("supervise")
-        .arg("--inherit")
-        .arg(inherited.to_arg())
-        .stdin(Stdio::null())
-        // Kept, as an exec keeps them.
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map(drop)
-}
-
 /// Starts the daemon [`os::process::spawn_background`]; a job that keeps it
 /// (Windows) is logged.
 fn start(command: &mut Command) -> io::Result<std::process::Child> {
@@ -305,212 +314,34 @@ fn start(command: &mut Command) -> io::Result<std::process::Child> {
     Ok(spawned.child)
 }
 
-#[cfg(unix)]
-type Owned = std::os::fd::OwnedFd;
-#[cfg(windows)]
-type Owned = std::os::windows::io::OwnedHandle;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-/// A pipe end as a File, which is all the pipe needs.
-fn file(end: impl Into<Owned>) -> File {
-    File::from(end.into())
-}
-
-#[cfg(unix)]
-mod platform {
-    use std::fs::File;
-    use std::io;
-    use std::os::fd::{AsRawFd as _, FromRawFd as _, RawFd};
-    use std::os::unix::process::CommandExt as _;
-    use std::process::Command;
-
-    use tokio::sync::watch;
-
-    use super::ExitCode;
-
-    pub fn spawn(
-        command: &mut Command,
-        child_reads: &File,
-        child_writes: &File,
-    ) -> io::Result<std::process::Child> {
-        let ends = [child_reads.as_raw_fd(), child_writes.as_raw_fd()];
-        // SAFETY: fcntl is async-signal-safe and touches only the child's
-        // copies of the two descriptors.
-        unsafe {
-            command.pre_exec(move || {
-                for fd in ends {
-                    set_cloexec(fd, false)?;
-                }
-                Ok(())
-            });
-        }
-        super::start(command)
-    }
-
-    fn set_cloexec(fd: RawFd, on: bool) -> io::Result<()> {
-        // SAFETY: plain descriptor flag calls.
-        unsafe {
-            let flags = libc::fcntl(fd, libc::F_GETFD);
-            if flags == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            let flags = if on {
-                flags | libc::FD_CLOEXEC
-            } else {
-                flags & !libc::FD_CLOEXEC
-            };
-            if libc::fcntl(fd, libc::F_SETFD, flags) == -1 {
-                return Err(io::Error::last_os_error());
-            }
-        }
-        Ok(())
-    }
-
-    pub fn inheritable(file: &File, on: bool) -> io::Result<()> {
-        set_cloexec(file.as_raw_fd(), !on)
-    }
-
-    pub fn file_from_raw(raw: u64) -> io::Result<File> {
-        let fd = RawFd::try_from(raw).map_err(io::Error::other)?;
-        set_cloexec(fd, true)?;
-        // SAFETY: the supervisor that exec'd this one handed the
-        // descriptor over and nothing else here owns it.
-        Ok(unsafe { File::from_raw_fd(fd) })
-    }
-
-    /// Reaps the child on a thread of its own, which also works for a
-    /// child inherited across an exec, where no Child handle exists.
-    pub fn wait(pid: u32) -> watch::Receiver<Option<ExitCode>> {
-        let (sender, receiver) = watch::channel(None);
-        std::thread::spawn(move || {
-            let mut status = 0;
-            let code = loop {
-                // SAFETY: waitpid on our own child.
-                let reaped = unsafe { libc::waitpid(pid as libc::pid_t, &mut status, 0) };
-                if reaped == -1 {
-                    if io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
-                        continue;
-                    }
-                    break -1;
-                }
-                if libc::WIFEXITED(status) {
-                    break libc::WEXITSTATUS(status);
-                }
-                if libc::WIFSIGNALED(status) {
-                    break -libc::WTERMSIG(status);
-                }
-            };
-            sender.send_replace(Some(code));
-        });
-        receiver
-    }
-
-    pub fn signal(pid: u32, signal: libc::c_int) {
-        // SAFETY: a signal to our own child, which has not been reaped.
-        unsafe {
-            libc::kill(pid as libc::pid_t, signal);
-        }
-    }
-}
-
-#[cfg(windows)]
-mod platform {
-    use std::fs::File;
-    use std::io;
-    use std::os::windows::io::{AsRawHandle as _, FromRawHandle as _, OwnedHandle, RawHandle};
-    use std::process::Command;
-    use std::sync::Arc;
-
-    use tokio::sync::watch;
-    use windows_sys::Win32::Foundation::{
-        HANDLE, HANDLE_FLAG_INHERIT, SetHandleInformation, WAIT_OBJECT_0,
-    };
-    use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, INFINITE, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-        PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
-    };
-
-    use super::ExitCode;
-
-    pub fn spawn(
-        command: &mut Command,
-        child_reads: &File,
-        child_writes: &File,
-    ) -> io::Result<std::process::Child> {
-        // std starts children inheriting every inheritable handle: mark
-        // the child's two ends, spawn, and the caller drops them.
-        inheritable(child_reads, true)?;
-        inheritable(child_writes, true)?;
-        super::start(command)
-    }
-
-    pub fn inheritable(file: &File, on: bool) -> io::Result<()> {
-        let flags = if on { HANDLE_FLAG_INHERIT } else { 0 };
-        // SAFETY: a flag on a handle this process owns.
-        if unsafe {
-            SetHandleInformation(file.as_raw_handle() as HANDLE, HANDLE_FLAG_INHERIT, flags)
-        } == 0
-        {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(())
-    }
-
-    pub fn file_from_raw(raw: u64) -> io::Result<File> {
-        // SAFETY: the supervisor that started this one handed the handle
-        // over and nothing else here owns it.
-        let file = unsafe { File::from_raw_handle(raw as RawHandle) };
-        inheritable(&file, false)?;
-        Ok(file)
-    }
-
-    pub fn process_of(child: std::process::Child) -> io::Result<Arc<OwnedHandle>> {
-        Ok(Arc::new(OwnedHandle::from(child)))
-    }
-
-    pub fn open_process(pid: u32) -> io::Result<Arc<OwnedHandle>> {
-        // SAFETY: opening a process by id; a null handle is an error.
-        let handle = unsafe {
-            OpenProcess(
-                PROCESS_SYNCHRONIZE | PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
-                0,
-                pid,
-            )
+    /// A Unix supervisor hands over the four fields every release reads;
+    /// a Windows one adds the child's process handle.
+    #[test]
+    fn the_handed_over_state_reads_back_with_or_without_a_process_handle() {
+        let unix = Inherited {
+            pid: 41,
+            go: 7,
+            prepared: 8,
+            lock: Some(9),
+            process: None,
         };
-        if handle.is_null() {
-            return Err(io::Error::last_os_error());
-        }
-        // SAFETY: a fresh handle this process owns.
-        Ok(Arc::new(unsafe {
-            OwnedHandle::from_raw_handle(handle as RawHandle)
-        }))
-    }
-
-    pub fn wait(process: Arc<OwnedHandle>) -> watch::Receiver<Option<ExitCode>> {
-        let (sender, receiver) = watch::channel(None);
-        std::thread::spawn(move || {
-            let handle = process.as_raw_handle() as HANDLE;
-            // SAFETY: waiting on and querying a process handle we own.
-            let code = unsafe {
-                if WaitForSingleObject(handle, INFINITE) != WAIT_OBJECT_0 {
-                    -1
-                } else {
-                    let mut code = 0u32;
-                    if GetExitCodeProcess(handle, &mut code) == 0 {
-                        -1
-                    } else {
-                        code as i32
-                    }
-                }
-            };
-            sender.send_replace(Some(code));
-        });
-        receiver
-    }
-
-    pub fn terminate(process: &OwnedHandle) {
-        // SAFETY: terminating a process whose handle we own.
-        unsafe {
-            TerminateProcess(process.as_raw_handle() as HANDLE, 1);
+        assert_eq!(unix.to_arg(), "41:7:8:9");
+        assert_eq!(Inherited::parse("41:7:8:9"), Some(unix));
+        let windows = Inherited {
+            pid: 41,
+            go: 700,
+            prepared: 704,
+            lock: None,
+            process: Some(708),
+        };
+        assert_eq!(windows.to_arg(), "41:700:704:-:708");
+        assert_eq!(Inherited::parse(&windows.to_arg()), Some(windows));
+        for bad in ["41:7:8", "41:7:8:9:x", "41:7:8:9:10:11", "x:7:8:9"] {
+            assert_eq!(Inherited::parse(bad), None, "{bad}");
         }
     }
 }

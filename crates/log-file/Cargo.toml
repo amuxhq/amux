@@ -7,9 +7,7 @@ description = "The size-capped log file every amux process writes, and reading i
 publish = false
 
 [dependencies]
-
-[target.'cfg(unix)'.dependencies]
-libc = { workspace = true }
+os = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

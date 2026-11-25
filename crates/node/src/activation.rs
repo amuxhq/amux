@@ -127,38 +127,13 @@ impl InheritedPipe {
     }
 }
 
-/// Owns an end the supervisor handed over, closed on exec so the daemon's
-/// own children never hold it.
-#[cfg(unix)]
+/// Owns an end the supervisor handed over, no longer inheritable, so the
+/// daemon's own children never hold it.
 fn own(raw: u64) -> io::Result<std::fs::File> {
-    use std::os::fd::{FromRawFd as _, RawFd};
-    let fd = RawFd::try_from(raw).map_err(io::Error::other)?;
-    // SAFETY: fcntl on a descriptor this process was handed.
-    if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: the supervisor handed the descriptor to this process alone.
-    Ok(unsafe { std::fs::File::from_raw_fd(fd) })
-}
-
-#[cfg(windows)]
-fn own(raw: u64) -> io::Result<std::fs::File> {
-    use std::os::windows::io::{AsRawHandle as _, FromRawHandle as _, RawHandle};
-
-    use windows_sys::Win32::Foundation::{HANDLE, HANDLE_FLAG_INHERIT, SetHandleInformation};
-    // SAFETY: the supervisor handed the handle to this process alone.
-    let file = unsafe { std::fs::File::from_raw_handle(raw as RawHandle) };
-    // SAFETY: clearing a flag on a handle this process owns.
-    if unsafe { SetHandleInformation(file.as_raw_handle() as HANDLE, HANDLE_FLAG_INHERIT, 0) } == 0
-    {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(file)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn own(_raw: u64) -> io::Result<std::fs::File> {
-    Err(io::Error::other("no supervisor pipe on this platform"))
+    // SAFETY: the supervisor handed the end to this process alone, named in
+    // the environment, which `take` reads once before any other thread
+    // exists.
+    unsafe { os::process::file_from_inherited(raw) }
 }
 
 #[derive(Debug, thiserror::Error)]

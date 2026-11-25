@@ -3,11 +3,10 @@
 //! check out, then set up and started; and an installation already
 //! answering is left alone.
 //!
-//! Each case points `HOME` at its own directory, which the amux it starts
-//! inherits; nextest runs every case in a process of its own. Windows
-//! reads a home from `USERPROFILE`, not `HOME`, so there a case would
-//! install into the real profile until the installer takes a home of its
-//! own (WP3.4).
+//! Each case gives the installer a home of its own ([`Options::home`]),
+//! which it installs under and gives the amux it starts, and points the
+//! environment's homes there too, for whatever else the case starts;
+//! nextest runs every case in a process of its own.
 
 use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
@@ -31,6 +30,10 @@ impl Home {
         // that reads the environment.
         unsafe {
             std::env::set_var("HOME", dir.path());
+            // Windows' homes, so nothing a case starts reaches the person's.
+            std::env::set_var("USERPROFILE", dir.path());
+            std::env::set_var("APPDATA", dir.path().join("AppData"));
+            std::env::set_var("LOCALAPPDATA", dir.path().join("Local"));
             std::env::set_var("AMUX_TEST_DISCOVERY_MODE", "disabled");
             std::env::remove_var("AMUX_CONFIG");
         }
@@ -50,21 +53,28 @@ impl Home {
     fn options(&self) -> Options {
         Options {
             config: Some(self.config.clone()),
+            home: Some(self.dir.path().to_owned()),
         }
     }
 
     fn installed(&self) -> PathBuf {
-        self.dir.path().join(".amux/bin/amux")
+        let installed = self.options().installed_binary().unwrap();
+        assert!(installed.starts_with(self.dir.path().join(".amux").join("bin")));
+        installed
     }
 }
 
 impl Drop for Home {
     fn drop(&mut self) {
+        // No pipes: a stand-in may leave a process holding what it is given.
         let _ = std::process::Command::new(self.installed())
             .args(["--config"])
             .arg(&self.config)
             .args(["server", "stop"])
-            .output();
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
     }
 }
 
@@ -73,10 +83,6 @@ fn amux() -> PathBuf {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: needs the installer's home override (WP3.4)"
-)]
 async fn a_download_is_installed_only_once_its_signature_and_hash_check_out() {
     let binary = std::fs::read(amux()).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -166,6 +172,47 @@ async fn a_download_is_installed_only_once_its_signature_and_hash_check_out() {
         .await
         .unwrap();
     assert_eq!(again, Outcome::Running);
+}
+
+/// Starting amux ends when `amux server start` does, whatever that leaves
+/// running on the streams it was given: here a stand-in that fails, leaving
+/// a process holding them for 15 seconds. A desktop app's first start would
+/// otherwise wait on pipes that end only when that process does.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_start_returns_when_the_command_does_whatever_it_leaves_running() {
+    // This process's own standard streams are the test runner's pipes. On
+    // Windows every process started from here inherits every inheritable
+    // handle, whatever streams it is given, so the stand-in's leftover
+    // would hold them too: an amux `main` clears them first, and so does
+    // this client.
+    os::process::harden_start();
+    let home = Home::new("http://127.0.0.1:9");
+    let installed = home.installed();
+    std::fs::create_dir_all(installed.parent().unwrap()).unwrap();
+    provider_fakes::dispatch::install(
+        &provider_fakes::binaries::path(provider_fakes::dispatch::BINARY),
+        &installed,
+        &provider_fakes::dispatch::Plan::Leave {
+            linger_secs: 15,
+            stderr: "the stand-in could not start amux\n".into(),
+            code: 1,
+        },
+    )
+    .unwrap();
+    let started = std::time::Instant::now();
+    let ensured = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        installer::ensure(&home.options(), |_| {}),
+    )
+    .await
+    .expect("ensure returns while what the start left runs on");
+    println!("ensure returned in {:?}: {ensured:?}", started.elapsed());
+    match ensured {
+        Err(Error::Command { output, .. }) => {
+            assert_eq!(output, "the stand-in could not start amux");
+        }
+        other => panic!("{other:?}"),
+    }
 }
 
 /// The Mac app's feed: a newer app is downloaded, checked and unpacked

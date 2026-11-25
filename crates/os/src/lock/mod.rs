@@ -25,12 +25,10 @@ mod tests;
 /// Windows: `LockFileEx` on the single byte at offset `u64::MAX - 1`. A
 /// Windows lock is mandatory over the bytes it covers, so one past the
 /// data leaves the file's contents readable, and writable through
-/// [`FileLock::write_data`], while it is held: the agent's lock carries
-/// its pid. That byte is also the last of the range std's
-/// [`File::try_lock`] takes (offset 0 for `u64::MAX` bytes), so a std lock
-/// and this one on the same file exclude each other: `supervisor.lock` and
-/// `installation.lock` are still std locks, which tests probe with
-/// [`FileLock::held`], and test support probes an agent's lock with std's.
+/// [`FileLock::write_data`], while it is held: the supervisor's lock and
+/// the agent's carry their pids. Every amux lock file is one of these, and
+/// is probed with [`FileLock::held`]; a std lock ([`File::try_lock`], the
+/// whole file) would make the data unreadable.
 #[derive(Debug)]
 pub struct FileLock {
     file: File,
@@ -44,6 +42,16 @@ impl FileLock {
         let mut options = crate::fs::private_open_options();
         options.read(true).create(true).truncate(false);
         let file = options.open(path)?;
+        Ok(imp::try_lock(&file)?.then_some(FileLock { file }))
+    }
+
+    /// Takes the lock through `file`, already open on a lock file: one a
+    /// predecessor handed this process ([`crate::process::file_from_inherited`]).
+    /// On Unix a lock goes with its descriptor across an exec, so a file the
+    /// image this one replaced held is held already, and taking it again
+    /// through the same descriptor succeeds; `None` when another process
+    /// holds it.
+    pub fn try_from_file(file: File) -> io::Result<Option<FileLock>> {
         Ok(imp::try_lock(&file)?.then_some(FileLock { file }))
     }
 

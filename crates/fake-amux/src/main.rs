@@ -10,7 +10,8 @@
 //! Behaviour files are `$FAKE_AMUX_DIR/behave-<version>`, holding one of:
 //! `prepare` (the default: prepare, wait for go, run until end of file on
 //! the pipe or SIGTERM), `exit` (exit before preparing), `hang` (never
-//! prepare), `ignore-term` (prepare and then ignore SIGTERM) and
+//! prepare), `ignore-term` (prepare and then ignore the stop: SIGTERM, and
+//! the pipe's end of file, which is the stop on Windows) and
 //! `crash-after-go` (exit once after go, rewriting the file to `prepare`).
 //!
 //! The version is the binary's stamp, so a re-stamped copy is another
@@ -129,9 +130,17 @@ fn daemon(pipe: Option<node::InheritedPipe>) {
             }
         };
         tokio::pin!(closed);
+        // The pipe closing is the stop on Windows, and is ignored as SIGTERM
+        // is; it then can't be heard again.
+        let mut open = true;
         loop {
             tokio::select! {
-                () = &mut closed => {
+                () = &mut closed, if open => {
+                    if behaviour == "ignore-term" {
+                        event("ignored-term");
+                        open = false;
+                        continue;
+                    }
                     event("eof");
                     std::process::exit(0);
                 }

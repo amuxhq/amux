@@ -3,12 +3,15 @@
 
 A desktop-platform conditional is any of:
 
-- a `cfg` predicate (in `#[cfg(...)]`, `#![cfg(...)]`, the predicate of
-  `#[cfg_attr(...)]`, or `cfg!(...)`, through `any`, `all` and `not`) that
-  names `unix`, `windows`, `target_family`, or a `target_os` other than
-  `"ios"` and `"android"`;
-- a path into `std::os::unix` or `std::os::windows` (`use std::os::{unix, ..}`
-  too), `libc::` or `windows_sys::`.
+- a `cfg` predicate (in `#[cfg(...)]`, `#![cfg(...)]`, `cfg!(...)`, and
+  `#[cfg_attr(...)]`'s predicate or any `cfg`/`cfg_attr` it applies, so
+  `#[cfg_attr(test, cfg(unix))]` counts; through `any`, `all` and `not`)
+  that names `unix`, `windows`, `target_family`, or a `target_os` other
+  than `"ios"` and `"android"`;
+- a path into `std::os::unix` or `std::os::windows`, `libc` or
+  `windows_sys`: in a `use`, grouped trees too (`use std::{os::unix::fs}`,
+  counted once for each module a `use` reaches), or in an expression
+  (`libc::kill`, `os::unix::fs::symlink` after `use std::os`).
 
 Each one is counted where it is written. Three rules hold them:
 
@@ -19,19 +22,26 @@ Each one is counted where it is written. Three rules hold them:
    not desktop), `cfg!` read as data (below), and a gate carrying
    `// out of scope on Windows: <feature>`, on its line or in the comment
    lines directly above it, naming a feature Windows leaves out by choice
-   (FEATURES below). Such a gate exempts what it gates too: the item after
-   an attribute (and a `mod name;`'s file and folder), the whole file for an
-   inner `#![cfg(...)]`, the block an `if cfg!(...) {` opens.
-2. Test code is held to the same rule, in the homes too where it is an
-   integration test (a file under a crate's `tests/`), since those exercise
-   an API callers use without `cfg`. A home's unit tests sit beside the
-   per-OS code they test and are left to review. Test code is a file under
-   any `tests/` folder, one named `tests.rs`, `*_test.rs` or `*_tests.rs`,
-   a module declared under a `cfg(test)` gate (`#[cfg(test)] mod name;`,
-   its file and folder) and the item after any gate whose predicate holds
-   `test` outside a `not(...)`. A test held back on Windows while a phase
-   works is written `#[cfg_attr(windows, ignore = "windows: <symptom>")]`:
-   allowed, and counted.
+   (FEATURES below), whose predicate is false in a build for Windows
+   (`cfg(not(windows))`, `cfg(unix)`; not `cfg(windows)`, nor
+   `cfg(any(unix, feature = ..))`, nor a lint's `cfg_attr`). Such a gate
+   exempts what it gates too: the item after an attribute (and a
+   `mod name;`'s file and folder), the whole file for an inner
+   `#![cfg(...)]`, the block an `if cfg!(...) {` (or `if !cfg!(...) {`)
+   opens.
+2. Test code is held to the same rule. In a home, its code is free but its
+   tests are held, since they test an API callers use without `cfg`; only
+   a home's file for one OS (a path part named `unix`, `windows`, `macos`,
+   `linux`, ...: `process/unix.rs`) may gate the tests of its own code.
+   Test code is a file under any `tests/` folder, one named `tests.rs`,
+   `*_test.rs` or `*_tests.rs`, a module declared under a `cfg(test)` gate
+   (`#[cfg(test)] mod name;`, its file and folder), the item after a `cfg`
+   that holds only in test builds (`test`, `all(test, unix)`; not
+   `any(windows, test)`), and an item marked `#[test]`. A test held back on
+   Windows while a phase works is written
+   `#[cfg_attr(windows, ignore = "windows: <symptom>")]`: allowed, and
+   counted, wherever it is (homes and out-of-scope modules too). An ignore
+   on a desktop platform written any other way is a violation everywhere.
 3. What is left is compared with the allowlist (platform-allowlist.txt
    beside this script), a count per file. A file over its count, or holding
    any when not listed, fails, and its conditionals are printed. A file
@@ -39,17 +49,19 @@ Each one is counted where it is written. Three rules hold them:
    work running side by side never conflicts on the file); the lead lowers
    it, with `--write-allowlist`, which writes the allowlist from the tree.
 
-`cfg!` is data when it picks a value rather than gating a statement: it is
-not inside an `if` or `while` condition on its line (`windows: cfg!(windows),`,
-`!cfg!(windows)`, `cfg!(windows).then(..)`, a `match` on it), or the `if`
-it conditions is an expression, which is when the `if` follows `=`, `(`,
-`[`, `,`, `|`, `:`, `=>` or `return`, when the whole `if .. else ..` is on
-one line, or when the chain ends in an `else` and no branch holds a
-statement (a `;`), as a function's tail `if cfg!(..) { A } else { B }`
-does. An `else if cfg!(..)` reads as the head of its chain does (the line
-above it at the same indent). An `if cfg!(..) {` that begins a statement, a
-match guard (`X if cfg!(..) =>`) and a condition continued on a line of its
-own (`&& cfg!(..)`) are gates. This reads syntax, not meaning; review holds
+`cfg!` is data when it picks a value rather than deciding what runs: it is
+not the condition of an `if` or `while` or the scrutinee of a `match` on
+its line (`windows: cfg!(windows),`, `!cfg!(windows)`,
+`cfg!(windows).then(..)`), or it is, and every branch or arm gives a value:
+an `if` chain that ends in an `else` (`let s = if cfg!(windows) { ';' }
+else { ':' };`, a function's tail `if cfg!(..) { A } else { B }`), a
+`match` whose arms are all values. A branch or arm runs code when it is
+empty or `()`, holds a statement (a `;`), or is an assertion, a print, a
+panic or a jump (`match cfg!(windows) { true => (), false => assert!(..) }`
+is a gate). An `else if cfg!(..)` reads as the head of its chain does (the
+line above it at the same indent). A `while`, a match guard
+(`X if cfg!(..) =>`) and a condition continued on a line of its own
+(`&& cfg!(..)`) are gates. This reads syntax, not meaning; review holds
 the rest.
 
     platform_check.py [--strict] [--list] [--write-allowlist]
@@ -107,6 +119,8 @@ FEATURES = re.compile(
 )
 MARKER = re.compile(r"out of scope on Windows:\s*(.*)")
 MOBILE = {"ios", "android"}
+# The names a home gives a file or folder for one OS.
+OS_WORDS = {"unix", "windows", "macos", "linux", "apple", "posix", "ios", "android"}
 
 # The lexer's openings: comments, raw strings, strings and quotes.
 SPECIAL = re.compile(r"""//|/\*|(?<![\w])[bc]?r(#*)"|"|'""")
@@ -117,18 +131,15 @@ NOT_NEWLINE = re.compile(r"[^\n]+")
 
 ATTRIBUTE = re.compile(r"#(!?)\s*\[\s*(cfg_attr|cfg)\s*\(")
 MACRO = re.compile(r"\bcfg!\s*\(")
-PATH = re.compile(r"\bstd::os::(?:(unix|windows)\b|\{)|\b(libc|windows_sys)::")
 BRACES = re.compile(r"[{};]")
 KEY_VALUE = re.compile(r'(\w+)\s*=\s*"([^"]*)"')
-NOT = re.compile(r"\bnot\s*\([^()]*\)")
 IGNORE = re.compile(r'\s*ignore\s*=\s*"windows: \S[^"]*"\s*,?\s*', re.S)
 FOLLOWING_ATTRIBUTES = re.compile(r"(?:\s*#\s*\[[^\]]*\])*")
 MOD_FILE = re.compile(r"(?:\s*#\s*\[[^\]]*\])*\s*(?:pub(?:\s*\([^)]*\))?\s+)?mod\s+(\w+)\s*;")
 # A file naming none of these has nothing to count, and lexing is most of
 # the time.
-RELEVANT = re.compile(r"\bcfg|\blibc::|\bwindows_sys::|\bstd::os::")
-CONDITION = re.compile(r"\b(?:if|while)\b")
-VALUE_BEFORE = re.compile(r"(?:[=(\[,|]|(?<!:):|=>|\breturn)$")
+RELEVANT = re.compile(r"\bcfg|\blibc\b|\bwindows_sys\b|\bos::")
+HEAD = re.compile(r"\b(if|while|match)\b")
 
 
 @dataclass
@@ -277,11 +288,57 @@ def desktop(predicate: str) -> bool:
     return re.search(r"\b(unix|windows|target_family)\b", bare) is not None
 
 
-def mentions_test(predicate: str) -> bool:
-    bare = KEY_VALUE.sub("", predicate)
-    while NOT.search(bare):
-        bare = NOT.sub("", bare)
-    return re.search(r"\btest\b", bare) is not None
+CFG_TOKENS = re.compile(r'\w+\s*=\s*"[^"]*"|\w+|[(),]')
+
+
+def evaluate(predicate: str, atom) -> bool | None:
+    """The predicate's value where `atom(name, value)` says what each atom
+    is (`value` is None for a bare name), None for one it cannot say."""
+    tokens = CFG_TOKENS.findall(predicate)
+    at = 0
+
+    def expression() -> bool | None:
+        nonlocal at
+        token = tokens[at]
+        at += 1
+        if token in ("any", "all", "not") and at < len(tokens) and tokens[at] == "(":
+            at += 1
+            values = []
+            while tokens[at] != ")":
+                values.append(expression())
+                if tokens[at] == ",":
+                    at += 1
+            at += 1
+            if token == "not":
+                return None if not values or values[0] is None else not values[0]
+            if token == "any":
+                return True if True in values else (False if all(v is False for v in values) else None)
+            return False if False in values else (True if all(v is True for v in values) else None)
+        pair = KEY_VALUE.fullmatch(token)
+        return atom(*pair.groups()) if pair else atom(token, None)
+
+    try:
+        return expression()
+    except IndexError:
+        return None
+
+
+def windows_atom(name: str, value: str | None) -> bool | None:
+    if value is None:
+        return {"windows": True, "unix": False}.get(name)
+    return value == "windows" if name in ("target_os", "target_family") else None
+
+
+def on_windows(predicate: str) -> bool | None:
+    """The predicate's value in a build for Windows, or None when it depends
+    on something else (a feature, `test`, `debug_assertions`)."""
+    return evaluate(predicate, windows_atom)
+
+
+def needs_test(predicate: str) -> bool:
+    """Whether the predicate holds only in a test build: `test`,
+    `all(test, unix)`, but not `any(windows, test)`."""
+    return evaluate(predicate, lambda name, value: False if (name, value) == ("test", None) else None) is False
 
 
 def split_cfg_attr(content: str) -> tuple[str, str]:
@@ -296,8 +353,30 @@ def split_cfg_attr(content: str) -> tuple[str, str]:
     return content, ""
 
 
+STRINGS = re.compile(r'"(?:[^"\\]|\\.)*"', re.S)
+NESTED = re.compile(r"\b(cfg_attr|cfg)\s*\(")
+
+
+def nested_cfgs(rest: str) -> list[tuple[str, str]]:
+    """The `cfg` and `cfg_attr` attributes a `cfg_attr` applies, at any
+    depth, as (kind, predicate)."""
+    blanked = STRINGS.sub(lambda m: '"' + " " * (len(m.group()) - 2) + '"', rest)
+    found = []
+    for m in NESTED.finditer(blanked):
+        close = close_paren(blanked, m.end() - 1)
+        content = rest[m.end() : close]
+        found.append((m.group(1), content if m.group(1) == "cfg" else split_cfg_attr(content)[0]))
+    return found
+
+
 def is_home(path: str) -> bool:
     return any(path == home or (home.endswith("/") and path.startswith(home)) for home in HOMES)
+
+
+def per_os(path: str) -> bool:
+    """A home's file for one OS (`process/unix.rs`, `windows/mod.rs`), whose
+    tests may test its own code where only that OS has it."""
+    return any(part.removesuffix(".rs") in OS_WORDS for part in path[len(crate_dir(path)) :].split("/"))
 
 
 def crate_dir(path: str) -> str:
@@ -347,49 +426,63 @@ def macro_is_data(source: Source, line: int, column: int) -> bool:
     prefix = text[:column]
     stripped = text.lstrip()
     head = None
-    for m in CONDITION.finditer(prefix):
+    for m in HEAD.finditer(prefix):
         if not re.search(r"[{};]", prefix[m.end() :]):
             head = m
     if head is None:
         # A condition continued from the line above gates.
         return not stripped.startswith(("&&", "||"))
-    if re.search(r"\}\s*else\b", text[column:]):
-        return True
     at = source.starts[line] + head.start()
+    if head.group(1) == "while":
+        return False
+    if head.group(1) == "match":
+        return match_is_value(source.code, at)
     before = prefix[: head.start()].rstrip()
     if before.endswith("else"):
         # The chain's head: earlier on this line, or the line above at the
         # same indent that doesn't close a block.
-        first = CONDITION.search(prefix)
+        first = re.search(r"\bif\b", prefix)
         if first is not None and first.start() < head.start():
             at = source.starts[line] + first.start()
-            before = prefix[: first.start()].rstrip()
         else:
             indent = len(text) - len(stripped)
-            at, before = -1, ""
+            at = -1
             for j in range(line - 1, -1, -1):
                 above = source.code_lines[j]
                 body = above.lstrip()
                 if not body or len(above) - len(body) != indent or body.startswith("}"):
                     continue
-                found = CONDITION.search(above)
+                found = re.search(r"\bif\b", above)
                 if found:
                     at = source.starts[j] + found.start()
-                    before = above[: found.start()].rstrip()
                 break
-    if VALUE_BEFORE.search(before):
-        return True
     return at >= 0 and chain_is_value(source.code, at)
 
 
 ELSE = re.compile(r"\s*else\b\s*")
+# An arm or branch that does something rather than give a value.
+SIDE_EFFECT = re.compile(
+    r"(?:(?:debug_)?assert\w*|panic|e?print(?:ln)?|write(?:ln)?|unreachable|todo|unimplemented)\s*!|(?:return|break|continue)\b"
+)
+
+
+def runs_code(body: str) -> bool:
+    """Whether a branch's body runs code rather than give a value: a block
+    holding a statement, an empty or unit body, or an assertion, a print,
+    a panic or a jump."""
+    b = body.strip()
+    if b.startswith("{") and b.endswith("}"):
+        inner = b[1:-1]
+        if statement_in(inner, 0, len(inner)):
+            return True
+        b = inner.strip()
+    return b in ("", "()") or SIDE_EFFECT.match(b) is not None
 
 
 def chain_is_value(code: str, at: int) -> bool:
-    """Whether the `if` at `at` is an expression whose every branch is one:
-    it ends in an `else`, and no branch's block holds a statement (a `;`
-    outside nested brackets), as in a function's tail `if cfg!(..) { A }
-    else { B }`."""
+    """Whether the `if` at `at` is an expression whose every branch is a
+    value: it ends in an `else`, and no branch runs code, as in a
+    function's tail `if cfg!(..) { A } else { B }`."""
     if not code.startswith("if", at):
         return False
     pos = at
@@ -398,7 +491,7 @@ def chain_is_value(code: str, at: int) -> bool:
         if open_at < 0:
             return False
         close = item_end(code, open_at)
-        if statement_in(code, open_at + 1, close - 1):
+        if runs_code(code[open_at:close]):
             return False
         otherwise = ELSE.match(code, close)
         if otherwise is None:
@@ -407,8 +500,47 @@ def chain_is_value(code: str, at: int) -> bool:
         if re.match(r"if\b", code[pos : pos + 3]):
             continue
         if code.startswith("{", pos):
-            return not statement_in(code, pos + 1, item_end(code, pos) - 1)
+            return not runs_code(code[pos : item_end(code, pos)])
         return False
+
+
+def match_is_value(code: str, at: int) -> bool:
+    """Whether the `match` at `at` picks a value in every arm: no arm runs
+    code (`true => (), false => assert!(..)` does)."""
+    open_at = code.find("{", at)
+    if open_at < 0:
+        return False
+    body = code[open_at + 1 : item_end(code, open_at) - 1]
+    arms, depth, i, start = [], 0, 0, None
+    while i < len(body):
+        c = body[i]
+        if start is None:
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+            elif depth == 0 and body.startswith("=>", i):
+                start = i + 2
+                i += 2
+                continue
+        else:
+            # The arm's body: a block, or up to the next comma outside brackets.
+            if not body[start:i].strip() and c == "{":
+                end = item_end(body, i)
+                arms.append(body[i:end])
+                start, i = None, end
+                continue
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+            elif c == "," and depth == 0:
+                arms.append(body[start:i])
+                start = None
+        i += 1
+    if start is not None:
+        arms.append(body[start:])
+    return bool(arms) and not any(runs_code(arm) for arm in arms)
 
 
 def statement_in(code: str, start: int, end: int) -> bool:
@@ -431,10 +563,19 @@ class Gate:
     what: str
     test: bool
     desktop: bool
+    # A `cfg_attr(windows, ignore = "windows: ...")`, and an ignore on a
+    # desktop platform written any other way.
     ignore: bool
+    bad_ignore: bool
     data: bool
     feature: str | None
+    # Whether what it gates is left out of a build for Windows.
+    excludes_windows: bool
     extent: tuple[int, int] | None = None
+
+    @property
+    def exempts(self) -> bool:
+        return bool(self.feature) and self.excludes_windows
 
 
 def gates(source: Source) -> list[Gate]:
@@ -446,6 +587,7 @@ def gates(source: Source) -> list[Gate]:
         close = close_paren(code, open_at)
         content = text[open_at + 1 : close]
         predicate, rest = split_cfg_attr(content) if kind == "cfg_attr" else (content, "")
+        nested = nested_cfgs(rest) if kind == "cfg_attr" else []
         bracket = code.find("]", close)
         bracket = close if bracket < 0 else bracket
         line = source.line(m.start())
@@ -457,18 +599,25 @@ def gates(source: Source) -> list[Gate]:
             extent = (m.start(), item_end(code, bracket + 1))
         following = FOLLOWING_ATTRIBUTES.match(code, bracket + 1)
         test_item = following is not None and re.search(r"\btest\b", code[following.start() : following.end()]) is not None
-        is_desktop = desktop(predicate)
+        is_desktop = desktop(predicate) or any(desktop(p) for _, p in nested)
+        ignore = kind == "cfg_attr" and predicate.strip() == "windows" and IGNORE.fullmatch(rest) is not None
+        if kind == "cfg":
+            excludes = on_windows(predicate) is False
+        else:
+            excludes = on_windows(predicate) is True and any(k == "cfg" and on_windows(p) is False for k, p in nested)
         found.append(
             Gate(
                 start=m.start(),
                 end=bracket + 1,
                 line=line,
                 what=f"#{'!' if inner else ''}[{kind}({' '.join(content.split())})]",
-                test=(kind == "cfg" and mentions_test(predicate)) or test_item,
+                test=(kind == "cfg" and needs_test(predicate)) or test_item,
                 desktop=is_desktop,
-                ignore=kind == "cfg_attr" and predicate.strip() == "windows" and IGNORE.fullmatch(rest) is not None,
+                ignore=ignore,
+                bad_ignore=not ignore and kind == "cfg_attr" and desktop(predicate) and re.match(r"\s*ignore\b", rest) is not None,
                 data=False,
                 feature=marker(source, line) if is_desktop else None,
+                excludes_windows=excludes,
                 extent=extent,
             )
         )
@@ -482,6 +631,9 @@ def gates(source: Source) -> list[Gate]:
         column = m.start() - source.starts[line]
         line_code = source.code_lines[line].rstrip()
         extent = (m.start(), item_end(code, code.rfind("{", 0, source.starts[line] + len(line_code)))) if line_code.endswith("{") else None
+        value = on_windows(content)
+        if code[: m.start()].rstrip().endswith("!") and value is not None:
+            value = not value
         found.append(
             Gate(
                 start=m.start(),
@@ -491,27 +643,65 @@ def gates(source: Source) -> list[Gate]:
                 test=False,
                 desktop=True,
                 ignore=False,
+                bad_ignore=False,
                 data=macro_is_data(source, line, column),
                 feature=marker(source, line),
+                # The block it opens runs on Windows unless the condition
+                # is false there, and alone (no `||`).
+                excludes_windows=extent is not None and value is False and "||" not in line_code,
                 extent=extent,
             )
         )
     return found
 
 
+USE = re.compile(r"\buse\s+([^;{}]*(?:\{[^;]*\})?[^;{}]*);", re.S)
+PLATFORM_PATH = re.compile(r"(?:std::os::(unix|windows)|(libc|windows_sys))(?:::|$)")
+EXPRESSION_PATH = re.compile(r"\bstd::os::(unix|windows)\b|(?<![\w:])os::(unix|windows)\b|\b(libc|windows_sys)::")
+
+
+def use_paths(tree: str) -> list[str]:
+    """Each path a `use` tree names: `std::{io, os::unix::fs}` is
+    `std::io` and `std::os::unix::fs`."""
+    tree = tree.strip()
+    open_at = tree.find("{")
+    if open_at < 0:
+        return [re.sub(r"\s+as\s+\w+$", "", tree).replace(" ", "").replace("\n", "")]
+    prefix = re.sub(r"\s+", "", tree[:open_at])
+    inner = tree[open_at + 1 : tree.rfind("}")]
+    paths, depth, start = [], 0, 0
+    for i, c in enumerate(inner + ","):
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+        elif c == "," and depth == 0:
+            part = inner[start:i].strip()
+            if part:
+                paths += [prefix + p for p in use_paths(part)]
+            start = i + 1
+    return paths
+
+
 def paths(source: Source) -> list[tuple[int, str]]:
-    found = []
-    for m in PATH.finditer(source.code):
-        if m.group(0).endswith("{"):
-            close = item_end(source.code, m.end() - 1)
-            if not re.search(r"\b(unix|windows)\b", source.code[m.end() : close]):
-                continue
-            found.append((m.start(), "std::os::{..}"))
-        elif m.group(1):
-            found.append((m.start(), f"std::os::{m.group(1)}"))
-        else:
-            found.append((m.start(), f"{m.group(2)}::"))
-    return found
+    code = source.code
+    found, uses = [], []
+    for m in USE.finditer(code):
+        uses.append((m.start(), m.end()))
+        # Once for each platform module a `use` reaches, however many names
+        # it takes from it.
+        named = set()
+        for path in use_paths(m.group(1)):
+            hit = PLATFORM_PATH.match(path.removeprefix("::"))
+            if hit:
+                named.add(f"use std::os::{hit.group(1)}" if hit.group(1) else f"use {hit.group(2)}")
+        found += [(m.start(), what) for what in sorted(named)]
+    for m in EXPRESSION_PATH.finditer(code):
+        if any(start <= m.start() < end for start, end in uses):
+            continue
+        os_name = m.group(1) or m.group(2)
+        found.append((m.start(), f"std::os::{os_name}" if os_name else f"{m.group(3)}::"))
+    return sorted(found)
 
 
 def rust_files(root: Path) -> list[str]:
@@ -543,57 +733,70 @@ def scan(root: Path) -> Result:
     scoped_modules: set[str] = set()
     for path, source in sources.items():
         for gate in all_gates[path]:
-            if not (gate.test or (gate.desktop and gate.feature)) or gate.what.startswith("cfg!"):
+            if not (gate.test or gate.exempts) or gate.what.startswith("cfg!"):
                 continue
             module = MOD_FILE.match(source.code, gate.end)
             if module is None:
                 continue
             base = module_base(path) + module.group(1)
             targets = {base + ".rs", base + "/"}
-            (test_modules if gate.test else scoped_modules).update(targets)
-            if gate.test and gate.desktop and gate.feature:
+            if gate.test:
+                test_modules.update(targets)
+            if gate.exempts:
                 scoped_modules.update(targets)
 
     result = Result(violations={}, ignores=[], marked=[])
+
+    def add(source: Source, line: int, what: str, test: bool):
+        result.violations.setdefault(source.path, []).append(Found(source.path, line + 1, what, source.lines[line].strip(), test))
+
+    def inside(offset: int, spans) -> bool:
+        return any(start <= offset < end for start, end in spans)
+
     for path, source in sources.items():
-        home = is_home(path)
-        test_file = is_test_file(path) or under(path, test_modules)
-        if home and not is_integration_test(path):
-            # Only the ignores count here.
-            result.ignores += [found(source, g, True) for g in all_gates[path] if g.ignore]
-            continue
-        if under(path, scoped_modules):
-            continue
-        tests = [g.extent for g in all_gates[path] if g.test and g.extent]
-        scoped = [g.extent for g in all_gates[path] if g.desktop and g.feature and g.extent]
-
-        def inside(offset: int, spans) -> bool:
-            return any(start <= offset < end for start, end in spans)
-
-        for gate in all_gates[path]:
-            if not gate.desktop:
-                continue
+        file_gates = all_gates[path]
+        # The ignores on Windows first, wherever they are.
+        for gate in file_gates:
             if gate.ignore:
                 result.ignores.append(found(source, gate, True))
+            elif gate.bad_ignore:
+                add(source, gate.line, gate.what + ' (an ignore on Windows reads `ignore = "windows: <symptom>"`)', True)
+        if under(path, scoped_modules):
+            continue
+        home = is_home(path)
+        if home and per_os(path):
+            continue
+        # In a home's other files the code is free, and its tests are held:
+        # what they test is the API callers use without `cfg`.
+        held_tests_only = home and not is_integration_test(path)
+        test_file = is_test_file(path) or under(path, test_modules)
+        tests = [g.extent for g in file_gates if g.test and g.extent]
+        scoped = [g.extent for g in file_gates if g.exempts and g.extent]
+
+        for gate in file_gates:
+            if not gate.desktop or gate.ignore or gate.bad_ignore or gate.data:
                 continue
-            if gate.data:
+            is_test = test_file or gate.test or inside(gate.start, tests)
+            if held_tests_only and not is_test:
                 continue
-            if gate.feature:
+            if gate.exempts:
                 result.marked.append(found(source, gate, True))
                 continue
             if inside(gate.start, scoped):
                 continue
-            is_test = test_file or gate.test or inside(gate.start, tests)
             what = gate.what
             if gate.feature == "":
                 what += " (its `out of scope on Windows:` comment names no feature Windows leaves out)"
-            result.violations.setdefault(path, []).append(Found(path, gate.line + 1, what, source.lines[gate.line].strip(), is_test))
+            elif gate.feature:
+                what += " (marked out of scope on Windows, but what it gates is built for Windows)"
+            add(source, gate.line, what, is_test)
+        if held_tests_only:
+            # A test there reaches platform code only through a gate, which is counted.
+            continue
         for offset, what in paths(source):
             if inside(offset, scoped):
                 continue
-            line = source.line(offset)
-            is_test = test_file or inside(offset, tests)
-            result.violations.setdefault(path, []).append(Found(path, line + 1, what, source.lines[line].strip(), is_test))
+            add(source, source.line(offset), what, test_file or inside(offset, tests))
     for violations in result.violations.values():
         violations.sort(key=lambda f: f.line)
     return result
@@ -620,8 +823,9 @@ def read_allowlist(path: Path) -> dict[str, int]:
 
 HEADER = """\
 # platform-check's allowlist (build/checks/platform_check.py): each file
-# outside the homes that still holds desktop-platform conditionals, with how
-# many. A file's count may only fall, and a file not listed may hold none.
+# that still holds desktop-platform conditionals outside the homes (or in a
+# home's tests), with how many. A file's count may only fall, and a file
+# not listed may hold none.
 # The lead writes it when landing, never a work package:
 #     python3 build/checks/platform_check.py --write-allowlist
 """
@@ -670,7 +874,7 @@ def check(root: Path, allowlist: Path, strict: bool = False, listing: bool = Fal
             stale.append((name, 0, limit))
     if over:
         failed = True
-        print("platform-check: desktop-platform conditionals outside the homes, over the allowlist")
+        print("platform-check: desktop-platform conditionals outside the homes (or in their tests), over the allowlist")
         print("(move them into a home, docs/TESTING.md \"Holding a test back on Windows\"; never raise the allowlist):")
         for name, found, limit in over:
             print(f"{name}: {len(found)}, allowlist {'holds ' + str(limit) if limit else 'has none'}")
@@ -690,7 +894,7 @@ def check(root: Path, allowlist: Path, strict: bool = False, listing: bool = Fal
     total = sum(len(f) for f in result.violations.values())
     tests = sum(1 for found in result.violations.values() for f in found if f.test)
     print(
-        f"platform-check: {total} desktop-platform conditionals outside the homes ({tests} in tests) "
+        f"platform-check: {total} desktop-platform conditionals held ({tests} in tests) "
         f"in {len(result.violations)} files; allowlist {len(allowed)} entries, {sum(allowed.values())} in all; "
         f"{len(result.ignores)} `ignore = \"windows: ...\"`; {len(result.marked)} gates out of scope on Windows"
     )

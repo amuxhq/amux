@@ -467,6 +467,7 @@ each run in the checkout with its output kept and printed when it fails:
 | `parity`, `shipping-check`, `ci-jobs-check` | Queries of Buck2's own graph (`uquery`, `cquery`), which no action of that graph can make |
 | `lint` | Clippy is Buck2 actions, cached like the tests, but a build of each target's clippy output, which `buck2 test` doesn't build, so it is a `buck2 build` beside the test run |
 | `check-windows` | Every Windows binary is Buck2 actions on a Linux worker, cached like the tests, but in the Windows configuration, which `buck2 test` over the Linux targets doesn't build, so it is a `buck2 build --materializations none` beside the test run; with no Linux worker in reach it is skipped and named |
+| `apple-build` | Every Swift module of the iPhone app, the Mac app, their packages and their test bundles, compiled in the configurations CI's Apple jobs build, with nothing linked or run and no simulator booted. Buck2 actions on the Mac's worker, cached like the tests, but in the two Apple configurations, which `buck2 test` doesn't build, so it is a `buck2 build --materializations none` beside the test run. The Apple graphs configure only on a Mac, so anywhere else, as on the landing host, it is skipped and named |
 
 `no-update-flags`, which refuses fixture-regeneration variables in the
 environment, runs first, before anything starts, and then

@@ -314,3 +314,7 @@ pub(super) fn block_reason() -> io::Result<Option<String>> {
     let text = &buffer[..buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len())];
     Ok(Some(String::from_utf16_lossy(text)))
 }
+
+#[cfg(test)]
+#[path = "windows_tests.rs"]
+pub(super) mod tests;

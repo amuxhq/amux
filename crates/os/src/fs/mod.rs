@@ -7,12 +7,11 @@
 //! provide returns [`io::ErrorKind::Unsupported`], unless its doc comment
 //! names the exception.
 
-use std::fmt;
 use std::fs::{File, Metadata, OpenOptions};
-use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
+use std::{fmt, io};
 
 #[cfg(unix)]
 mod unix;
@@ -293,7 +292,7 @@ pub fn remove_patiently(path: &Path, patience: Duration) -> io::Result<Removed> 
             // A link goes itself, never what it points at: a link to a
             // folder (a junction too, on Windows) goes as the file
             // removal's own case.
-            Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(path),
+            Ok(meta) if meta.is_dir() => imp::remove_dir_all(path),
             Ok(_) => imp::remove_file(path),
         };
         match removed {

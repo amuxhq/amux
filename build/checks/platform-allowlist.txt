@@ -4,7 +4,6 @@
 # not listed may hold none.
 # The lead writes it when landing, never a work package:
 #     python3 build/checks/platform_check.py --write-allowlist
-crates/agent-dir/src/local_socket.rs 2
 crates/agent/src/acp.rs 7
 crates/agent/src/catalogue.rs 1
 crates/agent/src/claude/hooks.rs 7
@@ -14,7 +13,6 @@ crates/agent/src/codex.rs 10
 crates/agent/src/dir.rs 3
 crates/agent/src/provider.rs 45
 crates/agent/src/tail.rs 2
-crates/agent/src/tree.rs 19
 crates/agent/tests/attach.rs 1
 crates/agent/tests/dump.rs 1
 crates/agent/tests/lifecycle.rs 8
@@ -48,6 +46,7 @@ crates/app-embedded/src/phone.rs 12
 crates/app-embedded/tests/embedded.rs 1
 crates/app-embedded/tests/runtime_log.rs 1
 crates/app-ffi/src/lib.rs 1
+crates/app-ffi/src/tests.rs 7
 crates/app-jni/src/lib.rs 2
 crates/app-runtime/tests/runtime.rs 1
 crates/client/tests/seam.rs 1
@@ -72,7 +71,6 @@ crates/node/src/link/resumption.rs 2
 crates/node/src/link/validation.rs 2
 crates/node/src/offers.rs 1
 crates/node/src/pairing/ssh.rs 1
-crates/node/src/plain_paths.rs 2
 crates/node/src/reports.rs 4
 crates/node/src/repositories.rs 2
 crates/node/src/reviews/cleanup.rs 3
@@ -102,7 +100,7 @@ crates/provider-fakes/tests/conformance.rs 2
 crates/provider-fakes/tests/pty.rs 1
 crates/provider-fakes/tests/scripted.rs 1
 crates/provider-fakes/tests/support/mod.rs 4
-crates/pty-host/src/lib.rs 1
+crates/pty-host/src/lib.rs 3
 crates/qualification/src/bin/acp_probe/main.rs 2
 crates/qualification/src/bin/claude_probe/capture.rs 13
 crates/qualification/src/bin/claude_probe/main.rs 1

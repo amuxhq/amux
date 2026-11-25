@@ -245,12 +245,14 @@ fn candidates(path: &Path, extensions: &[String]) -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
+
     use windows_sys::Win32::System::Registry::{
         KEY_ALL_ACCESS, KEY_READ, REG_OPTION_NON_VOLATILE, REG_SZ, REG_VALUE_TYPE, RegCloseKey,
         RegCreateKeyExW, RegDeleteTreeW, RegOpenKeyExW, RegSetValueExW,
     };
+
+    use super::*;
 
     fn wide(text: &str) -> Vec<u16> {
         text.encode_utf16().chain([0]).collect()

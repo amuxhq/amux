@@ -10,6 +10,8 @@ use super::{Descendant, Detach, Replaced, Spawnable, Spawned};
 use crate::Pid;
 
 mod table;
+#[cfg(test)]
+pub(super) mod tests;
 #[cfg(feature = "async")]
 mod tether;
 
@@ -158,21 +160,41 @@ fn below(root: i32, table: &[table::Row]) -> Vec<Descendant> {
 }
 
 pub(super) fn kill_descendants(census: &[Descendant]) {
+    // Nothing to kill is the common stop (Provider::finish): no scan.
     if census.is_empty() {
         return;
     }
-    let table = table::table();
+    let _ = signal_descendants(census, libc::SIGKILL, &table::table());
+}
+
+/// Sends `signal` to each process of `census` still the one the census
+/// found; the ones that refused it, and why. One gone meanwhile is not
+/// among them.
+fn signal_descendants(
+    census: &[Descendant],
+    signal: libc::c_int,
+    table: &[table::Row],
+) -> Vec<(Pid, io::Error)> {
+    let mut refused = Vec::new();
     for descendant in census {
         let same = table
             .iter()
             .any(|row| row.pid as Pid == descendant.pid && row.started == descendant.started);
-        if same {
-            // SAFETY: kill only sends a signal, to a process checked to be
-            // the one the census found.
-            unsafe {
-                libc::kill(descendant.pid as libc::pid_t, libc::SIGKILL);
-            }
+        // SAFETY: kill only sends a signal, to a process checked to be the
+        // one the census found.
+        if same && unsafe { libc::kill(descendant.pid as libc::pid_t, signal) } != 0 {
+            note_refusal(&mut refused, descendant.pid);
         }
+    }
+    refused
+}
+
+/// Notes the signal to `pid` that just failed, unless only because
+/// nothing is there any more.
+fn note_refusal(refused: &mut Vec<(Pid, io::Error)>, pid: Pid) {
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() != Some(libc::ESRCH) {
+        refused.push((pid, error));
     }
 }
 
@@ -244,27 +266,97 @@ impl Family {
         })
     }
 
+    /// SIGKILLs every group and every descendant, then goes round until
+    /// a census finds nobody live and nothing an earlier one found still
+    /// runs, within one deadline for all of it (as Windows does): a member
+    /// may fork while the last is killed (one in a group of its own, which
+    /// killpg misses), and a killed one stuck in the kernel runs on a
+    /// while. A signal refused (not a process gone, which is what is
+    /// wanted) is the error while its member runs; what runs at the
+    /// deadline is named.
+    ///
+    /// What no census sees can't be ended: a child forked and orphaned
+    /// between two censuses (its parent killed, it reparented to init or a
+    /// subreaper) is out of the tree, as a daemon that detached itself is
+    /// (proposal §2.2). Windows' job holds those; Unix has no such
+    /// containment.
     pub(super) fn kill_others(&self) -> io::Result<()> {
         let me = std::process::id();
-        // The census first, while everything still runs: once a parent is
-        // killed its children belong to init and are no longer below us.
-        let census = descendants(me);
-        for joined in self.groups.lock().iter() {
-            // SAFETY: killpg only sends a signal, to a group whose id the
-            // unreaped tether in it keeps from reuse (see Joined).
-            unsafe {
-                libc::killpg(joined.leader as libc::pid_t, libc::SIGKILL);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut refused: Vec<(Pid, io::Error)> = Vec::new();
+        // Everything a census found: a killed member's children go to
+        // init, out of later censuses, but must be gone too.
+        let mut found: Vec<Descendant> = Vec::new();
+        loop {
+            // The census first, while everything still runs: once a parent
+            // is killed its children belong to init and are no longer
+            // below us.
+            let table = table::try_table();
+            let census = match &table {
+                Ok(table) => below(me as i32, table),
+                Err(_) => Vec::new(),
+            };
+            for descendant in &census {
+                if !found.contains(descendant) {
+                    found.push(descendant.clone());
+                }
             }
+            for joined in self.groups.lock().iter() {
+                // SAFETY: killpg only sends a signal, to a group whose id
+                // the unreaped tether in it keeps from reuse (see Joined).
+                if unsafe { libc::killpg(joined.leader as libc::pid_t, libc::SIGKILL) } != 0 {
+                    note_refusal(&mut refused, joined.leader);
+                }
+            }
+            // A table that can't be read is an error, not an empty
+            // family: the groups are killed, but nothing else could be
+            // found to kill, or seen gone.
+            let table = table?;
+            for (pid, error) in signal_descendants(&census, libc::SIGKILL, &table) {
+                refused.push((pid, error));
+            }
+            let table = table::try_table()?;
+            // And what has forked since this round's census, below us
+            // still: it is killed on the next round.
+            for descendant in below(me as i32, &table) {
+                if !found.contains(&descendant) {
+                    found.push(descendant);
+                }
+            }
+            let left: Vec<Pid> = found
+                .iter()
+                .filter(|descendant| {
+                    table.iter().any(|row| {
+                        row.pid as Pid == descendant.pid
+                            && row.started == descendant.started
+                            && !row.zombie
+                    })
+                })
+                .map(|descendant| descendant.pid)
+                .collect();
+            if left.is_empty() {
+                return Ok(());
+            }
+            if let Some((pid, error)) = refused.iter().find(|(pid, _)| left.contains(pid)) {
+                return Err(io::Error::new(
+                    error.kind(),
+                    format!("member {pid} can't be ended: {error}"),
+                ));
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(io::Error::other(format!(
+                    "{} members still run after being killed: {left:?}",
+                    left.len()
+                )));
+            }
+            refused.clear();
+            std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        kill_descendants(&census);
-        // And whatever forked while the census was taken.
-        kill_descendants(&descendants(me));
-        Ok(())
     }
 
     pub(super) fn members(&self) -> io::Result<Vec<Pid>> {
         let me = std::process::id() as i32;
-        let table = table::table();
+        let table = table::try_table()?;
         #[cfg(feature = "async")]
         let tethers: Vec<Pid> = self
             .groups

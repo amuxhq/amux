@@ -70,6 +70,29 @@ class PortableTest(unittest.TestCase):
         self.assertIn('"manifest_path":"/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/adler2-2.0.1/Cargo.toml"', from_windows)
         self.assertIn('"description":"matches \\\\d+ in a regex, not a path"', from_windows)
 
+    def test_a_checkout_path_is_found_in_cargos_url_form(self):
+        # Cargo's URLs (the url crate's) escape a space, `%` and bytes past
+        # ASCII in a path, and leave brackets as they are; a UNC path's
+        # server is the URL's host.
+        plain = written(
+            metadata("/home/dev/amux", "/home/dev/.cargo", "/", "/home/dev/amux"),
+            PurePosixPath("/home/dev/amux"),
+            PurePosixPath("/home/dev/.cargo"),
+        )
+        for root, url_root, workspace in [
+            ("/home/dév/amux [test] 100%", "/home/d%C3%A9v/amux%20[test]%20100%25", PurePosixPath("/home/dév/amux [test] 100%")),
+        ]:
+            with self.subTest(root=root):
+                graph = metadata(root, "/home/dev/.cargo", "/", url_root)
+                self.assertEqual(written(graph, workspace, PurePosixPath("/home/dev/.cargo")), plain)
+        for root, url_root in [
+            (r"C:\Users\dev\amux [test]", "/C:/Users/dev/amux%20[test]"),
+            (r"\\FileServer\share\amux", "fileserver/share/amux"),
+        ]:
+            with self.subTest(root=root):
+                graph = metadata(root, r"C:\Users\dev\.cargo", "\\", url_root)
+                self.assertEqual(written(graph, PureWindowsPath(root), PureWindowsPath(r"C:\Users\dev\.cargo")), plain)
+
     def test_a_graph_from_linux_is_cargos_text_with_the_paths_replaced(self):
         graph = metadata("/home/dev/amux", "/home/dev/.cargo", "/", "/home/dev/amux")
         cargo = json.dumps(graph, separators=(",", ":"))

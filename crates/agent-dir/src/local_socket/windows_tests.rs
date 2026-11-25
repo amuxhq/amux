@@ -15,10 +15,108 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
 
-use super::windows::{INSTANCES, Listener, is_amux_pipe, owned_by_me, random_name};
-use super::*;
+use super::super::*;
+use super::{INSTANCES, Listener, is_amux_pipe, owned_by_me, random_name};
 
 const HEX32: &str = "0123456789abcdef0123456789abcdef";
+
+/// Name files whose reads stall, and for how long: a share gone quiet,
+/// for the reads of one path alone, so tests running beside are untouched.
+static STALLED: std::sync::Mutex<Vec<(std::path::PathBuf, Duration)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Called by each read of a name file before it reads.
+pub(super) fn stall(path: &Path) {
+    let stall = STALLED
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(stalled, _)| stalled == path)
+        .map(|(_, stall)| *stall);
+    if let Some(stall) = stall {
+        std::thread::sleep(stall);
+    }
+}
+
+fn stall_reads_of(path: &Path, stall: Duration) {
+    STALLED.lock().unwrap().push((path.to_owned(), stall));
+}
+
+/// A read of the name file that stalls is given up at the deadline, and
+/// the runtime that asked shuts down at once, not when the read ends.
+#[test]
+fn a_stalled_name_file_read_does_not_hold_its_runtime_open() {
+    let root = tempfile::tempdir().unwrap();
+    let path = std::path::absolute(root.path().join("ctl.sock")).unwrap();
+    std::fs::write(&path, random_name()).unwrap();
+    stall_reads_of(&path, Duration::from_secs(2));
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let error = runtime
+        .block_on(connect_within(&path, Duration::from_millis(200)))
+        .err()
+        .expect("the read stalls");
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut, "{error}");
+    let started = Instant::now();
+    drop(runtime);
+    let took = started.elapsed();
+    assert!(
+        took < Duration::from_secs(1),
+        "the runtime shut down in {took:?}"
+    );
+}
+
+/// A positive deadline shorter than a slow read is kept: the connect
+/// gives up by it, rather than reading on and answering late.
+#[tokio::test]
+async fn a_short_deadline_is_kept_through_a_slow_read() {
+    let root = tempfile::tempdir().unwrap();
+    let path = std::path::absolute(root.path().join("ctl.sock")).unwrap();
+    let _listener = LocalListener::bind(&path).unwrap();
+    stall_reads_of(&path, Duration::from_millis(50));
+    let started = Instant::now();
+    let connected = connect_within(&path, Duration::from_millis(10)).await;
+    let took = started.elapsed();
+    let error = connected
+        .err()
+        .unwrap_or_else(|| panic!("answered after {took:?}"));
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut, "{error}");
+}
+
+/// Clients already waiting are served while new ones keep arriving: each
+/// accept refills an instance a newcomer takes at once, and still the
+/// four that were waiting first are the next four served.
+#[tokio::test]
+async fn waiting_clients_are_served_before_newcomers() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("ctl.sock");
+    let mut listener = LocalListener::bind(&path).unwrap();
+    let mut clients = Vec::new();
+    for n in 0..INSTANCES {
+        let mut client = soon("a client connects", connect(&path)).await.unwrap();
+        client.write_all(&[n as u8]).await.unwrap();
+        clients.push(client);
+    }
+    let mut served = Vec::new();
+    for n in INSTANCES..2 * INSTANCES {
+        let mut stream = soon("an accept", listener.accept()).await.unwrap();
+        let mut said = [0u8];
+        stream.read_exact(&mut said).await.unwrap();
+        served.push(said[0] as usize);
+        // A newcomer takes the instance that accept just refilled.
+        let mut client = soon("a newcomer connects", connect(&path)).await.unwrap();
+        client.write_all(&[n as u8]).await.unwrap();
+        clients.push(client);
+    }
+    served.sort_unstable();
+    assert_eq!(
+        served,
+        (0..INSTANCES).collect::<Vec<_>>(),
+        "the first four, before any newcomer"
+    );
+}
 
 /// Within a few seconds, or the test fails rather than hangs.
 async fn soon<T>(what: &str, future: impl std::future::Future<Output = T>) -> T {
@@ -193,12 +291,35 @@ async fn a_busy_server_is_given_up_on_by_the_deadline() {
     let started = Instant::now();
     let error = connect_within(&path, patience).await.err().expect("busy");
     let waited = started.elapsed();
-    assert_eq!(error.kind(), io::ErrorKind::TimedOut, "{error}");
+    // Busy, not gone: a daemon starting must not take this one's name.
+    assert_eq!(error.kind(), io::ErrorKind::ResourceBusy, "{error}");
     assert!(
         waited >= patience,
         "it tried until the deadline: {waited:?}"
     );
     assert!(waited < CONNECT_PATIENCE, "and not much longer: {waited:?}");
+}
+
+/// Many dials at once, each to a listener of its own: more than the
+/// reads of name files allowed at once wait for a slot within their
+/// deadline, rather than failing at once.
+#[tokio::test]
+async fn dials_past_the_reads_allowed_at_once_wait_for_a_slot() {
+    let root = tempfile::tempdir().unwrap();
+    let mut listeners = Vec::new();
+    let mut dials = tokio::task::JoinSet::new();
+    for n in 0..4 * super::MOST_READING {
+        let path = root.path().join(format!("{n}.sock"));
+        listeners.push(LocalListener::bind(&path).unwrap());
+        dials.spawn(async move { (n, connect_within(&path, CONNECT_PATIENCE).await) });
+    }
+    let mut reached = 0;
+    while let Some(dialled) = soon("every dial", dials.join_next()).await {
+        let (n, dialled) = dialled.unwrap();
+        dialled.unwrap_or_else(|error| panic!("dial {n} reaches its listener: {error}"));
+        reached += 1;
+    }
+    assert_eq!(reached, listeners.len());
 }
 
 /// A file naming a pipe that is gone (its listener ended, a successor is
@@ -404,7 +525,7 @@ async fn an_earlier_builds_pipe_is_reached() {
     let server = legacy_pipe(&name);
     std::fs::write(&path, &name).unwrap();
     let probe = ClientOptions::new().open(&name).unwrap();
-    let owner = super::windows::owner_of(probe.as_raw_handle()).unwrap();
+    let owner = super::owner_of(probe.as_raw_handle()).unwrap();
     eprintln!("an earlier build's pipe is owned here by {owner}");
     drop(probe);
     server.disconnect().unwrap();

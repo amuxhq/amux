@@ -45,12 +45,18 @@ pub(super) fn create_private(path: &Path, how: Create) -> io::Result<File> {
     options.read(true).mode(0o600);
     match how {
         Create::New => options.write(true).create_new(true),
-        Create::Truncate => options.write(true).create(true).truncate(true),
+        // Emptied only once it is ours alone, below: a file someone else
+        // owns, which we may write but not chmod, keeps what it holds.
+        Create::Truncate => options.write(true).create(true).truncate(false),
         Create::Append => options.append(true).create(true),
     };
     let file = options.open(path)?;
-    // A file that was there keeps its mode through `open`.
+    // A file that was there keeps its mode through `open`; fchmod, on the
+    // file this handle has, whatever is at the path now.
     file.set_permissions(Permissions::from_mode(0o600))?;
+    if how == Create::Truncate {
+        file.set_len(0)?;
+    }
     Ok(file)
 }
 
@@ -125,6 +131,10 @@ pub(super) fn sync_dir(dir: &Path) -> io::Result<()> {
 
 pub(super) fn remove_file(path: &Path) -> io::Result<()> {
     fs::remove_file(path)
+}
+
+pub(super) fn remove_dir_all(path: &Path) -> io::Result<()> {
+    fs::remove_dir_all(path)
 }
 
 /// Unix has no sharing violations; a busy mount point and a folder another

@@ -21,6 +21,30 @@ use super::*;
 
 const PATIENCE: Duration = Duration::from_secs(30);
 
+// What the tests reach the runtime through; a child module sees its field.
+impl AmuxRuntime {
+    fn embedded(&self) -> Option<&Arc<app_bridge::EmbeddedRuntime>> {
+        self.0.embedded()
+    }
+
+    fn handle(&self) -> &tokio::runtime::Handle {
+        self.0.handle()
+    }
+}
+
+/// Starts the installation as `amux_runtime_start` does, with the overrides
+/// a test chooses, such as serving links on loopback.
+fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxRuntime>, String> {
+    app_bridge::start(config, overrides, app_bridge::Surface::Ios)
+        .map(|runtime| Box::new(AmuxRuntime(runtime)))
+}
+
+/// Attaches as `amux_runtime_attach` does, to the daemon answering on a
+/// front door the test chooses.
+fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime>, String> {
+    app_bridge::attach(front_door, tail).map(|runtime| Box::new(AmuxRuntime(runtime)))
+}
+
 fn text_step(text: &str) -> Step {
     Step::Text {
         chunks: vec![text.to_owned()],

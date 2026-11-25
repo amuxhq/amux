@@ -3264,7 +3264,6 @@ dependencies = [
  "libc",
  "os",
  "portable-pty",
- "tempfile",
  "thiserror 2.0.20",
  "tokio",
 ]

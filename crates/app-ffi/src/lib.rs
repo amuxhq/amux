@@ -61,32 +61,6 @@ pub struct AmuxProfile(app_bridge::AmuxProfile);
 /// One open chat.
 pub struct AmuxChat(app_bridge::AmuxChat);
 
-#[cfg(test)]
-impl AmuxRuntime {
-    fn embedded(&self) -> Option<&std::sync::Arc<app_bridge::EmbeddedRuntime>> {
-        self.0.embedded()
-    }
-
-    fn handle(&self) -> &tokio::runtime::Handle {
-        self.0.handle()
-    }
-}
-
-/// Starts the installation as `amux_runtime_start` does, with the overrides
-/// a test chooses, such as serving links on loopback.
-#[cfg(test)]
-fn start(config: &StartConfig, overrides: EdgeOverrides) -> Result<Box<AmuxRuntime>, String> {
-    app_bridge::start(config, overrides, app_bridge::Surface::Ios)
-        .map(|runtime| Box::new(AmuxRuntime(runtime)))
-}
-
-/// Attaches as `amux_runtime_attach` does, to the daemon answering on a
-/// front door the test chooses.
-#[cfg(test)]
-fn attach(front_door: &std::path::Path, tail: u32) -> Result<Box<AmuxRuntime>, String> {
-    app_bridge::attach(front_door, tail).map(|runtime| Box::new(AmuxRuntime(runtime)))
-}
-
 // --- strings and pointers --------------------------------------------------
 
 fn into_c_string(text: Option<String>) -> *mut c_char {

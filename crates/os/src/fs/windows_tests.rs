@@ -1,10 +1,11 @@
 //! `os::fs` on Windows: what only Windows can show.
 
+use std::os::windows::fs::OpenOptionsExt as _;
+use std::time::{Duration, Instant};
+
 use super::testing::dacl_sddl;
 use super::*;
 use crate::fs::{Removed, canonical, plain, remove_patiently, write_durably};
-use std::os::windows::fs::OpenOptionsExt as _;
-use std::time::{Duration, Instant};
 
 /// A folder beside the test program, which with the build's target folder
 /// outside the user profile (`C:\amux-cargo\…` here) is a root that does
@@ -84,7 +85,11 @@ fn a_private_folder_outside_the_profile_reads_back_owner_only_and_passes_it_on()
 fn making_an_existing_folder_private_upgrades_what_it_holds() {
     let root = OutsideProfile::new();
     let existing = root.0.join("old-root");
-    fs::create_dir_all(existing.join("profile")).unwrap();
+    fs::create_dir(&existing).unwrap();
+    // What an earlier build left: a folder anyone may use, which hands
+    // that down, wherever the test program happens to be built.
+    set_dacl(&existing, "D:P(A;OICI;FA;;;WD)");
+    fs::create_dir(existing.join("profile")).unwrap();
     let account = existing.join("profile").join("account");
     fs::write(&account, b"x").unwrap();
     let (_, before) = parse(&dacl_sddl(&account).unwrap());
@@ -230,6 +235,82 @@ fn patient_removal_of_a_held_file_or_folder_is_later() {
         drop(holder);
         assert_eq!(remove_patiently(path, patience).unwrap(), Removed::Gone);
         assert!(!path.exists());
+    }
+}
+
+/// Sets `path`'s DACL to the one `sddl` gives, protected from what its
+/// folder would hand down.
+fn set_dacl(path: &Path, sddl: &str) {
+    let sddl: Vec<u16> = sddl.encode_utf16().chain([0]).collect();
+    let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
+    let (mut present, mut defaulted, mut dacl) = (0, 0, ptr::null_mut());
+    let path = wide(path).unwrap();
+    // SAFETY: `sddl` and `path` are NUL-terminated; the ACL points into
+    // `descriptor`, which is freed after the call that reads it.
+    unsafe {
+        assert!(
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl.as_ptr(),
+                SDDL_REVISION_1,
+                &mut descriptor,
+                ptr::null_mut(),
+            ) != 0
+        );
+        assert!(
+            GetSecurityDescriptorDacl(descriptor, &mut present, &mut dacl, &mut defaulted) != 0
+        );
+        let status = SetNamedSecurityInfoW(
+            path.as_ptr(),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            dacl,
+            ptr::null(),
+        );
+        LocalFree(descriptor);
+        assert_eq!(status, 0, "the DACL is set");
+    }
+}
+
+/// An ACL that refuses a deletion is reported, not waited on as if
+/// something held the path: a sweep would put it off for ever.
+#[test]
+fn patient_removal_reports_a_deletion_an_acl_refuses() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("kept");
+    let tree = folder.join("agent");
+    fs::create_dir_all(&tree).unwrap();
+    let file = folder.join("agent.log");
+    fs::write(&file, b"x").unwrap();
+    // A deletion needs DELETE on the path or FILE_DELETE_CHILD on its
+    // folder: both are refused, to everyone.
+    let (allowed, no_delete) = ("D:P(A;;FA;;;WD)", "D:P(D;;0x10000;;;WD)(A;;FA;;;WD)");
+    set_dacl(&file, no_delete);
+    set_dacl(&tree, no_delete);
+    set_dacl(&folder, "D:P(D;;0x40;;;WD)(A;OICI;FA;;;WD)");
+    let patience = Duration::from_millis(300);
+    let removed: Vec<_> = [&file, &tree]
+        .into_iter()
+        .map(|path| {
+            let started = Instant::now();
+            let removed = remove_patiently(path, patience);
+            (path, started.elapsed(), removed)
+        })
+        .collect();
+    set_dacl(&folder, "D:P(A;OICI;FA;;;WD)");
+    set_dacl(&file, allowed);
+    set_dacl(&tree, allowed);
+    for (path, took, removed) in removed {
+        let error = removed.expect_err("a refused deletion is an error, not Later");
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "{error}");
+        assert!(
+            took < patience,
+            "{} was not waited on: {took:?}",
+            path.display()
+        );
+        assert!(path.exists());
+        assert_eq!(remove_patiently(path, patience).unwrap(), Removed::Gone);
     }
 }
 

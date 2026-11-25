@@ -301,7 +301,7 @@ mod tests {
 
     #[test]
     fn sampler_names_and_reads_the_current_process_measure() {
-        let sample = sample_memory(std::process::id()).expect("sample this process");
+        let sample = super::sample_memory(std::process::id()).expect("sample this process");
         assert!(sample.bytes > 0);
         let expected = match std::env::consts::OS {
             "macos" => "physical footprint",
@@ -321,7 +321,7 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .expect("start sample target");
-        let result = sample_memory(child.id());
+        let result = super::sample_memory(child.id());
         let _ = child.kill();
         let _ = child.wait();
         let sample = result.expect("sample child process");

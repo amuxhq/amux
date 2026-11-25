@@ -5,7 +5,6 @@
 
 use std::io::{IsTerminal as _, Write as _};
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -515,20 +514,6 @@ fn ask(prompt: &str) -> Result<String> {
     Ok(answer.trim().to_owned())
 }
 
-/// The profile's directory: where its client socket, identity and link
-/// socket live, on this machine.
-fn profile_dir(profile: &wire::Profile) -> Result<PathBuf> {
-    Path::new(&profile.socket_path)
-        .parent()
-        .map(Path::to_owned)
-        .ok_or_else(|| {
-            anyhow!(
-                "the profile socket {} has no directory",
-                profile.socket_path
-            )
-        })
-}
-
 /// This profile's identity as its daemon holds it, for the far end of an
 /// SSH pairing.
 async fn own_identity(admin: &Admin) -> Result<PairingIdentity> {
@@ -600,7 +585,17 @@ pub async fn pair_recv(admin: Admin) -> Result<()> {
 /// profile's link socket, carrying a peer's link.
 #[cfg(unix)]
 pub async fn relay(profile: &wire::Profile) -> Result<()> {
-    let socket = profile_dir(profile)?.join(node::LINK_SOCKET);
+    // The profile's directory holds its client socket, identity and link
+    // socket, on this machine.
+    let socket = std::path::Path::new(&profile.socket_path)
+        .parent()
+        .ok_or_else(|| {
+            anyhow!(
+                "the profile socket {} has no directory",
+                profile.socket_path
+            )
+        })?
+        .join(node::LINK_SOCKET);
     node::relay_stdio_to_unix_socket(socket).await?;
     Ok(())
 }

@@ -8,7 +8,7 @@ use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::{AsRawHandle, RawHandle};
 use std::path::Path;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -207,8 +207,14 @@ impl Listener {
                 return Poll::Pending;
             };
             // Its place is refilled before the next connection is awaited,
-            // and a failure to refill never costs this one.
-            drop(instances.swap_remove(at));
+            // and a failure to refill never costs this one. The rest keep
+            // their order, oldest first, and the refill goes last: a client
+            // waiting on an older instance is served before newer ones,
+            // however fast they come.
+            drop(instances.remove(at));
+            // And refilled now, so a client that comes before the next
+            // accept finds an instance listening, not every one taken.
+            self.refill(cx);
             match connected {
                 Ok(()) => return Poll::Ready(Stream::Server(server)),
                 // The client came and went before it was accepted: an
@@ -328,9 +334,30 @@ fn delete_open(file: &std::fs::File) -> io::Result<()> {
 pub async fn connect(path: &Path, patience: Duration) -> io::Result<(Stream, Option<u32>)> {
     let until = Instant::now() + patience;
     let mut pause = Duration::from_millis(5);
-    let mut tried = false;
+    // What the last try met, once there was one.
+    let mut last: Option<Waiting> = None;
     loop {
-        let waiting = match read_name(path, until).await? {
+        let tried = last.is_some();
+        // A zero deadline is one try, whose read has LEAST_READ; any other
+        // read ends by the caller's deadline.
+        let read_until = if !tried && patience.is_zero() {
+            Instant::now() + LEAST_READ
+        } else {
+            until
+        };
+        let named = match read_name(path, read_until).await {
+            Ok(named) => named,
+            // A retry the deadline cut short: the answer is what the try
+            // before it met.
+            Err(error)
+                if error.kind() == io::ErrorKind::TimedOut
+                    && let Some(waiting) = &last =>
+            {
+                return Err(given_up(path, patience, waiting));
+            }
+            Err(error) => return Err(error),
+        };
+        let waiting = match named {
             Named::Name(name) => {
                 let Some(form) = pipe_form(&name) else {
                     return Err(io::Error::new(
@@ -364,22 +391,32 @@ pub async fn connect(path: &Path, patience: Duration) -> io::Result<(Stream, Opt
             // A scanner or an indexer holding it a moment.
             Named::Held => Waiting::Held,
         };
-        tried = true;
         let now = Instant::now();
         if now >= until {
-            let (kind, what) = match waiting {
-                Waiting::Busy => (io::ErrorKind::TimedOut, "every pipe instance stayed busy"),
-                Waiting::Held => (io::ErrorKind::TimedOut, "the name file stayed held"),
-                Waiting::Gone => (io::ErrorKind::ConnectionRefused, "no pipe answered"),
-            };
-            return Err(io::Error::new(
-                kind,
-                format!("{}: {what} for {patience:?}", path.display()),
-            ));
+            return Err(given_up(path, patience, &waiting));
         }
         tokio::time::sleep(pause.min(until - now)).await;
         pause = (pause * 2).min(MOST_PAUSE);
+        // A try that would start at the deadline is none: what this one
+        // met is the answer.
+        if Instant::now() >= until {
+            return Err(given_up(path, patience, &waiting));
+        }
+        last = Some(waiting);
     }
+}
+
+/// What a connect that ran out of patience on `waiting` says.
+fn given_up(path: &Path, patience: Duration, waiting: &Waiting) -> io::Error {
+    let (kind, what) = match waiting {
+        Waiting::Busy => (
+            io::ErrorKind::ResourceBusy,
+            "every pipe instance stayed busy",
+        ),
+        Waiting::Held => (io::ErrorKind::TimedOut, "the name file stayed held"),
+        Waiting::Gone => (io::ErrorKind::ConnectionRefused, "no pipe answered"),
+    };
+    io::Error::new(kind, format!("{}: {what} for {patience:?}", path.display()))
 }
 
 /// Why a connect tries again.
@@ -401,51 +438,66 @@ enum Named {
 /// earlier build wrote at most 70.
 const MOST_NAME: u64 = 256;
 
-/// The least a read of the name file is given, whatever is left of the
-/// caller's patience, so a deadline of zero is one try, not none.
+/// What the one read of a connect with no patience at all is given, so a
+/// deadline of zero is one try, not none. Every other read ends by the
+/// caller's deadline.
 const LEAST_READ: Duration = Duration::from_millis(100);
 
 /// Reads of name files that may be outstanding at once. A read is
 /// abandoned at its deadline but its thread waits on, on a stalled disk
-/// (a network share gone quiet), so past this many a connect fails at once
-/// instead of tying up more threads.
+/// (a network share gone quiet), so a connect past this many waits for a
+/// slot within its own deadline instead of tying up more threads. The
+/// threads are our own, not tokio's blocking pool: a runtime waits for
+/// its blocking tasks when it shuts down, and a stalled read would hold
+/// `amux status` open after its connect gave up.
 const MOST_READING: usize = 4;
 
-static READING: AtomicUsize = AtomicUsize::new(0);
+/// One slot for each read of a name file under way, held by its thread.
+static READING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(MOST_READING);
 
-/// Reads the name file at `path` on a blocking thread, giving up at
-/// `until` (or [`LEAST_READ`] from now, if later).
+/// Reads the name file at `path` on a thread of its own, giving up at
+/// `until`, the wait for a slot among [`MOST_READING`] included.
 async fn read_name(path: &Path, until: Instant) -> io::Result<Named> {
-    struct Read;
-    impl Drop for Read {
-        fn drop(&mut self) {
-            READING.fetch_sub(1, Ordering::SeqCst);
+    let slot = match tokio::time::timeout_at(until.into(), READING.acquire()).await {
+        Ok(Ok(slot)) => slot,
+        Ok(Err(closed)) => return Err(io::Error::other(closed)),
+        Err(_) => {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!(
+                    "{}: earlier reads of socket files have not finished",
+                    path.display()
+                ),
+            ));
         }
-    }
-    if READING.fetch_add(1, Ordering::SeqCst) >= MOST_READING {
-        READING.fetch_sub(1, Ordering::SeqCst);
-        return Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            format!(
-                "{}: earlier reads of socket files have not finished",
-                path.display()
-            ),
-        ));
-    }
-    let read = Read;
+    };
     let file = path.to_owned();
-    let reading = tokio::task::spawn_blocking(move || {
-        let _read = read;
-        read_name_now(&file)
-    });
-    let until = until.max(Instant::now() + LEAST_READ);
-    match tokio::time::timeout_at(until.into(), reading).await {
-        Ok(Ok(named)) => named,
-        Ok(Err(error)) => Err(io::Error::other(error)),
-        Err(_) => Err(io::Error::new(
+    let (answer, reading) = tokio::sync::oneshot::channel();
+    // Detached: nothing waits for it but this connect, which may stop.
+    std::thread::Builder::new()
+        .name("amux-name-file".into())
+        .spawn(move || {
+            let _slot = slot;
+            #[cfg(test)]
+            tests::stall(&file);
+            let _ = answer.send(read_name_now(&file));
+        })?;
+    let late = || {
+        io::Error::new(
             io::ErrorKind::TimedOut,
             format!("{}: reading it did not finish in time", path.display()),
-        )),
+        )
+    };
+    match tokio::time::timeout_at(until.into(), reading).await {
+        // An answer seen only after the deadline (this task ran late, and
+        // a timeout looks at what it waits on before the clock) is late.
+        Ok(Ok(_)) if Instant::now() > until => Err(late()),
+        Ok(Ok(named)) => named,
+        Ok(Err(_)) => Err(io::Error::other(format!(
+            "{}: the read ended without an answer",
+            path.display()
+        ))),
+        Err(_) => Err(late()),
     }
 }
 
@@ -491,6 +543,7 @@ fn read_name_now(path: &Path) -> io::Result<Named> {
 /// an agent an earlier build started. Nothing else: no other host (a UNC
 /// name would hand this user's credentials to it), no device, no other
 /// pipe.
+#[cfg(test)]
 pub(super) fn is_amux_pipe(name: &str) -> bool {
     pipe_form(name).is_some()
 }
@@ -591,6 +644,7 @@ const ADMINISTRATORS: &str = "S-1-5-32-544";
 
 /// Whether the object open at `handle` (with `READ_CONTROL`) is owned by
 /// this user.
+#[cfg(test)]
 pub(super) fn owned_by_me(handle: RawHandle) -> io::Result<bool> {
     Ok(owner_of(handle)? == os::fs::current_user_sid()?)
 }
@@ -752,3 +806,7 @@ fn listening(listening: &mut Mutex<Vec<Listening>>) -> &mut Vec<Listening> {
         .get_mut()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
+
+#[cfg(test)]
+#[path = "windows_tests.rs"]
+mod tests;

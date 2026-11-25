@@ -2,7 +2,7 @@
 //! long for `sockaddr_un`.
 
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::{fs, io};
@@ -22,12 +22,12 @@ pub struct Listener {
 }
 
 impl Listener {
-    /// Binds under the directory's lock, which [`Listener::unbind`] takes
+    /// Binds under the socket's lock, which [`Listener::unbind`] takes
     /// too, so a predecessor's unbind can't fall between this bind and
     /// its check of what is at the path.
     pub fn bind(path: &Path) -> io::Result<Self> {
         let address = address(path)?;
-        let _locked = lock_dir(path)?;
+        let _locked = lock_socket(path)?;
         match fs::remove_file(&address) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -62,7 +62,7 @@ impl Listener {
 
     /// Removes the socket file at `path` if it is still the one this
     /// listener bound; a successor's stays. The check and the removal hold
-    /// the directory's lock, as a bind does, so no successor binds between
+    /// the socket's lock, as a bind does, so no successor binds between
     /// them, in this process or another.
     pub fn unbind(&self, path: &Path) {
         self.unbind_between(path, || {});
@@ -71,9 +71,11 @@ impl Listener {
     /// [`Listener::unbind`], running `between` after the check and before
     /// the removal: a test's way in.
     fn unbind_between(&self, path: &Path, between: impl FnOnce()) {
-        // A directory that can't be locked (it has gone) has nothing in
-        // it to keep.
-        let Ok(_locked) = lock_dir(path) else { return };
+        // A socket that can't be locked (its directory has gone) has
+        // nothing to keep.
+        let Ok(_locked) = lock_socket(path) else {
+            return;
+        };
         if fs::symlink_metadata(path).is_ok_and(|meta| (meta.dev(), meta.ino()) == self.file) {
             between();
             let _ = fs::remove_file(path);
@@ -81,18 +83,25 @@ impl Listener {
     }
 }
 
-/// The lock of the directory holding the socket `path`, held while the
-/// returned file is open: `flock` on the directory itself, which every
-/// bind and unbind there takes, in any process. Each holds it only for a
-/// removal and a bind.
-fn lock_dir(path: &Path) -> io::Result<fs::File> {
+/// The lock of the socket `path`, held while the returned file is open:
+/// `flock` on `<path>.lock` beside it, which every bind and unbind of the
+/// path takes, in any process. Each holds it only for a removal and a
+/// bind. A file open for writing, not the directory: on NFS `flock` is a
+/// byte-range lock on the server, and an exclusive one needs a descriptor
+/// that can write, which a directory's never is. The file stays, since a
+/// lock on a file one holder removed and another made anew would keep
+/// nobody out.
+fn lock_socket(path: &Path) -> io::Result<fs::File> {
     use std::os::fd::AsRawFd;
 
-    let dir = match path.parent() {
-        Some(dir) if !dir.as_os_str().is_empty() => dir,
-        _ => Path::new("."),
-    };
-    let file = fs::File::open(dir)?;
+    let mut lock = path.as_os_str().to_owned();
+    lock.push(".lock");
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(lock)?;
     loop {
         // SAFETY: the descriptor is `file`'s, open for the call.
         if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0 {
@@ -116,7 +125,18 @@ pub async fn connect(path: &Path, patience: Duration) -> io::Result<(Stream, Opt
                 io::ErrorKind::TimedOut,
                 format!("{} did not answer within {patience:?}", path.display()),
             )
-        })??;
+        })?
+        .map_err(|error| match error.kind() {
+            // Linux: the listener's backlog is full. It is there, and busy.
+            io::ErrorKind::WouldBlock => io::Error::new(
+                io::ErrorKind::ResourceBusy,
+                format!(
+                    "{} is too busy to take a connection: {error}",
+                    path.display()
+                ),
+            ),
+            _ => error,
+        })?;
     let pid = stream
         .peer_cred()
         .ok()
@@ -256,8 +276,9 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::local_socket::unix_private_address;
-    use crate::local_socket::{LocalListener, connect, forget_short_addresses, unix_address};
+    use crate::local_socket::{
+        LocalListener, connect, forget_short_addresses, unix_address, unix_private_address,
+    };
 
     #[test]
     fn an_agents_short_addresses_go_with_its_directory() {
@@ -277,6 +298,68 @@ mod tests {
         assert!(!real.exists(), "the private directory is gone");
     }
 
+    /// The lock is taken through a descriptor that can write, which an
+    /// exclusive `flock` on NFS needs, and on a file that stays.
+    #[tokio::test]
+    async fn the_lock_is_a_file_open_for_writing_beside_the_socket() {
+        use std::os::fd::AsRawFd;
+
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("ctl.sock");
+        let held = lock_socket(&path).unwrap();
+        // SAFETY: asks after the flags of a descriptor `held` owns.
+        let flags = unsafe { libc::fcntl(held.as_raw_fd(), libc::F_GETFL) };
+        assert!(flags >= 0);
+        assert_ne!(flags & libc::O_ACCMODE, libc::O_RDONLY, "it can write");
+        assert!(root.path().join("ctl.sock.lock").is_file());
+        drop(held);
+        let listener = Listener::bind(&path).unwrap();
+        listener.unbind(&path);
+        assert!(
+            root.path().join("ctl.sock.lock").is_file(),
+            "the lock stays"
+        );
+    }
+
+    /// A listener whose backlog is full is there, and busy: a connect
+    /// says so (`ResourceBusy`), not that nothing answers, so a daemon
+    /// starting doesn't take a live one's socket for free.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_listener_with_a_full_backlog_is_busy() {
+        use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("ctl.sock");
+        let address = address(&path).unwrap();
+        // SAFETY: a new socket, owned at once; bound to a path in our own
+        // folder and listening with the shortest backlog, never accepting.
+        let listener = unsafe {
+            let fd = libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0);
+            assert!(fd >= 0);
+            let listener = OwnedFd::from_raw_fd(fd);
+            let mut name: libc::sockaddr_un = std::mem::zeroed();
+            name.sun_family = libc::AF_UNIX as libc::sa_family_t;
+            for (to, from) in name.sun_path.iter_mut().zip(address.as_os_str().as_bytes()) {
+                *to = *from as libc::c_char;
+            }
+            let size = size_of::<libc::sockaddr_un>() as libc::socklen_t;
+            assert_eq!(libc::bind(fd, (&raw const name).cast(), size), 0);
+            assert_eq!(libc::listen(listener.as_raw_fd(), 0), 0);
+            listener
+        };
+        let mut held = Vec::new();
+        let error = loop {
+            match crate::local_socket::connect_within(&path, Duration::from_secs(1)).await {
+                Ok(stream) => held.push(stream),
+                Err(error) => break error,
+            }
+            assert!(held.len() < 64, "the backlog never filled");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::ResourceBusy, "{error}");
+        drop(listener);
+    }
+
     /// The socket file is the socket: a file put at the path since is
     /// another inode, and the predecessor's unbind leaves it.
     #[tokio::test]
@@ -292,7 +375,7 @@ mod tests {
 
     /// The race: the predecessor checks that the file is its own, a
     /// successor binds, and only then does the predecessor remove what is
-    /// at the path. The directory's lock holds the successor's bind back
+    /// at the path. The socket's lock holds the successor's bind back
     /// until the removal is done, so the successor's socket survives.
     #[tokio::test(flavor = "multi_thread")]
     async fn a_successor_binding_inside_an_unbind_keeps_its_socket() {

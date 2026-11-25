@@ -168,7 +168,7 @@ The same rule holds the code: desktop-platform conditionals (`cfg(unix)`, `cfg(w
 `target_family`, `std::os::unix`, `std::os::windows`, `libc::`, `windows_sys::`) live in the homes named for
 platform code: `crates/os`, agent-dir's `local_socket`, `crates/pty-host`, node's `platform` and the supervisor's
 `login` and `keep_awake`, the terminal client's `platform`, the phone bridges (`app-ffi`, `app-jni`) and the
-launcher. Elsewhere, a module gated whole for a feature Windows leaves out carries the same comment. The mobile
+launcher. A home's tests are held like any other test, since they test the API callers use without `cfg`; only a home's file for one OS (`process/unix.rs`) may gate the tests of its own code. Elsewhere, a module gated whole for a feature Windows leaves out carries the same comment, on a gate that leaves it out of a Windows build (`cfg(not(windows))`, never `cfg(windows)`). The mobile
 axis (`target_os = "ios"`, `target_os = "android"`) is a product choice and may appear anywhere, and so may
 `cfg!(windows)` read as a value, such as a default editor or a path separator, rather than as the condition of a
 statement.

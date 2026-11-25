@@ -304,6 +304,158 @@ class PlatformCheckTest(unittest.TestCase):
         )
         self.assertEqual(self.counted(), {"crates/agent/src/lib.rs": [1, 3]})
 
+    # The ways around it a review found (gate 0), each held.
+
+    def test_a_cfg_nested_in_a_cfg_attr_counts(self):
+        self.write(
+            "crates/agent/src/lib.rs",
+            """\
+            #[cfg(test)]
+            mod tests {
+                #[test]
+                #[cfg_attr(test, cfg(unix))]
+                fn a() {}
+                #[test]
+                #[cfg_attr(feature = "slow", cfg_attr(windows, ignore))]
+                fn b() {}
+                #[cfg_attr(test, derive(Debug))]
+                struct C;
+            }
+            """,
+        )
+        result = platform.scan(self.root)
+        self.assertEqual({f.line: f.test for f in result.violations["crates/agent/src/lib.rs"]}, {4: True, 7: True})
+        self.assertEqual(self.check()[0], 1)
+        self.allow({"crates/agent/src/lib.rs": 2})
+        self.assertEqual(self.check()[0], 0)
+        self.assertEqual(self.check(strict=True)[0], 1)
+
+    def test_a_homes_tests_of_its_api_are_held_and_its_ignores_counted(self):
+        self.write(
+            "crates/os/src/lib.rs",
+            """\
+            #[cfg(unix)]
+            mod unix;
+            pub fn private() { unsafe { libc::umask(0o077) }; }
+            #[cfg(test)]
+            mod tests {
+                #[cfg(unix)]
+                #[test]
+                fn mode_is_owner_only() {}
+                #[test]
+                #[cfg_attr(windows, ignore)]
+                fn a() {}
+                #[test]
+                #[cfg_attr(windows, ignore = "windows: the DACL reads back empty")]
+                fn b() {}
+                #[test]
+                fn c() { if cfg!(windows) { check(); } }
+            }
+            #[cfg(any(windows, test))]
+            fn helper() {}
+            """,
+        )
+        # A test of one OS's own code, beside it, may be gated.
+        self.write(
+            "crates/os/src/process/unix.rs",
+            """\
+            #[cfg(test)]
+            mod tests {
+                #[cfg(target_os = "linux")]
+                #[test]
+                fn proc_stat_reads_the_start_time() {}
+                #[test]
+                #[cfg_attr(windows, ignore = "windows: never built there")]
+                fn d() {}
+            }
+            """,
+        )
+        result = platform.scan(self.root)
+        self.assertEqual({f.line: f.test for f in result.violations["crates/os/src/lib.rs"]}, {6: True, 10: True, 16: True})
+        self.assertEqual(list(result.violations), ["crates/os/src/lib.rs"])
+        self.assertEqual([(f.path, f.line) for f in result.ignores], [("crates/os/src/lib.rs", 13), ("crates/os/src/process/unix.rs", 7)])
+        self.allow({"crates/os/src/lib.rs": 3})
+        code, out = self.check(strict=True)
+        self.assertEqual(code, 1)
+        self.assertIn("crates/os/src/process/unix.rs:7: ignore:", out)
+
+    def test_a_gate_marked_out_of_scope_must_leave_windows_out(self):
+        self.write(
+            "crates/node/src/lib.rs",
+            """\
+            #[cfg(windows)] // out of scope on Windows: wt
+            mod only_windows;
+            #[cfg(not(windows))] // out of scope on Windows: wt
+            mod wt;
+            #[cfg(any(unix, feature = "wt"))] // out of scope on Windows: wt
+            mod maybe;
+            #[cfg_attr(unix, allow(dead_code))] // out of scope on Windows: wt
+            fn lint() {}
+            #[cfg_attr(test, cfg(not(windows)))] // out of scope on Windows: wt
+            fn test_only() {}
+            fn run() {
+                if !cfg!(windows) { // out of scope on Windows: wt
+                    unsafe { libc::getpid() };
+                }
+                if cfg!(windows) { // out of scope on Windows: wt
+                    go();
+                }
+            }
+            """,
+        )
+        self.write("crates/node/src/only_windows.rs", "use windows_sys::Win32::Foundation::HANDLE;\n")
+        self.write("crates/node/src/wt.rs", "use std::os::unix::net::UnixStream;\n")
+        self.write("crates/node/src/maybe.rs", "use std::os::unix::net::UnixStream;\n")
+        code, out = self.check()
+        self.assertEqual(
+            self.counted(),
+            # A test build leaves `test_only` out, but Windows builds it.
+            {"crates/node/src/lib.rs": [1, 5, 7, 9, 15], "crates/node/src/only_windows.rs": [1], "crates/node/src/maybe.rs": [1]},
+        )
+        self.assertIn("marked out of scope on Windows, but what it gates is built for Windows", out)
+
+    def test_grouped_imports_count(self):
+        self.write(
+            "crates/agent/src/lib.rs",
+            """\
+            use std::{os::windows::fs::OpenOptionsExt};
+            use std::{
+                io,
+                os::{fd::AsRawFd, unix::{fs::PermissionsExt, net::UnixStream}},
+            };
+            use ::libc;
+            use std::{fs, path::Path};
+            use std::os;
+            fn link() { os::unix::fs::symlink("a", "b").unwrap(); }
+            """,
+        )
+        self.assertEqual(self.counted(), {"crates/agent/src/lib.rs": [1, 2, 6, 9]})
+
+    def test_a_match_on_cfg_macro_that_runs_code_is_a_gate(self):
+        self.write(
+            "crates/agent/src/lib.rs",
+            """\
+            fn a() {
+                match cfg!(windows) { true => (), false => assert!(ready()) }
+            }
+            fn b() -> &'static str {
+                match cfg!(windows) { true => ";", false => ":" }
+            }
+            fn c() {
+                match cfg!(unix) {
+                    true => {
+                        go();
+                    }
+                    false => {}
+                }
+            }
+            fn d() {
+                let x = if cfg!(windows) { () } else { assert!(ready()) };
+            }
+            """,
+        )
+        self.assertEqual(self.counted(), {"crates/agent/src/lib.rs": [2, 8, 16]})
+
     # The allowlist and the inputs.
 
     def test_write_allowlist_writes_what_the_tree_holds(self):

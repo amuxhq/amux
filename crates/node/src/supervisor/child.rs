@@ -77,10 +77,18 @@ impl Child {
         let (child_reads, child_writes) = (file(child_reads), file(child_writes));
         let (go, prepared_end) = (file(go), file(prepared_end));
         let mut command = Command::new(binary);
-        command.args(args).arg("daemon").stdin(Stdio::null()).env(
-            PIPE_ENV,
-            format!("{},{}", raw(&child_reads), raw(&child_writes)),
-        );
+        command
+            .args(args)
+            .arg("daemon")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            // The supervisor's own standard error, its log: where the
+            // daemon's early errors go.
+            .stderr(Stdio::inherit())
+            .env(
+                PIPE_ENV,
+                format!("{},{}", raw(&child_reads), raw(&child_writes)),
+            );
         let child = platform::spawn(&mut command, &child_reads, &child_writes)?;
         drop((child_reads, child_writes));
         let pid = child.id();
@@ -276,6 +284,9 @@ pub fn spawn_supervisor(
         .arg("--inherit")
         .arg(inherited.to_arg())
         .stdin(Stdio::null())
+        // Kept, as an exec keeps them.
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
         .spawn()
         .map(drop)
 }

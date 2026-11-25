@@ -26,10 +26,6 @@ fn alive(pid: u32) -> bool {
 /// Agents the previous build started keep their process, and their inode,
 /// through an update: the new daemon adopts them and they take new turns.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
-)]
 async fn agents_of_the_previous_build_work_on_after_an_update() {
     let running = node::version();
     let previous = release::version_stamp::previous(running).unwrap();
@@ -211,10 +207,6 @@ async fn a_tui_of_the_previous_build_works_on_after_an_update() {
 /// killed before it prepared: the rollback case. The previous build opens
 /// the store again and does real work in it.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
-)]
 async fn the_previous_build_reopens_a_store_the_new_one_opened_before_prepared() {
     let running = node::version();
     let previous = release::version_stamp::previous(running).unwrap();

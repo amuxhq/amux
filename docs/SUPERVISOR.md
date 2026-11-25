@@ -58,7 +58,13 @@ Nothing ever starts a daemon beside a supervisor.
 
 - `amux server start` starts `amux supervise`, detached from the terminal,
   when the install has a supervisor, and returns once the daemon's front door
-  answers. Without one it starts `amux daemon` directly.
+  answers. Without one it starts `amux daemon` directly. What it leaves
+  running holds none of its standard streams, so a caller reading its output
+  to the end (`amux server start | cat`, a desktop app's installer) sees the
+  end when `start` exits: every `amux` first makes its own standard handles
+  uninheritable (`os::process::harden_start`; on Windows a child otherwise
+  inherits every inheritable handle, whatever its `Stdio` says), and the
+  supervisor, daemon and agent spawns name all three streams.
 - Any other CLI verb that finds no daemon on the front door starts the
   supervisor if the install has one and none is running, then waits for the
   daemon. Without a supervisor it starts nothing: the daemon belongs to

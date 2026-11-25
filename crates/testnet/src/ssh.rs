@@ -37,28 +37,17 @@ pub(crate) fn install() {
 }
 
 /// Writes the login that makes `dir` a target: `amux` against `config`,
-/// with whatever the far side was asked to run.
+/// with whatever the far side was asked to run. The login is the
+/// `fake-provider` binary running `amux --config <config>` with the
+/// caller's arguments ([`provider_fakes::dispatch::Plan::Run`]).
 pub(crate) fn write_login(dir: &Path, amux: &Path, config: &Path) -> std::io::Result<()> {
-    let login_dir = dir.join(LOGIN_DIR);
-    std::fs::create_dir_all(&login_dir)?;
-    let login = login_dir.join("amux");
-    std::fs::write(
+    let login = provider_fakes::dispatch::program(&dir.join(LOGIN_DIR), "amux");
+    provider_fakes::dispatch::install(
+        &crate::binaries::Binaries::built().fake_provider(),
         &login,
-        format!(
-            "#!/bin/sh\nexec {} --config {} \"$@\"\n",
-            quoted(amux),
-            quoted(config)
-        ),
-    )?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&login, std::fs::Permissions::from_mode(0o755))?;
-    }
-    Ok(())
-}
-
-/// A path as one shell word.
-fn quoted(path: &Path) -> String {
-    format!("'{}'", path.to_string_lossy().replace('\'', r"'\''"))
+        &provider_fakes::dispatch::Plan::Run {
+            program: amux.to_owned(),
+            args: vec!["--config".to_owned(), config.to_string_lossy().into_owned()],
+        },
+    )
 }

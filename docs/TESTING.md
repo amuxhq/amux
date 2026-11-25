@@ -173,6 +173,14 @@ So that a test needs no gate, the harness does each platform-shaped thing one wa
 | dials or serves a local socket | `agent_dir::local_socket`, never a Unix socket type, since the socket is a named pipe on Windows |
 | needs a write refused or a file unreadable, a file held open by another program, or a link to a directory | `provider_fakes::faults`: `deny` (a mode on Unix, a deny entry in the DACL on Windows), `read_only`, `hold_exclusively` (a share mode, Windows only), `link_dir` (a junction on Windows) and `symlink`, which says why it skipped where the user may not make one; a permission fault checks `faults::unenforced()` first, which is `Some` for a process running as root |
 
+A test that needs a program where a command is expected (a provider on the PATH, an SSH login, a wrapper, a
+stand-in agent, a build that cannot run) writes no `#!/bin/sh` script, which Windows cannot run, and makes no file
+executable or symlinked: it links a fake provider (`fake-claude-sdk`, `fake-codex`, `fake-acp`) under the command's
+name, or installs `fake-provider` with a plan beside it (`provider_fakes::dispatch::install`), which runs another
+program, answers and exits, runs the next program of its name on the PATH, or is a testnet host's provider command.
+Names carry the platform's suffix (`dispatch::program`, `os::paths::exe_name`) and a PATH is built with
+`std::env::join_paths`.
+
 The same rule holds the code: desktop-platform conditionals (`cfg(unix)`, `cfg(windows)`, a desktop `target_os`,
 `target_family`, `std::os::unix`, `std::os::windows`, `libc::`, `windows_sys::`) live in the homes named for
 platform code: `crates/os`, agent-dir's `local_socket`, `crates/pty-host`, node's `platform` and the supervisor's

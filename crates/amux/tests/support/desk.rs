@@ -5,6 +5,7 @@ use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 
+use provider_fakes::dispatch::{self, program};
 use provider_fakes::{SCRIPT_ENV, Script};
 use tokio::process::Command;
 
@@ -48,22 +49,13 @@ impl Desk {
         let work = root.path().join("work");
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::create_dir_all(&work).unwrap();
-        node::release::restamp(amux_binary(), &bin.join("amux"), installed_version).unwrap();
+        node::release::restamp(amux_binary(), &program(&bin, "amux"), installed_version).unwrap();
         // One `claude` for both Claude kinds, as on a real machine: the
-        // headless kind is the one started with --print.
-        let claude = bin.join("claude");
-        std::fs::write(
-            &claude,
-            format!(
-                "#!/bin/sh\nfor arg in \"$@\"; do [ \"$arg\" = --print ] && exec {sdk} \"$@\"; done\nexec {pty} \"$@\"\n",
-                sdk = binaries().join("fake-claude-sdk").display(),
-                pty = binaries().join("fake-claude-pty").display(),
-            ),
-        )
-        .unwrap();
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
-        std::os::unix::fs::symlink(binaries().join("fake-codex"), bin.join("codex")).unwrap();
+        // fake plays headless Claude when started with stream-json input,
+        // as the headless kind is, and the terminal otherwise.
+        for (name, fake) in [("claude", "fake-claude-sdk"), ("codex", "fake-codex")] {
+            dispatch::link(&program(binaries(), fake), &program(&bin, name)).unwrap();
+        }
         std::fs::write(
             root.path().join("script.json"),
             serde_json::to_string(&Script {
@@ -115,15 +107,19 @@ impl Desk {
     }
 
     pub fn amux_path(&self) -> PathBuf {
-        self.bin.join("amux")
+        program(&self.bin, "amux")
+    }
+
+    /// The PATH the desk's amux runs with: its own `bin` first, so its
+    /// daemon's agents find the fakes as `claude` and `codex`.
+    pub fn path(&self) -> std::ffi::OsString {
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        std::env::join_paths(std::iter::once(self.bin.clone()).chain(std::env::split_paths(&path)))
+            .unwrap()
     }
 
     pub fn command(&self, args: &[&str]) -> Command {
-        let path = format!(
-            "{}:{}",
-            self.bin.display(),
-            std::env::var("PATH").unwrap_or_default()
-        );
+        let path = self.path();
         let mut command = Command::new(self.amux_path());
         command
             .args(args)
@@ -260,9 +256,12 @@ pub fn lock_held(path: &Path) -> bool {
     matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock))
 }
 
+/// Kills the process `pid` at once, if it still runs.
 pub fn kill(pid: i32) {
-    // SAFETY: a signal to a process this test started.
-    unsafe {
-        libc::kill(pid, libc::SIGKILL);
+    if let Ok(process) = u32::try_from(pid)
+        .map_err(std::io::Error::other)
+        .and_then(os::process::ProcessRef::open)
+    {
+        let _ = process.kill();
     }
 }

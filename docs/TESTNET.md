@@ -170,10 +170,16 @@ A host's `provider` decides what agents created on it run, whoever creates them:
 terminal client, the phone, or another agent's `start_subagent` tool. With `real`, they are the real Claude and Codex
 under the operator's own logins; an agent's own `provider` overrides its host's for that one agent.
 
-Each host has its own `claude` and `codex` wrapper commands in its directory. An in-process host names them in its
-launch settings; a process host, which runs whatever `claude` and `codex` its PATH holds, is started with the
-wrappers first on its PATH, and so are its agents, their provider children and a daemon started after an update.
-A wrapper finds which agent started it, then runs either the fake that agent was given or the real provider:
+Each host has its own `claude`, `codex` and `acp` wrapper commands in its directory's `bin/`. An in-process host names
+them in its launch settings; a process host, which runs whatever `claude` and `codex` its PATH holds, is started with
+the wrappers first on its PATH, and so are its agents, their provider children and a daemon started after an update.
+A wrapper is no shell script: it is `fake-provider` from `crates/provider-fakes`, linked (or copied) under the
+command's name, with its plan beside it as `<name>.plan.json` (`provider_fakes::dispatch`), so the same files run on
+Windows. It finds which agent started it from the agent directory amux names in the provider's tool server
+(`internal mcp <dir>`, in Claude's `--mcp-config` and Codex's `--config`); a command the daemon runs itself, such as
+a version check, names none and runs the host's default. It reads the choice the net recorded for that agent
+(`choices/<agent id>`, JSON), then plays the fake that agent was given, in its own process, or runs the real
+provider:
 
 - the real provider runs behind its recording probe (`claude-probe`, `codex-probe` from `qualification`, which
   must be built beside the other binaries), so every message amux wrote to it and read from
@@ -240,8 +246,8 @@ The first supervised host starts a release feed: a plain `http://127.0.0.1` serv
 `Release` and `ctl release publish` re-stamp the build under test as that version, sign and list it on the
 channel (to `rollout` percent of hosts by host id, or all), launch it once (a fresh binary's first launch can
 stall on macOS), and ask every supervised host's supervisor to check now rather than at its hourly check. With
-`broken`, the listed build is a script that exits at once, so it never prepares and the supervisor rolls back
-after its failed starts.
+`broken`, the listed build is `fake-provider` with no plan beside it, which says it is broken on purpose and exits at
+once, so it never prepares and the supervisor rolls back after its failed starts.
 
 ## Bad networks
 
@@ -349,7 +355,8 @@ process's stdio into the far daemon's link socket (`link.sock` in its profile di
 handshake admits only a paired key. Every in-process host serves its link socket. The net puts a stand-in `ssh`
 (`crates/testnet/stand-in/ssh`) first on its process's PATH, which process hosts inherit; no real SSH runs. A target
 is a host's directory, which `ssh_target(host)` answers: the stand-in runs amux's command through a shell, as sshd
-would, with the far host's own `amux` against its own installation first on that shell's PATH, so `amux internal ssh-link` joins
+would, with the far host's own `amux` against its own installation (`ssh-path/amux`, `fake-provider` running the
+far host's binary with `--config`) first on that shell's PATH, so `amux internal ssh-link` joins
 the far daemon's link socket, and `amux internal ssh-pair` answers an SSH pairing.
 Give the target to a peer as an SSH pairing does; `amux pair` reads a target as SSH in `user@host` form, and the
 stand-in drops the user.

@@ -4,6 +4,7 @@ DEPS = [
     "//crates/acp-protocol:acp-protocol",
     "//crates/claude-protocol:claude-protocol",
     "//crates/codex-protocol:codex-protocol",
+    "//crates/os:os",
     "//crates/pty-host:pty-host",
     "//third-party/rust:futures-util",
     "//third-party/rust:jiff",
@@ -56,6 +57,14 @@ amux_rust_binary(
 )
 
 amux_rust_binary(
+    name = "fake-provider",
+    version = "0.1.0",
+    crate_root = "src/bin/fake_provider.rs",
+    deps = DEPS,
+    tool = True,
+)
+
+amux_rust_binary(
     name = "fake-codex",
     version = "0.1.0",
     crate_root = "src/bin/fake_codex.rs",
@@ -72,6 +81,7 @@ amux_rust_test(
         "CARGO_BIN_EXE_fake-claude-pty": "$(location :fake-claude-pty)",
         "CARGO_BIN_EXE_fake-claude-sdk": "$(location :fake-claude-sdk)",
         "CARGO_BIN_EXE_fake-codex": "$(location :fake-codex)",
+        "CARGO_BIN_EXE_fake-provider": "$(location :fake-provider)",
     },
     resources = ["//crates/interpret:fixtures", "//:journeys"],
     binaries = True,

@@ -1,8 +1,6 @@
 //! `amux new --worktree`: an agent started from the shell in a new worktree
 //! of its folder's repository, with the workspaces experiment on and off.
 
-#![cfg(unix)]
-
 use std::path::{Path, PathBuf};
 
 use support::desk::{Desk, LONG_GRACE_SECS, say};

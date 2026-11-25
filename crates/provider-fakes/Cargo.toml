@@ -14,6 +14,7 @@ claude-protocol.workspace = true
 codex-protocol.workspace = true
 futures-util = { workspace = true }
 libc = { workspace = true }
+os = { workspace = true }
 pty-host = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
@@ -41,6 +42,10 @@ path = "src/bin/fake_codex.rs"
 [[bin]]
 name = "fake-acp"
 path = "src/bin/fake_acp.rs"
+
+[[bin]]
+name = "fake-provider"
+path = "src/bin/fake_provider.rs"
 
 [dev-dependencies]
 source-tree = { workspace = true }

@@ -2,8 +2,6 @@
 //! never a refusal's wire name, and a failure the far side caused is never
 //! blamed on this host's own daemon.
 
-#![cfg(unix)]
-
 use std::process::Stdio;
 
 use provider_fakes::Step;

@@ -2,8 +2,6 @@
 //! and the machine run them, each printing its transcript. `just journey
 //! system <id>` runs one; the ids are declared in journeys/manifest.json.
 
-#![cfg(unix)]
-
 use std::collections::BTreeMap;
 use std::time::Duration;
 

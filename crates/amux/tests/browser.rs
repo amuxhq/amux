@@ -5,7 +5,7 @@
 //! carried to a paired host through the bridge is the testnet's analytics
 //! story, which has the pair.
 
-#![cfg(unix)]
+#![cfg(not(windows))] // out of scope on Windows: the browser extension's native host
 
 use std::process::Stdio;
 

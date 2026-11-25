@@ -2,8 +2,6 @@
 //! starts it, with a self-signed certificate, beside a stand-in cloud that
 //! signs connection tokens; a daemon signed in to that cloud links to it.
 
-#![cfg(unix)]
-
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;

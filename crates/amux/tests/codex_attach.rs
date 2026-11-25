@@ -8,7 +8,7 @@
 //! from amux; then an approval is answered in the app, and amux's ask
 //! closes.
 
-#![cfg(unix)]
+#![cfg(not(windows))] // out of scope on Windows: attach
 
 use provider_fakes::{Ask, Step, Tool, ToolClass};
 use support::desk::{Desk, LONG_GRACE_SECS, say};

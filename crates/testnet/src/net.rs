@@ -2000,7 +2000,7 @@ impl Net {
                 .join(format!("{}.json", configured_script(&decl.name, id)));
             text.push_str(&format!(
                 "[agents.{id}]\ncommand = {}\nargs = [\"acp\"]\nenv = {{ {} = {} }}\n",
-                quoted(&dir.join("bin").join("acp")),
+                quoted(&provider_fakes::dispatch::program(&dir.join("bin"), "acp")),
                 providers::AGENT_SCRIPT_ENV,
                 quoted(&script),
             ));

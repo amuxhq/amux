@@ -33,11 +33,7 @@ impl Term {
 
     /// `binary args…` against the desk's install, in a terminal of its own.
     pub fn run(desk: &Desk, binary: &Path, args: &[&str], rows: u16, cols: u16) -> Term {
-        let path = format!(
-            "{}:{}",
-            desk.bin.display(),
-            std::env::var("PATH").unwrap_or_default()
-        );
+        let path = desk.path();
         let process = pty_host::spawn(PtySpawn {
             command: binary.to_owned(),
             args: args.iter().map(|arg| (*arg).into()).collect(),

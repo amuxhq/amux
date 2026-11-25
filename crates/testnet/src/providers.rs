@@ -5,10 +5,13 @@
 //! terminal client or the phone, an agent's own spawn tool, a resume. Only
 //! the first carries arguments the net chose, and clients must not be
 //! changed for a test, so the net decides at the one point they share: the
-//! command. Each host gets a `claude` and a `codex` script that find which
-//! agent is starting them (the `amux agent <dir>` above them), read that
-//! agent's choice if the net recorded one, and run either the scripted
-//! fake or the real provider.
+//! command. Each host gets a `claude`, a `codex` and an `acp` command, each
+//! the `fake-provider` binary with a plan beside it
+//! ([`provider_fakes::dispatch`]), which finds which agent is starting it
+//! (the agent directory amux names in the provider's tool server), reads
+//! that agent's choice if the net recorded one, and plays the scripted
+//! fake or runs the real provider. No shell runs, so the commands work on
+//! every OS.
 //!
 //! The real provider runs through its recording probe, so what amux wrote
 //! to it and read back is kept, and with the operator's own setup kept out:
@@ -17,9 +20,10 @@
 //! directory would lose it); Codex runs on a scratch home holding only the
 //! operator's login.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use provider_fakes::script::{INPUT_LOG_ENV, SCRIPT_ENV};
+use provider_fakes::dispatch::{self, Choice, HostCommand, Plan, Real, Runs};
 
 use crate::topology::{FakeKind, Provider};
 
@@ -38,14 +42,11 @@ impl RealTools {
     pub(crate) fn find(binaries: &Path) -> Result<Self, String> {
         let on_path = |command: &str| {
             let path = std::env::var_os("PATH").unwrap_or_default();
-            std::env::split_paths(&path)
-                .map(|dir| dir.join(command))
-                .find(|candidate| candidate.is_file())
-                .and_then(|found| std::path::absolute(found).ok())
+            os::paths::find_program(command.as_ref(), &path)
                 .ok_or_else(|| format!("no {command} on the PATH for a real provider"))
         };
         let probe = |name: &str| {
-            let path = binaries.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+            let path = dispatch::program(binaries, name);
             if path.is_file() {
                 Ok(path)
             } else {
@@ -68,7 +69,7 @@ impl RealTools {
 /// Where a host's provider commands come from and what they default to.
 pub(crate) struct Wrappers<'a> {
     pub host: &'a str,
-    /// The host's own directory: the scripts go in `bin/` below it.
+    /// The host's own directory: the commands go in `bin/` below it.
     pub dir: &'a Path,
     pub default: Provider,
     /// Where each agent's choice is recorded, as `<agent id>` files.
@@ -76,7 +77,7 @@ pub(crate) struct Wrappers<'a> {
     /// Where real agents' traffic is recorded, a folder per agent.
     pub recordings: &'a Path,
     pub real: Option<&'a RealTools>,
-    /// The fakes' binaries.
+    /// The fakes' binaries, `fake-provider` among them.
     pub fakes: &'a Path,
     /// What a fake plays for an agent the net recorded no choice for.
     pub host_script: Option<&'a Path>,
@@ -109,24 +110,28 @@ pub(crate) fn choose(
     kind: FakeKind,
     script: &Path,
 ) -> std::io::Result<()> {
-    std::fs::create_dir_all(choices)?;
-    let provider = match provider {
-        Provider::Real => "real",
-        Provider::Fake => "fake",
-    };
     let kind = match kind {
         FakeKind::ClaudePty => "claude_pty",
         FakeKind::ClaudeSdk => "claude_sdk",
         FakeKind::Codex => "codex",
     };
-    std::fs::write(
-        choices.join(agent.to_string()),
-        format!(
-            "provider={provider}\nkind={kind}\nscript={}\ninput={}\n",
-            quote(script),
-            quote(&script.with_extension("input")),
-        ),
+    dispatch::choose(
+        choices,
+        &agent.to_string(),
+        &Choice {
+            provider: runs(provider),
+            kind: Some(kind.to_owned()),
+            script: Some(script.to_owned()),
+            input: Some(script.with_extension("input")),
+        },
     )
+}
+
+fn runs(provider: Provider) -> Runs {
+    match provider {
+        Provider::Real => Runs::Real,
+        Provider::Fake => Runs::Fake,
+    }
 }
 
 /// The scratch Codex home a real host's agents run on: only the operator's
@@ -134,8 +139,8 @@ pub(crate) fn choose(
 pub(crate) fn seed_codex_home(dir: &Path) -> Result<PathBuf, String> {
     let source = std::env::var_os("CODEX_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex")))
-        .ok_or("no Codex login: neither CODEX_HOME nor HOME is set")?;
+        .or_else(|| os::paths::home_dir().map(|home| home.join(".codex")))
+        .ok_or("no Codex login: neither CODEX_HOME nor a home folder is set")?;
     let auth = source.join("auth.json");
     if !auth.exists() {
         return Err(format!(
@@ -166,12 +171,7 @@ pub(crate) fn seed_codex_home(dir: &Path) -> Result<PathBuf, String> {
     ] {
         std::fs::write(home.join(file), text).map_err(|error| error.to_string())?;
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700))
-            .map_err(|error| error.to_string())?;
-    }
+    os::fs::make_private(&home).map_err(|error| error.to_string())?;
     Ok(home)
 }
 
@@ -179,49 +179,9 @@ pub(crate) fn seed_codex_home(dir: &Path) -> Result<PathBuf, String> {
 pub(crate) const SMALL_CLAUDE: &str = "haiku";
 pub(crate) const SMALL_CODEX: &str = "gpt-5.6-luna";
 
-/// The real Claude's start, where `{probe}` is the recording probe. amux
-/// leaves the model and permission off the command line when nobody chose
-/// them, as for a child made by amux's spawn tool; Claude would then take
-/// a large model and the operator's own default mode, which may act
-/// without asking. A test net's agents start small and asking instead.
-fn claude_setup() -> String {
-    format!(
-        "    model=1 permission=1\n\
-         \x20   for argument in \"$@\"; do\n\
-         \x20       case \"$argument\" in\n\
-         \x20           --model|--model=*) model= ;;\n\
-         \x20           --permission-mode|--permission-mode=*|--dangerously-skip-permissions) permission= ;;\n\
-         \x20       esac\n\
-         \x20   done\n\
-         \x20   if [ -n \"$permission\" ]; then set -- --permission-mode default \"$@\"; fi\n\
-         \x20   if [ -n \"$model\" ]; then set -- --model {SMALL_CLAUDE} \"$@\"; fi\n\
-         \x20   unset CLAUDE_CONFIG_DIR\n\
-         \x20   export DISABLE_AUTOUPDATER=1 DISABLE_UPDATES=1 DISABLE_INSTALLATION_CHECKS=1\n\
-         \x20   exec {{probe}} --setting-sources project --strict-mcp-config \"$@\"\n"
-    )
-}
-
-/// Finds the agent this command runs for: the `amux agent <dir>` process
-/// above it, a few generations up at most (a terminal provider runs under
-/// its pseudo-terminal's helper). None for a command the daemon runs
-/// itself, such as a version check or a catalogue refresh.
-const FIND_AGENT: &str = r#"agent=
-pid=$PPID
-hops=0
-while [ "$hops" -lt 6 ] && [ -n "$pid" ] && [ "$pid" -gt 1 ]; do
-    args=$(ps -o args= -p "$pid" 2>/dev/null) || break
-    case "$args" in
-        *" agent "*/agents/*)
-            agent=${args##*/agents/}
-            agent=${agent%%[ /]*}
-            break
-            ;;
-    esac
-    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
-    hops=$((hops + 1))
-done
-"#;
-
+/// Writes the host's `claude`, `codex` and `acp` into its `bin/`. A
+/// command already there keeps its binary, which may be running, and takes
+/// the new plan.
 pub(crate) fn write(wrappers: &Wrappers<'_>) -> Result<Commands, String> {
     let bin = wrappers.dir.join("bin");
     std::fs::create_dir_all(&bin).map_err(|error| error.to_string())?;
@@ -229,231 +189,151 @@ pub(crate) fn write(wrappers: &Wrappers<'_>) -> Result<Commands, String> {
         Some(_) => Some(seed_codex_home(wrappers.dir)?),
         None => None,
     };
-    let fake = |kind: FakeKind| quote(&wrappers.fakes.join(kind.binary()));
-    let header = |command: &str| {
-        format!(
-            "#!/bin/sh\n# {command} for testnet host {host}: the scripted fake or the real {command},\n\
-             # by the choice recorded for the agent starting it.\n{FIND_AGENT}\
-             provider={default}\nkind=\nscript={script}\ninput={input}\n\
-             if [ -n \"$agent\" ] && [ -f {choices}/\"$agent\" ]; then . {choices}/\"$agent\"; fi\n",
-            host = wrappers.host,
-            default = match wrappers.default {
-                Provider::Real => "real",
-                Provider::Fake => "fake",
-            },
-            script = wrappers.host_script.map(quote).unwrap_or_default(),
-            input = wrappers
-                .host_script
-                .map(|script| quote(&script.with_extension("input")))
-                .unwrap_or_default(),
-            choices = quote(wrappers.choices),
-        )
+    let default = Choice {
+        provider: runs(wrappers.default),
+        kind: None,
+        script: wrappers.host_script.map(Path::to_owned),
+        input: wrappers
+            .host_script
+            .map(|script| script.with_extension("input")),
     };
-    let real_branch = |prefix: &str, real: Option<(&Path, &Path)>, setup: &str| match real {
-        Some((probe, real)) => format!(
-            "if [ \"$provider\" = real ]; then\n\
-             \x20   dir={recordings}/\"${{agent:-host}}\"\n\
-             \x20   mkdir -p \"$dir\"\n\
-             \x20   # The real provider must not find this script again on the PATH.\n\
-             \x20   PATH=$(printf '%s' \"$PATH\" | tr ':' '\\n' | grep -vxF {bin} | paste -sd: -)\n\
-             \x20   export PATH\n\
-             \x20   unset {script_env} {input_env}\n\
-             \x20   export {prefix}_CAPTURE_PROXY=1 {prefix}_CAPTURE_DIR=\"$dir\" {prefix}_REAL_PATH={real}\n\
-             {setup}\
-             fi\n",
-            recordings = quote(wrappers.recordings),
-            bin = quote(&bin),
-            script_env = SCRIPT_ENV,
-            input_env = INPUT_LOG_ENV,
-            real = quote(real),
-            setup = setup.replace("{probe}", &quote(probe)),
-        ),
-        None => "if [ \"$provider\" = real ]; then\n\
-                 \x20   echo \"testnet: this net has no real providers set up\" >&2\n\
-                 \x20   exit 70\n\
-                 fi\n"
-            .to_owned(),
+    let host = |command: dispatch::Command, fake_env: &[(&str, PathBuf)], real: Option<Real>| {
+        HostCommand {
+            command,
+            host: wrappers.host.to_owned(),
+            default: default.clone(),
+            choices: wrappers.choices.to_owned(),
+            fake_env: fake_env
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), value.to_string_lossy().into_owned()))
+                .collect(),
+            agent_script_env: None,
+            real,
+        }
     };
-    let fake_tail = |fakes: &str| {
-        format!(
-            "{fakes}\
-             if [ -n \"$script\" ]; then export {SCRIPT_ENV}=\"$script\" {INPUT_LOG_ENV}=\"$input\"; fi\n\
-             exec \"$fake\" \"$@\"\n"
-        )
+    let real = |capture: &str, probe: &Path, real: &Path| Real {
+        probe: probe.to_owned(),
+        real: real.to_owned(),
+        capture: capture.to_owned(),
+        recordings: wrappers.recordings.to_owned(),
+        bin: bin.clone(),
+        args: Vec::new(),
+        set: BTreeMap::new(),
+        unset: Vec::new(),
+        make: Vec::new(),
+        small_claude: None,
     };
-    let claude = format!(
-        "{}{}{}",
-        header("claude"),
-        real_branch(
-            "CLAUDE",
-            wrappers
-                .real
-                .map(|real| (real.claude_probe.as_path(), real.claude.as_path())),
-            &claude_setup(),
-        ),
-        fake_tail(&format!(
-            "case \"$kind\" in claude_pty) fake={} ;; *) fake={} ;; esac\n\
-             export CLAUDE_CONFIG_DIR={}\n",
-            fake(FakeKind::ClaudePty),
-            fake(FakeKind::ClaudeSdk),
-            quote(&wrappers.dir.join("claude")),
-        )),
+    let claude = host(
+        dispatch::Command::Claude,
+        &[("CLAUDE_CONFIG_DIR", wrappers.dir.join("claude"))],
+        wrappers.real.map(|tools| Real {
+            args: ["--setting-sources", "project", "--strict-mcp-config"]
+                .map(str::to_owned)
+                .into(),
+            set: [
+                "DISABLE_AUTOUPDATER",
+                "DISABLE_UPDATES",
+                "DISABLE_INSTALLATION_CHECKS",
+            ]
+            .map(|key| (key.to_owned(), "1".to_owned()))
+            .into(),
+            unset: vec!["CLAUDE_CONFIG_DIR".to_owned()],
+            small_claude: Some(SMALL_CLAUDE.to_owned()),
+            ..real("CLAUDE", &tools.claude_probe, &tools.claude)
+        }),
     );
-    let codex_setup = codex_home
-        .as_deref()
-        .map(|home| {
-            // Codex also reads skills from the user's home, outside its
-            // own: a home of its own keeps the operator's out.
-            let user = home.with_file_name("codex-user-home");
-            format!(
-                "    export CODEX_HOME={}\n    mkdir -p {user}\n    export HOME={user}\n    exec {{probe}} \"$@\"\n",
-                quote(home),
-                user = quote(&user),
-            )
-        })
-        .unwrap_or_default();
-    let codex = format!(
-        "{}{}{}",
-        header("codex"),
-        real_branch(
-            "CODEX",
-            wrappers
-                .real
-                .map(|real| (real.codex_probe.as_path(), real.codex.as_path())),
-            &codex_setup,
-        ),
-        fake_tail(&format!("fake={}\n", fake(FakeKind::Codex))),
+    let codex = host(
+        dispatch::Command::Codex,
+        &[],
+        wrappers
+            .real
+            .zip(codex_home.as_deref())
+            .map(|(tools, home)| {
+                // Codex also reads skills from the user's home, outside its
+                // own: a home of its own keeps the operator's out.
+                let user = home.with_file_name("codex-user-home");
+                Real {
+                    set: [
+                        ("CODEX_HOME".to_owned(), home.to_string_lossy().into_owned()),
+                        ("HOME".to_owned(), user.to_string_lossy().into_owned()),
+                    ]
+                    .into(),
+                    make: vec![user],
+                    ..real("CODEX", &tools.codex_probe, &tools.codex)
+                }
+            }),
     );
-    let acp = format!(
-        "{}{}{}{}",
-        header("acp"),
+    let acp = HostCommand {
         // An agent the topology configures with a script of its own is the
         // fake playing it, on a real host too: there is no real ACP agent
         // behind this command to fall back on.
-        format_args!(
-            "if [ -n \"${{{AGENT_SCRIPT_ENV}:-}}\" ]; then script=${AGENT_SCRIPT_ENV} input=${{{AGENT_SCRIPT_ENV}%.json}}.input provider=fake; fi\n"
-        ),
-        real_branch("ACP", None, ""),
-        fake_tail(&format!(
-            "fake={}
-export {}={}
-",
-            quote(&wrappers.fakes.join(provider_fakes::Kind::Acp.binary_name())),
-            provider_fakes::acp::SESSIONS_ENV,
+        agent_script_env: Some(AGENT_SCRIPT_ENV.to_owned()),
+        ..host(
+            dispatch::Command::Acp,
             // The host's own, so an agent restarted on it reopens its
             // session and nothing of the net's is left outside it.
-            quote(&wrappers.dir.join("acp-sessions")),
-        )),
-    );
-    let commands = Commands {
-        claude: bin.join("claude"),
-        codex: bin.join("codex"),
-        acp: bin.join("acp"),
+            &[(
+                provider_fakes::acp::SESSIONS_ENV,
+                wrappers.dir.join("acp-sessions"),
+            )],
+            None,
+        )
     };
-    for (path, text) in [
+    let commands = Commands {
+        claude: dispatch::program(&bin, "claude"),
+        codex: dispatch::program(&bin, "codex"),
+        acp: dispatch::program(&bin, "acp"),
+    };
+    let binary = dispatch::program(wrappers.fakes, dispatch::BINARY);
+    for (path, command) in [
         (&commands.claude, claude),
         (&commands.codex, codex),
         (&commands.acp, acp),
     ] {
-        std::fs::write(path, text).map_err(|error| error.to_string())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
-                .map_err(|error| error.to_string())?;
-        }
+        dispatch::install(&binary, path, &Plan::Host(command))
+            .map_err(|error| format!("writing {}: {error}", path.display()))?;
     }
     Ok(commands)
 }
 
-/// A path as one shell word.
-fn quote(path: &Path) -> String {
-    format!("'{}'", path.to_string_lossy().replace('\'', r"'\''"))
-}
-
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    /// What the real Claude is started with, through a probe that prints
-    /// its arguments.
-    fn started_with(arguments: &[&str]) -> Vec<String> {
-        let script = claude_setup().replace("{probe}", "printf '%s\\n'");
-        let output = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(script)
-            .arg("claude")
-            .args(arguments)
-            .output()
-            .expect("sh runs");
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .map(str::to_owned)
-            .collect()
-    }
-
+    /// A host's commands carry what the net set up for it: the host's
+    /// script for an agent with no choice of its own, on a fake host no
+    /// real provider to fall back on, and for `acp` the variable a
+    /// configured agent's script comes in.
     #[test]
-    fn claude_left_unset_starts_small_and_asking() {
-        assert_eq!(
-            started_with(&["-p", "hi"]),
-            [
-                "--setting-sources",
-                "project",
-                "--strict-mcp-config",
-                "--model",
-                SMALL_CLAUDE,
-                "--permission-mode",
-                "default",
-                "-p",
-                "hi"
-            ]
-        );
-    }
-
-    /// A configured ACP agent's script makes the command the fake that
-    /// plays it, even on a host whose agents default to the real ones.
-    #[test]
-    fn a_configured_acp_script_plays_on_a_real_host() {
+    fn a_hosts_commands_play_its_script() {
         let dir = tempfile::tempdir().expect("a folder");
         let fakes = dir.path().join("fakes");
         std::fs::create_dir_all(&fakes).expect("fakes");
-        let fake = fakes.join(provider_fakes::Kind::Acp.binary_name());
-        std::fs::write(&fake, format!("#!/bin/sh\nprintf '%s' \"${SCRIPT_ENV}\"\n"))
-            .expect("the fake");
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).expect("mode");
-        let host = dir.path().join("host");
+        std::fs::write(dispatch::program(&fakes, dispatch::BINARY), "a program")
+            .expect("the binary");
+        let host_script = dir.path().join("studio.host.json");
         let commands = write(&Wrappers {
             host: "studio",
-            dir: &host,
-            default: Provider::Real,
+            dir: &dir.path().join("host"),
+            default: Provider::Fake,
             choices: &dir.path().join("choices"),
             recordings: &dir.path().join("recordings"),
             real: None,
             fakes: &fakes,
-            host_script: None,
+            host_script: Some(&host_script),
         })
-        .expect("the wrappers");
-        let output = std::process::Command::new(&commands.acp)
-            .env(AGENT_SCRIPT_ENV, "/scripts/helper.json")
-            .output()
-            .expect("the command runs");
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(
-            String::from_utf8_lossy(&output.stdout),
-            "/scripts/helper.json"
-        );
-    }
-
-    #[test]
-    fn claude_keeps_what_amux_chose() {
-        let chosen = ["--dangerously-skip-permissions", "--model", "sonnet"];
-        assert_eq!(started_with(&chosen)[3..], chosen);
-        let chosen = ["--permission-mode", "plan", "--model=opus"];
-        assert_eq!(started_with(&chosen)[3..], chosen);
+        .expect("the commands");
+        for command in [&commands.claude, &commands.codex, &commands.acp] {
+            assert!(command.is_file(), "{}", command.display());
+            let Plan::Host(plan) = dispatch::read_plan(command).expect("a plan") else {
+                panic!("a host command");
+            };
+            assert_eq!(plan.default.script.as_deref(), Some(host_script.as_path()));
+            assert_eq!(plan.real, None);
+            assert_eq!(
+                plan.agent_script_env.as_deref(),
+                (command == &commands.acp).then_some(AGENT_SCRIPT_ENV)
+            );
+        }
     }
 }

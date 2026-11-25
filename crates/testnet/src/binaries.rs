@@ -32,15 +32,19 @@ impl Binaries {
     /// rather than an agent that fails to launch.
     pub fn for_driver() -> Result<Binaries, String> {
         let binaries = Binaries::built();
-        let missing: Vec<String> = [binaries.amux(), binaries.fake_acp()]
-            .into_iter()
-            .chain(
-                [FakeKind::ClaudePty, FakeKind::ClaudeSdk, FakeKind::Codex]
-                    .map(|kind| binaries.fake(kind)),
-            )
-            .filter(|binary| !binary.is_file())
-            .map(|binary| binary.display().to_string())
-            .collect();
+        let missing: Vec<String> = [
+            binaries.amux(),
+            binaries.fake_acp(),
+            binaries.fake_provider(),
+        ]
+        .into_iter()
+        .chain(
+            [FakeKind::ClaudePty, FakeKind::ClaudeSdk, FakeKind::Codex]
+                .map(|kind| binaries.fake(kind)),
+        )
+        .filter(|binary| !binary.is_file())
+        .map(|binary| binary.display().to_string())
+        .collect();
         if missing.is_empty() {
             Ok(binaries)
         } else {
@@ -67,6 +71,13 @@ impl Binaries {
     /// Agent Client Protocol.
     pub fn fake_acp(&self) -> PathBuf {
         self.binary(provider_fakes::Kind::Acp.binary_name())
+    }
+
+    /// The program a host's provider commands, an SSH login and a broken
+    /// release are, each doing what the plan beside it says
+    /// ([`provider_fakes::dispatch`]).
+    pub fn fake_provider(&self) -> PathBuf {
+        self.binary(provider_fakes::dispatch::BINARY)
     }
 
     fn binary(&self, name: &str) -> PathBuf {

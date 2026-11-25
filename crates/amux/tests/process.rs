@@ -8,8 +8,6 @@
 //! meanwhile; an agent that exited while no daemon was running is found
 //! exited; and resuming either loses nothing of what came before.
 
-#![cfg(unix)]
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
@@ -17,7 +15,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt as _;
 use patience::{PATIENCE, holds_for, until, until_within};
-use provider_fakes::{SCRIPT_ENV, Script, Step};
+use provider_fakes::{SCRIPT_ENV, Script, Step, dispatch};
 use tokio::io::AsyncBufReadExt as _;
 use tokio::process::{Child, Command};
 use tonic::transport::{Channel, Endpoint};
@@ -61,7 +59,11 @@ impl Install {
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::create_dir_all(&work).unwrap();
         for (name, fake) in [("claude", "fake-claude-sdk"), ("codex", "fake-codex")] {
-            std::os::unix::fs::symlink(binaries().join(fake), bin.join(name)).unwrap();
+            dispatch::link(
+                &dispatch::program(binaries(), fake),
+                &dispatch::program(&bin, name),
+            )
+            .unwrap();
         }
         // The built-in ACP agents' commands, shadowed by a program that
         // fails at once: a daemon whose config file is removed under it
@@ -69,7 +71,17 @@ impl Install {
         // PATH would start the Antigravity, OpenCode or Grok installed
         // there (see `support::NO_REAL_AGENTS`).
         for name in ["agy", "opencode", "grok"] {
-            std::os::unix::fs::symlink("/usr/bin/false", bin.join(name)).unwrap();
+            dispatch::install(
+                &dispatch::program(binaries(), dispatch::BINARY),
+                &dispatch::program(&bin, name),
+                &dispatch::Plan::Answer {
+                    lines: 0,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    code: 1,
+                },
+            )
+            .unwrap();
         }
         let script = root.path().join("script.json");
         std::fs::write(
@@ -107,11 +119,11 @@ impl Install {
 
     /// A command for the amux binary in this installation's environment.
     fn command(&self, args: &[&str]) -> Command {
-        let path = format!(
-            "{}:{}",
-            self.root.path().join("bin").display(),
-            std::env::var("PATH").unwrap_or_default()
-        );
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let path = std::env::join_paths(
+            std::iter::once(self.root.path().join("bin")).chain(std::env::split_paths(&path)),
+        )
+        .unwrap();
         let mut command = Command::new(source_tree::bin!("amux"));
         command
             .args(args)

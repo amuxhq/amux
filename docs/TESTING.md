@@ -164,6 +164,14 @@ guessed cause):
 
 A runtime skip, with its reason, is only for a missing privilege, such as the right to make symbolic links.
 
+A test that needs a program where a command is expected (a provider on the PATH, an SSH login, a wrapper, a
+stand-in agent, a build that cannot run) writes no `#!/bin/sh` script, which Windows cannot run, and makes no file
+executable or symlinked: it links a fake provider (`fake-claude-sdk`, `fake-codex`, `fake-acp`) under the command's
+name, or installs `fake-provider` with a plan beside it (`provider_fakes::dispatch::install`), which runs another
+program, answers and exits, runs the next program of its name on the PATH, or is a testnet host's provider command.
+Names carry the platform's suffix (`dispatch::program`, `os::paths::exe_name`) and a PATH is built with
+`std::env::join_paths`.
+
 The same rule holds the code: desktop-platform conditionals (`cfg(unix)`, `cfg(windows)`, a desktop `target_os`,
 `target_family`, `std::os::unix`, `std::os::windows`, `libc::`, `windows_sys::`) live in the homes named for
 platform code: `crates/os`, agent-dir's `local_socket`, `crates/pty-host`, node's `platform` and the supervisor's

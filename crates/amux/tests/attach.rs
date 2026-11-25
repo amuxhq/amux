@@ -7,7 +7,7 @@
 //! in stream mode, and the fleet opened over it returns to the same view
 //! process. Headless Claude has no terminal and is pointed at its chat.
 
-#![cfg(unix)]
+#![cfg(not(windows))] // out of scope on Windows: attach
 
 use provider_fakes::Step;
 use support::desk::{Desk, LONG_GRACE_SECS, say};

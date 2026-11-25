@@ -170,6 +170,7 @@ TEST_BINARIES = {
     "fake-claude-pty": "//crates/provider-fakes:fake-claude-pty",
     "fake-claude-sdk": "//crates/provider-fakes:fake-claude-sdk",
     "fake-codex": "//crates/provider-fakes:fake-codex",
+    "fake-provider": "//crates/provider-fakes:fake-provider",
 }
 
 # What a test that starts those binaries runs with (`binaries = True`).

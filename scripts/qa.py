@@ -48,7 +48,7 @@ SEVERITIES = ["data loss", "broken flow", "wrong state", "visual", "wording"]
 # `testnet serve` to exit; past this, the launcher kills what is left.
 DOWN_PATIENCE = 300
 BINARIES = ["amux", "testnet", "dump-show", "claude-probe", "codex-probe",
-            "fake-claude-sdk", "fake-claude-pty", "fake-codex", "fake-acp"]
+            "fake-claude-sdk", "fake-claude-pty", "fake-codex", "fake-acp", "fake-provider"]
 
 
 def say(text: str) -> None:

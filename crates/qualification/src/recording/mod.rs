@@ -89,15 +89,25 @@ fn parse_script(path: &Path) -> Result<Vec<IoEvent>, RecordingError> {
 /// `path` less every folder whose `command` is the probe itself. A wrapper
 /// earlier on the PATH that runs the next `command` it finds (a usage
 /// meter, a version manager) then reaches the real provider instead of
-/// the probe again, which would start another wrapper, without end.
+/// the probe again, which would start another wrapper, without end. The
+/// probe's file is `command` with the platform's executable suffix
+/// (`claude.exe` on Windows) unless it has it already.
 pub fn path_past_probe(
     probe: &Path,
     command: &std::ffi::OsStr,
     path: &std::ffi::OsStr,
 ) -> std::ffi::OsString {
     let probe = std::fs::canonicalize(probe).unwrap_or_else(|_| probe.to_owned());
+    let mut file = command.to_owned();
+    let extension = std::env::consts::EXE_EXTENSION;
+    if !Path::new(command)
+        .extension()
+        .is_some_and(|ext| !extension.is_empty() && ext.eq_ignore_ascii_case(extension))
+    {
+        file.push(std::env::consts::EXE_SUFFIX);
+    }
     let kept = std::env::split_paths(path).filter(|folder| {
-        std::fs::canonicalize(folder.join(command)).map_or(true, |found| found != probe)
+        std::fs::canonicalize(folder.join(&file)).map_or(true, |found| found != probe)
     });
     std::env::join_paths(kept).unwrap_or_else(|_| path.to_owned())
 }

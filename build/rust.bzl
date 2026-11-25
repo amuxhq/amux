@@ -175,6 +175,16 @@ TEST_BINARIES = {
 # What a test that starts those binaries runs with (`binaries = True`).
 _BINARIES_ENV = {"TESTNET_BINARIES": "$(location //crates/provider-fakes:binaries)"}
 
+# `env KEY=VALUE... COMMAND...` in Python: the leading words with an `=` in
+# them set the environment, and the rest is the command, whose exit status
+# is this one's.
+_SET_ENV = "; ".join([
+    "import os, subprocess, sys",
+    "n = next(i for i, a in enumerate(sys.argv[1:] + [''], 1) if '=' not in a)",
+    "os.environ.update(a.split('=', 1) for a in sys.argv[1:n])",
+    "sys.exit(subprocess.call(sys.argv[n:]))",
+])
+
 def _test_impl(ctx: AnalysisContext) -> list[Provider]:
     # A test with a `main` of its own (Cargo's `harness = false`) is a
     # program, run as it is.
@@ -199,9 +209,10 @@ def _test_impl(ctx: AnalysisContext) -> list[Provider]:
     )
     executors = get_re_executors_from_props(ctx)
     # `buck2 run` (how `just goldens` re-records) runs the runner here, in
-    # the checkout, so its environment rides on the command line.
+    # the checkout, so its environment rides on the command line, as the
+    # KEY=VALUE words `env` takes (`_set_env`).
     run = cmd_args(
-        "/usr/bin/env",
+        ctx.attrs._set_env,
         [cmd_args(key, "=", value, delimiter = "") for key, value in ctx.attrs.env.items()],
         command,
     )
@@ -245,6 +256,13 @@ _amux_test = rule(
             "prelude//os:windows": 2,
         })),
         "_runner": attrs.source(default = "root//build:test-runner.py"),
+        # What sets a `buck2 run`'s environment and starts its command:
+        # `env`, or on Windows, which has none, the runner's Python doing
+        # what `env` does.
+        "_set_env": attrs.list(attrs.string(), default = select({
+            "DEFAULT": ["/usr/bin/env"],
+            "prelude//os:windows": ["python", "-c", _SET_ENV],
+        })),
         # The Python the runner runs under, by the name the worker's PATH
         # has it: Windows' installers make no python3.
         "_python": attrs.string(default = select({

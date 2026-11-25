@@ -32,6 +32,9 @@ FAKE = textwrap.dedent(
         sys.exit(0)
     if name == "fails":
         sys.exit(1)
+    if name == "says-it-ran":
+        open(os.path.join(room, "ran"), "w").write("")
+        sys.exit(0)
     if name == "in-the-runner":
         sys.exit(0 if os.environ.get("AMUX_TEST_RUNNER") == "1" else 1)
     if name == "orphan":
@@ -165,6 +168,41 @@ class TestRunnerTest(unittest.TestCase):
         status, output = self.run_test("breakaway")
         self.assertIn(b"breakaway refused", output)
         self.assertEqual(status, "pass", output.decode(errors="replace"))
+
+    @unittest.skipUnless(WINDOWS, "the job is how Windows contains a test")
+    def test_a_test_that_cannot_join_its_job_never_runs_and_fails(self):
+        # As an enclosing job that forbids nesting refuses the assignment:
+        # AssignProcessToJobObject fails with ERROR_ACCESS_DENIED. The
+        # suspended test is pinned first, to see how it ended.
+        import ctypes
+
+        api = runner.win32()
+        pinned = []
+
+        def refused(job, process):
+            ctypes.set_last_error(5)
+            return 0
+
+        real_call = api.kernel32.AssignProcessToJobObject
+        api.kernel32.AssignProcessToJobObject = refused
+        self.addCleanup(setattr, api.kernel32, "AssignProcessToJobObject", real_call)
+        real_assign = runner.Job.assign
+
+        def assign(job, pid):
+            pinned.append(Pinned(pid))
+            return real_assign(job, pid)
+
+        runner.Job.assign = assign
+        self.addCleanup(setattr, runner.Job, "assign", real_assign)
+        self.addCleanup(lambda: [process.close() for process in pinned])
+
+        status, output = self.run_test("says-it-ran")
+        self.assertEqual(status, "fail", output.decode(errors="replace"))
+        self.assertIn(b"job", output)
+        self.assertIn(b"WinError 5", output)
+        self.assertEqual(len(pinned), 1, "the runner tried to join the test to its job once")
+        self.assertTrue(pinned[0].ended_within(5), "the suspended test was left running")
+        self.assertFalse((self.dir / "ran").exists(), "the test ran without its job")
 
 
 if __name__ == "__main__":

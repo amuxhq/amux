@@ -342,7 +342,7 @@ capabilities = ["Rust toolchain"]
 lane = "fast"
 evidence = ""
 update = ""
-cargo = [{ package = "os", kind = "lib", targets = ["os"], features = [] }]
+cargo = [{ package = "os", kind = "lib", targets = ["os"], features = ["async", "testing"] }]
 
 [[suite]]
 name = "interpreter-emissions"
@@ -652,8 +652,8 @@ cargo = [
 
 [[suite]]
 name = "provider-io-library-units"
-contract = "PTY ownership, the OS process, signal and file primitives, and capture redaction preserve process, signal, byte and sanitization contracts."
-paths = ["crates/os/src", "crates/pty-host/src", "crates/redaction/src"]
+contract = "PTY ownership and capture redaction preserve process, signal, byte and sanitization contracts."
+paths = ["crates/pty-host/src", "crates/redaction/src"]
 recipe = "just suite provider-io-library-units"
 boundary = "Provider adapter"
 oracle = "Process-group observations, byte streams, exit status and exact sanitized values."
@@ -665,7 +665,6 @@ lane = "fast"
 evidence = ""
 update = ""
 cargo = [
-  { package = "os", kind = "lib", targets = ["os"], features = ["async"] },
   { package = "pty-host", kind = "lib", targets = ["pty_host"], features = [] },
   { package = "redaction", kind = "lib", targets = ["redaction"], features = [] },
 ]

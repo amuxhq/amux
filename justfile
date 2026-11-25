@@ -244,8 +244,10 @@ upgrade-fixture: nextest
 # dependency policy. Buck2 builds it from scratch with this machine's own
 # toolchains (scripts/release-build.py) into target/release/, or
 # target/<triple>/release/ with `--target`, which must name this machine.
+# GitHub's macOS runner takes 35-40 minutes (the whole-program link alone
+# about 15), so the bound leaves it room.
 release-check *ARGS:
-    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 2400 scripts/py scripts/release-build.py "$@"
+    if [ "${1-}" = -- ]; then shift; fi; {{bounded}} 3600 scripts/py scripts/release-build.py "$@"
     if [ "${1-}" = -- ]; then shift; fi; scripts/release-policy-check.sh "$@"
 
 # Install the pre-push credential scan (scripts/hooks/pre-push) for every worktree.

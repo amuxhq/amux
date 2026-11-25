@@ -25,7 +25,9 @@ jobs:
   build:
     name: Build ${{ matrix.artifact }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # Above release-check's own bound (just release-check), which the
+    # macOS build nears.
+    timeout-minutes: 70
     strategy:
       # Each platform's build runs to its end, so a run shows every
       # platform's failure at once; the release waits for all three anyway.

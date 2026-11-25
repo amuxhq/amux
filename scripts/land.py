@@ -23,7 +23,12 @@ host is down.
 
 Either way the steps are scripts/landing.py's, and it prints `LANDED <sha>`
 at the end, or what stopped it. A merge conflict or a failing check is
-fixed on the branch, and the branch landed again.
+fixed on the branch, and the branch landed again. Before sending anything it
+merges HEAD onto a freshly fetched origin/main in memory (`git merge-tree`,
+which touches no tree), so a conflict stops here in seconds rather than at
+the queue.
+
+    land.py --log ID           print the whole log of the queue's landing ID
 """
 
 from __future__ import annotations
@@ -40,7 +45,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from landing import Gate, Stopped, git, land  # noqa: E402
+from landing import Gate, Stopped, conflict_detail, git, land  # noqa: E402
 
 CHECKOUT = Path(__file__).resolve().parents[1]
 STATE = Path.home() / ".cache/amux/land"
@@ -49,6 +54,27 @@ POLL_SECONDS = 3
 
 def step(what: str) -> None:
     print(f"land: {what}", flush=True)
+
+
+# --- before sending ---------------------------------------------------------
+
+
+def conflicts_with_main(commit: str) -> str | None:
+    """What stops commit merging onto a fresh origin/main, or None. Only
+    origin/main's remote-tracking ref moves. When main can't be fetched or
+    merge-tree can't judge, this says nothing and the landing decides."""
+    if subprocess.run(["git", "fetch", "--quiet", "origin", "main"], cwd=CHECKOUT).returncode != 0:
+        return None
+    merged = subprocess.run(
+        ["git", "merge-tree", "--write-tree", "--name-only", "--no-messages", "origin/main", commit],
+        cwd=CHECKOUT, text=True, capture_output=True,
+    )
+    if merged.returncode != 1:
+        return None
+    # The merged tree's id, then each conflicting file.
+    files = [line for line in merged.stdout.splitlines()[1:] if line]
+    base = git("rev-parse", "origin/main", cwd=CHECKOUT, capture=True)
+    return conflict_detail(CHECKOUT, base, commit, files)
 
 
 # --- here -------------------------------------------------------------------
@@ -153,22 +179,41 @@ def land_through(inbox: str, commit: str, message: str, branch: str) -> int:
     print(f"land: stopped: {first.removeprefix('STOPPED ')}", file=sys.stderr)
     if rest.strip():
         print(rest.rstrip(), file=sys.stderr)
-    print(f"land: the whole log: git fetch {inbox} refs/logs/{rid} && git cat-file blob FETCH_HEAD", file=sys.stderr)
+    print(f"land: the whole log: just land-log {rid}", file=sys.stderr)
     return 1
+
+
+def show_log(inbox: str, rid: str) -> int:
+    fetched = subprocess.run(["git", "fetch", "--quiet", inbox, f"refs/logs/{rid}"], cwd=CHECKOUT, env=inbox_env())
+    if fetched.returncode != 0:
+        print(f"land: the queue has no log {rid}", file=sys.stderr)
+        return 1
+    print(git("cat-file", "blob", "FETCH_HEAD", cwd=CHECKOUT, capture=True))
+    return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--local", action="store_true", help="land here rather than through the landing queue")
+    parser.add_argument("--log", metavar="ID", help="print the whole log of the queue's landing ID")
     parser.add_argument("message", nargs="?", help="the merge commit's message: what the branch does")
     args = parser.parse_args()
+    inbox = git("config", "--get", "amux.landInbox", cwd=CHECKOUT, capture=True, check=False)
+    if args.log:
+        if not inbox:
+            parser.error("no landing queue is set up here (git config amux.landInbox)")
+        return show_log(inbox, args.log)
     if not args.message:
         parser.error('say what the branch does: just land "What the branch does"')
     if git("status", "--porcelain", "--untracked-files=no", cwd=CHECKOUT, capture=True):
         print("land: the tree has uncommitted changes; commit them, then land", file=sys.stderr)
         return 1
     commit = git("rev-parse", "HEAD", cwd=CHECKOUT, capture=True)
-    inbox = git("config", "--get", "amux.landInbox", cwd=CHECKOUT, capture=True, check=False)
+    stop = conflicts_with_main(commit)
+    if stop:
+        print(f"land: stopped: the branch doesn't merge onto main: {stop}", file=sys.stderr)
+        print("land: merge main into the branch (`just merge-main`), then land again", file=sys.stderr)
+        return 1
     if args.local or not inbox:
         return land_here(commit, args.message)
     branch = git("rev-parse", "--abbrev-ref", "HEAD", cwd=CHECKOUT, capture=True)

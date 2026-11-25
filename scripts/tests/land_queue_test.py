@@ -185,7 +185,8 @@ class LandingTest(Repos):
         first = self.land("r1")
 
         self.assertEqual(self.main(), before)
-        self.assertEqual(first, "STOPPED the branch doesn't merge onto main: README")
+        self.assertTrue(first.startswith("STOPPED the branch doesn't merge onto main: README (changed on main by "), first)
+        self.assertIn(" Theirs)", first)
 
     def test_a_refused_push_lands_again_on_top_of_whoever_landed_first(self):
         commit(self.dev, "a", "1\n", "One")
@@ -293,6 +294,62 @@ class ClientTest(Repos):
 
         with patched(client, CHECKOUT=self.dev):
             self.assertEqual(client.ahead_of(str(self.inbox), client.request_id("later"), client.inbox_env()), 0)
+
+    def run_land(self, *argv: str) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with patched(client, CHECKOUT=self.dev, POLL_SECONDS=0.05), patched(sys, argv=["land.py", *argv]), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            status = client.main()
+        return status, out.getvalue(), err.getvalue()
+
+    def test_a_conflict_with_main_stops_before_anything_is_sent_naming_mains_commits(self):
+        other = self.clone("other")
+        commit(other, "README", "theirs\n", "Reword the readme")
+        git(other, "push", "--quiet", "origin", "HEAD:main")
+        commit(self.dev, "README", "mine\n", "Mine")
+        git(self.dev, "config", "amux.landInbox", str(self.inbox))
+
+        status, _, err = self.run_land("Add a feature")
+
+        self.assertEqual(status, 1)
+        self.assertIn("doesn't merge onto main: README (changed on main by ", err)
+        self.assertIn("Reword the readme", err)
+        self.assertIn("just merge-main", err)
+        self.assertEqual(queue.refs(self.inbox, "queue"), {})
+
+    def test_a_conflict_only_in_the_generated_bindings_says_how_to_resolve_it(self):
+        generated = "crates/wire/src/generated"
+        other = self.clone("other")
+        (other / generated).mkdir(parents=True)
+        commit(other, f"{generated}/amux.v1.rs", "theirs\n", "Regenerate on main")
+        git(other, "push", "--quiet", "origin", "HEAD:main")
+        (self.dev / generated).mkdir(parents=True)
+        commit(self.dev, f"{generated}/amux.v1.rs", "mine\n", "Regenerate here")
+
+        with patched(client, CHECKOUT=self.dev):
+            stop = client.conflicts_with_main(git(self.dev, "rev-parse", "HEAD"))
+
+        self.assertIn(f"{generated}/amux.v1.rs", stop)
+        self.assertIn("only the generated protobuf bindings conflict", stop)
+
+    def test_a_branch_that_merges_cleanly_is_sent(self):
+        commit(self.dev, "a", "1\n", "One")
+        with patched(client, CHECKOUT=self.dev):
+            self.assertIsNone(client.conflicts_with_main(git(self.dev, "rev-parse", "HEAD")))
+
+    def test_land_log_prints_a_landings_whole_log(self):
+        commit(self.dev, "a", "1\n", "One")
+        git(self.dev, "config", "amux.landInbox", str(self.inbox))
+        served = threading.Thread(target=self.serve_one, kwargs={"premerge": "echo the gate said hello"})
+        served.start()
+        self.run_land("Add a feature")
+        served.join(timeout=30)
+        [rid] = queue.refs(self.inbox, "logs")
+
+        status, out, _ = self.run_land("--log", rid)
+
+        self.assertEqual(status, 0)
+        self.assertIn("the gate said hello", out)
 
     def serve_one(self, premerge: str = "true"):
         for _ in range(600):

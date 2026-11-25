@@ -127,6 +127,10 @@ pub(super) fn remove_file(path: &Path) -> io::Result<()> {
     fs::remove_file(path)
 }
 
+pub(super) fn remove_dir_all(path: &Path) -> io::Result<()> {
+    fs::remove_dir_all(path)
+}
+
 /// Unix has no sharing violations; a busy mount point and a folder another
 /// process is filling are what waiting can fix.
 pub(super) fn is_held(error: &io::Error) -> bool {

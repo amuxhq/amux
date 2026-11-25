@@ -464,8 +464,54 @@ pub(super) fn sync_dir(dir: &Path) -> io::Result<()> {
 /// Removes a file, read-only or not: Windows refuses to delete a
 /// read-only file, which git's objects are. A link to a folder (a
 /// directory symlink or a junction) is a folder to Windows: it goes as an
-/// empty folder does, the link alone, nothing it points at.
+/// empty folder does, the link alone, nothing it points at. An ACL that
+/// refuses the deletion is told apart (see [`refusal_told_apart`]).
 pub(super) fn remove_file(path: &Path) -> io::Result<()> {
+    refusal_told_apart(path, || remove_file_now(path))
+}
+
+/// Removes a folder and what it holds, an ACL's refusal told apart.
+pub(super) fn remove_dir_all(path: &Path) -> io::Result<()> {
+    refusal_told_apart(path, || fs::remove_dir_all(path))
+}
+
+// The thread's last NTSTATUS, which windows-sys doesn't carry. raw-dylib
+// needs no import library.
+#[link(name = "ntdll.dll", kind = "raw-dylib", modifiers = "+verbatim")]
+unsafe extern "system" {
+    fn RtlGetLastNtStatus() -> i32;
+    fn RtlSetLastWin32ErrorAndNtStatusFromNtStatus(status: i32) -> u32;
+}
+
+/// Runs `remove`, and turns an ACCESS_DENIED that NT gave as
+/// STATUS_ACCESS_DENIED, an ACL refusing the deletion, into an error
+/// [`is_held`] doesn't wait on: waiting can't fix it, and a sweep would
+/// put the path off for ever. Windows reports a deletion already pending
+/// and an image still mapped as ACCESS_DENIED too (STATUS_DELETE_PENDING,
+/// STATUS_CANNOT_DELETE), and those stay held. The thread's last status
+/// is cleared first, so a stale one is never read: a failure that set none
+/// stays held, as before.
+fn refusal_told_apart(path: &Path, remove: impl FnOnce() -> io::Result<()>) -> io::Result<()> {
+    const STATUS_SUCCESS: i32 = 0;
+    const STATUS_ACCESS_DENIED: i32 = 0xC000_0022_u32 as i32;
+    // SAFETY: sets this thread's last error and status, nothing else.
+    unsafe { RtlSetLastWin32ErrorAndNtStatusFromNtStatus(STATUS_SUCCESS) };
+    match remove() {
+        Err(error)
+            if error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32)
+                // SAFETY: reads this thread's last status, nothing else.
+                && unsafe { RtlGetLastNtStatus() } == STATUS_ACCESS_DENIED =>
+        {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("{}: its deletion is refused: {error}", path.display()),
+            ))
+        }
+        done => done,
+    }
+}
+
+fn remove_file_now(path: &Path) -> io::Result<()> {
     use std::os::windows::fs::FileTypeExt as _;
     if fs::symlink_metadata(path)?.file_type().is_symlink_dir() {
         return fs::remove_dir(path);
@@ -489,7 +535,8 @@ pub(super) fn remove_file(path: &Path) -> io::Result<()> {
 /// Whether `error` is something else holding the file, which waiting can
 /// fix: a sharing or lock violation, a mapped file, a deletion pending, a
 /// folder still emptying. ACCESS_DENIED is among them, as that is what a
-/// file whose deletion is pending reports to an open or a rename.
+/// file whose deletion is pending reports to an open or a rename; a
+/// removal tells an ACL's refusal apart first ([`refusal_told_apart`]).
 pub(super) fn is_held(error: &io::Error) -> bool {
     let Some(code) = error.raw_os_error() else {
         return false;

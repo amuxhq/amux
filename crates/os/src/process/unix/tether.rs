@@ -1,5 +1,5 @@
-//! The tether, moved here from pty-host unchanged: a shell in the group
-//! that SIGTERMs it when its pipe from us closes (see [`crate::process::Tether`]).
+//! The tether, moved here from pty-host: a shell in the group that
+//! SIGTERMs it when its pipe from us closes (see [`crate::process::Tether`]).
 
 use std::io;
 use std::process::Stdio;
@@ -8,6 +8,47 @@ use tokio::process::{Child, Command};
 
 use crate::Pid;
 use crate::process::TETHER_GRACE_SECS;
+
+/// `others`: whether a process other than the shell itself, and not a
+/// zombie, is still in group `$g`. Linux and Android read `/proc` with
+/// builtins alone, so the shell starts nothing in the group to look;
+/// elsewhere `ps`, through a shell that names its own pid so its line is
+/// left out (a shell that forks a subshell for `$(...)` adds a line, which
+/// only makes the tether wait out the grace and SIGKILL). Where neither can
+/// be read, nothing is found and the leader alone is watched.
+const OTHERS: &str = r#"g=$1
+others() {
+  if [ -r /proc/self/stat ]; then
+    for s in /proc/[0-9]*/stat; do
+      [ "$s" = "/proc/$$/stat" ] && continue
+      read -r l < "$s" 2>/dev/null || continue
+      set -- ${l##*)}
+      [ "$1" != Z ] && [ "$3" = "$g" ] && return 0
+    done
+    return 1
+  fi
+  set -- $(sh -c 'echo $$; exec ps -A -o pgid= -o pid=' 2>/dev/null)
+  [ $# -ge 1 ] || return 1
+  n=$1; shift
+  while [ $# -ge 2 ]; do
+    [ "$1" = "$g" ] && [ "$2" != "$$" ] && [ "$2" != "$n" ] && return 0
+    shift 2
+  done
+  return 1
+}
+"#;
+
+/// Waits for the pipe to close, SIGTERMs the group, and SIGKILLs it if
+/// anything of it outlives the grace.
+fn watch() -> String {
+    format!(
+        r#"trap '' TERM; read _; kill -TERM "-$g" 2>/dev/null; i=0
+while kill -0 "$g" 2>/dev/null || others; do
+  if [ "$i" -ge {TETHER_GRACE_SECS} ]; then kill -KILL "-$g" 2>/dev/null; exit 0; fi
+  sleep 1; i=$((i + 1))
+done"#
+    )
+}
 
 #[derive(Debug)]
 pub(crate) struct Tether {
@@ -19,14 +60,11 @@ impl Tether {
         let group = leader
             .id()
             .ok_or_else(|| io::Error::other("the provider has already been reaped"))?;
-        // The shell ignores the SIGTERM it sends its own group.
-        let script = format!(
-            r#"trap '' TERM; read _; kill -TERM "-$1" 2>/dev/null; i=0
-while kill -0 "$1" 2>/dev/null; do
-  if [ "$i" -ge {TETHER_GRACE_SECS} ]; then kill -KILL "-$1" 2>/dev/null; exit 0; fi
-  sleep 1; i=$((i + 1))
-done"#
-        );
+        // The shell ignores the SIGTERM it sends its own group, and keeps
+        // watching the group, not just its leader, until nothing but itself
+        // is left in it or the grace is up: a member that ignored the
+        // SIGTERM and outlived the leader still gets the SIGKILL.
+        let script = format!("{OTHERS}{}", watch());
         let shell = Command::new("/bin/sh")
             .args(["-c", &script, "amux-tether"])
             .arg(group.to_string())
@@ -98,5 +136,72 @@ mod tests {
         })
         .await;
         assert!(gone.is_ok(), "nothing of the group lives on");
+    }
+
+    /// Whether a process of `group` still runs (a zombie doesn't).
+    fn live_in_group(group: i32) -> bool {
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            // SAFETY: signal 0 only asks whether the group has a process.
+            return unsafe { libc::killpg(group, 0) } == 0;
+        };
+        entries.filter_map(Result::ok).any(|entry| {
+            let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+                return false;
+            };
+            let Some(rest) = stat.rfind(')').map(|at| &stat[at + 1..]) else {
+                return false;
+            };
+            let fields: Vec<&str> = rest.split_whitespace().collect();
+            fields.len() > 2 && fields[0] != "Z" && fields[2] == group.to_string()
+        })
+    }
+
+    /// A member that ignores SIGTERM and outlives the leader is still
+    /// SIGKILLed once the grace is up: the tether watches the group, not
+    /// just its leader.
+    #[tokio::test]
+    async fn a_member_that_ignores_sigterm_is_killed_after_the_grace() {
+        let folder = tempfile::tempdir().unwrap();
+        let started = folder.path().join("started");
+        let mut command = Command::new("/bin/sh");
+        command.args([
+            "-c",
+            r#"(trap '' TERM; : > "$1"; while :; do sleep 1; done) & wait"#,
+            "sh",
+        ]);
+        command.arg(&started).process_group(0);
+        let mut provider = command.spawn().unwrap();
+        let group = provider.id().unwrap() as i32;
+        let tether = Tether::new(&provider).unwrap();
+        tokio::time::timeout(WAIT, async {
+            while !started.exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the provider's child starts");
+        let Tether { mut shell } = tether;
+        drop(shell.stdin.take());
+        let status = tokio::time::timeout(WAIT, provider.wait())
+            .await
+            .expect("the provider is asked to finish")
+            .unwrap();
+        assert_eq!(
+            std::os::unix::process::ExitStatusExt::signal(&status),
+            Some(15)
+        );
+        assert!(live_in_group(group), "the member ignored the SIGTERM");
+        let grace = Duration::from_secs(u64::from(crate::process::TETHER_GRACE_SECS) + 5);
+        tokio::time::timeout(grace, shell.wait())
+            .await
+            .expect("the tether ends once the grace is up")
+            .unwrap();
+        let gone = tokio::time::timeout(WAIT, async {
+            while live_in_group(group) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        assert!(gone.is_ok(), "the member is killed after the grace");
     }
 }

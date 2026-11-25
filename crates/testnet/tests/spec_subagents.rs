@@ -704,6 +704,17 @@ async fn four_parallel_subagents(kind: FakeKind) {
             .into_iter()
             .find(|agent| Some(&agent.agent.agent) == row.opens.as_ref())
             .expect("the fleet holds the agent the row opens");
+        // The laptop's client reads the subagent through the laptop's
+        // replica, which follows the desk on a stream of its own: the
+        // fleet can list the subagent finished, and the lead's chat show
+        // its turn over, while that replica still lacks the subagent's
+        // last call. So the laptop is held to all the desk has of it
+        // first, and the chat then shows what the laptop holds.
+        let listed = [&alpha, &bravo, &charlie, &delta]
+            .into_iter()
+            .find(|sub| Some(&sub.agent_id) == row.opens.as_ref())
+            .expect("the row opens one of the four");
+        net.current_listed("laptop", listed).await.unwrap();
         let chat = laptop.open(&opened.agent).await;
         let held = laptop
             .until(&format!("{name}'s whole chat"), |_| {
@@ -770,6 +781,7 @@ async fn four_parallel_subagents(kind: FakeKind) {
                 .ok_or_else(|| "not yet".to_owned())
         })
         .await;
+    net.current_listed("tablet", &alpha).await.unwrap();
     let late_alpha = tablet.open(&opened.agent).await;
     let held = tablet
         .until("alpha's whole chat", |_| {

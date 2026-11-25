@@ -1,0 +1,209 @@
+//! Unix domain sockets, reached through a short link when the path is too
+//! long for `sockaddr_un`.
+
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+use std::{fs, io};
+
+use tokio::net::{UnixListener, UnixStream};
+
+use super::Backoff;
+
+pub type Stream = UnixStream;
+
+pub struct Listener {
+    socket: UnixListener,
+    /// The bound socket file's device and inode: unbinding removes the
+    /// file at the path only while it is still this one.
+    file: (u64, u64),
+    backoff: Backoff,
+}
+
+impl Listener {
+    pub fn bind(path: &Path) -> io::Result<Self> {
+        let address = address(path)?;
+        match fs::remove_file(&address) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        let socket = UnixListener::bind(&address)?;
+        let meta = fs::symlink_metadata(&address)?;
+        Ok(Self {
+            socket,
+            file: (meta.dev(), meta.ino()),
+            backoff: Backoff::new(),
+        })
+    }
+
+    pub async fn accept(&mut self) -> Stream {
+        loop {
+            match self.socket.accept().await {
+                Ok((stream, _)) => {
+                    self.backoff.reset();
+                    return stream;
+                }
+                // Out of descriptors, a connection reset before it was
+                // taken: nothing waiting can't mend.
+                Err(error) => {
+                    let pause = self.backoff.pause();
+                    tracing::warn!(%error, ?pause, "accepting on a local socket failed; retrying");
+                    tokio::time::sleep(pause).await;
+                }
+            }
+        }
+    }
+
+    /// Removes the socket file at `path` if it is still the one this
+    /// listener bound; a successor's stays.
+    pub fn unbind(&self, path: &Path) {
+        if fs::symlink_metadata(path).is_ok_and(|meta| (meta.dev(), meta.ino()) == self.file) {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+/// The peer's pid comes from the socket itself: `SO_PEERCRED` on Linux,
+/// `LOCAL_PEEREPID` on macOS.
+pub async fn connect(path: &Path, patience: Duration) -> io::Result<(Stream, Option<u32>)> {
+    let address = address(path)?;
+    let stream = tokio::time::timeout(patience, UnixStream::connect(&address))
+        .await
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("{} did not answer within {patience:?}", path.display()),
+            )
+        })??;
+    let pid = stream
+        .peer_cred()
+        .ok()
+        .and_then(|cred| cred.pid())
+        .and_then(|pid| u32::try_from(pid).ok());
+    Ok((stream, pid))
+}
+
+/// `shutdown(Both)`, so the peer reads end of file even if another copy of
+/// the descriptor lives on, then the socket closed.
+pub fn close(stream: Stream) {
+    if let Ok(stream) = stream.into_std() {
+        let _ = stream.shutdown(std::net::Shutdown::Both);
+    }
+}
+
+/// The path to bind or dial for the socket named `path`.
+pub fn address(path: &Path) -> io::Result<PathBuf> {
+    if path.as_os_str().as_bytes().len() < limit() {
+        return Ok(path.to_owned());
+    }
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{} names no socket", path.display()),
+        ));
+    };
+    let link = runtime_dir()?.join(format!("{:016x}", fnv(dir.as_os_str().as_bytes())));
+    loop {
+        match fs::read_link(&link) {
+            Ok(target) if target == dir => break,
+            Ok(_) => fs::remove_file(&link)?,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                match std::os::unix::fs::symlink(dir, &link) {
+                    Ok(()) => break,
+                    // Someone else made it first; check what they made.
+                    Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                    Err(error) => return Err(error),
+                }
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    let address = link.join(name);
+    if address.as_os_str().as_bytes().len() >= limit() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("no short address fits {}", path.display()),
+        ));
+    }
+    Ok(address)
+}
+
+pub fn private_address(path: &Path) -> io::Result<PathBuf> {
+    if path.as_os_str().as_bytes().len() < limit() {
+        return Ok(path.to_owned());
+    }
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{} names no socket", path.display()),
+        ));
+    };
+    let short = runtime_dir()?.join(format!("{:016x}.d", fnv(dir.as_os_str().as_bytes())));
+    private_dir(&short)?;
+    let address = short.join(name);
+    if address.as_os_str().as_bytes().len() >= limit() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("no short address fits {}", path.display()),
+        ));
+    }
+    Ok(address)
+}
+
+/// Removes the short link to `dir` and its private short directory, if
+/// either was ever made.
+pub fn forget(dir: &Path) {
+    let Ok(runtime) = runtime_dir() else { return };
+    let hash = fnv(dir.as_os_str().as_bytes());
+    let link = runtime.join(format!("{hash:016x}"));
+    if fs::read_link(&link).is_ok_and(|target| target == dir) {
+        let _ = fs::remove_file(&link);
+    }
+    let _ = fs::remove_dir_all(runtime.join(format!("{hash:016x}.d")));
+}
+
+/// FNV-1a: stable across processes and versions, which is all a derived
+/// address needs.
+fn fnv(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
+fn limit() -> usize {
+    // SAFETY: sockaddr_un is plain old data; zeroed is a valid value.
+    unsafe { std::mem::zeroed::<libc::sockaddr_un>() }
+        .sun_path
+        .len()
+}
+
+/// A directory only this user can write, for the short links.
+fn runtime_dir() -> io::Result<PathBuf> {
+    // SAFETY: getuid cannot fail.
+    let uid = unsafe { libc::getuid() };
+    let dir = std::env::temp_dir().join(format!("amux-{uid}"));
+    private_dir(&dir)?;
+    Ok(dir)
+}
+
+/// Makes `dir` if it is missing, and refuses it unless it is a real
+/// directory this user owns that no one else can use.
+fn private_dir(dir: &Path) -> io::Result<()> {
+    // SAFETY: getuid cannot fail.
+    let uid = unsafe { libc::getuid() };
+    match fs::DirBuilder::new().mode(0o700).create(dir) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error),
+    }
+    let metadata = fs::symlink_metadata(dir)?;
+    if !metadata.is_dir() || metadata.uid() != uid || metadata.permissions().mode() & 0o077 != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("{} is not a private directory", dir.display()),
+        ));
+    }
+    Ok(())
+}

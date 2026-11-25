@@ -544,11 +544,18 @@ jobs:
       # to two minutes to go on that signal, against a second or two in the
       # others. By now the logs and the store are kept, so nothing depends
       # on how the daemon exits: it gets a short `buck2 kill` and then a
-      # hard kill, and the sampler goes too.
+      # hard kill. The sampler and the `sleep` it is in go too, children
+      # first, with the sampler held still so it starts no other: started
+      # in the background, they ignore the runner's first signal, and a
+      # `sleep` left behind cost 21 s.
       - name: Stop Buck2 and the sampler
         if: always()
         run: |
-          pkill -f scripts/ci-sample-system.sh || true
+          for sampler in $(pgrep -f scripts/ci-sample-system.sh); do
+            kill -STOP "$sampler" || continue
+            pkill -KILL -P "$sampler" || true
+            kill -KILL "$sampler" || true
+          done
           scripts/bounded 15 "$(scripts/py scripts/buck-tools.py path buck2)" kill || true
           pkill -9 -x buck2 || true
 

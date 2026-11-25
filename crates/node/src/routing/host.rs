@@ -170,28 +170,17 @@ pub(crate) fn local_host(
 /// hardware lookup table, and a table of marketing names would be this
 /// program guessing what computer it is running on.
 pub(crate) fn local_platform() -> wire::Platform {
-    match std::env::consts::OS {
-        "macos" => wire::Platform::Macos,
-        "linux" => wire::Platform::Linux,
-        "windows" => wire::Platform::Windows,
-        "ios" => wire::Platform::Ios,
-        "android" => wire::Platform::Android,
-        _ => wire::Platform::Unspecified,
-    }
+    wire::Platform::here()
 }
 
-/// The agent kinds this build hosts on this platform: terminal Claude is
-/// hosted on Unix only, which gives it a terminal of its own; the others
-/// run on every platform.
+/// The agent kinds this build hosts on this platform
+/// ([`wire::Kind::hosted_on`]): terminal Claude everywhere but Windows,
+/// which gives it a terminal of its own; the others on every platform.
 pub fn local_kinds() -> Vec<wire::Kind> {
     use wire::Kind;
     [Kind::ClaudePty, Kind::ClaudeSdk, Kind::Codex, Kind::Acp]
         .into_iter()
-        .filter(|kind| match kind {
-            Kind::ClaudePty => cfg!(unix),
-            Kind::ClaudeSdk | Kind::Codex | Kind::Acp => true,
-            Kind::Unspecified => false,
-        })
+        .filter(|kind| kind.hosted_on(local_platform()))
         .collect()
 }
 

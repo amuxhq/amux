@@ -300,7 +300,7 @@ fn the_other_kinds_snapshots_say_what_their_kind_can_do() {
     );
     assert_eq!(
         first(Codex::initial(&spec(wire::Kind::Codex)).1),
-        Some(wire::AgentCapabilities::codex())
+        Some(wire::AgentCapabilities::codex(wire::Platform::here()))
     );
 }
 

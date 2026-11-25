@@ -949,7 +949,7 @@ impl Provider {
         dir: &Path,
         events: mpsc::Sender<ProviderEvent>,
     ) -> Result<Self, ProviderError> {
-        if cfg!(windows) {
+        if !wire::Kind::ClaudePty.hosted_on(wire::Platform::here()) {
             return Err(ProviderError::TerminalOnWindows);
         }
         let (session, resume) = claude_session(spec, dir)?;
@@ -1951,17 +1951,15 @@ fn terminate(child: &tokio::process::Child) {
 }
 
 /// Where this agent's Codex server listens: a socket in its private
-/// folder, which Codex's own app joins to attach; stdio on Windows.
+/// folder, which Codex's own app joins to attach, where this platform's
+/// Codex is attachable ([`wire::AgentCapabilities::codex`]); stdio on
+/// Windows, where it is not.
 pub fn codex_listen(dir: &Path) -> io::Result<crate::codex::Listen> {
-    #[cfg(unix)]
-    {
+    if wire::AgentCapabilities::codex(wire::Platform::here()).attachable {
         Ok(crate::codex::Listen::Unix(socket_address(
             &dir.join(dir::PRIVATE).join(dir::CODEX_SOCK),
         )?))
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = dir;
+    } else {
         Ok(crate::codex::Listen::Stdio)
     }
 }

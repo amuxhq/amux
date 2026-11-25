@@ -462,7 +462,11 @@ kind or provider id. The interpreter fills them on the agent's snapshot, from
 its kind and from what the agent's program said; a host fills them on each
 `ProviderOnHost` it lists, for an agent started there now. A snapshot an
 earlier build wrote has none, and a client then reads its host's for the
-agent's provider. False is the safe reading of each: a client that leaves a
+agent's provider. Where the host lists none either (a host older than
+capabilities), the client reads what the agent's kind implies on that
+host's `Host.platform`, never on its own: a Mac describes a Windows host's
+Codex as not attachable. A host whose platform is unknown reads as not
+Windows. False is the safe reading of each: a client that leaves a
 control out loses only that control.
 
 | Field | Means | Terminal Claude | Headless Claude | Codex | An ACP agent |

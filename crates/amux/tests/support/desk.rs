@@ -92,6 +92,8 @@ impl Desk {
 
     /// As an installation set up long ago: setting up dismissed, so bare
     /// `amux` opens on home. The daemon must be running.
+    // overlap's only caller is still compiled out on Windows (Phase 2, wave 2).
+    #[allow(dead_code)]
     pub async fn set_up(&self) {
         let door = client::Installation::connect(&self.socket, client::Surface::Terminal)
             .await

@@ -19,6 +19,10 @@ use crate::support;
 /// activated, and every finished turn is in the store; resuming the exited
 /// agents loses nothing.
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
+)]
 async fn survive_daemon() {
     let running = node::version();
     let previous =

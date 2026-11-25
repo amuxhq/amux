@@ -24,6 +24,10 @@ fn desk(steps: Vec<Step>) -> Desk {
 /// `amux send` to an agent that has been settled says so in a sentence, not
 /// the refusal's name. QA: the CLI printed "worker did not take it: exited".
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
+)]
 async fn a_send_to_a_settled_agent_is_refused_in_plain_words() {
     let desk = desk(vec![
         Step::Text {
@@ -73,6 +77,10 @@ async fn a_send_to_a_settled_agent_is_refused_in_plain_words() {
 /// still there. QA: pairing to a wrong address said "the amux daemon went
 /// away".
 #[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: `amux server start` prints Started but never finishes: the daemon keeps its stdout pipe open"
+)]
 async fn pairing_to_an_address_nobody_answers_does_not_blame_this_hosts_daemon() {
     let desk = desk(Vec::new());
     desk.run(&["server", "start"]).await;

@@ -28,7 +28,6 @@ pub mod codex;
 pub mod codex_view;
 pub mod conformance;
 pub mod dispatch;
-pub mod faults;
 pub mod lines;
 pub mod mcp;
 pub mod playback;
@@ -38,6 +37,9 @@ pub mod sdk;
 pub mod shape;
 
 pub use conformance::{Drift, conformance};
+/// Filesystem faults a test injects, one call on every OS: the `os`
+/// crate's, here for the tests that already take the fakes.
+pub use os::testing::faults;
 pub use script::{
     AcpAgent, Ask, Call, Diff, INPUT_LOG_ENV, MidTurn, Offer, OfferedCommand, OfferedModel,
     Outcome, PLAYBACK_ENV, SCRIPT_ENV, Script, ScriptError, Step, Tool, ToolClass, ToolServerCall,

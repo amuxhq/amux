@@ -1,9 +1,9 @@
-//! Each filesystem fault `provider_fakes::faults` injects happens, and is
-//! undone, on the OS the test runs on.
+//! Each filesystem fault a test injects happens, and is undone, on the OS
+//! the test runs on.
 
 use std::io::ErrorKind;
 
-use provider_fakes::faults::{self, Deny, Linked};
+use super::{self as faults, Deny, Linked};
 
 /// Whether a permission fault can happen to this process; says why not.
 fn enforced() -> bool {

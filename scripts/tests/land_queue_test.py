@@ -82,12 +82,12 @@ class Repos(unittest.TestCase):
         git(self.dev, "push", "--quiet", str(self.inbox), f"{source}:refs/queue/{rid}")
         return head
 
-    def land(self, rid: str, premerge: str = "true") -> str:
+    def land(self, rid: str, premerge: str = "true", restart=None) -> str:
         def gate_for(log):
             return queue.logged_gate(log, None, premerge=("sh", "-c", premerge))
 
         with contextlib.redirect_stdout(io.StringIO()):
-            return queue.land_request(self.inbox, self.tree, rid, gate_for)
+            return queue.land_request(self.inbox, self.tree, rid, gate_for, restart)
 
     def result(self, rid: str) -> str:
         return git(self.inbox, "cat-file", "blob", f"refs/results/{rid}")
@@ -135,6 +135,44 @@ class LandingTest(Repos):
         self.assertIn("exited 3", first)
         self.assertIn("the tests broke", self.result("r1"))
         self.assertIn("the tests broke", git(self.inbox, "cat-file", "blob", "refs/logs/r1"))
+
+    def test_a_gate_stopped_by_a_stale_buck2_daemon_restarts_it_and_lands_again(self):
+        commit(self.dev, "a", "1\n", "One")
+        self.request("r1")
+        restarted = self.root / "restarted"
+        # Buck2's words until its daemon restarts, then a passing gate.
+        premerge = f"test -e {restarted} || {{ echo 'an artifact that has expired in the RE CAS'; exit 1; }}"
+
+        first = self.land("r1", premerge, restart=lambda: restarted.touch())
+
+        self.assertTrue(restarted.exists())
+        self.assertEqual(first, f"LANDED {self.main()}")
+        log = git(self.inbox, "cat-file", "blob", "refs/logs/r1")
+        self.assertIn("expired in the RE CAS", log)
+        self.assertIn("restarted it, landing again", log)
+
+    def test_a_stale_daemon_is_restarted_once_and_a_second_stop_stands(self):
+        before = self.main()
+        commit(self.dev, "a", "1\n", "One")
+        self.request("r1")
+        restarts = []
+
+        first = self.land("r1", "echo 'an artifact that has expired in the RE CAS'; exit 1",
+                          restart=lambda: restarts.append(1))
+
+        self.assertEqual(restarts, [1])
+        self.assertEqual(self.main(), before)
+        self.assertTrue(first.startswith("STOPPED the gate failed"), first)
+
+    def test_an_ordinary_gate_failure_leaves_the_daemon_alone(self):
+        commit(self.dev, "a", "1\n", "One")
+        self.request("r1")
+        restarts = []
+
+        first = self.land("r1", "echo the tests broke; exit 3", restart=lambda: restarts.append(1))
+
+        self.assertEqual(restarts, [])
+        self.assertTrue(first.startswith("STOPPED"), first)
 
     def test_a_branch_that_conflicts_with_main_stops_naming_the_file(self):
         commit(self.dev, "README", "mine\n", "Mine")

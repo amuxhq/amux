@@ -378,7 +378,11 @@ emulation, which matches what CI tests but is slower. The worker says it is
 Arm (its `cpu` property), and an Arm64 test asks for that
 (`exec-windows-arm64`), so it never reaches CI's x64 runner; an x64 test asks
 for no `cpu` and may run on either. Buck2 and NativeLink themselves are their
-x64 builds, under emulation: the pins name no Arm build for Windows.
+x64 builds, under emulation: the pins name no Arm build for Windows. So
+Buck2's own `host_info()` says x64 there, and the machine's platform comes
+from `scripts/buck-config.py` instead, which writes it as `amux.host`; every
+target that defaults to this machine's platform (the Rust tests, so `just
+test`, `just premerge` and `just goldens`) is built for Arm64 there.
 
 ### Repository checks
 
@@ -401,7 +405,8 @@ script run over exactly the files its target declares
   `//crates/ios-tools:unit`;
 - in [`js/BUCK`](../js/BUCK): the browser extension's Biome, type checks,
   unit tests, end-to-end test and npm audit ([Browser extension](BROWSER.md#building-and-testing));
-- the terminal journeys, `//crates/testnet:terminal-journeys`.
+- the terminal journeys, `//crates/testnet:terminal-journeys`, which a
+  Windows build skips: the terminal client is out of scope there.
 
 ```sh
 just checks                    # the repository's and the JavaScript's checks
@@ -418,6 +423,12 @@ Node for the JavaScript's checks is the release `//build:node` pins, the
 version the Linux toolchain's is. A check finds nothing it didn't declare:
 a test that reads a file outside its inputs fails, rather than passing on
 whatever the checkout holds.
+
+A check starts a script through its interpreter (`sh script.sh`,
+`python3 script.py`), and so does a script that runs another of the
+checkout's (`sh scripts/py`): Windows has no executable bit, so a file Buck2
+uploads from a Windows checkout reaches the Linux worker without one, and a
+script started by its path alone is refused there.
 
 A check that needs more than the checkout's files gets it from
 [`build/checks/inputs.py`](../build/checks/inputs.py), which `just test`

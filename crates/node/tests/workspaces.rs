@@ -74,14 +74,6 @@ start = "echo started >> .wt/ran"
 stop = "echo stopped >> .wt/ran"
 "#;
 
-/// A stop hook slow enough to delete the tree's agent while it runs, which
-/// says when it begins.
-const SLOW_STOP_CONFIG: &str = r#"
-[lifecycle]
-start = "echo started >> .wt/ran"
-stop = "echo stopping >> .wt/ran; sleep 3; echo stopped >> .wt/ran"
-"#;
-
 /// A repository named `shop` on `main`, configured for wt, with a bare
 /// `origin` whose default branch is `main`.
 fn wt_repository(install: &Install) -> PathBuf {
@@ -650,6 +642,14 @@ async fn a_switch_made_while_work_settles_restarts_the_quiet() {
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_wt_tree_deleted_while_its_stop_hook_runs_goes_once_the_stop_ends() {
+    /// A stop hook slow enough to delete the tree's agent while it runs,
+    /// which says when it begins.
+    const SLOW_STOP_CONFIG: &str = r#"
+[lifecycle]
+start = "echo started >> .wt/ran"
+stop = "echo stopping >> .wt/ran; sleep 3; echo stopped >> .wt/ran"
+"#;
+
     let install = Install::new();
     let repo = wt_repository_with(&install, SLOW_STOP_CONFIG);
     let wt_home = place(&install, "wt-home");

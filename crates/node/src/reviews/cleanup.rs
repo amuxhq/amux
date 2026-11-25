@@ -68,8 +68,6 @@ pub(super) fn remove(agent_dir: &Path) -> io::Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[cfg(unix)]
     #[test]
     fn a_link_inside_the_review_folder_is_removed_not_followed() {
@@ -82,7 +80,7 @@ mod tests {
         std::fs::write(elsewhere.join("kept"), "kept").unwrap();
         std::os::unix::fs::symlink(&elsewhere, folder.join("objects").join("info")).unwrap();
 
-        assert!(remove(&agent).unwrap());
+        assert!(super::remove(&agent).unwrap());
         assert!(!folder.exists());
         assert!(agent.is_dir(), "the agent's directory stays");
         assert_eq!(std::fs::read(elsewhere.join("kept")).unwrap(), b"kept");

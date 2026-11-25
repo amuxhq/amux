@@ -1,5 +1,7 @@
-# Buck2 configuration (docs/BUILD.md). The prelude is the copy bundled with
-# the pinned buck2 binary (build/tools.json), so bumping buck2 bumps both.
+# Buck2 configuration (docs/BUILD.md). The prelude is the one bundled with
+# the pinned buck2 binary (build/tools.json), vendored into prelude/ with its
+# downloads given SHA-256 digests by scripts/prelude.py: bumping buck2 means
+# running `scripts/prelude.py update` too.
 [cells]
   root = .
   prelude = prelude
@@ -13,9 +15,6 @@
   fbsource = none
   fbcode_macros = none
   buck = none
-
-[external_cells]
-  prelude = bundled
 
 # [parser] target_platform_detector_spec is per machine: scripts/buck-config.py
 # writes it into .buckconfig.local with this host's development platform.

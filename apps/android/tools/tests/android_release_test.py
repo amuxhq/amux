@@ -55,9 +55,13 @@ VERSION_CODE = 1
 """
 
     def test_project_numbers_and_rewrite(self) -> None:
+        real_text = (android_release.REPO_ROOT / android_release.VERSION_FILE).read_text()
+        real_version, real_build = android_release.project_numbers(real_text)
+        self.assertRegex(real_version, r"^\d+\.\d+\.\d+$")
+        self.assertGreaterEqual(real_build, 1)
         self.assertEqual(
-            android_release.project_numbers((android_release.REPO_ROOT / android_release.VERSION_FILE).read_text()),
-            android_release.project_numbers(self.SAMPLE_VERSION),
+            android_release.project_numbers(android_release.rewrite_numbers(real_text, "9.9.9", 99)),
+            ("9.9.9", 99),
         )
         self.assertEqual(android_release.project_numbers(self.SAMPLE_VERSION), ("0.1.0", 1))
         rewritten = android_release.rewrite_numbers(self.SAMPLE_VERSION, "1.0.0", 4)

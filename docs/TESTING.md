@@ -141,6 +141,52 @@ just sim --seeds 2000            # thousands of seeds per story, as the nightly 
 Under `cargo nextest run` the same switch is the environment: `TESTNET_MODE=simulated`, with `TESTNET_SEEDS=N` or
 `TESTNET_SEED=N`.
 
+## Holding a test back on Windows
+
+A test runs on every desktop platform. Windows leaves out a short list of features by choice: terminal Claude
+(`claude_pty`) and raw attach, the wt workspace backend, the browser extension's native host, SSH with a Windows
+machine at the far end, Arm64 release artifacts, and the terminal client beyond its free fixes. A test of one of
+those may be compiled out on Windows, and its gate says which:
+
+```rust
+#[cfg(not(windows))] // out of scope on Windows: wt
+mod wt;
+```
+
+The comment goes on the gate's line or in the comment lines directly above it, and must name one of those
+features; a whole file is gated the same way with `#![cfg(not(windows))]`. Nothing else compiles a test out on
+Windows. A test that fails there while its fix is being made stays compiled and is ignored, with what fails (not a
+guessed cause):
+
+```rust
+#[cfg_attr(windows, ignore = "windows: the second daemon never answers on the pipe")]
+```
+
+A runtime skip, with its reason, is only for a missing privilege, such as the right to make symbolic links.
+
+The same rule holds the code: desktop-platform conditionals (`cfg(unix)`, `cfg(windows)`, a desktop `target_os`,
+`target_family`, `std::os::unix`, `std::os::windows`, `libc::`, `windows_sys::`) live in the homes named for
+platform code: `crates/os`, agent-dir's `local_socket`, `crates/pty-host`, node's `platform` and the supervisor's
+`login` and `keep_awake`, the terminal client's `platform`, the phone bridges (`app-ffi`, `app-jni`) and the
+launcher. Elsewhere, a module gated whole for a feature Windows leaves out carries the same comment. The mobile
+axis (`target_os = "ios"`, `target_os = "android"`) is a product choice and may appear anywhere, and so may
+`cfg!(windows)` read as a value, such as a default editor or a path separator, rather than as the condition of a
+statement.
+
+`just platform-check` holds both rules ([`build/checks/platform_check.py`](../build/checks/platform_check.py) says
+exactly what it counts, and what it takes for test code and for `cfg!` read as data). What the tree held when the
+check arrived is listed in [`build/checks/platform-allowlist.txt`](../build/checks/platform-allowlist.txt), a
+count per file: a file may hold no more than its count, and a file not listed none. A change that moves code into a
+home passes with a note that the file's entry can be lowered; the allowlist is lowered when the change lands
+(`just platform-check --write-allowlist`), never raised. Every `ignore = "windows: ..."` is counted, and
+`just platform-check --strict` fails while the allowlist holds anything or any test is ignored on Windows.
+
+```sh
+just platform-check                    # the check, through Buck2
+just platform-check --list             # every conditional it counts, file and line
+just platform-check --strict           # an empty allowlist and nothing ignored on Windows
+```
+
 ## The catalogue
 
 `tests/catalog.toml` lists every suite once: its contract in a sentence, paths, focused recipe, boundary, oracle,

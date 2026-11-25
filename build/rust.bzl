@@ -82,6 +82,13 @@ def amux_files(name, srcs, visibility = ["PUBLIC"]):
     checkout when the test runs."""
     _files(name = name, srcs = srcs, visibility = visibility)
 
+def _rust_files():
+    """Every Rust file of the crate, its tests', examples' and build
+    script's among them, as `:rust-files`, for a check that reads them all
+    (`//:platform-check`). Once per crate, by whichever macro comes first."""
+    if not native.rule_exists("rust-files"):
+        amux_files(name = "rust-files", srcs = native.glob(["**/*.rs"]))
+
 def _binaries_impl(ctx: AnalysisContext) -> list[Provider]:
     # Each under its name with the binary's own extension, `.exe` for
     # Windows, as Cargo leaves them: provider_fakes::binaries adds it, and
@@ -379,6 +386,7 @@ def amux_rust_library(
     )
     # The sources, for another crate's test that reads them.
     amux_files(name = "files", srcs = files)
+    _rust_files()
     native.rust_library(
         name = crate,
         srcs_filegroup = _tree(crate + ".lib", files, include),
@@ -452,6 +460,7 @@ def amux_rust_test(
     its `labels`."""
     crate = _crate_name()
     package = native.package_name()
+    _rust_files()
     _test(
         name = name,
         harness = harness,
@@ -501,6 +510,7 @@ def amux_rust_binary(
     `test_deps`, `test_resources` and `binaries` as a library's."""
     crate = _crate_name()
     package = native.package_name()
+    _rust_files()
     if srcs == None:
         top = crate_root.split("/")[0]
         srcs = native.glob([top + "/**"])

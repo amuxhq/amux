@@ -150,6 +150,28 @@ amux_check(
     deps = ["//crates/{}:files".format(core) for core in _CORES],
 )
 
+# Every crate, for the platform check, which reads each one's Rust files
+# (its tests' too). A crate not listed fails the check, which compares what
+# it was given with the list of tracked files.
+_CRATES = [
+    "acp-protocol", "agent", "agent-core", "agent-dir", "amux", "analytics", "app-bridge",
+    "app-embedded", "app-ffi", "app-jni", "app-runtime", "attachments", "browser-core",
+    "claude-protocol", "client", "codex-protocol", "core-ring", "daemon-core", "fake-amux",
+    "git-facts", "highlight", "installer", "interpret", "ios-tools", "journal", "log-file",
+    "models", "node", "path-core", "patience", "preview", "provider-fakes", "pty-host",
+    "qualification", "redaction", "relay-core", "release", "replay-support", "settings",
+    "shot", "socket-core", "source-tree", "store", "supervisor-core", "testnet", "tui",
+    "ui-code", "ui-runtime", "ui-state", "ui-view", "wire", "workspace-core", "xtask",
+]
+
+# Desktop-platform code only in its homes, the rest held to the allowlist
+# (build/checks/platform_check.py says what counts).
+amux_check(
+    name = "platform-check",
+    command = ["python3", "build/checks/platform_check.py", "--tracked", "build/checks/inputs/tracked"],
+    deps = ["//build:platform-check", "//build:tracked"] + ["//crates/{}:rust-files".format(crate) for crate in _CRATES],
+)
+
 amux_check(
     name = "typed-provider-check",
     command = ["python3", "scripts/typed-provider-check.py"],
@@ -231,6 +253,7 @@ amux_script_tests(
         "env": {"deps": [":environments"]},
         "icon": {"deps": ["//apps/apple:release-files"]},
         "nativelink": {"deps": ["//build:nativelink"]},
+        "platform_check": {"deps": ["//build:platform-check"]},
         "qa_sandbox_purchase": {"srcs": [".gitignore"], "deps": ["//apps/apple:release-files"]},
         "release": {"srcs": [".gitignore"], "deps": ["//apps/apple:release-files"]},
         "store_check": {"deps": ["//crates/store:src/schema.rs"]},

@@ -61,9 +61,18 @@ WINDOWS = "check-windows"
 
 def main(patterns: list[str]) -> int:
     scripts = list(SCRIPTS)
+    # Where actions go (whether the build host is in reach, on a Mac) is
+    # decided once, here, and every recipe below is told it rather than
+    # asking again: one that found the host gone mid-run would switch the
+    # mode and restart Buck2's daemon under the rest (scripts/buck-config.py).
+    mode = subprocess.run(
+        [str(ROOT / "scripts/py"), str(ROOT / "scripts/buck-config.py"), "decide"],
+        cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, check=True,
+    ).stdout.strip()
+    env = dict(os.environ, AMUX_BUCK_MODE=mode)
     if patterns[:1] == ["--without-windows"]:
         patterns = patterns[1:]
-    elif subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "scripts/buck-config.py"), "linux"], cwd=ROOT, stdin=subprocess.DEVNULL).returncode == 0:
+    elif subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "scripts/buck-config.py"), "linux"], cwd=ROOT, env=env, stdin=subprocess.DEVNULL).returncode == 0:
         scripts.append(WINDOWS)
     else:
         print(f"premerge: {WINDOWS} skipped: no Linux worker is in reach to build Windows on", flush=True)
@@ -74,15 +83,15 @@ def main(patterns: list[str]) -> int:
     # too, finds nothing left to change. Buck2's daemon runs two commands at
     # once only while they see the same files: a write after clippy's build
     # has started holds the tests until that build ends.
-    subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "build/checks/inputs.py")], cwd=ROOT, check=True, stdin=subprocess.DEVNULL)
+    subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "build/checks/inputs.py")], cwd=ROOT, env=env, check=True, stdin=subprocess.DEVNULL)
     logs = Path(tempfile.mkdtemp(prefix="premerge-"))
     running: dict[str, tuple[subprocess.Popen, Path, float]] = {}
     for name in scripts:
         log = logs / f"{name}.log"
         with log.open("wb") as out:
-            child = subprocess.Popen([JUST, name], cwd=ROOT, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+            child = subprocess.Popen([JUST, name], cwd=ROOT, env=env, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
         running[name] = (child, log, time.monotonic())
-    tests = subprocess.Popen([JUST, "test", *patterns], cwd=ROOT, stdin=subprocess.DEVNULL)
+    tests = subprocess.Popen([JUST, "test", *patterns], cwd=ROOT, env=env, stdin=subprocess.DEVNULL)
 
     def stop(signum, _frame):
         for child, _, _ in running.values():
@@ -114,7 +123,7 @@ def main(patterns: list[str]) -> int:
     if ours:
         newest = max(ours, key=lambda log: log.stat().st_mtime)
         try:
-            subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "build/checks/timing.py"), str(newest)], cwd=ROOT, stdin=subprocess.DEVNULL, timeout=300)
+            subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "build/checks/timing.py"), str(newest)], cwd=ROOT, env=env, stdin=subprocess.DEVNULL, timeout=300)
         except subprocess.TimeoutExpired:
             print("timing: no summary (it took over five minutes)", flush=True)
 

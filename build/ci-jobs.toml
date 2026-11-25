@@ -120,8 +120,6 @@ paths = [
     "build/nativelink/macos.json5",
     "scripts/ci-sample-system.sh",
     "scripts/rerun-on-cache-timeout.sh",
-    "scripts/ci-sample-system.sh",
-    "scripts/rerun-on-cache-timeout.sh",
     # The C ABI the app calls, and the tools that write its Swift mirrors.
     "crates/app-ffi/**",
     "crates/ios-tools/**",

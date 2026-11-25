@@ -232,6 +232,14 @@ class TheRealTableTest(unittest.TestCase):
         unclassified = [path for path in files if self.table.kind(path) == "unclassified"]
         self.assertEqual(unclassified, [], "name these in build/ci-jobs.toml: everyone, covered or a job's paths")
 
+    def test_no_list_names_a_glob_twice(self):
+        # A repeated glob is a copy-and-paste slip no other check notices.
+        lists = {"everyone": self.table.everyone, "covered": self.table.covered}
+        lists |= {f"jobs.{job.key}.paths": job.paths for job in self.table.jobs}
+        for name, globs in lists.items():
+            repeated = sorted({p for p in globs.patterns if globs.patterns.count(p) > 1})
+            self.assertEqual(repeated, [], f"build/ci-jobs.toml [{name}] lists these more than once")
+
     def test_every_gated_job_has_a_job_in_the_workflow(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
         owners, _ = ci_jobs.workflow_owners(workflow)

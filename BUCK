@@ -236,6 +236,7 @@ amux_script_tests(
         "release": {"srcs": [".gitignore"], "deps": ["//apps/apple:release-files"]},
         "store_check": {"deps": ["//crates/store:src/schema.rs"]},
         "tests_catalog": {"srcs": ["tests/catalog.toml"], "deps": ["//crates/testnet:suites"]},
+        "timing": {"deps": ["//build:timing"]},
         "typed_provider_check": {"deps": ["//crates/agent:files", "//crates/interpret:files"]},
     },
 )

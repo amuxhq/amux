@@ -120,3 +120,10 @@ amux_files(
     name = "ci-jobs",
     srcs = ["ci-jobs.toml"],
 )
+
+# The summary after a Buck2 command of where its time went, which its test
+# reads (the root BUCK's script tests).
+amux_files(
+    name = "timing",
+    srcs = ["checks/timing.py"],
+)

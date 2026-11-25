@@ -1210,7 +1210,10 @@ async fn resume_accepted_catches_up_within_one_round_trip() {
 /// each launch is kept open until both are on disk, as a person looking at
 /// their fleet keeps the app open.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(windows, ignore = "windows: no ticket on disk before relaunch 2 (fails in every run on this VM)")]
+#[cfg_attr(
+    windows,
+    ignore = "windows: no ticket on disk before relaunch 2 (fails in every run on this VM)"
+)]
 async fn resume_every_relaunch_with_the_ticket_the_last_one_kept() {
     let mut net = linked_through_a_slow_network().await;
     let round_trip = 2 * ONE_WAY.as_millis();

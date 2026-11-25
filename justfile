@@ -488,6 +488,15 @@ ci-jobs-check:
 land *ARGS:
     scripts/py -B scripts/land.py "$@"
 
+# Print the whole log of a landing the queue ran, by the id `just land` named.
+land-log ID:
+    scripts/py -B scripts/land.py --log "{{ID}}"
+
+# Merge a fresh origin/main into this branch; when only the generated
+# protobuf bindings conflict, regenerate them (scripts/merge-main.sh).
+merge-main:
+    scripts/merge-main.sh
+
 # Run the live provider compatibility lane for one kind (claude_pty,
 # claude_sdk or codex) and scenario (initialize, respond, decide, interrupt,
 # resume, plan, questions, usage, catalogue, host_catalogue, permission, mode,

@@ -49,14 +49,15 @@ cannot keep a promise is not made by breaking it: it is the next protocol
 - Build, test and lint through `just` (`just --list`); `wt` is for worktrees
   and this tree's daemon. Recipes carry timeouts; a firing timeout is a hang
   to diagnose.
-- Before a change reaches main, run `just premerge`: every check and every
+- Before landing, run `just premerge`: every check and every
   test, through Buck2's cache, so only what the change affects runs. A
   failing golden is re-recorded in the same change (`just goldens`), after
   reading what moved.
 - Land a branch on main with `just land "What the branch does"`. It merges
   your HEAD with `--no-ff` onto a fresh main in a worktree of its own, runs
-  the checks on the merge, pushes, and prints `LANDED <sha>`; your tree is
-  never touched. If it stops, fix the branch and land again. Never
+  the checks again on the merge, pushes, and prints `LANDED <sha>`; your
+  tree is never touched. If it stops, fix the branch (`just merge-main`
+  brings main in) and land again. Never
   force-push. Without push access, open a pull request instead.
 - The why of a change and its test evidence go in the commit message; search
   past decisions with `git log --grep`. A rejected alternative that should

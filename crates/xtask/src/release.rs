@@ -132,6 +132,13 @@ pub(crate) fn trusted_keys(workflow: &str) -> Result<Vec<[u8; 32]>, Box<dyn std:
 /// disagree.
 const VERSIONED: &[&str] = &["crates/amux/Cargo.toml", "crates/node/Cargo.toml"];
 
+/// The BUCK files that say the same version again. Buck2 builds the release
+/// binaries and hands each crate the `version` its BUCK file names as
+/// CARGO_PKG_VERSION, so a cut that moved only the Cargo manifests would ship
+/// binaries that report the version before it, and a supervisor running one
+/// would take the release it already runs for a newer one.
+const BUCK_VERSIONED: &[&str] = &["crates/amux/BUCK", "crates/node/BUCK"];
+
 /// Makes the version exist: the number in the manifests and the lock,
 /// the release build checked, one commit tagged `v<version>`, branch and
 /// tag pushed. The tag starts the Release workflow. Refuses a tree with
@@ -171,14 +178,35 @@ fn cut(version: &str) -> Result<(), Box<dyn std::error::Error>> {
             .ok_or_else(|| format!("{manifest} does not carry version {current}"))?;
         std::fs::write(&path, bumped)?;
     }
+    for file in BUCK_VERSIONED {
+        let path = root.join(file);
+        let text = std::fs::read_to_string(&path)?;
+        let bumped = bump_buck_version(&text, &current, &wanted)
+            .ok_or_else(|| format!("{file} does not carry version {current}"))?;
+        std::fs::write(&path, bumped)?;
+    }
     run(
         &root,
         "cargo",
         &["update", "--offline", "-p", "amux", "-p", "node"],
     )?;
     run(&root, "just", &["release-check"])?;
+    // Supervisors compare the version the binary reports with the channel's,
+    // so a build that reports another one must not be tagged.
+    let reported = Command::new(root.join("target/release/amux"))
+        .arg("--version")
+        .output()?;
+    let reported = String::from_utf8_lossy(&reported.stdout);
+    if reported.trim() != format!("amux {wanted}") {
+        return Err(format!(
+            "the release build reports {:?}, not amux {wanted}; nothing was committed",
+            reported.trim()
+        )
+        .into());
+    }
     let mut add = vec!["add"];
     add.extend(VERSIONED);
+    add.extend(BUCK_VERSIONED);
     add.push("Cargo.lock");
     git(&root, &add)?;
     let tag = format!("v{wanted}");
@@ -213,6 +241,20 @@ pub fn bump_version(
     manifest
         .contains(&old)
         .then(|| manifest.replacen(&old, &new, 1))
+}
+
+/// The BUCK file with every target's `version` moved from `from` to `to`, or
+/// None when no target carries `from`. Each of a crate's targets (its binary
+/// or library and its tests) names the version, and none names a
+/// dependency's.
+pub fn bump_buck_version(
+    buck: &str,
+    from: &semver::Version,
+    to: &semver::Version,
+) -> Option<String> {
+    let old = format!("version = \"{from}\",");
+    let new = format!("version = \"{to}\",");
+    buck.contains(&old).then(|| buck.replace(&old, &new))
 }
 
 pub(crate) fn run(
@@ -815,6 +857,17 @@ mod tests {
             "a dependency's version is not the crate's"
         );
         assert!(bump_version(manifest, &to, &from).is_none());
+    }
+
+    #[test]
+    fn a_cut_moves_every_target_version_in_a_buck_file() {
+        let buck = "amux_rust_binary(\n    name = \"amux\",\n    version = \"0.7.0\",\n)\n\namux_rust_test(\n    name = \"integration\",\n    version = \"0.7.0\",\n)\n";
+        let from = semver::Version::parse("0.7.0").unwrap();
+        let to = semver::Version::parse("0.8.0").unwrap();
+        let bumped = bump_buck_version(buck, &from, &to).unwrap();
+        assert_eq!(bumped.matches("version = \"0.8.0\",").count(), 2);
+        assert!(!bumped.contains("0.7.0"));
+        assert!(bump_buck_version(buck, &to, &from).is_none());
     }
 
     /// The committed workflow names the release key and its backup, so the

@@ -207,8 +207,14 @@ impl Listener {
                 return Poll::Pending;
             };
             // Its place is refilled before the next connection is awaited,
-            // and a failure to refill never costs this one.
-            drop(instances.swap_remove(at));
+            // and a failure to refill never costs this one. The rest keep
+            // their order, oldest first, and the refill goes last: a client
+            // waiting on an older instance is served before newer ones,
+            // however fast they come.
+            drop(instances.remove(at));
+            // And refilled now, so a client that comes before the next
+            // accept finds an instance listening, not every one taken.
+            self.refill(cx);
             match connected {
                 Ok(()) => return Poll::Ready(Stream::Server(server)),
                 // The client came and went before it was accepted: an

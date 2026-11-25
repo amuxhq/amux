@@ -100,7 +100,7 @@ def store_baseline(tag: str) -> None:
 def proto_baseline(tag: str) -> None:
     out = OUT / "proto-baseline"
     ref = out / "ref"
-    if ref.is_file() and ref.read_text() == f"{tag}\n" and ((out / "proto").is_dir() or not tag):
+    if ref.is_file() and ref.read_text(encoding="utf-8") == f"{tag}\n" and ((out / "proto").is_dir() or not tag):
         return
     shutil.rmtree(out / "proto", ignore_errors=True)
     archive = git("archive", "--format=tar", tag, "proto", binary=True) if tag else None
@@ -122,12 +122,12 @@ def cargo_inputs(listing: bytes) -> None:
         file = ROOT / path
         key.update(path.encode() + b"\0" + (file.read_bytes() if file.is_file() else b"") + b"\0")
     stamp = DENY / "key"
-    if stamp.is_file() and stamp.read_text() == key.hexdigest() and (DENY / "metadata.json").is_file():
+    if stamp.is_file() and stamp.read_text(encoding="utf-8") == key.hexdigest() and (DENY / "metadata.json").is_file():
         return
     try:
         result = subprocess.run(
             ["cargo", "metadata", "--all-features", "--locked", "--format-version", "1"],
-            cwd=ROOT, capture_output=True, text=True, check=False,
+            cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=False,
         )
     except OSError as error:
         result = subprocess.CompletedProcess([], 1, "", str(error))
@@ -172,7 +172,7 @@ def index_entries() -> None:
     stamp = DENY / "index-refreshed"
     if not stamp.is_file() or time.time() - stamp.stat().st_mtime > ADVISORY_SECONDS:
         try:
-            result = subprocess.run(["cargo", "update", "--dry-run"], cwd=ROOT, capture_output=True, text=True, check=False, timeout=300)
+            result = subprocess.run(["cargo", "update", "--dry-run"], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=False, timeout=300)
             if result.returncode == 0:
                 stamp.parent.mkdir(parents=True, exist_ok=True)
                 stamp.touch()
@@ -185,7 +185,7 @@ def index_entries() -> None:
         warn("Cargo has no crates.io index cache; the deny check cannot tell a yanked release")
         return
     cache = caches[-1]
-    names = sorted({package["name"] for package in json.loads(metadata.read_text())["packages"] if package["source"] == CRATES_IO})
+    names = sorted({package["name"] for package in json.loads(metadata.read_text(encoding="utf-8"))["packages"] if package["source"] == CRATES_IO})
     # Under `cache/`, not Cargo's `.cache/`: a Buck2 glob skips hidden files.
     wanted = {"config.json": cache / "config.json"} | {f"cache/{index_path(name)}": cache / ".cache" / index_path(name) for name in names}
     out = DENY / "index"

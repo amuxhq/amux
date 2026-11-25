@@ -82,6 +82,13 @@ def amux_files(name, srcs, visibility = ["PUBLIC"]):
     checkout when the test runs."""
     _files(name = name, srcs = srcs, visibility = visibility)
 
+def _rust_files():
+    """Every Rust file of the crate, its tests', examples' and build
+    script's among them, as `:rust-files`, for a check that reads them all
+    (`//:platform-check`). Once per crate, by whichever macro comes first."""
+    if not native.rule_exists("rust-files"):
+        amux_files(name = "rust-files", srcs = native.glob(["**/*.rs"]))
+
 def _binaries_impl(ctx: AnalysisContext) -> list[Provider]:
     # Each under its name with the binary's own extension, `.exe` for
     # Windows, as Cargo leaves them: provider_fakes::binaries adds it, and
@@ -168,6 +175,16 @@ TEST_BINARIES = {
 # What a test that starts those binaries runs with (`binaries = True`).
 _BINARIES_ENV = {"TESTNET_BINARIES": "$(location //crates/provider-fakes:binaries)"}
 
+# `env KEY=VALUE... COMMAND...` in Python: the leading words with an `=` in
+# them set the environment, and the rest is the command, whose exit status
+# is this one's.
+_SET_ENV = "; ".join([
+    "import os, subprocess, sys",
+    "n = next(i for i, a in enumerate(sys.argv[1:] + [''], 1) if '=' not in a)",
+    "os.environ.update(a.split('=', 1) for a in sys.argv[1:n])",
+    "sys.exit(subprocess.call(sys.argv[n:]))",
+])
+
 def _test_impl(ctx: AnalysisContext) -> list[Provider]:
     # A test with a `main` of its own (Cargo's `harness = false`) is a
     # program, run as it is.
@@ -192,9 +209,10 @@ def _test_impl(ctx: AnalysisContext) -> list[Provider]:
     )
     executors = get_re_executors_from_props(ctx)
     # `buck2 run` (how `just goldens` re-records) runs the runner here, in
-    # the checkout, so its environment rides on the command line.
+    # the checkout, so its environment rides on the command line, as the
+    # KEY=VALUE words `env` takes (`_set_env`).
     run = cmd_args(
-        "/usr/bin/env",
+        ctx.attrs._set_env,
         [cmd_args(key, "=", value, delimiter = "") for key, value in ctx.attrs.env.items()],
         command,
     )
@@ -238,6 +256,13 @@ _amux_test = rule(
             "prelude//os:windows": 2,
         })),
         "_runner": attrs.source(default = "root//build:test-runner.py"),
+        # What sets a `buck2 run`'s environment and starts its command:
+        # `env`, or on Windows, which has none, the runner's Python doing
+        # what `env` does.
+        "_set_env": attrs.list(attrs.string(), default = select({
+            "DEFAULT": ["/usr/bin/env"],
+            "prelude//os:windows": ["python", "-c", _SET_ENV],
+        })),
         # The Python the runner runs under, by the name the worker's PATH
         # has it: Windows' installers make no python3.
         "_python": attrs.string(default = select({
@@ -379,6 +404,7 @@ def amux_rust_library(
     )
     # The sources, for another crate's test that reads them.
     amux_files(name = "files", srcs = files)
+    _rust_files()
     native.rust_library(
         name = crate,
         srcs_filegroup = _tree(crate + ".lib", files, include),
@@ -452,6 +478,7 @@ def amux_rust_test(
     its `labels`."""
     crate = _crate_name()
     package = native.package_name()
+    _rust_files()
     _test(
         name = name,
         harness = harness,
@@ -501,6 +528,7 @@ def amux_rust_binary(
     `test_deps`, `test_resources` and `binaries` as a library's."""
     crate = _crate_name()
     package = native.package_name()
+    _rust_files()
     if srcs == None:
         top = crate_root.split("/")[0]
         srcs = native.glob([top + "/**"])

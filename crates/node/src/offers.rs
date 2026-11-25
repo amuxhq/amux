@@ -330,7 +330,7 @@ impl Offers {
                         .map(|held| held.offer.provider_version.clone())
                         .unwrap_or_default(),
                 }),
-                capabilities: AgentCapabilities::of_kind(kind),
+                capabilities: AgentCapabilities::of_kind(kind, wire::Platform::here()),
             }
         });
         let agents = launch.agents.iter().filter_map(|program| {

@@ -22,6 +22,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 JUST = os.environ.get("JUST", "just")
+# The repository's Python (scripts/py picks one), for its other scripts;
+# scripts/py is a sh script, which Windows can't start directly.
+PY = [sys.executable] if os.name == "nt" else [str(ROOT / "scripts/py")]
 
 # The checks that stay scripts, each a recipe of the root justfile, and why
 # none is a Buck2 test: what each reads is the workspace as a whole, or the
@@ -56,7 +59,7 @@ def main(patterns: list[str]) -> int:
     # too, finds nothing left to change. Buck2's daemon runs two commands at
     # once only while they see the same files: a write after clippy's build
     # has started holds the tests until that build ends.
-    subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "build/checks/inputs.py")], cwd=ROOT, check=True, stdin=subprocess.DEVNULL)
+    subprocess.run([*PY, str(ROOT / "build/checks/inputs.py")], cwd=ROOT, check=True, stdin=subprocess.DEVNULL)
     logs = Path(tempfile.mkdtemp(prefix="premerge-"))
     running: dict[str, tuple[subprocess.Popen, Path, float]] = {}
     for name in SCRIPTS:
@@ -96,7 +99,7 @@ def main(patterns: list[str]) -> int:
     if ours:
         newest = max(ours, key=lambda log: log.stat().st_mtime)
         try:
-            subprocess.run([str(ROOT / "scripts/py"), str(ROOT / "build/checks/timing.py"), str(newest)], cwd=ROOT, stdin=subprocess.DEVNULL, timeout=300)
+            subprocess.run([*PY, str(ROOT / "build/checks/timing.py"), str(newest)], cwd=ROOT, stdin=subprocess.DEVNULL, timeout=300)
         except subprocess.TimeoutExpired:
             print("timing: no summary (it took over five minutes)", flush=True)
 

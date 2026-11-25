@@ -730,7 +730,9 @@ impl<A: OpenAsk> Shared<A> {
             housekeeping: false,
             housekept: false,
             subagents: BTreeMap::new(),
-            capabilities: wire::AgentCapabilities::of_kind(kind),
+            // The interpreter runs on the agent's own host, so it says
+            // what the agent can do there.
+            capabilities: wire::AgentCapabilities::of_kind(kind, wire::Platform::here()),
             settings: None,
             watch: Watch::default(),
         };
@@ -761,7 +763,7 @@ impl<A: OpenAsk> Shared<A> {
         // says it from the new process's handshake.
         if let Some(fixed) = wire::Kind::try_from(self.kind)
             .ok()
-            .and_then(wire::AgentCapabilities::of_kind)
+            .and_then(|kind| wire::AgentCapabilities::of_kind(kind, wire::Platform::here()))
         {
             self.capabilities = Some(fixed);
         }

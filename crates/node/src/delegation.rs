@@ -443,7 +443,8 @@ impl ProfileRuntime {
             )));
         }
         let kind = wire::Kind::try_from(parent.kind).unwrap_or(wire::Kind::Unspecified);
-        let forks = wire::AgentCapabilities::of_kind(kind)
+        // The parent runs on this host.
+        let forks = wire::AgentCapabilities::of_kind(kind, wire::Platform::here())
             .or_else(|| {
                 parent
                     .snapshot

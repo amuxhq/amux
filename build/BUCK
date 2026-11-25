@@ -80,6 +80,13 @@ amux_files(
     srcs = ["checks/deny.sh"] + glob(["checks/inputs/deny/**"], exclude = ["checks/inputs/deny/key", "checks/inputs/deny/index-refreshed"]),
 )
 
+# The platform check's script and its allowlist (`//:platform-check`, and
+# its tests among the root BUCK's script tests).
+amux_files(
+    name = "platform-check",
+    srcs = ["checks/platform_check.py", "checks/platform-allowlist.txt"],
+)
+
 # buf for the protocol check on a Mac's own worker, when no Linux worker is
 # in reach; on Linux it is the Linux toolchain's, the same version.
 http_file(

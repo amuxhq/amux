@@ -20,7 +20,9 @@ ALLOWED_LOCAL = {
     "preview": {"attachments", "wire"},
     "journal": {"wire"},
     "store": {"wire"},
-    "agent-dir": {"wire"},
+    # os on Windows: the pipe name file's patient rename and the user's SID
+    # a pipe is owned by.
+    "agent-dir": {"os", "wire"},
     "redaction": {"wire"},
     # The capped log file every process writes and a dump reads the tail of.
     "log-file": set(),
@@ -60,7 +62,7 @@ ALLOWED_LOCAL = {
     # wire descriptors and redacts free text without touching interpret.
     # highlight for the language of each file an agent changed, named by the
     # same rule the clients colour it by.
-    "node": {"agent-dir", "analytics", "attachments", "core-ring", "daemon-core", "git-facts", "highlight", "journal", "log-file", "path-core", "redaction", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
+    "node": {"agent-dir", "analytics", "attachments", "core-ring", "daemon-core", "git-facts", "highlight", "journal", "log-file", "os", "path-core", "redaction", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
     "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "settings", "tui", "wire"},
     # The release manifest the tool signs and the daemon verifies, and the
     # version stamp a release tool can rewrite in a built binary; the xtask

@@ -31,6 +31,9 @@ fn event(name: &str) -> Option<Event> {
 /// reason while the clean shutdown runs and after it, and what the handler
 /// answered.
 pub(crate) fn signal_role(rest: &[&str]) {
+    if rest[0] == "between" {
+        return between_role(event(rest[1]).expect("an event"));
+    }
     let Some(event) = event(rest[0]) else {
         return imp::tests::signal_role(rest);
     };
@@ -68,6 +71,32 @@ pub(crate) fn signal_role(rest: &[&str]) {
     });
 }
 
+/// Waits for a stop and gives up on it, as a `select!` another branch
+/// won does, dropping the wait; delivers `event` with nobody waiting; and
+/// says whether the next wait sees it.
+fn between_role(event: Event) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        match tokio::time::timeout(Duration::from_millis(200), terminated()).await {
+            Ok(stop) => say(format!("first {:?}", stop.unwrap())),
+            Err(_) => say("first none"),
+        }
+        let answered = std::thread::spawn(move || deliver(event)).join().unwrap();
+        say(format!("answered {}", answered.unwrap()));
+        // The runtime goes on with other work meanwhile, as a daemon's
+        // does: its signal driver runs with nobody waiting.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        match tokio::time::timeout(Duration::from_millis(1500), terminated()).await {
+            Ok(stop) => say(format!("again {:?}", stop.unwrap())),
+            Err(_) => say("again none"),
+        }
+        finished();
+    });
+}
+
 /// Every line a process in the role says for `name`.
 fn says(name: &str) -> Vec<String> {
     let mut command = helper(&format!("signal {name}"));
@@ -83,6 +112,15 @@ fn a_later_call_sees_the_first_stop() {
         said.iter().any(|line| line == "again Interrupt"),
         "{said:?}"
     );
+}
+
+/// A stop that lands while nobody waits, after a wait was given up (a
+/// `select!` another branch won), is seen by the next wait.
+#[test]
+fn a_stop_between_two_waits_is_seen_by_the_next() {
+    let said = says("between interrupt");
+    assert_eq!(said.first().map(String::as_str), Some("first none"), "{said:?}");
+    assert!(said.iter().any(|line| line == "again Interrupt"), "{said:?}");
 }
 
 /// The stop a process in the role saw for `name`, the block reason during

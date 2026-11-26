@@ -80,7 +80,8 @@ pub struct FleetView {
     /// Agents across the whole fleet that need the person, and that are
     /// working or starting: counted by agent, not by family, whatever is
     /// folded or filtered out of the sections. An agent whose host is out
-    /// of reach is not counted: its row is only as it last said.
+    /// of reach is not counted: its row is only as it last said. Nor is a
+    /// settled one, which is put away, and while it exits reads as starting.
     pub need_you: u32,
     pub working: u32,
 }
@@ -571,10 +572,14 @@ pub fn fleet_view(
     })
     .collect();
     // An agent whose host is out of reach is only as it last said, as its
-    // row says: it is not counted as working or needing the person.
+    // row says: it is not counted as working or needing the person. Nor is
+    // a settled one, put away: one settled a moment ago is still on its
+    // way out, its provider stopped and its row reading as starting until
+    // its host records it exited.
     let counted = |wanted: &[Attention]| {
         fleet
             .agents()
+            .filter(|agent| agent.filing() != Filing::Closed)
             .filter(|agent| wanted.contains(&placed(fleet, local_host, agent)))
             .count() as u32
     };

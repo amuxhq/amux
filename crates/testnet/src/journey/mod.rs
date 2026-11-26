@@ -343,20 +343,94 @@ pub(crate) fn compare_golden(path: &Path, actual: &str) -> Result<(), String> {
     ))
 }
 
-/// The lines that differ, approved then actual, each with its number.
+/// A unified diff of the approved text against the actual one: `-` for a
+/// line only the approved has, `+` for one only the actual has, three lines
+/// of context around each change and an `@@ -line,count +line,count @@`
+/// header per hunk, so a line that moved reads as one move rather than as
+/// every line after it differing.
 pub(crate) fn line_diff(approved: &str, actual: &str) -> String {
+    const CONTEXT: usize = 3;
     let (old, new): (Vec<&str>, Vec<&str>) = (approved.lines().collect(), actual.lines().collect());
+    // The longest common subsequence, from the end: `common[i][j]` is its
+    // length for `old[i..]` against `new[j..]`.
+    let mut common = vec![vec![0usize; new.len() + 1]; old.len() + 1];
+    for i in (0..old.len()).rev() {
+        for j in (0..new.len()).rev() {
+            common[i][j] = if old[i] == new[j] {
+                common[i + 1][j + 1] + 1
+            } else {
+                common[i + 1][j].max(common[i][j + 1])
+            };
+        }
+    }
+    // Every line in order, kept (' '), removed ('-') or added ('+'), with
+    // where it is in the approved and in the actual text.
+    let mut lines: Vec<(char, usize, usize)> = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < old.len() || j < new.len() {
+        if i < old.len() && j < new.len() && old[i] == new[j] {
+            lines.push((' ', i, j));
+            (i, j) = (i + 1, j + 1);
+        } else if i < old.len() && (j == new.len() || common[i + 1][j] >= common[i][j + 1]) {
+            lines.push(('-', i, j));
+            i += 1;
+        } else {
+            lines.push(('+', i, j));
+            j += 1;
+        }
+    }
+    let changed: Vec<usize> = (0..lines.len()).filter(|&at| lines[at].0 != ' ').collect();
     let mut out = Vec::new();
-    for at in 0..old.len().max(new.len()) {
-        let (a, b) = (old.get(at), new.get(at));
-        if a != b {
-            if let Some(a) = a {
-                out.push(format!("-{:>3} {a}", at + 1));
-            }
-            if let Some(b) = b {
-                out.push(format!("+{:>3} {b}", at + 1));
-            }
+    let mut next = 0;
+    while next < changed.len() {
+        let first = changed[next].saturating_sub(CONTEXT);
+        let mut last = changed[next];
+        while next + 1 < changed.len() && changed[next + 1] <= last + 2 * CONTEXT + 1 {
+            next += 1;
+            last = changed[next];
+        }
+        next += 1;
+        let hunk = &lines[first..=(last + CONTEXT).min(lines.len() - 1)];
+        let olds = hunk.iter().filter(|line| line.0 != '+').count();
+        let news = hunk.iter().filter(|line| line.0 != '-').count();
+        out.push(format!(
+            "@@ -{},{olds} +{},{news} @@",
+            hunk[0].1 + 1,
+            hunk[0].2 + 1
+        ));
+        for &(kind, i, j) in hunk {
+            out.push(match kind {
+                '-' => format!("-{}", old[i]),
+                '+' => format!("+{}", new[j]),
+                _ => format!(" {}", old[i]),
+            });
         }
     }
     out.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::line_diff;
+
+    #[test]
+    fn a_diff_shows_a_changed_line_in_its_context() {
+        let approved = "a\nb\nc\nd\ne\nf\ng\nh\n";
+        let actual = "a\nb\nc\nd\nE\nf\ng\nh\n";
+        assert_eq!(
+            line_diff(approved, actual),
+            "@@ -2,7 +2,7 @@\n b\n c\n d\n-e\n+E\n f\n g\n h"
+        );
+    }
+
+    #[test]
+    fn a_removed_line_is_one_removal_and_the_rest_lines_up() {
+        let approved = "1\n2\n3\n4\n5\n6\n7\n8\n9\n";
+        let actual = "1\n2\n3\n4\n5\n6\n7\n9\n";
+        assert_eq!(
+            line_diff(approved, actual),
+            "@@ -5,5 +5,4 @@\n 5\n 6\n 7\n-8\n 9"
+        );
+        assert_eq!(line_diff(approved, approved), "");
+    }
 }

@@ -229,11 +229,14 @@ fn run_bounded(name: &str, output: &Path) -> (bool, String) {
         return (true, format!("PASS {name} ({seconds}s)"));
     }
     let said = std::fs::read_to_string(&log).unwrap_or_default();
+    // The story's last word on why, with every line under it: a golden
+    // that differs says so on one line and gives the diff on the next.
     let prefix = format!("FAIL {name}: ");
-    let reason = said
-        .lines()
-        .rev()
-        .find_map(|line| line.strip_prefix(&prefix).map(str::to_owned))
+    let lines: Vec<&str> = said.lines().collect();
+    let reason = lines
+        .iter()
+        .rposition(|line| line.starts_with(&prefix))
+        .map(|at| lines[at..].join("\n")[prefix.len()..].to_owned())
         .unwrap_or_else(|| match status.and_then(|status| status.code()) {
             None => format!("timed out after {}s", STORY.as_secs()),
             Some(code) => format!("exited {code}"),

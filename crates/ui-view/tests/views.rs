@@ -3641,6 +3641,29 @@ fn header_counts_leave_out_agents_whose_host_is_out_of_reach() {
     );
 }
 
+/// A settled agent is put away, so the header does not count it, also in
+/// the moment after the settle while it exits: its provider stopped, its
+/// row reads as starting until its host records it exited. The terminal
+/// manage-agent journey drew "1 working" over a fleet with nothing working
+/// when its settled screen caught that moment (nova, 2026-11-26).
+#[test]
+fn header_counts_leave_out_an_agent_settled_while_it_exits() {
+    let mut fleet = FleetState::new();
+    fleet.update(fleet_row("a", "busy", Phase::Working, None, 1));
+    let mut leaving = fleet_entry("a", "leaving", Phase::Starting, None, 2);
+    leaving.filing = wire::Filing::Closed as i32;
+    fleet.update(listed(leaving));
+    let mut asking = fleet_entry("a", "asking", Phase::NeedsYou, None, 3);
+    asking.filing = wire::Filing::Closed as i32;
+    fleet.update(listed(asking));
+    let view = fleet_view(&fleet, b"a", &no_sessions(), &HashSet::new(), &|_| true);
+    assert_eq!(
+        (view.working, view.need_you),
+        (1, 0),
+        "the header counts settled agents"
+    );
+}
+
 /// A step that edits a file inside the agent's folder names it relative to
 /// the folder, as its ask does since round one; the whole absolute path,
 /// cut at 80 columns, hides the file's name.

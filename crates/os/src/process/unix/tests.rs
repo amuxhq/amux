@@ -47,6 +47,21 @@ pub(crate) fn run_role(name: &str, _rest: &[&str]) {
             crate::process::tests::say(format!("pid {}", child.id()));
             std::thread::sleep(std::time::Duration::from_secs(60));
         }
+        // Starts a sleeper in its own group and exits at once, leaving it
+        // there, as a wrapper does that starts the real program.
+        "leaver" => {
+            #[allow(
+                clippy::zombie_processes,
+                reason = "the sleeper is what this role leaves behind in its group"
+            )]
+            let child = helper("sleep")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("the sleeper starts");
+            crate::process::tests::say(format!("pid {}", child.id()));
+        }
         other => panic!("no role {other:?}"),
     }
 }
@@ -119,6 +134,63 @@ fn a_counted_member_reparented_away_still_dies_on_kill_others() {
             sleeper.kill().unwrap();
         }
     }
+}
+
+/// A child that has exited keeps its row, marked a zombie, until it is
+/// reaped: its pid can't be reused until then, so it stays pinned.
+#[test]
+fn an_exited_child_keeps_its_row_until_reaped() {
+    let mut child = helper("exit-after 0 0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pinned = super::ProcessRef::of_std_child(&child).expect("pinned, exited or not");
+    let raw = child.id() as i32;
+    assert!(
+        eventually(|| super::table::row(raw).is_some_and(|row| row.zombie)),
+        "seen exited"
+    );
+    let row = super::table::row(raw).unwrap();
+    assert_eq!(
+        (row.ppid, row.started),
+        (std::process::id() as i32, pinned.started)
+    );
+    child.wait().unwrap();
+    assert!(super::table::row(raw).is_none(), "gone once reaped");
+}
+
+/// A group's leader that has exited, unreaped, still holds its group's id:
+/// killing the group ends what the leader left in it.
+#[test]
+fn a_group_is_killed_after_its_leader_exits() {
+    use std::os::unix::process::CommandExt as _;
+    let mut command = helper("leaver");
+    command.process_group(0);
+    let driven = Driven::start(command);
+    let leader = ProcessRef::of_std_child(&driven.child).unwrap();
+    let left = ProcessRef::open(pid(&driven.expect("pid"))).unwrap();
+    let raw = driven.child.id() as i32;
+    assert!(
+        eventually(|| super::table::row(raw).is_some_and(|row| row.zombie)),
+        "the leader exits"
+    );
+    leader.kill_group().unwrap();
+    assert!(eventually(|| !left.alive()), "what it left is killed");
+}
+
+/// Both of macOS's rows for a process agree while it runs, so the one an
+/// exited process falls back to pins it by the same start time.
+#[cfg(target_os = "macos")]
+#[test]
+fn both_macos_rows_agree_on_a_running_process() {
+    let raw = std::process::id() as i32;
+    let live = super::table::live_row(raw).expect("proc_pidinfo answers");
+    let unreaped = super::table::unreaped_row(raw).expect("sysctl answers");
+    assert_eq!(
+        (live.ppid, live.started, live.zombie),
+        (unreaped.ppid, unreaped.started, unreaped.zombie)
+    );
 }
 
 /// A stop with nothing below it to kill (the common case, a provider

@@ -9,12 +9,15 @@
 //! administrator once, after the system asks the person to approve it.
 //!
 //! A rule counts as Windows counts it: an allow or block for amux's
-//! program, over UDP, on any of its ports, for any remote address or the
-//! local subnet's (one for some addresses decides nothing for the rest),
-//! and, where a group policy stops merging the machine's own rules on a
-//! profile, only a policy's rule there. [`plan`] removes only a block that
-//! does nothing else, as Windows' dismissed prompt adds, and names any
-//! other in its error, changing nothing.
+//! program, over UDP, on any of its ports, and, where a group policy stops
+//! merging the machine's own rules on a profile, only a policy's rule
+//! there. An allow lets devices nearby in only when it is for any remote
+//! address or the local subnet's (one for some addresses lets in nobody
+//! else); a block keeps them out for whatever addresses it names, since
+//! amux can't tell from a rule which subnets are the network's. [`plan`]
+//! removes only the block Windows adds when its prompt to allow amux is
+//! dismissed, unchanged, and names any other in its error, changing
+//! nothing.
 //!
 //! Everything that reads or changes the firewall goes through [`System`],
 //! so a test hands in its own and the machine's is never touched. On an OS
@@ -119,6 +122,10 @@ pub struct Rule {
     /// addresses, ranges, subnets or a keyword such as `LocalSubnet`);
     /// none for every address.
     pub remote: Vec<String>,
+    /// It has a field Windows' prompt to allow a program never writes:
+    /// addresses, ports, a service, interfaces, users or any other
+    /// condition. So it isn't, unchanged, a rule that prompt added.
+    pub other_fields: bool,
     /// It is a group policy's, which no change made on this machine
     /// removes, and which counts whatever the policy says of the machine's
     /// own rules.
@@ -147,6 +154,7 @@ impl Rule {
             some_ports: false,
             service: false,
             remote: Vec::new(),
+            other_fields: false,
             policy: false,
         };
         let (mut action, mut direction) = (None, None);
@@ -180,6 +188,9 @@ impl Rule {
                 }
                 _ => {}
             }
+            if !PROMPT_FIELDS.contains(&key) {
+                rule.other_fields = true;
+            }
         }
         rule.action = action?;
         rule.inbound = direction?;
@@ -204,19 +215,66 @@ impl Rule {
             some_ports: false,
             service: false,
             remote: Vec::new(),
+            other_fields: false,
             policy: false,
         }
     }
 
-    /// Whether it is for every device nearby: for any remote address, or
-    /// for the local subnet's. A rule for some addresses only (one
-    /// management machine's) decides nothing for the rest.
-    fn for_everyone_nearby(&self) -> bool {
-        self.remote.is_empty()
+    /// Whether it decides for devices nearby, by the remote addresses it
+    /// is for. An allow lets them in only when it is for any address or
+    /// the local subnet's: one for some addresses (a management machine's)
+    /// lets in nobody else. A block keeps them out whatever addresses it
+    /// names: a subnet or range written out may be the network's, or
+    /// overlap it, and a rule doesn't say which.
+    fn for_devices_nearby(&self) -> bool {
+        self.action == Action::Block
+            || self.remote.is_empty()
             || self
                 .remote
                 .iter()
                 .any(|address| address.eq_ignore_ascii_case("LocalSubnet"))
+    }
+
+    /// Whether it is, unchanged, the block Windows adds when its prompt to
+    /// allow `program` is dismissed on a private or domain network. In
+    /// [MS-GPFAS] 2.2.2.10's terms that rule is the machine's own, kept
+    /// under the id `UDP Query User{<GUID>}<program>`, and holds nothing
+    /// but `Action=Block`, `Active`, `Dir=In`, `Protocol=17`, the
+    /// network's `Profile` (private or domain, never public here),
+    /// `App=<program>`, a `Name` and `Desc` that are the program's (its
+    /// file description, which for amux is its file name, `amux`) and
+    /// `Defer`. A rule that differs in any of it was made or changed by
+    /// someone, and stays.
+    fn is_the_prompts(&self, program: &Path) -> bool {
+        // The file's name as Windows splits the path, whatever OS reads it.
+        let path = program.to_string_lossy();
+        let file = path.rsplit(['\\', '/']).next().unwrap_or_default();
+        let stem = file.rsplit_once('.').map_or(file, |(stem, _)| stem);
+        let program_named =
+            |name: &str| file.eq_ignore_ascii_case(name) || stem.eq_ignore_ascii_case(name);
+        let prompt_id = self
+            .id
+            .get(..PROMPT_ID.len())
+            .is_some_and(|start| start.eq_ignore_ascii_case(PROMPT_ID))
+            && self.id[PROMPT_ID.len()..]
+                .split_once('}')
+                .is_some_and(|(_, named)| same_program(named, program));
+        !self.policy
+            && prompt_id
+            && !self.other_fields
+            && self.action == Action::Block
+            && self.inbound
+            && self.protocol == Some(UDP)
+            && !self.profiles.public
+            && (self.profiles.private || self.profiles.domain)
+            && self.remote.is_empty()
+            && !self.some_ports
+            && !self.service
+            && self
+                .program
+                .as_deref()
+                .is_some_and(|named| same_program(named, program))
+            && program_named(&self.name)
     }
 
     /// Whether it decides what reaches `program` over UDP from a device
@@ -226,7 +284,7 @@ impl Rule {
             && self.inbound
             && !self.service
             && !self.some_ports
-            && self.for_everyone_nearby()
+            && self.for_devices_nearby()
             && self.protocol.is_none_or(|protocol| protocol == UDP)
             && self.profiles.overlaps(profile)
             && self
@@ -237,6 +295,16 @@ impl Rule {
 }
 
 const UDP: u8 = 17;
+
+/// The fields of a rule that Windows' prompt to allow a program writes, as
+/// [MS-GPFAS] 2.2.2.10 names them.
+const PROMPT_FIELDS: &[&str] = &[
+    "Action", "Active", "Dir", "Protocol", "Profile", "App", "Name", "Desc", "Defer",
+];
+
+/// How the id of the UDP rule Windows' prompt adds starts; a GUID and,
+/// after its brace, the program's path follow.
+const PROMPT_ID: &str = "UDP Query User{";
 
 /// What the firewall holds now.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -282,8 +350,9 @@ pub enum Standing {
     Off,
     /// No rule lets them: what they send is dropped.
     Closed,
-    /// A rule blocks them, as Windows adds when its prompt to allow amux is
-    /// dismissed. A block wins over any allow.
+    /// A rule blocks them, or some of them (one for some addresses), as
+    /// Windows adds when its prompt to allow amux is dismissed. A block
+    /// wins over any allow.
     Blocked,
 }
 
@@ -327,13 +396,14 @@ pub enum Change {
 /// What makes `snapshot` let devices nearby reach `program`: nothing when
 /// it does already.
 ///
-/// A rule that blocks them is removed only when that is all it does, as
-/// the one Windows adds when its prompt is dismissed on a private network:
-/// the machine's own, blocking UDP to amux on private or domain networks
-/// alone. Every other rule stays. Any other block (a group policy's, or
-/// one that also blocks other protocols or public networks), and a group
-/// policy that keeps the rule amux adds from counting, is an error that
-/// says why, and nothing is changed.
+/// A rule that blocks them is removed only when it is, unchanged, the one
+/// Windows adds when its prompt to allow amux is dismissed on a private or
+/// domain network (`Rule::is_the_prompts`). Every other rule stays. Any
+/// other block (a group policy's, one someone made, or the prompt's
+/// changed: for other protocols, public networks, some addresses or
+/// ports, or under another name), and a group policy that keeps the rule
+/// amux adds from counting, is an error that names it, and nothing is
+/// changed.
 pub fn plan(snapshot: &Snapshot, program: &Path) -> Result<Vec<Change>, String> {
     if standing(snapshot, program).open() {
         return Ok(Vec::new());
@@ -354,11 +424,12 @@ pub fn plan(snapshot: &Snapshot, program: &Path) -> Result<Vec<Change>, String> 
                     rule.name
                 ));
             }
-            if rule.id.is_empty() || rule.protocol != Some(UDP) || rule.profiles.public {
+            if !rule.is_the_prompts(program) {
                 return Err(format!(
-                    "the firewall rule {:?} keeps devices nearby from reaching amux, and blocks \
-                     more than UDP to amux on private and domain networks, so amux leaves it \
-                     as it is; changing or removing it in Windows Defender Firewall lets them",
+                    "the firewall rule {:?} keeps devices nearby from reaching amux, and isn't \
+                     the one Windows adds when its prompt to allow amux is dismissed, so amux \
+                     leaves it as it is; changing or removing it in Windows Defender Firewall \
+                     lets them",
                     rule.name
                 ));
             }
@@ -512,14 +583,18 @@ mod tests {
         Rule::parse(text).unwrap()
     }
 
-    /// The machine's own rules, each kept under the id `rule-<index>`.
+    /// The machine's own rules, each kept under the id `rule-<index>`, but
+    /// those of [`DISMISSED`] under the ids Windows' prompt gives them.
     fn snapshot(rules: &[&str]) -> Snapshot {
         Snapshot {
             rules: rules
                 .iter()
                 .enumerate()
                 .map(|(at, text)| Rule {
-                    id: format!("rule-{at}"),
+                    id: DISMISSED
+                        .iter()
+                        .position(|dismissed| dismissed == text)
+                        .map_or_else(|| format!("rule-{at}"), |at| DISMISSED_IDS[at].to_owned()),
                     ..rule(text)
                 })
                 .collect(),
@@ -552,9 +627,15 @@ mod tests {
                 some_ports: false,
                 service: false,
                 remote: Vec::new(),
+                other_fields: false,
                 policy: false,
             }
         );
+        // A field the prompt never writes, such as a local address or an
+        // interface type, is noted.
+        assert!(rule(r"v2.33|Action=Block|Dir=In|LA4=10.0.0.2|App=x.exe|").other_fields);
+        assert!(rule(r"v2.33|Action=Block|Dir=In|IFType=Wireless|App=x.exe|").other_fields);
+        assert!(!rule(DISMISSED[0]).other_fields);
         // Its remote addresses, each as written.
         let scoped = rule(
             r"v2.33|Action=Allow|Dir=In|RA4=10.0.0.5|RA4=192.168.1.0/255.255.255.0|RA6=fd00::5|App=x.exe|",
@@ -607,10 +688,17 @@ mod tests {
     }
 
     /// What Windows adds when its prompt to allow amux is dismissed on a
-    /// private network: a block for each protocol.
+    /// private network: a block for each protocol, named after the
+    /// program's file description, `amux`.
     const DISMISSED: [&str; 2] = [
-        r"v2.33|Action=Block|Active=TRUE|Dir=In|Protocol=17|Profile=Private|App=C:\users\someone\.amux\bin\amux.exe|Name=amux|Desc=amux|",
-        r"v2.33|Action=Block|Active=TRUE|Dir=In|Protocol=6|Profile=Private|App=C:\users\someone\.amux\bin\amux.exe|Name=amux|Desc=amux|",
+        r"v2.33|Action=Block|Active=TRUE|Dir=In|Protocol=17|Profile=Private|App=C:\users\someone\.amux\bin\amux.exe|Name=amux|Desc=amux|Defer=User|",
+        r"v2.33|Action=Block|Active=TRUE|Dir=In|Protocol=6|Profile=Private|App=C:\users\someone\.amux\bin\amux.exe|Name=amux|Desc=amux|Defer=User|",
+    ];
+
+    /// The ids Windows keeps [`DISMISSED`]'s rules under.
+    const DISMISSED_IDS: [&str; 2] = [
+        r"UDP Query User{1F0B5C2E-8A3C-4D1E-9B7A-2C6D8E4F1A3B}C:\users\someone\.amux\bin\amux.exe",
+        r"TCP Query User{7D2E9A41-3B6C-4F8D-A1E5-9C0B2D4F6E8A}C:\users\someone\.amux\bin\amux.exe",
     ];
 
     #[test]
@@ -650,12 +738,105 @@ mod tests {
             plan(&snapshot(&DISMISSED), amux()),
             Ok(vec![
                 Change::Remove {
-                    id: "rule-0".to_owned(),
+                    id: DISMISSED_IDS[0].to_owned(),
                     name: "amux".to_owned()
                 },
                 allow
             ])
         );
+    }
+
+    /// Only the block Windows' prompt adds, unchanged, is removed: the
+    /// same block made by someone, kept under another id, named otherwise,
+    /// or changed to cover some addresses, a port or an interface stays,
+    /// and is named.
+    #[test]
+    fn only_the_prompts_own_block_is_removed() {
+        let planned = |rule: Rule| {
+            let mut held = snapshot(&[]);
+            held.rules.push(rule);
+            plan(&held, amux())
+        };
+        let prompt = rule(DISMISSED[0]);
+        // Its id as Windows may write it, in another case: still the
+        // prompt's.
+        let shouted = DISMISSED_IDS[0].to_ascii_uppercase();
+        assert_eq!(
+            planned(Rule {
+                id: shouted.clone(),
+                ..prompt.clone()
+            }),
+            Ok(vec![
+                Change::Remove {
+                    id: shouted,
+                    name: "amux".to_owned()
+                },
+                Change::Allow {
+                    program: amux().to_owned()
+                }
+            ])
+        );
+        let mut changed = vec![
+            Rule {
+                id: "{B7E1C0D2-0000-4000-8000-000000000001}".to_owned(),
+                ..prompt.clone()
+            },
+            Rule {
+                id: DISMISSED_IDS[0].replace(r"\amux.exe", r"\other.exe"),
+                ..prompt.clone()
+            },
+            Rule {
+                name: "No amux at home".to_owned(),
+                ..prompt.clone()
+            },
+            Rule {
+                profiles: Profiles::ALL,
+                ..prompt.clone()
+            },
+            Rule {
+                protocol: None,
+                ..prompt.clone()
+            },
+        ];
+        for text in [
+            r"v2.33|Action=Block|Active=TRUE|Dir=In|Protocol=17|Profile=Private|RA4=LocalSubnet|App=C:\users\someone\.amux\bin\amux.exe|Name=amux|Desc=amux|",
+            r"v2.33|Action=Block|Active=TRUE|Dir=In|Protocol=17|Profile=Private|RPort=53|App=C:\users\someone\.amux\bin\amux.exe|Name=amux|Desc=amux|",
+            r"v2.33|Action=Block|Active=TRUE|Dir=In|Protocol=17|Profile=Private|IFType=Wireless|App=C:\users\someone\.amux\bin\amux.exe|Name=amux|Desc=amux|",
+        ] {
+            changed.push(Rule {
+                id: DISMISSED_IDS[0].to_owned(),
+                ..rule(text)
+            });
+        }
+        for rule in changed {
+            let name = format!("{:?}", rule.name);
+            let error = planned(rule).unwrap_err();
+            assert!(error.contains("amux leaves it as it is"), "{error}");
+            assert!(error.contains(&name), "{error}");
+        }
+    }
+
+    /// A block someone made for the local subnet and a routed corporate
+    /// one stays, named, and nothing changes: removing it would let the
+    /// corporate subnet in too.
+    #[test]
+    fn a_custom_block_for_the_local_and_a_corporate_subnet_stays() {
+        let custom = r"v2.33|Action=Block|Active=TRUE|Dir=In|Protocol=17|Profile=Domain|Profile=Private|RA4=LocalSubnet|RA4=10.20.0.0/255.255.0.0|RA6=LocalSubnet|App=C:\Users\someone\.amux\bin\amux.exe|Name=amux|Desc=amux|";
+        assert_eq!(
+            standing(&snapshot(&[ADDED, custom]), amux()),
+            Standing::Blocked
+        );
+        for elevated in [false, true] {
+            let fake = Fake::new(&[ADDED, custom], elevated);
+            let error = set_up(&fake, amux(), RERUN, elevated).unwrap_err();
+            assert!(error.to_string().contains("\"amux\""), "{error}");
+            assert!(
+                error.to_string().contains("amux leaves it as it is"),
+                "{error}"
+            );
+            assert!(fake.calls().is_empty());
+            assert_eq!(held(&fake).len(), 2);
+        }
     }
 
     /// A rule that blocks devices nearby and does more, or that no change
@@ -709,12 +890,51 @@ mod tests {
         let subnet = r"v2.33|Action=Allow|Active=TRUE|Dir=In|Protocol=17|Profile=Domain|Profile=Private|RA4=LocalSubnet|RA6=LocalSubnet|App=C:\Users\someone\.amux\bin\amux.exe|Name=amux nearby|";
         assert_eq!(standing(&snapshot(&[one]), amux()), Standing::Closed);
         assert_eq!(standing(&snapshot(&[subnet]), amux()), Standing::Allowed);
-        // Nor does a block for some addresses keep the rest out.
-        let blocked = r"v2.33|Action=Block|Active=TRUE|Dir=In|Protocol=17|RA4=10.0.0.9|App=C:\Users\someone\.amux\bin\amux.exe|Name=not that one|";
+    }
+
+    /// A block for some addresses may be for the network's own subnet, or
+    /// overlap it, and amux can't tell from the rule: it counts as
+    /// blocking devices nearby, beside any allow.
+    #[test]
+    fn a_block_for_some_addresses_blocks_devices_nearby() {
+        for remote in [
+            "RA4=10.0.0.9",
+            "RA4=192.168.1.0/255.255.255.0",
+            "RA4=10.0.0.1-10.0.0.200",
+            "RA6=fd00::/64",
+            "RA4=LocalSubnet",
+        ] {
+            let blocked = format!(
+                r"v2.33|Action=Block|Active=TRUE|Dir=In|Protocol=17|{remote}|App=C:\Users\someone\.amux\bin\amux.exe|Name=not those|"
+            );
+            assert_eq!(
+                standing(&snapshot(&[ADDED, &blocked]), amux()),
+                Standing::Blocked,
+                "{remote}"
+            );
+        }
+    }
+
+    /// A group policy's block for a subnet written out (here the whole
+    /// LAN) keeps devices nearby out whatever allow is beside it: setting
+    /// up says so and changes nothing, rather than report success.
+    #[test]
+    fn a_policys_block_for_a_subnet_is_reported_not_set_up() {
+        let policy = r"v2.33|Action=Block|Active=TRUE|Dir=In|Protocol=17|RA4=192.168.1.0/255.255.255.0|App=C:\Users\someone\.amux\bin\amux.exe|Name=No amux on the office LAN|";
+        let fake = Fake::new(&[ADDED, policy], true);
+        fake.snapshot.lock().unwrap().rules[1].policy = true;
         assert_eq!(
-            standing(&snapshot(&[ADDED, blocked]), amux()),
-            Standing::Allowed
+            standing(&fake.snapshot.lock().unwrap(), amux()),
+            Standing::Blocked
         );
+        let error = set_up(&fake, amux(), RERUN, true).unwrap_err();
+        assert!(error.to_string().contains("group policy's"), "{error}");
+        assert!(
+            error.to_string().contains("No amux on the office LAN"),
+            "{error}"
+        );
+        assert!(fake.calls().is_empty());
+        assert_eq!(held(&fake).len(), 2);
     }
 
     /// A firewall in memory that records what it is asked, and a run as an
@@ -834,7 +1054,7 @@ mod tests {
         assert_eq!(
             held(&fake),
             [
-                ("rule-1".to_owned(), "amux".to_owned()),
+                (DISMISSED_IDS[1].to_owned(), "amux".to_owned()),
                 ("added".to_owned(), "amux".to_owned())
             ]
         );

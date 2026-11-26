@@ -376,26 +376,17 @@ impl super::firewall::System for Firewall {
 
     fn apply(&self, changes: &[Change]) -> io::Result<()> {
         for change in changes {
-            let (program, arguments, doing) = match change {
-                Change::Remove { id, name } => (
-                    powershell()?,
-                    powershell_arguments(id),
-                    format!("remove the rule {name:?}"),
-                ),
-                Change::Allow { program } => (
-                    netsh()?,
-                    netsh_arguments(program),
-                    "add the rule".to_owned(),
-                ),
-            };
-            let output = std::process::Command::new(&program)
-                .raw_arg(arguments)
+            let run = FirewallRun::of(change)?;
+            let output = std::process::Command::new(&run.program)
+                .raw_arg(&run.arguments)
+                .envs(run.environment.iter().cloned())
                 .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW)
                 .output()?;
             if !output.status.success() {
                 return Err(io::Error::other(format!(
-                    "{} could not {doing}: {}{}",
-                    program.display(),
+                    "{} could not {}: {}{}",
+                    run.program.display(),
+                    run.doing,
                     String::from_utf8_lossy(&output.stdout).trim(),
                     String::from_utf8_lossy(&output.stderr).trim()
                 )));
@@ -467,21 +458,56 @@ fn powershell() -> io::Result<std::path::PathBuf> {
         .join("powershell.exe"))
 }
 
+/// What [`Firewall::apply`] runs to make one change.
+#[derive(Debug)]
+struct FirewallRun {
+    program: std::path::PathBuf,
+    /// Its command line after the program's name, as the program parses it.
+    arguments: String,
+    /// What it is told beside its command line, in its environment.
+    environment: Vec<(&'static str, String)>,
+    /// What it does, for an error: "could not <doing>".
+    doing: String,
+}
+
+/// The variable the id of the rule to remove reaches PowerShell in.
+const RULE_ID: &str = "AMUX_RULE_ID";
+
+impl FirewallRun {
+    fn of(change: &Change) -> io::Result<FirewallRun> {
+        Ok(match change {
+            Change::Remove { id, name } => FirewallRun {
+                program: powershell()?,
+                arguments: powershell_arguments(),
+                environment: vec![(RULE_ID, id.clone())],
+                doing: format!("remove the rule {name:?}"),
+            },
+            Change::Allow { program } => FirewallRun {
+                program: netsh()?,
+                arguments: netsh_arguments(program),
+                environment: Vec::new(),
+                doing: "add the rule".to_owned(),
+            },
+        })
+    }
+}
+
 /// The command line after `powershell` that removes the machine's own rule
-/// kept under `id`, and fails unless exactly that one rule was there.
-/// netsh names rules by their name, which many share (Windows' prompt
-/// names each it adds after the program), so the rule is found by its id,
-/// compared whole rather than as `-Name`'s pattern, in the store of the
-/// machine's own rules. The script goes encoded, so no quoting of the id
-/// is left to a command line.
-fn powershell_arguments(id: &str) -> String {
+/// kept under the id in [`RULE_ID`], and fails unless exactly that one
+/// rule was there. netsh names rules by their name, which many share
+/// (Windows' prompt names each it adds after the program), so the rule is
+/// found by its id, compared whole rather than as `-Name`'s pattern, in
+/// the store of the machine's own rules. The id comes as data, in the
+/// environment, never in the script's text, where a quote it holds (`'`,
+/// or `’`, which PowerShell also takes for one) would end a string.
+fn powershell_arguments() -> String {
     use base64::Engine as _;
     let script = format!(
-        "$ErrorActionPreference = 'Stop'; $id = '{}'; \
+        "$ErrorActionPreference = 'Stop'; $id = $env:{RULE_ID}; \
+         if (-not $id) {{ [Console]::Error.WriteLine('no rule id was given'); exit 2 }}; \
          $rules = @(Get-NetFirewallRule -PolicyStore PersistentStore | Where-Object {{ $_.Name -eq $id }}); \
          if ($rules.Count -ne 1) {{ [Console]::Error.WriteLine(\"$($rules.Count) rules have the id $id\"); exit 2 }}; \
-         $rules | Remove-NetFirewallRule",
-        id.replace('\'', "''")
+         $rules | Remove-NetFirewallRule"
     );
     let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
     format!(
@@ -724,13 +750,27 @@ mod tests {
     }
 
     /// PowerShell is told to remove the one rule with the id, whatever the
-    /// id holds: the script goes encoded, the id quoted inside it.
+    /// id holds: the id goes as data, in the run's environment, and the
+    /// script it runs is the same for every id, so no quote in the id (an
+    /// ASCII one or `’`, which PowerShell also ends a string on) reaches
+    /// the script's text.
     #[test]
     fn powershell_is_told_the_one_rule_to_remove() {
         use base64::Engine as _;
-        let id = r"UDP Query User{8A3C}C:\users\o'neil\.amux\bin\amux.exe";
-        let arguments = powershell_arguments(id);
-        let encoded = arguments
+        let id = "UDP Query User{8A3C}C:\\users\\o\u{2019}neil o'neil\\.amux\\bin\\amux.exe";
+        let run = FirewallRun::of(&Change::Remove {
+            id: id.to_owned(),
+            name: "amux".to_owned(),
+        })
+        .unwrap();
+        assert!(
+            run.program
+                .ends_with(r"System32\WindowsPowerShell\v1.0\powershell.exe"),
+            "{run:?}"
+        );
+        assert_eq!(run.environment, [(RULE_ID, id.to_owned())]);
+        let encoded = run
+            .arguments
             .strip_prefix("-NoProfile -NonInteractive -EncodedCommand ")
             .unwrap();
         let bytes = base64::engine::general_purpose::STANDARD
@@ -741,21 +781,28 @@ mod tests {
             .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
             .collect();
         let script = String::from_utf16(&units).unwrap();
-        assert!(
-            script.contains(r"$id = 'UDP Query User{8A3C}C:\users\o''neil\.amux\bin\amux.exe'"),
-            "{script}"
-        );
+        assert!(!script.contains("neil"), "{script}");
+        assert!(script.contains("$id = $env:AMUX_RULE_ID;"), "{script}");
         assert!(script.contains("-PolicyStore PersistentStore"), "{script}");
         assert!(script.contains("$_.Name -eq $id"), "{script}");
         assert!(
             script.ends_with("$rules | Remove-NetFirewallRule"),
             "{script}"
         );
-        assert!(
-            powershell()
-                .unwrap()
-                .ends_with(r"System32\WindowsPowerShell\v1.0\powershell.exe")
-        );
+        // The script names no id at all: every removal runs the same one.
+        let other = FirewallRun::of(&Change::Remove {
+            id: "another".to_owned(),
+            name: "amux".to_owned(),
+        })
+        .unwrap();
+        assert_eq!(other.arguments, run.arguments);
+        // Adding the rule is told nothing beside its command line.
+        let add = FirewallRun::of(&Change::Allow {
+            program: PathBuf::from(r"C:\Users\o’neil\.amux\bin\amux.exe"),
+        })
+        .unwrap();
+        assert!(add.environment.is_empty());
+        assert!(add.program.ends_with(r"System32\netsh.exe"));
     }
 
     /// Reading changes nothing: it is all a test does with this machine's

@@ -175,6 +175,43 @@ fn a_deep_path_has_a_long_form_and_a_shallow_one_stays_plain() {
     assert!(long.ends_with(Path::new(&"deep".repeat(70)).join("store.sqlite")));
 }
 
+/// A path's short form names the same file. On Windows each long name
+/// becomes its 8.3 one, unless the volume keeps none, and a path past
+/// `MAX_PATH` comes back plain once its short form is under it; a missing
+/// path has no short form there. Elsewhere the path is as it was.
+#[test]
+fn a_short_path_names_the_same_file_in_8_3_names_where_there_are_some() {
+    let dir = tempfile::tempdir().unwrap();
+    let names = ["a folder with a long name", "another long-named folder"];
+    let top = canonical(dir.path()).unwrap();
+    let mut deep = top.clone();
+    for (i, name) in names.iter().cycle().take(10).enumerate() {
+        deep.push(format!("{name} {i}"));
+    }
+    fs::create_dir_all(&deep).unwrap();
+    let file = deep.join("a config file with a long name.toml");
+    fs::write(&file, b"").unwrap();
+    assert!(file.as_os_str().len() > 260);
+
+    let short = short_path(&file).unwrap();
+    assert_eq!(FileId::of(&short).unwrap(), FileId::of(&file).unwrap());
+    if !cfg!(windows) {
+        assert_eq!(short, file);
+        return;
+    }
+    let text = short.to_string_lossy();
+    if !short.ends_with(file.strip_prefix(&top).unwrap()) {
+        // The volume keeps short names: every long one went.
+        assert!(text.len() < 260 && !text.starts_with(r"\\?\"), "{text}");
+        let tail = short.components().rev().take(11);
+        for name in tail {
+            let name = name.as_os_str().to_string_lossy();
+            assert!(name.len() <= 12 && name.contains('~'), "{name} in {text}");
+        }
+    }
+    assert!(short_path(&deep.join("missing")).is_err());
+}
+
 #[test]
 fn an_executable_is_executable_and_a_plain_file_on_unix_is_not() {
     let dir = tempfile::tempdir().unwrap();

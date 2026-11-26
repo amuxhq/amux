@@ -888,10 +888,15 @@ async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
 
 /// `start_at_login` writes the login item for the next login and removes
 /// it, with amux stopped; an install without a supervisor has none. The
-/// test's items are its own, which no service manager is told of.
+/// test's items are its own, which no service manager is told of. amux is
+/// copied to a temporary folder, so the item's length is the test's
+/// folders', not the build's (Windows starts no `Run` line past 260).
 #[test]
 fn start_at_login_writes_and_removes_the_login_item() {
-    let install = Install::new(true, "");
+    let bin = tempfile::tempdir().unwrap();
+    let amux = bin.path().join(os::paths::exe_name("amux"));
+    std::fs::copy(amux_binary(), &amux).unwrap();
+    let install = Install::with_binary(true, "", amux);
     let on = install.amux(&["config", "set", "start_at_login", "true"]);
     assert!(
         stdout(&on).contains("amux starts at login"),
@@ -900,8 +905,13 @@ fn start_at_login_writes_and_removes_the_login_item() {
     );
     let login = install.login_item();
     let item = login.contents().expect("this install's login item");
+    // Past 260 characters, Windows' item names the config by its short form.
+    let short = os::fs::short_path(&install.config).unwrap();
     assert!(
-        item.contains("supervise") && item.contains(&*install.config.to_string_lossy()),
+        item.contains("supervise")
+            && [&install.config, &short]
+                .iter()
+                .any(|config| item.contains(&*config.to_string_lossy())),
         "{item}"
     );
     assert!(

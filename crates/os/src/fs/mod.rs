@@ -391,6 +391,16 @@ pub fn long_form(path: &Path) -> PathBuf {
     imp::long_form(path)
 }
 
+/// The existing `path` in its shortest form, for a command line that
+/// must fit a limit. Windows: absolute, each folder and file by its 8.3
+/// short name (`GetShortPathNameW`, `C:\Users\SOMEON~1\…`), which names
+/// the same file; a name the volume keeps no short name for (short names
+/// turned off on it, or ReFS) stays long. Missing is an error there.
+/// Elsewhere `path` as it is, which has no short form.
+pub fn short_path(path: &Path) -> io::Result<PathBuf> {
+    imp::short_path(path)
+}
+
 /// Whether `name`, as one file or folder name, is one Windows cannot give
 /// a file: a device's (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`,
 /// `LPT0`–`LPT9`, in any case, alone or before an extension), or one

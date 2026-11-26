@@ -176,6 +176,13 @@ fn kill_others_without_a_census_is_an_error() {
 /// census: one counted while it was still below is ended all the same, and
 /// one never counted escapes, as a provider's tool shell would once the
 /// provider finishes on a polite stop.
+///
+/// The sleeper is seen reparented before the kill, not inferred to be
+/// from its parent reading dead: macOS stops answering for an exiting
+/// process (`proc_prepareexit`) before it hands the children on
+/// (`proc_exit`), so "dead" there comes first. And it is seen alive then,
+/// so a sleeper that died on the way (CI run 45886389827, once) says
+/// whether `kill_others` ended it.
 #[cfg(feature = "async")]
 #[test]
 fn a_counted_member_reparented_away_still_dies_on_kill_others() {
@@ -191,12 +198,27 @@ fn a_counted_member_reparented_away_still_dies_on_kill_others() {
         }
         member.kill().unwrap();
         assert!(eventually(|| !member.alive()), "the member dies");
+        let row = || super::table::row(sleeper.pid() as i32);
+        assert!(
+            eventually(|| row().is_none_or(|row| row.ppid != member.pid() as i32)),
+            "the sleeper is reparented: {:?}",
+            row()
+        );
+        assert!(
+            sleeper.alive(),
+            "the sleeper outlives its parent: {:?}",
+            row()
+        );
         driven.tell("kill");
         assert_eq!(driven.expect("killed"), "ok");
         if counted {
             assert!(eventually(|| !sleeper.alive()), "the counted sleeper dies");
         } else {
-            assert!(sleeper.alive(), "an uncounted sleeper is out of reach");
+            assert!(
+                sleeper.alive(),
+                "an uncounted sleeper is out of reach: {:?}",
+                row()
+            );
             sleeper.kill().unwrap();
         }
     }

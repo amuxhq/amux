@@ -12,6 +12,7 @@ pub mod paths;
 pub mod process;
 #[cfg(feature = "async")]
 pub mod signal;
+pub mod system;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 

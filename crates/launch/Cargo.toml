@@ -15,5 +15,10 @@ path = "src/main.rs"
 [dependencies]
 os = { workspace = true }
 
+# build.rs links the manifest and version information into
+# amux-launch.exe.
+[build-dependencies]
+exe-resource = { workspace = true }
+
 [lints]
 workspace = true

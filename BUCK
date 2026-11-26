@@ -116,6 +116,7 @@ _CARGO_PACKAGES = ["//crates/{}:cargo-package".format(name) for name in [
     "codex-protocol",
     "core-ring",
     "daemon-core",
+    "exe-resource",
     "fake-amux",
     "git-facts",
     "highlight",
@@ -263,7 +264,7 @@ amux_check(
 _CRATES = [
     "acp-protocol", "agent", "agent-core", "agent-dir", "amux", "analytics", "app-bridge",
     "app-embedded", "app-ffi", "app-jni", "app-runtime", "attachments", "browser-core",
-    "claude-protocol", "client", "codex-protocol", "core-ring", "daemon-core", "fake-amux",
+    "claude-protocol", "client", "codex-protocol", "core-ring", "daemon-core", "exe-resource", "fake-amux",
     "git-facts", "highlight", "installer", "interpret", "ios-tools", "journal", "launch",
     "log-file", "models", "node", "os", "path-core", "patience", "preview", "provider-fakes",
     "pty-host", "qualification", "redaction", "relay-core", "release", "replay-support", "settings",

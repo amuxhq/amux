@@ -8,6 +8,15 @@ pub(super) fn current_path() -> OsString {
     std::env::var_os("PATH").unwrap_or_default()
 }
 
+/// A Unix user's `PATH` is whatever their shell's profile builds; an
+/// install script edits that file itself.
+pub(super) fn remove_from_user_path(_dir: &Path) -> std::io::Result<bool> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "a Unix user's PATH is their shell profile's",
+    ))
+}
+
 /// Unix names a variable by its exact spelling.
 pub(super) fn same_variable(key: &str, name: &str) -> bool {
     key == name

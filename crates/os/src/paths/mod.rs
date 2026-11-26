@@ -1,8 +1,10 @@
 //! Where things are: the home folder, a program's file name, the `PATH` a
-//! newly logged-on process would see, and the program a name runs.
+//! newly logged-on process would see (and the user's own, which an
+//! uninstall takes amux's folder off), and the program a name runs.
 
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
+use std::io;
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
@@ -41,6 +43,27 @@ pub fn exe_name(stem: &str) -> String {
 /// separator. Unix: this process's `PATH`.
 pub fn current_path() -> OsString {
     imp::current_path()
+}
+
+/// Names the key under `HKCU` that holds the user's environment, in place
+/// of `Environment`, for a test on Windows: it must be under
+/// `Software\amux-test-`, so no test reaches the person's own `Path`.
+/// `scripts/install/install.ps1` reads it too. Ignored elsewhere.
+pub const TEST_ENVIRONMENT_KEY: &str = "AMUX_TEST_ENVIRONMENT_KEY";
+
+/// Takes `dir` off the user's own `PATH`, the one each new logon and
+/// terminal starts from; says whether it was on it.
+///
+/// Windows: every entry of the `Path` value under `HKCU\Environment` that
+/// names `dir` ([`TEST_ENVIRONMENT_KEY`]'s key in a test), compared as
+/// Windows compares folders, with an entry's `%VARIABLES%` expanded. The
+/// other entries stay exactly as written, `%VARIABLES%` and all, and the
+/// value keeps its kind (`REG_EXPAND_SZ`); a value left empty is deleted.
+/// Then `WM_SETTINGCHANGE` tells Explorer, so what it starts next has the
+/// new `PATH`. Unix: [`io::ErrorKind::Unsupported`]; the shell profiles an
+/// install script writes are the script's own.
+pub fn remove_from_user_path(dir: &Path) -> io::Result<bool> {
+    imp::remove_from_user_path(dir)
 }
 
 /// The program `name` runs when looked up on `path` (a `PATH` value), as

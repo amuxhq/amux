@@ -9,15 +9,14 @@ publish = false
 [dependencies]
 async-trait = { workspace = true }
 jiff = { workspace = true }
+# The system's version every request carries.
+os = { workspace = true }
 reqwest = { workspace = true }
 semver = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
-
-[target.'cfg(unix)'.dependencies]
-libc = { workspace = true }
 
 [dev-dependencies]
 source-tree = { workspace = true }

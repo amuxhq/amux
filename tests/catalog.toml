@@ -2,7 +2,7 @@ version = 1
 
 [[suite]]
 name = "desktop-cli-system"
-contract = "The built amux binary hosts agents that outlive a killed daemon and are adopted by the next, attaches terminals to them, forwards the browser extension's calls to its sockets, closes pairing mode however amux pair ends, words its refusals as sentences, starts an agent in a new worktree from `amux new --worktree`, serves the cloud relay, writes its login units, routes stop and update through the supervisor (ending Windows' login launcher on a stop), and keeps overlapping releases working across an update."
+contract = "The built amux binary hosts agents that outlive a killed daemon and are adopted by the next, attaches terminals to them, forwards the browser extension's calls to its sockets, closes pairing mode however amux pair ends, words its refusals as sentences, starts an agent in a new worktree from `amux new --worktree`, serves the cloud relay, writes its login units, routes stop and update through the supervisor (ending Windows' login launcher on a stop), uninstalls leaving nothing but a program still running, carries its Windows manifest and version, and keeps overlapping releases working across an update."
 paths = ["crates/amux/tests"]
 recipe = "just suite desktop-cli-system"
 boundary = "System composition"
@@ -584,6 +584,24 @@ cargo = [
 ]
 
 [[suite]]
+name = "windows-program-resources"
+contract = "Each Windows program amux ships is linked with one resource file, written by the same code under Cargo and Buck2: the empty entry, the application manifest (asInvoker, Windows 10 and 11, long paths, UTF-8) and VERSIONINFO with the crate's version as four numbers and as the strings Explorer shows; a file that is no PE program carries neither."
+paths = ["crates/exe-resource/src"]
+recipe = "just suite windows-program-resources"
+boundary = "System composition"
+oracle = "Byte layout of the resource file and its version blocks read back."
+real = ["the writer's and reader's own functions"]
+substituted = []
+time = "none"
+capabilities = ["Rust toolchain"]
+lane = "fast"
+evidence = ""
+update = ""
+cargo = [
+  { package = "exe-resource", kind = "lib", targets = ["exe_resource"], features = [] },
+]
+
+[[suite]]
 name = "daemon-library-units"
 contract = "Daemon-side libraries preserve their local parsing, state, routing, lifecycle, persistence, agent-directory and wire invariants."
 paths = ["crates/agent-dir/src", "crates/analytics/src", "crates/client/src", "crates/log-file/src", "crates/node/src", "crates/release/src", "crates/socket-core/src", "crates/settings/src", "crates/wire/src"]
@@ -1029,15 +1047,15 @@ cargo = [
 
 [[suite]]
 name = "install-scripts"
-contract = "The install scripts take the stable manifest's entry for the machine and install the binary it names only when the download's size and sha256 are the entry's; a machine the channel has no build for is told so."
+contract = "The install scripts take the stable manifest's entry for the machine and install the binary it names only when the download's size and sha256 are the entry's; a machine the channel has no build for is told so. On Windows the launcher goes beside it only when the download is the manifest's `<target>/amux-launch` entry's (a manifest naming no launcher of amux's release installs amux alone), the folder goes first on the user's PATH in the registry once with every other entry kept as written, and a running amux is stopped and moved aside to a fresh .old.<n>, swept by the next install."
 paths = ["crates/xtask/tests/install_scripts.rs", "scripts/install"]
 recipe = "just suite install-scripts"
 boundary = "System composition"
-oracle = "Exact script exits and the installed file's bytes, against a manifest the release crate serialized."
-real = ["child processes", "temporary files", "loopback HTTP"]
-substituted = ["amux.sh", "the release's assets"]
+oracle = "Exact script exits, the installed files' bytes and names, and the scratch registry value, against a manifest the release crate serialized."
+real = ["child processes", "temporary files", "loopback HTTP", "a scratch registry key (Windows)", "a running program holding the installed file (Windows)"]
+substituted = ["amux.sh", "the release's assets", "HKCU\\Environment by a scratch key"]
 time = "real"
-capabilities = ["Unix"]
+capabilities = ["Unix", "Windows"]
 lane = "tool"
 evidence = ""
 update = ""

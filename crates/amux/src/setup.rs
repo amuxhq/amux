@@ -52,7 +52,9 @@ fn own_config(config_path: Option<&Path>) -> Option<&Path> {
 }
 
 /// `amux uninstall`: stops this machine's running agents, removes the
-/// login item, stops amux, and deletes the installed binary; with
+/// login item (and an earlier build's), stops amux and with it Windows'
+/// launcher, deletes the installed programs and what updates left beside
+/// them, and takes their folder off PATH; with
 /// `delete_data`, the installation's root and config file too. A person at
 /// a terminal is asked before agents are stopped; anyone else passes
 /// `yes`. The only way amux is removed: no client deletes these itself.
@@ -103,6 +105,14 @@ pub async fn uninstall(
     {
         println!("Removed the login item ({}).", login.location());
     }
+    if login
+        .remove_earlier()
+        .context("removing the login item an earlier amux registered")?
+    {
+        println!("Removed the scheduled task an earlier amux registered.");
+    }
+    // Stopping the supervisor on purpose ends the launcher that started
+    // it (Windows' login item) too.
     crate::server::stop(config).await?;
     if let Some(hosts) = crate::browser_host::installed(own_config(config_path)) {
         for file in hosts
@@ -137,58 +147,91 @@ pub async fn uninstall(
     // --config or AMUX_CONFIG (a worktree's, a test's) leaves it alone.
     if config_path.is_none() {
         let bin = install_dir()?;
-        let mut removed = false;
-        for name in BINARY_NAMES {
-            removed |= remove_binary(&bin.join(name))?;
-        }
-        if removed {
-            println!("Removed amux from {}.", bin.display());
+        let held = remove_installed(&bin)?;
+        for path in &held {
+            println!(
+                "Left {}, which a running process holds; delete it once that exits.",
+                path.display()
+            );
         }
         remove_empty_dir(&bin);
         if let Some(parent) = bin.parent() {
             remove_empty_dir(parent);
         }
-        #[cfg(unix)]
+        match os::paths::remove_from_user_path(&bin) {
+            Ok(true) => println!("Took {} off your PATH.", bin.display()),
+            Ok(false) => {}
+            // Unix: the install script's lines in the shell profiles, below.
+            Err(error) if error.kind() == std::io::ErrorKind::Unsupported => {}
+            Err(error) => {
+                return Err(error).with_context(|| format!("taking {} off PATH", bin.display()));
+            }
+        }
         unset_shell_path()?;
     }
     Ok(())
 }
 
-/// Removes one installed binary. Windows refuses to delete the image a
-/// process is running, and this command is usually that process, so there
-/// the running binary is moved aside instead (into the temporary directory,
-/// else beside itself when that is on another drive) and the person is told
-/// to delete the copy once this exits.
-fn remove_binary(path: &Path) -> Result<bool> {
-    #[cfg(windows)]
-    if std::env::current_exe()
-        .and_then(std::fs::canonicalize)
-        .is_ok_and(|running| std::fs::canonicalize(path).is_ok_and(|path| path == running))
-    {
-        let name = format!("amux-uninstalled-{}.exe", std::process::id());
-        let temporary = std::env::temp_dir().join(&name);
-        let aside = if std::fs::rename(path, &temporary).is_ok() {
-            temporary
-        } else {
-            let beside = path.with_file_name(&name);
-            std::fs::rename(path, &beside)
-                .with_context(|| format!("moving the running {} aside", path.display()))?;
-            beside
-        };
-        println!(
-            "Moved the running amux to {}; delete it once this exits.",
-            aside.display()
-        );
-        return Ok(true);
-    }
-    remove_file(path)
-}
+/// How long the removals wait, all told, for programs that are ending (the
+/// launcher once its supervisor has stopped, an agent just stopped) before
+/// setting aside what they still hold.
+const ENDING_PATIENCE: Duration = Duration::from_secs(10);
 
-/// The binaries an install and its updates leave in the install directory.
-#[cfg(unix)]
-const BINARY_NAMES: [&str; 3] = ["amux", "amux.staged", "amux.prev"];
-#[cfg(windows)]
-const BINARY_NAMES: [&str; 3] = ["amux.exe", "amux.staged.exe", "amux.prev.exe"];
+/// Removes amux from `bin` with everything its updates left there, as
+/// [`Files::beside`] names it: the binary and the launcher Windows' login
+/// item runs, the previous build, the record of one rolled back, the
+/// downloads not yet installed, and each build moved aside while it ran
+/// (`.old.<n>`). Windows refuses to delete an image a process is running,
+/// and this command is usually one, so such a file is moved aside to a
+/// fresh `<program>.old.<n>` instead, as an update would, and returned: the
+/// one thing an uninstall leaves.
+fn remove_installed(bin: &Path) -> Result<Vec<PathBuf>> {
+    let files = Files::beside(&bin.join(os::paths::exe_name("amux")));
+    let asides = files.asides();
+    let mut paths = vec![
+        bin.join(os::paths::exe_name("amux")),
+        files.prev.clone(),
+        files.rejected.clone(),
+        files.staged.clone(),
+        files.launcher.clone(),
+        files.launcher_staged.clone(),
+    ];
+    paths.extend(asides.iter().cloned());
+
+    let running = std::env::current_exe().and_then(std::fs::canonicalize).ok();
+    let deadline = Instant::now() + ENDING_PATIENCE;
+    let mut removed = false;
+    let mut held = Vec::new();
+    for path in paths {
+        if std::fs::symlink_metadata(&path).is_err() {
+            continue;
+        }
+        let ours = running
+            .as_ref()
+            .is_some_and(|running| std::fs::canonicalize(&path).is_ok_and(|p| p == *running));
+        let patience = if ours {
+            Duration::ZERO
+        } else {
+            deadline.saturating_duration_since(Instant::now())
+        };
+        match os::fs::remove_patiently(&path, patience)
+            .with_context(|| format!("deleting {}", path.display()))?
+        {
+            os::fs::Removed::Gone => removed = true,
+            // One moved aside already keeps its name.
+            os::fs::Removed::Later if asides.contains(&path) => held.push(path),
+            os::fs::Removed::Later => held.push(
+                files
+                    .set_aside(&path)
+                    .with_context(|| format!("moving the running {} aside", path.display()))?,
+            ),
+        }
+    }
+    if removed || !held.is_empty() {
+        println!("Removed amux from {}.", bin.display());
+    }
+    Ok(held)
+}
 
 /// Where amux is installed: `~/.amux/bin`, on every platform.
 pub(crate) fn install_dir() -> Result<PathBuf> {
@@ -252,13 +295,12 @@ fn remove_empty_dir(path: &Path) {
 
 /// The two lines `https://amux.sh/install` adds to a shell profile, which
 /// it adds once and only in this form.
-#[cfg(unix)]
 const SHELL_PATH_LINES: &str =
     "\n# Added by amux installer\nexport PATH=\"$HOME/.amux/bin:$PATH\"\n";
 
-/// Takes the install script's PATH lines back out of the shell profiles it
-/// writes to.
-#[cfg(unix)]
+/// Takes the Unix install script's PATH lines back out of the shell
+/// profiles it writes to. Windows' script writes none, so there are none
+/// to find there.
 fn unset_shell_path() -> Result<()> {
     let Some(home) = os::paths::home_dir() else {
         return Ok(());

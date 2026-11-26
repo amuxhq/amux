@@ -359,6 +359,17 @@ fixups compile for Windows, is compiled against the C runtime as a DLL
 companion crate carries is found through a search path a build script
 gives Cargo, which reaches no dependent's link under Buck2.
 
+Each Windows program amux ships (`amux.exe`, `amux-launch.exe`) is linked
+with its application manifest and VERSIONINFO. A workspace crate's build
+script runs under Cargo only, so the two builds share the writer instead:
+[`crates/exe-resource`](../crates/exe-resource/src/lib.rs) writes a `.res`
+file, which the program's `build.rs` links under Cargo, and which Buck2's
+`<name>-resource` genrule writes with the crate's binary for a binary
+marked `windows_resource = True` (`amux_rust_binary` in
+[`build/rust.bzl`](../build/rust.bzl)), passing it to the linker.
+`lld-link` and MSVC's `link.exe` both take a `.res` file as an input, so no
+resource compiler runs.
+
 ### A Windows development machine
 
 A Windows machine you develop on is set up like a Mac in front of a build

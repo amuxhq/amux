@@ -34,6 +34,7 @@ DEPS = [
 ] + select({"DEFAULT": ["//third-party/rust:libc"], "prelude//os:windows": [], "prelude//os:none": []})
 
 TEST_DEPS = [
+    "//crates/exe-resource:exe-resource",
     "//crates/source-tree:source-tree",
     "//crates/journal:journal",
     "//crates/patience:patience",
@@ -56,6 +57,9 @@ amux_rust_binary(
     link_library = False,
     unit_tests = True,
     test_deps = TEST_DEPS,
+    # Its manifest and version information on Windows, as build.rs links
+    # them under Cargo.
+    windows_resource = True,
 )
 
 amux_rust_test(

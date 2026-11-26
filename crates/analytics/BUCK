@@ -1,6 +1,7 @@
 load("//build:rust.bzl", "amux_rust_library")
 
 DEPS = [
+    "//crates/os:os",
     "//third-party/rust:async-trait",
     "//third-party/rust:jiff",
     "//third-party/rust:reqwest",
@@ -9,7 +10,7 @@ DEPS = [
     "//third-party/rust:tokio",
     "//third-party/rust:tracing",
     "//third-party/rust:uuid",
-] + select({"DEFAULT": ["//third-party/rust:libc"], "prelude//os:windows": [], "prelude//os:none": []})
+]
 
 TEST_DEPS = ["//crates/source-tree:source-tree"]
 

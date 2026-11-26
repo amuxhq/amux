@@ -4,4 +4,5 @@
 //! capture in front of the real providers and join to the corpora.
 
 pub mod perf;
+pub mod platform;
 pub mod recording;

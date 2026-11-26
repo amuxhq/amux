@@ -42,7 +42,8 @@ pub mod door;
 mod feed;
 mod gate;
 mod invariant;
-// The journeys drive the terminal client in tmux.
+// out of scope on Windows: the journeys, which drive the TUI in tmux and
+// the phones' simulators beside a Mac or Linux host.
 #[cfg(unix)]
 pub mod journey;
 mod lan;

@@ -123,85 +123,87 @@ impl Drop for SystemBonjour {
 mod tests {
     use super::*;
 
-    /// Set in a re-run of this test binary that advertises and then waits
-    /// to be killed, standing in for a `testnet serve` that is SIGKILLed.
+    // macOS only by nature: the system's mDNS responder, through `dns-sd`,
+    // which a host's record reaches the iPhone simulator by.
     #[cfg(target_os = "macos")]
-    const OWNER: &str = "TESTNET_BONJOUR_OWNER";
+    mod mac {
+        use super::*;
 
-    #[cfg(target_os = "macos")]
-    fn advert(name: &str) -> Advertisement {
-        Advertisement {
-            host_id: uuid::Uuid::new_v4(),
-            name: name.into(),
-            addrs: vec!["127.0.0.1:9".parse().unwrap()],
-            scope: "testnet-bonjour-test".into(),
-            pairing_open: false,
+        /// Set in a re-run of this test binary that advertises and then waits
+        /// to be killed, standing in for a `testnet serve` that is SIGKILLed.
+        const OWNER: &str = "TESTNET_BONJOUR_OWNER";
+
+        fn advert(name: &str) -> Advertisement {
+            Advertisement {
+                host_id: uuid::Uuid::new_v4(),
+                name: name.into(),
+                addrs: vec!["127.0.0.1:9".parse().unwrap()],
+                scope: "testnet-bonjour-test".into(),
+                pairing_open: false,
+            }
         }
-    }
 
-    /// Whether a `dns-sd` still registers `name`.
-    #[cfg(target_os = "macos")]
-    fn registered(name: &str) -> bool {
-        Command::new("pgrep")
-            .args(["-f", &format!("^dns-sd -P {name} ")])
-            .stdout(Stdio::null())
-            .status()
-            .unwrap()
-            .success()
-    }
+        /// Whether a `dns-sd` still registers `name`.
+        fn registered(name: &str) -> bool {
+            Command::new("pgrep")
+                .args(["-f", &format!("^dns-sd -P {name} ")])
+                .stdout(Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        }
 
-    #[cfg(target_os = "macos")]
-    #[tokio::test]
-    async fn withdrawing_ends_the_registration_before_it_returns() {
-        let name = format!("testnet-withdraw-{}", uuid::Uuid::new_v4().simple());
-        let bonjour = SystemBonjour::new();
-        bonjour.advertise(advert(&name)).unwrap();
-        patience::until("dns-sd to register the advertisement", || {
-            std::future::ready(registered(&name).then_some(()).ok_or("no dns-sd yet"))
-        })
-        .await
-        .unwrap();
-        drop(bonjour);
-        assert!(!registered(&name), "dns-sd outlived the withdrawal");
-    }
-
-    #[cfg(target_os = "macos")]
-    #[tokio::test]
-    async fn a_killed_owner_takes_its_registration_with_it() {
-        if let Some(name) = std::env::var_os(OWNER) {
+        #[tokio::test]
+        async fn withdrawing_ends_the_registration_before_it_returns() {
+            let name = format!("testnet-withdraw-{}", uuid::Uuid::new_v4().simple());
             let bonjour = SystemBonjour::new();
-            bonjour.advertise(advert(name.to_str().unwrap())).unwrap();
-            // Held until the parent SIGKILLs this process, so no
-            // destructor of ours withdraws it.
-            match std::future::pending::<std::convert::Infallible>().await {}
-        }
-        let name = format!("testnet-owner-{}", uuid::Uuid::new_v4().simple());
-        let mut owner = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "bonjour::tests::a_killed_owner_takes_its_registration_with_it",
-                "--exact",
-                "--nocapture",
-            ])
-            .env(OWNER, &name)
-            .stdout(Stdio::null())
-            .spawn()
+            bonjour.advertise(advert(&name)).unwrap();
+            patience::until("dns-sd to register the advertisement", || {
+                std::future::ready(registered(&name).then_some(()).ok_or("no dns-sd yet"))
+            })
+            .await
             .unwrap();
-        let advertised = patience::until("the owner's dns-sd to register", || {
-            std::future::ready(registered(&name).then_some(()).ok_or("no dns-sd yet"))
-        })
-        .await;
-        owner.kill().unwrap();
-        owner.wait().unwrap();
-        advertised.unwrap();
-        patience::until("the owner's dns-sd to go with it", || {
-            std::future::ready(
-                (!registered(&name))
-                    .then_some(())
-                    .ok_or("dns-sd still running"),
-            )
-        })
-        .await
-        .unwrap();
+            drop(bonjour);
+            assert!(!registered(&name), "dns-sd outlived the withdrawal");
+        }
+
+        #[tokio::test]
+        async fn a_killed_owner_takes_its_registration_with_it() {
+            if let Some(name) = std::env::var_os(OWNER) {
+                let bonjour = SystemBonjour::new();
+                bonjour.advertise(advert(name.to_str().unwrap())).unwrap();
+                // Held until the parent SIGKILLs this process, so no
+                // destructor of ours withdraws it.
+                match std::future::pending::<std::convert::Infallible>().await {}
+            }
+            let name = format!("testnet-owner-{}", uuid::Uuid::new_v4().simple());
+            let mut owner = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "bonjour::tests::mac::a_killed_owner_takes_its_registration_with_it",
+                    "--exact",
+                    "--nocapture",
+                ])
+                .env(OWNER, &name)
+                .stdout(Stdio::null())
+                .spawn()
+                .unwrap();
+            let advertised = patience::until("the owner's dns-sd to register", || {
+                std::future::ready(registered(&name).then_some(()).ok_or("no dns-sd yet"))
+            })
+            .await;
+            owner.kill().unwrap();
+            owner.wait().unwrap();
+            advertised.unwrap();
+            patience::until("the owner's dns-sd to go with it", || {
+                std::future::ready(
+                    (!registered(&name))
+                        .then_some(())
+                        .ok_or("dns-sd still running"),
+                )
+            })
+            .await
+            .unwrap();
+        }
     }
 
     #[test]

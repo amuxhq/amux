@@ -78,6 +78,7 @@ fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     match arguments.first().map(String::as_str) {
         Some("ctl") => return testnet::ctl::main(arguments[1..].to_vec()),
+        // out of scope on Windows: the journeys, which drive the TUI in tmux.
         #[cfg(unix)]
         Some("journey") => return testnet::journey::main(arguments[1..].to_vec()),
         _ => {}
@@ -137,27 +138,13 @@ async fn serve() -> Result<()> {
     println!("{}", serde_json::to_string(&served.readiness)?);
     tokio::select! {
         () = served.closed() => {}
-        _ = tokio::signal::ctrl_c() => {}
-        () = terminated() => {}
+        // An interrupt, or the polite stop a supervisor sends (SIGTERM),
+        // whose default action would end the process without the shutdown
+        // that stops the hosts and withdraws their records.
+        stop = os::signal::terminated() => {
+            stop.context("listening for the OS's stop")?;
+        }
     }
     served.shutdown().await?;
     Ok(())
-}
-
-/// Resolves on SIGTERM, which a supervisor sends to stop the net politely;
-/// its default action would end the process without the shutdown that
-/// stops the hosts and withdraws their records.
-async fn terminated() {
-    #[cfg(unix)]
-    {
-        use tokio::signal::unix::{SignalKind, signal};
-        match signal(SignalKind::terminate()) {
-            Ok(mut terminate) => {
-                terminate.recv().await;
-            }
-            Err(_) => std::future::pending().await,
-        }
-    }
-    #[cfg(not(unix))]
-    std::future::pending::<()>().await;
 }

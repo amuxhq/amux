@@ -3,6 +3,7 @@ load("//build:rust.bzl", "amux_rust_binary")
 DEPS = [
     "//crates/agent-dir:agent-dir",
     "//crates/node:node",
+    "//crates/os:os",
     "//third-party/rust:tokio",
     "//third-party/rust:tracing-subscriber",
 ]

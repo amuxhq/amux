@@ -758,19 +758,8 @@ fn median(values: impl Iterator<Item = f64>) -> f64 {
 }
 
 /// The 1, 5 and 15 minute load averages.
-#[cfg(unix)]
 pub fn load_average() -> Result<[f64; 3]> {
-    let mut values = [0_f64; 3];
-    // SAFETY: `values` holds the three doubles asked for.
-    if unsafe { libc::getloadavg(values.as_mut_ptr(), 3) } != 3 {
-        bail!("the load average is unavailable");
-    }
-    Ok(values)
-}
-
-#[cfg(not(unix))]
-pub fn load_average() -> Result<[f64; 3]> {
-    bail!("the load average is unavailable on this platform")
+    crate::platform::load_average().context("the load average is unavailable")
 }
 
 #[cfg(test)]

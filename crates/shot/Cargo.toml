@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 source-tree = { workspace = true }
 tui = { workspace = true, features = ["fixtures"] }
+os = { workspace = true }
 # The storybook replays recorded sessions through the interpreters, which
 # the client itself never links.
 interpret = { workspace = true }

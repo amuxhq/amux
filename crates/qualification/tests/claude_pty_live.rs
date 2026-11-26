@@ -1,12 +1,15 @@
 //! Claude in a terminal under the real provider: `just live -- claude_pty all`.
 //! See live/mod.rs for what a run judges and reports.
 
-#[cfg(unix)]
 mod live;
 
-#[cfg(unix)]
 fn main() -> std::process::ExitCode {
     use live::Scenario;
+    // Windows leaves terminal Claude out, so its agents refuse it.
+    if !wire::Kind::ClaudePty.hosted_on(wire::Platform::here()) {
+        println!("live claude_pty: not_run on this platform");
+        return std::process::ExitCode::SUCCESS;
+    }
     live::main(live::Driver {
         kind: wire::Kind::ClaudePty,
         command: "claude",
@@ -20,9 +23,4 @@ fn main() -> std::process::ExitCode {
         },
         replay: interpret::replay::<interpret::claude_pty::ClaudePty>,
     })
-}
-
-#[cfg(not(unix))]
-fn main() {
-    println!("live claude_pty: not_run on this platform");
 }

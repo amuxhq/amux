@@ -851,14 +851,13 @@ fn paste_from_clipboard(
 /// The clipboard's text: `pbpaste` on macOS, elsewhere `xclip` on the X
 /// display in `DISPLAY`. Nothing when it holds none.
 fn clipboard_text() -> Vec<u8> {
-    let mut command = if cfg!(target_os = "macos") {
-        std::process::Command::new("pbpaste")
+    let (program, args): (&str, &[&str]) = if cfg!(target_os = "macos") {
+        ("pbpaste", &[])
     } else {
-        let mut xclip = std::process::Command::new("xclip");
-        xclip.args(["-selection", "clipboard", "-o"]);
-        xclip
+        ("xclip", &["-selection", "clipboard", "-o"])
     };
-    command
+    std::process::Command::new(program)
+        .args(args)
         .stderr(std::process::Stdio::null())
         .output()
         .ok()
@@ -868,9 +867,13 @@ fn clipboard_text() -> Vec<u8> {
 }
 
 fn set_clipboard_text(bytes: &[u8]) -> std::io::Result<std::process::Output> {
-    if !cfg!(target_os = "macos") {
-        return xclip_in("text/plain", bytes);
+    match cfg!(target_os = "macos") {
+        true => pbcopy(bytes),
+        false => xclip_in("text/plain", bytes),
     }
+}
+
+fn pbcopy(bytes: &[u8]) -> std::io::Result<std::process::Output> {
     use std::io::Write as _;
     let mut child = std::process::Command::new("pbcopy")
         .stdin(std::process::Stdio::piped())

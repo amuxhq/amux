@@ -39,19 +39,7 @@ pub fn spawn_detached(command: &str) {
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        // SAFETY: setsid is async-signal-safe and touches nothing shared.
-        unsafe {
-            shell.pre_exec(|| {
-                if libc::setsid() == -1 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-    }
+    crate::platform::own_session(&mut shell);
     if let Err(error) = shell.spawn() {
         eprintln!("spawn {command}: {error}");
     }

@@ -95,35 +95,12 @@ fn main() -> Result<()> {
 
 /// A thousand hosts and the relay's side of each hold two thousand
 /// sockets; a shell's default allowance is a few hundred.
-#[cfg(unix)]
 fn raise_open_files() -> Result<()> {
-    const WANTED: libc::rlim_t = 8_192;
-    let mut limit = libc::rlimit {
-        rlim_cur: 0,
-        rlim_max: 0,
-    };
-    // SAFETY: `limit` is a valid rlimit for the kernel to fill and read.
-    unsafe {
-        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) != 0 {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        if limit.rlim_cur < WANTED {
-            limit.rlim_cur = WANTED.min(limit.rlim_max);
-            if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
-                return Err(std::io::Error::last_os_error().into());
-            }
-        }
+    const WANTED: u64 = 8_192;
+    if let Some(allowed) = qualification::platform::raise_open_files(WANTED)?
+        && allowed < WANTED
+    {
+        bail!("the relay curve needs {WANTED} open files and this shell allows {allowed}");
     }
-    if limit.rlim_cur < WANTED {
-        bail!(
-            "the relay curve needs {WANTED} open files and this shell allows {}",
-            limit.rlim_cur
-        );
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn raise_open_files() -> Result<()> {
     Ok(())
 }

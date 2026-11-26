@@ -77,7 +77,6 @@ enum In {
     /// What a hook Claude waits on decided.
     Decision(Value),
     /// A message from the messaging socket, which only Unix serves.
-    #[cfg_attr(not(unix), allow(dead_code))]
     Peer(String),
     Closed,
 }
@@ -116,39 +115,21 @@ pub async fn run(script: Script, args: Args) -> i32 {
 /// A terminal hang-up or termination ends the session the way closing it
 /// does: the running step finishes, SessionEnd runs, the process exits 0.
 fn spawn_signals(tx: mpsc::UnboundedSender<In>) {
-    #[cfg(unix)]
     tokio::spawn(async move {
-        use tokio::signal::unix::{SignalKind, signal};
-        let (Ok(mut term), Ok(mut hup)) = (
-            signal(SignalKind::terminate()),
-            signal(SignalKind::hangup()),
-        ) else {
-            return;
-        };
-        tokio::select! {
-            _ = term.recv() => {}
-            _ = hup.recv() => {}
+        if os::signal::terminated().await.is_ok() {
+            let _ = tx.send(In::Closed);
         }
-        let _ = tx.send(In::Closed);
     });
-    #[cfg(not(unix))]
-    let _ = tx;
 }
 
 /// Claude redraws for a new size; the fake draws the size, so a test can
 /// see a resize reach the terminal.
 fn spawn_resizes() {
-    #[cfg(unix)]
-    tokio::spawn(async move {
-        use tokio::signal::unix::{SignalKind, signal};
-        let Ok(mut resized) = signal(SignalKind::window_change()) else {
-            return;
-        };
-        while resized.recv().await.is_some() {
-            let mut stdout = std::io::stdout().lock();
-            let _ = write!(stdout, "{}\r\n", crate::pty::size_line());
-            let _ = stdout.flush();
-        }
+    crate::platform::on_resize(|| {
+        let mut stdout = std::io::stdout().lock();
+        let _ = write!(stdout, "{}\r\n", crate::pty::size_line());
+        let _ = stdout.flush();
+        true
     });
 }
 
@@ -234,55 +215,47 @@ struct Messaging {
 }
 
 /// Bind the messaging socket and hand each message to the engine.
+/// Windows, which leaves terminal Claude out, has no such socket.
 fn serve_messaging(path: PathBuf, tx: mpsc::UnboundedSender<In>) -> std::io::Result<Messaging> {
-    #[cfg(unix)]
-    {
-        use std::io::BufRead;
-        use std::os::unix::fs::PermissionsExt;
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
-        }
-        let _ = std::fs::remove_file(&path);
-        let listener = std::os::unix::net::UnixListener::bind(&path)?;
-        let token = uuid::Uuid::new_v4().simple().to_string();
-        let expected = token.clone();
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(stream) = stream else { continue };
-                let mut lines = std::io::BufReader::new(stream).lines();
-                let auth: Option<Value> = lines
-                    .next()
-                    .and_then(Result::ok)
-                    .and_then(|line| serde_json::from_str(&line).ok());
-                if auth.as_ref().and_then(|auth| auth["token"].as_str()) != Some(expected.as_str())
-                {
+    use std::io::BufRead;
+    if let Some(dir) = path.parent() {
+        os::fs::create_private_dir(dir)?;
+    }
+    let _ = std::fs::remove_file(&path);
+    let listener = crate::platform::BlockingListener::bind(&path)?;
+    let token = uuid::Uuid::new_v4().simple().to_string();
+    let expected = token.clone();
+    std::thread::spawn(move || {
+        loop {
+            let Ok(stream) = listener.accept() else {
+                continue;
+            };
+            let mut lines = std::io::BufReader::new(stream).lines();
+            let auth: Option<Value> = lines
+                .next()
+                .and_then(Result::ok)
+                .and_then(|line| serde_json::from_str(&line).ok());
+            if auth.as_ref().and_then(|auth| auth["token"].as_str()) != Some(expected.as_str()) {
+                continue;
+            }
+            for line in lines.map_while(Result::ok) {
+                let Ok(message) = serde_json::from_str::<Value>(&line) else {
                     continue;
-                }
-                for line in lines.map_while(Result::ok) {
-                    let Ok(message) = serde_json::from_str::<Value>(&line) else {
-                        continue;
-                    };
-                    let text = message["message"]["content"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_owned();
-                    if tx.send(In::Peer(text)).is_err() {
-                        return;
-                    }
+                };
+                let text = message["message"]["content"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned();
+                if tx.send(In::Peer(text)).is_err() {
+                    return;
                 }
             }
-        });
-        Ok(Messaging {
-            socket: path,
-            token,
-        })
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (path, tx);
-        Err(std::io::Error::other("messaging sockets need Unix"))
-    }
+        }
+    });
+    Ok(Messaging {
+        socket: path,
+        token,
+    })
 }
 
 /// A prompt waiting for a turn, or to fold into the running one.

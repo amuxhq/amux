@@ -71,5 +71,7 @@ amux_rust_test(
     },
     link_library = False,
     include = {"//crates/node:test_signing_key": "crates/node/src/auth/test_signing_key.rs"},
+    # install.ps1, which windows_install runs as a person's `irm | iex` does.
+    resources = ["//:install-scripts"],
     binaries = True,
 )

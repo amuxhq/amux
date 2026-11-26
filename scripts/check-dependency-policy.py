@@ -34,7 +34,8 @@ ALLOWED_LOCAL = {
     "os": set(),
     # Reads an agent folder's branch and change totals by running git; the
     # agent process and the daemon share it. os for its private scratch
-    # folders and their patient removal.
+    # folders, their patient removal, and the one canonical path form a
+    # checkout's root is reported in.
     "git-facts": {"os"},
     # Syntax highlighting over tree-sitter's grammars: a leaf, so the host
     # colouring a diff and every client colouring a chat share one engine.

@@ -325,7 +325,7 @@ impl ProfileRuntime {
             }
             let dir = self.new_report_dir()?;
             let dump = dir.join(REPORT_DUMP);
-            std::fs::rename(&path, &dump)?;
+            os::fs::rename_patiently(&path, &dump)?;
             return Ok((dir, Some(dump)));
         }
         Ok((self.new_report_dir()?, None))
@@ -338,14 +338,8 @@ impl ProfileRuntime {
         let dir = self
             .reports
             .join(format!("{REPORT_DIR}{}-{}", self.clock_now(), &id[..8]));
-        let mut builder = std::fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            builder.mode(0o700);
-        }
-        builder.create(&dir)?;
+        os::fs::create_private_dir(&self.reports)?;
+        os::fs::create_private_dir(&dir)?;
         Ok(dir)
     }
 
@@ -437,14 +431,7 @@ pub(crate) fn core_of_check(check: &str) -> Core {
 /// Writes `bytes` readable by this user only, replacing what a retry left.
 fn private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    options.open(path)?.write_all(bytes)
+    os::fs::create_private(path, os::fs::Create::Truncate)?.write_all(bytes)
 }
 
 fn absent(reason: &str) -> Value {

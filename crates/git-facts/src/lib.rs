@@ -309,8 +309,11 @@ pub async fn add_worktree(
         std::fs::create_dir_all(parent).map_err(|error| WorktreeError::Git(error.to_string()))?;
     }
     let destination_text = destination.to_string_lossy();
+    // Long paths on, so a deep repository's files fit on Windows.
     let added = as_configured(repository)
         .args([
+            "-c",
+            "core.longpaths=true",
             "worktree",
             "add",
             "--quiet",
@@ -393,9 +396,11 @@ pub fn checkout(dir: &Path) -> Option<Checkout> {
 }
 
 /// The working tree `dir` is in and, for a linked worktree, the main clone
-/// it was made from, read from the file system alone.
+/// it was made from, read from the file system alone. Both are canonical
+/// in the form people and programs take ([`os::fs::canonical`]): never
+/// Windows' verbatim one, so they compare equal to the folders amux keeps.
 pub fn working_tree(dir: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
-    let dir = dir.canonicalize().ok()?;
+    let dir = os::fs::canonical(dir).ok()?;
     let root = dir.ancestors().find(|dir| dir.join(".git").exists())?;
     let dot_git = root.join(".git");
     let mut main = None;
@@ -411,7 +416,7 @@ pub fn working_tree(dir: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
                 .file_name()
                 .is_some_and(|name| name == "worktrees")
             && let Some(clone) = worktrees.parent().and_then(Path::parent)
-            && let Ok(clone) = clone.canonicalize()
+            && let Ok(clone) = os::fs::canonical(clone)
             && clone.join(".git").is_dir()
         {
             main = Some(clone);

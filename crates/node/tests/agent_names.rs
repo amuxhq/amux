@@ -101,6 +101,29 @@ async fn a_given_name_is_kept_and_a_missing_one_is_a_word_pair() {
             "{bad:?} cannot rename an agent: {renamed:?}"
         );
     }
+    // A name Windows reads as a device's is no folder's there, the
+    // worktree's of an agent made in one: no host takes it, whatever it
+    // runs, so an agent's name works on every host.
+    for reserved in ["con", "nul", "aux", "prn", "com1", "lpt9"] {
+        let request = create(&install.work, reserved, None);
+        let id = uuid::Uuid::from_slice(&request.agent_id).unwrap();
+        let created = runtime.spawn(request, None).await;
+        assert!(
+            matches!(&created, Err(status) if status.code() == tonic::Code::InvalidArgument
+                && status.message().contains("device")),
+            "{reserved:?} cannot name a new agent: {created:?}"
+        );
+        assert!(
+            runtime.agent(id).await.is_err(),
+            "{reserved:?} made no agent"
+        );
+        let renamed = runtime.rename(id_of(&assigned), reserved).await;
+        assert!(
+            matches!(&renamed, Err(error) if error.to_wire().code == wire::ErrorCode::InvalidArgument as i32
+                && error.to_string().contains("device")),
+            "{reserved:?} cannot rename an agent: {renamed:?}"
+        );
+    }
     assert_eq!(
         runtime.agent(id_of(&assigned)).await.unwrap().name,
         assigned.name

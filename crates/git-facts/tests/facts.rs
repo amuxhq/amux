@@ -232,7 +232,9 @@ async fn untracked_paths_past_the_command_line_limit_still_count() {
 #[tokio::test]
 async fn a_checkout_is_its_working_trees_root_and_a_worktree_names_its_clone() {
     let repo = repository();
-    let dir = repo.path().canonicalize().unwrap();
+    // A checkout's root is canonical in the plain form, never Windows'
+    // verbatim one.
+    let dir = os::fs::canonical(repo.path()).unwrap();
     git(
         &dir,
         &["remote", "add", "origin", "git@github.com:amuxhq/amux.git"],
@@ -255,7 +257,7 @@ async fn a_checkout_is_its_working_trees_root_and_a_worktree_names_its_clone() {
     add_worktree(&dir, &destination, "quiet-otter")
         .await
         .unwrap();
-    let destination = destination.canonicalize().unwrap();
+    let destination = os::fs::canonical(&destination).unwrap();
     assert_eq!(
         checkout(&destination),
         Some(Checkout {

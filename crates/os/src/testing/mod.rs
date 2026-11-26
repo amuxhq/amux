@@ -4,6 +4,7 @@
 
 pub mod faults;
 pub mod pipe;
+pub mod private;
 
 /// Whether the file or folder at `path` is owner-only in its own right, as
 /// `os::fs` leaves what it makes private, so a test needs no `cfg` to say

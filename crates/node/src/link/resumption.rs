@@ -588,11 +588,7 @@ fn write_keys(dir: &Path, keys: &TicketKeys) -> io::Result<()> {
 /// A new file only this user reads. Not synced: a ticket a crash loses
 /// costs its client one full handshake.
 fn private_file(path: &Path) -> io::Result<fs::File> {
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    options.open(path)
+    os::fs::create_private(path, os::fs::Create::Truncate)
 }
 
 /// `name` as one path component: itself where it is a plain host name,

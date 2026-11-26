@@ -17,7 +17,6 @@ use std::path::{Path, PathBuf};
 use daemon_core::payload::{BlobRefusal, CallError, ClientRequest, Response, Status};
 use sha2::{Digest as _, Sha256};
 use store::StoreError;
-use uuid::Uuid;
 use wire::{BlobRef, ErrorCode, GetBlobRequest, GetBlobResponse, PutBlobRequest};
 
 use crate::api::Owner;
@@ -239,22 +238,16 @@ impl ProfileRuntime {
     }
 }
 
-/// Writes `<dir>/<hex>` by temp-and-rename, so a reader sees the whole file
-/// or none; the name is the content's hash, so two writers are safe. A
-/// failed write removes its temporary file.
+/// Writes `<dir>/<hex>` all at once ([`os::fs::replace_atomically`]), so a
+/// reader sees the whole file or none; the name is the content's hash, so
+/// two writers are safe. A failed write leaves no temporary file.
 pub(crate) fn write_blob(dir: &Path, hash: &[u8], bytes: &[u8]) -> io::Result<()> {
     std::fs::create_dir_all(dir)?;
-    let name = hex(hash);
-    let path = dir.join(&name);
+    let path = dir.join(hex(hash));
     if std::fs::metadata(&path).is_ok_and(|meta| meta.is_file()) {
         return Ok(());
     }
-    let temp = dir.join(format!(".{name}.{}", Uuid::new_v4().simple()));
-    let written = std::fs::write(&temp, bytes).and_then(|()| std::fs::rename(&temp, &path));
-    if written.is_err() {
-        let _ = std::fs::remove_file(&temp);
-    }
-    written
+    os::fs::replace_atomically(&path, bytes)
 }
 
 pub(crate) fn hex(bytes: &[u8]) -> String {

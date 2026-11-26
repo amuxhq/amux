@@ -37,7 +37,7 @@ fn git(cwd: &Path, args: &[&str]) {
 fn repository(install: &Install) -> PathBuf {
     let repo = install.path("shop");
     std::fs::create_dir_all(&repo).unwrap();
-    let repo = repo.canonicalize().unwrap();
+    let repo = os::fs::canonical(&repo).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["commit", "-q", "--allow-empty", "-m", "start"]);
     repo

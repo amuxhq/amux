@@ -9,12 +9,11 @@
 //! the IP address it was given to.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::io::{self, Write as _};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
-use std::{fmt, fs};
+use std::{fmt, fs, io};
 
 use bytes::Bytes;
 
@@ -264,19 +263,7 @@ fn write_replacing(path: &Path, bytes: &[u8]) -> io::Result<()> {
         .parent()
         .ok_or_else(|| io::Error::other("a token file needs a parent directory"))?;
     fs::create_dir_all(dir)?;
-    let temp = path.with_extension(format!("{}.tmp", std::process::id()));
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    let written = options
-        .open(&temp)
-        .and_then(|mut file| file.write_all(bytes))
-        .and_then(|()| fs::rename(&temp, path));
-    if written.is_err() {
-        let _ = fs::remove_file(&temp);
-    }
-    written
+    os::fs::replace_atomically(path, bytes)
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

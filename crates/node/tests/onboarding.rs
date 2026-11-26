@@ -192,7 +192,7 @@ async fn suggestions_come_from_the_session_logs_in_the_home() {
     // Under the home, which is under the system's temporary directory.
     let repo = home.join("code/app");
     std::fs::create_dir_all(repo.join(".git")).unwrap();
-    let repo = repo.canonicalize().unwrap();
+    let repo = os::fs::canonical(&repo).unwrap();
     let log = home.join(".claude/projects/-app/session.jsonl");
     std::fs::create_dir_all(log.parent().unwrap()).unwrap();
     std::fs::write(&log, format!("{}\n", serde_json::json!({"cwd": repo}))).unwrap();

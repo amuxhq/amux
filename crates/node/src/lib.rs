@@ -45,6 +45,7 @@ mod outbox;
 mod pairing;
 mod peer_calls;
 mod plain_paths;
+mod platform;
 mod profile_admin;
 mod profiles;
 mod reach;

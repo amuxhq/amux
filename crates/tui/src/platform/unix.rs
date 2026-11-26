@@ -70,6 +70,8 @@ pub(super) fn restore_on_signal(bytes: &'static [u8]) {
     });
 }
 
+pub(super) const ASKS_THE_TERMINAL: bool = true;
+
 pub(super) fn stdin_readable(timeout: Duration) -> bool {
     let mut poll = libc::pollfd {
         fd: libc::STDIN_FILENO,

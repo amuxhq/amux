@@ -29,6 +29,27 @@ is not running it starts it first, as every verb does: the supervisor on a deskt
 daemon, and then waits for it (see [SUPERVISOR.md](SUPERVISOR.md)). On a server whose service manager runs the
 daemon it starts nothing and waits.
 
+### On Windows
+
+The terminal client is not supported on Windows; the desktop app is the interface there. `amux` still opens it and
+it draws, but a paste of more than one line is sent at its first line break: crossterm reads the Windows console
+through the console's own input API, which has no bracketed paste, so a pasted newline arrives as Enter. Making the
+client read the console's input as escape sequences instead, which would fix that, was estimated at two to four days
+and left out. Only fixes that cost nothing were made:
+
+- **The terminal is not asked for its colours.** `theme = "terminal"` takes the shipped dark palette on Windows
+  without sending the colour queries and the device-attributes request that closes them. The legacy console answers
+  neither and prints the questions as text, and the client does not read a terminal's answers off the console there
+  ([`crates/tui/src/platform/`](../crates/tui/src/platform/mod.rs) says which questions a platform asks).
+- **Paths read as Windows writes them.** The home folder shown as `~` is `%USERPROFILE%` (from `os::paths`), and an
+  agent's folder narrows at backslashes as at slashes, whichever host it is on.
+
+The rest stays as crossterm does it on Windows: mouse capture and the keyboard modes are console calls, not escape
+sequences, and there is no kitty keyboard protocol, so Ctrl+Enter and Shift+Enter arrive as Enter (the hints say
+so). Raw attach and terminal Claude are not on Windows at all. For maintainers: the tests that pin the exact bytes of
+entering and restoring the terminal are Unix-only, gated `out of scope on Windows: tui`, because crossterm writes
+none of those bytes on Windows, and the restore bytes are written only by the Unix signal handler and raw attach.
+
 The client redraws only when something changed: a key, a change from the fleet or the open chat, or a finished
 task. It ticks on a clock only while something on screen moves with time: every 250 ms while the open agent is
 working (the running turn's elapsed time) or its chat is still empty, and at the end of the quit guard or a

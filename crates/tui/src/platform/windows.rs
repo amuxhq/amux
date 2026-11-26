@@ -1,5 +1,6 @@
 //! The terminal client's OS calls on Windows: the shell's own handler for
-//! links and files. The terminal's answers are not read here yet.
+//! links and files. The terminal is never asked anything here, so nothing
+//! reads its answers.
 
 use std::path::Path;
 use std::time::Duration;
@@ -43,6 +44,10 @@ pub(super) fn reveal(path: &Path) -> std::io::Result<()> {
 
 /// Nothing: a console puts its own input mode back when the process ends.
 pub(super) fn restore_on_signal(_bytes: &'static [u8]) {}
+
+/// The legacy console answers neither the colour queries nor device
+/// attributes, and would print them.
+pub(super) const ASKS_THE_TERMINAL: bool = false;
 
 pub(super) fn stdin_readable(_timeout: Duration) -> bool {
     false

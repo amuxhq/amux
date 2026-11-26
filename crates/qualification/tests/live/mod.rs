@@ -78,6 +78,16 @@ const TURN: Duration = Duration::from_secs(240);
 const SCENARIO: Duration = Duration::from_secs(600);
 /// How long one CLI verb may take.
 const VERB: Duration = Duration::from_secs(60);
+/// The stack the run's thread has: Linux's default main thread's.
+const RUN_STACK: usize = 8 << 20;
+/// Whether an agent's Codex listens on a socket another client can join:
+/// Codex's own app attached (attach.rs), or the second client that stops a
+/// child (codex_subagents/stop.rs). A Windows host runs Codex over stdio.
+// out of scope on Windows: attach.
+const CODEX_SOCKET: bool = cfg!(unix);
+/// Why a scenario that needs Codex's socket did not run.
+const NO_CODEX_SOCKET: &str = "it needs Codex's socket, which a Windows host doesn't open \
+     (attach is out of scope on Windows)";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scenario {
@@ -547,6 +557,16 @@ impl Report {
 
 /// A target's entry: `<target> all | <scenario>...`.
 pub fn main(driver: Driver) -> ExitCode {
+    // As every amux `main` does: on Windows a child otherwise inherits this
+    // process's output pipe whatever its `Stdio` says, and an agent, which
+    // outlives the daemon by design, would hold the pipe Buck's test reads
+    // open after the lane has ended, so the run would never finish.
+    os::process::harden_start();
+    // And as Buck's test runner holds every other test: on Windows the
+    // daemon and its agents are born in this process's job, so however the
+    // lane ends (a stack overflow, a bound), nothing it started outlives it
+    // to hold the worker's folder open.
+    let _family = os::process::Family::contain_self();
     // Flags are cargo's or libtest's, handed to every target; a name that
     // is no scenario is a filter that matched nothing here.
     let names: Vec<String> = std::env::args()
@@ -602,7 +622,20 @@ pub fn main(driver: Driver) -> ExitCode {
         .enable_all()
         .build()
         .expect("a runtime");
-    runtime.block_on(run(&driver, &selected, &mut report));
+    // The run's future holds every scenario's, and an unoptimized build
+    // polls it through deep frames: the 1 MiB a Windows main thread has
+    // overflowed in `decide`, so it runs on a thread with room.
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("live".into())
+            .stack_size(RUN_STACK)
+            .spawn_scoped(scope, || {
+                runtime.block_on(run(&driver, &selected, &mut report))
+            })
+            .expect("the run's thread")
+            .join()
+            .expect("the run")
+    });
     for scenario in driver.scenarios() {
         if !selected.contains(&scenario) {
             report
@@ -695,9 +728,10 @@ async fn run(driver: &Driver, selected: &[Scenario], report: &mut Report) {
     install.shutdown().await;
 }
 
-/// The provider's version, from `<command> --version`.
+/// The provider's version, from `<command> --version`, run as the daemon
+/// would find it.
 async fn provider_version(command: &str) -> Result<String, String> {
-    let output = Command::new(command)
+    let output = Command::new(capture::on_path(command)?)
         .arg("--version")
         .envs(UPDATE_GUARDS.iter().copied())
         .stdin(Stdio::null())
@@ -815,13 +849,21 @@ struct Install {
 impl Install {
     async fn start(driver: &Driver) -> Result<Install, String> {
         let amux = testnet::Binaries::built().amux();
-        // Socket paths have a short limit; the system temp dir can be long.
-        // AMUX_LIVE_KEEP leaves the installation behind for a post-mortem.
+        // A Unix socket's path has a short limit, which the system temp
+        // dir can overrun, so the installation goes in /tmp; Windows has
+        // none, and its local sockets are named pipes, which have no such
+        // limit. AMUX_LIVE_KEEP leaves the installation behind for a
+        // post-mortem.
         let keep = std::env::var_os("AMUX_LIVE_KEEP").is_some();
+        let short = Path::new("/tmp");
         let root = tempfile::Builder::new()
             .prefix("al-")
             .disable_cleanup(keep)
-            .tempdir_in("/tmp")
+            .tempdir_in(if short.is_dir() {
+                short.to_owned()
+            } else {
+                std::env::temp_dir()
+            })
             .map_err(|error| error.to_string())?;
         let path = root.path().to_owned();
         if keep {
@@ -1309,6 +1351,7 @@ impl Install {
             Scenario::HostCatalogue => self.host_catalogue().await,
             Scenario::Permission => self.permission().await,
             Scenario::Mode => self.mode().await,
+            Scenario::Attach if !CODEX_SOCKET => Ok(Verdict::NotRun(NO_CODEX_SOCKET.into())),
             Scenario::Attach => self.attach().await,
             Scenario::MultiTurn => self.multi_turn().await,
             Scenario::Compacted => self.compacted().await,
@@ -1378,7 +1421,11 @@ impl Install {
             Scenario::SubagentElicitation => self.subagent_elicitation().await,
             Scenario::ChildCommand => self.child_command().await,
             Scenario::ChildApproval => self.child_approval().await,
+            // out of scope on Windows: attach (codex_subagents/stop.rs).
+            #[cfg(unix)]
             Scenario::ChildStop => self.child_stop().await,
+            #[allow(unreachable_patterns)]
+            Scenario::ChildStop => Ok(Verdict::NotRun(NO_CODEX_SOCKET.into())),
             Scenario::ChildContinued => self.child_continued().await,
             Scenario::ChildResume => self.child_resume().await,
             Scenario::ChildTools => self.child_tools().await,
@@ -1405,17 +1452,18 @@ impl Install {
         }
         let recorded = self.replayed(Scenario::Initialize, true)?;
         // What the provider reports at start may land just after it takes
-        // input: terminal Claude's start hook races its prompt drawing.
+        // input: terminal Claude's start hook races its prompt drawing, and
+        // Codex's account may be read a second after its thread starts.
         let kind = self.kind;
         let items = recorded.shape(kind).items;
+        let recorded_known = known(&recorded.state(kind));
         let _ = follow
             .until(SETTLE, "the start the recording made", |log| {
-                log.shape(kind).items == items
+                log.shape(kind).items == items && recorded_known.is_subset(&known(&log.state(kind)))
             })
             .await;
         let live = follow.snapshot();
         judge(&recorded.shape(self.kind), &live.shape(self.kind))?;
-        let recorded_known = known(&recorded.state(self.kind));
         let live_known = known(&live.state(self.kind));
         let missing: Vec<_> = recorded_known.difference(&live_known).collect();
         if !missing.is_empty() {
@@ -1664,8 +1712,8 @@ impl Drop for Install {
 fn seed_codex_home(root: &Path) -> Result<PathBuf, String> {
     let source = std::env::var_os("CODEX_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex")))
-        .ok_or("no Codex login: neither CODEX_HOME nor HOME is set")?;
+        .or_else(|| os::paths::home_dir().map(|home| home.join(".codex")))
+        .ok_or("no Codex login: neither CODEX_HOME nor a home folder is set")?;
     let auth = source.join("auth.json");
     if !auth.exists() {
         return Err(format!(
@@ -1674,7 +1722,7 @@ fn seed_codex_home(root: &Path) -> Result<PathBuf, String> {
         ));
     }
     let home = root.join("codex-home");
-    std::fs::create_dir_all(&home).map_err(|error| error.to_string())?;
+    os::fs::create_private_dir(&home).map_err(|error| error.to_string())?;
     std::fs::copy(&auth, home.join("auth.json")).map_err(|error| error.to_string())?;
     // Codex refuses a pristine home before it starts its app server; these
     // are its local setup sentinels, nothing of the operator's.
@@ -1685,9 +1733,6 @@ fn seed_codex_home(root: &Path) -> Result<PathBuf, String> {
     ] {
         std::fs::write(home.join(file), text).map_err(|error| error.to_string())?;
     }
-    use std::os::unix::fs::PermissionsExt as _;
-    std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700))
-        .map_err(|error| error.to_string())?;
     Ok(home)
 }
 

@@ -30,7 +30,6 @@ pub(super) async fn main() -> Result<(), Box<dyn std::error::Error>> {
         serve_meta_tool(Path::new(&log));
         return Ok(());
     }
-    #[cfg(unix)]
     if std::env::var_os(super::capture::PROXY_ENV).is_some() {
         return super::capture::run().await;
     }

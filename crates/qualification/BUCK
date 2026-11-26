@@ -9,6 +9,7 @@ DEPS = [
     "//crates/testnet:testnet",
     "//crates/wire:wire",
     "//third-party/rust:anyhow",
+    "//third-party/rust:futures-util",
     "//third-party/rust:jiff",
     "//third-party/rust:quinn",
     "//third-party/rust:rcgen",
@@ -22,13 +23,14 @@ DEPS = [
     "//third-party/rust:tokio-rustls",
     "//third-party/rust:tonic",
     "//third-party/rust:uuid",
-] + select({"DEFAULT": ["//third-party/rust:futures-util", "//third-party/rust:libc", "//third-party/rust:tokio-tungstenite"], "prelude//os:windows": [], "prelude//os:none": []}) + select({"DEFAULT": [], "prelude//os:windows": ["//third-party/rust:windows-sys"]})
+] + select({"DEFAULT": ["//third-party/rust:libc", "//third-party/rust:tokio-tungstenite"], "prelude//os:windows": [], "prelude//os:none": []}) + select({"DEFAULT": [], "prelude//os:windows": ["//third-party/rust:windows-sys"]})
 
 TEST_DEPS = [
     "//crates/agent-dir:agent-dir",
     "//crates/attachments:attachments",
     "//crates/client:client",
     "//crates/interpret:interpret",
+    "//crates/os:os",
     "//crates/ui-state:ui-state",
     "//third-party/rust:bytes",
     "//third-party/rust:hyper-util",

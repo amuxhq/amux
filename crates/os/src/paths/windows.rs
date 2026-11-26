@@ -4,12 +4,16 @@ use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::{OsStrExt as _, OsStringExt as _};
 use std::path::{Path, PathBuf};
-use std::ptr;
+use std::{io, ptr};
 
-use windows_sys::Win32::Foundation::ERROR_MORE_DATA;
+use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA};
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_EXPAND_SZ, RRF_NOEXPAND, RRF_RT_REG_EXPAND_SZ,
-    RRF_RT_REG_SZ, RegGetValueW,
+    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_EXPAND_SZ,
+    REG_VALUE_TYPE, RRF_NOEXPAND, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ, RegCloseKey,
+    RegDeleteValueW, RegGetValueW, RegOpenKeyExW, RegSetValueExW,
+};
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    HWND_BROADCAST, SMTO_ABORTIFHUNG, SendMessageTimeoutW, WM_SETTINGCHANGE,
 };
 
 /// Where Windows keeps the system's environment.
@@ -86,6 +90,17 @@ fn entry_key(entry: &Path) -> String {
 /// The `Path` value under `root\subkey`, its `%VARIABLES%` expanded when
 /// it is a `REG_EXPAND_SZ`; `None` when there is none.
 fn registry_path(root: HKEY, subkey: &str) -> Option<OsString> {
+    let (text, kind) = raw_path(root, subkey).ok()??;
+    Some(if kind == REG_EXPAND_SZ {
+        expand(&text.to_string_lossy()).into()
+    } else {
+        text
+    })
+}
+
+/// The `Path` value under `root\subkey` as written, `%VARIABLES%` and all,
+/// with its kind; `None` when there is none.
+fn raw_path(root: HKEY, subkey: &str) -> io::Result<Option<(OsString, REG_VALUE_TYPE)>> {
     let subkey: Vec<u16> = subkey.encode_utf16().chain([0]).collect();
     let value: Vec<u16> = "Path".encode_utf16().chain([0]).collect();
     let flags = RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND;
@@ -113,7 +128,8 @@ fn registry_path(root: HKEY, subkey: &str) -> Option<OsString> {
         match status {
             0 if !buffer.is_empty() || size == 0 => break,
             0 | ERROR_MORE_DATA => buffer = vec![0u16; (size as usize).div_ceil(2) + 1],
-            _ => return None,
+            ERROR_FILE_NOT_FOUND => return Ok(None),
+            status => return Err(io::Error::from_raw_os_error(status as i32)),
         }
     }
     let length = (size as usize / 2).min(buffer.len());
@@ -121,12 +137,130 @@ fn registry_path(root: HKEY, subkey: &str) -> Option<OsString> {
     while let [rest @ .., 0] = text {
         text = rest;
     }
-    let text = OsString::from_wide(text);
-    Some(if kind == REG_EXPAND_SZ {
-        expand(&text.to_string_lossy()).into()
+    Ok(Some((OsString::from_wide(text), kind)))
+}
+
+// The user's own Path --------------------------------------------------------------
+
+/// Where every test's registry keys are, under `HKCU`.
+const TEST_KEY_PREFIX: &str = r"Software\amux-test-";
+
+/// The key under `HKCU` the user's environment is in: `Environment`, or a
+/// test's.
+fn user_environment() -> io::Result<String> {
+    let Some(key) = std::env::var_os(super::TEST_ENVIRONMENT_KEY) else {
+        return Ok(USER_ENVIRONMENT.to_owned());
+    };
+    let key = key.to_string_lossy().into_owned();
+    if !key.starts_with(TEST_KEY_PREFIX) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "{} must name a key under {TEST_KEY_PREFIX}…, not {key}",
+                super::TEST_ENVIRONMENT_KEY
+            ),
+        ));
+    }
+    Ok(key)
+}
+
+pub(super) fn remove_from_user_path(dir: &Path) -> io::Result<bool> {
+    let removed = remove_from_path_under(&user_environment()?, dir)?;
+    if removed {
+        settings_changed();
+    }
+    Ok(removed)
+}
+
+/// Takes `dir` off the `Path` value under `HKCU\subkey`.
+fn remove_from_path_under(subkey: &str, dir: &Path) -> io::Result<bool> {
+    let Some((value, kind)) = raw_path(HKEY_CURRENT_USER, subkey)? else {
+        return Ok(false);
+    };
+    let Some(kept) = without_entry(&value.to_string_lossy(), dir) else {
+        return Ok(false);
+    };
+    let wide_subkey: Vec<u16> = subkey.encode_utf16().chain([0]).collect();
+    let name: Vec<u16> = "Path".encode_utf16().chain([0]).collect();
+    let mut key: HKEY = ptr::null_mut();
+    // SAFETY: `wide_subkey` is NUL-terminated; `key` is closed below.
+    let status = unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            wide_subkey.as_ptr(),
+            0,
+            KEY_QUERY_VALUE | KEY_SET_VALUE,
+            &mut key,
+        )
+    };
+    if status != 0 {
+        return Err(io::Error::from_raw_os_error(status as i32));
+    }
+    let status = if kept.is_empty() {
+        // SAFETY: `name` is NUL-terminated; `key` is open.
+        unsafe { RegDeleteValueW(key, name.as_ptr()) }
     } else {
-        text
-    })
+        let data: Vec<u16> = kept.encode_utf16().chain([0]).collect();
+        // SAFETY: `data` is `data.len() * 2` bytes, its NUL included.
+        unsafe {
+            RegSetValueExW(
+                key,
+                name.as_ptr(),
+                0,
+                kind,
+                data.as_ptr().cast(),
+                (data.len() * 2) as u32,
+            )
+        }
+    };
+    // SAFETY: opened above.
+    unsafe { RegCloseKey(key) };
+    match status {
+        0 => Ok(true),
+        status => Err(io::Error::from_raw_os_error(status as i32)),
+    }
+}
+
+/// `value`, a `Path` as written, without its entries that name `dir`
+/// (compared with their `%VARIABLES%` expanded), the rest exactly as they
+/// were; `None` when none does.
+fn without_entry(value: &str, dir: &Path) -> Option<String> {
+    let target = entry_key(dir);
+    let names_dir = |entry: &str| {
+        let entry = entry.trim().trim_matches('"');
+        !entry.is_empty() && entry_key(Path::new(&expand(entry))) == target
+    };
+    let entries: Vec<&str> = value.split(';').collect();
+    if !entries.iter().any(|entry| names_dir(entry)) {
+        return None;
+    }
+    let kept: Vec<&str> = entries
+        .into_iter()
+        .filter(|entry| !names_dir(entry))
+        .collect();
+    Some(kept.join(";"))
+}
+
+/// Tells every top-level window the user's environment changed, as the
+/// System control panel does, so Explorer reads it again and what it
+/// starts next has the new `PATH`. A window that doesn't answer within
+/// five seconds is passed over, and a hung one at once.
+fn settings_changed() {
+    let area: Vec<u16> = "Environment".encode_utf16().chain([0]).collect();
+    let mut result = 0usize;
+    // SAFETY: `area` is NUL-terminated and outlives the call, which reads
+    // it as the message's string; `result` is written once.
+    unsafe {
+        SendMessageTimeoutW(
+            HWND_BROADCAST,
+            WM_SETTINGCHANGE,
+            0,
+            area.as_ptr() as isize,
+            SMTO_ABORTIFHUNG,
+            5000,
+            &mut result,
+        )
+    };
 }
 
 /// `text` with each `%NAME%` replaced by that variable of this process, as
@@ -392,6 +526,50 @@ mod tests {
 
         key.delete();
         assert!(!key.exists(), "the scratch key is gone");
+    }
+
+    /// Uninstalling takes amux's folder off the user's `Path` however it
+    /// was written, and leaves every other entry as it was: `%VARIABLES%`
+    /// unexpanded, the value's kind, even an empty entry at the end.
+    #[test]
+    fn a_folder_comes_off_the_user_path_and_the_rest_stays_as_written() {
+        let key = ScratchKey::new();
+        let env = key.subkey("env");
+        let bin = Path::new(r"C:\Users\someone\.amux\bin");
+        key.set_path(
+            "env",
+            REG_EXPAND_SZ,
+            r"%SystemRoot%\keep;C:\Users\someone\.amux\bin\;c:\USERS\SOMEONE\.AMUX\BIN;C:\other;",
+        );
+        assert!(remove_from_path_under(&env, bin).unwrap());
+        assert_eq!(
+            raw_path(HKEY_CURRENT_USER, &env).unwrap(),
+            Some((
+                OsString::from(r"%SystemRoot%\keep;C:\other;"),
+                REG_EXPAND_SZ
+            ))
+        );
+        assert!(
+            !remove_from_path_under(&env, bin).unwrap(),
+            "it is off already"
+        );
+
+        // An entry written with a variable is the folder it names.
+        let root = std::env::var("SystemRoot").unwrap();
+        assert!(remove_from_path_under(&env, &Path::new(&root).join("keep")).unwrap());
+        assert_eq!(
+            raw_path(HKEY_CURRENT_USER, &env).unwrap(),
+            Some((OsString::from(r"C:\other;"), REG_EXPAND_SZ))
+        );
+
+        // A value left with nothing in it goes.
+        key.set_path("env", REG_SZ, r"C:\Users\someone\.amux\bin");
+        assert!(remove_from_path_under(&env, bin).unwrap());
+        assert_eq!(raw_path(HKEY_CURRENT_USER, &env).unwrap(), None);
+
+        // No value, or no key, is nothing to take off.
+        assert!(!remove_from_path_under(&env, bin).unwrap());
+        assert!(!remove_from_path_under(&key.subkey("none"), bin).unwrap());
     }
 
     #[test]

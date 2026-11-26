@@ -7,4 +7,7 @@ amux_rust_binary(
     deps = ["//crates/os:os"],
     link_library = False,
     unit_tests = True,
+    # Its manifest and version information on Windows, as build.rs links
+    # them under Cargo.
+    windows_resource = True,
 )

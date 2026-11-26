@@ -49,7 +49,12 @@ libc = { workspace = true }
 [target.'cfg(unix)'.dev-dependencies]
 libc = { workspace = true }
 
+# build.rs links the manifest and version information into amux.exe.
+[build-dependencies]
+exe-resource = { workspace = true }
+
 [dev-dependencies]
+exe-resource = { workspace = true }
 source-tree = { workspace = true }
 release = { workspace = true, features = ["test-key"] }
 pty-host = { workspace = true }

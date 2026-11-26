@@ -13,8 +13,9 @@ ALLOWED_LOCAL = {
     # os for the home folder.
     "settings": {"os", "wire"},
     # The typed events a device may send and their uploader: a leaf, so the
-    # daemon, the phone bridge and the CLI share one definition.
-    "analytics": set(),
+    # daemon, the phone bridge and the CLI share one definition; os for the
+    # system's version every request carries.
+    "analytics": {"os"},
     "attachments": {"wire"},
     # The line a fleet row quotes from a reply: the interpreter writes it
     # onto the agent's record, and the views read it from a chat they hold.
@@ -66,11 +67,17 @@ ALLOWED_LOCAL = {
     # highlight for the language of each file an agent changed, named by the
     # same rule the clients colour it by.
     "node": {"agent-dir", "analytics", "attachments", "core-ring", "daemon-core", "git-facts", "highlight", "journal", "log-file", "os", "path-core", "redaction", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
-    "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "os", "settings", "tui", "wire"},
+    # exe-resource in the build script, for amux.exe's manifest and version.
+    "amux": {"agent", "agent-dir", "analytics", "client", "exe-resource", "log-file", "node", "os", "settings", "tui", "wire"},
     # amux-launch, Windows' login item: it starts amux supervise and reads
     # the lineage's pipe, and shares nothing else with amux, so a running
-    # launcher of one release works with any release's amux.
-    "launch": {"os"},
+    # launcher of one release works with any release's amux; exe-resource
+    # in its build script, as amux's.
+    "launch": {"exe-resource", "os"},
+    # The manifest and version information each Windows program carries,
+    # which its build script writes and Buck2's resource step too: a leaf
+    # with no dependencies, built for the machine that builds.
+    "exe-resource": set(),
     # The release manifest the tool signs and the daemon verifies, and the
     # version stamp a release tool can rewrite in a built binary; the xtask
     # shares both without building the daemon.

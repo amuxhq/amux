@@ -1,0 +1,17 @@
+[package]
+name = "exe-resource"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The application manifest and version information each Windows program amux ships carries, written as a resource file the linker embeds, and read back from a built program"
+publish = false
+
+# What amux's and amux-launch's build scripts (Cargo) and the resource
+# step in build/rust.bzl (Buck) both run: one writer for both builds.
+[[bin]]
+name = "exe-resource"
+path = "src/main.rs"
+test = false
+
+[lints]
+workspace = true

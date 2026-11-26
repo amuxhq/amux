@@ -325,6 +325,295 @@ async fn server_stop_ends_the_launcher_that_started_the_supervisor() {
     .unwrap();
 }
 
+/// Both programs an install puts on Windows carry the application manifest
+/// (no elevation, Windows 10 and 11, long paths, UTF-8) and their version,
+/// as built: the binaries under test are the ones a release ships. A
+/// program built for anything else is no PE file and carries neither.
+#[test]
+fn the_windows_programs_carry_their_manifest_and_version() {
+    // amux's own version, and the launcher's crate's.
+    for (program, version) in [
+        (amux_binary().to_owned(), Some(env!("CARGO_PKG_VERSION"))),
+        (provider_fakes::binaries::path("amux-launch"), None),
+    ] {
+        let image = std::fs::read(&program).unwrap();
+        let embedded = exe_resource::embedded(&image);
+        assert_eq!(embedded.is_some(), cfg!(windows), "{}", program.display());
+        let Some(embedded) = embedded else { continue };
+        assert_eq!(embedded.manifest, exe_resource::MANIFEST);
+        for needed in ["asInvoker", "longPathAware", "UTF-8", "supportedOS"] {
+            assert!(embedded.manifest.contains(needed), "{needed}");
+        }
+        let shown = embedded.string("ProductVersion").expect("a version");
+        assert_eq!(embedded.string("FileVersion"), Some(shown));
+        assert_eq!(embedded.file_version, exe_resource::version_numbers(shown));
+        if let Some(version) = version {
+            assert_eq!(shown, version);
+        }
+        let stem = program.file_stem().unwrap().to_string_lossy();
+        assert_eq!(
+            embedded.string("OriginalFilename"),
+            Some(format!("{stem}.exe").as_str())
+        );
+    }
+}
+
+/// A key of the test's own under `HKCU\Software\amux-test-…`, standing in
+/// for `HKCU\Environment` (the user's PATH) on Windows, written and read
+/// with reg.exe and deleted when dropped. Elsewhere reg.exe is missing and
+/// it holds nothing.
+struct ScratchEnvironment {
+    key: String,
+}
+
+impl ScratchEnvironment {
+    fn new() -> Self {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        Self {
+            key: format!(r"Software\amux-test-env-{}-{nanos}", std::process::id()),
+        }
+    }
+
+    fn reg(&self, verb: &str, arguments: &[&str]) -> Option<Output> {
+        Command::new("reg")
+            .arg(verb)
+            .arg(format!(r"HKCU\{}", self.key))
+            .args(arguments)
+            .stdin(Stdio::null())
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+    }
+
+    fn set_path(&self, value: &str) {
+        self.reg(
+            "add",
+            &["/v", "Path", "/t", "REG_EXPAND_SZ", "/d", value, "/f"],
+        )
+        .expect("reg add");
+    }
+
+    /// The `Path` value's kind and value as stored, `%VARIABLES%` and all.
+    fn path(&self) -> Option<String> {
+        let output = self.reg("query", &["/v", "Path"])?;
+        let text = String::from_utf8_lossy(&output.stdout).into_owned();
+        let line = text
+            .lines()
+            .map(str::trim)
+            .find(|line| line.starts_with("Path "))?;
+        Some(line.split_once("    ")?.1.trim().to_owned())
+    }
+}
+
+impl Drop for ScratchEnvironment {
+    fn drop(&mut self) {
+        let _ = self.reg("delete", &["/f"]);
+    }
+}
+
+/// The default installation's login item under `items`, the `Run` value
+/// `amux`, as reg.exe reads it; `None` where there is none (and wherever
+/// there is no registry).
+fn login_value(items: &Path) -> Option<String> {
+    let output = Command::new("reg")
+        .args(["query", &format!(r"HKCU\{}", items.display()), "/v", "amux"])
+        .stdin(Stdio::null())
+        .output()
+        .ok()
+        .filter(|output| output.status.success())?;
+    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("amux "))?;
+    let (_, value) = line.split_once("REG_SZ")?;
+    Some(value.trim().to_owned())
+}
+
+/// `amux uninstall --yes --delete-data` of the default installation, run
+/// by the installed amux as a person would, while the login item's
+/// launcher runs it: it stops amux and so the launcher, removes the login
+/// item and the scheduled task an earlier build registered, deletes both
+/// programs and everything updates left beside them, takes their folder off
+/// PATH, and deletes the root and the config. Windows refuses to delete a
+/// running program, and the uninstalling amux is one: it is left as a
+/// `amux.exe.old.<n>`, the one thing an uninstall leaves. Elsewhere
+/// nothing is left at all.
+#[tokio::test(flavor = "multi_thread")]
+async fn uninstall_leaves_nothing_but_a_program_still_running() {
+    let scratch = tempfile::tempdir().unwrap();
+    let home = scratch.path().join("home");
+    let bin = home.join(".amux").join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let (amux, launcher) = (
+        bin.join(os::paths::exe_name("amux")),
+        bin.join(os::paths::exe_name("amux-launch")),
+    );
+    std::fs::copy(amux_binary(), &amux).unwrap();
+    std::fs::copy(provider_fakes::binaries::path("amux-launch"), &launcher).unwrap();
+    // Windows keeps the login item and the user's PATH in the registry,
+    // which this test points at keys of its own, and refuses to delete a
+    // running program. Unix has a service manager no test registers with
+    // (so no login item here), the PATH in a shell profile, and deletes
+    // what runs.
+    let windows = cfg!(windows);
+    // The default installation, in the scratch home: the config and root
+    // amux finds by itself.
+    let (appdata, local) = (home.join("AppData"), home.join("Local"));
+    let (config, root) = if windows {
+        (appdata.join("amux").join("config.toml"), local.join("amux"))
+    } else {
+        (
+            home.join(".config").join("amux").join("config.toml"),
+            home.join(".local").join("share").join("amux"),
+        )
+    };
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(
+        &config,
+        format!(
+            "supervisor = true\nupdates = \"manual\"\nkeep_awake = false\n{}",
+            crate::support::NO_REAL_AGENTS
+        ),
+    )
+    .unwrap();
+    let login = ScratchItems::new(&home);
+    let environment = ScratchEnvironment::new();
+    let run = |program: &Path, args: &[&str]| {
+        let mut command = Command::new(program);
+        command
+            .args(args)
+            .env_remove("AMUX_CONFIG")
+            .env_remove("AMUX_LOG")
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove("XDG_DATA_HOME")
+            .env("HOME", &home)
+            .env("USERPROFILE", &home)
+            .env("APPDATA", &appdata)
+            .env("LOCALAPPDATA", &local)
+            .env(support::NO_DISCOVERY.0, support::NO_DISCOVERY.1)
+            .env(login.env().0, login.env().1)
+            .env(os::paths::TEST_ENVIRONMENT_KEY, &environment.key)
+            .stdin(Stdio::null());
+        command
+    };
+
+    // The folder on PATH, as each platform's install script puts it.
+    let kept = r"%SystemRoot%\keep;C:\elsewhere";
+    if windows {
+        environment.set_path(&format!(
+            r"%SystemRoot%\keep;{};C:\elsewhere",
+            bin.display()
+        ));
+    }
+    let profile = home.join(".zshrc");
+    std::fs::write(
+        &profile,
+        "# mine\n\n# Added by amux installer\nexport PATH=\"$HOME/.amux/bin:$PATH\"\n",
+    )
+    .unwrap();
+
+    if windows {
+        let on = run(&amux, &["config", "set", "start_at_login", "true"])
+            .output()
+            .unwrap();
+        assert!(on.status.success(), "{}", stdout(&on));
+        let value = login_value(login.items()).unwrap_or_default();
+        assert!(
+            value.contains("amux-launch") && value.ends_with("supervise"),
+            "{value}\n{}",
+            stdout(&on)
+        );
+    }
+    // The launcher runs amux supervise, as the login item would start it.
+    let launched = run(&launcher, &["supervise"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let launched = std::cell::RefCell::new(Ending(launched));
+    let socket = root.join("amux.sock");
+    let answers = || {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(agent_dir::local_socket::connect(&socket))
+                .is_ok()
+        })
+    };
+    until("the launched supervisor's daemon to answer", answers).await;
+    let supervisor: u32 = std::fs::read_to_string(root.join(SUPERVISOR_LOCK))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    // What updates leave beside each program, and an earlier build's task.
+    let files = node::supervisor::Files::beside(&amux);
+    for path in [&files.prev, &files.rejected, &files.staged, &files.aside] {
+        std::fs::write(path, b"left by an update").unwrap();
+    }
+    std::fs::write(files.aside.with_extension("old.1"), b"moved aside").unwrap();
+    std::fs::write(
+        node::supervisor::Files::beside(&launcher).prev,
+        b"left by an update",
+    )
+    .unwrap();
+    std::fs::write(root.join("amux-task.xml"), b"\xff\xfe").unwrap();
+
+    let output = run(&amux, &["uninstall", "--yes", "--delete-data"])
+        .output()
+        .unwrap();
+    let said = format!(
+        "{}{}",
+        stdout(&output),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.status.success(), "{said}");
+    assert_eq!(said.contains("Removed the login item"), windows, "{said}");
+    assert_eq!(
+        said.contains("Removed the scheduled task an earlier amux registered."),
+        windows,
+        "{said}"
+    );
+    assert_eq!(login_value(login.items()), None, "{said}");
+    until("the launcher to exit", || {
+        launched.borrow_mut().0.try_wait().unwrap().is_some()
+    })
+    .await;
+    assert!(!alive(supervisor), "{said}");
+    assert!(!root.exists() && !config.exists(), "{said}");
+
+    let left: Vec<String> = match std::fs::read_dir(&bin) {
+        Ok(entries) => entries
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    if windows {
+        assert!(
+            left.len() == 1 && left[0].starts_with("amux.exe.old."),
+            "{left:?}\n{said}"
+        );
+        assert!(
+            said.contains(&format!("Left {}", bin.join(&left[0]).display())),
+            "{said}"
+        );
+        assert_eq!(
+            environment.path(),
+            Some(format!("REG_EXPAND_SZ    {kept}")),
+            "{said}"
+        );
+    } else {
+        assert!(
+            left.is_empty() && !home.join(".amux").exists(),
+            "{left:?}\n{said}"
+        );
+    }
+    assert_eq!(std::fs::read_to_string(&profile).unwrap(), "# mine\n\n");
+}
+
 // Unix's own behaviour: a launcher's blocked signal mask is inherited, and
 // the stop is a signal. Windows stops amux through supervisor.sock, which
 // no mask reaches, and `stop_goes_to_the_supervisor_first_...` drives it.

@@ -152,6 +152,51 @@ pub(super) fn remove_now(login: &StartAtLogin) -> io::Result<()> {
     remove(login)
 }
 
+/// The scheduled task builds before the `Run` value registered as the
+/// login item: one per machine, whose definition each kept in the root of
+/// the installation that registered it.
+const EARLIER_TASK: &str = "amux";
+const EARLIER_TASK_FILE: &str = "amux-task.xml";
+
+/// Ends and deletes the scheduled task an earlier build registered for
+/// this installation, which it marked by keeping the task's definition in
+/// the root, and deletes the definition; says whether there was one.
+/// Under a test's key the task is named after that key, so no test
+/// reaches the person's own.
+pub(super) fn remove_earlier(login: &StartAtLogin) -> io::Result<bool> {
+    let file = login.root.join(EARLIER_TASK_FILE);
+    if !file.is_file() {
+        return Ok(false);
+    }
+    if login.register {
+        let task = earlier_task(&login.items);
+        for arguments in [&["/End", "/TN"][..], &["/Delete", "/F", "/TN"]] {
+            // One already ended, or already deleted by hand, is fine.
+            let _ = std::process::Command::new("schtasks")
+                .args(arguments)
+                .arg(&task)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+    }
+    std::fs::remove_file(&file)?;
+    Ok(true)
+}
+
+/// The earlier task's name: `amux`, or under a test's key the key's own
+/// last part (`amux-test-…`).
+fn earlier_task(items: &Path) -> String {
+    if items == Path::new(RUN_KEY) {
+        return EARLIER_TASK.to_owned();
+    }
+    items
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| items.to_string_lossy().replace('\\', "-"))
+}
+
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain([0]).collect()
 }
@@ -341,6 +386,27 @@ mod tests {
                 .len(),
             MAX_COMMAND_LINE
         );
+    }
+
+    /// Uninstalling removes the scheduled task an earlier build registered
+    /// for this root, which it marked with the task's definition in the
+    /// root, and only then: the real `amux` task is a test's never.
+    #[test]
+    fn the_earlier_task_goes_only_where_its_definition_marks_the_root() {
+        let home = tempfile::tempdir().unwrap();
+        let scratch = ScratchItems::new(home.path());
+        let login = login(home.path(), scratch.items(), "data");
+        std::fs::create_dir_all(&login.root).unwrap();
+        assert!(!login.remove_earlier().unwrap(), "no definition, no task");
+
+        std::fs::write(login.root.join(EARLIER_TASK_FILE), b"\xff\xfe").unwrap();
+        assert!(login.remove_earlier().unwrap());
+        assert!(!login.root.join(EARLIER_TASK_FILE).exists());
+        assert!(!login.remove_earlier().unwrap());
+
+        assert_eq!(earlier_task(Path::new(RUN_KEY)), "amux");
+        let task = earlier_task(scratch.items());
+        assert!(task.starts_with("amux-test-"), "{task}");
     }
 
     /// Two roots' values sit side by side under the key, each set, read

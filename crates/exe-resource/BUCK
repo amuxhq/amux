@@ -1,0 +1,17 @@
+load("//build:rust.bzl", "amux_rust_binary", "amux_rust_library")
+
+# What a Windows program's build script writes under Cargo, and the
+# `exe-resource` binary writes under Buck2 (build/rust.bzl's
+# `windows_resource`): the same code, so both builds embed the same bytes.
+amux_rust_library(
+    version = "0.1.0",
+    srcs = ["src/lib.rs", "src/tests.rs"],
+)
+
+amux_rust_binary(
+    name = "exe-resource",
+    version = "0.1.0",
+    crate_root = "src/main.rs",
+    srcs = ["src/main.rs"],
+    tool = True,
+)

@@ -1181,6 +1181,38 @@ release pulled from stable stops being installed at once. The rollout
 percentage is ignored: it protects machines that already run something, and
 a new machine has nothing to protect.
 
+On Windows, `install.ps1` also:
+
+- installs the x64 build on Windows on Arm, which runs it emulated, since
+  only x64 ships;
+- puts `amux-launch.exe` beside `amux.exe`. No manifest names the launcher:
+  the script reads `checksums.txt` from the release folder the entry's URL
+  is in, downloads `amux-launch-windows-x86_64.exe` from there, and installs
+  nothing, amux included, unless its sha256 is the one listed. A release
+  whose `checksums.txt` lists no launcher predates it, and amux is
+  installed alone;
+- stops a running amux with `amux server stop` first, then moves whatever
+  still holds an installed file (an agent runs `amux.exe` too) aside to a
+  fresh `amux.exe.old.<n>`, since Windows renames a running program but
+  never deletes or replaces one, and deletes such copies left from before;
+- puts `~\.amux\bin` first in the user's `Path` (`HKCU\Environment`) once,
+  read and written as stored, a `REG_EXPAND_SZ` whose `%VARIABLES%` stay
+  as written, then broadcasts `WM_SETTINGCHANGE` so what Explorer starts
+  next sees it. `AMUX_TEST_ENVIRONMENT_KEY` points it at a test's key
+  instead;
+- sets `$ProgressPreference` (Windows PowerShell's progress bar slows a
+  download many times over) and TLS 1.2 on PowerShell 5.1.
+
+Each Windows program the release ships carries an application manifest
+(`asInvoker`, `supportedOS` Windows 10 and 11, `longPathAware`, UTF-8 as
+its `activeCodePage`) and VERSIONINFO with its crate's version, embedded
+when it is linked: [`crates/exe-resource`](../crates/exe-resource/src/lib.rs)
+writes them as a `.res` file both linkers take as an input, from Cargo's
+build script and from Buck2's resource step alike (`windows_resource` in
+`build/rust.bzl`), and the CLI's integration tests read them back out of the
+built programs. A signature, when releases are signed, goes on after both,
+before hashing and attesting.
+
 A script does not check the manifest's signature. It and the manifest come
 from the same server, so a check there would trust the server it was
 checking; the first install trusts amux.sh over TLS, and every update after

@@ -158,13 +158,29 @@ roots never overwrite each other and a worktree's never touches the real one.
 Windows starts no `Run` command line longer than 260 characters, so turning
 the item on with a longer one (a deep config path) is refused with an error
 saying so, and nothing is written. An `amux` scheduled task an earlier build
-registered is not removed; it still runs `amux supervise`, in a window.
+registered is left by turning the item on or off; it still runs `amux
+supervise`, in a window. `amux uninstall` removes it.
 
 `amux uninstall` removes it at once: it unregisters the login item
 (`launchctl bootout`, `systemctl --user disable --now`, or deleting the `Run`
 value) and deletes its file, again only when it is this installation's.
-It stops this machine's agents first and amux after, so nothing is left
-running without its binary.
+On Windows it also ends and deletes the `amux` scheduled task an earlier
+build registered for this installation, which that build marked by keeping
+the task's definition in the root (`amux-task.xml`). It stops this
+machine's agents first and amux after, so nothing is left running without
+its binary; the supervisor's deliberate stop ends the launcher that started
+it too.
+
+For the default installation it then deletes, beside `amux` and
+`amux-launch`, everything their updates leave
+([`Files::beside`](../crates/node/src/supervisor/files.rs)): `.prev`,
+`.rejected`, `.staged` and every `.old`/`.old.<n>`, and takes `~/.amux/bin`
+off PATH (the install script's lines in the shell profiles; on Windows the
+folder's entry in `HKCU\Environment`'s `Path`, every other entry kept as
+written, then `WM_SETTINGCHANGE`). Windows deletes no program a process is
+running, and the uninstalling `amux.exe` is one: a file still held after a
+few seconds is renamed to a fresh `amux.exe.old.<n>`, and the command says
+so. That is the one thing an uninstall leaves.
 
 ## The launcher (Windows)
 

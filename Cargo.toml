@@ -20,6 +20,7 @@ members = [
     "crates/codex-protocol",
     "crates/core-ring",
     "crates/daemon-core",
+    "crates/exe-resource",
     "crates/fake-amux",
     "crates/git-facts",
     "crates/highlight",
@@ -75,6 +76,7 @@ agent-core = { path = "crates/agent-core" }
 core-ring = { path = "crates/core-ring" }
 log-file = { path = "crates/log-file" }
 os = { path = "crates/os" }
+exe-resource = { path = "crates/exe-resource" }
 daemon-core = { path = "crates/daemon-core" }
 relay-core = { path = "crates/relay-core" }
 path-core = { path = "crates/path-core" }

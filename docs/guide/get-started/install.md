@@ -90,6 +90,11 @@ amux uninstall
 ```
 
 This stops the agents running on this device (it asks first), removes the
-login item, stops amux, and deletes `~/.amux/bin/amux` and the `PATH` lines
-the install script added. Your agents' history stays, in case you install
-again; add `--delete-data` to remove that too.
+login item, stops amux, deletes what the install put in `~/.amux/bin` (and
+the old builds updates kept there), and takes that folder off your `PATH`.
+Your agents' history stays, in case you install again; add `--delete-data`
+to remove that too.
+
+On Windows a program can't be deleted while it runs, and `amux uninstall`
+is one, so it leaves itself behind as `amux.exe.old.1` (or the next free
+number) and says so. Delete that file once the command has finished.

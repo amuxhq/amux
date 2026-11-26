@@ -1,7 +1,7 @@
 //! What the terminal client asks of the operating system: handing a link
 //! or a file to the system's handler, putting the terminal back when a
-//! signal ends the process, and reading the terminal's answers straight
-//! off standard input. One API with an implementation per OS (`unix.rs`,
+//! signal ends the process, and whether the terminal is asked anything, and
+//! reading its answers straight off standard input. One API with an implementation per OS (`unix.rs`,
 //! `windows.rs`), so the rest of the crate writes no `cfg`.
 
 use std::path::Path;
@@ -41,8 +41,18 @@ pub(crate) fn restore_on_signal(bytes: &'static [u8]) {
     imp::restore_on_signal(bytes);
 }
 
+/// Whether the terminal is asked questions whose answers come back on
+/// standard input: its colours (OSC 10, 11 and 4) and the primary device
+/// attributes request (`CSI c`) that closes them. Unix: yes. Windows: no;
+/// the legacy console answers none of them and prints the questions as
+/// text, and its input is read as console events, not as the bytes an
+/// answer would arrive in.
+pub(crate) fn asks_the_terminal() -> bool {
+    imp::ASKS_THE_TERMINAL
+}
+
 /// Whether standard input has bytes to read within `timeout`.
-/// Windows: always `false` (the terminal's answers are not read there).
+/// Windows: always `false` (the terminal is never asked there).
 pub(crate) fn stdin_readable(timeout: Duration) -> bool {
     imp::stdin_readable(timeout)
 }

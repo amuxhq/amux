@@ -297,23 +297,27 @@ enum Item {
 /// its last name, then the host, then the agent; the name and the age
 /// beside them always stay.
 fn where_it_runs(who: &str, cwd: &str, elsewhere: Option<&str>, room: usize) -> String {
-    let folder = text::tilde(cwd.trim_end_matches('/'));
+    // Either slash separates: the folder may be on a host of the other
+    // kind, and it is cut at the separators it was written with.
+    const SEPARATORS: [char; 2] = ['/', '\\'];
+    let folder = text::tilde(cwd.trim_end_matches(SEPARATORS));
     let folder = if folder.is_empty() {
         cwd.to_owned()
     } else {
         folder
     };
-    // The folder from whole to its last name: "~/a/b/c", "…/b/c", "c".
-    let names: Vec<&str> = folder.split('/').collect();
+    // The folder from whole to its last name: "~/a/b/c", "…/b/c", "…/c", "c".
+    let separators: Vec<usize> = folder.match_indices(SEPARATORS).map(|(at, _)| at).collect();
     let mut folders = vec![folder.clone()];
-    for from in 2..names.len() {
-        folders.push(format!("…/{}", names[from..].join("/")));
+    for &at in separators.iter().skip(1) {
+        folders.push(format!("…{}", &folder[at..]));
     }
-    if let Some(last) = names
+    if let Some(last) = separators
         .last()
-        .filter(|last| !last.is_empty() && **last != folder)
+        .map(|&at| &folder[at + 1..])
+        .filter(|last| !last.is_empty())
     {
-        folders.push((*last).to_owned());
+        folders.push(last.to_owned());
     }
     let join = |parts: &[&str]| {
         parts
@@ -2820,4 +2824,32 @@ fn agent_lines(
         push(&mut second, text::ellipsize(&words, room), style, end);
     }
     vec![first, Laid::row(tint(second, chosen, width, theme), target)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::where_it_runs;
+
+    /// Short of room, a folder gives way at its own separators, whichever
+    /// slash it was written with: a Windows host's folder shown anywhere is
+    /// cut at its backslashes, as a Unix one is at its slashes.
+    #[test]
+    fn a_folder_gives_way_at_the_separators_it_was_written_with() {
+        assert_eq!(
+            where_it_runs("Claude", r"D:\work\src\amux", None, 20),
+            r"Claude · …\src\amux"
+        );
+        assert_eq!(
+            where_it_runs("Claude", r"D:\work\src\amux\", None, 13),
+            "Claude · amux"
+        );
+        assert_eq!(
+            where_it_runs("Claude", "/srv/work/src/amux", None, 19),
+            "Claude · …/src/amux"
+        );
+        assert_eq!(
+            where_it_runs("Claude", "/srv/work/src/amux/", None, 13),
+            "Claude · amux"
+        );
+    }
 }

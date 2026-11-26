@@ -451,11 +451,15 @@ const REPLY_CAP: Duration = Duration::from_secs(2);
 /// is out are consumed with the answers — it is a fraction of a second at
 /// startup, before anything is on screen to type at.
 ///
-/// `None` when stdin or stdout is not a terminal, when raw mode cannot be
-/// entered, or when the ground or the text colour went unanswered.
+/// `None` when this platform's terminal is not asked (Windows: see
+/// [`crate::platform::asks_the_terminal`]), when stdin or stdout is not a
+/// terminal, when raw mode cannot be entered, or when the ground or the
+/// text colour went unanswered.
 pub fn query_terminal_colors(timeout: Duration) -> Option<TerminalColors> {
     use std::io::IsTerminal;
-    if !(io::stdin().is_terminal() && io::stdout().is_terminal()) {
+    if !crate::platform::asks_the_terminal()
+        || !(io::stdin().is_terminal() && io::stdout().is_terminal())
+    {
         return None;
     }
     // The signal handlers that put the terminal back on SIGINT, SIGTERM and
@@ -612,11 +616,13 @@ mod tests {
     /// The signal handler's hardcoded bytes must stay in lockstep with
     /// what the orderly restore path (crossterm) actually emits: the
     /// keyboard-enhancement pop, then `write_restore`.
+    ///
+    /// Unix only. On Windows crossterm makes these modes console calls,
+    /// not bytes (the pop is refused there: the console has no keyboard
+    /// enhancement), and the bytes are written only by the Unix signal
+    /// handler and raw attach, neither of which Windows has.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "windows: writing PopKeyboardEnhancementFlags to a Vec fails, Unsupported: keyboard progressive enhancement not implemented for the legacy Windows API"
-    )]
+    #[cfg(not(windows))] // out of scope on Windows: tui
     fn signal_restore_bytes_match_mouse_aware_write_restore() {
         let mut out: Vec<u8> = Vec::new();
         crossterm::execute!(out, PopKeyboardEnhancementFlags).expect("write to vec");
@@ -675,11 +681,13 @@ mod tests {
         );
     }
 
+    /// Unix only. On Windows crossterm captures the mouse with a console
+    /// call (`ENABLE_MOUSE_INPUT`), which its console-event reader needs;
+    /// writing the sequences instead would leave that reader without mouse
+    /// events, and the client is not supported there (docs/TERMINAL.md,
+    /// "On Windows").
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "windows: write_enter_chrome writes no mouse-capture sequences (?1000h to ?1006h) to a Vec"
-    )]
+    #[cfg(not(windows))] // out of scope on Windows: tui
     fn enter_chrome_enables_mouse_capture() {
         let mut out = Vec::new();
         write_enter_chrome(&mut out).expect("write to vec");

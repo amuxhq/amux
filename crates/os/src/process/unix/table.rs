@@ -65,11 +65,21 @@ fn read_table() -> std::io::Result<Vec<Row>> {
     Ok(pids.into_iter().filter_map(row).collect())
 }
 
-/// The row for `pid`, if it names a process.
+/// The row for `pid`, if it names a process. `proc_pidinfo` answers
+/// nothing (ESRCH) for a process that has exited unreaped, though its pid
+/// and its group's id are still held; `sysctl` still has its row.
 #[cfg(target_os = "macos")]
 pub(super) fn row(pid: i32) -> Option<Row> {
-    /// `proc_bsdinfo.pbi_status` of a process waiting to be reaped.
-    const SZOMB: u32 = 5;
+    live_row(pid).or_else(|| unreaped_row(pid))
+}
+
+/// `proc_bsdinfo.pbi_status` and `extern_proc.p_stat` of a process
+/// waiting to be reaped.
+#[cfg(target_os = "macos")]
+const SZOMB: u32 = 5;
+
+#[cfg(target_os = "macos")]
+pub(super) fn live_row(pid: i32) -> Option<Row> {
     let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
     let size = size_of::<libc::proc_bsdinfo>() as libc::c_int;
     // SAFETY: the buffer holds one proc_bsdinfo, and is read only when the
@@ -90,6 +100,54 @@ pub(super) fn row(pid: i32) -> Option<Row> {
         ppid: info.pbi_ppid as i32,
         started,
         zombie: info.pbi_status == SZOMB,
+    })
+}
+
+/// The row `sysctl(KERN_PROC_PID)` gives, which an exited, unreaped
+/// process still has. Its `struct kinfo_proc` (`<sys/sysctl.h>`), which
+/// libc doesn't define for Apple, is read as bytes at its fields'
+/// offsets, the same on arm64 and x86_64.
+#[cfg(target_os = "macos")]
+pub(super) fn unreaped_row(pid: i32) -> Option<Row> {
+    const SIZE: usize = 648;
+    /// `kp_proc.p_starttime`, a `struct timeval`.
+    const STARTED_SECS: usize = 0;
+    const STARTED_USECS: usize = 8;
+    /// `kp_proc.p_stat`, one byte.
+    const STATUS: usize = 36;
+    /// `kp_eproc.e_ppid`.
+    const PPID: usize = 560;
+    let mut buffer = [0u8; SIZE];
+    let mut length = SIZE;
+    let mut name = [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid];
+    // SAFETY: the name is four ints long, and the kernel writes at most
+    // `length` bytes into the buffer, saying how many it wrote.
+    let read = unsafe {
+        libc::sysctl(
+            name.as_mut_ptr(),
+            name.len() as libc::c_uint,
+            buffer.as_mut_ptr().cast(),
+            &mut length,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    // No such pid: success, with nothing written.
+    if read != 0 || length != SIZE {
+        return None;
+    }
+    let field = |at: usize| -> [u8; 4] { buffer[at..at + 4].try_into().expect("four bytes") };
+    let secs = i64::from_ne_bytes(
+        buffer[STARTED_SECS..STARTED_SECS + 8]
+            .try_into()
+            .expect("eight bytes"),
+    );
+    let usecs = i32::from_ne_bytes(field(STARTED_USECS));
+    Some(Row {
+        pid,
+        ppid: i32::from_ne_bytes(field(PPID)),
+        started: secs as u64 * 1_000_000 + usecs as u64,
+        zombie: u32::from(buffer[STATUS]) == SZOMB,
     })
 }
 

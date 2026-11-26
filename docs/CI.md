@@ -81,16 +81,23 @@ takes seconds shares a job.
 | macOS tests | `macos-26`, the same | `just test //crates/... --exclude journey` through Buck2: every workspace test that isn't Linux-only, the system suites among them |
 | macOS journeys | `macos-26`, the same | `just test //crates/testnet:terminal-journeys`: the terminal journeys, which take the whole worker |
 
-On Windows, suites that need Unix processes, PTYs or sockets are compiled
-out. Among them are the tests that host
-terminal Claude: the agent's terminal cases (in its `attach`, `dump`,
+Every suite runs on Windows. A test is compiled out there only when it tests
+a feature Windows leaves out by choice (terminal Claude and raw attach, the
+wt backend, the browser's native host, SSH with a Windows machine at the far
+end, Arm64 releases, the terminal client beyond its small fixes; see
+[Windows, as a stated cost](ARCHITECTURE.md#windows-as-a-stated-cost)), and
+its gate names that feature; one that fails there while its fix is made
+stays compiled and is ignored with what fails, which `platform-check`
+counts ([Holding a test back on
+Windows](TESTING.md#holding-a-test-back-on-windows)). The largest group is
+terminal Claude's: the agent's terminal cases (in its `attach`, `dump`,
 `providers`, `tools` and `lifecycle` suites), provider-fakes' `pty` suite,
 the terminal modules of its `conformance` and `scripted` suites, and the
-terminal client's `served` suite, whose hosts run terminal Claude. Windows does not host
-terminal Claude in this build (see
-[Windows, as a stated cost](ARCHITECTURE.md#windows-as-a-stated-cost)), so
-the Windows job runs the agent's test of that refusal instead, and every
-headless Claude and Codex test as everywhere.
+terminal client's `served` suite, whose hosts run terminal Claude. The
+Windows job runs the agent's test of that refusal instead, and every
+headless Claude and Codex test as everywhere. A test of something only
+Windows has, such as the scripted install run (`windows_install.rs`), runs
+only there.
 
 The terminal journeys are `reach-host`,
 `conversation-decision-claude-pty`, `conversation-decision-claude-sdk`,
@@ -253,8 +260,9 @@ build host's cache too, so a kept result still finds it. Each test binary
 takes one of the worker's six slots, on the runner's four cores, and runs
 two of its tests at a time, so six binaries run at once and their
 downloads from the build host overlap the others' running. The job keeps Buck2's and NativeLink's logs
-as its `buck2-logs-windows` artifact. Left out, as under Cargo: the protocol models,
-the simulated stories and the terminal journeys.
+as its `buck2-logs-windows` artifact. Left out: the protocol models, which
+the nightly runs, the terminal journeys, and the `linux-only` tests; the
+simulated stories run, since the simulated net is in process.
 
 A fork's pull request has no tailnet, so its Windows job tests under Cargo
 on the runner instead (`just cargo-test -- --profile ci --exclude models`),

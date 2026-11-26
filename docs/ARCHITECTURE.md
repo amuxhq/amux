@@ -39,7 +39,7 @@ What the design holds itself to:
 6. **Every client is an equal client,** and every behaviour is judged by
    how it reads from a phone that has just opened.
 
-Out of scope: Windows parity (its costs are listed
+Out of scope: the few things Windows leaves out (listed
 [below](#windows-as-a-stated-cost)), semantic search, the daemon scheduling
 or chaining agents (coordination is the agents' own job, through their
 tools, or the person's), and remote raw terminals: a remote agent is a chat.
@@ -347,23 +347,31 @@ This is the one complete listing; other pages link here rather than keep
 their own copies.
 
 ```text
-~/.config/amux/config.toml    the installation config ($XDG_CONFIG_HOME/amux; --config or AMUX_CONFIG name another)
+~/.config/amux/config.toml    the installation config ($XDG_CONFIG_HOME/amux; on Windows %APPDATA%\amux
+                              unless XDG_CONFIG_HOME is set; --config or AMUX_CONFIG name another)
 ~/.amux/bin/amux              the installed binary; an update stages amux.staged and keeps amux.prev beside it
+                              (amux.exe.staged and amux.exe.prev on Windows)
+~/.amux/bin/amux-launch.exe   Windows only: the windowless launcher the login item runs, updated with amux
+~/.amux/bin/amux.exe.old.<n>  Windows only: a build or launcher (amux-launch.exe.old.<n>) moved aside while a
+                              process still ran it, each under a name of its own; swept once nothing does
 ~/Library/LaunchAgents/sh.amux.supervise.plist
                               the login item `start_at_login` writes on macOS; ~/.config/systemd/user/amux.service
                               on Linux, and the HKCU Run value amux (amux-<hash> for another root) on Windows
 $TMPDIR/amux-<uid>/<hash>, <hash>.d
-                              short addresses for sockets whose paths are too long (see above)
+                              Unix only: short addresses for sockets whose paths are too long (see above)
 
-<root>/                       the config's `root`; default ~/.local/share/amux ($XDG_DATA_HOME/amux)
+<root>/                       the config's `root`; default ~/.local/share/amux ($XDG_DATA_HOME/amux; on Windows
+                              %LOCALAPPDATA%\amux unless XDG_DATA_HOME is set)
   amux.sock                   the front door; on Windows a file naming the pipe the daemon listens on
-  installation.lock           one daemon per installation; holds the daemon's pid
+  installation.lock           one daemon per installation; holds the daemon's pid, readable while it is held
   installation_id             what usage analytics count an install by; minted at the first start that sends them
   generation                  boot id, clean-shutdown flag and a counter a replica compares
   onboarding.json             the onboarding steps a person confirmed or skipped, and whether a paired
                               device made the first agent
-  supervisor.lock             one supervisor per installation
-  supervisor.sock             how the CLI reaches a running supervisor (`amux update`, and stop on Windows)
+  supervisor.lock             one supervisor per installation; holds the supervisor's pid, which `amux status` reads
+  supervisor.sock             how the CLI reaches a running supervisor (`amux update`, `amux server stop`)
+  supervisor.stopped          a stop that found no supervisor to tell where the install has one; a supervisor
+                              the launcher restarts stops on it, any other start removes it
   daemon.log, daemon.log.1    the daemon's log, 8 MiB each; AMUX_LOG names another file
   daemon-startup.log          what a daemon `amux server start` ran without a supervisor said before its log
                               opened; made afresh at each such start
@@ -445,7 +453,8 @@ agent process, its lifecycle, how it is stopped and the terminal socket are on
 ### An agent outlives its daemon
 
 An agent process is started detached, in its own process group and with no
-pipe to the daemon, so neither the daemon's exit nor its terminal reaches
+pipe to the daemon (on Windows also out of the daemon's job, with a hidden
+console of its own), so neither the daemon's exit nor its terminal reaches
 it. End of file on `ctl.sock` is the only way it learns the daemon went, and
 it starts a grace timer (`agent.grace_secs`, five minutes by default). A
 daemon that dials in cancels it. If none does, the agent drains: it
@@ -598,61 +607,145 @@ notifications on its own inventory entry, which only hosts paired with it read
 
 ### Windows, as a stated cost
 
-The code builds and its tests run on Windows in CI, but a Unix primitive is
-nicer in several places, and Windows pays for each:
+A Windows machine is a host like a Mac or a Linux one: it installs, starts
+with no window, starts at login, updates and rolls back, keeps its agents
+through a daemon's crash or update, contains what they start, pairs and
+links with other hosts and phones, and is held to the same tests, which run
+on Windows in CI ([holding a test back on
+Windows](TESTING.md#holding-a-test-back-on-windows)). This is the whole list
+of what differs.
 
-- **Local sockets.** `ctl.sock`, `pty.sock`, `tools.sock`, `agent.sock`, `hooks.sock`, the
-  profile socket and the front door are named pipes. Each bind makes a fresh
-  pipe and writes its name into the file at the socket's path, because a pipe
-  lives on while any connection to it is open and a successor could not take
-  its name
+**Left out by choice**, each a module or test gated whole and saying so:
+
+- **Terminal Claude and raw attach.** An agent of kind `claude_pty` there
+  ends before spawning anything, with the cause "terminal Claude is not
+  hosted on Windows in this build; headless Claude and Codex are". ConPTY
+  (which [`pty-host`](../crates/pty-host/src/lib.rs) still builds on,
+  through `portable-pty`) re-renders the child's output in its own escape
+  sequences, so the byte-exact conformance the terminal interpreter is held
+  to against Unix recordings cannot hold; Claude's messaging socket is
+  Unix-only; and the fake terminal Claude's raw console mode is Unix-only.
+  Codex's app server runs on stdio there rather than on a socket other
+  clients join, so nothing attaches to it. Headless Claude and Codex talk
+  over stdio and are hosted on Windows as everywhere else.
+- **The wt workspace backend.**
+- **The browser extension's native host.**
+- **SSH with a Windows machine at the far end.** A Windows host dials out
+  over SSH with the system's `ssh.exe`, but binds no `link.sock`, so a host
+  it pairs or links with over SSH runs macOS or Linux.
+- **Arm64 releases.** Arm64 is built and tested, and only x64 ships;
+  Windows on Arm runs it emulated.
+- **The terminal client** gets only the fixes that cost little there; the
+  desktop app is the interface ([the terminal client](TERMINAL.md)).
+
+**Windows' own costs:**
+
+- **No exec.** A daemon's restart for an experiment and a supervisor's own
+  update start a successor and exit, so the process id changes
+  (`os::process::EXEC_KEEPS_PID`).
+- **Agents end at logoff**, as they do when a launchd or systemd user
+  session ends: Windows ends every process in the session. The next start
+  shows them exited, with one-step resume.
+- **The firewall.** Devices nearby reach amux only through an inbound rule,
+  which needs an administrator's approval once (`amux setup firewall`,
+  `node::firewall`). Without it amux reaches them by dialling out and
+  through the relay, and `amux status` says so.
+- **The root** belongs on a local NTFS or ReFS volume; the daemon warns at
+  start on any other.
+- **One hidden console per agent:** one `conhost.exe` each.
+
+**How the primitives differ.** Each is one API in
+[`os`](../crates/os/src/lib.rs) or in one of the few other homes platform
+code may live in, so callers write no `cfg`:
+
+- **Consoles.** `amux.exe` is a console program, and a console program
+  started without a console is given a visible one, so nothing amux starts
+  in the background is started that way (`DETACHED_PROCESS` is used
+  nowhere). The supervisor, the daemon and each agent start
+  (`os::process::background`) with `CREATE_NO_WINDOW`, a console with no
+  window, which everything they start shares, so `git`, `claude` and
+  `codex` need no flags; with `CREATE_NEW_PROCESS_GROUP`, so a Ctrl+C in the
+  starting console misses them; and with `CREATE_BREAKAWAY_FROM_JOB`, so a
+  terminal's or an SSH session's job ending never ends them (a job that
+  forbids it keeps the process, which the starter logs). Each agent has a
+  console of its own, so closing a terminal that started a daemon by hand
+  ends none of them. The start names every handle the child inherits
+  (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`), and every `amux` first makes its
+  own standard handles uninheritable (`os::process::harden_start`), so a
+  pipe a desktop app hands `amux server start` reaches nothing it leaves
+  running.
+- **The agent's job.** An agent's first act is to put itself in a Job
+  Object of its own (`os::process::Family::contain_self`), which kills on
+  close and allows no breakaway. Its provider, the provider's tool server
+  and shells, and git are born inside it and end with it however the agent
+  ends, and the agent's kill ends the job's other members. Breakaway is
+  refused because Git Bash asks for it on every command whenever a job
+  allows it, which would contain nothing; the cost is that a build daemon a
+  tool starts (buck2d, Gradle) ends with its agent on Windows, where on
+  Unix one that starts a session of its own outlives it. The daemon holds
+  each agent by its process handle, from the spawn or from the control
+  socket's peer (`os::process::ProcessRef`), and kills with
+  `TerminateProcess`, never by pid.
+- **The polite stop.** No console control event is sent: most programs
+  take Ctrl+Break as "exit now", a `.cmd` shim's `cmd.exe` answers it with
+  "Terminate batch job (Y/N)?", and one aimed at anything but a live group
+  leader reaches every process on the console. Headless Claude and Codex
+  end when their input closes, which is the ask; after the deadline the
+  job's members are killed
+  ([the agent process](AGENT_PROCESS.md#one-decision-one-way-out)).
+- **Local sockets.** `ctl.sock`, `pty.sock`, `tools.sock`, `agent.sock`,
+  `hooks.sock`, the profile socket, the front door and `supervisor.sock`
+  are named pipes. Each bind makes a fresh pipe and writes its name into
+  the file at the socket's path, because a pipe lives on while any
+  connection to it is open and a successor could not take its name
   ([`agent_dir::local_socket`](../crates/agent-dir/src/local_socket/mod.rs)).
   The pipe namespace is shared by every user, where a Unix socket sits in a
-  private folder, so: a pipe's name is `\\.\pipe\amux-` and 128 random bits,
-  which nobody can take first; it is created owned by its user, admitting
-  that user alone and local clients only; and a client opens only a name of
-  exactly that form, whatever the file says (never another host's pipe or a
-  device), then refuses a pipe its own user doesn't own. The owner, not the
-  serving process's token, is what's checked, so a client accepts an
-  elevated daemon of the same user. The name file is read on a blocking thread
-  within the connect's deadline, at most 256 bytes of it. A server keeps four instances
-  listening, and a client finding them all busy, or the file naming a pipe
-  that has gone, tries again with the file read afresh until a deadline (two
-  seconds unless the caller chooses). Shutting down a pipe's write half does
-  nothing, so a connection is ended by closing it
-  (`LocalStream::close`, or a `Closer` for a split one).
-- **Process groups.** Agents start with `CREATE_NEW_PROCESS_GROUP` and
-  `CREATE_NO_WINDOW`, breaking away from the daemon's job. Each agent then
-  puts itself in a Job Object of its own (`os::process::Family`, which
-  forbids breakaway), so its provider and everything the provider starts
-  are born inside it and end with it; the agent's stop and kill end the
-  job's members. The daemon kills an agent through the process handle it
-  holds (`TerminateProcess`), never by pid, and what the agent started goes
-  with the agent's job.
-- **Terminals.** Pseudo-terminals are ConPTY, through `portable-pty` in
-  [`pty-host`](../crates/pty-host/src/lib.rs).
-- **Updates.** A running executable cannot be renamed over, so the
-  supervisor stops the daemon before the swap and moves the binary aside by
-  rename, and its own update is a spawn-then-exit rather than an exec.
+  private folder, so: a pipe's name is `\\.\pipe\amux-` and 128 random
+  bits, which nobody can take first; it is created owned by its user,
+  admitting that user alone and local clients only; and a client opens only
+  a name of exactly that form, whatever the file says (never another host's
+  pipe or a device), then refuses a pipe its own user doesn't own. The
+  owner, not the serving process's token, is what's checked, so a client
+  accepts an elevated daemon of the same user. The name file is read on a
+  blocking thread within the connect's deadline, at most 256 bytes of it. A
+  server keeps four instances listening, and a client finding them all
+  busy, or the file naming a pipe that has gone, tries again with the file
+  read afresh until a deadline (two seconds unless the caller chooses).
+  Shutting down a pipe's write half does nothing, so a connection is ended
+  by closing it (`LocalStream::close`, or a `Closer` for a split one).
+- **Locks.** A Windows lock is mandatory over the bytes it covers, so
+  `os::lock::FileLock` locks one byte far past a file's data, and the pid
+  that the agent's `lock`, `installation.lock` and `supervisor.lock` hold
+  stays readable while they are held.
 - **Signals.** There are none: `amux server stop` asks the supervisor over
-  its control socket (`supervisor.sock`), as it does everywhere, and the
-  supervisor stops its child by closing the activation pipe. What the OS
-  sends instead (Ctrl+C, the console closing, logoff, shutdown) reaches the
-  supervisor and the daemon through `os::signal::terminated`, and each
-  shuts down cleanly before the OS ends it.
-- **SSH.** Pairing and linking over SSH need a Unix host at the far end,
-  so a Windows profile binds no `link.sock`.
-- **Terminal Claude.** Not hosted on Windows in this build: an agent of kind
-  `claude_pty` there ends before spawning anything, with the cause "terminal
-  Claude is not hosted on Windows in this build; headless Claude and Codex
-  are". Three things stand in the way. ConPTY re-renders the child's output
-  in its own escape sequences, so the byte-exact conformance the terminal
-  interpreter is held to against Unix recordings cannot hold; Claude's
-  messaging socket is Unix-only; and the fake terminal Claude's raw console
-  mode is Unix-only. Headless Claude and Codex talk over stdio and are
-  hosted on Windows as everywhere else.
-- The login item is a value under the `Run` key that starts `amux-launch.exe`,
-  and keep-awake is `SetThreadExecutionState`.
+  `supervisor.sock`, as it does everywhere, and the supervisor stops its
+  daemon by closing the activation pipe. What the OS sends instead (Ctrl+C,
+  the console closing, logoff, shutdown) reaches the supervisor and the
+  daemon through `os::signal::terminated`, and each shuts down cleanly
+  before the OS ends it.
+- **Login and restart.** The login item is a value under the `Run` key,
+  which Windows starts in the person's session, in no job that ends what it
+  starts. It runs `amux-launch.exe`, built with no console, which starts
+  `amux supervise` with no window and starts it again when it dies, as
+  launchd's `KeepAlive` and systemd's `Restart=` do; it knows only the pipe
+  the line holds ([the launcher](SUPERVISOR.md#the-launcher-windows)).
+  Keep-awake is `SetThreadExecutionState`.
+- **Updates.** A running executable cannot be deleted or renamed over, and
+  agents and tool servers keep the image they started from, so an update
+  renames each retired binary aside to a fresh `amux.exe.old.<n>`, and a
+  later sweep deletes it once nothing runs it
+  ([binaries in use](SUPERVISOR.md#binaries-in-use-windows)).
+- **Finding programs.** A provider is found by `PATHEXT` as well as by
+  name, npm's `claude.cmd` shim included, on the `PATH` a newly logged-on
+  process would see (`os::paths::current_path`, which adds the user's and
+  the system's `Path` from the registry), so a tool installed after the
+  daemon started is found without a restart. A `.cmd` runs through
+  `cmd.exe`, which carries no line break, so behind one Claude's settings,
+  tool configuration and system prompt go by file
+  ([provider children](AGENT_PROCESS.md#provider-children)).
+- **Files.** Owner-only is a protected DACL; a removal something still
+  holds waits for the next sweep; and paths are stored without the
+  verbatim `\\?\` prefix ([everything else on disk](#everything-else-on-disk)).
 
 ## The crate map
 
@@ -672,7 +765,7 @@ every message a provider sends or is sent.
 | [`settings`](../crates/settings/src/lib.rs) | Installation, profile and UI settings, and where their files live. |
 | [`redaction`](../crates/redaction/src/lib.rs) | The structural redactor for free text and JSON in reports, logs and captures. |
 | [`log-file`](../crates/log-file/src/lib.rs) | The capped log file every process writes, rotated to one `.1`, and the tail a dump reads. |
-| [`os`](../crates/os/src/lib.rs) | The operating-system primitives several crates share, each one API with an implementation per OS, so callers write no `cfg`: starting a process in the background (no window, detached, breaking away from the starter's job), handle hygiene at start, an agent's `Family` (a Job Object on Windows; process groups, the tether and the census on Unix), a `ProcessRef` that a reused pid can't fool, handing files to a successor, `signal::terminated` (the OS asking a process to stop, a session's end included), the user's own PATH an uninstall takes amux's folder off (`paths::remove_from_user_path`), and the system's version (`system::version`). Its `testing` feature adds what only tests use: in-process stop events and `testing::faults`, the filesystem faults a test injects. Depends only on `libc` and `windows-sys`, plus tokio behind its `async` feature, and builds for every target, iOS and Android too. Agent-dir, agent, pty-host, node, amux, analytics, installer, log-file, git-facts, settings, tui, the launcher and test crates may depend on it; no core, nor wire, interpret, the UI library, client or browser-core. |
+| [`os`](../crates/os/src/lib.rs) | The operating-system primitives several crates share, each one API with an implementation per OS, so callers write no `cfg`: starting a process in the background (no window, detached, breaking away from the starter's job), handle hygiene at start, an agent's `Family` (a Job Object on Windows; process groups, the tether and the census on Unix), a `ProcessRef` that a reused pid can't fool, handing files to a successor, `signal::terminated` (the OS asking a process to stop, a session's end included), the user's own PATH an uninstall takes amux's folder off (`paths::remove_from_user_path`), and the system's version (`system::version`). Its `testing` feature adds what only tests use: in-process stop events and `testing::faults`, the filesystem faults a test injects. Depends only on `libc` and `windows-sys`, plus tokio behind its `async` feature, and builds for every target, iOS and Android too. Agent-dir, agent, pty-host, node, amux, analytics, installer, log-file, git-facts, settings, tui, the launcher and test crates may depend on it; no core, nor wire, interpret, the UI library, client or browser-core. Desktop-platform conditionals (`cfg(unix)`, `cfg(windows)`, a desktop `target_os`, `libc::`, `windows_sys::`) live only here and in the few other homes named for platform code, which `just platform-check` holds ([holding a test back on Windows](TESTING.md#holding-a-test-back-on-windows)). |
 | [`release`](../crates/release/src/lib.rs) | A release channel's signed manifest: signing, verification and the build a host installs, shared by the daemon, the installer and the release tool; the keys a build trusts and the target it was built for; and the version stamp in a built binary, with re-stamping a copy ([`version_stamp`](../crates/release/src/version_stamp.rs)). |
 | [`exe-resource`](../crates/exe-resource/src/lib.rs) | What each Windows program amux ships is linked with besides its code: the application manifest (`asInvoker`, Windows 10 and 11, long paths, UTF-8) and VERSIONINFO with its crate's version, written as a `.res` file the linker takes. The programs' build scripts call it under Cargo and its binary runs as Buck2's resource step (`windows_resource` in `build/rust.bzl`), so both builds embed the same bytes; it also reads them back out of a built program, for the test that checks they are there. |
 | [`installer`](../crates/installer/src/lib.rs) | What every client calls first: finds amux at the front door, downloads the channel's build and checks it against the signed manifest when it is missing, and starts it. Does not link the daemon. |
@@ -729,7 +822,8 @@ typed inputs and outputs, with no runtime, socket or lock in its graph.
 | Crate | What it is |
 |---|---|
 | [`tui`](../crates/tui/src/lib.rs) | The terminal client: the fleet and the chat, composed from the views. See [the terminal client](TERMINAL.md). |
-| [`amux`](../crates/amux/src/main.rs) | The one binary: CLI verbs, the terminal client, the daemon, the supervisor, the relay, and the hidden subcommands agents run. |
+| [`amux`](../crates/amux/src/main.rs) | The one binary: CLI verbs, the terminal client, the daemon, the supervisor, the relay, and the hidden subcommands agents run. On Windows the launcher ships beside it. |
+| [`launch`](../crates/launch/src/main.rs) | `amux-launch`, the program Windows' login item runs, built with no console: it starts the `amux` beside it with its own arguments and no window, and starts it again when the line dies. It shares only the lineage's pipe and two environment variables with amux, so a launcher of one release works with any release's amux ([the launcher](SUPERVISOR.md#the-launcher-windows)), and links `os` alone. |
 | [`app-runtime`](../crates/app-runtime/src/lib.rs) | The phone's chats and fleet over the local runtime, with changes gathered for the host's next turn. |
 | [`app-embedded`](../crates/app-embedded/src/lib.rs) | The daemon's profile runtime hosted in the phone's process. |
 | [`app-bridge`](../crates/app-bridge/src/lib.rs) | The language-neutral bridge over the embedded runtime, its chats and fleet, with view values as JSON. |

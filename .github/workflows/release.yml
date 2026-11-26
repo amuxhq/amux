@@ -98,6 +98,14 @@ jobs:
         with:
           subject-path: out/${{ matrix.artifact }}${{ runner.os == 'Windows' && '.exe' || '' }}
 
+      # Windows ships the login item's launcher beside amux.exe
+      # (scripts/release-symbols.sh), attested the same.
+      - name: Attest the launcher
+        if: github.event_name == 'push' && runner.os == 'Windows'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: out/amux-launch-windows-x86_64.exe
+
       - name: Upload artifact
         if: github.event_name == 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -124,7 +132,7 @@ jobs:
         run: mv artifacts/*/* .
 
       - name: Generate checksums
-        run: sha256sum amux-linux-x86_64 amux-macos-arm64 amux-windows-x86_64.exe > checksums.txt
+        run: sha256sum amux-linux-x86_64 amux-macos-arm64 amux-windows-x86_64.exe amux-launch-windows-x86_64.exe > checksums.txt
 
       - name: Create release
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
@@ -133,8 +141,10 @@ jobs:
             amux-linux-x86_64
             amux-macos-arm64
             amux-windows-x86_64.exe
+            amux-launch-windows-x86_64.exe
             amux-linux-x86_64.debug
             amux-macos-arm64.dSYM.zip
             amux-windows-x86_64.pdb
+            amux-launch-windows-x86_64.pdb
             checksums.txt
           generate_release_notes: true

@@ -21,6 +21,9 @@
 //!   execs the installed binary in supervise mode, keeping pid, child, pipe
 //!   and lock, so the supervisor is never the stale part for long.
 //! - Stopping the child is a signal, a stop deadline, then a kill.
+//! - A supervisor `amux-launch` started (Windows' login item) holds the
+//!   launcher's pipe, [`LINEAGE_ENV`], for life, hands it on at the
+//!   self-update, and writes `0` to it before a deliberate exit.
 //!
 //! Counters and timers live in the core's memory. The supervisor holds its
 //! own lock; the installation lock stays the daemon's.
@@ -43,8 +46,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use agent_dir::Clock;
-use child::Child;
 pub use child::Inherited;
+use child::{Child, Lineage};
 use control::Asked;
 pub use control::{Request, SUPERVISOR_SOCKET, ask};
 use core_ring::DumpLimit;
@@ -65,6 +68,13 @@ use crate::install::{private_dir, sync_dir};
 use crate::profiles;
 use crate::release::{self, Manifest, Release};
 use crate::window::{self, Window};
+
+/// Names the write end of a pipe `amux-launch` (Windows' login item) reads,
+/// as a handle value: the line of supervisors it started. A supervisor
+/// keeps it, hands it to its successor, and writes `0` to it before a
+/// deliberate exit; the pipe ending with nothing written is a crash, which
+/// the launcher restarts. Promised from its first release (AGENTS.md).
+pub const LINEAGE_ENV: &str = "AMUX_LAUNCH_LINEAGE";
 
 /// The supervisor's timings and thresholds; the defaults are the
 /// parameters table's starting points.
@@ -217,6 +227,9 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
         params,
         inherited,
     } = options;
+    // First: a supervisor that fails from here on ends its line with no
+    // `0`, which its launcher restarts.
+    let lineage = Lineage::take();
     let _awake = Aborting(keep_awake_on_power(keep_awake));
     let lock = match inherited.and_then(|inherited| inherited.lock) {
         Some(fd) => SupervisorLock::inherit(fd, &data_dir)?,
@@ -281,11 +294,18 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
         jobs,
         pending: VecDeque::new(),
         dumps: Dumps::default(),
+        lineage,
     };
     let done = match driver.execute(out)? {
         Some(Done) => Ok(()),
         None => driver.run(finished).await,
     };
+    // A deliberate exit, the daemon stopped: the line ends here.
+    if done.is_ok()
+        && let Some(lineage) = driver.lineage.take()
+    {
+        lineage.stopping();
+    }
     // The daemon is stopped and the lock released: a stop the OS asked for
     // (Windows: a closed console, logoff or shutdown) may end the process.
     os::signal::finished();
@@ -316,6 +336,9 @@ struct Driver {
     /// What executing outputs produced, stepped before anything new.
     pending: VecDeque<core::Input>,
     dumps: Dumps,
+    /// The launcher's pipe (Windows' login item), when one started this
+    /// line: handed to the successor, written `0` at a deliberate exit.
+    lineage: Option<Lineage>,
 }
 
 /// Prefixes the reason the supervisor core asked for a dump.
@@ -382,7 +405,7 @@ struct Done;
 
 impl Driver {
     async fn run(
-        mut self,
+        &mut self,
         mut finished: mpsc::UnboundedReceiver<(JobId, JobResult)>,
     ) -> Result<(), SuperviseError> {
         let mut terminate = std::pin::pin!(terminated());
@@ -624,17 +647,18 @@ impl Driver {
     }
 
     /// Replaces this process with the installed binary in supervise mode,
-    /// keeping the child and the pipe, and the lock where it can cross: an
-    /// exec on Unix; on Windows, which has no exec, a successor started with
-    /// all of it, the child's process handle among it, as this one exits.
-    /// A failure leaves this supervisor running, which is still correct.
+    /// keeping the child and the pipe, the lineage, and the lock where it
+    /// can cross: an exec on Unix; on Windows, which has no exec, a
+    /// successor started with all of it, the child's process handle among
+    /// it, as this one exits. The lineage stays open across it, so a
+    /// launcher sees nothing end. A failure leaves this supervisor
+    /// running, which is still correct.
     fn become_installed(&self, child: &Child) {
         let lock = self.lock.0.file();
         let handed = match child.hand_over(lock) {
             Ok(handed) => handed,
             Err(error) => {
                 tracing::warn!(%error, "could not hand over to the installed binary");
-                child.keep(lock);
                 return;
             }
         };
@@ -645,7 +669,13 @@ impl Driver {
             .arg("supervise")
             .arg("--inherit")
             .arg(handed.inherited.to_arg());
-        match os::process::exec_or_spawn(successor) {
+        let mut files = handed.files();
+        if let Some(lineage) = &self.lineage {
+            let (file, raw) = lineage.file();
+            successor.env(LINEAGE_ENV, raw.to_string());
+            files.push(file);
+        }
+        match os::process::exec_or_spawn(successor, &files) {
             Ok(replaced) => {
                 if replaced.breakaway_refused {
                     tracing::warn!(
@@ -656,8 +686,6 @@ impl Driver {
             }
             Err(error) => tracing::warn!(%error, "could not start the installed binary"),
         }
-        drop(handed);
-        child.keep(lock);
     }
 }
 

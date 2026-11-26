@@ -9,6 +9,7 @@ use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::time::Duration;
 
 use ::release::TEST_SEED;
 use node::release::{self, Choice, Manifest, Release, Skip, VerifyError};
@@ -158,6 +159,9 @@ struct Fixture {
     bin: PathBuf,
     server: Server,
     supervisor: Option<Child>,
+    /// `amux-launch` beside the binary, when a test starts the supervisor
+    /// through it, as Windows' login item does.
+    launcher: Option<Child>,
     /// The supervisor core's step budget, when a test sets one: the
     /// stand-in otherwise gives it a second.
     step_budget_micros: Option<u64>,
@@ -175,6 +179,7 @@ impl Fixture {
             _root: root,
             server: Server::start().await,
             supervisor: None,
+            launcher: None,
             step_budget_micros: None,
         };
         let build = fixture.build("1.0.0");
@@ -229,13 +234,15 @@ impl Fixture {
         panic!("the binary at the path is none of the builds");
     }
 
-    fn start(&mut self) -> u32 {
+    /// `program supervise` with the stand-in's environment, its standard
+    /// error on the supervisor's log.
+    fn supervise(&self, program: &Path) -> Command {
         let log = OpenOptions::new()
             .create(true)
             .append(true)
             .open(self.dir.join("supervisor.log"))
             .unwrap();
-        let mut command = Command::new(&self.bin);
+        let mut command = Command::new(program);
         command
             .arg("supervise")
             .env("FAKE_AMUX_DIR", &self.dir)
@@ -247,10 +254,69 @@ impl Fixture {
         if let Some(micros) = self.step_budget_micros {
             command.env("FAKE_AMUX_STEP_BUDGET_MICROS", micros.to_string());
         }
+        command
+    }
+
+    fn start(&mut self) -> u32 {
+        let mut command = self.supervise(&self.bin);
         let child = start(|| command.spawn()).unwrap();
         let pid = child.id();
         self.supervisor = Some(child);
         pid
+    }
+
+    /// Starts the supervisor as Windows' login item does: `amux-launch
+    /// supervise`, with the launcher copied beside the binary it runs.
+    fn start_launched(&mut self) {
+        let launcher = self.dir.join("bin").join(exe("amux-launch"));
+        let built = binaries().join(exe("amux-launch"));
+        write_executable(|| std::fs::copy(built, &launcher)).unwrap();
+        let mut command = self.supervise(&launcher);
+        self.launcher = Some(start(|| command.spawn()).unwrap());
+    }
+
+    /// Waits for the launcher to exit, and says how.
+    async fn launcher_exit(&mut self) -> std::process::ExitStatus {
+        let launcher = self.launcher.as_mut().unwrap();
+        until("the launcher to exit", || {
+            std::future::ready(launcher.try_wait().unwrap().ok_or("still running"))
+        })
+        .await
+        .unwrap()
+    }
+
+    fn launcher_runs(&mut self) -> bool {
+        self.launcher
+            .as_mut()
+            .unwrap()
+            .try_wait()
+            .unwrap()
+            .is_none()
+    }
+
+    /// The supervisor `handed` names took over from the one started as
+    /// `supervisor`: the same process, exec'd in place, where the OS execs
+    /// (Unix), or else the successor it started as it exited (Windows);
+    /// either way the one whose pid the lock names now.
+    async fn took_over(&self, supervisor: u32, handed: &Event) {
+        if os::process::EXEC_KEEPS_PID {
+            assert_eq!(
+                handed.pid, supervisor,
+                "the exec keeps the supervisor's pid"
+            );
+        } else {
+            assert_ne!(handed.pid, supervisor, "a successor of its own");
+            until_dead(supervisor).await;
+        }
+        let lock = self.dir.join("data").join(SUPERVISOR_LOCK);
+        let named = handed.pid.to_string();
+        until("the lock to name the supervisor that took over", || {
+            let held = std::fs::read_to_string(&lock).unwrap_or_default();
+            std::future::ready(if held == named { Ok(()) } else { Err(held) })
+        })
+        .await
+        .unwrap();
+        assert!(locked(&lock), "the lock is held");
     }
 
     fn events(&self) -> Vec<Event> {
@@ -320,11 +386,18 @@ impl Fixture {
     /// What the processes did and what the supervisor logged, with pids
     /// named by role, for a reader.
     fn transcript(&self, title: &str) {
-        let supervisor = self.supervisor_pid();
+        // Every supervisor of the line: the one started, and on Windows
+        // each successor.
+        let supervisors: Vec<u32> = self
+            .events()
+            .iter()
+            .filter(|event| event.what.starts_with("supervise"))
+            .map(|event| event.pid)
+            .collect();
         let mut daemons: Vec<u32> = Vec::new();
         println!("== {title}");
         for event in self.events() {
-            let who = if event.pid == supervisor {
+            let who = if supervisors.contains(&event.pid) {
                 "supervisor".to_owned()
             } else {
                 if !daemons.contains(&event.pid) {
@@ -379,10 +452,6 @@ impl Fixture {
         .unwrap();
     }
 
-    fn supervisor_pid(&self) -> u32 {
-        self.supervisor.as_ref().unwrap().id()
-    }
-
     /// Asks the supervisor to stop over its control socket, as `amux
     /// server stop` does on Windows (on Unix the CLI sends SIGTERM, which
     /// `amux`'s own supervise_cli tests drive).
@@ -391,11 +460,6 @@ impl Fixture {
             .await
             .expect("the supervisor answers on its control socket");
         println!("asked the supervisor to stop: {answer}");
-    }
-
-    /// Ends the supervisor at once, as a crash or a kill does.
-    fn kill_supervisor(&mut self) {
-        self.supervisor.as_mut().unwrap().kill().unwrap();
     }
 
     /// Waits for the `n`-th time a daemon of `version` was asked to stop:
@@ -426,6 +490,11 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
+        // First, or it would start another supervisor.
+        if let Some(mut launcher) = self.launcher.take() {
+            let _ = launcher.kill();
+            let _ = launcher.wait();
+        }
         if let Some(mut child) = self.supervisor.take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -545,11 +614,10 @@ async fn a_step_over_its_budget_leaves_the_supervisors_state_and_inputs_file() {
     assert_eq!(std::fs::read_dir(&reports).unwrap().count(), 1);
 }
 
+/// The supervisor becomes the installed build keeping its child, the pipe
+/// and the lock: by an exec, keeping its pid too, on Unix; on Windows by a
+/// successor it starts as it exits, which takes the lock again.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: supervise-inherited comes from a new pid, not the supervisor that was started"
-)]
 async fn installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and_lock() {
     let mut fixture = Fixture::new().await;
     let supervisor = fixture.start();
@@ -557,10 +625,7 @@ async fn installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and
     fixture.publish("2.0.0");
 
     let handed = fixture.nth(1, "supervise-inherited", "2.0.0").await;
-    assert_eq!(
-        handed.pid, supervisor,
-        "the exec keeps the supervisor's pid"
-    );
+    fixture.took_over(supervisor, &handed).await;
     let events = fixture.events();
     let order: Vec<(String, String, u32)> = events
         .iter()
@@ -573,17 +638,12 @@ async fn installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and
             .position(|event| *event == (what.to_owned(), version.to_owned(), pid))
             .unwrap_or_else(|| panic!("no {what} {version} {pid} in {order:?}"))
     };
-    assert!(at("term", "1.0.0", old.pid) < at("start", "2.0.0", new.pid));
-    assert!(at("go", "2.0.0", new.pid) < at("supervise-inherited", "2.0.0", supervisor));
+    let stopped = fixture.nth_stop(1, "1.0.0").await;
+    assert!(at(&stopped.what, "1.0.0", old.pid) < at("start", "2.0.0", new.pid));
+    assert!(at("go", "2.0.0", new.pid) < at("supervise-inherited", "2.0.0", handed.pid));
     assert_eq!(fixture.installed(), "2.0.0");
     assert!(!fixture.prev().exists(), "activation deleted prev");
     assert!(!fixture.beside().staged.exists());
-    let lock = fixture.dir.join("data").join(SUPERVISOR_LOCK);
-    assert!(locked(&lock), "the lock crossed the exec");
-    assert_eq!(
-        std::fs::read_to_string(&lock).unwrap(),
-        supervisor.to_string()
-    );
 
     // The same manifest again installs nothing: 2.0.0 is not newer.
     fixture.ticks(3).await;
@@ -602,8 +662,8 @@ async fn installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and
 
     // Killed, the supervisor takes its daemon with it: end of file on the
     // pipe.
-    fixture.kill_supervisor();
-    fixture.supervisor_exit().await;
+    kill(handed.pid);
+    until_dead(handed.pid).await;
     let eof = fixture.nth(1, "eof", "2.0.0").await;
     assert_eq!(eof.pid, restarted.pid);
     until_dead(restarted.pid).await;
@@ -721,10 +781,6 @@ async fn a_daemon_that_ignores_the_stop_signal_is_killed_at_the_stop_deadline() 
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: supervise-inherited comes from a new pid, not the supervisor that was started"
-)]
 async fn a_starting_supervisor_counts_failed_starts_against_prev_and_rolls_back() {
     // A reboot in the middle of an update: 2.0.0 at the path, 1.0.0 as prev.
     let mut fixture = Fixture::new().await;
@@ -741,16 +797,12 @@ async fn a_starting_supervisor_counts_failed_starts_against_prev_and_rolls_back(
     assert_eq!(fixture.rejected().as_deref(), Some("2.0.0"));
     // The supervisor was running 2.0.0: after go it becomes 1.0.0.
     let handed = fixture.nth(1, "supervise-inherited", "1.0.0").await;
-    assert_eq!(handed.pid, supervisor);
+    fixture.took_over(supervisor, &handed).await;
     assert_eq!(fixture.installed(), "1.0.0");
     assert!(!fixture.prev().exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: supervise-inherited comes from a new pid, not the supervisor that was started"
-)]
 async fn a_starting_supervisor_finishes_a_recorded_rollback() {
     // A crash between recording the rejected build and renaming prev back.
     let mut fixture = Fixture::new().await;
@@ -769,7 +821,7 @@ async fn a_starting_supervisor_finishes_a_recorded_rollback() {
         "the rejected build never runs"
     );
     let handed = fixture.nth(1, "supervise-inherited", "1.0.0").await;
-    assert_eq!(handed.pid, supervisor);
+    fixture.took_over(supervisor, &handed).await;
     assert_eq!(fixture.installed(), "1.0.0");
     assert!(!fixture.prev().exists());
 }
@@ -789,6 +841,92 @@ async fn a_starting_supervisor_deletes_a_prev_that_is_the_binary() {
     fixture.nth(4, "start", "1.0.0").await;
     assert_eq!(fixture.rejected(), None);
     assert_eq!(fixture.installed(), "1.0.0");
+}
+
+/// Windows' login item, `amux-launch`, starts the supervisor again when it
+/// dies: its lineage's pipe ends with nothing written. The waits double
+/// from a second.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_launcher_starts_a_supervisor_that_dies_again_after_a_backoff() {
+    let mut fixture = Fixture::new().await;
+    fixture.start_launched();
+    let mut gaps = Vec::new();
+    for n in 1..=2 {
+        let supervisor = fixture.nth(n, "supervise", "1.0.0").await;
+        fixture.nth(n, "go", "1.0.0").await;
+        kill(supervisor.pid);
+        let killed = std::time::Instant::now();
+        let next = fixture.nth(n + 1, "supervise", "1.0.0").await;
+        gaps.push(killed.elapsed());
+        assert_ne!(next.pid, supervisor.pid);
+    }
+    fixture.nth(3, "go", "1.0.0").await;
+    fixture.transcript("a launched supervisor killed twice");
+    println!("restarted after {gaps:?}");
+    assert!(gaps[0] >= Duration::from_secs(1), "{gaps:?}");
+    assert!(gaps[1] >= Duration::from_secs(2), "{gaps:?}");
+    assert!(fixture.launcher_runs(), "one launcher throughout");
+}
+
+/// The supervisor's self-update keeps the launcher's line open: the
+/// supervisor becomes the installed build (a successor of a new pid on
+/// Windows) holding the lineage, so the launcher starts nothing, and the
+/// daemon the update activated serves on across it. A deliberate stop of
+/// the successor then ends the launcher.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_self_update_keeps_the_launchers_line_and_a_stop_after_it_ends_the_launcher() {
+    let mut fixture = Fixture::new().await;
+    fixture.start_launched();
+    let first = fixture.nth(1, "supervise", "1.0.0").await;
+    fixture.nth(1, "go", "1.0.0").await;
+    fixture.publish("2.0.0");
+
+    let daemon = fixture.nth(1, "go", "2.0.0").await;
+    let handed = fixture.nth(1, "supervise-inherited", "2.0.0").await;
+    fixture.took_over(first.pid, &handed).await;
+    // Long past the launcher's first backoff: a line that had ended would
+    // have been started again by now.
+    fixture.ticks(10).await;
+    fixture.transcript("a launched supervisor updates itself to 2.0.0");
+    let fresh = fixture.count("supervise", "1.0.0") + fixture.count("supervise", "2.0.0");
+    assert_eq!(fresh, 1, "the launcher started one supervisor");
+    assert!(fixture.launcher_runs(), "one launcher throughout");
+    assert_eq!(fixture.count("start", "2.0.0"), 1);
+    assert_eq!(
+        fixture.count("eof", "2.0.0"),
+        0,
+        "the daemon was never stopped"
+    );
+    assert!(alive(daemon.pid), "the daemon serves on");
+
+    fixture.stop_supervisor().await;
+    assert!(fixture.launcher_exit().await.success());
+    fixture.nth(1, "supervisor-exit", "2.0.0").await;
+    until_dead(daemon.pid).await;
+    assert_eq!(
+        fixture.count("supervise", "2.0.0"),
+        0,
+        "nothing was started again"
+    );
+}
+
+/// A deliberate stop (`amux server stop`, over the control socket) ends
+/// the launcher, which reads the `0` the supervisor wrote before it exited
+/// and starts nothing again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_deliberate_stop_ends_the_launcher() {
+    let mut fixture = Fixture::new().await;
+    fixture.start_launched();
+    let daemon = fixture.nth(1, "go", "1.0.0").await;
+    fixture.stop_supervisor().await;
+    assert!(fixture.launcher_exit().await.success());
+    fixture.nth(1, "supervisor-exit", "1.0.0").await;
+    until_dead(daemon.pid).await;
+    assert_eq!(
+        fixture.count("supervise", "1.0.0"),
+        1,
+        "nothing was started again"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

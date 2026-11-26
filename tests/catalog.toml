@@ -2,7 +2,7 @@ version = 1
 
 [[suite]]
 name = "desktop-cli-system"
-contract = "The built amux binary hosts agents that outlive a killed daemon and are adopted by the next, attaches terminals to them, forwards the browser extension's calls to its sockets, closes pairing mode however amux pair ends, words its refusals as sentences, starts an agent in a new worktree from `amux new --worktree`, serves the cloud relay, writes its login units, routes stop and update through the supervisor, and keeps overlapping releases working across an update."
+contract = "The built amux binary hosts agents that outlive a killed daemon and are adopted by the next, attaches terminals to them, forwards the browser extension's calls to its sockets, closes pairing mode however amux pair ends, words its refusals as sentences, starts an agent in a new worktree from `amux new --worktree`, serves the cloud relay, writes its login units, routes stop and update through the supervisor (ending Windows' login launcher on a stop), and keeps overlapping releases working across an update."
 paths = ["crates/amux/tests"]
 recipe = "just suite desktop-cli-system"
 boundary = "System composition"
@@ -548,8 +548,8 @@ cargo = [
 
 [[suite]]
 name = "supervisor-update"
-contract = "The supervisor activates a new build, rolls back after failed starts, refuses a rejected build, finishes an interrupted rollback and restarts the daemon, with every step taken by the shipped supervisor code."
-paths = ["crates/node/tests/supervisor.rs", "crates/fake-amux/src"]
+contract = "The supervisor activates a new build, rolls back after failed starts, refuses a rejected build, finishes an interrupted rollback and restarts the daemon, with every step taken by the shipped supervisor code; started by amux-launch, as Windows' login item starts it, it is started again after a doubling backoff when it dies, keeps the launcher's line open across its own update, and ends the launcher when stopped on purpose."
+paths = ["crates/node/tests/supervisor.rs", "crates/fake-amux/src", "crates/launch/src"]
 recipe = "just suite supervisor-update"
 boundary = "System composition"
 oracle = "The supervisor's event transcript, installed and rejected builds, and process observations."
@@ -563,6 +563,24 @@ update = ""
 cargo = [
   { package = "fake-amux", kind = "bin", targets = ["fake-amux"], features = [] },
   { package = "node", modules = ["supervisor"], features = [] },
+]
+
+[[suite]]
+name = "windows-launcher"
+contract = "amux-launch, Windows' login item, waits a second doubling to a minute before starting a line that died, and a second again after one that ran ten minutes; reads a byte before its pipe's end as a deliberate stop and the end alone as a death; and names its pipe as amux supervise reads it."
+paths = ["crates/launch/src"]
+recipe = "just suite windows-launcher"
+boundary = "System composition"
+oracle = "Value assertions on the backoff schedule, the pipe's reading and the promised name."
+real = ["the launcher's own functions"]
+substituted = ["the lineage's pipe by an in-memory reader"]
+time = "none"
+capabilities = ["Rust toolchain"]
+lane = "fast"
+evidence = ""
+update = ""
+cargo = [
+  { package = "launch", kind = "bin", targets = ["amux-launch"], features = [] },
 ]
 
 [[suite]]

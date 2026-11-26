@@ -49,6 +49,11 @@ const ASSETS: &[(&str, &str)] = &[
     ("aarch64-apple-darwin", "amux-macos-arm64"),
     ("x86_64-pc-windows-msvc", "amux-windows-x86_64.exe"),
 ];
+/// What the Release workflow publishes beside a target's binary that no
+/// manifest names: Windows' login item launcher, `amux-launch.exe`, which
+/// an install puts beside `amux.exe`. A deploy checks each is attested and
+/// in `checksums.txt`, so no channel names a release that lacks one.
+const BESIDE: &[(&str, &str)] = &[("x86_64-pc-windows-msvc", "amux-launch-windows-x86_64.exe")];
 const CHANNELS: &[&str] = &["stable", "preview"];
 /// The target whose binary a deploy signs with Developer ID before any
 /// manifest names it.
@@ -383,6 +388,29 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
     ])?;
     let staging = root.join("target/release-deploy").join(&tag);
     std::fs::create_dir_all(&staging)?;
+    for (_, asset) in BESIDE {
+        gh(&[
+            "release",
+            "download",
+            &tag,
+            "--pattern",
+            asset,
+            "--dir",
+            &staging.to_string_lossy(),
+            "--clobber",
+        ])?;
+        let path = staging.join(asset);
+        let check = attestation_check(&path, repository, &tag, &commit);
+        gh(&check.iter().map(String::as_str).collect::<Vec<_>>()).map_err(|error| {
+            format!("{asset} of {tag} is not attested by {WORKFLOW} at {commit}: {error}")
+        })?;
+        agrees_with_checksums(
+            &checksums,
+            asset,
+            &release::sha256_of(&std::fs::read(&path)?),
+        )
+        .map_err(|error| format!("{tag}: {error}"))?;
+    }
     let mut targets = BTreeMap::new();
     for (target, asset) in ASSETS {
         gh(&[
@@ -876,5 +904,27 @@ mod tests {
     fn the_workflow_names_a_key_and_its_backup() {
         let workflow = std::fs::read_to_string(repository_root().join(WORKFLOW)).unwrap();
         trusted_keys(&workflow).unwrap();
+    }
+
+    /// Every file a deploy reads is one the committed workflow checksums
+    /// and publishes: each target's binary, and Windows' launcher beside
+    /// it.
+    #[test]
+    fn the_workflow_publishes_every_asset_a_deploy_reads() {
+        let workflow = std::fs::read_to_string(repository_root().join(WORKFLOW)).unwrap();
+        let checksummed = workflow
+            .lines()
+            .find(|line| line.contains("sha256sum"))
+            .expect("the workflow writes checksums.txt");
+        for (_, asset) in ASSETS.iter().chain(BESIDE) {
+            assert!(
+                checksummed.split_whitespace().any(|word| word == *asset),
+                "{asset} is in checksums.txt: {checksummed}"
+            );
+            assert!(
+                workflow.lines().any(|line| line.trim() == *asset),
+                "{asset} is among the release's files"
+            );
+        }
     }
 }

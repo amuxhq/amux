@@ -49,6 +49,11 @@ case "$target" in
         # The linker already keeps symbols in the PDB, not the executable.
         cp "$built/amux.exe" "$out/$asset"
         cp "$built/amux.pdb" "$out/${asset%.exe}.pdb"
+        # The login item's launcher, shipped beside it:
+        # amux-launch-windows-x86_64.exe for amux-windows-x86_64.exe.
+        launcher="amux-launch-${asset#amux-}"
+        cp "$built/amux-launch.exe" "$out/$launcher"
+        cp "$built/amux-launch.pdb" "$out/${launcher%.exe}.pdb"
         ;;
     *)
         echo "release-symbols: no symbol split for $target" >&2

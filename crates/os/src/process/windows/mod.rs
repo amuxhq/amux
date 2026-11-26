@@ -3,10 +3,12 @@
 
 use std::fs::File;
 use std::io;
+use std::os::windows::ffi::OsStrExt as _;
 use std::os::windows::io::{
     AsRawHandle as _, FromRawHandle as _, IntoRawHandle as _, OwnedHandle, RawHandle,
 };
 use std::os::windows::process::CommandExt as _;
+use std::path::Path;
 
 use windows_sys::Win32::Foundation::{
     CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_ACCESS_DENIED,
@@ -30,13 +32,16 @@ use windows_sys::Win32::System::JobObjects::{
 #[cfg(feature = "async")]
 use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
 use windows_sys::Win32::System::Threading::{
-    CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, GetCurrentProcess,
-    GetExitCodeProcess, GetProcessId, INFINITE, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_SUSPEND_RESUME, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, TerminateProcess,
-    WaitForSingleObject,
+    CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
+    CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList,
+    EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess, GetProcessId, INFINITE,
+    InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess,
+    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_SUSPEND_RESUME, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, STARTF_USESTDHANDLES,
+    STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
-use super::{Descendant, Detach, Replaced, Spawnable, Spawned};
+use super::{Descendant, Detach, Given, Replaced, Spawnable, Spawned, Stream};
 use crate::Pid;
 
 #[cfg(test)]
@@ -55,36 +60,427 @@ pub(super) fn detach(cmd: &mut std::process::Command, _how: Detach) {
 /// starts.
 pub(super) fn own_group(_cmd: &mut std::process::Command) {}
 
-pub(super) fn spawn_background<C: Spawnable>(cmd: &mut C) -> io::Result<Spawned<C::Child>> {
-    match cmd.spawn_child() {
-        Ok(child) => Ok(Spawned {
-            child,
-            breakaway_refused: false,
-        }),
-        // Our job doesn't allow breakaway: start the child inside it.
+/// A process this one started, by its own handle.
+#[derive(Debug)]
+pub struct Process {
+    handle: OwnedHandle,
+    pid: Pid,
+}
+
+pub(super) type Background = Process;
+#[cfg(feature = "async")]
+pub(super) type AsyncBackground = Process;
+
+pub(super) fn spawn_background<C: Spawnable>(
+    cmd: &mut C,
+    given: Given<'_>,
+) -> io::Result<Spawned<C::Child>> {
+    let (process, breakaway_refused) = start_breaking_away(cmd.std_command(), &given)?;
+    Ok(Spawned {
+        child: C::adopt(process),
+        breakaway_refused,
+    })
+}
+
+pub(super) fn exec_or_spawn(cmd: std::process::Command, files: &[&File]) -> io::Result<Replaced> {
+    let given = Given {
+        stdin: Stream::Inherit,
+        stdout: Stream::Inherit,
+        stderr: Stream::Inherit,
+        files,
+    };
+    let (process, breakaway_refused) = start_breaking_away(&cmd, &given)?;
+    Ok(Replaced {
+        child: super::Background { inner: process },
+        breakaway_refused,
+    })
+}
+
+/// Starts `cmd` out of this process's job, or inside it when the job
+/// forbids leaving (`ERROR_ACCESS_DENIED`): the process, and whether it was
+/// refused.
+fn start_breaking_away(
+    cmd: &std::process::Command,
+    given: &Given<'_>,
+) -> io::Result<(Process, bool)> {
+    match start(cmd, given, BACKGROUND) {
+        Ok(process) => Ok((process, false)),
         Err(error) if error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
-            cmd.std_command()
-                .creation_flags(BACKGROUND & !CREATE_BREAKAWAY_FROM_JOB);
-            let retried = cmd.spawn_child();
-            // The command asks for breakaway again, so its next start tries
-            // (and reports) afresh.
-            cmd.std_command().creation_flags(BACKGROUND);
-            Ok(Spawned {
-                child: retried?,
-                breakaway_refused: true,
-            })
+            start(cmd, given, BACKGROUND & !CREATE_BREAKAWAY_FROM_JOB)
+                .map(|process| (process, true))
         }
         Err(error) => Err(error),
     }
 }
 
-pub(super) fn exec_or_spawn(mut cmd: std::process::Command) -> io::Result<Replaced> {
-    detach(&mut cmd, Detach::Session);
-    let spawned = spawn_background(&mut cmd)?;
-    Ok(Replaced {
-        child: spawned.child,
-        breakaway_refused: spawned.breakaway_refused,
-    })
+/// UTF-16, ending in a NUL.
+fn wide(text: &std::ffi::OsStr) -> Vec<u16> {
+    text.encode_wide().chain([0]).collect()
+}
+
+/// Appends `arg` to a command line as the C runtime's parser reads it back
+/// (std's own quoting): in quotes when it is empty or holds a space or tab,
+/// with backslashes doubled before a quote and escaped quotes.
+fn append_arg(line: &mut Vec<u16>, arg: &std::ffi::OsStr, quote: bool) {
+    const BACKSLASH: u16 = b'\\' as u16;
+    const QUOTE: u16 = b'"' as u16;
+    let arg: Vec<u16> = arg.encode_wide().collect();
+    let quote =
+        quote || arg.is_empty() || arg.iter().any(|&c| c == b' ' as u16 || c == b'\t' as u16);
+    if quote {
+        line.push(QUOTE);
+    }
+    let mut backslashes = 0;
+    for &c in &arg {
+        if c == BACKSLASH {
+            backslashes += 1;
+        } else {
+            if c == QUOTE {
+                line.extend(std::iter::repeat_n(BACKSLASH, backslashes + 1));
+            }
+            backslashes = 0;
+        }
+        line.push(c);
+    }
+    if quote {
+        line.extend(std::iter::repeat_n(BACKSLASH, backslashes));
+        line.push(QUOTE);
+    }
+}
+
+/// The command line `cmd` runs as: its program, in quotes, then its
+/// arguments.
+fn command_line(cmd: &std::process::Command) -> io::Result<Vec<u16>> {
+    let program = cmd.get_program();
+    if program.encode_wide().any(|c| c == b'"' as u16) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a program name can't hold a quote",
+        ));
+    }
+    let mut line = Vec::new();
+    append_arg(&mut line, program, true);
+    for arg in cmd.get_args() {
+        line.push(b' ' as u16);
+        append_arg(&mut line, arg, false);
+    }
+    line.push(0);
+    Ok(line)
+}
+
+/// The program to start: a path with a folder in it made absolute against
+/// this process's working directory (with `.exe` when it names none and
+/// nothing is there without it), or None for a bare name, which the OS
+/// looks for as a command line's first word.
+fn application(cmd: &std::process::Command) -> io::Result<Option<Vec<u16>>> {
+    let program = Path::new(cmd.get_program());
+    if program.components().count() < 2 && !program.is_absolute() {
+        return Ok(None);
+    }
+    let mut path = std::path::absolute(program)?;
+    if path.extension().is_none() && !path.exists() {
+        path.set_extension("exe");
+    }
+    Ok(Some(wide(path.as_os_str())))
+}
+
+/// The environment block for `cmd`: None when it changes nothing (the
+/// child takes this process's), else this process's with its changes,
+/// names compared without case as Windows does, sorted.
+fn environment(cmd: &std::process::Command) -> Option<Vec<u16>> {
+    let mut changes = cmd.get_envs().peekable();
+    changes.peek()?;
+    let key = |name: &std::ffi::OsStr| -> Vec<u16> {
+        name.encode_wide()
+            .map(|c| {
+                if c < 128 {
+                    (c as u8).to_ascii_uppercase() as u16
+                } else {
+                    c
+                }
+            })
+            .collect()
+    };
+    let mut vars: std::collections::BTreeMap<Vec<u16>, (std::ffi::OsString, std::ffi::OsString)> =
+        std::env::vars_os()
+            .map(|(name, value)| (key(&name), (name, value)))
+            .collect();
+    for (name, value) in changes {
+        match value {
+            Some(value) => vars.insert(key(name), (name.to_owned(), value.to_owned())),
+            None => vars.remove(&key(name)),
+        };
+    }
+    let mut block = Vec::new();
+    for (name, value) in vars.values() {
+        block.extend(name.encode_wide());
+        block.push(b'=' as u16);
+        block.extend(value.encode_wide());
+        block.push(0);
+    }
+    // An empty block still needs its two NULs.
+    if block.is_empty() {
+        block.push(0);
+    }
+    block.push(0);
+    Some(block)
+}
+
+/// An inheritable duplicate of `handle`, closed when dropped.
+fn inheritable(handle: HANDLE) -> io::Result<OwnedHandle> {
+    let mut copy: HANDLE = std::ptr::null_mut();
+    // SAFETY: duplicating a handle this process holds into itself.
+    let done = unsafe {
+        DuplicateHandle(
+            GetCurrentProcess(),
+            handle,
+            GetCurrentProcess(),
+            &mut copy,
+            0,
+            1,
+            DUPLICATE_SAME_ACCESS,
+        )
+    };
+    if done == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: a fresh duplicate this process owns.
+    Ok(unsafe { OwnedHandle::from_raw_handle(copy as RawHandle) })
+}
+
+/// What a child is given as one standard stream: an inheritable duplicate,
+/// or None for a standard handle this process doesn't have.
+fn stream(stream: &Stream, which: u32, null: &mut Option<File>) -> io::Result<Option<OwnedHandle>> {
+    let handle = match stream {
+        Stream::Null => {
+            if null.is_none() {
+                *null = Some(File::options().read(true).write(true).open("NUL")?);
+            }
+            null.as_ref()
+                .map_or(std::ptr::null_mut(), |file| file.as_raw_handle() as HANDLE)
+        }
+        // SAFETY: reading our own standard handle.
+        Stream::Inherit => unsafe { GetStdHandle(which) },
+        Stream::File(file) => file.as_raw_handle() as HANDLE,
+    };
+    if handle.is_null() || handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+        return Ok(None);
+    }
+    inheritable(handle).map(Some)
+}
+
+/// Starts `cmd` with `flags`, inheriting `given` and nothing else: every
+/// handle it inherits is named in `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`.
+fn start(cmd: &std::process::Command, given: &Given<'_>, flags: u32) -> io::Result<Process> {
+    let mut line = command_line(cmd)?;
+    let application = application(cmd)?;
+    let environment = environment(cmd);
+    let cwd = cmd.get_current_dir().map(|dir| wide(dir.as_os_str()));
+    let mut null = None;
+    let streams = [
+        stream(&given.stdin, STD_INPUT_HANDLE, &mut null)?,
+        stream(&given.stdout, STD_OUTPUT_HANDLE, &mut null)?,
+        stream(&given.stderr, STD_ERROR_HANDLE, &mut null)?,
+    ];
+    let raw = |handle: &Option<OwnedHandle>| {
+        handle.as_ref().map_or(std::ptr::null_mut(), |handle| {
+            handle.as_raw_handle() as HANDLE
+        })
+    };
+    // The files are marked inheritable for this start only; a list may
+    // name only inheritable handles.
+    let mut marked = Vec::new();
+    let marking = given.files.iter().try_for_each(|file| {
+        let mut flags = 0;
+        // SAFETY: a query of a handle this process owns.
+        if unsafe { GetHandleInformation(file.as_raw_handle() as HANDLE, &mut flags) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if flags & HANDLE_FLAG_INHERIT == 0 {
+            set_inheritable(file, true)?;
+            marked.push(*file);
+        }
+        Ok(())
+    });
+    let started = marking.and_then(|()| {
+        let mut list: Vec<HANDLE> = streams.iter().map(raw).filter(|h| !h.is_null()).collect();
+        for file in given.files {
+            let handle = file.as_raw_handle() as HANDLE;
+            if !list.contains(&handle) {
+                list.push(handle);
+            }
+        }
+        let mut attributes = Attributes::handle_list(&list)?;
+        let mut startup = STARTUPINFOEXW::default();
+        startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+        startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        startup.StartupInfo.hStdInput = raw(&streams[0]);
+        startup.StartupInfo.hStdOutput = raw(&streams[1]);
+        startup.StartupInfo.hStdError = raw(&streams[2]);
+        startup.lpAttributeList = attributes.list();
+        let mut info = PROCESS_INFORMATION::default();
+        let pointer =
+            |text: &Option<Vec<u16>>| text.as_ref().map_or(std::ptr::null(), |text| text.as_ptr());
+        // SAFETY: every pointer is to a buffer that outlives the call: the
+        // NUL-terminated names and line, the environment block, the
+        // startup information and the attribute list over `list`.
+        let created = unsafe {
+            CreateProcessW(
+                pointer(&application),
+                line.as_mut_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1,
+                flags | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+                environment
+                    .as_ref()
+                    .map_or(std::ptr::null(), |block| block.as_ptr().cast()),
+                pointer(&cwd),
+                &raw const startup.StartupInfo,
+                &mut info,
+            )
+        };
+        if created == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: both handles are this process's own, fresh from the call.
+        let (process, _thread) = unsafe {
+            (
+                OwnedHandle::from_raw_handle(info.hProcess as RawHandle),
+                OwnedHandle::from_raw_handle(info.hThread as RawHandle),
+            )
+        };
+        Ok(Process {
+            handle: process,
+            pid: info.dwProcessId,
+        })
+    });
+    for file in marked {
+        let _ = set_inheritable(file, false);
+    }
+    started
+}
+
+/// A thread attribute list naming the handles a child inherits.
+struct Attributes {
+    /// The list's memory, in words so it is aligned for it.
+    buffer: Vec<usize>,
+}
+
+impl Attributes {
+    /// `handles` must outlive the list's use, and hold no handle twice.
+    fn handle_list(handles: &[HANDLE]) -> io::Result<Attributes> {
+        let mut size = 0;
+        // SAFETY: a size query; it fails with the size needed.
+        unsafe { InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &mut size) };
+        let mut attributes = Attributes {
+            buffer: vec![0; size.div_ceil(size_of::<usize>())],
+        };
+        // SAFETY: the buffer is the size the query asked for.
+        if unsafe { InitializeProcThreadAttributeList(attributes.list(), 1, 0, &mut size) } == 0 {
+            // Nothing to delete: it never initialized.
+            attributes.buffer = Vec::new();
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: the list was just initialized for one attribute, and the
+        // handles outlive it, as the caller promises.
+        let updated = unsafe {
+            UpdateProcThreadAttribute(
+                attributes.list(),
+                0,
+                PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
+                handles.as_ptr().cast(),
+                size_of_val(handles),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+            )
+        };
+        if updated == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(attributes)
+    }
+
+    fn list(&mut self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
+        self.buffer.as_mut_ptr().cast()
+    }
+}
+
+impl Drop for Attributes {
+    fn drop(&mut self) {
+        if !self.buffer.is_empty() {
+            // SAFETY: a list initialized in handle_list.
+            unsafe { DeleteProcThreadAttributeList(self.list()) };
+        }
+    }
+}
+
+fn exit_status(handle: HANDLE) -> io::Result<std::process::ExitStatus> {
+    use std::os::windows::process::ExitStatusExt as _;
+    let mut code = 0u32;
+    // SAFETY: a query of a process handle we own.
+    if unsafe { GetExitCodeProcess(handle, &mut code) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(std::process::ExitStatus::from_raw(code))
+}
+
+impl Process {
+    fn raw(&self) -> HANDLE {
+        self.handle.as_raw_handle() as HANDLE
+    }
+}
+
+pub(super) fn background_id(child: &Process) -> Pid {
+    child.pid
+}
+
+pub(super) fn background_pin(child: &Process) -> io::Result<ProcessRef> {
+    ProcessRef::of_handle(child.raw())
+}
+
+pub(super) fn background_try_wait(
+    child: &mut Process,
+) -> io::Result<Option<std::process::ExitStatus>> {
+    // SAFETY: a zero-timeout wait on a process handle we own.
+    match unsafe { WaitForSingleObject(child.raw(), 0) } {
+        WAIT_OBJECT_0 => exit_status(child.raw()).map(Some),
+        WAIT_TIMEOUT => Ok(None),
+        _ => Err(io::Error::last_os_error()),
+    }
+}
+
+pub(super) fn background_wait(child: &mut Process) -> io::Result<std::process::ExitStatus> {
+    // SAFETY: waiting on a process handle we own.
+    if unsafe { WaitForSingleObject(child.raw(), INFINITE) } != WAIT_OBJECT_0 {
+        return Err(io::Error::last_os_error());
+    }
+    exit_status(child.raw())
+}
+
+pub(super) fn background_kill(child: &mut Process) -> io::Result<()> {
+    ProcessRef::of_handle(child.raw())?.kill()
+}
+
+#[cfg(feature = "async")]
+pub(super) fn async_background_id(child: &Process) -> Pid {
+    child.pid
+}
+
+#[cfg(feature = "async")]
+pub(super) fn async_background_pin(child: &Process) -> io::Result<ProcessRef> {
+    ProcessRef::of_handle(child.raw())
+}
+
+#[cfg(feature = "async")]
+pub(super) async fn async_background_wait(
+    child: &mut Process,
+) -> io::Result<std::process::ExitStatus> {
+    // SAFETY: a zero-timeout wait on a process handle we own.
+    if unsafe { WaitForSingleObject(child.raw(), 0) } != WAIT_OBJECT_0 {
+        wait::signalled(child.raw())?.await;
+    }
+    exit_status(child.raw())
 }
 
 pub(super) fn console_window() -> bool {

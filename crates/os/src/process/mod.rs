@@ -12,7 +12,7 @@
 use std::fs::File;
 use std::io;
 use std::path::Path;
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
 
 use crate::Pid;
 
@@ -55,25 +55,37 @@ mod sealed {
 }
 
 /// A command [`background`] can configure and [`spawn_background`] can
-/// start: `std::process::Command`, and with the `async` feature
-/// `tokio::process::Command`.
+/// start: `std::process::Command`, which starts a [`Background`], and with
+/// the `async` feature `tokio::process::Command`, which starts an
+/// [`AsyncBackground`].
 pub trait Spawnable: sealed::Sealed {
     /// What a spawn returns.
     type Child;
     #[doc(hidden)]
     fn std_command(&mut self) -> &mut std::process::Command;
+    /// Starts the command with the OS's own spawn (Unix).
+    #[cfg(unix)]
     #[doc(hidden)]
     fn spawn_child(&mut self) -> io::Result<Self::Child>;
+    /// Takes in a process started from the command (Windows).
+    #[cfg(windows)]
+    #[doc(hidden)]
+    fn adopt(process: imp::Process) -> Self::Child;
 }
 
 impl sealed::Sealed for std::process::Command {}
 impl Spawnable for std::process::Command {
-    type Child = std::process::Child;
+    type Child = Background;
     fn std_command(&mut self) -> &mut std::process::Command {
         self
     }
-    fn spawn_child(&mut self) -> io::Result<std::process::Child> {
-        self.spawn()
+    #[cfg(unix)]
+    fn spawn_child(&mut self) -> io::Result<Background> {
+        self.spawn().map(|inner| Background { inner })
+    }
+    #[cfg(windows)]
+    fn adopt(process: imp::Process) -> Background {
+        Background { inner: process }
     }
 }
 
@@ -81,23 +93,24 @@ impl Spawnable for std::process::Command {
 impl sealed::Sealed for tokio::process::Command {}
 #[cfg(feature = "async")]
 impl Spawnable for tokio::process::Command {
-    type Child = tokio::process::Child;
+    type Child = AsyncBackground;
     fn std_command(&mut self) -> &mut std::process::Command {
         self.as_std_mut()
     }
-    fn spawn_child(&mut self) -> io::Result<tokio::process::Child> {
-        self.spawn()
+    #[cfg(unix)]
+    fn spawn_child(&mut self) -> io::Result<AsyncBackground> {
+        self.spawn().map(|inner| AsyncBackground { inner })
+    }
+    #[cfg(windows)]
+    fn adopt(process: imp::Process) -> AsyncBackground {
+        AsyncBackground { inner: process }
     }
 }
 
 /// Configures `cmd` to run in the background: detached as `how` (see
-/// [`Detach`]), with no window, its working directory `cwd`, and all three
-/// standard streams null.
-///
-/// Call this before setting any stream the child should have instead:
-/// a later `stdin`, `stdout` or `stderr` replaces the null one. (std has no
-/// way to ask whether a stream was set, so this can't leave one alone.)
-/// Start the command with [`spawn_background`].
+/// [`Detach`]), with no window, and its working directory `cwd`. Start it
+/// with [`spawn_background`], which gives it its standard streams and
+/// whatever else it inherits.
 pub fn background<C: Spawnable>(cmd: &mut C, how: Detach, cwd: &Path) {
     let std = cmd.std_command();
     std.stdin(Stdio::null())
@@ -105,6 +118,39 @@ pub fn background<C: Spawnable>(cmd: &mut C, how: Detach, cwd: &Path) {
         .stderr(Stdio::null())
         .current_dir(cwd);
     imp::detach(std, how);
+}
+
+/// One standard stream of a process [`spawn_background`] starts.
+#[derive(Debug, Default)]
+pub enum Stream {
+    /// The null device.
+    #[default]
+    Null,
+    /// This process's own.
+    Inherit,
+    File(File),
+}
+
+/// Everything a background process inherits: its three standard streams
+/// and `files`, and nothing else this process holds.
+///
+/// Each of `files` reaches the child at the number [`raw_for_child`] gives,
+/// which the caller tells it (an argument, an environment variable). It is
+/// made inheritable for this one start and not after, so the caller needn't
+/// [`set_inheritable`] it.
+///
+/// Windows: the start names these handles to the OS in an explicit list
+/// (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`), so no other inheritable handle
+/// this process holds reaches the child: not one its own starter passed
+/// down unknowingly (a desktop app's pipes), nor one another thread marked
+/// inheritable for a start of its own. Unix: Rust opens every descriptor
+/// close-on-exec, so the child gets its streams and `files`.
+#[derive(Debug, Default)]
+pub struct Given<'a> {
+    pub stdin: Stream,
+    pub stdout: Stream,
+    pub stderr: Stream,
+    pub files: &'a [&'a File],
 }
 
 /// A background process just started.
@@ -117,11 +163,76 @@ pub struct Spawned<C> {
     pub breakaway_refused: bool,
 }
 
-/// Starts a command [`background`] configured. On Windows, a start refused
-/// because this process's job forbids breakaway (`ERROR_ACCESS_DENIED`) is
-/// tried once more without breakaway, and the result says so.
-pub fn spawn_background<C: Spawnable>(cmd: &mut C) -> io::Result<Spawned<C::Child>> {
-    imp::spawn_background(cmd)
+/// Starts a command [`background`] configured, with what `given` names and
+/// nothing else (see [`Given`]). On Windows, a start refused because this
+/// process's job forbids breakaway (`ERROR_ACCESS_DENIED`) is tried once
+/// more without breakaway, and the result says so.
+///
+/// Windows starts the process itself (`CreateProcessW`, as std can't name
+/// the handles a child inherits) from the command's program, arguments,
+/// environment changes and working directory: streams set on the command
+/// are not read, `given` has them, and nor is an `env_clear`.
+pub fn spawn_background<C: Spawnable>(
+    cmd: &mut C,
+    given: Given<'_>,
+) -> io::Result<Spawned<C::Child>> {
+    imp::spawn_background(cmd, given)
+}
+
+/// A process [`spawn_background`] started from a `std::process::Command`.
+#[derive(Debug)]
+pub struct Background {
+    inner: imp::Background,
+}
+
+impl Background {
+    pub fn id(&self) -> Pid {
+        imp::background_id(&self.inner)
+    }
+
+    /// Pins the process, so its pid is never reused under a kill.
+    pub fn pin(&self) -> io::Result<ProcessRef> {
+        imp::background_pin(&self.inner).map(|inner| ProcessRef { inner })
+    }
+
+    /// How it exited, if it has.
+    pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
+        imp::background_try_wait(&mut self.inner)
+    }
+
+    /// Waits, blocking, for it to exit.
+    pub fn wait(&mut self) -> io::Result<ExitStatus> {
+        imp::background_wait(&mut self.inner)
+    }
+
+    /// Ends it at once. `Ok` when it has already exited.
+    pub fn kill(&mut self) -> io::Result<()> {
+        imp::background_kill(&mut self.inner)
+    }
+}
+
+/// A process [`spawn_background`] started from a `tokio::process::Command`.
+#[cfg(feature = "async")]
+#[derive(Debug)]
+pub struct AsyncBackground {
+    inner: imp::AsyncBackground,
+}
+
+#[cfg(feature = "async")]
+impl AsyncBackground {
+    pub fn id(&self) -> Pid {
+        imp::async_background_id(&self.inner)
+    }
+
+    /// Pins the process, so its pid is never reused under a kill.
+    pub fn pin(&self) -> io::Result<ProcessRef> {
+        imp::async_background_pin(&self.inner).map(|inner| ProcessRef { inner })
+    }
+
+    /// Resolves once it has exited (and on Unix reaps it), with how.
+    pub async fn wait(&mut self) -> io::Result<ExitStatus> {
+        imp::async_background_wait(&mut self.inner).await
+    }
 }
 
 /// Readies `cmd` to start at the head of a process group of its own
@@ -171,21 +282,26 @@ impl Tree {
 /// running. The caller hands over to it and exits.
 #[derive(Debug)]
 pub struct Replaced {
-    pub child: std::process::Child,
+    pub child: Background,
     /// As [`Spawned::breakaway_refused`].
     pub breakaway_refused: bool,
 }
 
-/// Replaces this process with `cmd`.
+/// Replaces this process with `cmd`, which keeps this process's standard
+/// streams and working directory, as an exec would, and inherits `files`
+/// (as [`Given::files`]) and nothing else.
 ///
 /// Unix: exec, which returns only on failure, so this never returns `Ok`.
 /// Windows, which has no exec: starts `cmd` detached as
 /// [`Detach::Session`] and returns it; the caller hands over and exits.
-/// Either way the successor keeps this process's standard streams and
-/// working directory unless `cmd` sets its own, as an exec would.
-pub fn exec_or_spawn(cmd: std::process::Command) -> io::Result<Replaced> {
-    imp::exec_or_spawn(cmd)
+/// The successor's working directory is `cmd`'s, if it names one.
+pub fn exec_or_spawn(cmd: std::process::Command, files: &[&File]) -> io::Result<Replaced> {
+    imp::exec_or_spawn(cmd, files)
 }
+
+/// Whether [`exec_or_spawn`] keeps this process's pid: an exec (Unix), or
+/// a successor of a pid of its own (Windows).
+pub const EXEC_KEEPS_PID: bool = cfg!(unix);
 
 /// The first call in every amux `main`.
 ///

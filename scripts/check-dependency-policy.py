@@ -67,6 +67,10 @@ ALLOWED_LOCAL = {
     # same rule the clients colour it by.
     "node": {"agent-dir", "analytics", "attachments", "core-ring", "daemon-core", "git-facts", "highlight", "journal", "log-file", "os", "path-core", "redaction", "relay-core", "release", "settings", "socket-core", "store", "supervisor-core", "wire"},
     "amux": {"agent", "agent-dir", "analytics", "client", "log-file", "node", "os", "settings", "tui", "wire"},
+    # amux-launch, Windows' login item: it starts amux supervise and reads
+    # the lineage's pipe, and shares nothing else with amux, so a running
+    # launcher of one release works with any release's amux.
+    "launch": {"os"},
     # The release manifest the tool signs and the daemon verifies, and the
     # version stamp a release tool can rewrite in a built binary; the xtask
     # shares both without building the daemon.

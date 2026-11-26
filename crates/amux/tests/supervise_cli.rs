@@ -325,6 +325,81 @@ async fn server_stop_ends_the_launcher_that_started_the_supervisor() {
     .unwrap();
 }
 
+/// A supervisor that dies under the launcher is started again after a
+/// backoff. `amux server stop` during that wait finds no supervisor to
+/// tell, so it records the stop in the root; the supervisor the launcher
+/// starts next reads it, says the stop on the launcher's pipe and exits
+/// without starting a daemon, and the launcher exits. amux is moved away
+/// while the stop runs, so each restart the launcher tries fails until
+/// it is back, and the stop lands in the wait however the timing falls.
+#[tokio::test(flavor = "multi_thread")]
+async fn server_stop_while_the_launcher_waits_to_restart_ends_the_launcher() {
+    let bin = tempfile::tempdir().unwrap();
+    let (amux, away, launcher) = (
+        bin.path().join(os::paths::exe_name("amux")),
+        bin.path().join(os::paths::exe_name("amux-away")),
+        bin.path().join(os::paths::exe_name("amux-launch")),
+    );
+    std::fs::copy(amux_binary(), &amux).unwrap();
+    std::fs::copy(provider_fakes::binaries::path("amux-launch"), &launcher).unwrap();
+    let install = Install::with_binary(true, "", amux.clone());
+    let config = install.config.to_str().unwrap().to_owned();
+    let launcher = install
+        .run(&launcher, &["supervise", "--config", &config])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let launcher = std::cell::RefCell::new(Ending(launcher));
+    until("the launched supervisor's daemon to answer", || {
+        install.answers()
+    })
+    .await;
+    let supervisor = install
+        .supervisor_pid()
+        .expect("the launcher ran amux supervise");
+
+    // A running program can be renamed, on Windows too.
+    std::fs::rename(&amux, &away).unwrap();
+    os::process::ProcessRef::open(supervisor)
+        .and_then(|process| process.kill())
+        .expect("killing the supervisor");
+    until("the supervisor and its daemon to end", || {
+        !alive(supervisor) && install.supervisor_pid().is_none() && !install.daemon_running()
+    })
+    .await;
+    let stopped = install.run(&away, &["server", "stop"]).output().unwrap();
+    assert!(stopped.status.success(), "{}", stdout(&stopped));
+    assert!(
+        stdout(&stopped).contains("The amux daemon is not running."),
+        "no supervisor answered: {}",
+        stdout(&stopped)
+    );
+    assert!(install.data.join(node::supervisor::STOPPED).exists());
+    std::fs::rename(&away, &amux).unwrap();
+
+    until("the launcher to exit", || {
+        launcher.borrow_mut().0.try_wait().unwrap().is_some()
+    })
+    .await;
+    let status = launcher.borrow_mut().0.wait().unwrap();
+    assert!(status.success(), "{status}");
+    let log = std::fs::read_to_string(install.data.join("supervisor.log")).unwrap();
+    assert!(
+        log.contains("waited to start amux again: staying stopped"),
+        "the restarted supervisor read the stop:\n{log}"
+    );
+    assert!(
+        !install.data.join(node::supervisor::STOPPED).exists(),
+        "the stop was taken back as it was honoured"
+    );
+    holds_for("nothing to start again", Duration::from_secs(2), || async {
+        install.supervisor_pid().is_none() && !install.answers() && !install.daemon_running()
+    })
+    .await
+    .unwrap();
+}
+
 /// Both programs an install puts on Windows carry the application manifest
 /// (no elevation, Windows 10 and 11, long paths, UTF-8) and their version,
 /// as built: the binaries under test are the ones a release ships. A

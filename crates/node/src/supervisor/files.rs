@@ -4,7 +4,9 @@
 //! that was rolled back; and `<binary>.staged`, a download not yet
 //! installed. Windows' login launcher, `amux-launch`, lives beside the
 //! binary too, and an update replaces it from the same release, staged as
-//! `<launcher>.staged`.
+//! `<launcher>.staged`. A download is written to `<staged>.part` and takes
+//! the staged name only once it is verified, so a staged file is always
+//! the release's.
 //!
 //! On Windows every process started from a binary keeps it mapped until it
 //! exits: the supervisor, its daemon, and the agents and tool servers of
@@ -35,6 +37,9 @@ pub const SUPERVISOR_LOCK: &str = "supervisor.lock";
 
 /// What a binary moved aside is named after: `<binary>.old.<n>`.
 const ASIDE: &str = ".old.";
+
+/// What a download is written to until it is verified: `<staged>.part`.
+const PART: &str = ".part";
 
 #[derive(Clone, Debug)]
 pub struct Files {
@@ -69,6 +74,12 @@ impl Files {
             launcher_staged: beside(&launcher, ".staged"),
             launcher,
         }
+    }
+
+    /// Where the download staged at `staged` is written until it is
+    /// verified.
+    pub fn part(staged: &Path) -> PathBuf {
+        beside(staged, PART)
     }
 
     pub fn prev_exists(&self) -> bool {
@@ -191,11 +202,74 @@ impl Files {
 
     /// What a start finds left over: downloads an interrupted update never
     /// installed, and the binaries moved aside ([`Files::sweep_asides`]).
+    /// First the launcher an update was interrupted in replacing goes back
+    /// ([`Files::recover_launcher`]), since what it comes from is among
+    /// what is cleared.
     pub fn clear_leftovers(&self) {
+        self.recover_launcher();
         for staged in [&self.staged, &self.launcher_staged] {
             let _ = os::fs::remove_patiently(staged, Duration::ZERO);
+            let _ = os::fs::remove_patiently(&Self::part(staged), Duration::ZERO);
         }
         self.sweep_asides();
+    }
+
+    /// Puts a launcher at its path when an update stopped between moving
+    /// the one there aside and renaming the staged one into its place (the
+    /// supervisor killed, the machine switched off): the login item names
+    /// that path, and nothing would be there to start at the next login.
+    /// The staged launcher goes in if there is one, as the update would
+    /// have put it (a staged file is a verified download, [`Files::part`]);
+    /// else the launcher moved aside last goes back. A launcher at the
+    /// path, or nothing to put there, leaves everything as it is.
+    fn recover_launcher(&self) {
+        if self.launcher.symlink_metadata().is_ok() {
+            return;
+        }
+        let from = if self.launcher_staged.symlink_metadata().is_ok() {
+            self.launcher_staged.clone()
+        } else {
+            match self.newest_launcher_aside() {
+                Some(aside) => aside,
+                None => return,
+            }
+        };
+        match os::fs::rename_patiently(&from, &self.launcher)
+            .and_then(|()| sync_parent(&self.launcher))
+        {
+            Ok(()) => tracing::info!(
+                from = %from.display(),
+                "put back the launcher an interrupted update left missing"
+            ),
+            Err(error) => tracing::warn!(
+                from = %from.display(),
+                %error,
+                "could not put back the launcher an interrupted update left missing"
+            ),
+        }
+    }
+
+    /// The launcher moved aside last: the one written last (a rename keeps
+    /// a file's time), and of two written at once the higher `n`.
+    fn newest_launcher_aside(&self) -> Option<PathBuf> {
+        let stem = format!("{}{ASIDE}", self.launcher.file_name()?.to_string_lossy());
+        self.asides()
+            .into_iter()
+            .filter_map(|aside| {
+                let n: u32 = aside
+                    .file_name()?
+                    .to_string_lossy()
+                    .strip_prefix(stem.as_str())?
+                    .parse()
+                    .ok()?;
+                let written = aside
+                    .symlink_metadata()
+                    .and_then(|meta| meta.modified())
+                    .ok()?;
+                Some(((written, n), aside))
+            })
+            .max_by(|(a, _), (b, _)| a.cmp(b))
+            .map(|(_, aside)| aside)
     }
 
     /// Removes each binary moved aside that nothing runs any more, and
@@ -460,28 +534,97 @@ mod tests {
         assert_eq!(names(dir.path()), expected, "the old one ran nothing");
     }
 
-    /// A start removes what an interrupted update left: the downloads and
-    /// every binary moved aside, the launcher's too, and nothing else.
-    #[test]
-    fn a_start_clears_downloads_and_binaries_moved_aside() {
-        let (dir, _binary, files) = install();
-        let launcher = files
+    fn launcher_name(files: &Files) -> String {
+        files
             .launcher
             .file_name()
             .unwrap()
             .to_string_lossy()
-            .into_owned();
+            .into_owned()
+    }
+
+    /// A start removes what an interrupted update left: the downloads,
+    /// finished or not, and every binary moved aside, the launcher's too,
+    /// and nothing else.
+    #[test]
+    fn a_start_clears_downloads_and_binaries_moved_aside() {
+        let (dir, _binary, files) = install();
+        let launcher = launcher_name(&files);
         for name in [
+            launcher.clone(),
             "amux.staged".to_owned(),
+            "amux.staged.part".to_owned(),
             "amux.old.3".to_owned(),
             format!("{launcher}.old.1"),
             format!("{launcher}.staged"),
+            format!("{launcher}.staged.part"),
             "amux.old.notes".to_owned(),
             "amux.prev".to_owned(),
         ] {
             std::fs::write(dir.path().join(name), b"").unwrap();
         }
         files.clear_leftovers();
-        assert_eq!(names(dir.path()), ["amux", "amux.old.notes", "amux.prev"]);
+        let mut expected = vec![
+            "amux".to_owned(),
+            "amux.old.notes".to_owned(),
+            "amux.prev".to_owned(),
+            launcher,
+        ];
+        expected.sort();
+        assert_eq!(names(dir.path()), expected);
+    }
+
+    /// An update stopped (the supervisor killed) after moving the launcher
+    /// aside and before the staged one took its path leaves the login
+    /// item naming nothing. The next start puts the staged launcher there,
+    /// as the update would have, before it clears downloads and sweeps.
+    #[test]
+    fn a_start_puts_the_staged_launcher_where_an_interrupted_update_left_none() {
+        let (dir, _binary, files) = install();
+        let launcher = launcher_name(&files);
+        std::fs::write(
+            dir.path().join(format!("{launcher}.old.1")),
+            b"old launcher",
+        )
+        .unwrap();
+        std::fs::write(&files.launcher_staged, b"new launcher").unwrap();
+        files.clear_leftovers();
+        assert_eq!(std::fs::read(&files.launcher).unwrap(), b"new launcher");
+        let mut expected = vec!["amux".to_owned(), launcher];
+        expected.sort();
+        assert_eq!(names(dir.path()), expected, "the old one ran nothing");
+    }
+
+    /// With nothing staged, the launcher moved aside last goes back: the
+    /// one written last, whatever its `n` (the first free one is taken).
+    #[test]
+    fn a_start_puts_back_the_launcher_moved_aside_last_where_none_is_left() {
+        let (dir, _binary, files) = install();
+        let launcher = launcher_name(&files);
+        let now = std::time::SystemTime::now();
+        for (n, text, age) in [(1, "newest", 0), (2, "older", 60), (3, "oldest", 120)] {
+            let aside = dir.path().join(format!("{launcher}.old.{n}"));
+            std::fs::write(&aside, text).unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(&aside)
+                .unwrap()
+                .set_modified(now - Duration::from_secs(age))
+                .unwrap();
+        }
+        files.clear_leftovers();
+        assert_eq!(std::fs::read(&files.launcher).unwrap(), b"newest");
+        let mut expected = vec!["amux".to_owned(), launcher];
+        expected.sort();
+        assert_eq!(names(dir.path()), expected, "nothing runs the others");
+
+        // A launcher at its path is left as it is, and nothing comes back.
+        std::fs::write(
+            dir.path().join(format!("{}.old.1", launcher_name(&files))),
+            b"aside",
+        )
+        .unwrap();
+        files.clear_leftovers();
+        assert_eq!(std::fs::read(&files.launcher).unwrap(), b"newest");
     }
 }

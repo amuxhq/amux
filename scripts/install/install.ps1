@@ -127,10 +127,14 @@ function Install-File($Source, $Destination) {
 }
 
 # Deletes the programs an earlier install or update moved aside, leaving
-# any still in use for next time.
+# any still in use for next time. Only the names amux gives them,
+# <program>.old.<n>: any other file there, a backup of the person's own
+# say, is theirs.
 function Remove-SetAside {
     foreach ($name in $BinaryName, $LauncherName) {
-        Get-ChildItem -LiteralPath $InstallDir -Filter "$name.old*" -Force -ErrorAction SilentlyContinue |
+        $pattern = "^$([regex]::Escape($name))\.old\.[0-9]+$"
+        Get-ChildItem -LiteralPath $InstallDir -Filter "$name.old.*" -Force -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match $pattern } |
             ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
     }
 }
@@ -161,9 +165,12 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wP
 
 # Puts $Dir first on the user's own PATH, the Path value of
 # HKCU\Environment, unless it is on it already. The value is read and
-# written as it is stored, a REG_EXPAND_SZ whose %VARIABLES% stay
-# unexpanded; [Environment]::SetEnvironmentVariable would expand them for
-# good. AMUX_TEST_ENVIRONMENT_KEY names a test's key in its place.
+# written as it is stored, %VARIABLES% unexpanded
+# ([Environment]::SetEnvironmentVariable would expand them for good), and
+# keeps its kind: a REG_EXPAND_SZ, whose entries Windows expands at logon
+# and which are compared expanded here, or a REG_SZ, whose entries are
+# literal. A new value is a REG_EXPAND_SZ, as Windows writes one.
+# AMUX_TEST_ENVIRONMENT_KEY names a test's key in its place.
 function Add-UserPath($Dir) {
     $keyName = "Environment"
     if ($env:AMUX_TEST_ENVIRONMENT_KEY) {
@@ -175,15 +182,22 @@ function Add-UserPath($Dir) {
     $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($keyName)
     try {
         $current = [string]$key.GetValue("Path", "", [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        $kind = [Microsoft.Win32.RegistryValueKind]::ExpandString
+        if ($key.GetValueNames() -contains "Path" -and $key.GetValueKind("Path") -eq [Microsoft.Win32.RegistryValueKind]::String) {
+            $kind = [Microsoft.Win32.RegistryValueKind]::String
+        }
         $wanted = $Dir.TrimEnd("\")
         foreach ($entry in ($current -split ";")) {
             $entry = $entry.Trim().Trim('"')
-            if ($entry -and [Environment]::ExpandEnvironmentVariables($entry).TrimEnd("\") -ieq $wanted) {
+            if ($kind -eq [Microsoft.Win32.RegistryValueKind]::ExpandString) {
+                $entry = [Environment]::ExpandEnvironmentVariables($entry)
+            }
+            if ($entry -and $entry.TrimEnd("\") -ieq $wanted) {
                 return $false
             }
         }
         $value = if ($current) { "$Dir;$current" } else { $Dir }
-        $key.SetValue("Path", $value, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+        $key.SetValue("Path", $value, $kind)
     }
     finally {
         $key.Close()
@@ -243,7 +257,18 @@ function Install-Amux {
         $wasRunning = Test-Running
         if ($wasRunning) {
             Write-Host "Stopping the running amux (amux server stop)..."
+            # A native program's exit code is no error to PowerShell, so it
+            # is read here: a stop that failed leaves the old supervisor
+            # running, and nothing is replaced under it.
             & (Join-Path $InstallDir $BinaryName) server stop
+            if ($LASTEXITCODE -ne 0) {
+                throw @"
+amux server stop failed (exit code $LASTEXITCODE). The amux running from
+$InstallDir
+may still be running, and nothing was installed. Stop it (amux server stop,
+or end amux.exe and amux-launch.exe in Task Manager), then run this again.
+"@
+            }
         }
         Remove-SetAside
 

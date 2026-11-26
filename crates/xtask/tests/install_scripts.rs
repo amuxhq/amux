@@ -331,6 +331,11 @@ mod powershell {
     /// names the scratch key the user PATH is kept in; without one the
     /// script is asked to leave PATH alone.
     fn install(feed: &Feed, path_key: Option<&ScratchKey>) -> Output {
+        install_with(feed, path_key, &[])
+    }
+
+    /// The same, with `env` set for the script and what it runs.
+    fn install_with(feed: &Feed, path_key: Option<&ScratchKey>, env: &[(&str, &str)]) -> Output {
         let home = feed.home.path();
         let (appdata, local, temp) = (
             home.join("AppData").join("Roaming"),
@@ -370,7 +375,68 @@ mod powershell {
                 .env("AMUX_NO_MODIFY_PATH", "1")
                 .env_remove("AMUX_TEST_ENVIRONMENT_KEY"),
         };
+        command.envs(env.iter().copied());
         command.output().unwrap()
+    }
+
+    /// Names the exit code the stand-in amux's `server stop` ends with.
+    const STOP_EXIT: &str = "AMUX_STAND_IN_STOP_EXIT";
+
+    /// A stand-in amux.exe, compiled by Windows PowerShell's own C#
+    /// compiler into `dir`: `server stop` says so and exits with the code
+    /// [`STOP_EXIT`] names (0 without it), and anything else waits two
+    /// minutes, standing in for a running amux.
+    fn stand_in(dir: &std::path::Path) -> PathBuf {
+        const SOURCE: &str = r#"
+using System;
+public static class StandIn {
+    public static int Main(string[] args) {
+        if (args.Length == 2 && args[0] == "server" && args[1] == "stop") {
+            Console.WriteLine("stand-in: server stop");
+            string code = Environment.GetEnvironmentVariable("AMUX_STAND_IN_STOP_EXIT");
+            return code == null ? 0 : int.Parse(code);
+        }
+        System.Threading.Thread.Sleep(120000);
+        return 0;
+    }
+}
+"#;
+        let exe = dir.join("stand-in-amux.exe");
+        let source = dir.join("stand-in-amux.cs");
+        std::fs::write(&source, SOURCE).unwrap();
+        let output = Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"])
+            .arg(
+                "Add-Type -TypeDefinition ([IO.File]::ReadAllText($env:STAND_IN_SOURCE)) \
+                 -OutputAssembly $env:STAND_IN_EXE -OutputType ConsoleApplication",
+            )
+            .env("STAND_IN_SOURCE", &source)
+            .env("STAND_IN_EXE", &exe)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success() && exe.is_file(),
+            "compiling the stand-in: {}",
+            said(&output)
+        );
+        exe
+    }
+
+    /// The stand-in at the installed amux's path, running.
+    fn run_stand_in(feed: &Feed) -> (Vec<u8>, Running) {
+        let compiled = stand_in(feed.home.path());
+        std::fs::copy(&compiled, installed(feed)).unwrap();
+        let running = Running(
+            Command::new(installed(feed))
+                .arg("wait")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        (std::fs::read(&compiled).unwrap(), running)
     }
 
     fn bin(feed: &Feed) -> PathBuf {
@@ -423,11 +489,9 @@ mod powershell {
                 .unwrap()
         }
 
-        fn set_path(&self, value: &str) {
-            let output = self.reg(
-                "add",
-                &["/v", "Path", "/t", "REG_EXPAND_SZ", "/d", value, "/f"],
-            );
+        /// Writes the `Path` value as `kind`, `REG_EXPAND_SZ` or `REG_SZ`.
+        fn set_path(&self, kind: &str, value: &str) {
+            let output = self.reg("add", &["/v", "Path", "/t", kind, "/d", value, "/f"]);
             assert!(output.status.success(), "{}", said(&output));
         }
 
@@ -550,9 +614,34 @@ mod powershell {
         // written back would name the scratch folder for good.
         let kept =
             r"%USERPROFILE%\AppData\Local\Microsoft\WindowsApps;%SystemRoot%\keep;C:\elsewhere";
-        key.set_path(kept);
+        key.set_path("REG_EXPAND_SZ", kept);
         let expected = (
             "REG_EXPAND_SZ".to_owned(),
+            format!(r"{};{kept}", bin(&feed).display()),
+        );
+
+        let output = install(&feed, Some(&key));
+        assert!(output.status.success(), "{}", said(&output));
+        assert!(said(&output).contains("to your PATH"), "{}", said(&output));
+        assert_eq!(key.path(), Some(expected.clone()));
+
+        let output = install(&feed, Some(&key));
+        assert!(output.status.success(), "{}", said(&output));
+        assert!(!said(&output).contains("to your PATH"), "{}", said(&output));
+        assert_eq!(key.path(), Some(expected), "the folder is listed once");
+    }
+
+    /// A REG_SZ user PATH stays a REG_SZ, whose entries Windows never
+    /// expands: one written `%USERPROFILE%\.amux\bin` is that literal
+    /// folder, not the install folder, so the install folder goes on it.
+    #[test]
+    fn a_literal_user_path_stays_literal() {
+        let feed = honest();
+        let key = ScratchKey::new();
+        let kept = r"%USERPROFILE%\.amux\bin;C:\elsewhere";
+        key.set_path("REG_SZ", kept);
+        let expected = (
+            "REG_SZ".to_owned(),
             format!(r"{};{kept}", bin(&feed).display()),
         );
 
@@ -570,28 +659,19 @@ mod powershell {
     /// An installed amux that is running can't be replaced: the script
     /// stops amux, moves what still runs aside to a fresh `.old.<n>`, and
     /// installs; the next install sweeps the copy away once it has exited.
-    /// A copy of ping.exe stands in for a running amux.
+    /// A stand-in whose `server stop` succeeds and which goes on running
+    /// is the running amux.
     #[test]
     fn a_running_amux_is_moved_aside_and_swept_once_it_has_exited() {
         let feed = honest();
         let output = install(&feed, None);
         assert!(output.status.success(), "{}", said(&output));
-        let system = PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join("System32");
-        std::fs::copy(system.join("PING.EXE"), installed(&feed)).unwrap();
-        let running = Running(
-            Command::new(installed(&feed))
-                .args(["-n", "120", "127.0.0.1"])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .unwrap(),
-        );
+        let (_, running) = run_stand_in(&feed);
 
         let output = install(&feed, None);
         let text = said(&output);
         assert!(output.status.success(), "{text}");
-        assert!(text.contains("amux server stop"), "{text}");
+        assert!(text.contains("stand-in: server stop"), "{text}");
         assert!(text.contains("moved aside to amux.exe.old.1"), "{text}");
         assert_eq!(std::fs::read(installed(&feed)).unwrap(), BINARY);
         assert_eq!(
@@ -603,5 +683,61 @@ mod powershell {
         let output = install(&feed, None);
         assert!(output.status.success(), "{}", said(&output));
         assert_eq!(listing(&feed), ["amux-launch.exe", "amux.exe"]);
+    }
+
+    /// Windows PowerShell throws on no native program's exit code: a
+    /// `server stop` that fails leaves the old supervisor running, so the
+    /// script says so and installs nothing, rather than moving the running
+    /// amux aside and saying it stopped.
+    #[test]
+    fn a_failed_stop_installs_nothing_and_says_amux_may_still_run() {
+        let feed = honest();
+        let output = install(&feed, None);
+        assert!(output.status.success(), "{}", said(&output));
+        let (stand_in, _running) = run_stand_in(&feed);
+
+        let output = install_with(&feed, None, &[(STOP_EXIT, "3")]);
+        let text = said(&output);
+        assert!(!output.status.success(), "{text}");
+        assert!(text.contains("stand-in: server stop"), "{text}");
+        assert!(
+            text.contains("amux server stop failed (exit code 3)")
+                && text.contains("may still be running")
+                && text.contains("nothing was installed"),
+            "{text}"
+        );
+        assert!(!text.contains("has been installed"), "{text}");
+        assert_eq!(std::fs::read(installed(&feed)).unwrap(), stand_in);
+        assert_eq!(listing(&feed), ["amux-launch.exe", "amux.exe"]);
+    }
+
+    /// A reinstall deletes only the names amux gives what it moves aside,
+    /// `<program>.old.<n>`: any other file beside them is the person's.
+    #[test]
+    fn a_reinstall_sweeps_only_amuxs_own_set_aside_names() {
+        let feed = honest();
+        let output = install(&feed, None);
+        assert!(output.status.success(), "{}", said(&output));
+        for name in [
+            "amux.exe.old.1",
+            "amux-launch.exe.old.12",
+            "amux.exe.old-backup",
+            "amux.exe.old.1.bak",
+            "amux-launch.exe.old.mine",
+        ] {
+            std::fs::write(bin(&feed).join(name), b"").unwrap();
+        }
+        let output = install(&feed, None);
+        assert!(output.status.success(), "{}", said(&output));
+        assert_eq!(
+            listing(&feed),
+            [
+                "amux-launch.exe",
+                "amux-launch.exe.old.mine",
+                "amux.exe",
+                "amux.exe.old-backup",
+                "amux.exe.old.1.bak",
+            ]
+        );
     }
 }

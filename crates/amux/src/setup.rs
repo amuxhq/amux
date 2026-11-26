@@ -180,8 +180,8 @@ const ENDING_PATIENCE: Duration = Duration::from_secs(10);
 /// Removes amux from `bin` with everything its updates left there, as
 /// [`Files::beside`] names it: the binary and the launcher Windows' login
 /// item runs, the previous build, the record of one rolled back, the
-/// downloads not yet installed, and each build moved aside while it ran
-/// (`.old.<n>`). Windows refuses to delete an image a process is running,
+/// downloads not yet installed, finished or not, and each build moved
+/// aside while it ran (`.old.<n>`). Windows refuses to delete an image a process is running,
 /// and this command is usually one, so such a file is moved aside to a
 /// fresh `<program>.old.<n>` instead, as an update would, and returned: the
 /// one thing an uninstall leaves.
@@ -195,6 +195,8 @@ fn remove_installed(bin: &Path) -> Result<Vec<PathBuf>> {
         files.staged.clone(),
         files.launcher.clone(),
         files.launcher_staged.clone(),
+        Files::part(&files.staged),
+        Files::part(&files.launcher_staged),
     ];
     paths.extend(asides.iter().cloned());
 

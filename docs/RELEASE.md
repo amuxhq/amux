@@ -1202,12 +1202,17 @@ On Windows, `install.ps1` also:
 - stops a running amux with `amux server stop` first, then moves whatever
   still holds an installed file (an agent runs `amux.exe` too) aside to a
   fresh `amux.exe.old.<n>`, since Windows renames a running program but
-  never deletes or replaces one, and deletes such copies left from before;
+  never deletes or replaces one, and deletes such copies left from before
+  (only `<program>.old.<n>`: any other name there is the person's). A stop
+  that exits nonzero, which Windows PowerShell doesn't throw on, ends the
+  script with nothing installed and says the old supervisor may still be
+  running;
 - puts `~\.amux\bin` first in the user's `Path` (`HKCU\Environment`) once,
-  read and written as stored, a `REG_EXPAND_SZ` whose `%VARIABLES%` stay
-  as written, then broadcasts `WM_SETTINGCHANGE` so what Explorer starts
-  next sees it. `AMUX_TEST_ENVIRONMENT_KEY` points it at a test's key
-  instead;
+  read and written as stored, `%VARIABLES%` as written, and of the kind
+  it was: a `REG_EXPAND_SZ` (a new value's kind), whose entries are
+  compared expanded, or a `REG_SZ`, whose entries are literal. It then
+  broadcasts `WM_SETTINGCHANGE` so what Explorer starts next sees it.
+  `AMUX_TEST_ENVIRONMENT_KEY` points it at a test's key instead;
 - sets `$ProgressPreference` (Windows PowerShell's progress bar slows a
   download many times over) and TLS 1.2 on PowerShell 5.1.
 

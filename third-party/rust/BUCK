@@ -12090,6 +12090,7 @@ third_party_rust_library(
             ],
         ),
     },
+    rustc_flags = ["-Cdebug-assertions=off"],
     visibility = [],
     deps = [
         ":bytes-1",

@@ -11,7 +11,8 @@ use std::time::Duration;
 use crate::Pid;
 use crate::process::tests::{Driven, eventually, helper, members, pid, say};
 use crate::process::{
-    Detach, ProcessRef, background, descendants, file_from_inherited, spawn_background,
+    Detach, Given, ProcessRef, Stream, background, descendants, file_from_inherited, pipe,
+    spawn_background,
 };
 
 /// The roles only Windows has.
@@ -37,8 +38,9 @@ pub(crate) fn run_role(name: &str, _rest: &[&str]) {
             jail_self();
             let mut command = helper("sleep");
             background(&mut command, Detach::Session, &std::env::temp_dir());
-            let first = spawn_background(&mut command).expect("the first starts");
-            let second = spawn_background(&mut command).expect("the second starts");
+            let first = spawn_background(&mut command, Given::default()).expect("the first starts");
+            let second =
+                spawn_background(&mut command, Given::default()).expect("the second starts");
             say(format!(
                 "refused {} {}",
                 first.breakaway_refused, second.breakaway_refused
@@ -187,12 +189,17 @@ fn contain_self_works_inside_a_job_that_forbids_breakaway() {
 
 #[test]
 fn a_background_process_has_no_window() {
+    let folder = tempfile::tempdir().unwrap();
+    let out = folder.path().join("out");
     let mut command = helper("console");
     background(&mut command, Detach::Group, &std::env::temp_dir());
-    command.stdout(Stdio::piped());
-    let child = spawn_background(&mut command).unwrap().child;
-    let output = child.wait_with_output().unwrap();
-    let said = String::from_utf8_lossy(&output.stdout);
+    let given = Given {
+        stdout: Stream::File(std::fs::File::create(&out).unwrap()),
+        ..Given::default()
+    };
+    let mut child = spawn_background(&mut command, given).unwrap().child;
+    child.wait().unwrap();
+    let said = std::fs::read_to_string(&out).unwrap();
     let line = said
         .lines()
         .find_map(|line| line.strip_prefix("@os "))
@@ -203,6 +210,46 @@ fn a_background_process_has_no_window() {
         attached >= 1,
         "it has a console, which its children share: {line}"
     );
+}
+
+/// The D3 finding: a process holding an inheritable handle it was never
+/// told of (a desktop app's own pipe, passed down to amux unknowingly)
+/// starts a background child, which doesn't get it, so the pipe's reader
+/// sees its end when the process exits, though the child runs on. Every
+/// child would inherit it from a start that names no handle list.
+#[test]
+fn a_background_child_inherits_only_what_it_is_given() {
+    let (mut unknown, passed) = pipe().unwrap();
+    let (said, out) = pipe().unwrap();
+    // The parent is given the pipe's write end as a handle it isn't told
+    // of; it starts a sleeper in the background and exits.
+    let mut command = helper("harden-parent 1");
+    background(&mut command, Detach::Session, &std::env::temp_dir());
+    let given = Given {
+        stdout: Stream::File(out),
+        files: &[&passed],
+        ..Given::default()
+    };
+    let mut parent = spawn_background(&mut command, given).unwrap().child;
+    drop(passed);
+    parent.wait().unwrap();
+    let line = std::io::BufRead::lines(std::io::BufReader::new(said))
+        .map_while(Result::ok)
+        .find_map(|line| line.strip_prefix("@os pid ").map(str::to_owned))
+        .expect("the parent names its child");
+    let child = ProcessRef::open(pid(&line)).unwrap();
+    let (sender, ended) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(std::io::Read::read(&mut unknown, &mut [0; 1]));
+    });
+    let ended = ended.recv_timeout(Duration::from_secs(10));
+    let alive = child.alive();
+    child.kill().unwrap();
+    assert!(
+        matches!(ended, Ok(Ok(0) | Err(_))),
+        "the pipe ends with the parent, not with its child: {ended:?}"
+    );
+    assert!(alive, "the child runs on");
 }
 
 /// The job, not a census, holds a child's children on Windows: the census

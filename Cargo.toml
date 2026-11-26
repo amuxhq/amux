@@ -20,6 +20,7 @@ members = [
     "crates/codex-protocol",
     "crates/core-ring",
     "crates/daemon-core",
+    "crates/exe-resource",
     "crates/fake-amux",
     "crates/git-facts",
     "crates/highlight",
@@ -27,6 +28,7 @@ members = [
     "crates/interpret",
     "crates/ios-tools",
     "crates/journal",
+    "crates/launch",
     "crates/log-file",
     "crates/models",
     "crates/node",
@@ -74,6 +76,7 @@ agent-core = { path = "crates/agent-core" }
 core-ring = { path = "crates/core-ring" }
 log-file = { path = "crates/log-file" }
 os = { path = "crates/os" }
+exe-resource = { path = "crates/exe-resource" }
 daemon-core = { path = "crates/daemon-core" }
 relay-core = { path = "crates/relay-core" }
 path-core = { path = "crates/path-core" }
@@ -284,6 +287,17 @@ opt-level = 3
 
 [profile.dev.package.stateright]
 opt-level = 3
+
+# quinn-proto without debug assertions, as a release builds it (Buck2's
+# third-party/rust/fixups/quinn-proto does the same). 0.11's loss-detection
+# timeout asserts that a server with nothing in flight is still waiting on
+# the client's address, which a failed path validation leaves untrue
+# (quinn-rs/quinn#2658): a path change our link socket shows quinn as a new
+# address can fail one. The panic took the connection's driver and the link
+# with it in debug builds only; a release arms one needless probe and goes
+# on. Fixed upstream in quinn-rs/quinn#2660 for 0.12; drop this with it.
+[profile.dev.package.quinn-proto]
+debug-assertions = false
 
 [profile.dev.package.store]
 opt-level = 3

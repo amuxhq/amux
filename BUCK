@@ -43,6 +43,13 @@ amux_files(
     srcs = glob(["scripts/**"]),
 )
 
+# What https://amux.sh/install hands a machine, for a test that runs it
+# with the binaries under test.
+amux_files(
+    name = "install-scripts",
+    srcs = glob(["scripts/install/**"]),
+)
+
 amux_files(
     name = "guide",
     srcs = glob(["docs/guide/**"]),
@@ -116,6 +123,7 @@ _CARGO_PACKAGES = ["//crates/{}:cargo-package".format(name) for name in [
     "codex-protocol",
     "core-ring",
     "daemon-core",
+    "exe-resource",
     "fake-amux",
     "git-facts",
     "highlight",
@@ -123,6 +131,7 @@ _CARGO_PACKAGES = ["//crates/{}:cargo-package".format(name) for name in [
     "interpret",
     "ios-tools",
     "journal",
+    "launch",
     "log-file",
     "models",
     "node",
@@ -262,10 +271,10 @@ amux_check(
 _CRATES = [
     "acp-protocol", "agent", "agent-core", "agent-dir", "amux", "analytics", "app-bridge",
     "app-embedded", "app-ffi", "app-jni", "app-runtime", "attachments", "browser-core",
-    "claude-protocol", "client", "codex-protocol", "core-ring", "daemon-core", "fake-amux",
-    "git-facts", "highlight", "installer", "interpret", "ios-tools", "journal", "log-file",
-    "models", "node", "os", "path-core", "patience", "preview", "provider-fakes", "pty-host",
-    "qualification", "redaction", "relay-core", "release", "replay-support", "settings",
+    "claude-protocol", "client", "codex-protocol", "core-ring", "daemon-core", "exe-resource", "fake-amux",
+    "git-facts", "highlight", "installer", "interpret", "ios-tools", "journal", "launch",
+    "log-file", "models", "node", "os", "path-core", "patience", "preview", "provider-fakes",
+    "pty-host", "qualification", "redaction", "relay-core", "release", "replay-support", "settings",
     "shot", "socket-core", "source-tree", "store", "supervisor-core", "testnet", "tui",
     "ui-code", "ui-runtime", "ui-state", "ui-view", "wire", "workspace-core", "xtask",
 ]

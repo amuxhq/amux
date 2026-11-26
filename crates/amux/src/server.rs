@@ -6,7 +6,6 @@
 
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -27,6 +26,10 @@ const PATIENCE: Duration = Duration::from_secs(30);
 /// How long `amux server stop` waits on a supervisor, which gives its
 /// daemon the stop deadline before a kill.
 const SUPERVISOR_PATIENCE: Duration = Duration::from_secs(45);
+/// How long `amux server stop`, having recorded the stop, waits on a
+/// supervisor the launcher started meanwhile to exit on it or open its
+/// control socket.
+const RECORDED_PATIENCE: Duration = Duration::from_secs(5);
 
 pub(crate) fn daemon_log(config: &InstallationConfig) -> PathBuf {
     std::env::var_os(LOG_ENV)
@@ -488,7 +491,7 @@ pub async fn start(config: &InstallationConfig, config_path: Option<&Path>) -> R
 pub(crate) fn spawn_supervisor(
     config: &InstallationConfig,
     config_path: Option<&Path>,
-) -> Result<std::process::Child> {
+) -> Result<os::process::Background> {
     std::fs::create_dir_all(&config.root)
         .with_context(|| format!("creating {}", config.root.display()))?;
     let log = config.root.join(SUPERVISOR_LOG);
@@ -514,7 +517,7 @@ fn spawn_detached(
     command: &mut std::process::Command,
     root: &Path,
     stderr: File,
-) -> std::io::Result<std::process::Child> {
+) -> std::io::Result<os::process::Background> {
     use std::io::Write as _;
     let mut note = stderr.try_clone()?;
     // The child runs in `root`, not here: a relative XDG folder, which
@@ -533,11 +536,11 @@ fn spawn_detached(
         }
     }
     os::process::background(command, os::process::Detach::Session, root);
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(stderr);
-    let spawned = os::process::spawn_background(command)?;
+    let given = os::process::Given {
+        stderr: os::process::Stream::File(stderr),
+        ..os::process::Given::default()
+    };
+    let spawned = os::process::spawn_background(command, given)?;
     if spawned.breakaway_refused {
         let _ = writeln!(
             note,
@@ -551,9 +554,32 @@ fn spawn_detached(
 /// stops its daemon, or the daemon would come straight back; without one
 /// the daemon is asked to shut down. Agents keep running and wait out
 /// their grace for the next daemon.
+///
+/// With no supervisor running where the install has one, a launcher
+/// (Windows' login item) whose supervisor died may be waiting to start it
+/// again: the stop is recorded in the root ([`node::supervisor::STOPPED`])
+/// for the supervisor it starts, which then exits at once and ends the
+/// launcher.
 pub async fn stop(config: &InstallationConfig) -> Result<()> {
-    if let Some(pid) = running_supervisor(&config.root)? {
-        stop_supervisor(config, &pid).await?;
+    let mut running = running_supervisor(&config.root)?;
+    let mut reached = Reached::Neither;
+    if running.is_none() && config.supervisor && config.root.is_dir() {
+        let stopped = config.root.join(node::supervisor::STOPPED);
+        std::fs::write(&stopped, b"")
+            .with_context(|| format!("recording the stop in {}", stopped.display()))?;
+        // A supervisor started before that was written read nothing; one
+        // started after it exits on it without opening its socket.
+        if running_supervisor(&config.root)?.is_some() {
+            reached = reach_restarted(&config.root, RECORDED_PATIENCE).await?;
+        }
+        if reached != Reached::Released {
+            running = running_supervisor(&config.root)?;
+        }
+    }
+    if let Some(pid) = running {
+        if reached != Reached::Asked {
+            stop_supervisor(config, &pid).await?;
+        }
         let deadline = Instant::now() + SUPERVISOR_PATIENCE;
         while running_supervisor(&config.root)?.is_some() || installation_locked(&config.root)? {
             if Instant::now() >= deadline {
@@ -587,6 +613,42 @@ pub async fn stop(config: &InstallationConfig) -> Result<()> {
     }
     println!("Stopped the amux daemon.");
     Ok(())
+}
+
+/// How a supervisor the launcher started while `amux server stop` recorded
+/// the stop was reached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Reached {
+    /// Its lock was released: it read the stop and exited.
+    Released,
+    /// Its control socket took the stop: it read nothing.
+    Asked,
+    /// Neither within the patience.
+    Neither,
+}
+
+/// Waits up to `patience` for the supervisor holding the lock under `root`
+/// to release it or to take a stop over its control socket. A launcher's
+/// restart that read the recorded stop exits without ever opening its
+/// socket, and one that started just before opens it soon; only after
+/// neither is the stop asked for as for any other supervisor.
+async fn reach_restarted(root: &Path, patience: Duration) -> Result<Reached> {
+    let deadline = Instant::now() + patience;
+    loop {
+        if running_supervisor(root)?.is_none() {
+            return Ok(Reached::Released);
+        }
+        if node::supervisor::ask(root, node::supervisor::Request::Stop, PATIENCE)
+            .await
+            .is_ok()
+        {
+            return Ok(Reached::Asked);
+        }
+        if Instant::now() >= deadline {
+            return Ok(Reached::Neither);
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
 
 /// Asks the supervisor to stop over its control socket, on every OS.
@@ -640,6 +702,58 @@ fn lock_held(path: &Path) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A supervisor the launcher started while `amux server stop` recorded
+    /// the stop: the stop waits for it to exit on the record (its lock
+    /// released), or for its socket to take the stop, and only after
+    /// neither asks as for any supervisor. The lock and the socket stand
+    /// in for the supervisor here, since the race can't be staged.
+    #[tokio::test]
+    async fn a_stop_recorded_waits_for_the_restarted_supervisor_to_exit_or_answer() {
+        let root = tempfile::tempdir().unwrap();
+        let lock_path = root.path().join(node::supervisor::SUPERVISOR_LOCK);
+        let hold = || {
+            os::lock::FileLock::try_acquire(&lock_path)
+                .unwrap()
+                .unwrap()
+        };
+
+        // It exits on the record without opening its socket.
+        let lock = hold();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            drop(lock);
+        });
+        let reached = reach_restarted(root.path(), Duration::from_secs(10)).await;
+        release.join().unwrap();
+        assert_eq!(reached.unwrap(), Reached::Released);
+
+        // It read nothing, and its socket opens a moment later.
+        let lock = hold();
+        let socket = root.path().join(node::supervisor::SUPERVISOR_SOCKET);
+        let answer = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let mut listener = agent_dir::local_socket::LocalListener::bind(&socket).unwrap();
+            let stream = listener.accept().await.unwrap();
+            let (read, mut write) = tokio::io::split(stream);
+            let mut line = String::new();
+            tokio::io::AsyncBufReadExt::read_line(&mut tokio::io::BufReader::new(read), &mut line)
+                .await
+                .unwrap();
+            tokio::io::AsyncWriteExt::write_all(&mut write, b"stopping\n")
+                .await
+                .unwrap();
+            line
+        });
+        let reached = reach_restarted(root.path(), Duration::from_secs(10)).await;
+        assert_eq!(reached.unwrap(), Reached::Asked);
+        assert_eq!(answer.await.unwrap().trim(), "stop");
+
+        // Neither: the patience runs out, and the stop goes on as ever.
+        let reached = reach_restarted(root.path(), Duration::from_millis(200)).await;
+        assert_eq!(reached.unwrap(), Reached::Neither);
+        drop(lock);
+    }
 
     /// The daemon runs the experiments the file switches on when it
     /// starts, and only those this build implements.

@@ -2,6 +2,7 @@
 //! this crate's tests and with the `testing` feature, which test-support
 //! crates turn on.
 
+pub mod desktop;
 pub mod faults;
 pub mod pipe;
 pub mod private;

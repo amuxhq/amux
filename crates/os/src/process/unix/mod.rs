@@ -6,7 +6,7 @@ use std::io;
 use std::os::fd::{AsRawFd as _, FromRawFd as _, RawFd};
 use std::os::unix::process::CommandExt as _;
 
-use super::{Descendant, Detach, Replaced, Spawnable, Spawned};
+use super::{Descendant, Detach, Given, Replaced, Spawnable, Spawned, Stream};
 use crate::Pid;
 
 mod table;
@@ -70,15 +70,100 @@ impl Tree {
     }
 }
 
-pub(super) fn spawn_background<C: Spawnable>(cmd: &mut C) -> io::Result<Spawned<C::Child>> {
+pub(super) type Background = std::process::Child;
+#[cfg(feature = "async")]
+pub(super) type AsyncBackground = tokio::process::Child;
+
+fn stdio(stream: Stream) -> std::process::Stdio {
+    match stream {
+        Stream::Null => std::process::Stdio::null(),
+        Stream::Inherit => std::process::Stdio::inherit(),
+        Stream::File(file) => file.into(),
+    }
+}
+
+/// Runs `start` with each of `files` open across an exec, and closes them
+/// on exec again after, whatever `start` did.
+fn with_files<T>(files: &[&File], start: impl FnOnce() -> io::Result<T>) -> io::Result<T> {
+    let mut opened = Vec::new();
+    let result = files
+        .iter()
+        .try_for_each(|file| {
+            set_cloexec(file.as_raw_fd(), false)?;
+            opened.push(file.as_raw_fd());
+            Ok(())
+        })
+        .and_then(|()| start());
+    for fd in opened {
+        let _ = set_cloexec(fd, true);
+    }
+    result
+}
+
+pub(super) fn spawn_background<C: Spawnable>(
+    cmd: &mut C,
+    given: Given<'_>,
+) -> io::Result<Spawned<C::Child>> {
+    let Given {
+        stdin,
+        stdout,
+        stderr,
+        files,
+    } = given;
+    cmd.std_command()
+        .stdin(stdio(stdin))
+        .stdout(stdio(stdout))
+        .stderr(stdio(stderr));
     Ok(Spawned {
-        child: cmd.spawn_child()?,
+        child: with_files(files, || cmd.spawn_child())?,
         breakaway_refused: false,
     })
 }
 
-pub(super) fn exec_or_spawn(mut cmd: std::process::Command) -> io::Result<Replaced> {
-    Err(cmd.exec())
+pub(super) fn exec_or_spawn(
+    mut cmd: std::process::Command,
+    files: &[&File],
+) -> io::Result<Replaced> {
+    with_files(files, || Err(cmd.exec()))
+}
+
+pub(super) fn background_id(child: &Background) -> Pid {
+    child.id()
+}
+
+pub(super) fn background_pin(child: &Background) -> io::Result<ProcessRef> {
+    ProcessRef::of_std_child(child)
+}
+
+pub(super) fn background_try_wait(
+    child: &mut Background,
+) -> io::Result<Option<std::process::ExitStatus>> {
+    child.try_wait()
+}
+
+pub(super) fn background_wait(child: &mut Background) -> io::Result<std::process::ExitStatus> {
+    child.wait()
+}
+
+pub(super) fn background_kill(child: &mut Background) -> io::Result<()> {
+    child.kill()
+}
+
+#[cfg(feature = "async")]
+pub(super) fn async_background_id(child: &AsyncBackground) -> Pid {
+    child.id().unwrap_or(0)
+}
+
+#[cfg(feature = "async")]
+pub(super) fn async_background_pin(child: &AsyncBackground) -> io::Result<ProcessRef> {
+    ProcessRef::of_child(child)
+}
+
+#[cfg(feature = "async")]
+pub(super) async fn async_background_wait(
+    child: &mut AsyncBackground,
+) -> io::Result<std::process::ExitStatus> {
+    child.wait().await
 }
 
 pub(super) fn console_window() -> bool {

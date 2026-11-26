@@ -14,7 +14,8 @@ The binary and the symbols a release keeps beside it go where Cargo's
 release build left them, `target/<triple>/release/` (`target/release/`
 without --target), which scripts/release-symbols.sh and
 scripts/release-policy-check.sh read: `amux` (`amux.exe` and `amux.pdb` on
-Windows, and `amux.dSYM` on macOS). The release keys come from
+Windows, with `amux-launch.exe` and `amux-launch.pdb`, the login item's
+launcher, beside them; and `amux.dSYM` on macOS). The release keys come from
 AMUX_RELEASE_PUBLIC_KEYS, as for Cargo; with none, the binary trusts only the
 test key. TRIPLE must be this machine's: a release is built natively on each
 platform.
@@ -66,6 +67,9 @@ def main() -> int:
     outputs = {"//crates/amux:amux": out / f"amux{exe}"}
     if os_name == "windows":
         outputs["//crates/amux:amux[pdb]"] = out / "amux.pdb"
+        # The login item's launcher ships beside amux.exe.
+        outputs["//crates/launch:amux-launch"] = out / "amux-launch.exe"
+        outputs["//crates/launch:amux-launch[pdb]"] = out / "amux-launch.pdb"
     for target, path in outputs.items():
         if path.is_dir():
             shutil.rmtree(path)

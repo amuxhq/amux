@@ -1223,6 +1223,17 @@ async fn a_link_behind_a_router_survives_its_host_changing_network() {
     // the desk's answers come back through.
     laptop.dial(desk, net.edge("desk").unwrap().lan_addr().unwrap());
     until_route(&net, "laptop", "desk", node::harness::LiveRoute::Direct).await;
+    // The link is routed before its `Up` is written to the link log, so
+    // the count below waits for the line: read at once, it could miss the
+    // first `Up` and blame the move for it.
+    until("the laptop's link log to have the link up", || async {
+        match net.carrying_path("laptop", "desk") {
+            Ok(Some(_)) => Ok(()),
+            other => Err(format!("{other:?}")),
+        }
+    })
+    .await
+    .unwrap();
     let ups = |net: &Net| {
         net.link_log("laptop")
             .unwrap()

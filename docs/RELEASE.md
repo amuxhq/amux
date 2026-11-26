@@ -882,11 +882,19 @@ from the commits:
 | --- | --- | --- |
 | `ubuntu-latest` | `x86_64-unknown-linux-gnu` | `amux-linux-x86_64` |
 | `macos-latest` | `aarch64-apple-darwin` | `amux-macos-arm64` |
-| `windows-latest` | `x86_64-pc-windows-msvc` | `amux-windows-x86_64.exe` |
+| `windows-latest` | `x86_64-pc-windows-msvc` | `amux-windows-x86_64.exe`, and `amux-launch-windows-x86_64.exe` beside it |
+
+The Windows build also ships `amux-launch.exe`, the login item's windowless
+launcher ([Supervisor](SUPERVISOR.md#the-launcher-windows)), which an
+install puts beside `amux.exe`. It is attested and checksummed like the
+binaries, and a deploy names it in the manifest beside the Windows binary
+(below), refusing a release whose launcher isn't attested or doesn't match
+`checksums.txt`.
 
 Each binary's symbols are published beside it: `amux-linux-x86_64.debug`
 (found through the binary's GNU debuglink), `amux-macos-arm64.dSYM.zip`
-(matched by Mach-O UUID) and `amux-windows-x86_64.pdb`. They hold function
+(matched by Mach-O UUID) and `amux-windows-x86_64.pdb` (and
+`amux-launch-windows-x86_64.pdb`). They hold function
 names and line tables, enough to symbolicate a crash address from a shipped
 binary; the binaries themselves carry no symbols.
 
@@ -942,6 +950,14 @@ one entry per target triple, and one signature over all of it.
   be served to stable by whoever holds the manifest's URL.
 - A binary looks itself up by the triple it was built for, which
   `crates/release/build.rs` compiles in as `AMUX_TARGET`.
+- What a release ships beside a target's binary is an entry of its own,
+  keyed `<triple>/<program>`: `x86_64-pc-windows-msvc/amux-launch` is the
+  launcher. A supervisor that installs the triple's entry downloads and
+  verifies the launcher's too when it names the same version (a bad one
+  fails the update), and installs it beside the binary in the same swap.
+  A build reads only the keys
+  it knows, so an older one ignores the launcher's while the signature
+  covers it like any other.
 - `url` is fetched as-is; the file there is the whole `amux` binary, and
   `size` is its length. The supervisor writes no more than `size` bytes
   of it, and installs it only when its length and hash are the entry's.
@@ -1173,6 +1189,42 @@ release that was cut but never deployed to stable is not installed, and a
 release pulled from stable stops being installed at once. The rollout
 percentage is ignored: it protects machines that already run something, and
 a new machine has nothing to protect.
+
+On Windows, `install.ps1` also:
+
+- installs the x64 build on Windows on Arm, which runs it emulated, since
+  only x64 ships;
+- puts `amux-launch.exe` beside `amux.exe`, from the manifest's
+  `<target>/amux-launch` entry, checked by size and sha256 as amux is; a
+  launcher that isn't the entry's installs nothing, amux included. A
+  manifest naming no launcher of amux's version predates it, and amux is
+  installed alone;
+- stops a running amux with `amux server stop` first, then moves whatever
+  still holds an installed file (an agent runs `amux.exe` too) aside to a
+  fresh `amux.exe.old.<n>`, since Windows renames a running program but
+  never deletes or replaces one, and deletes such copies left from before
+  (only `<program>.old.<n>`: any other name there is the person's). A stop
+  that exits nonzero, which Windows PowerShell doesn't throw on, ends the
+  script with nothing installed and says the old supervisor may still be
+  running;
+- puts `~\.amux\bin` first in the user's `Path` (`HKCU\Environment`) once,
+  read and written as stored, `%VARIABLES%` as written, and of the kind
+  it was: a `REG_EXPAND_SZ` (a new value's kind), whose entries are
+  compared expanded, or a `REG_SZ`, whose entries are literal. It then
+  broadcasts `WM_SETTINGCHANGE` so what Explorer starts next sees it.
+  `AMUX_TEST_ENVIRONMENT_KEY` points it at a test's key instead;
+- sets `$ProgressPreference` (Windows PowerShell's progress bar slows a
+  download many times over) and TLS 1.2 on PowerShell 5.1.
+
+Each Windows program the release ships carries an application manifest
+(`asInvoker`, `supportedOS` Windows 10 and 11, `longPathAware`, UTF-8 as
+its `activeCodePage`) and VERSIONINFO with its crate's version, embedded
+when it is linked: [`crates/exe-resource`](../crates/exe-resource/src/lib.rs)
+writes them as a `.res` file both linkers take as an input, from Cargo's
+build script and from Buck2's resource step alike (`windows_resource` in
+`build/rust.bzl`), and the CLI's integration tests read them back out of the
+built programs. A signature, when releases are signed, goes on after both,
+before hashing and attesting.
 
 A script does not check the manifest's signature. It and the manifest come
 from the same server, so a check there would trust the server it was

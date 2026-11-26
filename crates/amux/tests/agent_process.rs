@@ -12,10 +12,11 @@
 //! incarnation starts from.
 
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 
 use agent::attach::Attached;
 use agent::local_socket::{self, LocalStream};
+use os::process::Background;
 use patience::{PATIENCE, until};
 use prost::Message as _;
 use provider_fakes::{SCRIPT_ENV, Script, Step};
@@ -105,17 +106,18 @@ impl Fixture {
     /// Starts `amux internal agent <dir>` as the daemon does: detached as an
     /// agent is ([`os::process::Detach::Group`]: a process group of its
     /// own on Unix), away from the test's terminal.
-    fn spawn(&self, n: u32) -> Child {
+    fn spawn(&self, n: u32) -> Background {
         os::testing::require_test_runner("this test runs amux internal agent");
         let log = std::fs::File::create(self.root.path().join(format!("agent.{n}.log"))).unwrap();
         let mut command = Command::new(source_tree::bin!("amux"));
         command.args(["internal", "agent"]).arg(&self.dir);
         os::process::background(&mut command, os::process::Detach::Group, &self.work);
-        command
-            .stdin(Stdio::null())
-            .stdout(log.try_clone().unwrap())
-            .stderr(log);
-        os::process::spawn_background(&mut command)
+        let given = os::process::Given {
+            stdout: os::process::Stream::File(log.try_clone().unwrap()),
+            stderr: os::process::Stream::File(log),
+            ..os::process::Given::default()
+        };
+        os::process::spawn_background(&mut command, given)
             .expect("amux agent starts")
             .child
     }
@@ -215,7 +217,7 @@ impl Fixture {
     }
 }
 
-async fn exits(child: &mut Child) -> std::process::ExitStatus {
+async fn exits(child: &mut Background) -> std::process::ExitStatus {
     until("the agent process to exit", || {
         std::future::ready(child.try_wait().unwrap().ok_or("still running"))
     })

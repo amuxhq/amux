@@ -165,6 +165,7 @@ def amux_binaries(**kwargs):
 # name provider_fakes::binaries finds each under.
 TEST_BINARIES = {
     "amux": "//crates/amux:amux",
+    "amux-launch": "//crates/launch:amux-launch",
     "examples/amux_stand_in": "//crates/agent:amux_stand_in",
     "fake-acp": "//crates/provider-fakes:fake-acp",
     "fake-amux": "//crates/fake-amux:fake-amux",
@@ -519,9 +520,14 @@ def amux_rust_binary(
         test_deps = [],
         test_resources = [],
         binaries = False,
+        windows_resource = False,
         visibility = ["PUBLIC"],
         **kwargs):
-    """A crate's `[[bin]]` (or `[[example]]`). `tool = True` for test
+    """A crate's `[[bin]]` (or `[[example]]`). `windows_resource = True`
+    for a program amux ships for Windows: built for Windows, it is linked
+    with the application manifest and version information
+    crates/exe-resource writes for it (`:<name>-resource`), as its build
+    script links them under Cargo. `tool = True` for test
     harnesses and build tools, which build with test features on; the
     product's binaries build as they ship. `link_library = False` for a
     binary in a crate with no library. A binary named after its crate's
@@ -536,6 +542,18 @@ def amux_rust_binary(
     if srcs == None:
         top = crate_root.split("/")[0]
         srcs = native.glob([top + "/**"])
+    if windows_resource:
+        # The linker takes the .res file as an input, MSVC's and lld-link
+        # alike, so no resource compiler runs.
+        native.genrule(
+            name = name + "-resource",
+            out = name + ".res",
+            cmd = "$(exe //crates/exe-resource:exe-resource-bin) {} {} $OUT".format(name, version),
+        )
+        kwargs["linker_flags"] = kwargs.pop("linker_flags", []) + select({
+            "DEFAULT": [],
+            "prelude//os:windows": ["$(location :{}-resource)".format(name)],
+        })
     native.rust_binary(
         name = name + "-bin" if link_library and name == crate else name,
         crate = name.replace("-", "_"),

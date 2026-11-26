@@ -1,0 +1,5 @@
+# Cargo.toml builds quinn-proto without debug assertions in development
+# builds too, as a release builds it: quinn-proto 0.11's loss-detection
+# timeout asserts an invariant that a failed path validation breaks
+# (quinn-rs/quinn#2658), and the panic takes the connection with it.
+rustc_flags = ["-Cdebug-assertions=off"]

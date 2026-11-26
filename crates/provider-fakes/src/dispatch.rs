@@ -610,7 +610,7 @@ fn host(command: &HostCommand, args: &[String]) -> i32 {
 /// and this one waits for it and passes its status on.
 fn run(command: std::process::Command) -> i32 {
     let program = command.get_program().to_string_lossy().into_owned();
-    match os::process::exec_or_spawn(command) {
+    match os::process::exec_or_spawn(command, &[]) {
         Ok(mut replaced) => match replaced.child.wait() {
             Ok(status) => status.code().unwrap_or(128),
             Err(error) => {

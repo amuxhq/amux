@@ -32,7 +32,7 @@ pub fn relaunch() -> io::Error {
     };
     let mut command = std::process::Command::new(exe);
     command.args(args);
-    match os::process::exec_or_spawn(command) {
+    match os::process::exec_or_spawn(command, &[]) {
         Ok(replaced) => {
             if replaced.breakaway_refused {
                 tracing::warn!(

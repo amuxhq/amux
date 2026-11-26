@@ -16,18 +16,26 @@
 //!   signature, hard-links the current binary to prev and renames the
 //!   staged binary over the path; activation deletes prev and fsyncs the
 //!   directory before `go`; a rollback writes the rejected version and
-//!   fsyncs it before renaming prev back.
+//!   fsyncs it before renaming prev back. Windows' login launcher, which
+//!   the manifest names beside the binary, is staged and swapped with it.
 //! - After `go`, a supervisor running a binary other than the installed one
 //!   execs the installed binary in supervise mode, keeping pid, child, pipe
 //!   and lock, so the supervisor is never the stale part for long.
 //! - Stopping the child is a signal, a stop deadline, then a kill.
+//! - A supervisor `amux-launch` started (Windows' login item) holds the
+//!   launcher's pipe, [`LINEAGE_ENV`], for life, hands it on at the
+//!   self-update, and writes `0` to it before a deliberate exit. One it
+//!   started again after a crash ([`RESTART_ENV`]) exits so at once when
+//!   `amux server stop` came while it waited ([`STOPPED`]).
 //!
 //! Counters and timers live in the core's memory. The supervisor holds its
 //! own lock; the installation lock stays the daemon's.
 //!
-//! On Windows a running executable cannot be renamed over, so the
-//! supervisor stops the child before the swap and moves the binary aside
-//! to prev by rename, and its own update is a spawn-then-exit.
+//! On Windows a running executable cannot be deleted or renamed over, and
+//! agents of earlier builds keep theirs running, so the supervisor stops
+//! the child before the swap and moves the binary aside to prev by rename;
+//! a binary no longer needed moves aside to a name of its own, swept once
+//! nothing runs it (`files`). Its own update is a spawn-then-exit.
 
 mod child;
 mod control;
@@ -43,8 +51,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use agent_dir::Clock;
-use child::Child;
 pub use child::Inherited;
+use child::{Child, Lineage};
 use control::Asked;
 pub use control::{Request, SUPERVISOR_SOCKET, ask};
 use core_ring::DumpLimit;
@@ -65,6 +73,26 @@ use crate::install::{private_dir, sync_dir};
 use crate::profiles;
 use crate::release::{self, Manifest, Release};
 use crate::window::{self, Window};
+
+/// Names the write end of a pipe `amux-launch` (Windows' login item) reads,
+/// as a handle value: the line of supervisors it started. A supervisor
+/// keeps it, hands it to its successor, and writes `0` to it before a
+/// deliberate exit; the pipe ending with nothing written is a crash, which
+/// the launcher restarts. Promised from its first release (AGENTS.md).
+pub const LINEAGE_ENV: &str = "AMUX_LAUNCH_LINEAGE";
+
+/// Set by `amux-launch` on every start after its first: the start is a
+/// restart after the line died, not one anybody asked for. Such a start
+/// honours a stop that came while the launcher waited ([`STOPPED`]).
+pub const RESTART_ENV: &str = "AMUX_LAUNCH_RESTART";
+
+/// In the data directory: `amux server stop` found no supervisor to stop.
+/// A launcher may be waiting out its backoff after a crash to start one
+/// again, and the supervisor it starts ([`RESTART_ENV`]) reads this,
+/// removes it, ends the launcher's line and exits without starting a
+/// daemon. Any other start removes it and runs: a deliberate start
+/// (`amux server start`, a login) undoes the stop.
+pub const STOPPED: &str = "supervisor.stopped";
 
 /// The supervisor's timings and thresholds; the defaults are the
 /// parameters table's starting points.
@@ -217,15 +245,29 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
         params,
         inherited,
     } = options;
+    // First: a supervisor that fails from here on ends its line with no
+    // `0`, which its launcher restarts.
+    let mut lineage = Lineage::take();
     let _awake = Aborting(keep_awake_on_power(keep_awake));
     let lock = match inherited.and_then(|inherited| inherited.lock) {
         Some(fd) => SupervisorLock::inherit(fd, &data_dir)?,
         None => SupervisorLock::acquire(&data_dir, inherited.is_some())?,
     };
     let files = Files::beside(&binary);
-    // What this process runs: the binary at the path when it started.
-    let mine = FileId::of(&binary).map_err(files_error("reading the installed binary"))?;
     files.clear_leftovers();
+    if inherited.is_none()
+        && stays_stopped(&data_dir, std::env::var_os(RESTART_ENV).is_some(), || {
+            if let Some(lineage) = lineage.take() {
+                lineage.stopping();
+            }
+        })
+    {
+        tracing::info!(
+            "`amux server stop` ran while the launcher waited to start amux again: staying stopped"
+        );
+        os::signal::finished();
+        return Ok(());
+    }
     let prev = if !files.prev_exists() {
         PrevFound::None
     } else if files.prev_is(&binary) {
@@ -254,7 +296,7 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
     let core = Supervisor::start(
         Start {
             params: params.for_core(),
-            target,
+            target: target.clone(),
             running,
             prev,
             rejected,
@@ -272,7 +314,8 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
         data_dir,
         updates,
         clock,
-        mine,
+        target,
+        launcher: None,
         lock,
         daemons,
         timers: BTreeMap::new(),
@@ -281,15 +324,41 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
         jobs,
         pending: VecDeque::new(),
         dumps: Dumps::default(),
+        lineage,
     };
     let done = match driver.execute(out)? {
         Some(Done) => Ok(()),
         None => driver.run(finished).await,
     };
+    // A deliberate exit, the daemon stopped: the line ends here.
+    if done.is_ok()
+        && let Some(lineage) = driver.lineage.take()
+    {
+        lineage.stopping();
+    }
     // The daemon is stopped and the lock released: a stop the OS asked for
     // (Windows: a closed console, logoff or shutdown) may end the process.
     os::signal::finished();
     done
+}
+
+/// Whether this start is a launcher's `restart` that a stop came during
+/// ([`STOPPED`]). Either way a stop recorded is taken back: honoured now,
+/// or undone by a deliberate start. Honoured, the launcher is told first
+/// (`notify`, the stop byte) and the record goes after, so a supervisor
+/// that dies between the two leaves the stop for the next restart.
+fn stays_stopped(data_dir: &Path, restart: bool, notify: impl FnOnce()) -> bool {
+    let stopped = data_dir.join(STOPPED);
+    if stopped.symlink_metadata().is_err() {
+        return false;
+    }
+    if restart {
+        notify();
+    }
+    if let Err(error) = std::fs::remove_file(&stopped) {
+        tracing::warn!(path = %stopped.display(), %error, "could not take back the recorded stop");
+    }
+    restart
 }
 
 /// The supervisor core's driver: the daemon processes and their pipes, the
@@ -303,7 +372,11 @@ struct Driver {
     data_dir: PathBuf,
     updates: UpdatesFn,
     clock: Arc<dyn Clock>,
-    mine: FileId,
+    /// The build target the channel's manifest is read for.
+    target: String,
+    /// The launcher the last manifest read names beside this target's
+    /// build, from the same release: fetched and installed with it.
+    launcher: Option<Release>,
     lock: SupervisorLock,
     /// The daemons the core started, by its name for them. The core starts
     /// one only when none lives.
@@ -316,6 +389,9 @@ struct Driver {
     /// What executing outputs produced, stepped before anything new.
     pending: VecDeque<core::Input>,
     dumps: Dumps,
+    /// The launcher's pipe (Windows' login item), when one started this
+    /// line: handed to the successor, written `0` at a deliberate exit.
+    lineage: Option<Lineage>,
 }
 
 /// Prefixes the reason the supervisor core asked for a dump.
@@ -382,7 +458,7 @@ struct Done;
 
 impl Driver {
     async fn run(
-        mut self,
+        &mut self,
         mut finished: mpsc::UnboundedReceiver<(JobId, JobResult)>,
     ) -> Result<(), SuperviseError> {
         let mut terminate = std::pin::pin!(terminated());
@@ -466,6 +542,18 @@ impl Driver {
 
     /// The clock, then one input, through the core; its outputs done.
     fn step(&mut self, input: core::Input) -> Result<Option<Done>, SuperviseError> {
+        if let core::Input::JobDone {
+            result: JobResult::Listed(listed),
+            ..
+        } = &input
+        {
+            self.launcher = match listed {
+                Listed::Manifest { manifest, .. } => {
+                    release::launcher(manifest, &self.target).cloned()
+                }
+                _ => None,
+            };
+        }
         let mut out = Vec::new();
         let now_ms = millis_now(&*self.clock);
         let core = &mut self.core;
@@ -523,13 +611,9 @@ impl Driver {
                 }
                 Output::List { job, auto_only } => self.list(job, auto_only),
                 Output::Fetch { job, release } => self.fetch(job, release),
-                Output::RemovePrev => self
+                Output::RemovePrev | Output::RetirePrev => self
                     .files
-                    .remove_prev()
-                    .map_err(files_error("removing prev"))?,
-                Output::RetirePrev => self
-                    .files
-                    .retire_prev(&self.mine)
+                    .retire_prev()
                     .map_err(files_error("removing prev"))?,
                 Output::WriteRejected { version } => {
                     tracing::warn!(rejected = %version, "rolling back to prev");
@@ -540,7 +624,7 @@ impl Driver {
                 }
                 Output::RestorePrev => {
                     self.files
-                        .restore_prev(&self.binary, &self.mine)
+                        .restore_prev(&self.binary)
                         .map_err(files_error("putting prev back"))?;
                     tracing::info!("put prev back over the binary");
                 }
@@ -549,6 +633,14 @@ impl Driver {
                     self.files
                         .install_staged(&self.binary)
                         .map_err(files_error("installing the staged binary"))?;
+                    match self.files.install_launcher() {
+                        Ok(true) => tracing::info!("installed the staged launcher beside it"),
+                        Ok(false) => {}
+                        Err(error) => tracing::warn!(
+                            %error,
+                            "could not install the staged launcher: the one there stays until the next release"
+                        ),
+                    }
                 }
                 Output::BecomeInstalled { daemon } => {
                     if let Some(child) = self.daemons.get(&daemon) {
@@ -576,8 +668,11 @@ impl Driver {
         Ok(None)
     }
 
-    /// Reads the channel's manifest and verifies it, off the loop.
+    /// Reads the channel's manifest and verifies it, off the loop. Each
+    /// check first sweeps the binaries moved aside, so one an agent of an
+    /// earlier build held goes soon after that agent does.
     fn list(&self, job: JobId, auto_only: bool) {
+        self.files.sweep_asides();
         let policy = (self.updates)();
         let jobs = self.jobs.clone();
         let data_dir = self.data_dir.clone();
@@ -606,16 +701,30 @@ impl Driver {
         });
     }
 
-    /// Downloads and verifies a release beside the binary, off the loop.
+    /// Downloads and verifies a release beside the binary, off the loop,
+    /// with the launcher the manifest names from the same release. Either
+    /// failing fails the update, so the two are installed together.
     fn fetch(&self, job: JobId, release: Release) {
         let jobs = self.jobs.clone();
         let staged = self.files.staged.clone();
+        let launcher = self
+            .launcher
+            .clone()
+            .filter(|launcher| launcher.version == release.version)
+            .map(|launcher| (launcher, self.files.launcher_staged.clone()));
         tokio::spawn(async move {
-            let fetched = match fetch(&release, &staged).await {
+            let mut fetched = fetch(&release, &staged).await;
+            if let (Ok(()), Some((launcher, launcher_staged))) = (&fetched, &launcher) {
+                fetched = fetch(launcher, launcher_staged).await;
+            }
+            let fetched = match fetched {
                 Ok(()) => Ok(()),
                 Err(error) => {
                     tracing::warn!(%error, "the update check failed");
                     let _ = std::fs::remove_file(&staged);
+                    if let Some((_, launcher_staged)) = &launcher {
+                        let _ = std::fs::remove_file(launcher_staged);
+                    }
                     Err(error.to_string())
                 }
             };
@@ -624,28 +733,36 @@ impl Driver {
     }
 
     /// Replaces this process with the installed binary in supervise mode,
-    /// keeping the child and the pipe, and the lock where it can cross: an
-    /// exec on Unix; on Windows, which has no exec, a successor started with
-    /// all of it, the child's process handle among it, as this one exits.
-    /// A failure leaves this supervisor running, which is still correct.
+    /// keeping the child and the pipe, the lineage, and the lock where it
+    /// can cross: an exec on Unix; on Windows, which has no exec, a
+    /// successor started with all of it, the child's process handle among
+    /// it, as this one exits. The lineage stays open across it, so a
+    /// launcher sees nothing end. A failure leaves this supervisor
+    /// running, which is still correct.
     fn become_installed(&self, child: &Child) {
         let lock = self.lock.0.file();
         let handed = match child.hand_over(lock) {
             Ok(handed) => handed,
             Err(error) => {
                 tracing::warn!(%error, "could not hand over to the installed binary");
-                child.keep(lock);
                 return;
             }
         };
         tracing::info!(binary = %self.binary.display(), "handing over to the installed binary");
         let mut successor = std::process::Command::new(&self.binary);
         successor
+            .env_remove(RESTART_ENV)
             .args(&self.args)
             .arg("supervise")
             .arg("--inherit")
             .arg(handed.inherited.to_arg());
-        match os::process::exec_or_spawn(successor) {
+        let mut files = handed.files();
+        if let Some(lineage) = &self.lineage {
+            let (file, raw) = lineage.file();
+            successor.env(LINEAGE_ENV, raw.to_string());
+            files.push(file);
+        }
+        match os::process::exec_or_spawn(successor, &files) {
             Ok(replaced) => {
                 if replaced.breakaway_refused {
                     tracing::warn!(
@@ -656,8 +773,6 @@ impl Driver {
             }
             Err(error) => tracing::warn!(%error, "could not start the installed binary"),
         }
-        drop(handed);
-        child.keep(lock);
     }
 }
 
@@ -786,8 +901,23 @@ async fn list(source: &UpdateSource) -> Result<Manifest, CheckError> {
 }
 
 /// Stages the release at `staged`, verified against its manifest entry and
-/// executable.
+/// executable. It is downloaded to [`Files::part`] and renamed to `staged`
+/// once verified, so a staged file, which a start may install
+/// ([`Files::clear_leftovers`]), is never a download cut short.
 async fn fetch(release: &Release, staged: &Path) -> Result<(), CheckError> {
+    let part = Files::part(staged);
+    let downloaded = download(release, &part).await;
+    let staged_now = downloaded
+        .and_then(|()| os::fs::rename_patiently(&part, staged).map_err(CheckError::Stage));
+    if staged_now.is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
+    staged_now
+}
+
+/// Downloads the release to `part`, verified against its manifest entry and
+/// executable.
+async fn download(release: &Release, part: &Path) -> Result<(), CheckError> {
     if release.size > ARTIFACT_LIMIT {
         return Err(CheckError::TooLarge {
             what: "the artifact",
@@ -801,7 +931,7 @@ async fn fetch(release: &Release, staged: &Path) -> Result<(), CheckError> {
         .await
         .and_then(reqwest::Response::error_for_status)
         .map_err(fetch_error(&release.url))?;
-    let mut file = tokio::fs::File::create(staged)
+    let mut file = tokio::fs::File::create(part)
         .await
         .map_err(CheckError::Stage)?;
     let mut hash = Sha256::new();
@@ -823,7 +953,7 @@ async fn fetch(release: &Release, staged: &Path) -> Result<(), CheckError> {
     file.sync_all().await.map_err(CheckError::Stage)?;
     drop(file);
     release::verify_artifact(release, &release::sha256_hex(&hash.finalize()), written)?;
-    files::make_executable(staged).map_err(CheckError::Stage)?;
+    os::fs::make_executable(part).map_err(CheckError::Stage)?;
     Ok(())
 }
 
@@ -916,6 +1046,38 @@ fn sync_parent(path: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A launcher's restart that finds a stop recorded tells the launcher
+    /// while the record is still there, so dying in between leaves it for
+    /// the next restart; then the record goes. A deliberate start takes the
+    /// record back without telling anyone, and nothing recorded is nothing
+    /// to do.
+    #[test]
+    fn a_recorded_stop_outlasts_the_restart_until_the_launcher_is_told() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let stopped = data_dir.path().join(STOPPED);
+        assert!(!stays_stopped(data_dir.path(), true, || panic!(
+            "nothing recorded"
+        )));
+
+        std::fs::write(&stopped, b"").unwrap();
+        let mut told = false;
+        assert!(stays_stopped(data_dir.path(), true, || {
+            assert!(
+                stopped.exists(),
+                "the record went before the launcher was told"
+            );
+            told = true;
+        }));
+        assert!(told);
+        assert!(!stopped.exists());
+
+        std::fs::write(&stopped, b"").unwrap();
+        assert!(!stays_stopped(data_dir.path(), false, || panic!(
+            "a deliberate start"
+        )));
+        assert!(!stopped.exists());
+    }
 
     #[test]
     fn a_violation_the_supervisor_core_repeats_is_reported_once_per_interval() {

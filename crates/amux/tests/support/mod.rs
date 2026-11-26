@@ -329,6 +329,13 @@ pub fn kill_agents_under(root: &Path) {
 /// does: `taskkill /F /T` where there is one (Windows, the process tree),
 /// else SIGKILL to its process group (`pkill -KILL -g <pid>`). Says
 /// whether the kill was made.
+///
+/// taskkill fails the whole tree when one member can't be ended, and a
+/// member that ends on its own while the tree is ended, as a provider does
+/// once its agent's job closes, is one it can't: on GitHub's Windows
+/// runner a headless Claude agent's kill failed so (CI run 45718964949).
+/// So a kill whose agent has gone was made, and the caller checks that
+/// nothing of the tree is left; taskkill's words are printed either way.
 pub fn kill_group(pid: u32) -> bool {
     let quiet = |command: &mut std::process::Command| {
         command
@@ -337,9 +344,28 @@ pub fn kill_group(pid: u32) -> bool {
             .stderr(std::process::Stdio::null())
             .status()
     };
-    match quiet(std::process::Command::new("taskkill").args(["/F", "/T", "/PID", &pid.to_string()]))
+    let agent = os::process::ProcessRef::open(pid).ok();
+    match std::process::Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .stdin(std::process::Stdio::null())
+        .output()
     {
-        Ok(status) => status.success(),
+        Ok(output) if output.status.success() => true,
+        Ok(output) => {
+            eprintln!(
+                "taskkill /F /T /PID {pid}: {}: {}{}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            while agent.as_ref().is_some_and(os::process::ProcessRef::alive)
+                && std::time::Instant::now() < deadline
+            {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            agent.is_some_and(|agent| !agent.alive())
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             quiet(std::process::Command::new("pkill").args(["-KILL", "-g", &pid.to_string()]))
                 .is_ok_and(|status| status.success())

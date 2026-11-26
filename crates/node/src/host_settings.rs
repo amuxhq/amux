@@ -491,8 +491,8 @@ fn repository(path: &str, home: Option<&Path>) -> Result<String, SettingsError> 
             "a repository is an absolute path, not {path:?}"
         )));
     }
-    // Written plain, and an entry an earlier build wrote verbatim
-    // (`\\?\C:\…`) is read plain, so the two compare equal.
+    // Kept plain: one typed in Windows' verbatim form (`\\?\C:\…`), there
+    // or not, is the same folder as its plain spelling and compares equal.
     let path = crate::plain_paths::canonical(given)
         .unwrap_or_else(|_| crate::plain_paths::plain(given.to_owned()));
     path.to_str()

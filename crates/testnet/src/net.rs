@@ -4411,13 +4411,14 @@ fn create_config(decl: &AgentDecl, provider: Provider) -> CreateAgentRequest {
 }
 
 /// The directory an agent starts in: its host's work directory, a folder
-/// below it named relatively (made when missing), or an absolute path as
-/// it is.
+/// below it named relatively (made when missing), or a rooted path as it
+/// is (`/tmp` too, which has no drive on Windows: joined to the work
+/// directory it would be the drive's `\tmp`, made outside the net).
 fn work_dir(work: &Path, cwd: Option<&str>) -> Result<String, NetError> {
     let Some(cwd) = cwd else {
         return Ok(work.to_string_lossy().into_owned());
     };
-    if cwd.is_empty() || Path::new(cwd).is_absolute() {
+    if cwd.is_empty() || Path::new(cwd).has_root() {
         return Ok(cwd.to_owned());
     }
     let dir = work.join(cwd);

@@ -411,11 +411,11 @@ daemon removes both at start.
 Everything under `<root>` is its user's alone. The root, `reports/`, each
 profile and its `agents/` are owner-only (mode 0700; on Windows a protected
 DACL granting the user, SYSTEM and Administrators alone, which what is made
-inside inherits), and so are the files that hold a secret, wherever they
-are made. Each start makes the root, its reports and its profiles so again,
-which upgrades in place a root an earlier build left open (every one on
-Windows), and warns when the root's volume is a poor home for one: on
-Windows, anything but a local NTFS or ReFS drive. A file written whole
+inside inherits), made so as each is created, and so are the files that
+hold a secret, wherever they are made; a profile's device key and its
+folder are made so again each time the key is loaded. Each start warns
+when the root's volume is a poor home for one: on Windows, anything but a
+local NTFS or ReFS drive. A file written whole
 (`generation`, a spec, the device key, the account) goes through one
 durable write in [`os::fs`](../crates/os/src/fs/mod.rs): a temporary file
 beside it, flushed, put in place atomically, then the folder flushed; a
@@ -426,7 +426,7 @@ the next listing of profiles), never a failed start or a failed
 `amux profile rm`. Paths amux stores, shows or sends (the root and
 everything under it, pinned and recent folders, a checkout's root) are
 canonical in the form people and programs take, never Windows' verbatim
-`\\?\C:\…`; one an earlier build stored verbatim is read plain. SQLite,
+`\\?\C:\…`; a pinned folder typed verbatim is kept plain. SQLite,
 which opens its files without std, is handed the store's path in its
 long form (`os::fs::long_form`: verbatim only when it is too long for a
 plain one), so a deep root's store still opens.

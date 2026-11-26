@@ -132,8 +132,7 @@ pub(crate) fn sweep_dump_leftovers(data_dir: &Path, profile_dirs: &[PathBuf]) {
 
 /// Creates a directory, and its parents, only this user can enter. One
 /// that is there already is left as it is: it may be a folder a person
-/// chose to hold a socket. What an earlier build left of the root is made
-/// private at start, by [`prepare_root`].
+/// chose to hold a socket.
 pub fn private_dir(path: &Path) -> io::Result<()> {
     if path.is_dir() {
         return Ok(());
@@ -178,10 +177,9 @@ pub(crate) fn remove_or_leave(path: &Path, patience: Duration, what: &str) -> bo
 }
 
 /// Readies the installation's root at the daemon's start. It says when the
-/// root's volume is a poor home for one, and makes the root, its reports
-/// and each profile and its agents only this user's, which upgrades in
-/// place a root an earlier build left readable by others, as every one on
-/// Windows was. Nothing here stops a start: what fails is said and left.
+/// root's volume is a poor home for one, and makes its reports folder
+/// where there is none yet, private ([`private_dir`]). Nothing here stops
+/// a start: what fails is said and left.
 pub(crate) fn prepare_root(data_dir: &Path) {
     match os::fs::volume_supports_root(data_dir) {
         Ok(os::fs::VolumeCheck::Suitable) => {}
@@ -194,28 +192,8 @@ pub(crate) fn prepare_root(data_dir: &Path) {
             tracing::warn!(root = %data_dir.display(), %error, "the root's volume could not be checked");
         }
     }
-    let private = |path: &Path| {
-        if let Err(error) = os::fs::make_private(path) {
-            tracing::warn!(path = %path.display(), %error, "could not be made private");
-        }
-    };
-    private(data_dir);
-    if let Err(error) = os::fs::create_private_dir(&data_dir.join(REPORTS)) {
-        tracing::warn!(%error, "the reports folder could not be made private");
-    }
-    let Ok(profiles) = fs::read_dir(data_dir.join(PROFILES)) else {
-        return;
-    };
-    for profile in profiles.flatten() {
-        let dir = profile.path();
-        if !dir.is_dir() {
-            continue;
-        }
-        private(&dir);
-        let agents = dir.join(AGENTS);
-        if agents.is_dir() {
-            private(&agents);
-        }
+    if let Err(error) = private_dir(&data_dir.join(REPORTS)) {
+        tracing::warn!(%error, "the reports folder could not be made");
     }
 }
 

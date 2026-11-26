@@ -215,6 +215,10 @@ pub fn program(dir: &Path, name: &str) -> PathBuf {
 /// Puts `binary` at `at`: a hard link where the volume allows one, a copy
 /// otherwise. A file already there is left as it is, since it is the same
 /// program and may be running: only its plan changes.
+///
+/// The link is to the file `binary` resolves to. Buck hands a Unix test
+/// its binaries as relative symbolic links, and a hard link to one of
+/// those is the link itself, which names nothing from another folder.
 pub fn link(binary: &Path, at: &Path) -> std::io::Result<()> {
     if at.exists() {
         return Ok(());
@@ -222,7 +226,8 @@ pub fn link(binary: &Path, at: &Path) -> std::io::Result<()> {
     if let Some(dir) = at.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    std::fs::hard_link(binary, at).or_else(|_| std::fs::copy(binary, at).map(|_| ()))
+    let binary = std::fs::canonicalize(binary)?;
+    std::fs::hard_link(&binary, at).or_else(|_| std::fs::copy(&binary, at).map(|_| ()))
 }
 
 /// Makes `at` the `fake-provider` binary (`binary`) running `plan`. The
@@ -843,5 +848,41 @@ mod tests {
             plan_path(&program),
             Path::new("bin").join("claude.plan.json")
         );
+    }
+
+    /// Buck hands a Unix test its binaries as relative symbolic links
+    /// (`symlinked_dir`). A hard link made from one is a second name for
+    /// the link, not for the binary, so in another folder it names nothing:
+    /// on macOS, where the temp folder shares the work folder's volume, the
+    /// link was made, and every installed command failed to start with "No
+    /// such file or directory" (CI run 45718964949).
+    #[test]
+    fn a_program_linked_from_a_relative_symbolic_link_is_the_binary() {
+        let root = tempfile::tempdir().unwrap();
+        let built = root.path().join("out");
+        std::fs::create_dir_all(&built).unwrap();
+        std::fs::write(built.join("binary"), b"the binary").unwrap();
+        let tree = root.path().join("binaries");
+        std::fs::create_dir_all(&tree).unwrap();
+        let named = tree.join("fake-provider");
+        match os::testing::faults::symlink(&Path::new("..").join("out").join("binary"), &named)
+            .unwrap()
+        {
+            os::testing::faults::Linked::Made => {}
+            os::testing::faults::Linked::Skipped(why) => {
+                eprintln!("skipped: {why}");
+                return;
+            }
+        }
+        let at = root.path().join("bin").join("claude");
+        link(&named, &at).unwrap();
+        assert!(
+            !std::fs::symlink_metadata(&at)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "the program is a link, not the binary"
+        );
+        assert_eq!(std::fs::read(&at).unwrap(), b"the binary");
     }
 }

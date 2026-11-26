@@ -249,6 +249,7 @@ android_instrumentation_apk(
 amux_bundle(
     name = "bundle",
     deps = [":release-lib", ":jni-release"],
+    bundle_config_file = "bundle-config.json",
     proguard_config = ":release-rules",
     **_RELEASE
 )

@@ -163,6 +163,21 @@ pub fn symlink(target: &Path, link: &Path) -> io::Result<Linked> {
     imp::symlink(target, link)
 }
 
+/// Disables the privileges that carry this process past an ACL, where its
+/// token has them enabled, and names those it disabled: on Windows
+/// SeBackup, SeRestore and SeTakeOwnership, which open a file whatever its
+/// DACL says (`DeleteFileW` and `RemoveDirectoryW` ask with backup intent),
+/// and SeDebug, which opens any process. An administrator's token holds
+/// them disabled, but a runner may hand its tests one with them enabled:
+/// on GitHub's Windows runner the refusals tests set up in DACLs never
+/// happened (CI run 45718964949). Processes started afterwards inherit the token as
+/// it is then. On Unix there is nothing to disable: see [`unenforced`].
+///
+/// Buck runs each test in a process of its own, so this lasts the test.
+pub fn hold_to_acls() -> io::Result<Vec<&'static str>> {
+    imp::hold_to_acls()
+}
+
 /// Why a permission fault would not happen to this process, when it would
 /// not: run as root on Unix, a process reads and writes whatever the mode
 /// says. A test injecting [`deny`] or [`read_only`] returns early, saying

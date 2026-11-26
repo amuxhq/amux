@@ -6,6 +6,7 @@ DEPS = [
     "//crates/client:client",
     "//crates/log-file:log-file",
     "//crates/node:node",
+    "//crates/os:os",
     "//crates/wire:wire",
     "//third-party/rust:sha2",
     "//third-party/rust:thiserror",

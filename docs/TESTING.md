@@ -215,23 +215,18 @@ axis (`target_os = "ios"`, `target_os = "android"`) is a product choice and may 
 statement.
 
 `just platform-check` holds both rules ([`build/checks/platform_check.py`](../build/checks/platform_check.py) says
-exactly what it counts, and what it takes for test code and for `cfg!` read as data). What the tree held when the
-check arrived is listed in [`build/checks/platform-allowlist.txt`](../build/checks/platform-allowlist.txt), a
-count per file: a file may hold no more than its count, and a file not listed none. A change that moves code into a
-home passes with a note that the file's entry can be lowered; the allowlist is lowered when the change lands
-(`just platform-check --write-allowlist`), never raised. Every `ignore = "windows: ..."` is counted, and so is
-every gate out of scope on Windows or only one OS has by nature. `just platform-check --strict` fails while the
-allowlist holds anything or any test is ignored on Windows.
-
-Strict is the end state, and deleting the allowlist file is what switches it on: with no allowlist the check is
-strict however it runs, so `just premerge`, through its Buck2 test `//:platform-check`, holds every change to it
-from then on. With none, no file outside the homes may hold a conditional, and `--write-allowlist` refuses to
-write the file again.
+exactly what it counts, and what it takes for test code and for `cfg!` read as data). It is strict: no file
+outside the homes holds a conditional, and no test is ignored on Windows. While the code moved into its homes, the
+check compared each file with an allowlist (`build/checks/platform-allowlist.txt`, a count per file of what the
+tree held when the check arrived, only ever lowered); Phase 6 emptied it and deleted the file, and with no
+allowlist the check is strict however it runs, so `just premerge`, through its Buck2 test `//:platform-check`,
+holds every change to it, and `--write-allowlist` refuses to write the file again. Every gate out of scope on
+Windows or only one OS has by nature is counted, and `--list` prints them.
 
 ```sh
 just platform-check                    # the check, through Buck2
 just platform-check --list             # every conditional it counts, and each gate only one OS has
-just platform-check --strict           # an empty allowlist and nothing ignored on Windows
+just platform-check --strict           # the same, as it always is with no allowlist
 ```
 
 ## The catalogue

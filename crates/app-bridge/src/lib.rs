@@ -654,8 +654,10 @@ pub fn install_from_json(options: Option<&str>) -> Result<String, String> {
 }
 
 /// Checks for a newer version of the Mac app, from an `UpdateCheck` as JSON,
-/// returning an `Option<AppUpdate>` serialized as JSON.
-#[cfg(target_os = "macos")]
+/// returning an `Option<AppUpdate>` serialized as JSON. Built wherever the
+/// installer is, though only the Mac app's bridge (`amux_check_for_update`)
+/// calls it.
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn check_for_update_from_json(check: Option<&str>) -> Result<String, String> {
     let check: app_runtime::values::UpdateCheck =
         parse(check).ok_or_else(|| "the check is not an UpdateCheck".to_owned())?;

@@ -119,8 +119,9 @@ ALLOWED_LOCAL = {
     "browser-core": {"attachments", "ui-state", "ui-view", "wire"},
     # The phone's chats and fleet over the local runtime, with no node.
     "app-runtime": {"client", "ui-runtime", "ui-state", "ui-view", "wire"},
-    # The daemon's profile runtime hosted in the phone's process.
-    "app-embedded": {"analytics", "app-runtime", "client", "log-file", "node", "wire"},
+    # The daemon's profile runtime hosted in the phone's process; os for
+    # the wake descriptor an app's run loop watches.
+    "app-embedded": {"analytics", "app-runtime", "client", "log-file", "node", "os", "wire"},
     # The language-neutral bridge over both.
     # The installer only off the phone, for a desktop app's first call.
     "app-bridge": {

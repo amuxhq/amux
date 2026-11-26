@@ -214,7 +214,7 @@ impl Drop for Transport {
 /// app's queue to watch, and a condition for a thread blocked in
 /// [`Phone::wait`].
 struct Wake {
-    descriptor: descriptor::Descriptor,
+    descriptor: os::wake::Descriptor,
     /// A byte is in the descriptor, or about to be.
     armed: AtomicBool,
     rings: Mutex<u64>,
@@ -223,7 +223,7 @@ struct Wake {
 
 impl Wake {
     fn new() -> Result<Wake, EmbeddedError> {
-        let descriptor = descriptor::Descriptor::new().map_err(|error| {
+        let descriptor = os::wake::Descriptor::new().map_err(|error| {
             EmbeddedError::Relay(format!("opening the wake descriptor: {error}"))
         })?;
         Ok(Wake {
@@ -238,7 +238,7 @@ impl Wake {
         *self.rings.lock().unwrap_or_else(|p| p.into_inner()) += 1;
         self.rang.notify_all();
         if !self.armed.swap(true, Ordering::SeqCst) {
-            self.descriptor.write();
+            self.descriptor.ring();
         }
     }
 
@@ -261,65 +261,5 @@ impl Wake {
             .rang
             .wait_while(rings, |rings| *rings == seen)
             .unwrap_or_else(|p| p.into_inner());
-    }
-}
-
-/// The descriptor an app's run loop watches: one end of a socket pair,
-/// readable while a byte waits in it.
-// Unix only by nature: a descriptor for an app's run loop (iOS's, Android's) to watch
-#[cfg(unix)]
-mod descriptor {
-    use std::io::{Read as _, Write as _};
-    use std::os::fd::AsRawFd as _;
-    use std::os::unix::net::UnixStream;
-
-    pub(super) struct Descriptor {
-        reader: UnixStream,
-        writer: UnixStream,
-    }
-
-    impl Descriptor {
-        pub(super) fn new() -> std::io::Result<Descriptor> {
-            let (reader, writer) = UnixStream::pair()?;
-            reader.set_nonblocking(true)?;
-            writer.set_nonblocking(true)?;
-            Ok(Descriptor { reader, writer })
-        }
-
-        pub(super) fn raw(&self) -> i32 {
-            self.reader.as_raw_fd()
-        }
-
-        /// Makes it readable. A full buffer is readable already.
-        pub(super) fn write(&self) {
-            let _ = (&self.writer).write(&[1]);
-        }
-
-        pub(super) fn drain(&self) {
-            let mut drained = [0_u8; 64];
-            while matches!((&self.reader).read(&mut drained), Ok(read) if read > 0) {}
-        }
-    }
-}
-
-/// No descriptor: a desktop build for Windows, which no app's run loop
-/// watches, is told -1.
-// Unix only by nature: the descriptor above, which only a Unix app's run loop watches
-#[cfg(not(unix))]
-mod descriptor {
-    pub(super) struct Descriptor;
-
-    impl Descriptor {
-        pub(super) fn new() -> std::io::Result<Descriptor> {
-            Ok(Descriptor)
-        }
-
-        pub(super) fn raw(&self) -> i32 {
-            -1
-        }
-
-        pub(super) fn write(&self) {}
-
-        pub(super) fn drain(&self) {}
     }
 }

@@ -59,6 +59,11 @@ pub(super) fn scratch_items(_home: &Path, key: &str) -> PathBuf {
     PathBuf::from(key)
 }
 
+/// The value is the registration, and a test's goes under its own key.
+pub(super) fn registers() -> bool {
+    true
+}
+
 /// Deletes a test's key and all it holds; any other key is left alone.
 pub(super) fn forget_scratch(items: &Path) {
     let key = items.to_string_lossy();

@@ -379,15 +379,14 @@ cores-check:
 
 # A desktop-platform conditional (`cfg(unix)`, `cfg(windows)`, a desktop
 # `target_os`, `std::os::unix`, `libc::`, ...) belongs in the homes named for
-# platform code; elsewhere a file may hold no more than
-# build/checks/platform-allowlist.txt allows it, and a test gated off Windows
-# must name a feature Windows leaves out (docs/TESTING.md, "Holding a test
-# back on Windows"). With no options it is the Buck2 check
-# `//:platform-check`; with any it runs the script here: `--strict` also
-# wants the allowlist empty and no test ignored on Windows, which it always
-# does once the allowlist file is deleted, `--list` prints every conditional
-# counted, `--write-allowlist` writes the allowlist.
-# Fail on desktop-platform code outside its homes, beyond the allowlist.
+# platform code and nowhere else, no test is ignored on Windows, and a test
+# gated off Windows names a feature Windows leaves out or what only one OS
+# has (docs/TESTING.md, "Holding a test back on Windows"). With no options
+# it is the Buck2 check `//:platform-check`; with any it runs the script
+# here: `--list` prints every conditional counted. With no allowlist file
+# (build/checks/platform-allowlist.txt, deleted in Phase 6) it is always
+# strict.
+# Fail on desktop-platform code outside its homes.
 platform-check *ARGS:
     if [ $# -eq 0 ]; then "{{just_executable()}}" test //:platform-check; else {{bounded}} 120 scripts/py -B build/checks/platform_check.py "$@"; fi
 

@@ -167,6 +167,57 @@ pub(super) fn make_executable(path: &Path) -> io::Result<()> {
     fs::set_permissions(path, Permissions::from_mode(executable))
 }
 
+#[cfg(target_os = "macos")]
+pub(super) fn sign_ad_hoc(path: &Path) -> io::Result<()> {
+    let status = std::process::Command::new("codesign")
+        .args(["--force", "--sign", "-"])
+        .arg(path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()?;
+    if !status.success() {
+        return Err(io::Error::other(format!(
+            "codesign {} failed",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(super) fn sign_ad_hoc(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub(super) fn clear_quarantine(path: &Path) -> io::Result<()> {
+    use std::os::unix::ffi::OsStrExt as _;
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    // SAFETY: both arguments are NUL-terminated strings that outlive the
+    // call.
+    let removed = unsafe {
+        libc::removexattr(
+            path.as_ptr(),
+            c"com.apple.quarantine".as_ptr(),
+            libc::XATTR_NOFOLLOW,
+        )
+    };
+    if removed == 0 {
+        return Ok(());
+    }
+    let error = io::Error::last_os_error();
+    match error.raw_os_error() {
+        Some(libc::ENOATTR) => Ok(()),
+        _ => Err(error),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(super) fn clear_quarantine(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
 pub(super) fn is_executable(_path: &Path, meta: &Metadata) -> bool {
     meta.is_file() && meta.permissions().mode() & 0o111 != 0
 }
@@ -253,5 +304,49 @@ mod tests {
         let new = dir.path().join("new");
         drop(create_private(&new, Create::New).unwrap());
         assert_eq!(mode(&new), 0o600);
+    }
+
+    /// A quarantined download loses its quarantine, and only that.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_quarantined_file_is_cleared() {
+        use std::os::unix::ffi::OsStrExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("download");
+        fs::write(&path, b"x").unwrap();
+        let name = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        let attribute = c"com.apple.quarantine";
+        let value = b"0081;00000000;test;";
+        let get = || {
+            // SAFETY: both names are NUL-terminated; a null buffer asks for
+            // the value's size alone.
+            unsafe {
+                libc::getxattr(
+                    name.as_ptr(),
+                    attribute.as_ptr(),
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                    libc::XATTR_NOFOLLOW,
+                )
+            }
+        };
+        // SAFETY: both names are NUL-terminated; `value` is `value.len()`
+        // bytes.
+        let set = unsafe {
+            libc::setxattr(
+                name.as_ptr(),
+                attribute.as_ptr(),
+                value.as_ptr().cast(),
+                value.len(),
+                0,
+                libc::XATTR_NOFOLLOW,
+            )
+        };
+        assert_eq!(set, 0, "{}", std::io::Error::last_os_error());
+        assert!(get() > 0);
+        super::super::clear_quarantine(&path).unwrap();
+        assert_eq!(get(), -1);
+        assert_eq!(fs::read(&path).unwrap(), b"x");
     }
 }

@@ -665,6 +665,14 @@ pub(super) fn make_executable(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+pub(super) fn sign_ad_hoc(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+pub(super) fn clear_quarantine(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
 pub(super) fn is_executable(path: &Path, meta: &Metadata) -> bool {
     meta.is_file() && crate::paths::windows::runs_by_extension(path)
 }

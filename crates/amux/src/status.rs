@@ -166,8 +166,9 @@ pub(crate) fn firewall_words(standing: node::firewall::Standing) -> &'static str
         Standing::Blocked => {
             "has a rule that keeps devices nearby from reaching amux (Windows adds one when its \
              prompt to allow amux is dismissed), so it reaches them only by dialling out and \
-             through the relay; `amux setup firewall` replaces it, after asking for \
-             administrator approval."
+             through the relay; `amux setup firewall` replaces the rule Windows' prompt \
+             added, after asking for administrator approval, and names any other rule for \
+             you to change."
         }
     }
 }

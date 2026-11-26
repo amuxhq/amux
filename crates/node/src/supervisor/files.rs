@@ -5,7 +5,6 @@
 //! installed.
 
 use std::ffi::OsString;
-use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -173,7 +172,7 @@ impl FileId {
         use windows_sys::Win32::Storage::FileSystem::{
             BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
         };
-        let file = File::open(path)?;
+        let file = std::fs::File::open(path)?;
         // SAFETY: an all-zero struct is a valid out parameter.
         let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
         // SAFETY: querying a handle we own into a struct we own.

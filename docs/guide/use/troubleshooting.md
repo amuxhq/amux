@@ -84,7 +84,17 @@ place, `~\.amux\bin\amux.exe`.
 
 If you dismissed Windows' own prompt to allow amux when it first appeared,
 Windows added a rule that blocks it instead. `amux status` says so, and
-`amux setup firewall` replaces that rule with its own.
+`amux setup firewall` replaces that rule with its own. It removes nothing
+else: if a rule you made blocks amux on more than that, such as everywhere
+or on public networks too, it names the rule and changes nothing, so you
+can change it yourself in Windows Defender Firewall.
+
+A rule that lets in only some addresses, such as one computer's, doesn't let
+in the rest of your devices, so `amux setup firewall` adds its rule beside
+it. On a work computer, your organisation's policy may set the firewall's
+rules. If a rule of the policy blocks amux, or the policy ignores rules
+made on the computer itself, `amux setup firewall` says so and changes
+nothing: whoever manages the policy can add the rule.
 
 ## An agent can't carry on
 

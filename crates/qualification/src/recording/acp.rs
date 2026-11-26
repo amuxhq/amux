@@ -30,6 +30,20 @@ pub fn corpus_root() -> PathBuf {
     source_tree::crate_dir!().join("../interpret/fixtures/acp/live")
 }
 
+/// Where the live lane joins its recordings: the corpus in the checkout it
+/// was told of ([`super::live::checkout`]), else [`corpus_root`].
+pub fn kept_corpus_root() -> PathBuf {
+    match super::live::checkout() {
+        Some(checkout) => checkout
+            .join("crates")
+            .join("interpret")
+            .join("fixtures")
+            .join("acp")
+            .join("live"),
+        None => corpus_root(),
+    }
+}
+
 /// Variables holding credentials an ACP agent may read, whose values no
 /// recording keeps.
 const SECRETS: &[&str] = &[

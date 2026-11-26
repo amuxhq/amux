@@ -290,7 +290,8 @@ unsafe fn wide_text(text: *const u16) -> String {
 
 /// Windows Defender Firewall: its rules and profiles read from the
 /// registry, where it keeps them (any user may read them), and changed
-/// with `netsh advfirewall`, which needs administrator rights.
+/// with `netsh advfirewall` and PowerShell's `Remove-NetFirewallRule`,
+/// which need administrator rights.
 pub struct Firewall;
 
 const FIREWALL_POLICY: &str =
@@ -301,8 +302,14 @@ impl super::firewall::System for Firewall {
     fn read(&self) -> io::Result<Snapshot> {
         let mut rules = Vec::new();
         for store in [FIREWALL_POLICY, GROUP_POLICY] {
-            let texts = string_values(&format!(r"{store}\FirewallRules"))?;
-            rules.extend(texts.iter().filter_map(|text| Rule::parse(text)));
+            let values = string_values(&format!(r"{store}\FirewallRules"))?;
+            rules.extend(values.into_iter().filter_map(|(id, text)| {
+                Some(Rule {
+                    id,
+                    policy: store == GROUP_POLICY,
+                    ..Rule::parse(&text)?
+                })
+            }));
         }
         // A group policy's setting wins over the machine's own; with
         // neither, the firewall is on, as Windows starts it.
@@ -315,12 +322,26 @@ impl super::firewall::System for Firewall {
                 None => named(FIREWALL_POLICY, local)?.is_none_or(|value| value != 0),
             })
         };
+        // The machine's own rules count beside a group policy's unless the
+        // policy says otherwise for that profile.
+        let merged = |policy: &str| -> io::Result<bool> {
+            Ok(dword(
+                &format!(r"{GROUP_POLICY}\{policy}"),
+                "AllowLocalPolicyMerge",
+            )?
+            .is_none_or(|value| value != 0))
+        };
         Ok(Snapshot {
             rules,
             on: Profiles {
                 domain: on("DomainProfile", "DomainProfile")?,
                 private: on("StandardProfile", "PrivateProfile")?,
                 public: on("PublicProfile", "PublicProfile")?,
+            },
+            local_rules: Profiles {
+                domain: merged("DomainProfile")?,
+                private: merged("PrivateProfile")?,
+                public: merged("PublicProfile")?,
             },
         })
     }
@@ -355,18 +376,28 @@ impl super::firewall::System for Firewall {
 
     fn apply(&self, changes: &[Change]) -> io::Result<()> {
         for change in changes {
-            let netsh = netsh()?;
-            let output = std::process::Command::new(&netsh)
-                .raw_arg(netsh_arguments(change))
+            let (program, arguments, doing) = match change {
+                Change::Remove { id, name } => (
+                    powershell()?,
+                    powershell_arguments(id),
+                    format!("remove the rule {name:?}"),
+                ),
+                Change::Allow { program } => (
+                    netsh()?,
+                    netsh_arguments(program),
+                    "add the rule".to_owned(),
+                ),
+            };
+            let output = std::process::Command::new(&program)
+                .raw_arg(arguments)
                 .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW)
                 .output()?;
-            // Removing finds nothing to remove when the rules that block
-            // are a group policy's, which no local change undoes; the
-            // firewall read after says so.
-            if !output.status.success() && matches!(change, Change::Allow { .. }) {
+            if !output.status.success() {
                 return Err(io::Error::other(format!(
-                    "netsh could not add the rule: {}",
-                    String::from_utf8_lossy(&output.stdout).trim()
+                    "{} could not {doing}: {}{}",
+                    program.display(),
+                    String::from_utf8_lossy(&output.stdout).trim(),
+                    String::from_utf8_lossy(&output.stderr).trim()
                 )));
             }
         }
@@ -427,19 +458,45 @@ fn netsh() -> io::Result<std::path::PathBuf> {
     Ok(Path::new(&root).join("System32").join("netsh.exe"))
 }
 
-/// The command line after `netsh` for `change`, as netsh parses it: the
-/// path in quotes, which no Windows path contains.
-fn netsh_arguments(change: &Change) -> String {
-    match change {
-        Change::RemoveInbound { program } => format!(
-            r#"advfirewall firewall delete rule name=all dir=in program="{}""#,
-            program.display()
-        ),
-        Change::Allow { program } => format!(
-            r#"advfirewall firewall add rule name="{RULE_NAME}" dir=in action=allow program="{}" protocol=udp profile=private,domain enable=yes description="Lets devices nearby reach amux: links, pairing and discovery on the local network.""#,
-            program.display()
-        ),
-    }
+/// Windows PowerShell in the system folder, never one found on PATH: it
+/// runs with administrator rights.
+fn powershell() -> io::Result<std::path::PathBuf> {
+    Ok(netsh()?
+        .with_file_name("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe"))
+}
+
+/// The command line after `powershell` that removes the machine's own rule
+/// kept under `id`, and fails unless exactly that one rule was there.
+/// netsh names rules by their name, which many share (Windows' prompt
+/// names each it adds after the program), so the rule is found by its id,
+/// compared whole rather than as `-Name`'s pattern, in the store of the
+/// machine's own rules. The script goes encoded, so no quoting of the id
+/// is left to a command line.
+fn powershell_arguments(id: &str) -> String {
+    use base64::Engine as _;
+    let script = format!(
+        "$ErrorActionPreference = 'Stop'; $id = '{}'; \
+         $rules = @(Get-NetFirewallRule -PolicyStore PersistentStore | Where-Object {{ $_.Name -eq $id }}); \
+         if ($rules.Count -ne 1) {{ [Console]::Error.WriteLine(\"$($rules.Count) rules have the id $id\"); exit 2 }}; \
+         $rules | Remove-NetFirewallRule",
+        id.replace('\'', "''")
+    );
+    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    format!(
+        "-NoProfile -NonInteractive -EncodedCommand {}",
+        base64::engine::general_purpose::STANDARD.encode(utf16)
+    )
+}
+
+/// The command line after `netsh` that adds [`RULE_NAME`] for `program`,
+/// as netsh parses it: the path in quotes, which no Windows path contains.
+fn netsh_arguments(program: &Path) -> String {
+    format!(
+        r#"advfirewall firewall add rule name="{RULE_NAME}" dir=in action=allow program="{}" protocol=udp profile=private,domain enable=yes description="Lets devices nearby reach amux: links, pairing and discovery on the local network.""#,
+        program.display()
+    )
 }
 
 fn wide(text: impl AsRef<OsStr>) -> Vec<u16> {
@@ -473,9 +530,9 @@ impl Drop for Key {
     }
 }
 
-/// Every string value of a key under HKEY_LOCAL_MACHINE; none when the
-/// key doesn't exist.
-fn string_values(subkey: &str) -> io::Result<Vec<String>> {
+/// Every string value of a key under HKEY_LOCAL_MACHINE, by name; none
+/// when the key doesn't exist.
+fn string_values(subkey: &str) -> io::Result<Vec<(String, String)>> {
     let Some(key) = Key::open(subkey)? else {
         return Ok(Vec::new());
     };
@@ -525,7 +582,11 @@ fn string_values(subkey: &str) -> io::Result<Vec<String>> {
             ERROR_SUCCESS if kind == REG_SZ => {
                 let text = &data[..(data_len as usize / 2).min(data.len())];
                 let text = text.split(|unit| *unit == 0).next().unwrap_or_default();
-                values.push(String::from_utf16_lossy(text));
+                let named = &name[..(name_len as usize).min(name.len())];
+                values.push((
+                    String::from_utf16_lossy(named),
+                    String::from_utf16_lossy(text),
+                ));
             }
             ERROR_NO_MORE_ITEMS => break,
             // Not a string, or one written since the key was measured,
@@ -652,13 +713,7 @@ mod tests {
     #[test]
     fn netsh_is_told_the_rule_amux_asks_for() {
         let program = PathBuf::from(r"C:\Users\Some One\.amux\bin\amux.exe");
-        assert_eq!(
-            netsh_arguments(&Change::RemoveInbound {
-                program: program.clone()
-            }),
-            r#"advfirewall firewall delete rule name=all dir=in program="C:\Users\Some One\.amux\bin\amux.exe""#
-        );
-        let add = netsh_arguments(&Change::Allow { program });
+        let add = netsh_arguments(&program);
         assert!(
             add.starts_with(
                 r#"advfirewall firewall add rule name="amux" dir=in action=allow program="C:\Users\Some One\.amux\bin\amux.exe" protocol=udp profile=private,domain enable=yes "#
@@ -668,12 +723,55 @@ mod tests {
         assert!(netsh().unwrap().ends_with(r"System32\netsh.exe"));
     }
 
+    /// PowerShell is told to remove the one rule with the id, whatever the
+    /// id holds: the script goes encoded, the id quoted inside it.
+    #[test]
+    fn powershell_is_told_the_one_rule_to_remove() {
+        use base64::Engine as _;
+        let id = r"UDP Query User{8A3C}C:\users\o'neil\.amux\bin\amux.exe";
+        let arguments = powershell_arguments(id);
+        let encoded = arguments
+            .strip_prefix("-NoProfile -NonInteractive -EncodedCommand ")
+            .unwrap();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .unwrap();
+        let units: Vec<u16> = bytes
+            .chunks(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
+        let script = String::from_utf16(&units).unwrap();
+        assert!(
+            script.contains(r"$id = 'UDP Query User{8A3C}C:\users\o''neil\.amux\bin\amux.exe'"),
+            "{script}"
+        );
+        assert!(script.contains("-PolicyStore PersistentStore"), "{script}");
+        assert!(script.contains("$_.Name -eq $id"), "{script}");
+        assert!(
+            script.ends_with("$rules | Remove-NetFirewallRule"),
+            "{script}"
+        );
+        assert!(
+            powershell()
+                .unwrap()
+                .ends_with(r"System32\WindowsPowerShell\v1.0\powershell.exe")
+        );
+    }
+
     /// Reading changes nothing: it is all a test does with this machine's
     /// firewall.
     #[test]
     fn this_machines_firewall_reads() {
         let snapshot = Firewall.read().unwrap();
         assert!(!snapshot.rules.is_empty(), "Windows ships rules of its own");
+        assert!(
+            snapshot.rules.iter().all(|rule| !rule.id.is_empty()),
+            "each rule read has the id it is kept under"
+        );
+        assert!(
+            snapshot.rules.iter().any(|rule| !rule.policy),
+            "Windows' own rules are the machine's"
+        );
         let nobody = Path::new(r"C:\amux-test\no-such-program.exe");
         assert!(matches!(
             standing(&snapshot, nobody),

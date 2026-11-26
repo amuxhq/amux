@@ -312,7 +312,7 @@ async fn run(agent: &Agent, scenario: Scenario) -> (Verdict, Notes) {
         }
         match qualification::recording::acp::join(
             &capture,
-            &qualification::recording::acp::corpus_root(),
+            &qualification::recording::acp::kept_corpus_root(),
             &name,
             agent.provider,
             DRIVEN_BY,
@@ -348,13 +348,10 @@ fn on_path(command: &str) -> bool {
     std::env::split_paths(&path).any(|dir| dir.join(command).is_file())
 }
 
-/// The raw captures, beside the test binary's target directory.
+/// The raw captures, in the lane's target folder
+/// ([`qualification::recording::live::kept_target`]).
 fn live_dir() -> PathBuf {
-    let exe = std::env::current_exe().expect("the test binary's path");
-    exe.ancestors()
-        .nth(3)
-        .map(Path::to_owned)
-        .unwrap_or_else(|| PathBuf::from("target"))
+    qualification::recording::live::kept_target()
         .join("live")
         .join("acp")
 }

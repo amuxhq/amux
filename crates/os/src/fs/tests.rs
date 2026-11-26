@@ -155,6 +155,26 @@ fn canonical_round_trips() {
     assert!(canonical_once.is_dir());
 }
 
+/// A deep path's long form is one a library calling Windows itself can
+/// open (verbatim there); a shallow one is left plain, as it is elsewhere.
+#[test]
+fn a_deep_path_has_a_long_form_and_a_shallow_one_stays_plain() {
+    let dir = tempfile::tempdir().unwrap();
+    let shallow = canonical(dir.path()).unwrap().join("store.sqlite");
+    assert_eq!(long_form(&shallow), shallow);
+    let deep = shallow
+        .with_file_name("deep".repeat(70))
+        .join("store.sqlite");
+    let long = long_form(&deep);
+    assert_eq!(
+        long.to_string_lossy().starts_with(r"\\?\"),
+        cfg!(windows),
+        "{}",
+        long.display()
+    );
+    assert!(long.ends_with(Path::new(&"deep".repeat(70)).join("store.sqlite")));
+}
+
 #[test]
 fn an_executable_is_executable_and_a_plain_file_on_unix_is_not() {
     let dir = tempfile::tempdir().unwrap();

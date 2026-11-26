@@ -273,6 +273,13 @@ pub fn rename_patiently(from: &Path, to: &Path) -> io::Result<()> {
     patiently(SHARING_PATIENCE, || std::fs::rename(from, to))
 }
 
+/// Whether the file a running process was started from can be deleted or
+/// renamed over while it runs: on Unix, where the process keeps the inode;
+/// not on Windows, which keeps the image mapped and refuses both until
+/// every process running it has exited. There it can only be renamed
+/// away, to a name nothing else uses.
+pub const RUNNING_IMAGE_REPLACEABLE: bool = cfg!(unix);
+
 /// What [`remove_patiently`] did.
 #[must_use]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

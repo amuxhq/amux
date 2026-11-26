@@ -2,12 +2,29 @@
 //! binary that was running before the swap, whose presence means an update
 //! is not yet activated; `<binary>.rejected`, the version of the last build
 //! that was rolled back; and `<binary>.staged`, a download not yet
-//! installed.
+//! installed. Windows' login launcher, `amux-launch`, lives beside the
+//! binary too, and an update replaces it from the same release, staged as
+//! `<launcher>.staged`.
+//!
+//! On Windows every process started from a binary keeps it mapped until it
+//! exits: the supervisor, its daemon, and the agents and tool servers of
+//! every earlier build still running. A mapped file can be renamed away but
+//! never deleted or renamed over
+//! ([`os::fs::RUNNING_IMAGE_REPLACEABLE`]). So where an update would delete
+//! a binary or rename over one, a Windows supervisor first moves it aside
+//! to a name of its own, `<binary>.old.<n>`, never over an existing one,
+//! and deletes it there if nothing runs it. Every supervisor start and
+//! every update check sweeps those names, and leaves what is still mapped
+//! for the next sweep: no sweep ever fails the supervisor. `.prev`,
+//! `.rejected` and `.staged` keep their names and meaning, which the next
+//! release's supervisor reads.
 
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
+use os::fs::{RUNNING_IMAGE_REPLACEABLE, Removed};
 use semver::Version;
 
 use super::sync_parent;
@@ -16,14 +33,20 @@ use crate::install::write_durably;
 /// The supervisor's lock file in the data directory; it holds the pid.
 pub const SUPERVISOR_LOCK: &str = "supervisor.lock";
 
+/// What a binary moved aside is named after: `<binary>.old.<n>`.
+const ASIDE: &str = ".old.";
+
 #[derive(Clone, Debug)]
 pub struct Files {
+    binary: PathBuf,
     pub prev: PathBuf,
     pub rejected: PathBuf,
     pub staged: PathBuf,
-    /// Where a Windows supervisor moves prev when it is its own running
-    /// executable, which cannot be deleted; removed at the next start.
-    pub aside: PathBuf,
+    /// Windows' login launcher (`amux-launch`) beside the binary, which an
+    /// update replaces from the same release.
+    pub launcher: PathBuf,
+    /// The launcher's download, not yet installed.
+    pub launcher_staged: PathBuf,
 }
 
 fn beside(binary: &Path, suffix: &str) -> PathBuf {
@@ -37,11 +60,14 @@ fn beside(binary: &Path, suffix: &str) -> PathBuf {
 
 impl Files {
     pub fn beside(binary: &Path) -> Self {
+        let launcher = binary.with_file_name(os::paths::exe_name(crate::release::LAUNCHER));
         Self {
+            binary: binary.to_owned(),
             prev: beside(binary, ".prev"),
             rejected: beside(binary, ".rejected"),
             staged: beside(binary, ".staged"),
-            aside: beside(binary, ".old"),
+            launcher_staged: beside(&launcher, ".staged"),
+            launcher,
         }
     }
 
@@ -66,33 +92,37 @@ impl Files {
         write_durably(&self.rejected, version.to_string().as_bytes())
     }
 
-    pub fn remove_prev(&self) -> io::Result<()> {
-        std::fs::remove_file(&self.prev)?;
+    /// prev is no longer needed: activation's cleanup, or a prev a start
+    /// found to be the binary itself. On Windows it may be this
+    /// supervisor's own image, or one agents of its build still run, so it
+    /// moves aside rather than going at once.
+    pub fn retire_prev(&self) -> io::Result<()> {
+        discard(&self.prev, &self.binary)?;
         sync_parent(&self.prev)
     }
 
-    /// Activation's cleanup: prev is no longer needed.
-    pub fn retire_prev(&self, mine: &FileId) -> io::Result<()> {
-        if cfg!(windows) && FileId::of(&self.prev).is_ok_and(|prev| prev == *mine) {
-            std::fs::rename(&self.prev, &self.aside)?;
-            return sync_parent(&self.prev);
+    /// Renames prev back over the binary. On Windows the binary at the path
+    /// may be this supervisor's own running image (it started after a swap
+    /// and before the activation that would have retired prev), and is at
+    /// least the build that just failed to start, whose image can stay held
+    /// for a moment after it exits: it moves aside first, and prev takes
+    /// the free path.
+    pub fn restore_prev(&self, binary: &Path) -> io::Result<()> {
+        let aside = match RUNNING_IMAGE_REPLACEABLE || binary.symlink_metadata().is_err() {
+            true => None,
+            false => Some(move_aside(binary, &self.binary)?),
+        };
+        if let Err(error) = os::fs::rename_patiently(&self.prev, binary) {
+            // The path is what a login item starts the supervisor by: what
+            // was there goes back before the failure is reported.
+            if let Some(aside) = &aside {
+                let _ = os::fs::rename_patiently(aside, binary);
+            }
+            return Err(error);
         }
-        self.remove_prev()
-    }
-
-    /// Renames prev back over the binary. On Windows the binary may be
-    /// this supervisor's own running image, when it started after a swap
-    /// and before the activation that would have retired prev; that cannot
-    /// be replaced, so it moves aside first, where the next start removes
-    /// it. Otherwise the binary is the build that just failed to start, and
-    /// on Windows an image that has only just exited can stay held for a
-    /// moment, so the rename over it is patient.
-    pub fn restore_prev(&self, binary: &Path, mine: &FileId) -> io::Result<()> {
-        if cfg!(windows) && FileId::of(binary).is_ok_and(|current| current == *mine) {
-            let _ = std::fs::remove_file(&self.aside);
-            std::fs::rename(binary, &self.aside)?;
+        if let Some(aside) = &aside {
+            let _ = os::fs::remove_patiently(aside, Duration::ZERO);
         }
-        os::fs::rename_patiently(&self.prev, binary)?;
         sync_parent(binary)
     }
 
@@ -103,46 +133,145 @@ impl Files {
     /// prev first.
     pub fn install_staged(&self, binary: &Path) -> io::Result<()> {
         if self.prev_exists() {
-            std::fs::remove_file(&self.prev)?;
+            discard(&self.prev, &self.binary)?;
         }
-        #[cfg(unix)]
-        std::fs::hard_link(binary, &self.prev)?;
-        #[cfg(windows)]
-        std::fs::rename(binary, &self.prev)?;
-        std::fs::rename(&self.staged, binary).inspect_err(|_| self.put_back(binary))?;
+        if RUNNING_IMAGE_REPLACEABLE {
+            std::fs::hard_link(binary, &self.prev)?;
+        } else {
+            os::fs::rename_patiently(binary, &self.prev)?;
+        }
+        os::fs::rename_patiently(&self.staged, binary).inspect_err(|_| self.put_back(binary))?;
         sync_parent(binary)
     }
 
     /// Undoes the move aside after the staged binary failed to take the
     /// path. The path is what the service manager starts the supervisor
     /// by, and on Windows it is empty now: the current binary goes back
-    /// before the failure is reported.
-    #[cfg(windows)]
+    /// before the failure is reported. On Unix the path never moved, and
+    /// prev, a link to it, is recognised at the next start; there is
+    /// nothing to undo.
     fn put_back(&self, binary: &Path) {
-        let _ = std::fs::rename(&self.prev, binary);
+        if !RUNNING_IMAGE_REPLACEABLE {
+            let _ = os::fs::rename_patiently(&self.prev, binary);
+        }
     }
 
-    /// On Unix the path never moved, and prev, a link to it, is
-    /// recognised at the next start; there is nothing to undo.
-    #[cfg(not(windows))]
-    fn put_back(&self, _binary: &Path) {}
+    /// Puts the staged launcher, downloaded with the binary from the same
+    /// release, in place of the one beside the binary, which may be
+    /// running (it is the login item's restart policy, and on Windows
+    /// keeps its image mapped): that one moves aside. False when nothing
+    /// was staged. A failure leaves the launcher that was there; the
+    /// launcher's contract with amux is promised across releases, so an
+    /// older one goes on working until the next release replaces it.
+    pub fn install_launcher(&self) -> io::Result<bool> {
+        if self.launcher_staged.symlink_metadata().is_err() {
+            return Ok(false);
+        }
+        let installed = self.replace_launcher();
+        let _ = os::fs::remove_patiently(&self.launcher_staged, Duration::ZERO);
+        installed.map(|()| true)
+    }
 
-    /// What an interrupted download or a Windows update leaves behind.
+    fn replace_launcher(&self) -> io::Result<()> {
+        let aside = match RUNNING_IMAGE_REPLACEABLE || self.launcher.symlink_metadata().is_err() {
+            true => None,
+            false => Some(move_aside(&self.launcher, &self.launcher)?),
+        };
+        if let Err(error) = os::fs::rename_patiently(&self.launcher_staged, &self.launcher) {
+            if let Some(aside) = &aside {
+                let _ = os::fs::rename_patiently(aside, &self.launcher);
+            }
+            return Err(error);
+        }
+        if let Some(aside) = &aside {
+            let _ = os::fs::remove_patiently(aside, Duration::ZERO);
+        }
+        sync_parent(&self.launcher)
+    }
+
+    /// What a start finds left over: downloads an interrupted update never
+    /// installed, and the binaries moved aside ([`Files::sweep_asides`]).
     pub fn clear_leftovers(&self) {
-        let _ = std::fs::remove_file(&self.staged);
-        let _ = std::fs::remove_file(&self.aside);
+        for staged in [&self.staged, &self.launcher_staged] {
+            let _ = os::fs::remove_patiently(staged, Duration::ZERO);
+        }
+        self.sweep_asides();
+    }
+
+    /// Removes each binary moved aside that nothing runs any more, and
+    /// leaves the rest for a later sweep. Never an error: a sweep is
+    /// cleanup, and nothing the supervisor does waits on it.
+    pub fn sweep_asides(&self) {
+        for aside in self.asides() {
+            match os::fs::remove_patiently(&aside, Duration::ZERO) {
+                Ok(Removed::Gone) => {
+                    tracing::info!(path = %aside.display(), "removed a binary moved aside");
+                }
+                Ok(Removed::Later) => {
+                    tracing::debug!(path = %aside.display(), "a binary moved aside still runs");
+                }
+                Err(error) => {
+                    tracing::warn!(path = %aside.display(), %error, "could not remove a binary moved aside");
+                }
+            }
+        }
+    }
+
+    /// Every binary moved aside beside the binary, the launcher's among
+    /// them: `<binary>.old.<n>` and `<launcher>.old.<n>`.
+    pub fn asides(&self) -> Vec<PathBuf> {
+        let Some(dir) = self.binary.parent() else {
+            return Vec::new();
+        };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        let stems: Vec<String> = [&self.binary, &self.launcher]
+            .iter()
+            .filter_map(|path| path.file_name())
+            .map(|name| format!("{}{ASIDE}", name.to_string_lossy()))
+            .collect();
+        let mut asides: Vec<PathBuf> = entries
+            .flatten()
+            .filter(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                stems.iter().any(|stem| {
+                    name.strip_prefix(stem.as_str()).is_some_and(|n| {
+                        !n.is_empty() && n.bytes().all(|byte| byte.is_ascii_digit())
+                    })
+                })
+            })
+            .map(|entry| entry.path())
+            .collect();
+        asides.sort();
+        asides
     }
 }
 
-pub fn make_executable(path: &Path) -> io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
+/// Gets a binary that is no longer needed out of the way: deleted where a
+/// running image can be (Unix); on Windows renamed aside, then deleted if
+/// nothing runs it, and otherwise left for a sweep.
+fn discard(path: &Path, binary: &Path) -> io::Result<()> {
+    if RUNNING_IMAGE_REPLACEABLE {
+        return std::fs::remove_file(path);
     }
-    #[cfg(not(unix))]
-    let _ = path;
+    let aside = move_aside(path, binary)?;
+    let _ = os::fs::remove_patiently(&aside, Duration::ZERO);
     Ok(())
+}
+
+/// Renames `path`, a build of `binary` (the binary itself, its prev, or the
+/// launcher), to `<binary>.old.<n>`, the first `n` no file has, so it never
+/// goes over one still mapped. Only the supervisor, which holds its lock,
+/// names files so.
+fn move_aside(path: &Path, binary: &Path) -> io::Result<PathBuf> {
+    let aside = (1..=u32::MAX)
+        .map(|n| beside(binary, &format!("{ASIDE}{n}")))
+        .find(|aside| aside.symlink_metadata().is_err())
+        .ok_or_else(|| io::Error::other("no free name to move a binary aside to"))?;
+    os::fs::rename_patiently(path, &aside)?;
+    Ok(aside)
 }
 
 /// A file's identity: device and inode on Unix, volume and file index on
@@ -188,6 +317,8 @@ impl FileId {
 
 #[cfg(test)]
 mod tests {
+    use provider_fakes::faults::hold_exclusively;
+
     use super::*;
 
     fn install() -> (tempfile::TempDir, PathBuf, Files) {
@@ -198,6 +329,15 @@ mod tests {
         (dir, binary, files)
     }
 
+    fn names(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
     #[test]
     fn a_failed_install_leaves_the_binary_at_its_path() {
         let (_dir, binary, files) = install();
@@ -205,46 +345,130 @@ mod tests {
         let error = files.install_staged(&binary).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
         assert_eq!(std::fs::read(&binary).unwrap(), b"running");
-        if cfg!(windows) {
+        if !RUNNING_IMAGE_REPLACEABLE {
             assert!(!files.prev_exists(), "prev went back over the empty path");
         }
     }
 
     #[test]
-    fn prev_goes_back_over_a_binary_that_is_the_running_image() {
-        let (_dir, binary, files) = install();
+    fn prev_goes_back_over_the_binary_and_what_was_there_goes() {
+        let (dir, binary, files) = install();
         std::fs::write(&files.prev, b"previous").unwrap();
-        let mine = FileId::of(&binary).unwrap();
-        files.restore_prev(&binary, &mine).unwrap();
+        files.restore_prev(&binary).unwrap();
         assert_eq!(std::fs::read(&binary).unwrap(), b"previous");
         assert!(!files.prev_exists());
-        if cfg!(windows) {
-            assert_eq!(std::fs::read(&files.aside).unwrap(), b"running");
-        }
+        assert_eq!(names(dir.path()), ["amux"], "nothing runs the failed build");
     }
 
     /// A rollback renames prev over the build that just failed to start.
     /// On Windows an image that has only just exited can stay held for a
-    /// moment; the rename waits for it rather than failing the supervisor.
-    /// A handle sharing nothing stands in for that hold here.
+    /// moment; the move aside waits for it rather than failing the
+    /// supervisor. A handle sharing nothing stands in for that hold here.
     #[test]
     fn prev_goes_back_over_a_binary_held_for_a_moment() {
         let (_dir, binary, files) = install();
         std::fs::write(&files.prev, b"previous").unwrap();
-        let held = match provider_fakes::faults::hold_exclusively(&binary) {
+        let held = match hold_exclusively(&binary) {
             Ok(held) => held,
             // Unix has no share modes, so nothing holds a file this way.
             Err(error) if error.kind() == io::ErrorKind::Unsupported => return,
             Err(error) => panic!("holding the binary: {error}"),
         };
         let release = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(200));
+            std::thread::sleep(Duration::from_millis(200));
             drop(held);
         });
-        let mine = FileId::of(&files.prev).unwrap();
-        files.restore_prev(&binary, &mine).unwrap();
+        files.restore_prev(&binary).unwrap();
         release.join().unwrap();
         assert_eq!(std::fs::read(&binary).unwrap(), b"previous");
         assert!(!files.prev_exists());
+    }
+
+    /// Two updates in a row while the builds before each still run. On
+    /// Windows a retired build moves aside to a name of its own, never over
+    /// one an earlier build left there, which something still holds: an
+    /// agent of that build, mapping its image. A handle sharing nothing
+    /// stands in for it here, refusing the deletion as a mapping does. What
+    /// nothing holds goes at once; a sweep removes the rest once nothing
+    /// holds it. On Unix prev is deleted at once.
+    #[test]
+    fn each_retired_build_moves_aside_to_a_name_of_its_own() {
+        let (dir, binary, files) = install();
+        let first = dir.path().join("amux.old.1");
+        std::fs::write(&first, b"first").unwrap();
+        let held = match hold_exclusively(&first) {
+            Ok(held) => Some(held),
+            // Unix has no share modes; there, nothing moves aside.
+            Err(error) if error.kind() == io::ErrorKind::Unsupported => {
+                std::fs::remove_file(&first).unwrap();
+                None
+            }
+            Err(error) => panic!("holding the first build: {error}"),
+        };
+        for version in [&b"second"[..], b"third"] {
+            std::fs::write(&files.staged, version).unwrap();
+            files.install_staged(&binary).unwrap();
+            assert_eq!(std::fs::read(&binary).unwrap(), version);
+            files.retire_prev().unwrap();
+            assert!(!files.prev_exists());
+            let expected: &[&str] = match held {
+                Some(_) => &["amux", "amux.old.1"],
+                None => &["amux"],
+            };
+            assert_eq!(
+                names(dir.path()),
+                expected,
+                "nothing holds the retired build"
+            );
+        }
+        if held.is_some() {
+            files.sweep_asides();
+            assert_eq!(names(dir.path()), ["amux", "amux.old.1"], "still held");
+        }
+        drop(held);
+        files.sweep_asides();
+        assert_eq!(names(dir.path()), ["amux"]);
+    }
+
+    /// The launcher staged with the binary replaces the one beside it,
+    /// which may be running.
+    #[test]
+    fn the_staged_launcher_replaces_the_one_beside_the_binary() {
+        let (dir, _binary, files) = install();
+        assert!(!files.install_launcher().unwrap(), "nothing staged");
+        std::fs::write(&files.launcher, b"old launcher").unwrap();
+        std::fs::write(&files.launcher_staged, b"new launcher").unwrap();
+        assert!(files.install_launcher().unwrap());
+        assert_eq!(std::fs::read(&files.launcher).unwrap(), b"new launcher");
+        assert!(files.launcher_staged.symlink_metadata().is_err());
+        let launcher = files.launcher.file_name().unwrap().to_string_lossy();
+        let mut expected = vec!["amux".to_owned(), launcher.into_owned()];
+        expected.sort();
+        assert_eq!(names(dir.path()), expected, "the old one ran nothing");
+    }
+
+    /// A start removes what an interrupted update left: the downloads and
+    /// every binary moved aside, the launcher's too, and nothing else.
+    #[test]
+    fn a_start_clears_downloads_and_binaries_moved_aside() {
+        let (dir, _binary, files) = install();
+        let launcher = files
+            .launcher
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        for name in [
+            "amux.staged".to_owned(),
+            "amux.old.3".to_owned(),
+            format!("{launcher}.old.1"),
+            format!("{launcher}.staged"),
+            "amux.old.notes".to_owned(),
+            "amux.prev".to_owned(),
+        ] {
+            std::fs::write(dir.path().join(name), b"").unwrap();
+        }
+        files.clear_leftovers();
+        assert_eq!(names(dir.path()), ["amux", "amux.old.notes", "amux.prev"]);
     }
 }

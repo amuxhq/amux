@@ -887,8 +887,9 @@ from the commits:
 The Windows build also ships `amux-launch.exe`, the login item's windowless
 launcher ([Supervisor](SUPERVISOR.md#the-launcher-windows)), which an
 install puts beside `amux.exe`. It is attested and checksummed like the
-binaries, but no channel's manifest names it: a deploy refuses a release
-whose launcher isn't attested or doesn't match `checksums.txt`.
+binaries, and a deploy names it in the manifest beside the Windows binary
+(below), refusing a release whose launcher isn't attested or doesn't match
+`checksums.txt`.
 
 Each binary's symbols are published beside it: `amux-linux-x86_64.debug`
 (found through the binary's GNU debuglink), `amux-macos-arm64.dSYM.zip`
@@ -949,6 +950,14 @@ one entry per target triple, and one signature over all of it.
   be served to stable by whoever holds the manifest's URL.
 - A binary looks itself up by the triple it was built for, which
   `crates/release/build.rs` compiles in as `AMUX_TARGET`.
+- What a release ships beside a target's binary is an entry of its own,
+  keyed `<triple>/<program>`: `x86_64-pc-windows-msvc/amux-launch` is the
+  launcher. A supervisor that installs the triple's entry downloads and
+  verifies the launcher's too when it names the same version (a bad one
+  fails the update), and installs it beside the binary in the same swap.
+  A build reads only the keys
+  it knows, so an older one ignores the launcher's while the signature
+  covers it like any other.
 - `url` is fetched as-is; the file there is the whole `amux` binary, and
   `size` is its length. The supervisor writes no more than `size` bytes
   of it, and installs it only when its length and hash are the entry's.

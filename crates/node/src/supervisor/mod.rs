@@ -16,7 +16,8 @@
 //!   signature, hard-links the current binary to prev and renames the
 //!   staged binary over the path; activation deletes prev and fsyncs the
 //!   directory before `go`; a rollback writes the rejected version and
-//!   fsyncs it before renaming prev back.
+//!   fsyncs it before renaming prev back. Windows' login launcher, which
+//!   the manifest names beside the binary, is staged and swapped with it.
 //! - After `go`, a supervisor running a binary other than the installed one
 //!   execs the installed binary in supervise mode, keeping pid, child, pipe
 //!   and lock, so the supervisor is never the stale part for long.
@@ -28,9 +29,11 @@
 //! Counters and timers live in the core's memory. The supervisor holds its
 //! own lock; the installation lock stays the daemon's.
 //!
-//! On Windows a running executable cannot be renamed over, so the
-//! supervisor stops the child before the swap and moves the binary aside
-//! to prev by rename, and its own update is a spawn-then-exit.
+//! On Windows a running executable cannot be deleted or renamed over, and
+//! agents of earlier builds keep theirs running, so the supervisor stops
+//! the child before the swap and moves the binary aside to prev by rename;
+//! a binary no longer needed moves aside to a name of its own, swept once
+//! nothing runs it (`files`). Its own update is a spawn-then-exit.
 
 mod child;
 mod control;
@@ -236,8 +239,6 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
         None => SupervisorLock::acquire(&data_dir, inherited.is_some())?,
     };
     let files = Files::beside(&binary);
-    // What this process runs: the binary at the path when it started.
-    let mine = FileId::of(&binary).map_err(files_error("reading the installed binary"))?;
     files.clear_leftovers();
     let prev = if !files.prev_exists() {
         PrevFound::None
@@ -267,7 +268,7 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
     let core = Supervisor::start(
         Start {
             params: params.for_core(),
-            target,
+            target: target.clone(),
             running,
             prev,
             rejected,
@@ -285,7 +286,8 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
         data_dir,
         updates,
         clock,
-        mine,
+        target,
+        launcher: None,
         lock,
         daemons,
         timers: BTreeMap::new(),
@@ -323,7 +325,11 @@ struct Driver {
     data_dir: PathBuf,
     updates: UpdatesFn,
     clock: Arc<dyn Clock>,
-    mine: FileId,
+    /// The build target the channel's manifest is read for.
+    target: String,
+    /// The launcher the last manifest read names beside this target's
+    /// build, from the same release: fetched and installed with it.
+    launcher: Option<Release>,
     lock: SupervisorLock,
     /// The daemons the core started, by its name for them. The core starts
     /// one only when none lives.
@@ -489,6 +495,18 @@ impl Driver {
 
     /// The clock, then one input, through the core; its outputs done.
     fn step(&mut self, input: core::Input) -> Result<Option<Done>, SuperviseError> {
+        if let core::Input::JobDone {
+            result: JobResult::Listed(listed),
+            ..
+        } = &input
+        {
+            self.launcher = match listed {
+                Listed::Manifest { manifest, .. } => {
+                    release::launcher(manifest, &self.target).cloned()
+                }
+                _ => None,
+            };
+        }
         let mut out = Vec::new();
         let now_ms = millis_now(&*self.clock);
         let core = &mut self.core;
@@ -546,13 +564,9 @@ impl Driver {
                 }
                 Output::List { job, auto_only } => self.list(job, auto_only),
                 Output::Fetch { job, release } => self.fetch(job, release),
-                Output::RemovePrev => self
+                Output::RemovePrev | Output::RetirePrev => self
                     .files
-                    .remove_prev()
-                    .map_err(files_error("removing prev"))?,
-                Output::RetirePrev => self
-                    .files
-                    .retire_prev(&self.mine)
+                    .retire_prev()
                     .map_err(files_error("removing prev"))?,
                 Output::WriteRejected { version } => {
                     tracing::warn!(rejected = %version, "rolling back to prev");
@@ -563,7 +577,7 @@ impl Driver {
                 }
                 Output::RestorePrev => {
                     self.files
-                        .restore_prev(&self.binary, &self.mine)
+                        .restore_prev(&self.binary)
                         .map_err(files_error("putting prev back"))?;
                     tracing::info!("put prev back over the binary");
                 }
@@ -572,6 +586,14 @@ impl Driver {
                     self.files
                         .install_staged(&self.binary)
                         .map_err(files_error("installing the staged binary"))?;
+                    match self.files.install_launcher() {
+                        Ok(true) => tracing::info!("installed the staged launcher beside it"),
+                        Ok(false) => {}
+                        Err(error) => tracing::warn!(
+                            %error,
+                            "could not install the staged launcher: the one there stays until the next release"
+                        ),
+                    }
                 }
                 Output::BecomeInstalled { daemon } => {
                     if let Some(child) = self.daemons.get(&daemon) {
@@ -599,8 +621,11 @@ impl Driver {
         Ok(None)
     }
 
-    /// Reads the channel's manifest and verifies it, off the loop.
+    /// Reads the channel's manifest and verifies it, off the loop. Each
+    /// check first sweeps the binaries moved aside, so one an agent of an
+    /// earlier build held goes soon after that agent does.
     fn list(&self, job: JobId, auto_only: bool) {
+        self.files.sweep_asides();
         let policy = (self.updates)();
         let jobs = self.jobs.clone();
         let data_dir = self.data_dir.clone();
@@ -629,16 +654,30 @@ impl Driver {
         });
     }
 
-    /// Downloads and verifies a release beside the binary, off the loop.
+    /// Downloads and verifies a release beside the binary, off the loop,
+    /// with the launcher the manifest names from the same release. Either
+    /// failing fails the update, so the two are installed together.
     fn fetch(&self, job: JobId, release: Release) {
         let jobs = self.jobs.clone();
         let staged = self.files.staged.clone();
+        let launcher = self
+            .launcher
+            .clone()
+            .filter(|launcher| launcher.version == release.version)
+            .map(|launcher| (launcher, self.files.launcher_staged.clone()));
         tokio::spawn(async move {
-            let fetched = match fetch(&release, &staged).await {
+            let mut fetched = fetch(&release, &staged).await;
+            if let (Ok(()), Some((launcher, launcher_staged))) = (&fetched, &launcher) {
+                fetched = fetch(launcher, launcher_staged).await;
+            }
+            let fetched = match fetched {
                 Ok(()) => Ok(()),
                 Err(error) => {
                     tracing::warn!(%error, "the update check failed");
                     let _ = std::fs::remove_file(&staged);
+                    if let Some((_, launcher_staged)) = &launcher {
+                        let _ = std::fs::remove_file(launcher_staged);
+                    }
                     Err(error.to_string())
                 }
             };
@@ -851,7 +890,7 @@ async fn fetch(release: &Release, staged: &Path) -> Result<(), CheckError> {
     file.sync_all().await.map_err(CheckError::Stage)?;
     drop(file);
     release::verify_artifact(release, &release::sha256_hex(&hash.finalize()), written)?;
-    files::make_executable(staged).map_err(CheckError::Stage)?;
+    os::fs::make_executable(staged).map_err(CheckError::Stage)?;
     Ok(())
 }
 

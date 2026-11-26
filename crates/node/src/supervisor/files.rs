@@ -204,11 +204,16 @@ impl Files {
     /// installed, and the binaries moved aside ([`Files::sweep_asides`]).
     /// First the launcher an update was interrupted in replacing goes back
     /// ([`Files::recover_launcher`]), since what it comes from is among
-    /// what is cleared.
+    /// what is cleared. While the launcher's path is still empty (Windows
+    /// held every file that could fill it), the staged launcher is kept, as
+    /// the sweep keeps the launcher's asides: the next start tries again.
     pub fn clear_leftovers(&self) {
         self.recover_launcher();
+        let launcher_missing = self.launcher_missing();
         for staged in [&self.staged, &self.launcher_staged] {
-            let _ = os::fs::remove_patiently(staged, Duration::ZERO);
+            if !(launcher_missing && staged == &self.launcher_staged) {
+                let _ = os::fs::remove_patiently(staged, Duration::ZERO);
+            }
             let _ = os::fs::remove_patiently(&Self::part(staged), Duration::ZERO);
         }
         self.sweep_asides();
@@ -220,39 +225,54 @@ impl Files {
     /// that path, and nothing would be there to start at the next login.
     /// The staged launcher goes in if there is one, as the update would
     /// have put it (a staged file is a verified download, [`Files::part`]);
-    /// else the launcher moved aside last goes back. A launcher at the
-    /// path, or nothing to put there, leaves everything as it is.
+    /// else, or when it can't be moved (Windows holding it), the launcher
+    /// moved aside last goes back. A launcher at the path, or nothing to
+    /// put there, leaves everything as it is.
     fn recover_launcher(&self) {
-        if self.launcher.symlink_metadata().is_ok() {
+        if !self.launcher_missing() {
             return;
         }
-        let from = if self.launcher_staged.symlink_metadata().is_ok() {
-            self.launcher_staged.clone()
-        } else {
-            match self.newest_launcher_aside() {
-                Some(aside) => aside,
-                None => return,
+        let staged =
+            Some(self.launcher_staged.clone()).filter(|staged| staged.symlink_metadata().is_ok());
+        for from in staged.into_iter().chain(self.newest_launcher_aside()) {
+            match os::fs::rename_patiently(&from, &self.launcher)
+                .and_then(|()| sync_parent(&self.launcher))
+            {
+                Ok(()) => {
+                    tracing::info!(
+                        from = %from.display(),
+                        "put back the launcher an interrupted update left missing"
+                    );
+                    return;
+                }
+                Err(error) => tracing::warn!(
+                    from = %from.display(),
+                    %error,
+                    "could not put back the launcher an interrupted update left missing"
+                ),
             }
-        };
-        match os::fs::rename_patiently(&from, &self.launcher)
-            .and_then(|()| sync_parent(&self.launcher))
-        {
-            Ok(()) => tracing::info!(
-                from = %from.display(),
-                "put back the launcher an interrupted update left missing"
-            ),
-            Err(error) => tracing::warn!(
-                from = %from.display(),
-                %error,
-                "could not put back the launcher an interrupted update left missing"
-            ),
         }
+    }
+
+    /// Whether nothing is at the launcher's path, which the login item
+    /// names: what could fill it (the staged launcher, the asides) is then
+    /// kept rather than cleared.
+    fn launcher_missing(&self) -> bool {
+        self.launcher.symlink_metadata().is_err()
+    }
+
+    /// What the launcher's asides are named after: `<launcher>.old.`.
+    fn launcher_aside_stem(&self) -> Option<String> {
+        Some(format!(
+            "{}{ASIDE}",
+            self.launcher.file_name()?.to_string_lossy()
+        ))
     }
 
     /// The launcher moved aside last: the one written last (a rename keeps
     /// a file's time), and of two written at once the higher `n`.
     fn newest_launcher_aside(&self) -> Option<PathBuf> {
-        let stem = format!("{}{ASIDE}", self.launcher.file_name()?.to_string_lossy());
+        let stem = self.launcher_aside_stem()?;
         self.asides()
             .into_iter()
             .filter_map(|aside| {
@@ -274,9 +294,24 @@ impl Files {
 
     /// Removes each binary moved aside that nothing runs any more, and
     /// leaves the rest for a later sweep. Never an error: a sweep is
-    /// cleanup, and nothing the supervisor does waits on it.
+    /// cleanup, and nothing the supervisor does waits on it. While the
+    /// launcher's path is empty, the launcher's asides are kept: one of
+    /// them is what [`Files::recover_launcher`] puts back.
     pub fn sweep_asides(&self) {
+        let keep = match self.launcher_missing() {
+            true => self.launcher_aside_stem(),
+            false => None,
+        };
         for aside in self.asides() {
+            let launchers = keep.as_deref().is_some_and(|stem| {
+                aside
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with(stem))
+            });
+            if launchers {
+                tracing::info!(path = %aside.display(), "kept a launcher moved aside: none is at its path");
+                continue;
+            }
             match os::fs::remove_patiently(&aside, Duration::ZERO) {
                 Ok(Removed::Gone) => {
                     tracing::info!(path = %aside.display(), "removed a binary moved aside");
@@ -626,5 +661,70 @@ mod tests {
         .unwrap();
         files.clear_leftovers();
         assert_eq!(std::fs::read(&files.launcher).unwrap(), b"newest");
+    }
+
+    /// While nothing is at the launcher's path, no sweep (a start's, or
+    /// the one before each update check) removes a launcher moved aside:
+    /// it is what a start puts back. The binary's asides go as ever.
+    #[test]
+    fn a_sweep_keeps_the_launchers_asides_while_its_path_is_empty() {
+        let (dir, _binary, files) = install();
+        let launcher = launcher_name(&files);
+        let aside = format!("{launcher}.old.1");
+        std::fs::write(dir.path().join(&aside), b"old launcher").unwrap();
+        std::fs::write(dir.path().join("amux.old.2"), b"old build").unwrap();
+        files.sweep_asides();
+        let mut expected = vec!["amux".to_owned(), aside];
+        expected.sort();
+        assert_eq!(names(dir.path()), expected);
+    }
+
+    /// Windows holding the staged launcher (a virus scanner reading the
+    /// new download) fails its rename into place: the launcher moved aside
+    /// last goes back instead. With that one held too, nothing fills the
+    /// path, and the next start finds the staged launcher and the aside
+    /// both still there, and puts the staged one in.
+    #[test]
+    fn a_start_falls_back_to_the_aside_when_the_staged_launcher_is_held() {
+        let (dir, _binary, files) = install();
+        let launcher = launcher_name(&files);
+        let aside = dir.path().join(format!("{launcher}.old.1"));
+        std::fs::write(&aside, b"old launcher").unwrap();
+        std::fs::write(&files.launcher_staged, b"new launcher").unwrap();
+        let staged = match hold_exclusively(&files.launcher_staged) {
+            Ok(held) => held,
+            // Unix has no share modes, so nothing holds a file this way.
+            Err(error) if error.kind() == io::ErrorKind::Unsupported => return,
+            Err(error) => panic!("holding the staged launcher: {error}"),
+        };
+        files.clear_leftovers();
+        assert_eq!(std::fs::read(&files.launcher).unwrap(), b"old launcher");
+        drop(staged);
+
+        // Both held: the path stays empty, and what could fill it stays.
+        std::fs::remove_file(&files.launcher).unwrap();
+        std::fs::write(&aside, b"old launcher").unwrap();
+        std::fs::write(&files.launcher_staged, b"new launcher").unwrap();
+        let held = [
+            hold_exclusively(&files.launcher_staged).unwrap(),
+            hold_exclusively(&aside).unwrap(),
+        ];
+        files.clear_leftovers();
+        drop(held);
+        assert!(files.launcher.symlink_metadata().is_err());
+        files.sweep_asides();
+        let mut expected = vec![
+            "amux".to_owned(),
+            format!("{launcher}.old.1"),
+            format!("{launcher}.staged"),
+        ];
+        expected.sort();
+        assert_eq!(names(dir.path()), expected, "nothing usable swept");
+
+        files.clear_leftovers();
+        assert_eq!(std::fs::read(&files.launcher).unwrap(), b"new launcher");
+        let mut expected = vec!["amux".to_owned(), launcher];
+        expected.sort();
+        assert_eq!(names(dir.path()), expected);
     }
 }

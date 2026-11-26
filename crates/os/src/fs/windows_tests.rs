@@ -195,6 +195,31 @@ fn a_durable_replace_goes_through_a_reader_that_shares_deletion() {
     assert_eq!(old, "old", "the reader keeps the file it opened");
 }
 
+/// A file a durable write just put in place is still open in its writer,
+/// shared with nobody: a plain read fails, a patient one waits for the
+/// writer to close it. A device key read by another first run met this.
+#[test]
+fn a_patient_read_waits_out_a_writer_that_shares_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("device.key");
+    let mut writer = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .share_mode(0)
+        .open(&path)
+        .unwrap();
+    io::Write::write_all(&mut writer, b"key").unwrap();
+    let error = fs::read(&path).unwrap_err();
+    assert!(is_held(&error), "{error}");
+    std::thread::scope(|scope| {
+        scope.spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            drop(writer);
+        });
+        assert_eq!(crate::fs::read_patiently(&path).unwrap(), b"key");
+    });
+}
+
 /// The fallback is for other volumes: this one takes POSIX semantics, so a
 /// replace here never falls back.
 #[test]

@@ -57,14 +57,16 @@ pub const WAKE_GAP: Duration = Duration::from_secs(30);
 pub(crate) const EVENT_CAPACITY: usize = 128;
 
 /// The addresses of both families a listener on every interface answers
-/// at. IPv6 link-local addresses are left out: one names a peer only with
-/// its interface, which differs on the dialling machine.
+/// at, of the interfaces a device nearby could reach
+/// ([`crate::platform::interface_ips`]). IPv6 link-local addresses are left
+/// out: one names a peer only with its interface, which differs on the
+/// dialling machine.
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub(crate) fn local_pairing_addrs(port: u16) -> Vec<SocketAddr> {
-    let mut addrs = if_addrs::get_if_addrs()
+    let mut addrs = crate::platform::interface_ips()
         .unwrap_or_default()
         .into_iter()
-        .map(|interface| SocketAddr::new(interface.ip(), port))
+        .map(|ip| SocketAddr::new(ip, port))
         .filter(|addr| !addr.ip().is_unspecified() && !is_ipv6_link_local(addr.ip()))
         .collect::<Vec<_>>();
     addrs.sort_unstable();

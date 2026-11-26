@@ -2614,10 +2614,6 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: the session times out waiting for \"after the rebind\""
-)]
 async fn a_direct_link_keeps_its_session_through_a_rebind_a_large_transfer_and_a_poor_network() {
     use provider_fakes::script::Step;
 

@@ -185,8 +185,22 @@ impl UdpGate {
                 let mut generation = 0;
                 let mut buf = vec![0; 65_536];
                 loop {
-                    let Ok((n, from)) = front.recv_from(&mut buf).await else {
-                        return;
+                    let (n, from) = match front.recv_from(&mut buf).await {
+                        Ok(received) => received,
+                        // A reply to a sender that has gone (its socket
+                        // closed as its host moved) is refused, which
+                        // Windows reports on the next receive; it says
+                        // nothing about what arrives next.
+                        Err(error)
+                            if matches!(
+                                error.kind(),
+                                std::io::ErrorKind::ConnectionReset
+                                    | std::io::ErrorKind::ConnectionRefused
+                            ) =>
+                        {
+                            continue;
+                        }
+                        Err(_) => return,
                     };
                     let (now, upstream) = *shared.upstream.lock().unwrap();
                     if now != generation {

@@ -273,3 +273,78 @@ pub(super) fn symlink(target: &Path, link: &Path) -> io::Result<Linked> {
         Err(error) => Err(error),
     }
 }
+
+pub(super) fn hold_to_acls() -> io::Result<Vec<&'static str>> {
+    use std::os::windows::io::{FromRawHandle as _, OwnedHandle};
+
+    use windows_sys::Win32::Foundation::{HANDLE, LUID};
+    use windows_sys::Win32::Security::{
+        AdjustTokenPrivileges, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW, SE_PRIVILEGE_ENABLED,
+        TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
+    };
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    const PAST_ACLS: [&str; 4] = [
+        "SeBackupPrivilege",
+        "SeRestorePrivilege",
+        "SeTakeOwnershipPrivilege",
+        "SeDebugPrivilege",
+    ];
+    let mut token: HANDLE = std::ptr::null_mut();
+    // SAFETY: the pseudo-handle needs no closing; `token` receives a handle
+    // owned below.
+    if unsafe {
+        OpenProcessToken(
+            GetCurrentProcess(),
+            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+            &mut token,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: `token` is a handle this function owns from here.
+    let token = unsafe { OwnedHandle::from_raw_handle(token) };
+    let mut disabled = Vec::new();
+    for name in PAST_ACLS {
+        let wide: Vec<u16> = name.encode_utf16().chain([0]).collect();
+        let mut luid = LUID {
+            LowPart: 0,
+            HighPart: 0,
+        };
+        // SAFETY: `wide` is NUL-terminated and `luid` outlives the call.
+        if unsafe { LookupPrivilegeValueW(std::ptr::null(), wide.as_ptr(), &mut luid) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let off = TOKEN_PRIVILEGES {
+            PrivilegeCount: 1,
+            Privileges: [LUID_AND_ATTRIBUTES {
+                Luid: luid,
+                Attributes: 0,
+            }],
+        };
+        let mut before = TOKEN_PRIVILEGES::default();
+        let mut length = 0u32;
+        // SAFETY: both states are one-entry TOKEN_PRIVILEGES that outlive
+        // the call. A privilege the token lacks changes nothing and
+        // reports no previous state.
+        if unsafe {
+            AdjustTokenPrivileges(
+                token.as_raw_handle(),
+                0,
+                &off,
+                size_of::<TOKEN_PRIVILEGES>() as u32,
+                &mut before,
+                &mut length,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        if before.PrivilegeCount == 1 && before.Privileges[0].Attributes & SE_PRIVILEGE_ENABLED != 0
+        {
+            disabled.push(name);
+        }
+    }
+    Ok(disabled)
+}

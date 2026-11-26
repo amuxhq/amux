@@ -48,3 +48,7 @@ pub(super) fn remove_link(link: &Path) -> io::Result<()> {
 pub(super) fn symlink(target: &Path, link: &Path) -> io::Result<Linked> {
     std::os::unix::fs::symlink(target, link).map(|()| Linked::Made)
 }
+
+pub(super) fn hold_to_acls() -> io::Result<Vec<&'static str>> {
+    Ok(Vec::new())
+}

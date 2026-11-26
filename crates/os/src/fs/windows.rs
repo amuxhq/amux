@@ -710,6 +710,48 @@ pub(super) mod testing {
         if status != 0 {
             return Err(io::Error::from_raw_os_error(status as i32));
         }
+        let result = dacl_text(descriptor);
+        // SAFETY: allocated by GetNamedSecurityInfoW.
+        unsafe { LocalFree(descriptor) };
+        result
+    }
+
+    /// How a DACL read back as SDDL names `sid`: by the alias SDDL has for
+    /// it where it has one, as `LA` for the machine's built-in
+    /// Administrator (`S-1-5-21-…-500`, the user GitHub's Windows runner
+    /// runs as), else as the SID itself.
+    pub(crate) fn sddl_trustee(sid: &str) -> io::Result<String> {
+        let sddl: Vec<u16> = format!("D:(A;;FA;;;{sid})")
+            .encode_utf16()
+            .chain([0])
+            .collect();
+        let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
+        // SAFETY: `sddl` is NUL-terminated; `descriptor` receives a
+        // LocalAlloc'd descriptor freed below.
+        if unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl.as_ptr(),
+                SDDL_REVISION_1,
+                &mut descriptor,
+                ptr::null_mut(),
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        let text = dacl_text(descriptor);
+        // SAFETY: allocated by ConvertStringSecurityDescriptorToSecurityDescriptorW.
+        unsafe { LocalFree(descriptor) };
+        let text = text?;
+        text.trim_end_matches(')')
+            .rsplit(';')
+            .next()
+            .map(str::to_owned)
+            .ok_or_else(|| io::Error::other(format!("no trustee in {text}")))
+    }
+
+    /// The DACL of `descriptor` as SDDL.
+    fn dacl_text(descriptor: PSECURITY_DESCRIPTOR) -> io::Result<String> {
         let mut text: *mut u16 = ptr::null_mut();
         // SAFETY: `descriptor` is valid; `text` receives a LocalAlloc'd string.
         let converted = unsafe {
@@ -721,17 +763,14 @@ pub(super) mod testing {
                 ptr::null_mut(),
             )
         };
-        let result = if converted == 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            // SAFETY: NUL-terminated, freed just below.
-            let sddl = unsafe { from_wide_nul(text) };
-            unsafe { LocalFree(text.cast()) };
-            Ok(sddl.to_string_lossy().into_owned())
-        };
-        // SAFETY: allocated by GetNamedSecurityInfoW.
-        unsafe { LocalFree(descriptor) };
-        result
+        if converted == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: NUL-terminated, freed just below.
+        let sddl = unsafe { from_wide_nul(text) };
+        // SAFETY: allocated by the conversion, not used again.
+        unsafe { LocalFree(text.cast()) };
+        Ok(sddl.to_string_lossy().into_owned())
     }
 }
 

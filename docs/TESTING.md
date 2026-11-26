@@ -173,13 +173,15 @@ So that a test needs no gate, the harness does each platform-shaped thing one wa
 | hands a child the activation pipe, as a supervisor does | `os::testing::pipe::pipe`, whose ends are files for `os::process::set_inheritable` and `raw_for_child` |
 | asks whether a lock is held | `os::lock::FileLock::held` |
 | dials or serves a local socket | `agent_dir::local_socket`, never a Unix socket type, since the socket is a named pipe on Windows |
-| needs a write refused or a file unreadable, a file held open by another program, or a link to a directory | `os::testing::faults` (the `os` crate's `testing` feature; `provider_fakes::faults` re-exports it): `deny` (a mode on Unix, a deny entry in the DACL on Windows), `read_only`, `hold_exclusively` (a share mode, Windows only), `link_dir` (a junction on Windows) and `symlink`, which says why it skipped where the user may not make one; a permission fault checks `faults::unenforced()` first, which is `Some` for a process running as root |
+| needs a write refused or a file unreadable, a file held open by another program, or a link to a directory | `os::testing::faults` (the `os` crate's `testing` feature; `provider_fakes::faults` re-exports it): `deny` (a mode on Unix, a deny entry in the DACL on Windows), `read_only`, `hold_exclusively` (a share mode, Windows only), `link_dir` (a junction on Windows) and `symlink`, which says why it skipped where the user may not make one; a permission fault checks `faults::unenforced()` first, which is `Some` for a process running as root; a test whose refusal is a Windows DACL calls `faults::hold_to_acls()` first, which disables the privileges that pass any DACL (SeBackup, SeRestore, SeTakeOwnership, SeDebug) where the token has them enabled, as on GitHub's Windows runner, where such refusals never happened |
 
 A test that needs a program where a command is expected (a provider on the PATH, an SSH login, a wrapper, a
 stand-in agent, a build that cannot run) writes no `#!/bin/sh` script, which Windows cannot run, and makes no file
 executable or symlinked: it links a fake provider (`fake-claude-sdk`, `fake-codex`, `fake-acp`) under the command's
 name, or installs `fake-provider` with a plan beside it (`provider_fakes::dispatch::install`), which runs another
 program, answers and exits, runs the next program of its name on the PATH, or is a testnet host's provider command.
+`dispatch::link` links the file a built binary resolves to: Buck hands a Unix test its binaries as relative symbolic
+links, and a hard link to one of those names nothing from another folder.
 Names carry the platform's suffix (`dispatch::program`, `os::paths::exe_name`) and a PATH is built with
 `std::env::join_paths`.
 

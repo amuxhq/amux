@@ -31,7 +31,7 @@ DEPS = [
     "//third-party/rust:url",
     "//third-party/rust:uuid",
     "//third-party/rust:zstd",
-] + select({"DEFAULT": ["//third-party/rust:futures-util", "//third-party/rust:libc", "//third-party/rust:tokio-tungstenite"], "prelude//os:windows": [], "prelude//os:none": []}) + select({"DEFAULT": [], "prelude//os:windows": ["//third-party/rust:windows-sys"]})
+] + select({"DEFAULT": ["//third-party/rust:futures-util", "//third-party/rust:tokio-tungstenite"], "prelude//os:windows": [], "prelude//os:none": []})
 
 TEST_DEPS = [
     "//crates/source-tree:source-tree",

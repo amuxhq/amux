@@ -360,10 +360,6 @@ fn the_agent_exits_on_its_child_exit_while_a_straggler_holds_the_terminal() {
 /// kill of the provider's process group misses them: QA saw a stopped
 /// headless Claude's command run on for its whole 90 seconds, writing
 /// files, and the stop itself take 30 seconds to report a kill.
-#[cfg_attr(
-    windows,
-    ignore = "windows: the stopped agent's command (`sleep`, started by the fake's shell) is still running after the stop, and the test runs past its 180 s limit"
-)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stop_mid_command_ends_stopped_at_once_and_leaves_no_command_running() {
     let marker = format!("600.{}", uuid::Uuid::new_v4().as_u128() % 1_000_000_000);
@@ -389,15 +385,14 @@ async fn a_stop_mid_command_ends_stopped_at_once_and_leaves_no_command_running()
     agent.ready().await;
     assert_eq!(daemon.prompt(b"p1", "build it").await, Verdict::Accepted);
     agent
-        .until("the command is running", || {
-            running(&format!("sleep {marker}"))
-        })
+        .until("the command is running", || running(&marker))
         .await;
 
     daemon.stop().await;
     let cause = agent.exit().await;
-    let left = running(&format!("sleep {marker}"));
-    kill_mentioning(&format!("sleep {marker}"));
+    // The marker alone: Windows names the command `"…sleep.exe" 600.…`.
+    let left = running(&marker);
+    kill_mentioning(&marker);
     assert!(
         !left,
         "the stopped agent's command is still running: a session leader of its own escapes the provider's process group"
@@ -408,6 +403,57 @@ async fn a_stop_mid_command_ends_stopped_at_once_and_leaves_no_command_running()
         "a person's stop of a working agent ends it as stopped"
     );
     assert!(!agent.log().has_text("never"));
+}
+
+/// A Claude installed behind a shim, as npm installs it (`claude.cmd` on
+/// Windows, a script on Unix), is found by its bare name on the `PATH` its
+/// agent is given, and runs with its whole launch. Windows runs a `.cmd`
+/// through `cmd.exe`, which carries no line break (the system prompt the
+/// agent appends has some) and cuts a long line, so what Claude takes from
+/// a file goes as one there.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_claude_behind_a_shim_is_found_by_its_name_and_runs() {
+    let shims = tempfile::tempdir().unwrap();
+    let fake = fakes().join(format!("fake-claude-sdk{}", std::env::consts::EXE_SUFFIX));
+    let (name, body) = if cfg!(windows) {
+        ("claude.cmd", format!("@\"{}\" %*\r\n", fake.display()))
+    } else {
+        (
+            "claude",
+            format!("#!/bin/sh\nexec '{}' \"$@\"\n", fake.display()),
+        )
+    };
+    let shim = shims.path().join(name);
+    std::fs::write(&shim, body).unwrap();
+    os::fs::make_executable(&shim).unwrap();
+    let path = std::env::join_paths(std::iter::once(shims.path().to_owned()).chain(
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+    ))
+    .unwrap();
+    let path: &'static str = Box::leak(path.into_string().unwrap().into_boxed_str());
+    let agent = Agent::start(Setup {
+        command: Some("claude".into()),
+        env: vec![("PATH", path)],
+        steps: vec![text("hello from behind the shim"), Step::TurnEnd],
+        ..Setup::sdk()
+    })
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    assert_eq!(daemon.prompt(b"p1", "hello").await, Verdict::Accepted);
+    agent
+        .wait("the reply", |log| {
+            log.has_text("hello from behind the shim")
+        })
+        .await;
+    let by_file = agent
+        .dir
+        .join(agent::PRIVATE)
+        .join("claude-settings.json")
+        .exists();
+    assert_eq!(by_file, cfg!(windows), "the settings went by file");
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
 }
 
 /// A one-shot terminal Claude types its queued follow-up as its turn ends,

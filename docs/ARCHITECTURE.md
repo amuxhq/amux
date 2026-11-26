@@ -599,9 +599,13 @@ nicer in several places, and Windows pays for each:
   nothing, so a connection is ended by closing it
   (`LocalStream::close`, or a `Closer` for a split one).
 - **Process groups.** Agents start with `CREATE_NEW_PROCESS_GROUP` and
-  `CREATE_NO_WINDOW`, breaking away from the daemon's job. The daemon kills
-  an agent through the process handle it holds (`TerminateProcess`), never
-  by pid; what the agent started goes with the agent's own job.
+  `CREATE_NO_WINDOW`, breaking away from the daemon's job. Each agent then
+  puts itself in a Job Object of its own (`os::process::Family`, which
+  forbids breakaway), so its provider and everything the provider starts
+  are born inside it and end with it; the agent's stop and kill end the
+  job's members. The daemon kills an agent through the process handle it
+  holds (`TerminateProcess`), never by pid, and what the agent started goes
+  with the agent's job.
 - **Terminals.** Pseudo-terminals are ConPTY, through `portable-pty` in
   [`pty-host`](../crates/pty-host/src/lib.rs).
 - **Updates.** A running executable cannot be renamed over, so the
@@ -756,8 +760,7 @@ The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `log-file`, `os`, `release`, `analytics`, `git-facts`, `highlight`, `acp-protocol`, `claude-protocol`, `codex-protocol` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code |
-| `pty-host` | `os` | the tether is part of an agent's family, which `os` holds |
+| `wire`, `log-file`, `os`, `release`, `analytics`, `git-facts`, `highlight`, `acp-protocol`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code; `pty-host` hosts a pseudo-terminal and nothing of amux's |
 | `journal`, `store`, `attachments`, `redaction`, `settings` | `wire` | `settings` names each experiment's version by the wire's entry for it |
 | `agent-dir` | `os`, `wire` | `os` on Windows alone: the pipe name file's patient rename, and the user's SID a pipe is owned by |
 | `preview` | `attachments`, `wire` | |

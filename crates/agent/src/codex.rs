@@ -53,14 +53,12 @@ pub fn attach_args(thread: &str, listen: &Listen) -> Option<Vec<String>> {
 }
 
 /// Starts `command` (Codex with its global arguments, folder and
-/// environment already set) as `app-server --listen <listen>`, leading a
-/// process group of its own on Unix. A socket file a killed server left at
+/// environment already set, and readied for the agent's family) as
+/// `app-server --listen <listen>`. A socket file a killed server left at
 /// the path is removed first so it cannot stop this start; the caller owns
 /// the path, so no live server is there.
 pub fn spawn_server(mut command: Command, listen: &Listen) -> io::Result<Child> {
     command.args(["app-server", "--listen", &listen.url()]);
-    #[cfg(unix)]
-    command.process_group(0);
     match listen {
         Listen::Stdio => {
             command.stdin(Stdio::piped()).stdout(Stdio::piped());
@@ -134,7 +132,7 @@ pub struct Sender(SenderOf);
 
 enum SenderOf {
     Stdio(Option<ChildStdin>),
-    #[cfg(unix)]
+    #[cfg(unix)] // out of scope on Windows: attach, Codex's socket
     Socket(socket::Sink),
 }
 
@@ -148,7 +146,7 @@ impl Sender {
                 stdin.write_all(b"\n").await?;
                 stdin.flush().await
             }
-            #[cfg(unix)]
+            #[cfg(unix)] // out of scope on Windows: attach, Codex's socket
             SenderOf::Socket(sink) => socket::send(sink, message).await,
         }
     }
@@ -162,7 +160,7 @@ impl Sender {
                 stdin.take();
                 Ok(())
             }
-            #[cfg(unix)]
+            #[cfg(unix)] // out of scope on Windows: attach, Codex's socket
             SenderOf::Socket(sink) => socket::close(sink).await,
         }
     }
@@ -173,7 +171,7 @@ pub struct Receiver(ReceiverOf);
 
 enum ReceiverOf {
     Stdio(BufReader<ChildStdout>),
-    #[cfg(unix)]
+    #[cfg(unix)] // out of scope on Windows: attach, Codex's socket
     Socket(socket::Stream),
 }
 
@@ -197,7 +195,7 @@ impl Receiver {
                     Err(error) => Some(Err(error)),
                 }
             }
-            #[cfg(unix)]
+            #[cfg(unix)] // out of scope on Windows: attach, Codex's socket
             ReceiverOf::Socket(stream) => socket::next(stream).await,
         }
     }
@@ -210,7 +208,7 @@ fn closed() -> io::Error {
     )
 }
 
-#[cfg(unix)]
+#[cfg(unix)] // out of scope on Windows: attach, Codex's socket
 mod socket {
     /// The largest message or frame read from Codex.
     const MAX_MESSAGE: usize = 128 * 1024 * 1024;

@@ -1200,7 +1200,7 @@ async fn a_session_file_with_no_conversation_is_replaced_by_a_new_session() {
     assert_eq!(agent.exit().await, ExitCause::Killed);
     let file = provider_fakes::playback::transcript_path(
         &agent.claude_config(),
-        &std::fs::canonicalize(agent.work()).unwrap(),
+        &os::fs::canonical(&agent.work()).unwrap(),
         &session,
     );
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();

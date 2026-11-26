@@ -18,10 +18,10 @@ use windows_sys::Win32::System::Diagnostics::Debug::{
     SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX, SetErrorMode,
 };
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
-    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_PROCESS_ID_LIST,
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicProcessIdList,
-    JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
+    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    JOBOBJECT_BASIC_PROCESS_ID_LIST, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JobObjectBasicProcessIdList, JobObjectExtendedLimitInformation, QueryInformationJobObject,
+    SetInformationJobObject,
 };
 use windows_sys::Win32::System::Threading::{
     CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, GetCurrentProcess,
@@ -268,8 +268,10 @@ impl Family {
                 return Err(io::Error::last_os_error());
             }
             let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-            limits.BasicLimitInformation.LimitFlags =
-                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+            // No BREAKAWAY_OK: Git Bash (MSYS2, Cygwin's runtime) starts
+            // every command broken away from a job that allows it, so a
+            // provider's tool shells would all leave the family.
+            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
             let set = SetInformationJobObject(
                 job,
                 JobObjectExtendedLimitInformation,
@@ -284,6 +286,9 @@ impl Family {
             Ok(Family { job: Held(job) })
         }
     }
+
+    /// Nothing to do: the job keeps every member wherever its parent went.
+    pub(super) fn count(&self) {}
 
     #[cfg(feature = "async")]
     pub(super) fn prepare(&self, _cmd: &mut tokio::process::Command) {}
@@ -579,6 +584,16 @@ impl ProcessRef {
         Ok(())
     }
 
+    pub(super) fn ask_to_finish(&self) -> io::Result<()> {
+        if !self.alive() {
+            return Ok(());
+        }
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Windows has no way to ask a process without a window to finish",
+        ))
+    }
+
     #[cfg(feature = "async")]
     pub(super) async fn exited(&self) -> io::Result<()> {
         if !self.alive() {
@@ -618,19 +633,4 @@ impl ProcessRef {
             self.pid
         )))
     }
-}
-
-#[cfg(test)]
-pub(super) fn in_job(job: Option<HANDLE>) -> bool {
-    let mut inside = 0;
-    // SAFETY: asking about this process, with a job handle the caller
-    // holds or null for any job.
-    unsafe {
-        IsProcessInJob(
-            GetCurrentProcess(),
-            job.unwrap_or(std::ptr::null_mut()),
-            &mut inside,
-        );
-    }
-    inside != 0
 }

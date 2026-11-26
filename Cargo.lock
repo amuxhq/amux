@@ -45,7 +45,6 @@ dependencies = [
  "hyper-util",
  "interpret",
  "journal",
- "libc",
  "log-file",
  "notify",
  "os",
@@ -66,7 +65,6 @@ dependencies = [
  "tower",
  "url",
  "uuid",
- "windows-sys 0.61.2",
  "wire",
  "zstd",
 ]
@@ -3263,7 +3261,6 @@ dependencies = [
  "anyhow",
  "bytes",
  "libc",
- "os",
  "portable-pty",
  "thiserror 2.0.20",
  "tokio",

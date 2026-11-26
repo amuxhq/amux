@@ -147,6 +147,15 @@ pub(crate) fn at_rest(frame: &str, terms: &[&str]) -> bool {
     terms.iter().all(|term| frame.contains(term)) && !working(frame)
 }
 
+/// The chat holds what its agent offers: the keys under the composer say
+/// what Shift+Tab changes, its permission or its mode. The client fetches
+/// the agent's catalogue once the chat is on screen, so a chat that opens
+/// on a new agent's first reply draws that reply a moment before the key,
+/// longer on a loaded machine.
+pub(crate) fn offered(frame: &str) -> bool {
+    frame.contains("shift+tab permission") || frame.contains("shift+tab mode")
+}
+
 pub(crate) struct TerminalJourney {
     name: String,
     pub output: PathBuf,

@@ -193,6 +193,19 @@ fn both_macos_rows_agree_on_a_running_process() {
     );
 }
 
+/// Another user's process, which `proc_pidinfo` refuses, stays out of the
+/// table rather than costing every census a `sysctl` of its own.
+#[cfg(target_os = "macos")]
+#[test]
+fn another_users_process_has_no_macos_row() {
+    // SAFETY: geteuid only reads this process's effective user.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    // launchd, root's.
+    assert!(super::table::row(1).is_none());
+}
+
 /// A stop with nothing below it to kill (the common case, a provider
 /// that left nothing) reads no process table.
 #[test]

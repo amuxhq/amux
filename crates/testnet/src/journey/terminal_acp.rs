@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 use super::common::*;
-use super::terminal::{TerminalJourney, at_home, at_rest, chat_of, timed, working};
+use super::terminal::{TerminalJourney, at_home, at_rest, chat_of, offered, timed, working};
 use super::terminal_stories::spaced;
 use super::{Proved, negative_control, never_sent, phase, quoted, reflected_once};
 
@@ -222,8 +222,8 @@ pub(crate) fn create_from_config(journey: &mut TerminalJourney) -> Proved {
     let id = text(&agent["id"]);
     journey.wait(
         &pane,
-        |frame| at_rest(frame, &[HELLO_ACP, HELLO_REPLY]),
-        "the reply at rest",
+        |frame| at_rest(frame, &[HELLO_ACP, HELLO_REPLY]) && offered(frame),
+        "the reply at rest, with the agent's modes",
     )?;
     journey.frame(&pane, "replied")?;
     let chat = journey.wait_chat(

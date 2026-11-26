@@ -714,6 +714,10 @@ async fn a_daemon_that_ignores_the_stop_signal_is_killed_at_the_stop_deadline() 
     fixture.nth(1, "go", "2.0.0").await;
     assert_eq!(fixture.count("ignored-term", "1.0.0"), 1);
     until_dead(old.pid).await;
+    // The update ends with the supervisor becoming 2.0.0: an exec on Unix,
+    // a successor of a new pid on Windows. Ended before that, the test
+    // would leave the successor running, unnamed in the events.
+    fixture.nth(1, "supervise-inherited", "2.0.0").await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

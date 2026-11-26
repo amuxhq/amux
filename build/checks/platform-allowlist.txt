@@ -14,10 +14,8 @@ crates/amux/src/main.rs 9
 crates/amux/src/pairing.rs 4
 crates/amux/src/relaunch.rs 17
 crates/amux/src/server.rs 1
-crates/amux/src/setup.rs 6
 crates/amux/tests/pairing.rs 7
 crates/amux/tests/supervise_cli.rs 12
-crates/analytics/src/context.rs 8
 crates/app-bridge/src/lib.rs 1
 crates/app-embedded/src/phone.rs 12
 crates/app-ffi/src/lib.rs 1

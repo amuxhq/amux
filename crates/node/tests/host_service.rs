@@ -490,6 +490,61 @@ async fn a_host_under_a_managed_mcp_config_still_asks_claude() {
     daemon.shutdown().await.unwrap();
 }
 
+/// A provider wrapper that starts a program on its own output and exits
+/// leaves the helper waiting for an answer that never comes. The ask times
+/// out, and what the wrapper left ends with the helper, though nothing
+/// finds it below the helper any more: on Unix it has been reparented
+/// away, and goes with the process group the helper leads; on Windows the
+/// helper's job ends it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_timed_out_ask_ends_what_the_providers_wrapper_left_running() {
+    let host = Host::new(&Script::default());
+    let wrapper = host.install.path(&os::paths::exe_name("claude"));
+    let pids = host.install.path("left.pids");
+    provider_fakes::dispatch::install(
+        &provider_fakes::binaries::path(provider_fakes::dispatch::BINARY),
+        &wrapper,
+        &provider_fakes::dispatch::Plan::Leave {
+            linger_secs: 600,
+            stderr: String::new(),
+            code: 0,
+            pids: Some(pids.clone()),
+            version: Some("2.1.300 (Claude Code)".into()),
+        },
+    )
+    .unwrap();
+    let mut launch = host.launch();
+    launch.claude_command = wrapper.to_string_lossy().into_owned();
+    launch.core.start_deadline_ms = 2_000;
+    let daemon = serving(&host.install, "boot-1", launch).await;
+    let runtime = runtime(&daemon, &host.install);
+    let asked = runtime.host_catalogue("claude").await;
+    assert!(asked.is_err(), "{asked:?}");
+    let left: Vec<u32> = std::fs::read_to_string(&pids)
+        .unwrap()
+        .lines()
+        .map(|pid| pid.parse().unwrap())
+        .collect();
+    assert!(!left.is_empty(), "the wrapper left a copy running");
+    until("what the wrapper left to end", || {
+        let running: Vec<u32> = left
+            .iter()
+            .copied()
+            .filter(|&pid| os::process::ProcessRef::open(pid).is_ok_and(|copy| copy.alive()))
+            .collect();
+        async move {
+            match running.is_empty() {
+                true => Ok(()),
+                false => Err(format!("{running:?} still run")),
+            }
+        }
+    })
+    .await
+    .unwrap();
+    drop(runtime);
+    daemon.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_host_that_cannot_ask_its_provider_says_so() {
     let install = Install::new();

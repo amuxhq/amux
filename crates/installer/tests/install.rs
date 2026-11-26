@@ -196,6 +196,8 @@ async fn a_start_returns_when_the_command_does_whatever_it_leaves_running() {
             linger_secs: 15,
             stderr: "the stand-in could not start amux\n".into(),
             code: 1,
+            pids: None,
+            version: None,
         },
     )
     .unwrap();

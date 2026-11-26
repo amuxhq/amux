@@ -37,6 +37,10 @@ pub(super) fn detach(cmd: &mut std::process::Command, how: Detach) {
     }
 }
 
+pub(super) fn own_group(cmd: &mut std::process::Command) {
+    cmd.process_group(0);
+}
+
 pub(super) fn spawn_background<C: Spawnable>(cmd: &mut C) -> io::Result<Spawned<C::Child>> {
     Ok(Spawned {
         child: cmd.spawn_child()?,
@@ -542,6 +546,26 @@ impl ProcessRef {
 
     pub(super) fn kill(&self) -> io::Result<()> {
         self.signal(libc::SIGKILL).map(drop)
+    }
+
+    pub(super) fn kill_group(&self) -> io::Result<()> {
+        // Exited or not: unreaped, the leader holds its group's id.
+        let pinned = table::row(self.pid as i32).is_some_and(|row| row.started == self.started);
+        if pinned {
+            // SAFETY: killpg only sends a signal, to the group whose id is
+            // the pid of the process just checked to be the one pinned.
+            if unsafe { libc::killpg(self.pid as libc::pid_t, libc::SIGKILL) } == -1 {
+                let error = io::Error::last_os_error();
+                match error.raw_os_error() {
+                    // No such group: the process leads none. macOS answers
+                    // EPERM for a group whose only member has exited
+                    // unreaped.
+                    Some(libc::ESRCH | libc::EPERM) => {}
+                    _ => return Err(error),
+                }
+            }
+        }
+        self.kill()
     }
 
     pub(super) fn ask_to_finish(&self) -> io::Result<()> {

@@ -45,6 +45,10 @@ pub(super) fn detach(cmd: &mut std::process::Command, _how: Detach) {
     cmd.creation_flags(BACKGROUND);
 }
 
+/// Windows has no process groups to kill: a job holds what a process
+/// starts.
+pub(super) fn own_group(_cmd: &mut std::process::Command) {}
+
 pub(super) fn spawn_background<C: Spawnable>(cmd: &mut C) -> io::Result<Spawned<C::Child>> {
     match cmd.spawn_child() {
         Ok(child) => Ok(Spawned {
@@ -570,6 +574,10 @@ impl ProcessRef {
     pub(super) fn alive(&self) -> bool {
         // SAFETY: a zero-timeout wait on a process handle we own.
         unsafe { WaitForSingleObject(self.raw(), 0) == WAIT_TIMEOUT }
+    }
+
+    pub(super) fn kill_group(&self) -> io::Result<()> {
+        self.kill()
     }
 
     pub(super) fn kill(&self) -> io::Result<()> {

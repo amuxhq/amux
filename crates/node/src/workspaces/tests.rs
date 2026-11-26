@@ -299,6 +299,41 @@ fn a_worktree_that_cannot_be_marked_is_undone_with_its_branch() {
     assert!(!worktrees.contains("unmarked"), "{worktrees}");
 }
 
+/// A process holding a worktree's git metadata for a moment, as a git
+/// still reading there does, fails git's removal with the checkout and the
+/// metadata both left: the removal is tried again while it can still
+/// succeed, and the worktree goes once the hold ends. Unix has no hold of
+/// this kind: opens never exclude each other there.
+#[test]
+fn a_worktree_whose_metadata_is_held_for_a_moment_still_goes() {
+    let place = Place::new();
+    let backends = place.backends(HOST);
+    let planned = backends.plan(&place.repo(), "held").unwrap();
+    backends.make(&planned.workspace, &planned.plan).unwrap();
+    let checkout = PathBuf::from(&planned.workspace.id);
+    let metadata = PathBuf::from(run_git(&checkout, &["rev-parse", "--absolute-git-dir"]));
+    // What `git worktree remove` reads to find the worktree, and nothing
+    // before it does.
+    let held = match provider_fakes::faults::hold_exclusively(&metadata.join("gitdir")) {
+        Ok(held) => held,
+        Err(error) if error.kind() == std::io::ErrorKind::Unsupported => {
+            println!("skipped: {error}");
+            return;
+        }
+        Err(error) => panic!("holding the metadata: {error}"),
+    };
+    let release = std::thread::spawn(move || {
+        // Longer than the git commands before the removal take, shorter
+        // than the removal's patience.
+        std::thread::sleep(std::time::Duration::from_millis(1_200));
+        drop(held);
+    });
+    assert_eq!(backends.delete(&planned.workspace, false), Removal::Removed);
+    release.join().unwrap();
+    assert!(!checkout.exists(), "the checkout was left");
+    assert!(!metadata.exists(), "git's metadata was left");
+}
+
 /// The wt backend, against a wt home and trees folder of the test's own.
 #[cfg(not(any(windows, target_os = "ios", target_os = "android")))] // out of scope on Windows: wt
 mod wt {

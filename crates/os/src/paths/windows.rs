@@ -165,8 +165,17 @@ fn expand(text: &str) -> String {
 
 // Programs -------------------------------------------------------------------------
 
-pub(super) fn find_program(name: &OsStr, path: &OsStr) -> Option<PathBuf> {
-    find_program_with(name, path, &pathext())
+/// Windows names a variable whatever its case.
+pub(super) fn same_variable(key: &str, name: &str) -> bool {
+    key.eq_ignore_ascii_case(name)
+}
+
+/// Under `pathext` when given, else this process's `PATHEXT`.
+pub(super) fn find_program(name: &OsStr, path: &OsStr, pathext: Option<&OsStr>) -> Option<PathBuf> {
+    match pathext {
+        Some(pathext) => find_program_with(name, path, pathext),
+        None => find_program_with(name, path, &self::pathext()),
+    }
 }
 
 fn pathext() -> OsString {

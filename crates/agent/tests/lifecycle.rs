@@ -456,6 +456,30 @@ async fn a_claude_behind_a_shim_is_found_by_its_name_and_runs() {
     assert_eq!(agent.exit().await, ExitCause::Stopped);
 }
 
+/// A provider whose environment sets no `PATH` starts with the one its
+/// program was found on: the `PATH` a newly logged-on process would see.
+/// On Windows that adds the folders the system's and the user's `Path`
+/// gained since the agent's process started, so npm's `claude.cmd`, found
+/// in one, finds the `node` installed beside it too.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_provider_with_no_path_of_its_own_starts_with_the_one_it_was_found_on() {
+    let agent = Agent::start(Setup {
+        steps: vec![text("hello"), Step::TurnEnd],
+        ..Setup::sdk()
+    })
+    .await;
+    let mut daemon = agent.dial().await;
+    agent.ready().await;
+    let path = agent
+        .provider_env()
+        .into_iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
+        .map(|(_, value)| std::ffi::OsString::from(value));
+    assert_eq!(path, Some(os::paths::current_path()));
+    daemon.stop().await;
+    assert_eq!(agent.exit().await, ExitCause::Stopped);
+}
+
 /// A one-shot terminal Claude types its queued follow-up as its turn ends,
 /// and until Claude records that prompt the agent reads idle with nothing
 /// queued. The prompt is still in flight: the child runs it before it

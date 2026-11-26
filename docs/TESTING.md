@@ -180,6 +180,8 @@ stand-in agent, a build that cannot run) writes no `#!/bin/sh` script, which Win
 executable or symlinked: it links a fake provider (`fake-claude-sdk`, `fake-codex`, `fake-acp`) under the command's
 name, or installs `fake-provider` with a plan beside it (`provider_fakes::dispatch::install`), which runs another
 program, answers and exits, runs the next program of its name on the PATH, or is a testnet host's provider command.
+`dispatch::link` links the file a built binary resolves to: Buck hands a Unix test its binaries as relative symbolic
+links, and a hard link to one of those names nothing from another folder.
 Names carry the platform's suffix (`dispatch::program`, `os::paths::exe_name`) and a PATH is built with
 `std::env::join_paths`.
 

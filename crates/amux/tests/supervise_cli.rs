@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use node::release;
 use node::supervisor::SUPERVISOR_LOCK;
+use node::supervisor::login::{ScratchItems, StartAtLogin};
 use patience::{holds_for, until_within};
 use support::{Channel, PATIENCE, agent_pid, amux_binary};
 
@@ -22,6 +23,9 @@ struct Install {
     data: PathBuf,
     socket: PathBuf,
     binary: PathBuf,
+    /// Where its login items go: its home on Unix, a scratch registry key
+    /// on Windows, so no test reaches the person's own.
+    login: ScratchItems,
 }
 
 impl Install {
@@ -49,12 +53,14 @@ impl Install {
             ),
         )
         .unwrap();
+        let login = ScratchItems::new(&root.path().join("home"));
         Self {
             root,
             config,
             data,
             socket,
             binary,
+            login,
         }
     }
 
@@ -69,10 +75,23 @@ impl Install {
             .env("APPDATA", self.root.path().join("home").join("AppData"))
             .env("LOCALAPPDATA", self.root.path().join("home").join("Local"))
             .env(support::NO_DISCOVERY.0, support::NO_DISCOVERY.1)
+            .env(self.login.env().0, self.login.env().1)
             .env_remove("AMUX_LOG")
             .env_remove("XDG_CONFIG_HOME")
             .stdin(Stdio::null());
         command
+    }
+
+    /// This install's login item, as its amux would write it.
+    fn login_item(&self) -> StartAtLogin {
+        StartAtLogin {
+            binary: self.binary.clone(),
+            config: Some(self.config.clone()),
+            path: String::new(),
+            root: self.data.clone(),
+            items: self.login.items().to_owned(),
+            register: false,
+        }
     }
 
     fn amux(&self, args: &[&str]) -> Output {
@@ -414,27 +433,11 @@ async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
     assert!(assertions_of(pid).is_empty());
 }
 
-/// Where a login item for `install` would be, under its test home.
-fn login_item(install: &Install) -> PathBuf {
-    let home = install.root.path().join("home");
-    if cfg!(target_os = "macos") {
-        home.join("Library/LaunchAgents/sh.amux.supervise.plist")
-    } else {
-        home.join(".config/systemd/user/amux.service")
-    }
-}
-
 /// `start_at_login` writes the login item for the next login and removes
 /// it, with amux stopped; an install without a supervisor has none.
 #[cfg_attr(
     target_os = "linux",
     ignore = "registering the systemd unit needs a user session"
-)]
-// Not run on Windows: there `start_at_login` registers the scheduled task
-// `amux` in the person's own Task Scheduler, which no test home keeps apart.
-#[cfg_attr(
-    windows,
-    ignore = "windows: not run: it would register the real scheduled task `amux`"
 )]
 #[test]
 fn start_at_login_writes_and_removes_the_login_item() {
@@ -445,14 +448,18 @@ fn start_at_login_writes_and_removes_the_login_item() {
         "{}",
         stdout(&on)
     );
-    let item = std::fs::read_to_string(login_item(&install)).unwrap();
-    assert!(item.contains("supervise") && item.contains(&*install.data.to_string_lossy()));
+    let login = install.login_item();
+    let item = login.contents().expect("this install's login item");
+    assert!(
+        item.contains("supervise") && item.contains(&*install.config.to_string_lossy()),
+        "{item}"
+    );
     assert!(
         install.supervisor_pid().is_none(),
         "the item waits for the next login"
     );
     install.amux(&["config", "set", "start_at_login", "false"]);
-    assert!(!login_item(&install).exists());
+    assert!(!login.is_on() && login.contents().is_none());
 
     let without = Install::new(false, "");
     let output = without.amux(&["config", "set", "start_at_login", "true"]);

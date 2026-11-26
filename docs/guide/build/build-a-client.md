@@ -324,7 +324,7 @@ Details:
   anything for it. Every `amux` command reads `AMUX_CONFIG` too.
 - **The login item.** Installing adds none. The `start_at_login` setting
   ([settings](#6-settings-and-onboarding)) writes one (a LaunchAgent on macOS, a systemd
-  user unit on Linux, a scheduled task on Windows) that starts amux at
+  user unit on Linux, a `Run` value on Windows) that starts amux at
   every login from the next one on; ask the person, as onboarding's
   `keep_reachable` step does.
 - **`PATH`.** An app opened from the desktop often has a sparse `PATH`, and

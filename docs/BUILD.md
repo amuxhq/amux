@@ -408,18 +408,32 @@ fewer than the six a Windows test that takes the whole worker asks for
 alone when the build host is out of reach: a Windows machine can't compile
 anything itself, so Linux actions wait for it instead.
 
-Two steps need an elevated shell, because the task runs as you without your
-signing in (an S4U task), which Windows lets only an administrator set up:
-`install` itself, and stopping a running NativeLink, since its
-`nativelink.exe` belongs to that task (`Stop-Process -Name nativelink -Force`
-in an elevated PowerShell). Everything else, the recipes included, runs
-unelevated.
+What needs an elevated shell is the task's, because it runs as you without
+your signing in (an S4U task), which Windows lets only an administrator set
+up, and its `nativelink.exe` belongs to it:
 
-A build that fails with "CAS blob(s) … missing" (or "not found in either
-fast or slow store") after the build host's cache was wiped is a stale Buck2
-daemon: it remembers the blobs it uploaded before the wipe as already there,
-and so never uploads them again. `scripts/buck2 kill` ends it, and the next
-build starts a daemon that knows nothing and uploads what's missing.
+- `python scripts/nativelink.py install`, which registers the task, stops
+  the NativeLink it ran before and starts it again;
+- `python scripts/nativelink.py uninstall`, which stops it and removes the
+  task;
+- stopping a running NativeLink by hand: `Stop-Process -Name nativelink
+  -Force` in an elevated PowerShell (`Stop-ScheduledTask` alone ends the
+  `cmd.exe` the task started and leaves NativeLink serving).
+
+Everything else, the recipes and `status` included, runs unelevated.
+
+When a build goes wrong on a Windows machine:
+
+- **"CAS blob(s) … missing"** (or "not found in either fast or slow
+  store") after the build host's cache was wiped is a stale Buck2 daemon:
+  it remembers the blobs it uploaded before the wipe as already there, and
+  so never uploads them again. `scripts/buck2 kill` ends it, and the next
+  build starts a daemon that knows nothing and uploads what's missing.
+- **Buck2 commands that time out together**, when several start at once
+  with no daemon running (`just premerge` starts its scripts beside its
+  tests): each finds no daemon, kills the one another has just started and
+  starts its own, so the rest wait until their bounds fire. Start the
+  daemon first, `scripts/buck2 server`, and they all find it.
 
 Windows can't start a sh script itself, so a Python script that runs
 `scripts/buck2` or `scripts/bounded` runs it with `sh`, and one that runs

@@ -263,11 +263,14 @@ front door is `<root>/amux.sock`.
 
 - **The config file** is the one `AMUX_CONFIG` names, else
   `$XDG_CONFIG_HOME/amux/config.toml`, which is `~/.config/amux/config.toml`
-  when `XDG_CONFIG_HOME` is unset, on macOS and Linux alike. A missing file
-  means every default.
+  when `XDG_CONFIG_HOME` is unset, on macOS and Linux alike, and
+  `%APPDATA%\amux\config.toml` on Windows. A missing file means every
+  default.
 - **The root** is the config's top-level `root` key, else
   `$XDG_DATA_HOME/amux`, which is `~/.local/share/amux` when
-  `XDG_DATA_HOME` is unset.
+  `XDG_DATA_HOME` is unset, and `%LOCALAPPDATA%\amux` on Windows.
+- On Windows too, a set `XDG_CONFIG_HOME` or `XDG_DATA_HOME` wins over
+  those defaults, as it does for amux itself.
 
 To ask whether amux is up, call `GetInstallation` on the front door with a
 deadline of a few seconds; it answers the daemon's version. A missing
@@ -315,6 +318,7 @@ remove it.
 
   On Windows the install script is PowerShell,
   `irm https://amux.sh/install | iex`; then `amux server start` as above.
+  It needs no administrator, and puts `amux-launch.exe` beside `amux.exe`.
 
 Details:
 
@@ -324,29 +328,52 @@ Details:
   anything for it. Every `amux` command reads `AMUX_CONFIG` too.
 - **The login item.** Installing adds none. The `start_at_login` setting
   ([settings](#6-settings-and-onboarding)) writes one (a LaunchAgent on macOS, a systemd
-  user unit on Linux, a `Run` value on Windows) that starts amux at
-  every login from the next one on; ask the person, as onboarding's
-  `keep_reachable` step does.
+  user unit on Linux, a `Run` value on Windows, which starts amux through
+  `amux-launch.exe` with no window) that starts amux at every login from
+  the next one on; ask the person, as onboarding's `keep_reachable` step
+  does.
 - **`PATH`.** An app opened from the desktop often has a sparse `PATH`, and
   the daemon records its own `PATH` in the login item for the agents it
   starts. Start amux with the person's login-shell `PATH` (on macOS and
   Linux, what `$SHELL -ilc 'printf %s "$PATH"'` prints), as the installer
-  crate does, or the agents will not find the tools they run.
+  crate does, or the agents will not find the tools they run. On Windows
+  there is no login shell to ask and the login item records no `PATH`:
+  amux adds the user's and the system's `Path` from the registry to its own
+  whenever it starts a provider, so an app's `PATH` is enough.
 - **Downloading amux yourself.** Read
   `https://amux.sh/releases/stable.json`, the stable channel's signed
   manifest, as the install script does. Each target
   (`aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`,
   `x86_64-pc-windows-msvc`) names a URL, a size and a SHA-256, and the
   manifest carries an Ed25519 signature over them. Check the download's
-  size and SHA-256 against it.
-- **Running `amux server start`.** Give it no pipe to wait on: standard
-  output to nothing, standard error to a file you read once it exits. It
-  returns once amux answers, but the supervisor and daemon it leaves running
-  may hold whatever streams it was given, so a client reading a pipe to its
-  end could wait on them. Bound the wait too; the installer crate gives it 60
-  seconds.
+  size and SHA-256 against it. On Windows, also install the entry
+  `x86_64-pc-windows-msvc/amux-launch` as `amux-launch.exe` beside
+  `amux.exe`, checked the same way; it is what the login item runs. A
+  running program can't be replaced on Windows: stop amux first (`amux
+  server stop`), and rename a file something still runs (an agent runs
+  `amux.exe` too) aside to `amux.exe.old.<n>` rather than over it, as the
+  install script does; amux deletes those once nothing runs them.
+- **Running `amux server start`.** It returns once amux answers. What it
+  leaves running (the supervisor and the daemon) holds none of the streams
+  it was given, so a client reading its output through a pipe sees the end
+  when it exits. Bound the wait all the same: the installer crate sends its
+  standard output to nothing and its standard error to a file it reads
+  once the command exits, and gives it 60 seconds.
+- **No window on Windows.** `amux.exe` is a console program, and Windows
+  gives a console program started by one that has no console (a desktop
+  app) a console window of its own. Start every `amux` command from a
+  desktop app with `CREATE_NO_WINDOW`. Nothing amux starts after that shows
+  a window: the supervisor, the daemon and the agents run without one.
 - **Exit codes.** Every `amux` command exits 0 on success and 1 on failure,
   with the reason on standard error; 2 is a usage error.
+- **A packaged Windows app.** An app packaged as MSIX with full
+  containment sees `%LOCALAPPDATA%` through its package, which keeps what
+  it writes there apart from the person's own, and what it starts runs in
+  its container, so the amux it started would keep a root of its own,
+  apart from the command line's. Install and start amux from outside any
+  container: ship the app unpackaged, or as a package with an external
+  location, so amux runs as the person's own process with the root the
+  command line uses.
 
 ### 3. Profiles
 

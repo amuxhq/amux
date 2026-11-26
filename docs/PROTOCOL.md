@@ -824,7 +824,7 @@ directory and journal are otherwise its whole interface (see
 | The installation front door, `<root>/amux.sock` | `InstallationService` | every client on this machine, to find profiles, sign them in and follow them |
 | A profile's client socket, `<data_dir>/profiles/<id>/sock` | The local services (`InventoryService`, `SessionService`, `DraftService`), the host services (`AgentService`, `HostService`, `ReviewService`) and `ProfileAdminService`; a call addressed to another host is carried there | the terminal client, the CLI, the Mac app and third-party clients, at the path the front door reports as `Profile.socket_path` |
 | An agent's `agents/<id>/tools.sock` | The same, without `ProfileAdminService`, with that agent as the caller | the agent's MCP tool server and, for the child a spawn asks for, its agent process; nothing else |
-| A profile's `link.sock` | a link, not a service | `amux internal ssh-link`, carrying an SSH link |
+| A profile's `link.sock` (not on Windows) | a link, not a service | `amux internal ssh-link`, carrying an SSH link |
 | A link stream whose handshake presented a pinned key | The host services, for that host's people and agents, and `PeerService`, for its daemon | paired daemons, including a phone's embedded daemon |
 | A link stream admitted by an open pairing window | `PairingService` | a host pairing with this one |
 
@@ -836,6 +836,32 @@ sockets are Unix domain sockets on Unix and named pipes on Windows
 address is reached through a short symbolic link in the per-user runtime
 directory, and on Windows the file at the path holds the name of the pipe the
 daemon listens on, so both ends derive the same address from the same path.
+
+No local socket carries a credential: who may dial it is decided by the
+operating system, so each is its user's alone. On Unix a socket sits under
+the owner-only root, and a profile's `sock` is owner-only itself. Windows'
+pipe namespace is shared by every user, so a pipe is made to be as private:
+
+- **Its name can't be taken first.** Each bind makes a fresh pipe named
+  `\\.\pipe\amux-` and 32 random hex digits, and writes the name into the file
+  at the socket's path, which is under the owner-only root.
+- **Only its user reaches it.** The pipe is owned by its user and admits
+  that user alone, and no client on another machine.
+- **A client trusts nothing it reads.** It opens a name only of exactly that
+  form, whatever the file says, so never another machine's pipe or a
+  device, and before it writes a byte checks that the pipe it opened is
+  owned by its own user. It checks the owner rather than the serving
+  process's token, so a client accepts an elevated daemon of the same user.
+
+On every OS a dial has a deadline: a server that is busy, or between binds
+(on Windows a file naming a pipe that has gone), is tried again for two
+seconds, unless the caller gives another bound, and on Windows the file is
+read afresh each time. A listener never stops accepting: an error is logged
+and retried with backoff, and a connection already made is never dropped.
+Unbinding removes the file only while it still names this listener, so a
+successor that bound the path since keeps it. A connection is ended by
+closing it, both halves at once, since shutting down a pipe's write half
+does nothing on Windows.
 
 An agent's `ctl.sock` and `pty.sock` are not part of this surface. The daemon
 dials `ctl.sock` to hand the agent its inputs, and a terminal on the same

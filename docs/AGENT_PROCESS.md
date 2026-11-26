@@ -88,19 +88,27 @@ path holds its name.
 ## Starting
 
 The daemon writes `spec.<n>` and starts `amux internal agent <dir>` detached from
-itself: in its own process group, with stdin and stdout closed and stderr
-appended to `agent.log`, so neither the daemon's terminal nor its death
-reaches the agent. The agent holds `agent.log` and `private/provider.log`
+itself (`os::process::background`): in its own process group, with stdin
+and stdout closed and stderr appended to `agent.log`, so neither the
+daemon's terminal nor its death reaches the agent. On Windows it also
+leaves the daemon's job (`CREATE_BREAKAWAY_FROM_JOB`), so a terminal's or an
+SSH session's job ending doesn't end it, and gets a console of its own with
+no window (`CREATE_NO_WINDOW`), which everything it starts shares, so no
+window ever shows and closing the daemon's terminal reaches none of them.
+A job that forbids breakaway keeps the agent inside, which the daemon
+logs. The agent holds `agent.log` and `private/provider.log`
 to 1 MiB each, checking every 30 seconds and moving a log past its cap to
 `<name>.1`; a report carries the minute of `agent.log` before it, at INFO and above, and never
 `provider.log`, which is the provider's own output.
 
 `agent::run` then:
 
-1. Takes `<dir>/lock`. If another live process holds it, the agent exits with
-   code 1 ("another agent process holds …"). The kernel releases the lock
-   when the process dies, which is how the daemon tells a live agent from a
-   dead one.
+1. Takes `<dir>/lock` and writes its pid into it, which stays readable
+   while the lock is held (`agent_dir::lock_holder` reads it, believing it
+   only when that process also serves `private/agent.sock`). If another
+   live process holds it, the agent exits with code 1 ("another agent
+   process holds …"). The kernel releases the lock when the process dies,
+   which is how the daemon tells a live agent from a dead one.
 2. Reads the newest `spec.<n>` and creates `private/`.
 3. Binds `ctl.sock` first, so a daemon can dial in as soon as the process
    exists; then `pty.sock` for terminal Claude and Codex, and
@@ -175,7 +183,10 @@ holds the agent's folder when the daemon sees the exit. The family is
 everything the agent process starts ([`family.rs`](../crates/agent/src/family.rs),
 `os::process::Family`): the agent's first act is to contain itself, so on
 Windows it is in a Job Object of its own, which every process it starts
-afterwards is born inside and which ends with it however it ends; on Unix
+afterwards is born inside and which ends with it however it ends. The job
+lets nothing break away: Git Bash asks to on every command whenever a job
+allows it, so allowing it would contain nothing, and a build daemon a tool
+starts (buck2d, Gradle) ends with its agent on Windows. On Unix
 each provider leads a process group of its own, tethered to the agent, and
 the census is every process descended from it. Claude's and Codex's tool
 shells each lead a session of their own, so a kill of the provider's

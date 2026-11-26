@@ -572,11 +572,12 @@ sleep, which is no worse than `keep_awake = false`.
 | [`crates/amux/tests/windows_install.rs`](../crates/amux/tests/windows_install.rs) | Windows only: the whole install run in a scratch machine. `install.ps1` installs amux and its launcher from a feed on the loopback, `server start` and `stop`, `start_at_login` writes the `Run` value and a simulated logon starts what it names, an agent on the fakes keeps its process and its turn through two updates from the feed and answers after, and `amux uninstall` leaves only a program a running process held, with the user's PATH as it was; no step shows a window of the run's, and every supervisor and daemon logs `console window=false`. The `Run` key and `HKCU\Environment` are scratch keys, and nothing runs that doesn't read them. |
 | [`crates/node/tests/settings.rs`](../crates/node/tests/settings.rs) | The daemon's half of keep-awake: wanted while an agent works under `keep_awake`, not once the turn ends or the setting goes off. |
 | [`crates/amux/tests/overlap.rs`](../crates/amux/tests/overlap.rs) | Releases overlapping on one machine. Agents started by the first build work on through two updates in a row and a daemon killed mid-turn; a terminal client of the previous build keeps working and names the newer daemon; the previous build reopens and works in a store the new build opened before it was killed ahead of `prepared`; restarting the generated LaunchAgent under a running turn leaves the agent running. "The previous build" is a copy of the build under test re-stamped one version lower (`node::release::restamp`). |
-| [`crates/amux/tests/process.rs`](../crates/amux/tests/process.rs) | A daemon killed mid-turn loses nothing: agents finish without it and the next daemon adopts them. A daemon with no supervisor restarts itself in place, once, for several `amux config set experiments.enabled` in a row, keeping its process id and its agent mid-turn, restarts nothing for a name the build lacks, and reaps the agent the replaced image started. |
+| [`crates/amux/tests/process.rs`](../crates/amux/tests/process.rs) | A daemon killed mid-turn loses nothing: agents finish without it and the next daemon adopts them. A daemon with no supervisor restarts itself in place, once, for several `amux config set experiments.enabled` in a row, keeping its agent mid-turn and, where exec keeps it, its process id (on Windows the first daemon exits cleanly and its successor serves the new experiments), restarts nothing for a name the build lacks, and reaps the agent the replaced image started (Unix, where it is the image's child). |
 
 `just journey system survive-daemon` tells the same story end to end: agents of
 every kind finish their turns with amux killed, amux comes back under its
 supervisor, a newer build is activated, and resuming loses nothing. The
-suites run on Windows too, but for the cases marked
-`ignore = "windows: ..."`, which say what still fails there. See [Testing](TESTING.md) for how to run
-them.
+suites run on Windows too, and `windows_install.rs` only there; a case
+that belongs to one OS (a LaunchAgent, macOS's power assertion, Unix's stop
+signal, a pid an exec keeps) is skipped or branches elsewhere, and says
+so. See [Testing](TESTING.md) for how to run them.

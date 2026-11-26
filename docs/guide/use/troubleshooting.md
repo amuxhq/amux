@@ -30,8 +30,9 @@ amux server start
 ```
 
 If it still doesn't start, the logs say why. They're in
-`~/.local/share/amux/`: `daemon.log` for amux itself, and `supervisor.log` for
-the small process that starts it and keeps it up to date.
+`~/.local/share/amux/` (on Windows, `%LOCALAPPDATA%\amux\`): `daemon.log`
+for amux itself, and `supervisor.log` for the small process that starts it
+and keeps it up to date.
 
 Your agents don't depend on amux running. If amux was away for long enough
 that an agent gave up waiting, the agent shows as **stopped** with a note that
@@ -98,6 +99,69 @@ On a work computer, your organisation's policy may set the firewall's
 rules. If a rule of the policy blocks amux, or the policy ignores rules
 made on the computer itself, `amux setup firewall` says so and changes
 nothing: whoever manages the policy can add the rule.
+
+## Pairing over SSH from Windows fails
+
+amux pairs and links over SSH with the `ssh` on your `Path`, normally the
+one that comes with Windows, and never stops to ask for a password or a
+passphrase. A key with a passphrase works only once it's in Windows' SSH
+agent, which Windows ships turned off. In PowerShell as an administrator,
+turn it on once:
+
+```powershell
+Get-Service ssh-agent | Set-Service -StartupType Automatic
+Start-Service ssh-agent
+```
+
+Then, as yourself, run `ssh-add` with your key, and check that
+`ssh you@server` logs in without asking anything before you pair again. If
+another `ssh` comes first on your `Path` (Git's, say), amux uses that one,
+and it doesn't read Windows' SSH agent. The machine at the other end must
+run macOS or Linux: amux can't be reached over SSH on a Windows machine.
+
+## On Windows, amux finds different settings in some terminals
+
+On Windows amux keeps its settings in `%APPDATA%\amux\config.toml` and its
+data in `%LOCALAPPDATA%\amux\`. If `XDG_CONFIG_HOME` or `XDG_DATA_HOME` is
+set, as some shells and tools for Unix programs do (Git Bash, MSYS2, a
+profile script), amux uses those folders instead. Set in one terminal only,
+they give amux run from that terminal a different config and data from the
+amux Windows starts when you sign in: different agents, pairings and
+settings, and a second amux running beside the first.
+
+`amux status` names the config file it reads. To see whether either
+variable is set, run this in PowerShell (in Git Bash, drop the `env:`):
+
+```powershell
+echo $env:XDG_CONFIG_HOME $env:XDG_DATA_HOME
+```
+
+Unset them in the shell that sets them. Or, to keep amux there on purpose,
+set them for your whole account instead (in **Settings**, search for
+**environment variables**, then **Edit environment variables for your
+account**), and sign out and in again.
+
+## On Windows, amux warns about the drive its data is on
+
+amux keeps its data on a local drive formatted NTFS or ReFS, where Windows
+can replace or remove a file something else has open and keep the files
+yours alone. On a network drive, a USB stick, a RAM disk or a FAT or exFAT
+drive (as a redirected or roaming profile may put `%LOCALAPPDATA%`), amux
+still starts, but `daemon.log` says `the root's volume is a poor home for
+amux's data` and why, and updates, cleanup and privacy may not work as
+they should.
+
+Point amux at a folder on a local NTFS drive, then restart it:
+
+```powershell
+amux config set root D:\amux
+amux server stop
+amux
+```
+
+amux starts afresh there: what it kept in the old folder, your pairings
+and your agents' history, stays behind, so this is best done before you've
+set much up.
 
 ## An agent can't carry on
 
@@ -183,7 +247,8 @@ holds your messages, your code, or your file and folder names
 - **From the shell**, run `amux dump --reason "what looks wrong" --send`.
 
 Reports go to your amux account, so you need to be signed in to send one. A copy
-stays in `~/.local/share/amux/reports/`. Without `--send`, `amux dump` only
+stays in `~/.local/share/amux/reports/` (on Windows,
+`%LOCALAPPDATA%\amux\reports\`). Without `--send`, `amux dump` only
 saves the report there, so you can look at it, or share it yourself. On the
 phone, **Export Diagnostics** does the same.
 

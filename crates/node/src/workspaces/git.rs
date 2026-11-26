@@ -217,22 +217,27 @@ impl Maker for GitBackend {
         // Explicit flags, as wt's own check has, since a repository's
         // `status.showUntrackedFiles=no` would hide files the forced removal
         // then deletes. Ignored files are not changes: build output goes.
-        let dirty = git(
-            path,
-            &[
-                "status",
-                "--porcelain",
-                "--untracked-files=normal",
-                "--ignore-submodules=none",
-            ],
-        )
-        .map(|status| !status.is_empty());
-        if dirty != Ok(false) && !discard {
+        let clean = || {
+            git(
+                path,
+                &[
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=normal",
+                    "--ignore-submodules=none",
+                ],
+            )
+            .is_ok_and(|status| status.is_empty())
+        };
+        let keep = || {
             // Left on disk for the person, and no longer this host's.
             if let Err(error) = std::fs::remove_file(git_dir.join(OWNER_MARKER)) {
                 tracing::warn!(id = %workspace.id, %error, "disowning a worktree failed");
             }
-            return Removal::Kept;
+            Removal::Kept
+        };
+        if !discard && !clean() {
+            return keep();
         }
         let path_text = path.to_string_lossy();
         // Clean but for ignored files, such as build output, or changes the
@@ -244,11 +249,13 @@ impl Maker for GitBackend {
         // still reading there. Held in the worktree's own git directory,
         // what git reads to find the worktree, git removes nothing and
         // fails with both left: it is asked again while both are there,
-        // pausing longer each time, for as long as a removal waits. Held in
-        // the checkout, git removes what it can and the git directory, and
-        // fails with the folder left: what is left is removed patiently, so
-        // the tree does not stay on disk for good. Still held after that,
-        // it is left with a warning.
+        // pausing longer each time, for as long as a removal waits. Without
+        // consent to discard, each try is checked clean again first: a
+        // change saved meanwhile keeps the worktree, as one saved before
+        // would have. Held in the checkout, git removes what it can and the
+        // git directory, and fails with the folder left: what is left is
+        // removed patiently, so the tree does not stay on disk for good.
+        // Still held after that, it is left with a warning.
         let patience = crate::install::REMOVAL_PATIENCE;
         let started = std::time::Instant::now();
         let mut pause = std::time::Duration::from_millis(50);
@@ -256,6 +263,9 @@ impl Maker for GitBackend {
         {
             std::thread::sleep(pause.min(patience.saturating_sub(started.elapsed())));
             pause = (pause * 2).min(std::time::Duration::from_millis(500));
+            if !discard && !clean() {
+                return keep();
+            }
             removed = remove();
         }
         if removed.is_err() && !git_dir.is_dir() {

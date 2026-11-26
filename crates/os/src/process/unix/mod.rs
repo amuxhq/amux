@@ -41,6 +41,35 @@ pub(super) fn own_group(cmd: &mut std::process::Command) {
     cmd.process_group(0);
 }
 
+/// A child leading a process group of its own, pinned so the group is
+/// reached while it is unreaped.
+#[cfg(feature = "async")]
+#[derive(Debug)]
+pub(super) struct Tree {
+    leader: ProcessRef,
+}
+
+#[cfg(feature = "async")]
+impl Tree {
+    pub(super) fn spawn(
+        cmd: &mut tokio::process::Command,
+    ) -> io::Result<(tokio::process::Child, Tree)> {
+        own_group(cmd.as_std_mut());
+        let mut child = cmd.spawn()?;
+        match ProcessRef::of_child(&child) {
+            Ok(leader) => Ok((child, Tree { leader })),
+            Err(error) => {
+                let _ = child.start_kill();
+                Err(error)
+            }
+        }
+    }
+
+    pub(super) fn kill(&self) -> io::Result<()> {
+        self.leader.kill_group()
+    }
+}
+
 pub(super) fn spawn_background<C: Spawnable>(cmd: &mut C) -> io::Result<Spawned<C::Child>> {
     Ok(Spawned {
         child: cmd.spawn_child()?,

@@ -3,7 +3,9 @@
 
 use std::fs::File;
 use std::io;
-use std::os::windows::io::{AsRawHandle as _, FromRawHandle as _, OwnedHandle, RawHandle};
+use std::os::windows::io::{
+    AsRawHandle as _, FromRawHandle as _, IntoRawHandle as _, OwnedHandle, RawHandle,
+};
 use std::os::windows::process::CommandExt as _;
 
 use windows_sys::Win32::Foundation::{
@@ -21,13 +23,13 @@ use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     JOBOBJECT_BASIC_PROCESS_ID_LIST, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JobObjectBasicProcessIdList, JobObjectExtendedLimitInformation, QueryInformationJobObject,
-    SetInformationJobObject,
+    SetInformationJobObject, TerminateJobObject,
 };
 use windows_sys::Win32::System::Threading::{
-    CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, GetCurrentProcess,
-    GetExitCodeProcess, GetProcessId, INFINITE, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_SUSPEND_RESUME, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, TerminateProcess,
-    WaitForSingleObject,
+    CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CREATE_SUSPENDED,
+    GetCurrentProcess, GetExitCodeProcess, GetProcessId, INFINITE, OpenProcess,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SUSPEND_RESUME, PROCESS_SYNCHRONIZE,
+    PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
 };
 
 use super::{Descendant, Detach, Replaced, Spawnable, Spawned};
@@ -266,34 +268,47 @@ pub(super) struct Family {
     job: Held,
 }
 
+/// A new job that ends every process in it once its last handle closes,
+/// and lets none break away: Git Bash (MSYS2, Cygwin's runtime) starts
+/// every command broken away from a job that allows it, so a provider's
+/// tool shells would all leave it.
+fn kill_on_close_job() -> io::Result<OwnedHandle> {
+    // SAFETY: a new, unnamed job whose handle isn't inheritable (no
+    // security attributes), owned at once, so a failure closes it.
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let job = OwnedHandle::from_raw_handle(job as RawHandle);
+        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let set = SetInformationJobObject(
+            job.as_raw_handle() as HANDLE,
+            JobObjectExtendedLimitInformation,
+            (&raw const limits).cast(),
+            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        );
+        if set == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(job)
+    }
+}
+
 impl Family {
     pub(super) fn contain_self() -> io::Result<Family> {
-        // SAFETY: a new, unnamed job whose handle isn't inheritable (no
-        // security attributes), set up and joined; on failure the handle
-        // is closed before this process is in it.
-        unsafe {
-            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-            if job.is_null() {
-                return Err(io::Error::last_os_error());
-            }
-            let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-            // No BREAKAWAY_OK: Git Bash (MSYS2, Cygwin's runtime) starts
-            // every command broken away from a job that allows it, so a
-            // provider's tool shells would all leave the family.
-            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            let set = SetInformationJobObject(
-                job,
-                JobObjectExtendedLimitInformation,
-                (&raw const limits).cast(),
-                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            );
-            if set == 0 || AssignProcessToJobObject(job, GetCurrentProcess()) == 0 {
-                let error = io::Error::last_os_error();
-                CloseHandle(job);
-                return Err(error);
-            }
-            Ok(Family { job: Held(job) })
+        let job = kill_on_close_job()?;
+        // SAFETY: joining the job just made; on failure its handle closes
+        // with `job`, before this process is in it.
+        if unsafe { AssignProcessToJobObject(job.as_raw_handle() as HANDLE, GetCurrentProcess()) }
+            == 0
+        {
+            return Err(io::Error::last_os_error());
         }
+        Ok(Family {
+            job: Held(job.into_raw_handle() as HANDLE),
+        })
     }
 
     /// Nothing to do: the job keeps every member wherever its parent went.
@@ -478,6 +493,57 @@ pub(super) struct Member;
 #[cfg(feature = "async")]
 impl Member {
     pub(super) async fn release(self) {}
+}
+
+/// A child in a job of its own, which ends what is left of it when the
+/// tree is dropped.
+#[cfg(feature = "async")]
+#[derive(Debug)]
+pub(super) struct Tree {
+    job: OwnedHandle,
+}
+
+#[cfg(feature = "async")]
+impl Tree {
+    pub(super) fn spawn(
+        cmd: &mut tokio::process::Command,
+    ) -> io::Result<(tokio::process::Child, Tree)> {
+        let job = kill_on_close_job()?;
+        // Suspended until it is in the job, so nothing it starts is born
+        // outside.
+        cmd.as_std_mut().creation_flags(CREATE_SUSPENDED);
+        let mut child = cmd.spawn()?;
+        let entered = match child.raw_handle() {
+            // SAFETY: the job just made, and the child's own process
+            // handle, open while `child` is; a process created suspended
+            // runs once its one thread is resumed.
+            Some(process) => unsafe {
+                if AssignProcessToJobObject(job.as_raw_handle() as HANDLE, process as HANDLE) == 0 {
+                    Err(io::Error::last_os_error())
+                } else if NtResumeProcess(process as HANDLE) < 0 {
+                    Err(io::Error::other("resuming the child failed"))
+                } else {
+                    Ok(())
+                }
+            },
+            None => Err(io::Error::other("the child has already been reaped")),
+        };
+        match entered {
+            Ok(()) => Ok((child, Tree { job })),
+            Err(error) => {
+                let _ = child.start_kill();
+                Err(error)
+            }
+        }
+    }
+
+    pub(super) fn kill(&self) -> io::Result<()> {
+        // SAFETY: ending the processes of the job whose handle we own.
+        if unsafe { TerminateJobObject(self.job.as_raw_handle() as HANDLE, 1) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
 }
 
 #[cfg(feature = "async")]

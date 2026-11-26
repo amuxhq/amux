@@ -195,11 +195,9 @@ fn a_short_path_names_the_same_file_in_8_3_names_where_there_are_some() {
 
     let short = short_path(&file).unwrap();
     assert_eq!(FileId::of(&short).unwrap(), FileId::of(&file).unwrap());
-    if !cfg!(windows) {
-        assert_eq!(short, file);
-        return;
-    }
     let text = short.to_string_lossy();
+    // Only Windows has short names; elsewhere the path is as it was.
+    assert!(cfg!(windows) || short == file, "{text}");
     if !short.ends_with(file.strip_prefix(&top).unwrap()) {
         // The volume keeps short names: every long one went.
         assert!(text.len() < 260 && !text.starts_with(r"\\?\"), "{text}");
@@ -209,7 +207,8 @@ fn a_short_path_names_the_same_file_in_8_3_names_where_there_are_some() {
             assert!(name.len() <= 12 && name.contains('~'), "{name} in {text}");
         }
     }
-    assert!(short_path(&deep.join("missing")).is_err());
+    // Windows has no short form of a missing path.
+    assert_eq!(short_path(&deep.join("missing")).is_err(), cfg!(windows));
 }
 
 #[test]

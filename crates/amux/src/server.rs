@@ -6,7 +6,6 @@
 
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -488,7 +487,7 @@ pub async fn start(config: &InstallationConfig, config_path: Option<&Path>) -> R
 pub(crate) fn spawn_supervisor(
     config: &InstallationConfig,
     config_path: Option<&Path>,
-) -> Result<std::process::Child> {
+) -> Result<os::process::Background> {
     std::fs::create_dir_all(&config.root)
         .with_context(|| format!("creating {}", config.root.display()))?;
     let log = config.root.join(SUPERVISOR_LOG);
@@ -514,7 +513,7 @@ fn spawn_detached(
     command: &mut std::process::Command,
     root: &Path,
     stderr: File,
-) -> std::io::Result<std::process::Child> {
+) -> std::io::Result<os::process::Background> {
     use std::io::Write as _;
     let mut note = stderr.try_clone()?;
     // The child runs in `root`, not here: a relative XDG folder, which
@@ -533,11 +532,11 @@ fn spawn_detached(
         }
     }
     os::process::background(command, os::process::Detach::Session, root);
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(stderr);
-    let spawned = os::process::spawn_background(command)?;
+    let given = os::process::Given {
+        stderr: os::process::Stream::File(stderr),
+        ..os::process::Given::default()
+    };
+    let spawned = os::process::spawn_background(command, given)?;
     if spawned.breakaway_refused {
         let _ = writeln!(
             note,

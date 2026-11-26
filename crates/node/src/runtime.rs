@@ -1694,7 +1694,7 @@ impl ProfileRuntime {
         let tools = self.bind_tools(id, dir)?;
         handle.tasks.lock().unwrap().push(tools);
         let child = spawn_agent(&self.launch().install_path, dir)?;
-        match ProcessRef::of_child(&child) {
+        match child.pin() {
             Ok(process) => *handle.spawned.lock().unwrap() = Some(process),
             // Known later from the socket, or from the lock, if at all.
             Err(error) => tracing::warn!(agent = %id, %error, "pinning a started agent process"),
@@ -2495,7 +2495,7 @@ async fn dial(dir: &Path) -> Option<Connected> {
 /// own process group (on Windows its own console, with no window), so the
 /// daemon's terminal and death do not reach it, and no pipe to the daemon,
 /// which would break when the daemon goes.
-fn spawn_agent(install_path: &Path, dir: &Path) -> io::Result<tokio::process::Child> {
+fn spawn_agent(install_path: &Path, dir: &Path) -> io::Result<os::process::AsyncBackground> {
     let log = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -2505,11 +2505,12 @@ fn spawn_agent(install_path: &Path, dir: &Path) -> io::Result<tokio::process::Ch
     command
         .args(["internal", "agent"])
         .arg(dir)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(log)
         .kill_on_drop(false);
-    let spawned = os::process::spawn_background(&mut command)?;
+    let given = os::process::Given {
+        stderr: os::process::Stream::File(log),
+        ..os::process::Given::default()
+    };
+    let spawned = os::process::spawn_background(&mut command, given)?;
     if spawned.breakaway_refused {
         tracing::warn!(
             dir = %dir.display(),
@@ -2522,7 +2523,7 @@ fn spawn_agent(install_path: &Path, dir: &Path) -> io::Result<tokio::process::Ch
 pub use agent_dir::AGENT_LOG;
 
 /// Waits on a child this daemon started, so it never lingers as a zombie.
-async fn reap(mut child: tokio::process::Child) {
+async fn reap(mut child: os::process::AsyncBackground) {
     let _ = child.wait().await;
 }
 

@@ -27,6 +27,7 @@ members = [
     "crates/interpret",
     "crates/ios-tools",
     "crates/journal",
+    "crates/launch",
     "crates/log-file",
     "crates/models",
     "crates/node",

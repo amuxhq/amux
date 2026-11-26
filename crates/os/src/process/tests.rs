@@ -6,6 +6,7 @@
 //! Objects, the console, a reused pid) is in that OS's `tests` module
 //! beside its code, with its roles and the helpers only it has.
 
+use std::fs::File;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc;
@@ -150,7 +151,8 @@ fn run_role(name: &str, rest: &[&str]) {
         "daemonizer" => {
             let mut command = helper("sleep");
             background(&mut command, Detach::Session, &std::env::temp_dir());
-            let spawned = spawn_background(&mut command).expect("the daemon starts");
+            let spawned =
+                spawn_background(&mut command, Given::default()).expect("the daemon starts");
             say(format!(
                 "pid {} refused {}",
                 spawned.child.id(),
@@ -165,7 +167,8 @@ fn run_role(name: &str, rest: &[&str]) {
             }
             let mut command = helper("sleep");
             background(&mut command, Detach::Session, &std::env::temp_dir());
-            let spawned = spawn_background(&mut command).expect("the child starts");
+            let spawned =
+                spawn_background(&mut command, Given::default()).expect("the child starts");
             say(format!("pid {}", spawned.child.id()));
         }
         "ticker" => {
@@ -224,7 +227,7 @@ fn run_role(name: &str, rest: &[&str]) {
             say("wrote");
         }
         "exec" => {
-            let replaced = exec_or_spawn(helper("say exec'd")).expect("the successor starts");
+            let replaced = exec_or_spawn(helper("say exec'd"), &[]).expect("the successor starts");
             say(format!("spawned {}", replaced.child.id()));
         }
         "say" => say(format!("said {}", rest.join(" "))),
@@ -244,14 +247,11 @@ fn run_role(name: &str, rest: &[&str]) {
                 .expect("the child starts");
             let pinned = ProcessRef::of_std_child(&child).expect("the child is pinned");
             let handle = pinned.for_successor().expect("a handle for the successor");
-            let raw = match &handle {
-                Some(file) => {
-                    set_inheritable(file, true).expect("the handle is inheritable");
-                    raw_for_child(file).to_string()
-                }
-                None => "-".to_owned(),
-            };
-            exec_or_spawn(helper(&format!("heir {} {raw}", child.id())))
+            let raw = handle
+                .as_ref()
+                .map_or_else(|| "-".to_owned(), |file| raw_for_child(file).to_string());
+            let files: Vec<&File> = handle.iter().collect();
+            exec_or_spawn(helper(&format!("heir {} {raw}", child.id())), &files)
                 .expect("the successor starts");
             say("bequeathed");
         }

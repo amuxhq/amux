@@ -65,7 +65,12 @@ impl Install {
     }
 
     fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(&self.binary);
+        self.run(&self.binary, args)
+    }
+
+    /// `program <args>` in this install's environment.
+    fn run(&self, program: &Path, args: &[&str]) -> Command {
+        let mut command = Command::new(program);
         command
             .args(args)
             .env("AMUX_CONFIG", &self.config)
@@ -251,6 +256,71 @@ async fn stop_goes_to_the_supervisor_first_where_the_install_has_one() {
         Duration::from_secs(2),
         || async { !install.answers() && !install.daemon_running() },
     )
+    .await
+    .unwrap();
+}
+
+/// Ends a process when dropped, so a test that fails leaves no launcher
+/// starting supervisors.
+struct Ending(std::process::Child);
+
+impl Drop for Ending {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// Windows' login item runs `amux-launch supervise --config <path>`: the
+/// launcher beside amux, which starts the supervisor with no window and
+/// starts it again when it dies. `amux server stop` ends it too: the
+/// supervisor says the stop on the launcher's pipe as it exits, and the
+/// launcher starts nothing again and exits.
+#[tokio::test(flavor = "multi_thread")]
+async fn server_stop_ends_the_launcher_that_started_the_supervisor() {
+    // Both copied into one folder, as an install has them: the launcher
+    // runs the amux beside it, and a Unix test's binaries are links to
+    // folders of their own.
+    let bin = tempfile::tempdir().unwrap();
+    let (amux, launcher) = (
+        bin.path().join(os::paths::exe_name("amux")),
+        bin.path().join(os::paths::exe_name("amux-launch")),
+    );
+    std::fs::copy(amux_binary(), &amux).unwrap();
+    std::fs::copy(provider_fakes::binaries::path("amux-launch"), &launcher).unwrap();
+    let install = Install::with_binary(true, "", amux);
+    let config = install.config.to_str().unwrap().to_owned();
+    let launcher = install
+        .run(&launcher, &["supervise", "--config", &config])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let launcher = std::cell::RefCell::new(Ending(launcher));
+    until("the launched supervisor's daemon to answer", || {
+        install.answers()
+    })
+    .await;
+    let supervisor = install
+        .supervisor_pid()
+        .expect("the launcher ran amux supervise");
+
+    let stopped = install.amux(&["server", "stop"]);
+    assert!(
+        stdout(&stopped).contains("Stopped amux supervise and its daemon."),
+        "{}",
+        stdout(&stopped)
+    );
+    until("the launcher to exit", || {
+        launcher.borrow_mut().0.try_wait().unwrap().is_some()
+    })
+    .await;
+    let status = launcher.borrow_mut().0.wait().unwrap();
+    assert!(status.success(), "{status}");
+    assert!(!alive(supervisor));
+    holds_for("nothing to start again", Duration::from_secs(2), || async {
+        install.supervisor_pid().is_none() && !install.answers()
+    })
     .await
     .unwrap();
 }
@@ -517,10 +587,6 @@ async fn update_says_updates_are_deploys_without_a_supervisor() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: the supervisor's own update comes from a new pid, not the supervisor that was started (`the supervisor exec'd in place`)"
-)]
 async fn update_retry_installs_the_channel_build_now_even_one_rolled_back_here() {
     let builds = tempfile::tempdir().unwrap();
     let bin = builds.path().join("bin");
@@ -551,11 +617,29 @@ async fn update_retry_installs_the_channel_build_now_even_one_rolled_back_here()
     assert!(said.contains("amux 2.0.0 is running."), "{said}");
     let version = Command::new(&installed).arg("--version").output().unwrap();
     assert_eq!(stdout(&version).trim(), "amux 2.0.0");
-    assert_eq!(
-        install.supervisor_pid(),
-        Some(supervisor),
-        "the supervisor exec'd in place"
-    );
+    // The supervisor became 2.0.0 too: by an exec in place where the OS
+    // has one (Unix), else by a successor it started as it exited.
+    if os::process::EXEC_KEEPS_PID {
+        assert_eq!(
+            install.supervisor_pid(),
+            Some(supervisor),
+            "the supervisor exec'd in place"
+        );
+    } else {
+        until("the old supervisor to hand over and exit", || {
+            !alive(supervisor)
+        })
+        .await;
+        let lock = install.data.join(SUPERVISOR_LOCK);
+        until("its successor to take the lock", || {
+            std::fs::read_to_string(&lock)
+                .ok()
+                .and_then(|named| named.trim().parse::<u32>().ok())
+                .is_some_and(|successor| successor != supervisor && alive(successor))
+                && locked(&lock)
+        })
+        .await;
+    }
 
     let again = install.amux(&["update"]);
     println!("$ amux update\n{}", stdout(&again));

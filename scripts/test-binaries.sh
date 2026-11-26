@@ -30,7 +30,7 @@ fi
 cargo build --locked --workspace \
     --bin amux \
     --bin fake-claude-pty --bin fake-claude-sdk --bin fake-codex --bin fake-acp --bin fake-provider \
-    --bin fake-amux \
+    --bin fake-amux --bin amux-launch \
     --example amux_stand_in
 
 # The tests read the directory as a native path: on Windows, Git's sh

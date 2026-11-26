@@ -1,0 +1,10 @@
+load("//build:rust.bzl", "amux_rust_binary")
+
+amux_rust_binary(
+    name = "amux-launch",
+    version = "0.1.0",
+    crate_root = "src/main.rs",
+    deps = ["//crates/os:os"],
+    link_library = False,
+    unit_tests = True,
+)

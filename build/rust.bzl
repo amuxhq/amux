@@ -165,6 +165,7 @@ def amux_binaries(**kwargs):
 # name provider_fakes::binaries finds each under.
 TEST_BINARIES = {
     "amux": "//crates/amux:amux",
+    "amux-launch": "//crates/launch:amux-launch",
     "examples/amux_stand_in": "//crates/agent:amux_stand_in",
     "fake-acp": "//crates/provider-fakes:fake-acp",
     "fake-amux": "//crates/fake-amux:fake-amux",

@@ -892,10 +892,16 @@ mod tests {
         // version: a login item or service unit, a supervisor handing over to
         // the release it installed, a running agent's provider, a paired
         // host over SSH. Those lines keep parsing in every later build; a
-        // line is added here, never changed.
+        // line is added here, never changed. Windows' login item runs
+        // `amux-launch supervise --config <path>`, which runs amux with the
+        // same words, and `amux supervise` honours the launcher's pipe named
+        // in AMUX_LAUNCH_LINEAGE (keeps it, hands it to its successor, and
+        // writes `0` to it before a deliberate exit).
+        assert_eq!(node::supervisor::LINEAGE_ENV, "AMUX_LAUNCH_LINEAGE");
         for hidden in [
             &["amux", "supervise"][..],
             &["amux", "--config", "/config.toml", "supervise"],
+            &["amux", "supervise", "--config", "/config.toml"],
             &["amux", "supervise", "--inherit", "state"],
             &["amux", "daemon"],
             &["amux", "relay"],

@@ -1,0 +1,19 @@
+[package]
+name = "launch"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "amux-launch: the windowless launcher Windows' login item runs, which starts amux supervise and starts it again when its line dies"
+publish = false
+
+[[bin]]
+name = "amux-launch"
+path = "src/main.rs"
+
+# os alone (docs/ARCHITECTURE.md, "The crate map"): it shares nothing with
+# amux but the lineage's pipe.
+[dependencies]
+os = { workspace = true }
+
+[lints]
+workspace = true

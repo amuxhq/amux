@@ -882,11 +882,18 @@ from the commits:
 | --- | --- | --- |
 | `ubuntu-latest` | `x86_64-unknown-linux-gnu` | `amux-linux-x86_64` |
 | `macos-latest` | `aarch64-apple-darwin` | `amux-macos-arm64` |
-| `windows-latest` | `x86_64-pc-windows-msvc` | `amux-windows-x86_64.exe` |
+| `windows-latest` | `x86_64-pc-windows-msvc` | `amux-windows-x86_64.exe`, and `amux-launch-windows-x86_64.exe` beside it |
+
+The Windows build also ships `amux-launch.exe`, the login item's windowless
+launcher ([Supervisor](SUPERVISOR.md#the-launcher-windows)), which an
+install puts beside `amux.exe`. It is attested and checksummed like the
+binaries, but no channel's manifest names it: a deploy refuses a release
+whose launcher isn't attested or doesn't match `checksums.txt`.
 
 Each binary's symbols are published beside it: `amux-linux-x86_64.debug`
 (found through the binary's GNU debuglink), `amux-macos-arm64.dSYM.zip`
-(matched by Mach-O UUID) and `amux-windows-x86_64.pdb`. They hold function
+(matched by Mach-O UUID) and `amux-windows-x86_64.pdb` (and
+`amux-launch-windows-x86_64.pdb`). They hold function
 names and line tables, enough to symbolicate a crash address from a shipped
 binary; the binaries themselves carry no symbols.
 

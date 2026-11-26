@@ -11,10 +11,10 @@
 use std::fs::File;
 use std::io::{self, BufRead as _, BufReader, Write as _};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::Arc;
 
-use os::process::{ProcessRef, raw_for_child, set_inheritable};
+use os::process::{Given, ProcessRef, Stream, raw_for_child};
 use tokio::sync::{mpsc, watch};
 
 use crate::activation::PIPE_ENV;
@@ -77,6 +77,55 @@ impl Inherited {
     }
 }
 
+/// The write end of the pipe whose reader started this supervisor's line:
+/// `amux-launch`, the Windows login item, which restarts the line when the
+/// pipe ends with nothing written and ends itself when `0` came first.
+///
+/// The supervisor holds it for its whole life, writes `0` before a
+/// deliberate exit, and hands it to the successor it starts at a
+/// self-update, so the pipe stays open across the handover and its reader
+/// needs no pid. The daemon never has it.
+pub struct Lineage(File);
+
+impl Lineage {
+    /// The lineage named in [`super::LINEAGE_ENV`], if this supervisor was
+    /// started with one; a value that names no inherited handle is logged
+    /// and there is none.
+    pub fn take() -> Option<Self> {
+        let value = std::env::var_os(super::LINEAGE_ENV)?;
+        let raw = match value.to_str().and_then(|value| value.parse().ok()) {
+            Some(raw) => raw,
+            None => {
+                tracing::warn!(?value, "{} is not a handle", super::LINEAGE_ENV);
+                return None;
+            }
+        };
+        // SAFETY: the launcher or the supervisor this one replaced handed
+        // the handle over in the environment, which is read once, as the
+        // supervisor starts, and nothing else in this process owns it.
+        match unsafe { os::process::file_from_inherited(raw) } {
+            Ok(file) => Some(Self(file)),
+            Err(error) => {
+                tracing::warn!(%error, "the lineage {} named", super::LINEAGE_ENV);
+                None
+            }
+        }
+    }
+
+    /// The file a successor inherits, and the value to name it by.
+    pub fn file(&self) -> (&File, u64) {
+        (&self.0, raw_for_child(&self.0))
+    }
+
+    /// Says this is a deliberate exit, so the line ends here. A reader
+    /// gone already (the launcher killed) changes nothing.
+    pub fn stopping(mut self) {
+        if let Err(error) = self.0.write_all(&[0]) {
+            tracing::info!(%error, "the lineage's reader is gone");
+        }
+    }
+}
+
 /// How a child ended: its exit code, or on Unix the negated signal.
 pub type ExitCode = i32;
 
@@ -92,18 +141,33 @@ pub struct Child {
     prepared: Option<mpsc::UnboundedReceiver<()>>,
 }
 
-/// What [`Child::hand_over`] made inheritable, kept until the successor has
+/// What [`Child::hand_over`] hands the successor, kept until it has
 /// started.
-pub struct HandedOver {
+pub struct HandedOver<'a> {
     pub inherited: Inherited,
+    /// The pipe's two ends, and the lock where it crosses (Unix).
+    files: Vec<&'a File>,
     /// The process handle handed over (Windows): a duplicate, closed here
     /// once the successor holds its own.
-    _process: Option<File>,
+    process: Option<File>,
+}
+
+impl HandedOver<'_> {
+    /// Every file the successor inherits, as `--inherit` names them.
+    pub fn files(&self) -> Vec<&File> {
+        self.files
+            .iter()
+            .copied()
+            .chain(self.process.as_ref())
+            .collect()
+    }
 }
 
 impl Child {
     /// Starts `<binary> <args> daemon` with the pipe, in the background in
-    /// `root`.
+    /// `root`. It inherits the pipe's two ends and the supervisor's
+    /// standard error and nothing else: not the lineage, whose end must
+    /// come when the supervisor's line does.
     pub fn spawn(binary: &Path, args: &[std::ffi::OsString], root: &Path) -> io::Result<Self> {
         let (child_reads, go) = os::process::pipe()?;
         let (prepared_end, child_writes) = os::process::pipe()?;
@@ -112,11 +176,7 @@ impl Child {
         command
             .args(args)
             .arg("daemon")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            // The supervisor's own standard error, its log: where the
-            // daemon's early errors go.
-            .stderr(Stdio::inherit())
+            .env_remove(super::LINEAGE_ENV)
             .env(
                 PIPE_ENV,
                 format!(
@@ -125,15 +185,17 @@ impl Child {
                     raw_for_child(&child_writes)
                 ),
             );
-        // The child's two ends are inheritable for this one spawn, from the
-        // one thread the supervisor starts processes on, and closed here
-        // right after it.
-        set_inheritable(&child_reads, true)?;
-        set_inheritable(&child_writes, true)?;
-        let child = start(&mut command)?;
+        let given = Given {
+            // The supervisor's own standard error, its log: where the
+            // daemon's early errors go.
+            stderr: Stream::Inherit,
+            files: &[&child_reads, &child_writes],
+            ..Given::default()
+        };
+        let child = start(&mut command, given)?;
         drop((child_reads, child_writes));
         let pid = child.id();
-        let process = Arc::new(ProcessRef::of_std_child(&child)?);
+        let process = Arc::new(child.pin()?);
         let reader = prepared_end.try_clone()?;
         Ok(Self {
             pid,
@@ -230,27 +292,23 @@ impl Child {
         }
     }
 
-    /// The state the next supervisor needs, with every handle in it made
-    /// inheritable: the pipe's ends, the child's process handle where it
-    /// has one (Windows), and otherwise the lock, which goes with its
-    /// descriptor across the exec.
-    pub fn hand_over(&self, lock: &File) -> io::Result<HandedOver> {
+    /// The state the next supervisor needs, and the files it inherits for
+    /// it: the pipe's ends, the child's process handle where it has one
+    /// (Windows), and otherwise the lock, which goes with its descriptor
+    /// across the exec.
+    pub fn hand_over<'a>(&'a self, lock: &'a File) -> io::Result<HandedOver<'a>> {
         let go = self
             .go
             .as_ref()
             .ok_or_else(|| io::Error::other("the pipe is closed"))?;
-        set_inheritable(go, true)?;
-        set_inheritable(&self.prepared_end, true)?;
         let process = self.process.for_successor()?;
+        let mut files = vec![go, &self.prepared_end];
         // A lock goes with the process that took it on Windows, the one
         // OS that hands over a process handle, so it is taken again there.
         let lock = match &process {
-            Some(process) => {
-                set_inheritable(process, true)?;
-                None
-            }
+            Some(_) => None,
             None => {
-                set_inheritable(lock, true)?;
+                files.push(lock);
                 Some(raw_for_child(lock))
             }
         };
@@ -262,17 +320,9 @@ impl Child {
                 lock,
                 process: process.as_ref().map(raw_for_child),
             },
-            _process: process,
+            files,
+            process,
         })
-    }
-
-    /// Undoes [`Child::hand_over`] when the successor did not start.
-    pub fn keep(&self, lock: &File) {
-        if let Some(go) = &self.go {
-            let _ = set_inheritable(go, false);
-        }
-        let _ = set_inheritable(&self.prepared_end, false);
-        let _ = set_inheritable(lock, false);
     }
 }
 
@@ -304,8 +354,8 @@ fn read_prepared(file: File) -> mpsc::UnboundedReceiver<()> {
 
 /// Starts the daemon [`os::process::spawn_background`]; a job that keeps it
 /// (Windows) is logged.
-fn start(command: &mut Command) -> io::Result<std::process::Child> {
-    let spawned = os::process::spawn_background(command)?;
+fn start(command: &mut Command, given: Given<'_>) -> io::Result<os::process::Background> {
+    let spawned = os::process::spawn_background(command, given)?;
     if spawned.breakaway_refused {
         tracing::warn!(
             "the job the supervisor runs in forbids leaving it: the daemon ends when that job does"

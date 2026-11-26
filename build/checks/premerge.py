@@ -57,6 +57,13 @@ SCRIPTS = [
 # reach it is skipped and says so, as the linux-only tests are.
 WINDOWS = "check-windows"
 
+# On Windows, clippy for Linux too, on a Linux worker: `lint` there lints
+# Windows' build, which leaves out every `cfg(unix)` item, so a warning only
+# Linux's build has would pass here and fail the land. A Mac or a Linux
+# machine lints as it always has, since Linux's or its own build there holds
+# the Unix code. Skipped with no Linux worker in reach, as check-windows is.
+LINUX_LINT = ("lint-linux", ["lint", "--target-platforms", "root//build/platforms:linux-cli-testing-dev"])
+
 # Every Swift module of the iPhone app and the Mac app, their packages and
 # their test bundles, compiled but not linked or run (`just apple-build`):
 # CI builds the apps only for a change it judges theirs (build/ci-jobs.toml),
@@ -69,7 +76,8 @@ APPLE = "apple-build"
 
 
 def main(patterns: list[str]) -> int:
-    scripts = list(SCRIPTS)
+    # Each check by name, with the recipe and arguments that run it.
+    scripts = [(name, [name]) for name in SCRIPTS]
     # Where actions go (whether the build host is in reach, on a Mac) is
     # decided once, here, and every recipe below is told it rather than
     # asking again: one that found the host gone mid-run would switch the
@@ -79,14 +87,28 @@ def main(patterns: list[str]) -> int:
         cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, check=True,
     ).stdout.strip()
     env = dict(os.environ, AMUX_BUCK_MODE=mode)
+    reach: list[bool] = []
+
+    def linux() -> bool:
+        """Whether a Linux worker is in reach, asked once and only if needed."""
+        if not reach:
+            asked = subprocess.run([*PY, str(ROOT / "scripts/buck-config.py"), "linux"], cwd=ROOT, env=env, stdin=subprocess.DEVNULL)
+            reach.append(asked.returncode == 0)
+        return reach[0]
+
     if patterns[:1] == ["--without-windows"]:
         patterns = patterns[1:]
-    elif subprocess.run([*PY, str(ROOT / "scripts/buck-config.py"), "linux"], cwd=ROOT, env=env, stdin=subprocess.DEVNULL).returncode == 0:
-        scripts.append(WINDOWS)
+    elif linux():
+        scripts.append((WINDOWS, [WINDOWS]))
     else:
         print(f"premerge: {WINDOWS} skipped: no Linux worker is in reach to build Windows on", flush=True)
+    if os.name == "nt":
+        if linux():
+            scripts.append(LINUX_LINT)
+        else:
+            print(f"premerge: {LINUX_LINT[0]} skipped: no Linux worker is in reach to lint Linux's build on", flush=True)
     if sys.platform == "darwin":
-        scripts.append(APPLE)
+        scripts.append((APPLE, [APPLE]))
     else:
         print(f"premerge: {APPLE} skipped: the Apple apps' Swift compiles only on a Mac", flush=True)
     started = time.monotonic()
@@ -99,10 +121,10 @@ def main(patterns: list[str]) -> int:
     subprocess.run([*PY, str(ROOT / "build/checks/inputs.py")], cwd=ROOT, env=env, check=True, stdin=subprocess.DEVNULL)
     logs = Path(tempfile.mkdtemp(prefix="premerge-"))
     running: dict[str, tuple[subprocess.Popen, Path, float]] = {}
-    for name in scripts:
+    for name, recipe in scripts:
         log = logs / f"{name}.log"
         with log.open("wb") as out:
-            child = subprocess.Popen([JUST, name], cwd=ROOT, env=env, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+            child = subprocess.Popen([JUST, *recipe], cwd=ROOT, env=env, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
         running[name] = (child, log, time.monotonic())
     tests = subprocess.Popen([JUST, "test", *patterns], cwd=ROOT, env=env, stdin=subprocess.DEVNULL)
 

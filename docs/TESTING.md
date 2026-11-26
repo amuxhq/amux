@@ -154,9 +154,25 @@ mod wt;
 ```
 
 The comment goes on the gate's line or in the comment lines directly above it, and must name one of those
-features; a whole file is gated the same way with `#![cfg(not(windows))]`. Nothing else compiles a test out on
-Windows. A test that fails there while its fix is being made stays compiled and is ignored, with what fails (not a
-guessed cause):
+features; a whole file is gated the same way with `#![cfg(not(windows))]`.
+
+A test of something only one OS has, which no test on the other could hold, is gated to that OS with a reason:
+
+```rust
+#[cfg(windows)] // Windows only by nature: Windows' installer
+mod windows_install;
+```
+
+The side is one of four: `Windows only by nature`, `Unix only by nature` (`cfg(unix)` or `cfg(not(windows))`, for
+a mechanism Windows has no counterpart of, such as `install.sh` or a terminal's hangup signal), `macOS only by
+nature` (`target_os = "macos"`, such as dns-sd beside Bonjour) and `Linux only by nature` (`target_os = "linux"`).
+The marker holds only on a gate of test code, with a reason, whose predicate leaves out every desktop OS the side
+isn't (`cfg(unix)` marked macOS only fails, since Linux builds it). It is not for a behaviour every OS has and
+tests differently, which is one test written against the harness below, and code outside tests has no such
+marker: it goes in a home. The reason is the reviewer's to judge.
+
+Nothing else compiles a test out on Windows. A test that fails there while its fix is being made stays compiled
+and is ignored, with what fails (not a guessed cause):
 
 ```rust
 #[cfg_attr(windows, ignore = "windows: the second daemon never answers on the pipe")]
@@ -202,12 +218,18 @@ exactly what it counts, and what it takes for test code and for `cfg!` read as d
 check arrived is listed in [`build/checks/platform-allowlist.txt`](../build/checks/platform-allowlist.txt), a
 count per file: a file may hold no more than its count, and a file not listed none. A change that moves code into a
 home passes with a note that the file's entry can be lowered; the allowlist is lowered when the change lands
-(`just platform-check --write-allowlist`), never raised. Every `ignore = "windows: ..."` is counted, and
-`just platform-check --strict` fails while the allowlist holds anything or any test is ignored on Windows.
+(`just platform-check --write-allowlist`), never raised. Every `ignore = "windows: ..."` is counted, and so is
+every gate out of scope on Windows or only one OS has by nature. `just platform-check --strict` fails while the
+allowlist holds anything or any test is ignored on Windows.
+
+Strict is the end state, and deleting the allowlist file is what switches it on: with no allowlist the check is
+strict however it runs, so `just premerge`, through its Buck2 test `//:platform-check`, holds every change to it
+from then on. With none, no file outside the homes may hold a conditional, and `--write-allowlist` refuses to
+write the file again.
 
 ```sh
 just platform-check                    # the check, through Buck2
-just platform-check --list             # every conditional it counts, file and line
+just platform-check --list             # every conditional it counts, and each gate only one OS has
 just platform-check --strict           # an empty allowlist and nothing ignored on Windows
 ```
 

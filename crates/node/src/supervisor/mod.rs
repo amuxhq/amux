@@ -247,7 +247,7 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
     } = options;
     // First: a supervisor that fails from here on ends its line with no
     // `0`, which its launcher restarts.
-    let lineage = Lineage::take();
+    let mut lineage = Lineage::take();
     let _awake = Aborting(keep_awake_on_power(keep_awake));
     let lock = match inherited.and_then(|inherited| inherited.lock) {
         Some(fd) => SupervisorLock::inherit(fd, &data_dir)?,
@@ -255,13 +255,16 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
     };
     let files = Files::beside(&binary);
     files.clear_leftovers();
-    if inherited.is_none() && stays_stopped(&data_dir) {
+    if inherited.is_none()
+        && stays_stopped(&data_dir, std::env::var_os(RESTART_ENV).is_some(), || {
+            if let Some(lineage) = lineage.take() {
+                lineage.stopping();
+            }
+        })
+    {
         tracing::info!(
             "`amux server stop` ran while the launcher waited to start amux again: staying stopped"
         );
-        if let Some(lineage) = lineage {
-            lineage.stopping();
-        }
         os::signal::finished();
         return Ok(());
     }
@@ -339,18 +342,23 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
     done
 }
 
-/// Whether this start is a launcher's restart that a stop came during
+/// Whether this start is a launcher's `restart` that a stop came during
 /// ([`STOPPED`]). Either way a stop recorded is taken back: honoured now,
-/// or undone by a deliberate start.
-fn stays_stopped(data_dir: &Path) -> bool {
+/// or undone by a deliberate start. Honoured, the launcher is told first
+/// (`notify`, the stop byte) and the record goes after, so a supervisor
+/// that dies between the two leaves the stop for the next restart.
+fn stays_stopped(data_dir: &Path, restart: bool, notify: impl FnOnce()) -> bool {
     let stopped = data_dir.join(STOPPED);
     if stopped.symlink_metadata().is_err() {
         return false;
     }
+    if restart {
+        notify();
+    }
     if let Err(error) = std::fs::remove_file(&stopped) {
         tracing::warn!(path = %stopped.display(), %error, "could not take back the recorded stop");
     }
-    std::env::var_os(RESTART_ENV).is_some()
+    restart
 }
 
 /// The supervisor core's driver: the daemon processes and their pipes, the
@@ -1038,6 +1046,38 @@ fn sync_parent(path: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A launcher's restart that finds a stop recorded tells the launcher
+    /// while the record is still there, so dying in between leaves it for
+    /// the next restart; then the record goes. A deliberate start takes the
+    /// record back without telling anyone, and nothing recorded is nothing
+    /// to do.
+    #[test]
+    fn a_recorded_stop_outlasts_the_restart_until_the_launcher_is_told() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let stopped = data_dir.path().join(STOPPED);
+        assert!(!stays_stopped(data_dir.path(), true, || panic!(
+            "nothing recorded"
+        )));
+
+        std::fs::write(&stopped, b"").unwrap();
+        let mut told = false;
+        assert!(stays_stopped(data_dir.path(), true, || {
+            assert!(
+                stopped.exists(),
+                "the record went before the launcher was told"
+            );
+            told = true;
+        }));
+        assert!(told);
+        assert!(!stopped.exists());
+
+        std::fs::write(&stopped, b"").unwrap();
+        assert!(!stays_stopped(data_dir.path(), false, || panic!(
+            "a deliberate start"
+        )));
+        assert!(!stopped.exists());
+    }
 
     #[test]
     fn a_violation_the_supervisor_core_repeats_is_reported_once_per_interval() {

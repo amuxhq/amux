@@ -26,12 +26,13 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use agent_dir::Clock;
-use agent_dir::local_socket::{self, LocalListener, LocalStream};
+use agent_dir::local_socket::{self, Closer, LocalListener, LocalStream};
 use daemon_core::Refusal;
 pub use daemon_core::ingest::{INGEST_BATCH, KEPT_SEGMENTS};
 use daemon_core::payload::{CallError, ClientRequest, Response, Status};
+use os::process::ProcessRef;
 use store::{AgentKey, AgentRow, Sqlite, StoreError};
-use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
+use tokio::io::{ReadHalf, WriteHalf};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
@@ -436,10 +437,28 @@ enum Look {
 struct Connected {
     reader: ReadHalf<LocalStream>,
     writer: WriteHalf<LocalStream>,
+    /// Closes the whole connection, the reader's half too.
+    closer: Closer,
     hello: AgentHello,
-    /// The agent process's id, from the socket: whoever started it.
-    peer: Option<u32>,
+    /// The agent process, as the socket names its server: whoever started
+    /// it. Pinned while the connection proves which process it is, so its
+    /// pid can't be reused under a later kill. None for an agent served
+    /// from inside this process, which no kill may end.
+    peer: Option<ProcessRef>,
 }
+
+/// The daemon's end of an agent's control connection: the write half the
+/// core's frames go out on, and what closes the connection outright.
+struct Ctl {
+    writer: WriteHalf<LocalStream>,
+    closer: Closer,
+    /// Which connection this is, so a write that overran on it never takes
+    /// a later one out of its slot.
+    number: u64,
+}
+
+/// The number the next control connection takes.
+static CONNECTIONS: AtomicU64 = AtomicU64::new(0);
 
 pub struct ProfileRuntime {
     profile: ProfileId,
@@ -524,8 +543,8 @@ type Waiting = (u64, oneshot::Sender<Option<SendInputResponse>>);
 
 pub(crate) struct AgentHandle {
     dir: PathBuf,
-    /// The write half of the control connection, while one is open.
-    pub(crate) ctl: tokio::sync::Mutex<Option<WriteHalf<LocalStream>>>,
+    /// The control connection, while one is open.
+    ctl: tokio::sync::Mutex<Option<Ctl>>,
     /// The frames the core asked to write, in its order.
     writes: mpsc::UnboundedSender<CtlFrame>,
     /// Inputs waiting for their verdict on the current connection, by
@@ -540,12 +559,11 @@ pub(crate) struct AgentHandle {
     /// connection ends.
     dumps: Mutex<HashMap<Vec<u8>, oneshot::Sender<DumpPart>>>,
     hello: watch::Sender<Option<AgentHello>>,
-    /// The process id, once this daemon started the process.
-    pid: Mutex<Option<u32>>,
-    /// The process id on the other end of the control socket, as the
-    /// operating system names it: known for an agent an earlier daemon
-    /// started too.
-    peer: Mutex<Option<u32>>,
+    /// The process, pinned, once this daemon started it.
+    spawned: Mutex<Option<ProcessRef>>,
+    /// The process on the other end of the control socket, pinned at the
+    /// dial: known for an agent an earlier daemon started too.
+    peer: Mutex<Option<ProcessRef>>,
     /// Whether the process this daemon starts is still starting or
     /// running. A new process has not taken its lock yet, so a free lock
     /// says nothing about it until it has exited.
@@ -574,7 +592,7 @@ impl AgentHandle {
             dumps: Mutex::new(HashMap::new()),
             hello: watch::Sender::new(None),
             handed: std::sync::atomic::AtomicUsize::new(0),
-            pid: Mutex::new(None),
+            spawned: Mutex::new(None),
             peer: Mutex::new(None),
             running: watch::Sender::new(starting),
             failure: Mutex::new(None),
@@ -656,27 +674,39 @@ impl AgentHandle {
     /// connection and the write together at most `patience`, so an agent
     /// that stopped reading never holds a caller. A write that overruns may
     /// have sent part of its frame and the agent is not reading anyway: the
-    /// write half is shut down, which an agent that does read sees as the
-    /// daemon going away, and the watcher dials it again.
+    /// connection is closed outright, both halves, so the watcher's read
+    /// ends and it dials the agent again, and an agent that reads again
+    /// sees the daemon go away and takes the next connection. (Shutting
+    /// down the write half alone would leave the read half holding the
+    /// connection open, and on Windows a pipe's shutdown is nothing at all.)
     pub(crate) async fn write_ctl(&self, frame: &CtlFrame, patience: Duration) -> Sent {
+        let mut written_on = None;
         let written = tokio::time::timeout(patience, async {
             match self.ctl.lock().await.as_mut() {
                 None => Sent::NoConnection,
-                Some(ctl) => match agent_dir::write_frame(ctl, frame).await {
-                    Ok(()) => Sent::Written,
-                    Err(_) => Sent::Failed,
-                },
+                Some(ctl) => {
+                    written_on = Some((ctl.number, ctl.closer.clone()));
+                    match agent_dir::write_frame(&mut ctl.writer, frame).await {
+                        Ok(()) => Sent::Written,
+                        Err(_) => Sent::Failed,
+                    }
+                }
             }
         })
         .await;
         match written {
             Ok(sent) => sent,
             Err(_) => {
-                // Held by another writer that overran too: it closes it.
-                if let Ok(mut ctl) = self.ctl.try_lock()
-                    && let Some(mut writer) = ctl.take()
-                {
-                    let _ = writer.shutdown().await;
+                // The connection the write overran on is closed. One that
+                // was still waiting for the connection leaves it to the
+                // writer ahead of it, which overran too.
+                if let Some((number, closer)) = written_on {
+                    closer.close();
+                    if let Ok(mut ctl) = self.ctl.try_lock()
+                        && ctl.as_ref().is_some_and(|ctl| ctl.number == number)
+                    {
+                        ctl.take();
+                    }
                 }
                 Sent::Failed
             }
@@ -1643,7 +1673,11 @@ impl ProfileRuntime {
         let tools = self.bind_tools(id, dir)?;
         handle.tasks.lock().unwrap().push(tools);
         let child = spawn_agent(&self.launch().install_path, dir)?;
-        *handle.pid.lock().unwrap() = child.id();
+        match ProcessRef::of_child(&child) {
+            Ok(process) => *handle.spawned.lock().unwrap() = Some(process),
+            // Known later from the socket, or from the lock, if at all.
+            Err(error) => tracing::warn!(agent = %id, %error, "pinning a started agent process"),
+        }
         let running = handle.running.clone();
         handle.tasks.lock().unwrap().push(tokio::spawn(async move {
             reap(child).await;
@@ -1754,9 +1788,12 @@ impl ProfileRuntime {
         }
     }
 
-    /// Kills the agent's process group, as the core's job.
-    pub(crate) fn kill_process(&self, id: AgentId) -> bool {
-        self.handle(id).is_some_and(|handle| self.kill(&handle))
+    /// Kills the agent's process, as the core's job.
+    pub(crate) async fn kill_process(&self, id: AgentId) -> bool {
+        match self.handle(id) {
+            Some(handle) => kill(&handle).await,
+            None => false,
+        }
     }
 
     /// The handle for an agent an earlier daemon started, serving its
@@ -1957,11 +1994,8 @@ impl ProfileRuntime {
             }
         }
         for id in looked.orphans {
-            agent_dir::local_socket::forget_short_addresses(&self.agent_dir(id));
-            match std::fs::remove_dir_all(self.agent_dir(id)) {
-                Ok(()) => report.removed.push(id),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
+            if remove_orphan(self.agent_dir(id)).await {
+                report.removed.push(id);
             }
         }
         for list in [
@@ -2071,7 +2105,9 @@ impl ProfileRuntime {
                 task.abort();
                 let _ = task.await;
             }
-            handle.ctl.lock().await.take();
+            if let Some(ctl) = handle.ctl.lock().await.take() {
+                ctl.closer.close();
+            }
         }
     }
 
@@ -2168,11 +2204,16 @@ impl ProfileRuntime {
         let Connected {
             reader,
             writer,
+            closer,
             hello,
             peer,
         } = connected;
         *handle.peer.lock().unwrap() = peer;
-        *handle.ctl.lock().await = Some(writer);
+        *handle.ctl.lock().await = Some(Ctl {
+            writer,
+            closer,
+            number: CONNECTIONS.fetch_add(1, Ordering::Relaxed),
+        });
         handle.hello.send_replace(Some(hello));
         self.driver()
             .feed(daemon_core::Input::AgentHello {
@@ -2247,8 +2288,8 @@ impl ProfileRuntime {
                 // now: their senders learn the answer was lost.
                 watched.replies.lock().unwrap().clear();
                 watched.dumps.lock().unwrap().clear();
-                if let Some(mut ctl) = watched.ctl.lock().await.take() {
-                    let _ = ctl.shutdown().await;
+                if let Some(ctl) = watched.ctl.lock().await.take() {
+                    ctl.closer.close();
                 }
             }
             let ended = match watched.failure.lock().unwrap().take() {
@@ -2284,22 +2325,76 @@ impl ProfileRuntime {
             }
         }
     }
+}
 
-    /// Kills the agent's process group: the process this daemon started,
-    /// or the one on the other end of its control socket. Returns whether
-    /// it could.
-    fn kill(&self, handle: &AgentHandle) -> bool {
-        let pid = *handle.pid.lock().unwrap();
-        let Some(pid) = pid.or(*handle.peer.lock().unwrap()) else {
-            return false;
-        };
+/// Kills the agent's process: the one this daemon started, or the one that
+/// answered its control socket, each pinned so a pid reused since is never
+/// reached; else whoever holds its directory's lock, named by the pid the
+/// lock carries and confirmed by its agent socket. What the agent started
+/// goes with it: its family is tied to it (the job on Windows, the tethers
+/// on Unix). Returns whether it could.
+async fn kill(handle: &AgentHandle) -> bool {
+    let pinned = [&handle.spawned, &handle.peer]
+        .into_iter()
+        .find_map(|slot| slot.lock().unwrap().as_ref().map(end));
+    if let Some(ended) = pinned {
+        return ended;
+    }
+    let dir = handle.dir.clone();
+    match tokio::task::spawn_blocking(move || agent_dir::lock_holder(&dir)).await {
+        Ok(Ok(agent_dir::Holder::Process(process))) => end(&process),
         // An agent served from inside this process has no process of its
-        // own to end, and killing the one on the other end of its socket
-        // would end the daemon instead.
-        if pid == std::process::id() {
-            return false;
+        // own to end, and ending the holder would end the daemon instead.
+        Ok(Ok(agent_dir::Holder::ThisProcess)) => false,
+        Ok(Ok(agent_dir::Holder::Free | agent_dir::Holder::Unconfirmed)) => false,
+        Ok(Err(error)) => {
+            tracing::warn!(dir = %handle.dir.display(), %error, "finding an agent's process to kill");
+            false
         }
-        kill_group(pid)
+        Err(_) => false,
+    }
+}
+
+/// Ends a pinned agent process at once. True once it is gone, or was.
+fn end(process: &ProcessRef) -> bool {
+    match process.kill() {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(pid = process.pid(), %error, "killing an agent process");
+            false
+        }
+    }
+}
+
+/// Removes a directory no row lists. One that something still holds (a
+/// shell working in it, a log open without delete sharing, as
+/// `Get-Content -Wait` holds it on Windows) is left for the next sweep
+/// with a warning: a sweep never fails a start. Returns whether it is gone.
+async fn remove_orphan(dir: PathBuf) -> bool {
+    agent_dir::local_socket::forget_short_addresses(&dir);
+    let removing = dir.clone();
+    let removed = tokio::task::spawn_blocking(move || {
+        os::fs::remove_patiently(&removing, os::fs::SHARING_PATIENCE)
+    })
+    .await
+    .unwrap_or_else(|error| Err(io::Error::other(error)));
+    match removed {
+        Ok(os::fs::Removed::Gone) => true,
+        Ok(os::fs::Removed::Later) => {
+            tracing::warn!(
+                dir = %dir.display(),
+                "an orphaned agent directory is still in use; the next sweep removes it"
+            );
+            false
+        }
+        Err(error) => {
+            tracing::warn!(
+                dir = %dir.display(),
+                %error,
+                "an orphaned agent directory could not be removed; the next sweep tries again"
+            );
+            false
+        }
     }
 }
 
@@ -2354,6 +2449,12 @@ async fn dial(dir: &Path) -> Option<Connected> {
     let (stream, peer) = local_socket::connect_to_process(&dir.join(agent_dir::CTL_SOCK))
         .await
         .ok()?;
+    // Pinned while the connection is open, so the pid is the process that
+    // answered and not one that took the pid since.
+    let peer = peer
+        .filter(|&pid| pid != std::process::id())
+        .and_then(|pid| ProcessRef::open(pid).ok());
+    let closer = stream.closer();
     let (mut reader, writer) = tokio::io::split(stream);
     let hello = tokio::time::timeout(HELLO_PATIENCE, agent_dir::read_frame(&mut reader))
         .await
@@ -2363,6 +2464,7 @@ async fn dial(dir: &Path) -> Option<Connected> {
         Some(ctl_frame::Of::Hello(hello)) => Some(Connected {
             reader,
             writer,
+            closer,
             hello,
             peer,
         }),
@@ -2403,27 +2505,6 @@ pub use agent_dir::AGENT_LOG;
 /// Waits on a child this daemon started, so it never lingers as a zombie.
 async fn reap(mut child: tokio::process::Child) {
     let _ = child.wait().await;
-}
-
-#[cfg(unix)]
-pub(crate) fn kill_group(pid: u32) -> bool {
-    let Ok(pid) = libc::pid_t::try_from(pid) else {
-        return false;
-    };
-    // SAFETY: plain signals to the process group the agent leads, or to
-    // the process alone when it leads none.
-    unsafe { libc::killpg(pid, libc::SIGKILL) == 0 || libc::kill(pid, libc::SIGKILL) == 0 }
-}
-
-#[cfg(not(unix))]
-pub(crate) fn kill_group(pid: u32) -> bool {
-    std::process::Command::new("taskkill")
-        .args(["/F", "/T", "/PID", &pid.to_string()])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
 }
 
 /// The inventory row for an agents row.

@@ -77,6 +77,10 @@ pub const LAN_PORT_FILE: &str = "lan_port";
 pub const LINK_SOCKET: &str = "link.sock";
 /// How long a link handed over on the link socket has for its handshake.
 const LINK_SOCKET_HANDSHAKE: Duration = Duration::from_secs(10);
+/// Whether anything dials the link socket on this OS, so it is served:
+/// not on Windows, where SSH with a Windows machine at the far end is out
+/// of scope and `amux internal ssh-link` relays nothing in.
+const LINK_SOCKET_DIALLED: bool = !cfg!(windows);
 /// How long links get to carry their LinkClose before the edge stops.
 const LINK_CLOSE_FLUSH: Duration = Duration::from_millis(200);
 
@@ -104,7 +108,8 @@ pub struct EdgeOptions {
     /// Dial trusted peers at their known addresses and when discovery finds
     /// them.
     pub dial: bool,
-    /// Serve the local socket SSH relays hand a peer's link to.
+    /// Serve the local socket SSH relays hand a peer's link to, where
+    /// anything dials it (not on Windows).
     pub link_socket: bool,
     /// What a profile's one socket sends and receives on, when something
     /// stands in for the network under it (a test's imitation of a router);
@@ -529,7 +534,7 @@ impl Edge {
         }
         tasks.push(reachability.spawn_dial_on_found(discovery.browse()));
         discovery.requery();
-        if options.link_socket {
+        if options.link_socket && LINK_SOCKET_DIALLED {
             tasks.push(serve_link_socket(
                 dir,
                 link_ctx,
@@ -1492,8 +1497,8 @@ fn serve_link_socket(
                     });
                 }
                 Err(error) => {
-                    tracing::warn!(%error, "the link socket stopped accepting");
-                    break;
+                    tracing::warn!(%error, "accepting on the link socket failed");
+                    tokio::time::sleep(crate::grpc::ACCEPT_RETRY).await;
                 }
             }
         }

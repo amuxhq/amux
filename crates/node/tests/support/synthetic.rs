@@ -186,6 +186,12 @@ impl SyntheticAgent {
         self.wedged.send_replace(true);
     }
 
+    /// The agent reads its control connections again, from where it
+    /// stopped, as a process back from a long blocking call does.
+    pub fn read_again(&self) {
+        self.wedged.send_replace(false);
+    }
+
     /// The agent stops answering, as a process stopped by the scheduler
     /// would: it takes in what the daemon sends and answers nothing until
     /// thawed.
@@ -349,9 +355,10 @@ impl SyntheticAgent {
                                 () = async {
                                     let _ = wedged.wait_for(|wedged| *wedged).await;
                                 } => {
-                                    // Holds the connection open, unread.
-                                    std::future::pending::<()>().await;
-                                    return;
+                                    // Holds the connection open, unread,
+                                    // until told to read again.
+                                    let _ = wedged.wait_for(|wedged| !*wedged).await;
+                                    continue;
                                 }
                                 frame = agent_dir::read_frame(&mut reader) => frame,
                             };

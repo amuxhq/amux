@@ -219,12 +219,16 @@ done": the agent's own drain, finishing its turn, happens only when its daemon
 is lost, and no message asks for it. If a stopped agent overruns the daemon's
 stop deadline (30 seconds), the stop becomes a kill: the daemon sends
 `Stop { kill: true }` on the control socket, and if the agent has not exited
-two seconds later, kills the agent process's own process group from outside.
+two seconds later, kills the agent process from outside; what the agent
+started goes with it, through its tethers on Unix and its job on Windows.
 The kill is the daemon's own escalation and no client can ask for it.
-The process it kills is the one on the other end of the control socket, as
-the operating system names it (`SO_PEERCRED` on Linux, `LOCAL_PEEREPID` on
-macOS, the pipe's server process on Windows), so an agent adopted from an
-earlier daemon is killed as surely as one this daemon started.
+The process it kills is the one it started, or the one on the other end of
+the control socket, as the operating system names it (`SO_PEERCRED` on
+Linux, `LOCAL_PEEREPID` on macOS, the pipe's server process on Windows),
+pinned at the dial so a pid reused since is never reached; failing both,
+the process the directory's lock names (`agent_dir::lock_holder`). So an
+agent adopted from an earlier daemon is killed as surely as one this daemon
+started.
 
 A turn end after which the incarnation exits is marked `last` in the
 journal (the interpreter cannot know it; the process marks it): a one-shot

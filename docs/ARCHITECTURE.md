@@ -258,7 +258,11 @@ neither.
 [`runtime.rs`](../crates/node/src/runtime.rs)) exists for every agent whose
 process is live. It holds the agent's directory, the write half of the
 control connection, the inputs and dumps waiting for the agent's answer on
-that connection, the last Hello, and the process ids. One watcher task per
+that connection, the last Hello, and the agent's process, pinned
+(`os::process::ProcessRef`: the one this daemon started, or the one that
+answered the dial), so a kill never reaches a process that took its pid
+since. A write that overruns its patience closes the connection outright,
+read half too, and the watcher dials again. One watcher task per
 handle dials `ctl.sock` and feeds the core what it reads: the Hello, each
 Nudge, the connection ending. The core ingests the journal on a Nudge, and
 when the connection ends the driver tells it whether the process is gone
@@ -376,7 +380,7 @@ $TMPDIR/amux-<uid>/<hash>, <hash>.d
     account                   the account binding and its credential, when bound
     relay-token               the week-long relay token the account service issued, so a launch dials at once
     sock                      the client socket, owner-only
-    link.sock                 where `amux internal ssh-link` hands in a peer's link over SSH
+    link.sock                 where `amux internal ssh-link` hands in a peer's link over SSH (not on Windows)
     store.sqlite              agents, items, paired hosts, drafts, recent directories, deliveries,
                               notifications; written only by this profile's core
     core-ring/                the core's newest checkpoint and the inputs since, for dumps and replay
@@ -461,7 +465,10 @@ time:
    as it was, and the daemon does not start.
 5. Finish the sweep: resume ingest from each stored cursor, and mark
    exited, with the cause "while amux was stopped", every agent whose
-   process is gone.
+   process is gone. A directory no row lists is removed; one something
+   still holds (a shell working in it, a log open as `Get-Content -Wait`
+   holds it on Windows) is left for the next start's sweep, with a
+   warning, and never stops this one.
 6. Refuse to start if another daemon answers on the front door. Otherwise
    bring each profile into service: its client socket, its network edge,
    its outboxes, which first run only once every own journal has been read
@@ -592,7 +599,9 @@ nicer in several places, and Windows pays for each:
   nothing, so a connection is ended by closing it
   (`LocalStream::close`, or a `Closer` for a split one).
 - **Process groups.** Agents start with `CREATE_NEW_PROCESS_GROUP` and
-  `DETACHED_PROCESS`; a kill ends the process tree with `taskkill /F /T`.
+  `CREATE_NO_WINDOW`, breaking away from the daemon's job. The daemon kills
+  an agent through the process handle it holds (`TerminateProcess`), never
+  by pid; what the agent started goes with the agent's own job.
 - **Terminals.** Pseudo-terminals are ConPTY, through `portable-pty` in
   [`pty-host`](../crates/pty-host/src/lib.rs).
 - **Updates.** A running executable cannot be renamed over, so the
@@ -601,7 +610,8 @@ nicer in several places, and Windows pays for each:
 - **Signals.** There are none: `amux server stop` asks the supervisor over
   its control socket (`supervisor.sock`), and the supervisor stops its child
   by closing the activation pipe.
-- **SSH.** Pairing and linking over SSH need a Unix host at the far end.
+- **SSH.** Pairing and linking over SSH need a Unix host at the far end,
+  so a Windows profile binds no `link.sock`.
 - **Terminal Claude.** Not hosted on Windows in this build: an agent of kind
   `claude_pty` there ends before spawning anything, with the cause "terminal
   Claude is not hosted on Windows in this build; headless Claude and Codex

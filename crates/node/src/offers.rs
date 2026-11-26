@@ -763,12 +763,10 @@ impl ProfileRuntime {
             .stderr(Stdio::piped())
             // Ended by `running` instead, with the provider it started.
             .kill_on_drop(false);
-        #[cfg(unix)]
-        helper.process_group(0);
         let child = helper
             .spawn()
             .map_err(|error| CatalogueError::Helper(error.to_string()))?;
-        let mut running = Running(child.id());
+        let mut running = Running(os::process::ProcessRef::of_child(&child).ok());
         let deadline = Duration::from_millis(launch.core.start_deadline_ms);
         let output = match tokio::time::timeout(deadline, child.wait_with_output()).await {
             Ok(output) => {
@@ -795,18 +793,24 @@ impl ProfileRuntime {
     }
 }
 
-/// A catalogue helper still running, by its pid: dropped before it exits,
-/// as when its ask takes too long or the daemon stops mid-ask, it is
-/// killed with the provider it started, which runs in its group (on
-/// Windows, below it in its process tree). Killing the helper alone would
-/// leave the provider running with whatever the daemon's process handed
-/// down to it.
-struct Running(Option<u32>);
+/// A catalogue helper still running, pinned: dropped before it exits, as
+/// when its ask takes too long or the daemon stops mid-ask, it is killed
+/// with the provider it started. Killing the helper alone would leave the
+/// provider running with whatever the daemon's process handed down to it.
+/// On Unix what the helper started is found below it while it still runs
+/// and killed too; Windows has no such census, and the provider goes with
+/// the helper only where the helper holds what it starts in a job of its
+/// own (`os::process::Family`).
+struct Running(Option<os::process::ProcessRef>);
 
 impl Drop for Running {
     fn drop(&mut self) {
-        if let Some(pid) = self.0.take() {
-            crate::runtime::kill_group(pid);
+        if let Some(helper) = self.0.take() {
+            // Taken first: once the helper is killed, what it started is no
+            // longer below it.
+            let started = os::process::descendants(helper.pid());
+            let _ = helper.kill();
+            os::process::kill_descendants(&started);
         }
     }
 }

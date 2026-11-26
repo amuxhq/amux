@@ -1489,7 +1489,7 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
             let Some(runtime) = runtime.upgrade() else {
                 return;
             };
-            if runtime.kill_process(uuid::Uuid::from_bytes(agent.0)) {
+            if runtime.kill_process(uuid::Uuid::from_bytes(agent.0)).await {
                 JobResult::Done
             } else {
                 JobResult::Failed("no process this daemon can kill".to_owned())

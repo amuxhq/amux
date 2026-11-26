@@ -111,9 +111,10 @@ pub struct Offered {
 impl AgentProgram {
     /// Where this program's command is, looked up as it will be started:
     /// on the PATH its own environment gives, else the host's for every
-    /// provider, else the daemon's.
+    /// provider, else the one a newly logged-on process would see.
     pub fn find(&self, provider_env: &HashMap<String, String>) -> Option<PathBuf> {
-        Lookup::for_program(&self.env, provider_env).find(&self.command)
+        let path = path_for(&self.env, provider_env).unwrap_or_else(os::paths::current_path);
+        find_command(&self.command, &path, os::paths::home_dir().as_deref())
     }
 
     /// The environment it starts with: the host's additions for every
@@ -138,164 +139,41 @@ pub fn offered(programs: &[AgentProgram], provider_env: &HashMap<String, String>
         .collect()
 }
 
-/// How a command is looked up: the PATH, and on Windows the extensions an
-/// extensionless name may stand for (`PATHEXT`). Platform-shaped only by
-/// `windows`, so the Windows rules run in a test on any machine.
-#[derive(Clone, Debug)]
-pub struct Lookup {
-    pub path: Option<OsString>,
-    pub pathext: Option<OsString>,
-    pub home: Option<PathBuf>,
-    pub windows: bool,
-}
-
-/// What Windows tries when `PATHEXT` is unset.
-const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
-
-impl Lookup {
-    /// The lookup the program will be started under on this machine.
-    fn for_program(own: &BTreeMap<String, String>, provider_env: &HashMap<String, String>) -> Self {
-        // Windows names a variable whatever its case (`Path` is `PATH`).
-        let named = |key: &String, name: &str| {
-            if cfg!(windows) {
-                key.eq_ignore_ascii_case(name)
+/// The `PATH` the program's own environment gives it, else the host's
+/// for every provider. Windows names a variable whatever its case (`Path`
+/// is `PATH`).
+fn path_for(
+    own: &BTreeMap<String, String>,
+    provider_env: &HashMap<String, String>,
+) -> Option<OsString> {
+    let any_case = cfg!(windows);
+    own.iter()
+        .chain(provider_env.iter())
+        .find(|(key, _)| {
+            if any_case {
+                key.eq_ignore_ascii_case("PATH")
             } else {
-                key == name
+                *key == "PATH"
             }
-        };
-        let var = |name: &str| -> Option<OsString> {
-            own.iter()
-                .chain(provider_env.iter())
-                .find(|(key, _)| named(key, name))
-                .map(|(_, value)| OsString::from(value))
-                .or_else(|| std::env::var_os(name))
-        };
-        Self {
-            path: var("PATH"),
-            pathext: var("PATHEXT"),
-            home: std::env::home_dir(),
-            windows: cfg!(windows),
-        }
-    }
-
-    /// The file `command` names, as an absolute path. A command holding a
-    /// path separator is that
-    /// path, a leading `~/` the home; any other is looked up in each PATH
-    /// directory in turn. On Windows a name is found with each `PATHEXT`
-    /// extension in turn, which is how npm's `.cmd` shims are found; the
-    /// extensionless file npm puts beside a shim is a shell script Windows
-    /// cannot start, so a name without an extension of its own is never
-    /// taken bare there.
-    pub fn find(&self, command: &str) -> Option<PathBuf> {
-        if command.is_empty() {
-            return None;
-        }
-        let separated = command.contains('/') || (self.windows && command.contains('\\'));
-        if separated {
-            let path = match (command.strip_prefix("~/"), &self.home) {
-                (Some(rest), Some(home)) => home.join(rest),
-                _ => PathBuf::from(command),
-            };
-            return self
-                .candidates(&path)
-                .into_iter()
-                .find(|path| runnable(path))
-                .and_then(absolute);
-        }
-        let dirs = self.path.as_deref()?;
-        split_paths(dirs, self.windows)
-            .into_iter()
-            .filter(|dir| !dir.as_os_str().is_empty())
-            .flat_map(|dir| self.candidates(&dir.join(command)))
-            .find(|path| runnable(path))
-            .and_then(absolute)
-    }
-
-    /// The files `path` may be: itself on Unix; on Windows itself when its
-    /// extension is one `PATHEXT` lists, then itself with each listed one.
-    fn candidates(&self, path: &Path) -> Vec<PathBuf> {
-        if !self.windows {
-            return vec![path.to_owned()];
-        }
-        let pathext = self
-            .pathext
-            .as_deref()
-            .and_then(OsStr::to_str)
-            .unwrap_or(DEFAULT_PATHEXT);
-        let extensions: Vec<&str> = pathext
-            .split(';')
-            .map(str::trim)
-            .filter(|extension| extension.starts_with('.') && extension.len() > 1)
-            .collect();
-        let own = path
-            .extension()
-            .and_then(OsStr::to_str)
-            .map(|extension| format!(".{extension}"));
-        let mut candidates = Vec::new();
-        if own.as_deref().is_some_and(|own| {
-            extensions
-                .iter()
-                .any(|listed| listed.eq_ignore_ascii_case(own))
-        }) {
-            candidates.push(path.to_owned());
-        }
-        for extension in extensions {
-            // Lower case first, as files are named: Windows, whose file
-            // system matches names whatever their case, would otherwise
-            // find `agent.exe` as the `agent.EXE` its default PATHEXT
-            // spells, and the path the agent is started by and shown as
-            // would not be the file's own. Another file system running the
-            // same rules finds only the spelling on disk, so both are tried.
-            let lower = extension.to_ascii_lowercase();
-            let mut name = path.as_os_str().to_owned();
-            name.push(&lower);
-            candidates.push(PathBuf::from(name));
-            if lower != extension {
-                let mut name = path.as_os_str().to_owned();
-                name.push(extension);
-                candidates.push(PathBuf::from(name));
-            }
-        }
-        candidates
-    }
+        })
+        .map(|(_, value)| OsString::from(value))
 }
 
-/// The directories a PATH value lists, split as the platform it is for
-/// splits them: `;` on Windows, where a directory may be quoted, `:`
-/// elsewhere.
-fn split_paths(value: &OsStr, windows: bool) -> Vec<PathBuf> {
-    let text = value.to_string_lossy();
-    let separator = if windows { ';' } else { ':' };
-    text.split(separator)
-        .map(|dir| PathBuf::from(if windows { dir.trim_matches('"') } else { dir }))
-        .collect()
-}
-
-/// The file that was checked, as an absolute path. A relative command or
-/// PATH entry was checked against the daemon's working directory, while the
-/// agent's program starts in the agent's folder, where the same relative
-/// path would name another file or none.
-fn absolute(path: PathBuf) -> Option<PathBuf> {
-    std::path::absolute(path).ok()
-}
-
-/// A file that can be started: on Unix one with an execute bit.
-fn runnable(path: &Path) -> bool {
-    let Ok(metadata) = std::fs::metadata(path) else {
-        return false;
+/// The file `command` names, as an absolute path: a command holding a path
+/// separator is that path, a leading `~/` the home; any other is looked up
+/// on `path` as the operating system starts a program
+/// ([`os::paths::find_program`]: the execute bit on Unix, `PATHEXT` on
+/// Windows, so npm's `.cmd` shims are found and the extensionless script
+/// beside one never is). A relative command or `PATH` entry is checked
+/// against the daemon's working directory, so the path returned is
+/// absolute: the program starts in the agent's folder, where the same
+/// relative path would name another file or none.
+fn find_command(command: &str, path: &OsStr, home: Option<&Path>) -> Option<PathBuf> {
+    let homed = match (command.strip_prefix("~/"), home) {
+        (Some(rest), Some(home)) => home.join(rest),
+        _ => PathBuf::from(command),
     };
-    if !metadata.is_file() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        metadata.permissions().mode() & 0o111 != 0
-    }
-    #[cfg(not(unix))]
-    {
-        true
-    }
+    os::paths::find_program(homed.as_os_str(), path)
 }
 
 #[cfg(test)]
@@ -419,55 +297,27 @@ mod tests {
         os::fs::make_executable(path).unwrap();
     }
 
-    #[cfg(unix)]
-    fn unix(path: &OsStr) -> Lookup {
-        Lookup {
-            path: Some(path.to_owned()),
-            pathext: None,
-            home: None,
-            windows: false,
-        }
-    }
-
-    /// The lookup as this machine runs it, with `path` for its PATH.
-    fn native(path: &OsStr) -> Lookup {
-        Lookup {
-            path: Some(path.to_owned()),
-            pathext: None,
-            home: None,
-            windows: cfg!(windows),
-        }
-    }
-
     /// A program's file name as this platform starts it.
     fn exe(name: &str) -> String {
-        format!("{name}{}", std::env::consts::EXE_SUFFIX)
+        os::paths::exe_name(name)
     }
 
-    // The Unix rules, whose `:`-separated PATH and extensionless programs a
-    // Windows machine does not have.
-    #[cfg(unix)]
+    /// A name is found in the first PATH directory holding a program by
+    /// it, as this OS starts programs (os::paths has the rules of each:
+    /// the execute bit, `PATHEXT` and npm's shims).
     #[test]
     fn a_command_is_found_in_the_first_path_directory_holding_it() {
         let dir = tempfile::tempdir().unwrap();
         let (first, second) = (dir.path().join("first"), dir.path().join("second"));
-        executable(&second.join("agy"));
-        executable(&first.join("opencode"));
-        executable(&second.join("opencode"));
+        executable(&second.join(exe("agy")));
+        executable(&first.join(exe("opencode")));
+        executable(&second.join(exe("opencode")));
         let path = std::env::join_paths([&first, &second]).unwrap();
-        let lookup = unix(&path);
-        assert_eq!(lookup.find("agy"), Some(second.join("agy")));
-        assert_eq!(lookup.find("opencode"), Some(first.join("opencode")));
-        assert_eq!(lookup.find("grok"), None, "not installed: not offered");
-        assert_eq!(unix(OsStr::new("")).find("agy"), None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_file_without_an_execute_bit_is_not_a_command() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("agy"), "not a program").unwrap();
-        assert_eq!(unix(dir.path().as_os_str()).find("agy"), None);
+        let find = |command: &str| find_command(command, &path, None);
+        assert_eq!(find("agy"), Some(second.join(exe("agy"))));
+        assert_eq!(find("opencode"), Some(first.join(exe("opencode"))));
+        assert_eq!(find("grok"), None, "not installed: not offered");
+        assert_eq!(find_command("agy", OsStr::new(""), None), None);
     }
 
     #[test]
@@ -475,73 +325,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let program = dir.path().join("bin").join(exe("my-agent"));
         executable(&program);
-        let lookup = Lookup {
-            home: Some(dir.path().to_owned()),
-            ..native(OsStr::new(""))
-        };
-        assert_eq!(
-            lookup.find(program.to_str().unwrap()),
-            Some(program.clone())
-        );
-        assert_eq!(lookup.find("~/bin/my-agent"), Some(program));
-        assert_eq!(lookup.find("~/bin/missing"), None);
+        let find = |command: &str| find_command(command, OsStr::new(""), Some(dir.path()));
+        assert_eq!(find(program.to_str().unwrap()), Some(program.clone()));
+        assert_eq!(find("~/bin/my-agent"), Some(program));
+        assert_eq!(find("~/bin/missing"), None);
     }
 
-    /// Windows finds a name by `PATHEXT`, so npm's `opencode.cmd` shim is
-    /// found and the extensionless shell script beside it never is; an
-    /// `.exe` earlier in the extensions wins in the same directory, and the
-    /// directories go in PATH order, split at `;`.
-    #[test]
-    fn windows_finds_npm_shims_by_pathext() {
-        let dir = tempfile::tempdir().unwrap();
-        let npm = dir.path().join("npm");
-        let tools = dir.path().join("tools");
-        executable(&npm.join("opencode"));
-        executable(&npm.join("opencode.cmd"));
-        executable(&npm.join("opencode.ps1"));
-        executable(&npm.join("grok.cmd"));
-        executable(&tools.join("grok.exe"));
-        executable(&tools.join("only-bare"));
-        let path = format!("\"{}\";{}", npm.display(), tools.display());
-        let lookup = Lookup {
-            path: Some(path.into()),
-            pathext: Some(".com;.exe;.bat;.cmd".into()),
-            home: None,
-            windows: true,
-        };
-        assert_eq!(lookup.find("opencode"), Some(npm.join("opencode.cmd")));
-        assert_eq!(
-            lookup.find("grok"),
-            Some(npm.join("grok.cmd")),
-            "PATH order first"
-        );
-        assert_eq!(lookup.find("grok.exe"), Some(tools.join("grok.exe")));
-        assert_eq!(
-            lookup.find("only-bare"),
-            None,
-            "no extension Windows starts"
-        );
-        let unset = Lookup {
-            pathext: None,
-            ..lookup.clone()
-        };
-        // The default spells its extensions upper case, which a file system
-        // that ignores case, as Windows' does, finds either way.
-        let lower = |path: Option<PathBuf>| path.map(|path| path.to_string_lossy().to_lowercase());
-        assert_eq!(
-            lower(unset.find("opencode")),
-            lower(Some(npm.join("opencode.cmd"))),
-            "the default PATHEXT"
-        );
-        assert_eq!(
-            lookup.find(&format!("{}\\opencode", npm.display())),
-            cfg!(windows).then(|| PathBuf::from(format!("{}\\opencode.cmd", npm.display()))),
-            "a backslash path is a path on Windows"
-        );
-    }
-
-    /// The program's own PATH is where its command is looked up, as it is
-    /// where the program would look.
     /// A relative command, or a relative PATH entry, was checked against
     /// the daemon's working directory, so that is the file named, by its
     /// absolute path: the program starts in the agent's folder, where the
@@ -554,14 +343,16 @@ mod tests {
         executable(&dir.path().join(exe("my-agent")));
         let expected = here.join(&folder).join(exe("my-agent"));
         let relative = format!("./{}/my-agent", folder.to_string_lossy());
-        let found = native(OsStr::new("")).find(&relative).unwrap();
+        let found = find_command(&relative, OsStr::new(""), None).unwrap();
         assert!(found.is_absolute(), "{found:?}");
         assert_eq!(found, expected);
-        let found = native(&folder).find("my-agent").unwrap();
+        let found = find_command("my-agent", &folder, None).unwrap();
         assert!(found.is_absolute(), "{found:?}");
         assert_eq!(found, expected);
     }
 
+    /// The program's own PATH is where its command is looked up, as it is
+    /// where the program would look.
     #[test]
     fn a_programs_own_path_wins() {
         let dir = tempfile::tempdir().unwrap();

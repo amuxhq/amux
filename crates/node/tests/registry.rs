@@ -274,6 +274,79 @@ async fn startup_prepares_after_looking_and_writes_only_after_go() {
 /// daemon that ingested the final step and died before marking leaves the
 /// cause on the row, and the next daemon's sweep, with nothing left to
 /// ingest, keeps it rather than recording that the agent ended while away.
+/// What keeps an orphaned directory from going: on Windows a file in it
+/// held open without delete sharing (`Get-Content -Wait` on its log, a
+/// shell working in it); on Unix, whose opens never stop a removal, a
+/// folder that refuses it.
+enum Held {
+    Open(#[allow(dead_code)] provider_fakes::faults::Held),
+    Denied(#[allow(dead_code)] provider_fakes::faults::Denied),
+}
+
+/// An orphaned agent directory that something still holds is left for the
+/// next sweep with a warning, never a start that fails: the daemon starts
+/// all the same, and the start after the hold ends removes it.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_orphan_something_holds_is_left_for_the_next_sweep_and_the_daemon_starts() {
+    use provider_fakes::faults;
+    let install = Install::new();
+    let orphan = uuid::Uuid::new_v4();
+    let dir = install.agent_dir(orphan);
+    std::fs::create_dir_all(&dir).unwrap();
+    let log = dir.join(agent_dir::AGENT_LOG);
+    std::fs::write(&log, "the last incarnation's log\n").unwrap();
+    let held = match faults::hold_exclusively(&log) {
+        Ok(held) => Held::Open(held),
+        Err(error) if error.kind() == std::io::ErrorKind::Unsupported => {
+            if let Some(why) = faults::unenforced() {
+                println!("skipped: {why}");
+                return;
+            }
+            Held::Denied(faults::deny(&dir, faults::Deny::Write).unwrap())
+        }
+        Err(error) => panic!("holding the orphan's log: {error}"),
+    };
+
+    let launch = || install.launch("idle", vec![]);
+    let daemon = install.start("boot-1", launch()).await;
+    let report = daemon.sweep(install.profile).unwrap().clone();
+    assert!(
+        report.removed.is_empty(),
+        "nothing held is reported removed: {report:?}"
+    );
+    assert!(dir.exists(), "the held directory is left");
+    daemon.shutdown().await.unwrap();
+
+    drop(held);
+    let daemon = install.start("boot-1", launch()).await;
+    assert_eq!(
+        daemon.sweep(install.profile).unwrap().removed,
+        vec![orphan],
+        "the next sweep removes it"
+    );
+    assert!(!dir.exists());
+    daemon.shutdown().await.unwrap();
+}
+
+/// A profile binds the link socket SSH relays hand a link to only where
+/// anything dials it: not on Windows, where SSH with a Windows machine at
+/// the far end is out of scope.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_profile_binds_its_link_socket_only_where_ssh_dials_it() {
+    let install = Install::new();
+    let mut options = install.options("boot-1", install.launch("idle", vec![]));
+    options.edge.link_socket = true;
+    let daemon = node::start(options, None).await.expect("the daemon starts");
+    let socket = install.profile_dir().join(node::LINK_SOCKET);
+    assert_eq!(
+        socket.exists(),
+        !cfg!(windows),
+        "the link socket at {}",
+        socket.display()
+    );
+    daemon.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn an_ingested_cause_survives_a_daemon_that_died_before_marking() {
     let install = Install::new();

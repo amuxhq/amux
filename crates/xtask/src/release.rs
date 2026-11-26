@@ -82,14 +82,7 @@ pub fn main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 fn generate(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write as _;
     let seed = release::new_seed();
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    // The release tooling runs on the Mac; the workspace still builds on
-    // every platform CI tests, where Unix permissions may not exist.
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    let mut file = options
-        .open(path)
+    let mut file = os::fs::create_private(path, os::fs::Create::New)
         .map_err(|error| format!("cannot make {}: {error}", path.display()))?;
     writeln!(file, "{}", release::hex(&seed))?;
     file.sync_all()?;
@@ -778,12 +771,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("backup.key");
         generate(&path).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
-            assert_eq!(mode & 0o777, 0o600, "only its owner may read it");
-        }
+        assert!(
+            os::testing::is_private(&path).unwrap(),
+            "only its owner may read it"
+        );
         assert!(file_seed(&path).is_ok());
         assert!(
             generate(&path).is_err(),

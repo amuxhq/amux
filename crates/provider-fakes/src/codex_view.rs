@@ -333,12 +333,12 @@ async fn join(url: &str, thread: &str) -> Result<(Server, Value), String> {
     Ok((server, answer))
 }
 
-#[cfg(unix)]
+/// Codex's app reaches a remote server on a Unix socket; on Windows a host
+/// keeps Codex on stdio and offers no attach, and the connect fails.
 struct Server {
     socket: crate::clients::Connection,
 }
 
-#[cfg(unix)]
 impl Server {
     async fn connect(url: &str) -> Result<Self, String> {
         let path = match crate::clients::Listen::from_url(url)? {
@@ -397,79 +397,24 @@ impl Server {
     }
 }
 
-/// Codex's app reaches a remote server on a Unix socket; on Windows a host
-/// keeps Codex on stdio and offers no attach.
-#[cfg(not(unix))]
-struct Server;
-
-#[cfg(not(unix))]
-impl Server {
-    async fn connect(url: &str) -> Result<Self, String> {
-        Err(format!("cannot attach to {url} on Windows"))
-    }
-
-    async fn send(&mut self, _frame: &Value) -> Result<(), String> {
-        Ok(())
-    }
-
-    async fn next(&mut self) -> Option<Value> {
-        None
-    }
-
-    async fn call(&mut self, _method: &str, _params: Value) -> Result<Value, String> {
-        Err("no server".into())
-    }
-}
-
 fn draw(text: &str) {
     let mut stdout = std::io::stdout().lock();
     let _ = write!(stdout, "{text}\r\n");
     let _ = stdout.flush();
 }
 
+/// A resize, and the OS's stop (a terminal's hangup, a termination),
+/// which ends the view.
 fn signals(tx: mpsc::Sender<Event>) {
-    #[cfg(unix)]
+    let resized = tx.clone();
+    crate::platform::on_resize(move || resized.send(Event::Resized).is_ok());
     std::thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("a tokio runtime");
-        runtime.block_on(async move {
-            use tokio::signal::unix::{SignalKind, signal};
-            let (Ok(mut resized), Ok(mut term), Ok(mut hup)) = (
-                signal(SignalKind::window_change()),
-                signal(SignalKind::terminate()),
-                signal(SignalKind::hangup()),
-            ) else {
-                return;
-            };
-            loop {
-                let event = tokio::select! {
-                    _ = resized.recv() => Event::Resized,
-                    _ = term.recv() => Event::Ended,
-                    _ = hup.recv() => Event::Ended,
-                };
-                let ended = matches!(event, Event::Ended);
-                if tx.send(event).is_err() || ended {
-                    return;
-                }
-            }
-        });
-    });
-    // A console signals nothing on a resize: the fake looks at its size
-    // often enough that a test waiting for the new one sees it.
-    #[cfg(windows)]
-    std::thread::spawn(move || {
-        let mut drawn = crate::pty::size_line();
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(20));
-            let size = crate::pty::size_line();
-            if size != drawn {
-                drawn = size;
-                if tx.send(Event::Resized).is_err() {
-                    return;
-                }
-            }
+        if runtime.block_on(os::signal::terminated()).is_ok() {
+            let _ = tx.send(Event::Ended);
         }
     });
 }

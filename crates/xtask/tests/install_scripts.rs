@@ -156,10 +156,9 @@ fn said(output: &Output) -> String {
     )
 }
 
+// Unix only by nature: install.sh is the macOS and Linux installer.
 #[cfg(unix)]
 mod sh {
-    use std::os::unix::fs::PermissionsExt as _;
-
     use super::*;
 
     fn install(feed: &Feed, more: &[(&str, &str)]) -> Output {
@@ -187,8 +186,11 @@ mod sh {
         assert!(output.status.success(), "{}", said(&output));
         let binary = installed(&feed);
         assert_eq!(std::fs::read(&binary).unwrap(), BINARY);
-        let mode = std::fs::metadata(&binary).unwrap().permissions().mode();
-        assert_ne!(mode & 0o111, 0, "the installed binary is executable");
+        let meta = std::fs::metadata(&binary).unwrap();
+        assert!(
+            os::fs::is_executable(&binary, &meta),
+            "the installed binary is executable"
+        );
         assert!(
             said(&output).contains("amux 9.9.9 has been installed"),
             "{}",
@@ -273,6 +275,7 @@ mod sh {
     }
 }
 
+// Windows only by nature: install.ps1 is Windows' installer.
 #[cfg(windows)]
 mod powershell {
     use std::process::{Child, Stdio};

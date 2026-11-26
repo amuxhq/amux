@@ -1316,6 +1316,7 @@ version = "0.1.0"
 dependencies = [
  "agent-dir",
  "node",
+ "os",
  "tokio",
  "tracing-subscriber",
 ]
@@ -4193,6 +4194,7 @@ dependencies = [
  "crossterm",
  "fontdue",
  "interpret",
+ "os",
  "png",
  "ratatui",
  "serde",
@@ -5969,6 +5971,7 @@ dependencies = [
 name = "xtask"
 version = "0.1.0"
 dependencies = [
+ "os",
  "protoc-bin-vendored",
  "release",
  "semver",

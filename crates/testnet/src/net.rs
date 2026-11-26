@@ -4061,7 +4061,9 @@ impl Drop for Net {
         // A panicking test's net: its agents killed, without waiting, so
         // none outlives it.
         kill_holders(&agent_dirs(&self.agents_folders()), &mut Vec::new());
-        #[cfg(unix)]
+        // Then whatever else names the net's root, where there is a
+        // `pkill`. Windows has none and needs none: each agent's job ends
+        // what the agent started with it.
         let _ = std::process::Command::new("pkill")
             .args(["-KILL", "-f"])
             .arg(self.root.path())

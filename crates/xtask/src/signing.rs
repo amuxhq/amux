@@ -35,10 +35,10 @@ pub const IDENTIFIER: &str = "sh.amux.cli";
 /// `codesign --sign` takes, so the name that carries the Team ID is never
 /// needed.
 pub fn identity() -> Result<String, Box<dyn std::error::Error>> {
-    if !cfg!(target_os = "macos") {
-        return Err("signing with Developer ID runs on a Mac".into());
-    }
-    let listed = output("security", &["find-identity", "-v", "-p", "codesigning"])?;
+    let listed =
+        output("security", &["find-identity", "-v", "-p", "codesigning"]).map_err(|error| {
+            format!("signing with Developer ID runs on a Mac, with its `security`: {error}")
+        })?;
     developer_id(&listed).ok_or_else(|| {
         format!(
             "no {DEVELOPER_ID} certificate with its private key is in this Mac's keychains; \

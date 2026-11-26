@@ -42,11 +42,12 @@ impl Permission {
 /// One agent process, with its probe in front of it.
 pub struct Conn {
     child: Child,
-    /// The probe's process group, which is its own pid. Kept from the
-    /// start: once the child is reaped tokio no longer knows its pid, and
-    /// the agent it started may still be running in the group.
-    #[cfg_attr(not(unix), allow(dead_code))]
-    group: Option<u32>,
+    /// The probe's tree: on Unix its process group, which outlives the
+    /// probe while the agent it started still runs; on Windows its job.
+    tree: os::process::Tree,
+    /// The probe, pinned, to see it exit without reaping it: the group is
+    /// reached only while the probe is unreaped.
+    probe: Option<os::process::ProcessRef>,
     stdin: Option<ChildStdin>,
     incoming: mpsc::UnboundedReceiver<Value>,
     next_id: u64,
@@ -99,12 +100,9 @@ impl Conn {
         for (name, value) in env {
             process.env(name, value);
         }
-        // Its own process group, so ending a scenario ends whatever the
-        // agent started too (its tool servers, its shells).
-        #[cfg(unix)]
-        process.process_group(0);
-        let mut child = process
-            .spawn()
+        // A tree of its own, so ending a scenario ends whatever the agent
+        // started too (its tool servers, its shells).
+        let (mut child, tree) = os::process::Tree::spawn(&mut process)
             .map_err(|error| format!("starting {}: {error}", probe.display()))?;
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().ok_or("no stdout")?;
@@ -122,7 +120,8 @@ impl Conn {
             }
         });
         Ok(Conn {
-            group: child.id(),
+            probe: os::process::ProcessRef::of_child(&child).ok(),
+            tree,
             child,
             stdin,
             incoming,
@@ -285,19 +284,23 @@ impl Conn {
     }
 
     /// Ends the process as amux ends an agent: its stdin closed, a few
-    /// seconds to go, then its whole process group killed.
+    /// seconds to go, then its whole tree killed.
     pub async fn end(mut self) {
         self.stdin = None;
-        let _ = tokio::time::timeout(Duration::from_secs(8), self.child.wait()).await;
+        let patience = Duration::from_secs(8);
+        match &self.probe {
+            Some(probe) => {
+                let _ = tokio::time::timeout(patience, probe.exited()).await;
+            }
+            None => {
+                let _ = tokio::time::timeout(patience, self.child.wait()).await;
+            }
+        }
         self.kill_group();
     }
 
     fn kill_group(&mut self) {
-        #[cfg(unix)]
-        if let Some(pid) = self.group {
-            // SAFETY: signalling a process group this client created.
-            unsafe { libc::killpg(pid as i32, libc::SIGKILL) };
-        }
+        let _ = self.tree.kill();
         let _ = self.child.start_kill();
     }
 }

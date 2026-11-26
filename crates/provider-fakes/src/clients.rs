@@ -7,7 +7,7 @@
 //! [`Event`]s, so the server and playback treat a stdio host as the one
 //! client that ever connects.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use tokio::io::{AsyncBufReadExt, BufReader, Stdout};
 use tokio::sync::mpsc;
@@ -22,7 +22,8 @@ pub enum Event {
     /// One message the client wrote, as written.
     Frame(ClientId, String),
     Closed(ClientId),
-    /// A socket server was asked to finish (SIGTERM). Codex then finishes
+    /// A socket server was asked to finish (SIGTERM, or another of the
+    /// OS's stops). Codex then finishes
     /// what is running and exits; for a stdio host the end of its input
     /// says the same.
     Terminated,
@@ -62,7 +63,6 @@ impl Listen {
 /// Writes whole messages to one client.
 pub enum Writer {
     Lines(Out<Stdout>),
-    #[cfg(unix)]
     Socket(socket::Sink),
 }
 
@@ -70,7 +70,6 @@ impl Writer {
     pub async fn write(&mut self, text: &str) -> std::io::Result<()> {
         match self {
             Writer::Lines(out) => out.raw(text.as_bytes()).await,
-            #[cfg(unix)]
             Writer::Socket(sink) => socket::write(sink, text).await,
         }
     }
@@ -83,7 +82,8 @@ pub async fn serve(listen: &Listen) -> std::io::Result<mpsc::UnboundedReceiver<E
         Listen::Stdio => {
             tokio::spawn(stdio(tx));
         }
-        Listen::Unix(path) => unix(path, tx).await?,
+        // Not on Windows, whose hosts keep Codex on stdio.
+        Listen::Unix(path) => socket::serve(path, tx).await?,
     }
     Ok(events)
 }
@@ -107,47 +107,32 @@ async fn stdio(tx: mpsc::UnboundedSender<Event>) {
     let _ = tx.send(Event::Closed(0));
 }
 
-#[cfg(unix)]
-async fn unix(path: &Path, tx: mpsc::UnboundedSender<Event>) -> std::io::Result<()> {
-    socket::serve(path, tx).await
-}
-
-#[cfg(not(unix))]
-async fn unix(path: &Path, _tx: mpsc::UnboundedSender<Event>) -> std::io::Result<()> {
-    Err(std::io::Error::other(format!(
-        "fake-codex serves {} only on Unix; Windows hosts use stdio",
-        path.display()
-    )))
-}
-
-#[cfg(unix)]
 pub use socket::{Connection, connect};
 
-#[cfg(unix)]
 mod socket {
     use std::path::Path;
     use std::time::Duration;
 
     use futures_util::stream::SplitSink;
     use futures_util::{SinkExt, StreamExt};
-    use tokio::net::{UnixListener, UnixStream};
     use tokio::sync::mpsc;
     use tokio_tungstenite::WebSocketStream;
     use tokio_tungstenite::tungstenite::Message;
 
     use super::{Event, Writer};
+    use crate::platform::{SocketListener, SocketStream};
 
-    pub type Sink = SplitSink<WebSocketStream<UnixStream>, Message>;
+    pub type Sink = SplitSink<WebSocketStream<SocketStream>, Message>;
 
     /// A client's side of the socket.
-    pub type Connection = WebSocketStream<UnixStream>;
+    pub type Connection = WebSocketStream<SocketStream>;
 
     /// Connects to a server on `path` as Codex's own clients do, waiting
     /// up to `wait` for it to start listening.
     pub async fn connect(path: &Path, wait: Duration) -> std::io::Result<Connection> {
         let deadline = tokio::time::Instant::now() + wait;
         let stream = loop {
-            match UnixStream::connect(path).await {
+            match crate::platform::connect(path).await {
                 Ok(stream) => break stream,
                 Err(error) if tokio::time::Instant::now() >= deadline => return Err(error),
                 Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
@@ -171,18 +156,16 @@ mod socket {
         if std::fs::symlink_metadata(path).is_ok() {
             std::fs::remove_file(path)?;
         }
-        let listener = UnixListener::bind(path)?;
-        let mut terminate =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        let listener = SocketListener::bind(path)?;
         let terminated = tx.clone();
         tokio::spawn(async move {
-            if terminate.recv().await.is_some() {
+            if os::signal::terminated().await.is_ok() {
                 let _ = terminated.send(Event::Terminated);
             }
         });
         tokio::spawn(async move {
             let mut next = 0;
-            while let Ok((stream, _)) = listener.accept().await {
+            while let Ok(stream) = listener.accept().await {
                 tokio::spawn(client(next, stream, tx.clone()));
                 next += 1;
             }
@@ -190,7 +173,7 @@ mod socket {
         Ok(())
     }
 
-    async fn client(id: super::ClientId, stream: UnixStream, tx: mpsc::UnboundedSender<Event>) {
+    async fn client(id: super::ClientId, stream: SocketStream, tx: mpsc::UnboundedSender<Event>) {
         // A client that skips the upgrade is dropped here, unanswered.
         let Ok(socket) = tokio_tungstenite::accept_async(stream).await else {
             return;

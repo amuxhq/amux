@@ -30,6 +30,7 @@ pub mod conformance;
 pub mod dispatch;
 pub mod lines;
 pub mod mcp;
+mod platform;
 pub mod playback;
 pub mod pty;
 pub mod script;

@@ -271,14 +271,10 @@ fn code_of(status: std::process::ExitStatus) -> i32 {
     if let Some(code) = status.code() {
         return code;
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt as _;
-        if let Some(signal) = status.signal() {
-            return 128 + signal;
-        }
+    match qualification::platform::exit_signal(&status) {
+        Some(signal) => 128 + signal,
+        None => 1,
     }
-    1
 }
 
 /// Carries one stream byte for byte, as it arrives, and records it framed

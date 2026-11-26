@@ -9,6 +9,7 @@ autotests = false
 
 [dependencies]
 source-tree = { workspace = true }
+os = { workspace = true }
 release = { workspace = true }
 semver = { workspace = true }
 tonic-prost-build = { workspace = true }
@@ -16,6 +17,7 @@ protoc-bin-vendored = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
+os = { workspace = true, features = ["testing"] }
 tempfile = { workspace = true }
 
 [[test]]

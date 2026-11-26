@@ -29,12 +29,7 @@ fn xdg_dir(env_var: &str, default_suffix: &str) -> PathBuf {
             return PathBuf::from(base);
         }
     }
-    let home = if cfg!(windows) {
-        std::env::var("USERPROFILE").ok()
-    } else {
-        std::env::var("HOME").ok()
-    };
-    home.map(PathBuf::from)
+    os::paths::home_dir()
         .map(|home| home.join(default_suffix))
         .unwrap_or_else(|| PathBuf::from(default_suffix))
 }
@@ -661,11 +656,11 @@ impl InstallationConfig {
 
     /// The repository list with a leading `~/` made the home directory.
     pub fn repositories(&self) -> Vec<PathBuf> {
-        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" });
+        let home = os::paths::home_dir();
         self.repositories
             .iter()
             .map(|path| match (path.strip_prefix("~"), &home) {
-                (Ok(rest), Some(home)) => PathBuf::from(home).join(rest),
+                (Ok(rest), Some(home)) => home.join(rest),
                 _ => path.clone(),
             })
             .collect()

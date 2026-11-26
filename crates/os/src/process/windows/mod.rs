@@ -25,8 +25,9 @@ use windows_sys::Win32::System::JobObjects::{
 };
 use windows_sys::Win32::System::Threading::{
     CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, GetCurrentProcess,
-    GetProcessId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SUSPEND_RESUME,
-    PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
+    GetExitCodeProcess, GetProcessId, INFINITE, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_SUSPEND_RESUME, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, TerminateProcess,
+    WaitForSingleObject,
 };
 
 use super::{Descendant, Detach, Replaced, Spawnable, Spawned};
@@ -195,6 +196,10 @@ pub(super) fn set_inheritable(file: &File, on: bool) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     Ok(())
+}
+
+pub(super) fn file_of_pipe(end: impl Into<OwnedHandle>) -> File {
+    File::from(end.into())
 }
 
 pub(super) fn raw_for_child(file: &File) -> u64 {
@@ -596,6 +601,55 @@ impl ProcessRef {
     pub(super) fn resume(&self) -> io::Result<()> {
         // SAFETY: resuming the process whose handle we own.
         self.nt(unsafe { NtResumeProcess(self.raw()) })
+    }
+
+    pub(super) fn ask_to_stop(&self) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Windows has no signal to ask a process to stop with",
+        ))
+    }
+
+    pub(super) fn reap(&self) -> io::Result<i32> {
+        // SAFETY: waiting on and querying a process handle we own.
+        unsafe {
+            if WaitForSingleObject(self.raw(), INFINITE) != WAIT_OBJECT_0 {
+                return Err(io::Error::last_os_error());
+            }
+            let mut code = 0u32;
+            if GetExitCodeProcess(self.raw(), &mut code) == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(code as i32)
+        }
+    }
+
+    pub(super) fn for_successor(&self) -> io::Result<Option<File>> {
+        let copy = duplicate(self.raw())?;
+        // SAFETY: a fresh duplicate this process owns; a File is how the
+        // inheritance helpers carry a handle, and nothing reads it as one.
+        Ok(Some(unsafe { File::from_raw_handle(copy as RawHandle) }))
+    }
+
+    pub(super) unsafe fn inherited(pid: Pid, handle: Option<u64>) -> io::Result<ProcessRef> {
+        let Some(handle) = handle else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("no handle was handed over for process {pid}"),
+            ));
+        };
+        // SAFETY: the caller's promise, passed on.
+        let file = unsafe { file_from_inherited(handle) }?;
+        let handle = OwnedHandle::from(file);
+        // SAFETY: querying a process handle we own.
+        let named = unsafe { GetProcessId(handle.as_raw_handle() as HANDLE) };
+        if named != pid {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("the handle handed over names process {named}, not {pid}"),
+            ));
+        }
+        Ok(ProcessRef { handle, pid })
     }
 
     fn nt(&self, status: i32) -> io::Result<()> {

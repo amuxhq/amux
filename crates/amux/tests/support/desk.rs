@@ -1,7 +1,6 @@
 //! A desktop install in a temporary directory, driven through the amux CLI
 //! the way a person runs it, for the system tests and journeys.
 
-use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 
@@ -257,10 +256,7 @@ pub fn spoken(chat: &[(String, String)]) -> Vec<&str> {
 
 /// Whether some process holds the lock on the file at `path`.
 pub fn lock_held(path: &Path) -> bool {
-    let Ok(file) = OpenOptions::new().write(true).open(path) else {
-        return false;
-    };
-    matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock))
+    os::lock::FileLock::held(path).unwrap_or(false)
 }
 
 /// Kills the process `pid` at once, if it still runs.

@@ -52,18 +52,10 @@ impl LogFile {
 
     /// Points the process's standard error at this file, appending, so a
     /// panic or a stray message lands in the live file and follows its
-    /// rotations. Windows keeps the standard error it was given.
+    /// rotations, and a child started with standard error inherited writes
+    /// there too ([`os::process::redirect_stderr`]).
     pub fn claim_stderr(&self) -> io::Result<()> {
-        #[cfg(unix)]
-        {
-            use std::os::fd::AsRawFd;
-            // SAFETY: both descriptors are open for the call's length, and
-            // dup2 only replaces descriptor 2 with a copy of ours.
-            if unsafe { libc::dup2(self.file.as_raw_fd(), libc::STDERR_FILENO) } < 0 {
-                return Err(io::Error::last_os_error());
-            }
-        }
-        Ok(())
+        os::process::redirect_stderr(&self.file)
     }
 }
 
@@ -229,13 +221,8 @@ fn read_tail(path: &Path, max: u64) -> io::Result<Option<(Vec<u8>, u64)>> {
 }
 
 fn append(path: &Path) -> io::Result<File> {
-    let mut options = OpenOptions::new();
+    let mut options = os::fs::private_open_options();
     options.create(true).append(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
     options.open(path)
 }
 

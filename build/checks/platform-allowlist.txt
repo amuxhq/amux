@@ -34,7 +34,7 @@ crates/node/src/changes.rs 3
 crates/node/src/install.rs 2
 crates/node/src/reviews/cleanup.rs 1
 crates/node/src/suggestions.rs 1
-crates/node/src/supervisor/files.rs 17
+crates/node/src/supervisor/files.rs 6
 crates/node/src/workspaces/mod.rs 12
 crates/node/tests/reviews.rs 1
 crates/provider-fakes/src/clients.rs 6

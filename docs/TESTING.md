@@ -171,12 +171,11 @@ isn't (`cfg(unix)` marked macOS only fails, since Linux builds it). It is not fo
 tests differently, which is one test written against the harness below, and code outside tests has no such
 marker: it goes in a home. The reason is the reviewer's to judge.
 
-Nothing else compiles a test out on Windows. A test that fails there while its fix is being made stays compiled
-and is ignored, with what fails (not a guessed cause):
-
-```rust
-#[cfg_attr(windows, ignore = "windows: the second daemon never answers on the pipe")]
-```
+Nothing else compiles a test out on Windows, and nothing holds one back there: `platform-check` is strict, so an
+`ignore = "windows: …"` fails the check. A test that fails on Windows is fixed in the change that finds it, or, if
+what it tests is something Windows leaves out, gated as above with that feature named. (During the Windows
+programme such a test was ignored with what failed, `#[cfg_attr(windows, ignore = "windows: <symptom>")]`, until
+its fix landed; none is left, and strict mode keeps it so.)
 
 A runtime skip, with its reason, is only for a missing privilege, such as the right to make symbolic links.
 

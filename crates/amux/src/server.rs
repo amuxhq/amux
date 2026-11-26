@@ -550,8 +550,22 @@ fn spawn_detached(
 /// stops its daemon, or the daemon would come straight back; without one
 /// the daemon is asked to shut down. Agents keep running and wait out
 /// their grace for the next daemon.
+///
+/// With no supervisor running where the install has one, a launcher
+/// (Windows' login item) whose supervisor died may be waiting to start it
+/// again: the stop is recorded in the root ([`node::supervisor::STOPPED`])
+/// for the supervisor it starts, which then exits at once and ends the
+/// launcher.
 pub async fn stop(config: &InstallationConfig) -> Result<()> {
-    if let Some(pid) = running_supervisor(&config.root)? {
+    let mut running = running_supervisor(&config.root)?;
+    if running.is_none() && config.supervisor && config.root.is_dir() {
+        let stopped = config.root.join(node::supervisor::STOPPED);
+        std::fs::write(&stopped, b"")
+            .with_context(|| format!("recording the stop in {}", stopped.display()))?;
+        // A supervisor started before that was written read nothing.
+        running = running_supervisor(&config.root)?;
+    }
+    if let Some(pid) = running {
         stop_supervisor(config, &pid).await?;
         let deadline = Instant::now() + SUPERVISOR_PATIENCE;
         while running_supervisor(&config.root)?.is_some() || installation_locked(&config.root)? {

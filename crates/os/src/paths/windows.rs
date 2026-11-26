@@ -177,7 +177,7 @@ fn remove_from_path_under(subkey: &str, dir: &Path) -> io::Result<bool> {
     let Some((value, kind)) = raw_path(HKEY_CURRENT_USER, subkey)? else {
         return Ok(false);
     };
-    let Some(kept) = without_entry(&value.to_string_lossy(), dir) else {
+    let Some(kept) = without_entry(&value.to_string_lossy(), kind == REG_EXPAND_SZ, dir) else {
         return Ok(false);
     };
     let wide_subkey: Vec<u16> = subkey.encode_utf16().chain([0]).collect();
@@ -221,14 +221,19 @@ fn remove_from_path_under(subkey: &str, dir: &Path) -> io::Result<bool> {
     }
 }
 
-/// `value`, a `Path` as written, without its entries that name `dir`
-/// (compared with their `%VARIABLES%` expanded), the rest exactly as they
-/// were; `None` when none does.
-fn without_entry(value: &str, dir: &Path) -> Option<String> {
+/// `value`, a `Path` as written, without its entries that name `dir`, the
+/// rest exactly as they were; `None` when none does. In an `expandable`
+/// value (`REG_EXPAND_SZ`) entries are compared with their `%VARIABLES%`
+/// expanded, as Windows expands them; in a `REG_SZ` each is literal.
+fn without_entry(value: &str, expandable: bool, dir: &Path) -> Option<String> {
     let target = entry_key(dir);
     let names_dir = |entry: &str| {
         let entry = entry.trim().trim_matches('"');
-        !entry.is_empty() && entry_key(Path::new(&expand(entry))) == target
+        let entry = match expandable {
+            true => expand(entry),
+            false => entry.to_owned(),
+        };
+        !entry.is_empty() && entry_key(Path::new(&entry)) == target
     };
     let entries: Vec<&str> = value.split(';').collect();
     if !entries.iter().any(|entry| names_dir(entry)) {
@@ -530,7 +535,8 @@ mod tests {
 
     /// Uninstalling takes amux's folder off the user's `Path` however it
     /// was written, and leaves every other entry as it was: `%VARIABLES%`
-    /// unexpanded, the value's kind, even an empty entry at the end.
+    /// unexpanded, the value's kind, even an empty entry at the end. Only
+    /// a REG_EXPAND_SZ's entries are compared expanded.
     #[test]
     fn a_folder_comes_off_the_user_path_and_the_rest_stays_as_written() {
         let key = ScratchKey::new();
@@ -563,6 +569,17 @@ mod tests {
                 OsString::from(r"%USERPROFILE%\AppData\keep;C:\other;"),
                 REG_EXPAND_SZ
             ))
+        );
+
+        // A REG_SZ's entries are literal, as Windows reads them: one
+        // written with a variable names no folder but itself, and stays.
+        let literal = r"%SystemRoot%\keep;C:\Users\someone\.amux\bin;C:\other";
+        key.set_path("env", REG_SZ, literal);
+        assert!(!remove_from_path_under(&env, &Path::new(&root).join("keep")).unwrap());
+        assert!(remove_from_path_under(&env, bin).unwrap());
+        assert_eq!(
+            raw_path(HKEY_CURRENT_USER, &env).unwrap(),
+            Some((OsString::from(r"%SystemRoot%\keep;C:\other"), REG_SZ))
         );
 
         // A value left with nothing in it goes.

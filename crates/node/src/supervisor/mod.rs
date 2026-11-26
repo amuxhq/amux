@@ -24,7 +24,9 @@
 //! - Stopping the child is a signal, a stop deadline, then a kill.
 //! - A supervisor `amux-launch` started (Windows' login item) holds the
 //!   launcher's pipe, [`LINEAGE_ENV`], for life, hands it on at the
-//!   self-update, and writes `0` to it before a deliberate exit.
+//!   self-update, and writes `0` to it before a deliberate exit. One it
+//!   started again after a crash ([`RESTART_ENV`]) exits so at once when
+//!   `amux server stop` came while it waited ([`STOPPED`]).
 //!
 //! Counters and timers live in the core's memory. The supervisor holds its
 //! own lock; the installation lock stays the daemon's.
@@ -78,6 +80,19 @@ use crate::window::{self, Window};
 /// deliberate exit; the pipe ending with nothing written is a crash, which
 /// the launcher restarts. Promised from its first release (AGENTS.md).
 pub const LINEAGE_ENV: &str = "AMUX_LAUNCH_LINEAGE";
+
+/// Set by `amux-launch` on every start after its first: the start is a
+/// restart after the line died, not one anybody asked for. Such a start
+/// honours a stop that came while the launcher waited ([`STOPPED`]).
+pub const RESTART_ENV: &str = "AMUX_LAUNCH_RESTART";
+
+/// In the data directory: `amux server stop` found no supervisor to stop.
+/// A launcher may be waiting out its backoff after a crash to start one
+/// again, and the supervisor it starts ([`RESTART_ENV`]) reads this,
+/// removes it, ends the launcher's line and exits without starting a
+/// daemon. Any other start removes it and runs: a deliberate start
+/// (`amux server start`, a login) undoes the stop.
+pub const STOPPED: &str = "supervisor.stopped";
 
 /// The supervisor's timings and thresholds; the defaults are the
 /// parameters table's starting points.
@@ -240,6 +255,16 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
     };
     let files = Files::beside(&binary);
     files.clear_leftovers();
+    if inherited.is_none() && stays_stopped(&data_dir) {
+        tracing::info!(
+            "`amux server stop` ran while the launcher waited to start amux again: staying stopped"
+        );
+        if let Some(lineage) = lineage {
+            lineage.stopping();
+        }
+        os::signal::finished();
+        return Ok(());
+    }
     let prev = if !files.prev_exists() {
         PrevFound::None
     } else if files.prev_is(&binary) {
@@ -312,6 +337,20 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
     // (Windows: a closed console, logoff or shutdown) may end the process.
     os::signal::finished();
     done
+}
+
+/// Whether this start is a launcher's restart that a stop came during
+/// ([`STOPPED`]). Either way a stop recorded is taken back: honoured now,
+/// or undone by a deliberate start.
+fn stays_stopped(data_dir: &Path) -> bool {
+    let stopped = data_dir.join(STOPPED);
+    if stopped.symlink_metadata().is_err() {
+        return false;
+    }
+    if let Err(error) = std::fs::remove_file(&stopped) {
+        tracing::warn!(path = %stopped.display(), %error, "could not take back the recorded stop");
+    }
+    std::env::var_os(RESTART_ENV).is_some()
 }
 
 /// The supervisor core's driver: the daemon processes and their pipes, the
@@ -704,6 +743,7 @@ impl Driver {
         tracing::info!(binary = %self.binary.display(), "handing over to the installed binary");
         let mut successor = std::process::Command::new(&self.binary);
         successor
+            .env_remove(RESTART_ENV)
             .args(&self.args)
             .arg("supervise")
             .arg("--inherit")
@@ -853,8 +893,23 @@ async fn list(source: &UpdateSource) -> Result<Manifest, CheckError> {
 }
 
 /// Stages the release at `staged`, verified against its manifest entry and
-/// executable.
+/// executable. It is downloaded to [`Files::part`] and renamed to `staged`
+/// once verified, so a staged file, which a start may install
+/// ([`Files::clear_leftovers`]), is never a download cut short.
 async fn fetch(release: &Release, staged: &Path) -> Result<(), CheckError> {
+    let part = Files::part(staged);
+    let downloaded = download(release, &part).await;
+    let staged_now = downloaded
+        .and_then(|()| os::fs::rename_patiently(&part, staged).map_err(CheckError::Stage));
+    if staged_now.is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
+    staged_now
+}
+
+/// Downloads the release to `part`, verified against its manifest entry and
+/// executable.
+async fn download(release: &Release, part: &Path) -> Result<(), CheckError> {
     if release.size > ARTIFACT_LIMIT {
         return Err(CheckError::TooLarge {
             what: "the artifact",
@@ -868,7 +923,7 @@ async fn fetch(release: &Release, staged: &Path) -> Result<(), CheckError> {
         .await
         .and_then(reqwest::Response::error_for_status)
         .map_err(fetch_error(&release.url))?;
-    let mut file = tokio::fs::File::create(staged)
+    let mut file = tokio::fs::File::create(part)
         .await
         .map_err(CheckError::Stage)?;
     let mut hash = Sha256::new();
@@ -890,7 +945,7 @@ async fn fetch(release: &Release, staged: &Path) -> Result<(), CheckError> {
     file.sync_all().await.map_err(CheckError::Stage)?;
     drop(file);
     release::verify_artifact(release, &release::sha256_hex(&hash.finalize()), written)?;
-    os::fs::make_executable(staged).map_err(CheckError::Stage)?;
+    os::fs::make_executable(part).map_err(CheckError::Stage)?;
     Ok(())
 }
 

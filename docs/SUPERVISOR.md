@@ -213,10 +213,25 @@ The supervisor holds the pipe for its whole life and never passes it to
 the daemon. At its own update it hands the pipe to its successor with the
 child and the activation pipe ([below](#the-supervisor-updates-itself)), so
 the pipe stays open across the handover and the launcher sees nothing end.
-The command line and `AMUX_LAUNCH_LINEAGE` are promised from the first
-release that ships the launcher: a login item written by one release starts
-whichever release is installed later, and a running launcher meets the
-supervisors of later releases.
+
+A stop while the launcher waits out a backoff finds no supervisor to tell.
+`amux server stop`, finding none where the install has one, writes
+`<data_dir>/supervisor.stopped` (and stops a supervisor that started
+before it was written as usual). Every start after the launcher's first
+carries `AMUX_LAUNCH_RESTART=1`; a supervisor started so that finds the
+file removes it, writes `0` and exits before it starts a daemon, and the
+launcher exits. Any other start (the login's, `amux server start`) removes
+the file and runs: a deliberate start undoes the stop. The launcher can't
+read the file itself, since it knows no root, only the arguments it passes
+on; and amux, not the launcher, deciding keeps the launcher's contract to
+one more variable. A named event was the other way, but `server stop`
+would have needed the launcher's name for it from a file in the root
+anyway, and the launcher would have needed a wait it can be woken from.
+
+The command line, `AMUX_LAUNCH_LINEAGE` and `AMUX_LAUNCH_RESTART` are
+promised from the first release that ships the launcher: a login item
+written by one release starts whichever release is installed later, and a
+running launcher meets the supervisors of later releases.
 
 ## Stop goes to the owner
 
@@ -377,8 +392,9 @@ soon as stable names a version above the one running.
 **The swap.** The manifest's signature is verified against the key compiled
 into the running binary, and its channel against the one followed, before
 anything in it is read. A build to install is then downloaded to
-`amux.staged` beside the binary, no more than its signed size, and its
-length and SHA-256 compared with the manifest's. On Unix the current binary
+`amux.staged.part` beside the binary, no more than its signed size, its
+length and SHA-256 compared with the manifest's, and only then renamed to
+`amux.staged`: a staged file is always a verified one. On Unix the current binary
 is then hard-linked to `amux.prev`, so the install path is never missing, and
 the staged file is renamed over the install path. Running processes keep the
 file they started from: agents, tool servers and terminal clients are
@@ -395,7 +411,13 @@ it with the binary (a bad one fails the update), and puts it beside
 running as the login item keeps its old image, which is harmless: its
 command line and its pipe are all it shares with amux, and both are
 promised. A launcher that fails to go in leaves the one there, and the
-next release tries again; a rollback puts back `amux.exe` alone.
+next release tries again; a rollback puts back `amux.exe` alone. An update
+stopped between moving the launcher aside and renaming the staged one in
+(the supervisor killed, the power cut) leaves the login item naming no
+file, so every supervisor start, before it clears downloads or sweeps,
+puts a launcher back where there is none: the staged one if there is one,
+else the one moved aside last (the newest by its time, which a rename
+keeps).
 
 ![The agent never learns an update happened except by EOF on its control socket. A crash is the same timeline: the supervisor restarts the child either way, and after K starts that never activate it restarts the previous binary instead. A daemon that never returns ends at the grace timer: the agent drains and exits, its journal remainder is ingested by whichever daemon comes next, and the agent shows as exited (daemon lost) with one-tap resume.](figures/update-timeline.svg)
 
@@ -538,8 +560,9 @@ sleep, which is no worse than `keep_awake = false`.
 | Where | What it shows |
 | --- | --- |
 | [`crates/supervisor-core/src/tests.rs`](../crates/supervisor-core/src/tests.rs) | The core's rules one input at a time; among them a restart the daemon asks for stopping it and starting it again at once, with no backoff and nothing moved, and nothing started when the supervisor is stopping. |
+| [`crates/node/src/supervisor/files.rs`](../crates/node/src/supervisor/files.rs) | The files beside the binary: a failed swap leaving the binary at its path, rollback over a build held for a moment, each retired build moved aside to a name of its own and swept once nothing holds it, the staged launcher replacing the one there, a start clearing downloads (finished or not) and what was moved aside, and a start putting back the launcher an interrupted update left missing, the staged one or else the one moved aside last. |
 | [`crates/node/tests/supervisor.rs`](../crates/node/tests/supervisor.rs) | The real supervisor driving a stand-in binary (`fake-amux`) whose daemon mode is scripted per version, against a local manifest server, with releases signed by the test key. Restart on every exit and stop on request; install a newer signed release and exec it keeping pid, child, pipe and lock (on Windows, a successor that takes the lock again); two updates in a row with a process of each earlier build still running from its image (on Windows each retired build moved aside to a name of its own and swept once nothing runs it); the release's launcher installed beside the binary while it runs; under `amux-launch`, a dead supervisor started again after a doubling backoff, the launcher's line kept open across the self-update, and the launcher ended by a deliberate stop; refuse a bad hash or signature; roll back after K starts that never prepare and skip the rejected build; stop a daemon that hangs before `prepared` at the start deadline; restart without rollback after `go`; kill at the stop deadline; the three recovery cases above; the real `amux daemon` exiting when its supervisor dies; rollout and version choice. |
-| [`crates/amux/tests/supervise_cli.rs`](../crates/amux/tests/supervise_cli.rs) | The CLI around it, with the real binary: `start_at_login` writing the login item for the next login and removing it, and finding no supervisor to write one for, stop going to the supervisor first or to the daemon when there is none, and ending the launcher that started it, a client starting the supervisor only where the install has one, a client's experiment switch restarting the daemon through the supervisor with the agent mid-turn keeping its process, the supervisor's power assertion under `keep_awake`, let go and taken again as the setting changes (macOS), `amux config set channel`, and `amux update` reporting a build that never started and leaving it alone after, and `amux update --retry` installing a build this machine had rolled back. |
+| [`crates/amux/tests/supervise_cli.rs`](../crates/amux/tests/supervise_cli.rs) | The CLI around it, with the real binary: `start_at_login` writing the login item for the next login and removing it, and finding no supervisor to write one for, stop going to the supervisor first or to the daemon when there is none, and ending the launcher that started it, or one waiting out its backoff after the supervisor was killed, which then starts nothing, a client starting the supervisor only where the install has one, a client's experiment switch restarting the daemon through the supervisor with the agent mid-turn keeping its process, the supervisor's power assertion under `keep_awake`, let go and taken again as the setting changes (macOS), `amux config set channel`, and `amux update` reporting a build that never started and leaving it alone after, and `amux update --retry` installing a build this machine had rolled back. |
 | [`crates/amux/tests/windows_install.rs`](../crates/amux/tests/windows_install.rs) | Windows only: the whole install run in a scratch machine. `install.ps1` installs amux and its launcher from a feed on the loopback, `server start` and `stop`, `start_at_login` writes the `Run` value and a simulated logon starts what it names, an agent on the fakes keeps its process and its turn through two updates from the feed and answers after, and `amux uninstall` leaves only a program a running process held, with the user's PATH as it was; no step shows a window of the run's, and every supervisor and daemon logs `console window=false`. The `Run` key and `HKCU\Environment` are scratch keys, and nothing runs that doesn't read them. |
 | [`crates/node/tests/settings.rs`](../crates/node/tests/settings.rs) | The daemon's half of keep-awake: wanted while an agent works under `keep_awake`, not once the turn ends or the setting goes off. |
 | [`crates/amux/tests/overlap.rs`](../crates/amux/tests/overlap.rs) | Releases overlapping on one machine. Agents started by the first build work on through two updates in a row and a daemon killed mid-turn; a terminal client of the previous build keeps working and names the newer daemon; the previous build reopens and works in a store the new build opened before it was killed ahead of `prepared`; restarting the generated LaunchAgent under a running turn leaves the agent running. "The previous build" is a copy of the build under test re-stamped one version lower (`node::release::restamp`). |

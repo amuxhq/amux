@@ -18,9 +18,16 @@
 //! `amux supervise` keeps the pipe for life and hands it to the successor
 //! it starts at a self-update, so an update never reads as a death.
 //!
-//! The command line and `AMUX_LAUNCH_LINEAGE` are promised from the first
-//! release that ships this (AGENTS.md): a login item written by one release
-//! starts whichever release is installed later.
+//! Every start after the first carries `AMUX_LAUNCH_RESTART=1`. A stop
+//! while the launcher waits finds no supervisor to tell, so `amux server
+//! stop` leaves word in amux's root, which the launcher can't find; amux
+//! started with this reads it, writes the byte and exits, and the launcher
+//! exits too.
+//!
+//! The command line, `AMUX_LAUNCH_LINEAGE` and `AMUX_LAUNCH_RESTART` are
+//! promised from the first release that ships this (AGENTS.md): a login
+//! item written by one release starts whichever release is installed
+//! later.
 
 #![windows_subsystem = "windows"]
 
@@ -34,6 +41,10 @@ use std::time::{Duration, Instant};
 /// Unix): `node::supervisor::LINEAGE_ENV`, which this crate can't link.
 const LINEAGE_ENV: &str = "AMUX_LAUNCH_LINEAGE";
 
+/// Tells amux a start is a restart after its line died:
+/// `node::supervisor::RESTART_ENV`.
+const RESTART_ENV: &str = "AMUX_LAUNCH_RESTART";
+
 fn main() {
     os::process::harden_start();
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -44,14 +55,16 @@ fn main() {
     // The folder it was started in, which a login item doesn't choose.
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
     let mut backoff = Backoff::default();
+    let mut restart = false;
     loop {
         let started = Instant::now();
-        if let Ok(Ended::Stopped) = run(&amux, &args, &cwd) {
+        if let Ok(Ended::Stopped) = run(&amux, &args, &cwd, restart) {
             return;
         }
         // A start that failed (amux moved aside mid-update, say) is a
         // death too, and is tried again.
         std::thread::sleep(backoff.after(started.elapsed()));
+        restart = true;
     }
 }
 
@@ -70,14 +83,19 @@ enum Ended {
     Died,
 }
 
-/// Starts `amux <args>` holding the lineage's write end, and reads the
-/// read end until it ends.
-fn run(amux: &Path, args: &[OsString], cwd: &Path) -> io::Result<Ended> {
+/// Starts `amux <args>` holding the lineage's write end, saying whether it
+/// is a `restart`, and reads the read end until it ends.
+fn run(amux: &Path, args: &[OsString], cwd: &Path, restart: bool) -> io::Result<Ended> {
     let (mut lineage, write) = os::process::pipe()?;
     let mut command = Command::new(amux);
     command
         .args(args)
         .env(LINEAGE_ENV, os::process::raw_for_child(&write).to_string());
+    if restart {
+        command.env(RESTART_ENV, "1");
+    } else {
+        command.env_remove(RESTART_ENV);
+    }
     os::process::background(&mut command, os::process::Detach::Session, cwd);
     let given = os::process::Given {
         files: &[&write],
@@ -166,5 +184,6 @@ mod tests {
     #[test]
     fn the_lineage_is_named_as_promised() {
         assert_eq!(LINEAGE_ENV, "AMUX_LAUNCH_LINEAGE");
+        assert_eq!(RESTART_ENV, "AMUX_LAUNCH_RESTART");
     }
 }

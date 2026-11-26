@@ -167,7 +167,8 @@ impl Child {
     /// Starts `<binary> <args> daemon` with the pipe, in the background in
     /// `root`. It inherits the pipe's two ends and the supervisor's
     /// standard error and nothing else: not the lineage, whose end must
-    /// come when the supervisor's line does.
+    /// come when the supervisor's line does, nor word of the launcher's
+    /// restart.
     pub fn spawn(binary: &Path, args: &[std::ffi::OsString], root: &Path) -> io::Result<Self> {
         let (child_reads, go) = os::process::pipe()?;
         let (prepared_end, child_writes) = os::process::pipe()?;
@@ -177,6 +178,7 @@ impl Child {
             .args(args)
             .arg("daemon")
             .env_remove(super::LINEAGE_ENV)
+            .env_remove(super::RESTART_ENV)
             .env(
                 PIPE_ENV,
                 format!(

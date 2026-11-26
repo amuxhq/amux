@@ -174,6 +174,96 @@ async fn a_download_is_installed_only_once_its_signature_and_hash_check_out() {
     assert_eq!(again, Outcome::Running);
 }
 
+/// A manifest that names a launcher beside this target's build, from the
+/// same release (Windows' `<target>/amux-launch`), has it installed beside
+/// amux, checked as amux is: one that isn't the entry's installs nothing,
+/// amux included. Only Windows' manifests name one; the installer reads it
+/// by this build's target, so the case runs on every OS.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_launcher_the_manifest_names_is_installed_beside_amux_only_once_it_checks_out() {
+    let binary = std::fs::read(amux()).unwrap();
+    let launcher = b"the login item's launcher".to_vec();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let with_launcher = |path: &str| {
+        let mut manifest = manifest(&base, "/amux", &binary, "9.9.9");
+        manifest.targets.insert(
+            release::beside_key(release::TARGET, release::LAUNCHER),
+            Release {
+                version: "9.9.9".into(),
+                url: format!("{base}{path}"),
+                sha256: release::sha256_of(&launcher),
+                size: launcher.len() as u64,
+            },
+        );
+        manifest.signature = release::sign(&release::TEST_SEED, &manifest);
+        manifest
+    };
+    serve(
+        vec![
+            (
+                "/good/stable.json".into(),
+                serde_json::to_vec(&with_launcher("/launcher")).unwrap(),
+            ),
+            (
+                "/swapped/stable.json".into(),
+                serde_json::to_vec(&with_launcher("/other")).unwrap(),
+            ),
+            ("/amux".into(), binary.clone()),
+            ("/launcher".into(), launcher.clone()),
+            ("/other".into(), b"not the launcher at all".to_vec()),
+        ],
+        listener,
+    );
+    let beside = |home: &Home| {
+        home.installed()
+            .with_file_name(os::paths::exe_name(release::LAUNCHER))
+    };
+
+    let home = Home::new(&format!("{base}/swapped"));
+    let refused = installer::ensure(&home.options(), |_| {}).await;
+    assert!(
+        matches!(
+            refused,
+            Err(Error::Verify(release::VerifyError::Size { .. }))
+        ),
+        "{refused:?}"
+    );
+    assert!(!home.installed().exists() && !beside(&home).exists());
+    let leftovers: Vec<_> = std::fs::read_dir(home.dir.path().join(".amux/bin"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .filter(|name| name != ".install.lock")
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+    drop(home);
+
+    let home = Home::new(&format!("{base}/good"));
+    let (mut received, mut total) = (0, 0);
+    let outcome = installer::ensure(&home.options(), |step| {
+        if let Step::Downloading {
+            received: now,
+            total: of,
+        } = step
+        {
+            assert!(now <= of && now >= received);
+            (received, total) = (now, of);
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        outcome,
+        Outcome::Installed {
+            version: "9.9.9".into(),
+        }
+    );
+    let both = (binary.len() + launcher.len()) as u64;
+    assert_eq!((received, total), (both, both), "one download of both");
+    assert_eq!(std::fs::read(home.installed()).unwrap(), binary);
+    assert_eq!(std::fs::read(beside(&home)).unwrap(), launcher);
+}
+
 /// Starting amux ends when `amux server start` does, whatever that leaves
 /// running on the streams it was given: here a stand-in that fails, leaving
 /// a process holding them for 15 seconds. A desktop app's first start would

@@ -228,14 +228,6 @@ impl StartAtLogin {
         platform::remove_now(self)?;
         Ok(true)
     }
-
-    /// Removes the item an earlier build registered for this installation
-    /// in place of today's, as uninstalling does: on Windows the `amux`
-    /// scheduled task builds before the `Run` value used. Says whether
-    /// there was one; elsewhere there never is.
-    pub fn remove_earlier(&self) -> io::Result<bool> {
-        platform::remove_earlier(self)
-    }
 }
 
 /// Login items no service manager reads, for a test, removed with all
@@ -360,11 +352,6 @@ mod file_item {
     pub(super) fn remove_now(login: &StartAtLogin) -> io::Result<()> {
         run(login, &manager::stop_commands(), false)?;
         remove_file(&file(login))
-    }
-
-    /// A LaunchAgent and a systemd unit are what every build wrote.
-    pub(super) fn remove_earlier(_login: &StartAtLogin) -> io::Result<bool> {
-        Ok(false)
     }
 
     fn remove_file(file: &Path) -> io::Result<()> {

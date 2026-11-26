@@ -157,19 +157,18 @@ to `supervisor.log`. The value is this installation's by its name, so two
 roots never overwrite each other and a worktree's never touches the real one.
 Windows starts no `Run` command line longer than 260 characters, so turning
 the item on with a longer one (a deep config path) is refused with an error
-saying so, and nothing is written. An `amux` scheduled task an earlier build
-registered is left by turning the item on or off; it still runs `amux
-supervise`, in a window. `amux uninstall` removes it.
+saying so, and nothing is written.
 
 `amux uninstall` removes it at once: it unregisters the login item
 (`launchctl bootout`, `systemctl --user disable --now`, or deleting the `Run`
 value) and deletes its file, again only when it is this installation's.
-On Windows it also ends and deletes the `amux` scheduled task an earlier
-build registered for this installation, which that build marked by keeping
-the task's definition in the root (`amux-task.xml`). It stops this
+It stops this
 machine's agents first and amux after, so nothing is left running without
 its binary; the supervisor's deliberate stop ends the launcher that started
-it too.
+it too. A launcher waiting out a backoff when the uninstall runs has no
+supervisor to hear the stop: it finds `amux.exe` gone at its next attempt
+and exits, and its image, still running when the uninstall deletes the
+programs, is moved aside like any other (below).
 
 For the default installation it then deletes, beside `amux` and
 `amux-launch`, everything their updates leave
@@ -207,7 +206,19 @@ and reads the other end:
   supervisor that could not start). The launcher starts amux again after a
   backoff of 1 second doubling to 60, back to 1 after a line that ran 10
   minutes. A start that fails, say while an update has the binary moved
-  aside, counts as a death too.
+  aside, counts as a death too. If no `amux.exe` is left beside the
+  launcher when the backoff ends (an uninstall removed it while the
+  launcher waited), there is nothing to start and no supervisor will ever
+  end the line, so the launcher exits.
+
+A supervisor the launcher starts that finds another supervisor holding the
+root's lock (`amux server start` ran before the login item did, or while
+the launcher waited) writes `0` before it exits with its error: that
+supervisor owns the root, and a launcher left waiting would start amux
+again after its `amux server stop`, which found a supervisor to tell and
+so recorded nothing. A successor started at an update that finds the lock
+held leaves the line alone, since the supervisor it replaces still holds
+it. A direct `amux supervise` has no line and just fails.
 
 The supervisor holds the pipe for its whole life and never passes it to
 the daemon. At its own update it hands the pipe to its successor with the

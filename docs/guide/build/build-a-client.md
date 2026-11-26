@@ -319,6 +319,7 @@ remove it.
   On Windows the install script is PowerShell,
   `irm https://amux.sh/install | iex`; then `amux server start` as above.
   It needs no administrator, and puts `amux-launch.exe` beside `amux.exe`.
+  The `installer` crate's `ensure` does the same.
 
 Details:
 

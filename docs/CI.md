@@ -171,7 +171,14 @@ judged in this order:
    tests and journeys own code only a Mac compiles, the root `justfile` and
    the macOS worker's configuration; Windows owns code only Windows compiles
    (`cfg(windows)`, `not(unix)` and the like), its toolchain, worker and
-   recipes. That job runs.
+   recipes, the launcher (`crates/launch`), the resources linked into each
+   Windows program (`crates/exe-resource`) and the install script it runs
+   (`install.ps1`). A module for one OS (`fs/windows.rs`,
+   `process/windows/`, `platform/macos.rs`) holds no `cfg` of its own, since
+   its parent's declaration carries it, so it is matched by its path: a file
+   or folder under `crates/` named `windows` or `macos`, or a file
+   `windows_*.rs` or `macos_*.rs` beside one.
+   A module for Linux alone is the Linux gate's. That job runs.
 3. `covered`: what the Linux gate exercises (every crate, the protocol, the
    documentation, the scripts) or what no gated job uses. No gated job runs.
 4. Anything else is unclassified, and every gated job runs.

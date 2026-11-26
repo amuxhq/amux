@@ -133,4 +133,6 @@ to remove that too.
 
 On Windows a program can't be deleted while it runs, and `amux uninstall`
 is one, so it leaves itself behind as `amux.exe.old.1` (or the next free
-number) and says so. Delete that file once the command has finished.
+number) and says so. Delete that file once the command has finished. If amux
+had stopped unexpectedly and was about to start again, `amux-launch.exe` may
+be left the same way, until it notices amux is gone and exits.

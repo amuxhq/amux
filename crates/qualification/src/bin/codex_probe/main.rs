@@ -1,4 +1,3 @@
-#[cfg(unix)]
 mod capture;
 mod probe;
 

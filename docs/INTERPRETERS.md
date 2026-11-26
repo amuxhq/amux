@@ -1505,7 +1505,14 @@ just live acp <agent>[,<agent>...] <scenario>[,<scenario>...]
 ```
 
 The probe stands in for the provider on the lane's `PATH` and runs the real
-one past it. A live Codex agent runs on your account's default model
+one past it: a hard link to the probe (or a copy, where the volume takes no
+link) named as the provider with the platform's executable suffix, which the
+daemon finds as it finds any provider, so nothing is a symbolic link or needs
+an execute bit. On Windows `just live` runs the lane as a Buck2 test, in
+NativeLink's non-interactive session under your own profile, so the daemon
+and agents it starts open no windows on the desktop; `claude_pty`, `attach`
+and Codex's `child_stop` (a second client on Codex's socket) report
+`not_run` there, since a Windows host runs Codex over stdio. A live Codex agent runs on your account's default model
 in a Codex home holding only your login, with a config of its own where its
 scenario names one (a tool server, a provider, web search). A live Claude
 agent reads only project settings and the tool servers its scenario names

@@ -4,29 +4,22 @@
 //!
 //! `codex app-server` runs as asked, and every message between it and its
 //! clients is recorded as the corpus records it: `stdin` for what a client
-//! sent, `stdout` for what the server sent. Over stdio the
-//! proxy carries the lines itself. On a socket the server listens on one of
-//! the proxy's own and the proxy listens where the host asked, carrying each
-//! client's WebSocket messages across; the first client is recorded as
-//! `amux` and any later one (Codex's own app attached) as `other`. Every
-//! other invocation runs Codex unrecorded. Every line carries the proxy's
-//! `process` id, so one capture directory can hold many runs.
+//! sent, `stdout` for what the server sent. Over stdio (how a Windows host
+//! runs Codex) the proxy carries the lines itself. On a socket the server
+//! listens on one of the proxy's own and the proxy listens where the host
+//! asked, carrying each client's WebSocket messages across; the first client
+//! is recorded as `amux` and any later one (Codex's own app attached) as
+//! `other`. Every other invocation runs Codex unrecorded, its exit the
+//! proxy's. Every line carries the proxy's `process` id, so one capture
+//! directory can hold many runs.
 
 use std::io::Write as _;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::path::PathBuf;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use futures_util::{SinkExt as _, StreamExt as _};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
-use tokio::net::{UnixListener, UnixStream};
-use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 
 pub(super) const PROXY_ENV: &str = "CODEX_CAPTURE_PROXY";
-/// How long a client may wait for the server's own socket to answer.
-const UPSTREAM: Duration = Duration::from_secs(60);
-
 #[derive(Clone)]
 struct Recorder {
     dir: PathBuf,
@@ -57,10 +50,10 @@ impl Recorder {
 
 pub(super) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let real = std::env::var_os("CODEX_REAL_PATH").unwrap_or_else(|| "codex".into());
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = std::env::args().skip(1).collect();
     if !args.iter().any(|arg| arg == "app-server") {
-        use std::os::unix::process::CommandExt as _;
-        return Err(std::process::Command::new(real).args(&args).exec().into());
+        let status = std::process::Command::new(real).args(&args).status()?;
+        std::process::exit(status.code().unwrap_or(1));
     }
     let dir =
         PathBuf::from(std::env::var_os("CODEX_CAPTURE_DIR").ok_or("CODEX_CAPTURE_DIR is not set")?);
@@ -93,16 +86,20 @@ pub(super) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .map(|at| at + 1)
         .filter(|at| args.get(*at).is_some_and(|url| url.starts_with("unix://")));
     let status = match listen {
+        // out of scope on Windows: attach. A Windows host runs Codex over
+        // stdio, with no socket for Codex's own app to join.
+        #[cfg(unix)]
         Some(at) => {
+            let mut args = args;
             let asked = PathBuf::from(&args[at]["unix://".len()..]);
             // A Unix socket's path has a short limit (104 bytes on macOS),
             // which a capture directory deep in a run's folders overruns,
             // so the server's own socket goes in the temporary directory.
             let own = std::env::temp_dir().join(format!("codex-probe-{}.sock", std::process::id()));
             args[at] = format!("unix://{}", own.display());
-            socket(real, args, &asked, own, recorder).await?
+            socket::run(real, args, &asked, own, recorder).await?
         }
-        None => stdio(real, args, recorder).await?,
+        _ => stdio(real, args, recorder).await?,
     };
     std::process::exit(status.code().unwrap_or(1));
 }
@@ -157,90 +154,108 @@ async fn stdio(
     Ok(status)
 }
 
-async fn socket(
-    real: std::ffi::OsString,
-    args: Vec<String>,
-    asked: &Path,
-    own: PathBuf,
-    recorder: Recorder,
-) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
-    let _ = std::fs::remove_file(&own);
-    // In the proxy's process group, so whatever ends the group ends both.
-    let mut child = tokio::process::Command::new(real)
-        .args(&args)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .spawn()?;
-    let _ = std::fs::remove_file(asked);
-    let listener = UnixListener::bind(asked)?;
-    let accept = tokio::spawn(async move {
-        let mut clients = 0usize;
-        while let Ok((client, _)) = listener.accept().await {
-            let transport = if clients == 0 { "amux" } else { "other" };
-            clients += 1;
-            tokio::spawn(carry(client, own.clone(), transport, recorder.clone()));
-        }
-    });
-    let status = child.wait().await?;
-    accept.abort();
-    Ok(status)
-}
+// out of scope on Windows: attach, Codex's socket.
+#[cfg(unix)]
+mod socket {
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
 
-/// Carries one client's messages to the server and back, recording each.
-async fn carry(client: UnixStream, own: PathBuf, transport: &'static str, recorder: Recorder) {
-    let path = Arc::new(Mutex::new(String::from("/")));
-    let asked = path.clone();
-    // The handshake's own callback type; its error is the library's.
-    #[allow(clippy::result_large_err)]
-    let note_path = move |request: &Request, response: Response| {
-        *asked.lock().unwrap() = request.uri().path().to_owned();
-        Ok(response)
-    };
-    let Ok(client) = tokio_tungstenite::accept_hdr_async(client, note_path).await else {
-        return;
-    };
-    let deadline = Instant::now() + UPSTREAM;
-    let upstream = loop {
-        match UnixStream::connect(&own).await {
-            Ok(stream) => break stream,
-            Err(_) if Instant::now() < deadline => {
-                tokio::time::sleep(Duration::from_millis(50)).await
+    use futures_util::{SinkExt as _, StreamExt as _};
+    use tokio::net::{UnixListener, UnixStream};
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+
+    use super::Recorder;
+
+    /// How long a client may wait for the server's own socket to answer.
+    const UPSTREAM: Duration = Duration::from_secs(60);
+
+    pub(super) async fn run(
+        real: std::ffi::OsString,
+        args: Vec<String>,
+        asked: &Path,
+        own: PathBuf,
+        recorder: Recorder,
+    ) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
+        let _ = std::fs::remove_file(&own);
+        // In the proxy's process group, so whatever ends the group ends both.
+        let mut child = tokio::process::Command::new(real)
+            .args(&args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .spawn()?;
+        let _ = std::fs::remove_file(asked);
+        let listener = UnixListener::bind(asked)?;
+        let accept = tokio::spawn(async move {
+            let mut clients = 0usize;
+            while let Ok((client, _)) = listener.accept().await {
+                let transport = if clients == 0 { "amux" } else { "other" };
+                clients += 1;
+                tokio::spawn(carry(client, own.clone(), transport, recorder.clone()));
             }
-            Err(_) => return,
-        }
-    };
-    let url = format!("ws://localhost{}", path.lock().unwrap());
-    let Ok((server, _)) = tokio_tungstenite::client_async(url, upstream).await else {
-        return;
-    };
-    let (mut to_client, mut from_client) = client.split();
-    let (mut to_server, mut from_server) = server.split();
-    let up = {
-        let recorder = recorder.clone();
-        async move {
-            while let Some(Ok(message)) = from_client.next().await {
+        });
+        let status = child.wait().await?;
+        accept.abort();
+        Ok(status)
+    }
+
+    /// Carries one client's messages to the server and back, recording each.
+    async fn carry(client: UnixStream, own: PathBuf, transport: &'static str, recorder: Recorder) {
+        let path = Arc::new(Mutex::new(String::from("/")));
+        let asked = path.clone();
+        // The handshake's own callback type; its error is the library's.
+        #[allow(clippy::result_large_err)]
+        let note_path = move |request: &Request, response: Response| {
+            *asked.lock().unwrap() = request.uri().path().to_owned();
+            Ok(response)
+        };
+        let Ok(client) = tokio_tungstenite::accept_hdr_async(client, note_path).await else {
+            return;
+        };
+        let deadline = Instant::now() + UPSTREAM;
+        let upstream = loop {
+            match UnixStream::connect(&own).await {
+                Ok(stream) => break stream,
+                Err(_) if Instant::now() < deadline => {
+                    tokio::time::sleep(Duration::from_millis(50)).await
+                }
+                Err(_) => return,
+            }
+        };
+        let url = format!("ws://localhost{}", path.lock().unwrap());
+        let Ok((server, _)) = tokio_tungstenite::client_async(url, upstream).await else {
+            return;
+        };
+        let (mut to_client, mut from_client) = client.split();
+        let (mut to_server, mut from_server) = server.split();
+        let up = {
+            let recorder = recorder.clone();
+            async move {
+                while let Some(Ok(message)) = from_client.next().await {
+                    if let Message::Text(text) = &message {
+                        recorder.record("stdin", transport, text.as_str());
+                    }
+                    let close = message.is_close();
+                    if to_server.send(message).await.is_err() || close {
+                        break;
+                    }
+                }
+                let _ = to_server.close().await;
+            }
+        };
+        let down = async move {
+            while let Some(Ok(message)) = from_server.next().await {
                 if let Message::Text(text) = &message {
-                    recorder.record("stdin", transport, text.as_str());
+                    recorder.record("stdout", transport, text.as_str());
                 }
                 let close = message.is_close();
-                if to_server.send(message).await.is_err() || close {
+                if to_client.send(message).await.is_err() || close {
                     break;
                 }
             }
-            let _ = to_server.close().await;
-        }
-    };
-    let down = async move {
-        while let Some(Ok(message)) = from_server.next().await {
-            if let Message::Text(text) = &message {
-                recorder.record("stdout", transport, text.as_str());
-            }
-            let close = message.is_close();
-            if to_client.send(message).await.is_err() || close {
-                break;
-            }
-        }
-        let _ = to_client.close().await;
-    };
-    tokio::join!(up, down);
+            let _ = to_client.close().await;
+        };
+        tokio::join!(up, down);
+    }
 }

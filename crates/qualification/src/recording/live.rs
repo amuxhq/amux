@@ -31,11 +31,10 @@ pub fn stand_in_for(command: &str, proxy_env: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// The owner's home folder, which every recording redacts.
+/// The owner's home folder, which every recording redacts: `HOME` on
+/// Unix, the profile folder on Windows, where `HOME` is usually unset.
 pub fn owner_home() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_default()
+    std::env::home_dir().unwrap_or_default()
 }
 
 /// The values of the variables `names` that are set: the provider's

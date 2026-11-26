@@ -1,3 +1,4 @@
+// out of scope on Windows: terminal Claude, whose capture this is.
 #[cfg(unix)]
 mod capture;
 mod probe;

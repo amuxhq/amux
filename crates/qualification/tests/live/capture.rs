@@ -3,8 +3,10 @@
 //!
 //! The daemon finds the provider command on its PATH. The lane puts a
 //! folder first on that PATH holding the probe under the provider's name
-//! (`claude` is claude-probe, `codex` is codex-probe), told by its
-//! environment to run the real provider and record what crosses: headless
+//! (`claude` is claude-probe, `codex` is codex-probe, with the platform's
+//! executable suffix), a hard link or a copy as `provider-fakes`' dispatch
+//! places a fake, so nothing is a symbolic link or needs an execute bit. Its
+//! environment tells it to run the real provider and record what crosses: headless
 //! Claude's stream lines, terminal Claude's screen, keys, hooks and
 //! transcript rows, Codex's app-server messages. Each provider process is
 //! one spawn, a line in the capture's `spawn.jsonl` with its arguments and
@@ -46,12 +48,12 @@ fn probe(name: &str) -> Result<PathBuf, String> {
     }
 }
 
-/// The first `command` on the PATH.
-fn on_path(command: &str) -> Result<PathBuf, String> {
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    std::env::split_paths(&path)
-        .map(|dir| dir.join(command))
-        .find(|candidate| candidate.is_file())
+/// The program `command` runs, found as the daemon finds a provider
+/// ([`os::paths::Lookup`]: an execute bit on Unix; on Windows `PATHEXT`'s
+/// extensions, so npm's `claude.cmd` is found too).
+pub fn on_path(command: &str) -> Result<PathBuf, String> {
+    os::paths::Lookup::new(&std::collections::HashMap::new())
+        .find(std::ffi::OsStr::new(command))
         .ok_or_else(|| format!("no {command} on the PATH"))
 }
 
@@ -86,7 +88,8 @@ impl Capture {
         for folder in [&shim, &dir] {
             std::fs::create_dir_all(folder).map_err(|error| error.to_string())?;
         }
-        std::os::unix::fs::symlink(&probe, shim.join(command)).map_err(|e| e.to_string())?;
+        provider_fakes::dispatch::link(&probe, &provider_fakes::dispatch::program(&shim, command))
+            .map_err(|error| error.to_string())?;
         let path = std::env::var_os("PATH").unwrap_or_default();
         let path = std::env::join_paths(std::iter::once(shim).chain(std::env::split_paths(&path)))
             .map_err(|error| error.to_string())?;

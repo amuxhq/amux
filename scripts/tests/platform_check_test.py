@@ -144,6 +144,83 @@ class PlatformCheckTest(unittest.TestCase):
         self.assertIn("names no feature Windows leaves out", out)
         self.assertIn("3 gates out of scope on Windows", out)
 
+    def test_a_test_only_one_os_has_by_nature_is_not_flagged_nor_what_it_gates(self):
+        self.write(
+            "crates/amux/tests/integration.rs",
+            """\
+            #[cfg(windows)] // Windows only by nature: Windows' installer
+            mod windows_install;
+            // Unix only by nature: a terminal's hangup is a Unix signal,
+            // which Windows has no counterpart of.
+            #[cfg(unix)]
+            mod hangup {
+                fn f() { unsafe { libc::kill(1, libc::SIGHUP) }; }
+            }
+            #[cfg(target_os = "macos")] // Unix only by nature: launchd
+            mod launchd;
+            #[cfg(windows)] // Windows only by nature:
+            mod no_reason;
+            #[cfg(unix)] // Windows only by nature: the wrong side
+            mod wrong_side;
+            #[cfg(not(windows))] // Windows only by nature: the wrong side
+            mod not_windows;
+            #[cfg(any(windows, feature = "x"))] // Windows only by nature: maybe Unix too
+            mod maybe;
+            #[cfg(windows)] // Unix only by nature: the wrong side
+            mod windows_as_unix;
+            #[cfg(target_os = "macos")] // macOS only by nature: dns-sd
+            mod bonjour;
+            #[cfg(target_os = "linux")] // Linux only by nature: systemd
+            mod systemd;
+            #[cfg(unix)] // macOS only by nature: Linux builds it too
+            mod unix_as_macos;
+            #[cfg(not(target_os = "macos"))] // Linux only by nature: Windows builds it too
+            mod not_mac_as_linux;
+            """,
+        )
+        self.write("crates/amux/tests/windows_install.rs", "use windows_sys::Win32::Foundation::HANDLE;\n")
+        self.write("crates/amux/tests/launchd.rs", "use std::os::unix::fs::PermissionsExt;\n")
+        self.write(
+            "crates/node/src/lib.rs",
+            """\
+            #[cfg(windows)] // Windows only by nature: code goes in a home
+            fn code() {}
+            #[cfg(test)]
+            mod tests {
+                #[cfg(windows)] // Windows only by nature: a Job Object
+                #[test]
+                fn job() { let _ = std::os::windows::io::RawHandle::default; }
+            }
+            """,
+        )
+        code, out = self.check()
+        self.assertEqual(
+            self.counted(),
+            {"crates/amux/tests/integration.rs": [11, 13, 15, 17, 19, 25, 27], "crates/node/src/lib.rs": [1]},
+        )
+        self.assertIn("comment gives no reason", out)
+        self.assertIn("marked Windows only by nature, but it does not leave out macOS or Linux", out)
+        self.assertIn("marked Unix only by nature, but it does not leave out Windows", out)
+        self.assertIn("marked macOS only by nature, but it does not leave out Windows or Linux", out)
+        self.assertIn("marked Linux only by nature, but it does not leave out Windows or macOS", out)
+        self.assertIn("only a test may be Windows only by nature; code goes in a home", out)
+        self.assertIn("6 gates only on one OS by nature", out)
+        listing = io.StringIO()
+        with contextlib.redirect_stdout(listing):
+            platform.check(self.root, self.allowlist, listing=True)
+        self.assertIn(
+            "crates/amux/tests/integration.rs:1: Windows only by nature (Windows' installer): #[cfg(windows)]",
+            listing.getvalue(),
+        )
+        self.assertIn("crates/amux/tests/integration.rs:5: Unix only by nature (a terminal's hangup", listing.getvalue())
+        self.assertIn("crates/amux/tests/integration.rs:21: macOS only by nature (dns-sd)", listing.getvalue())
+        self.assertIn("crates/amux/tests/integration.rs:23: Linux only by nature (systemd)", listing.getvalue())
+        # Nothing to hold back, so strict passes beside them.
+        self.write("crates/amux/tests/integration.rs", "#[cfg(windows)] // Windows only by nature: Windows' installer\nmod windows_install;\n")
+        self.write("crates/node/src/lib.rs", "fn code() {}\n")
+        (self.root / "crates/amux/tests/launchd.rs").unlink()
+        self.assertEqual(self.check(strict=True)[0], 0)
+
     # Where they may be.
 
     def test_the_homes_hold_platform_code_but_their_integration_tests_are_held(self):
@@ -221,6 +298,25 @@ class PlatformCheckTest(unittest.TestCase):
         self.assertEqual(self.check(strict=True)[0], 1)
         self.write("crates/agent/src/lib.rs", "fn a() {}\n")
         self.assertEqual(self.check(strict=True)[0], 0)
+
+    def test_with_the_allowlist_gone_the_check_is_strict(self):
+        self.write("crates/agent/src/lib.rs", '#[test]\n#[cfg_attr(windows, ignore = "windows: hangs")]\nfn a() {}\n')
+        self.assertEqual(self.check()[0], 0)
+        self.allowlist.unlink()
+        code, out = self.check()
+        self.assertEqual(code, 1)
+        self.assertIn("no allowlist", out)
+        self.assertIn("nothing may be ignored on Windows", out)
+        self.write("crates/agent/src/lib.rs", "#[cfg(unix)]\nfn a() {}\n")
+        code, out = self.check()
+        self.assertEqual(code, 1)
+        self.assertIn("crates/agent/src/lib.rs: 1, allowlist has none", out)
+        self.write("crates/agent/src/lib.rs", "fn a() {}\n")
+        self.assertEqual(self.check()[0], 0)
+        # Nor is it written again, which would turn strict off.
+        with self.assertRaises(SystemExit):
+            platform.main(["--root", str(self.root), "--allowlist", str(self.allowlist), "--write-allowlist"])
+        self.assertFalse(self.allowlist.exists())
 
     # What counts.
 

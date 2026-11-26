@@ -15,6 +15,11 @@ pub(super) fn long_form(path: &Path) -> PathBuf {
     path.to_owned()
 }
 
+/// Unix names have no short form.
+pub(super) fn short_path(path: &Path) -> io::Result<PathBuf> {
+    Ok(path.to_owned())
+}
+
 pub(super) fn create_private_dir(dir: &Path) -> io::Result<()> {
     DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
     // An existing folder keeps its mode through `create`.

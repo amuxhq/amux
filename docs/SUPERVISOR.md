@@ -155,9 +155,11 @@ launcher there names `amux.exe` itself, which starts the supervisor in a
 console window and without the restart. The supervisor writes its own output
 to `supervisor.log`. The value is this installation's by its name, so two
 roots never overwrite each other and a worktree's never touches the real one.
-Windows starts no `Run` command line longer than 260 characters, so turning
-the item on with a longer one (a deep config path) is refused with an error
-saying so, and nothing is written.
+Windows starts no `Run` command line longer than 260 characters, so a longer
+one (a deep config or install path) is written with each path by its 8.3
+short names (`os::fs::short_path`), and only one still too long, on a volume
+keeping no short names, is refused with an error saying so, with nothing
+written.
 
 `amux uninstall` removes it at once: it unregisters the login item
 (`launchctl bootout`, `systemctl --user disable --now`, or deleting the `Run`

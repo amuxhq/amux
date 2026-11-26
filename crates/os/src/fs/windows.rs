@@ -32,8 +32,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_DISPOSITION_INFO, FILE_DISPOSITION_INFO_EX, FILE_FLAG_BACKUP_SEMANTICS, FILE_GENERIC_READ,
     FILE_GENERIC_WRITE, FILE_RENAME_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     FILE_WRITE_DATA, FileDispositionInfo, FileDispositionInfoEx, FileRenameInfo, FileRenameInfoEx,
-    FlushFileBuffers, GetDriveTypeW, GetVolumeInformationW, GetVolumePathNameW, OPEN_ALWAYS,
-    OPEN_EXISTING, SetFileInformationByHandle, WRITE_DAC,
+    FlushFileBuffers, GetDriveTypeW, GetShortPathNameW, GetVolumeInformationW, GetVolumePathNameW,
+    OPEN_ALWAYS, OPEN_EXISTING, SetFileInformationByHandle, WRITE_DAC,
 };
 use windows_sys::Win32::System::SystemServices::FILE_SUPPORTS_POSIX_UNLINK_RENAME;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
@@ -794,6 +794,30 @@ pub(super) fn long_form(path: &Path) -> PathBuf {
             PathBuf::from(OsString::from_wide(&wide))
         }
         Err(_) => path.to_owned(),
+    }
+}
+
+/// `GetShortPathNameW` of [`wide`]'s form, in the plain form when it has
+/// one.
+pub(super) fn short_path(path: &Path) -> io::Result<PathBuf> {
+    let long = wide(path)?;
+    let mut short: Vec<u16> = Vec::new();
+    loop {
+        // SAFETY: `long` is NUL-terminated; `short` holds `short.len()`
+        // characters (none on the first, size-only call).
+        let length =
+            unsafe { GetShortPathNameW(long.as_ptr(), short.as_mut_ptr(), short.len() as u32) }
+                as usize;
+        if length == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // Too small, the answer is the size it needs, its NUL included;
+        // big enough, the length written, without it.
+        if length < short.len() {
+            short.truncate(length);
+            return Ok(super::plain(PathBuf::from(OsString::from_wide(&short))));
+        }
+        short = vec![0u16; length];
     }
 }
 

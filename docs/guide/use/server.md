@@ -75,8 +75,10 @@ On Windows this adds amux to the apps that start when you sign in (it shows
 in Task Manager's Startup apps), with no window. If amux stops unexpectedly,
 it starts again by itself within a minute; `amux server stop` stops it
 until you next sign in. Windows won't start one whose command is longer
-than 260 characters, so if your config file sits at a very long path, amux
-says so instead of turning it on; move the file somewhere shorter.
+than 260 characters, so when amux or your config file sits at a very long
+path, amux names them by their short (8.3) names, such as `C:\PROGRA~1`.
+Only if that is still too long, on a drive with short names turned off,
+does amux say so instead of turning it on; move the file somewhere shorter.
 
 Windows starts amux only once you sign in, and signing out ends it and the
 agents running on the PC. So on a Windows PC you keep as a server, stay

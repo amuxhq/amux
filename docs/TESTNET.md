@@ -218,7 +218,10 @@ net starts it with `amux server start` and stops it with `amux server stop`, as 
 it outright (`ProcessRef::kill`: SIGKILL, `TerminateProcess`). The daemon it kills is the process serving the front
 door, as the operating system names the socket's server, while the installation lock is held across the look; a
 supervisor is the pid its `supervisor.lock` holds. Removing a process host, or shutting the net down, kills both
-until neither lock is held, and a test pins them first with `Net::host_processes` to see each exit. Its agents
+until neither lock is held, and a test pins them first with `Net::host_processes` to see each exit. A daemon that
+took its lock and stalled before serving its front door has no server to name it, so there it is the pid its
+`installation.lock` holds, believed as the supervisor's is: while the lock stays held across the look and still
+names it. Its agents
 keep running through a kill, in their grace, and the next daemon adopts them. The net reaches it as a client does,
 over its front door and profile socket: the waits that listen inside an in-process runtime (`fence`, `turn_ended`, `input_settled`) use the
 profile's Subscribe stream instead, back-filling with Fetch past the 200 rows a subscription opens with.

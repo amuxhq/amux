@@ -31,6 +31,48 @@ pub fn stand_in_for(command: &str, proxy_env: &str) -> io::Result<()> {
     Ok(())
 }
 
+/// What names the checkout a live lane keeps its recordings in when it runs
+/// somewhere else: `--checkout=<folder>`, which `just live` passes on
+/// Windows, where the lane runs as a Buck test in NativeLink's work folder
+/// on the same machine, and nothing it writes there comes back. Without
+/// it, the lane keeps them where `buck2 run` from the checkout does.
+const CHECKOUT_FLAG: &str = "--checkout=";
+
+/// The checkout `--checkout=<folder>` among `args` names, if any.
+fn checkout_in(args: impl IntoIterator<Item = std::ffi::OsString>) -> Option<PathBuf> {
+    args.into_iter()
+        .find_map(|arg| arg.to_str()?.strip_prefix(CHECKOUT_FLAG).map(PathBuf::from))
+}
+
+/// The checkout this lane was told to keep its recordings in
+/// (`--checkout=<folder>`), if any.
+pub fn checkout() -> Option<PathBuf> {
+    checkout_in(std::env::args_os().skip(1))
+}
+
+/// The target folder a live lane keeps its raw captures and recordings
+/// under (`live/recordings/<kind>/<scenario>`, `live/acp`, ...): the
+/// checkout's `target` when one is named ([`checkout`]), else the one the
+/// lane's binary was built in.
+pub fn kept_target() -> PathBuf {
+    kept_target_for(
+        checkout(),
+        &std::env::current_exe().expect("the lane's path"),
+    )
+}
+
+fn kept_target_for(checkout: Option<PathBuf>, exe: &Path) -> PathBuf {
+    match checkout {
+        Some(checkout) => checkout.join("target"),
+        // target/<profile>/deps/<binary>
+        None => exe
+            .ancestors()
+            .nth(3)
+            .map(Path::to_owned)
+            .unwrap_or_else(|| PathBuf::from("target")),
+    }
+}
+
 /// The owner's home folder, which every recording redacts: `HOME` on
 /// Unix, the profile folder on Windows, where `HOME` is usually unset.
 pub fn owner_home() -> PathBuf {
@@ -305,4 +347,40 @@ fn elicit(
 fn send(stdout: &mut io::Stdout, message: Value) {
     let _ = writeln!(stdout, "{message}");
     let _ = stdout.flush();
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsString;
+    use std::path::{Path, PathBuf};
+
+    use super::{checkout_in, kept_target_for};
+
+    fn args(list: &[&str]) -> Vec<OsString> {
+        list.iter().map(OsString::from).collect()
+    }
+
+    /// Told the checkout, a lane keeps its recordings in the checkout's
+    /// `target`, wherever its binary runs: on Windows, NativeLink's work
+    /// folder, which nothing comes back from.
+    #[test]
+    fn a_lane_told_its_checkout_keeps_its_recordings_there() {
+        let checkout = checkout_in(args(&["initialize", "--checkout=C:/src/amux", "respond"]));
+        assert_eq!(checkout, Some(PathBuf::from("C:/src/amux")));
+        let exe = Path::new("C:/nativelink/work/abc/buck-out/x/crates/qualification/lane.exe");
+        assert_eq!(
+            kept_target_for(checkout, exe),
+            Path::new("C:/src/amux").join("target")
+        );
+    }
+
+    /// Untold, it keeps them beside the target folder its binary is in.
+    #[test]
+    fn a_lane_untold_keeps_its_recordings_beside_its_binary() {
+        assert_eq!(checkout_in(args(&["all", "--nocapture"])), None);
+        assert_eq!(
+            kept_target_for(None, Path::new("/src/amux/target/debug/deps/lane")),
+            Path::new("/src/amux/target")
+        );
+    }
 }

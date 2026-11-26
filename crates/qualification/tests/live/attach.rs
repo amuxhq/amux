@@ -39,17 +39,12 @@ const PROMPT: &str = "Run exactly this shell command once, with your shell tool,
 /// A word of the prompt no terminal wraps.
 const PROMPT_MARK: &str = "attached.txt";
 
-/// Where a run's capture goes: `target/live/codex-attach`, next to the
-/// test binary's own target directory.
+/// Where a run's capture goes: `live/codex-attach` in the lane's target
+/// folder ([`qualification::recording::live::kept_target`]).
 pub fn capture_dir() -> PathBuf {
-    let exe = std::env::current_exe().expect("the test binary's path");
-    // target/<profile>/deps/<binary>
-    let target = exe
-        .ancestors()
-        .nth(3)
-        .map(Path::to_owned)
-        .unwrap_or_else(|| PathBuf::from("target"));
-    target.join("live").join("codex-attach")
+    qualification::recording::live::kept_target()
+        .join("live")
+        .join("codex-attach")
 }
 
 /// Writes the verdict beside the capture, as the run's last word.

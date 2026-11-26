@@ -731,8 +731,10 @@ async fn run(driver: &Driver, selected: &[Scenario], report: &mut Report) {
 /// The provider's version, from `<command> --version`, run as the daemon
 /// would find it.
 async fn provider_version(command: &str) -> Result<String, String> {
-    let output = Command::new(capture::on_path(command)?)
+    let (program, path) = capture::on_path(command)?;
+    let output = Command::new(program)
         .arg("--version")
+        .env("PATH", path)
         .envs(UPDATE_GUARDS.iter().copied())
         .stdin(Stdio::null())
         .output();

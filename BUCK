@@ -43,6 +43,13 @@ amux_files(
     srcs = glob(["scripts/**"]),
 )
 
+# What https://amux.sh/install hands a machine, for a test that runs it
+# with the binaries under test.
+amux_files(
+    name = "install-scripts",
+    srcs = glob(["scripts/install/**"]),
+)
+
 amux_files(
     name = "guide",
     srcs = glob(["docs/guide/**"]),

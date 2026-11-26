@@ -20,6 +20,22 @@ cargo = [
 ]
 
 [[suite]]
+name = "windows-install-run"
+contract = "On Windows, the built amux and its launcher go through what a person does with them, in a scratch machine: install.ps1 installs them from a release feed and puts their folder first on the user's PATH as written, `amux server start` and `stop` work, the login item names the launcher and a logon started from it brings the daemon up, an agent on the fakes keeps its process and its turn through two updates from the feed and answers after them, and `amux uninstall` leaves nothing but a program moved aside while a process ran it, the PATH as it was and no login item; no step shows a window of any process the run started, and every supervisor and daemon starts with no console window."
+paths = ["crates/amux/tests/windows_install.rs", "scripts/install/install.ps1", "crates/os/src/testing/desktop"]
+recipe = "just suite windows-install-run"
+boundary = "System composition"
+oracle = "Exact command output and exit status, the installed files' names, the scratch registry values, process ownership through the updates, the chat read back over the profile socket, the supervisor's and daemon's console lines, and the visible top-level windows of the run's job sampled throughout."
+real = ["built amux and amux-launch binaries", "Windows PowerShell", "supervisor", "agent processes", "loopback HTTP", "named pipes", "scratch registry keys", "the desktop's windows"]
+substituted = ["providers by the scripted fakes", "amux.sh and the release's assets by a loopback feed signed with the test key", "the Run key and HKCU\\Environment by scratch keys", "the person's homes by a temporary folder"]
+time = "real"
+capabilities = ["Windows"]
+lane = "system"
+evidence = "the printed transcript, with a line after each step saying no window showed"
+update = ""
+cargo = [{ package = "amux", modules = ["windows_install"] }]
+
+[[suite]]
 name = "system-journeys"
 contract = "Whole stories told with the built binaries as a person and the machine run them: agents of every kind finish their turns with amux killed, amux comes back under its supervisor, a newer build is activated, and resuming loses nothing."
 paths = ["crates/amux/tests/system_journeys.rs", "journeys/manifest.json"]

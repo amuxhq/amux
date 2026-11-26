@@ -267,10 +267,22 @@ pub(crate) fn push_runs(line: &mut Line<'static>, runs: &[(String, Style)], widt
 /// A path on this machine as the person would write it: their home
 /// directory as `~`.
 pub(crate) fn tilde(path: &str) -> String {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let home = home.trim_end_matches('/');
+    match os::paths::home_dir() {
+        Some(home) => tilde_from(&home.to_string_lossy(), path),
+        None => path.to_owned(),
+    }
+}
+
+/// `path` with the home folder `home` written `~`, when it is inside it:
+/// the rest starts at a separator this platform's paths use (either slash
+/// on Windows), so `/home/adam` is not inside `/home/ada`.
+fn tilde_from(home: &str, path: &str) -> String {
+    let home = home.trim_end_matches(std::path::is_separator);
     match path.strip_prefix(home) {
-        Some(rest) if !home.is_empty() && (rest.is_empty() || rest.starts_with('/')) => {
+        Some(rest)
+            if !home.is_empty()
+                && (rest.is_empty() || rest.starts_with(std::path::is_separator)) =>
+        {
             format!("~{rest}")
         }
         _ => path.to_owned(),
@@ -629,6 +641,23 @@ pub(crate) fn ellipsize_middle(text: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The home folder, wherever this platform keeps it, reads as `~` at
+    /// the start of a path in this platform's own separator; a folder whose
+    /// name merely starts with the home's stays whole.
+    #[test]
+    fn a_path_in_the_home_folder_reads_from_tilde() {
+        let home = os::paths::home_dir().expect("a home folder");
+        let separator = std::path::MAIN_SEPARATOR;
+        let inside = home.join("src").join("amux");
+        assert_eq!(
+            tilde(&inside.to_string_lossy()),
+            format!("~{separator}src{separator}amux")
+        );
+        assert_eq!(tilde(&home.to_string_lossy()), "~");
+        let beside = format!("{}x", home.display());
+        assert_eq!(tilde(&beside), beside);
+    }
 
     #[test]
     fn wrap_breaks_at_words_and_splits_only_overlong_ones() {

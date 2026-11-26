@@ -33,8 +33,9 @@ ALLOWED_LOCAL = {
     # interpret, the UI library, client and browser-core never take it.
     "os": set(),
     # Reads an agent folder's branch and change totals by running git; the
-    # agent process and the daemon share it.
-    "git-facts": set(),
+    # agent process and the daemon share it. os for its private scratch
+    # folders and their patient removal.
+    "git-facts": {"os"},
     # Syntax highlighting over tree-sitter's grammars: a leaf, so the host
     # colouring a diff and every client colouring a chat share one engine.
     "highlight": set(),
@@ -117,8 +118,9 @@ ALLOWED_LOCAL = {
     "app-ffi": {"app-bridge"},
     # The JNI facade over the bridge.
     "app-jni": {"app-bridge"},
-    # The terminal client composes the views over the drivers' state.
-    "tui": {"attachments", "client", "settings", "ui-code", "ui-runtime", "ui-state", "ui-view", "wire"},
+    # The terminal client composes the views over the drivers' state; os
+    # for the home folder a path is shown from.
+    "tui": {"attachments", "client", "os", "settings", "ui-code", "ui-runtime", "ui-state", "ui-view", "wire"},
     # The bounded ring of a core's inputs since its last checkpoint, in
     # segments named as the journal's are.
     "core-ring": {"journal"},

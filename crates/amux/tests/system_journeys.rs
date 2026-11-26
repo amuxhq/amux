@@ -13,16 +13,13 @@ use support::{
 
 use crate::support;
 
-/// Three agents, one of each kind, are mid-turn when amux is killed. They
+/// An agent of each kind (three; two on Windows, which runs no terminal
+/// Claude) is mid-turn when amux is killed. They
 /// finish their turns with nobody reading, outlive their grace and exit.
 /// amux comes back under its supervisor, a newer build is installed and
 /// activated, and every finished turn is in the store; resuming the exited
 /// agents loses nothing.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: `amux new claude --in native` is refused: this host does not run terminal Claude agents"
-)]
 async fn survive_daemon() {
     let running = node::version();
     let previous =
@@ -45,6 +42,7 @@ async fn survive_daemon() {
     desk.run(&["server", "start"]).await;
     let mut agents: BTreeMap<&str, Vec<u8>> = BTreeMap::new();
     for (name, agent, interface) in [
+        #[cfg(not(windows))] // out of scope on Windows: terminal Claude
         ("terminal", "claude", "native"),
         ("headless", "claude", "amux"),
         ("codex", "codex", "amux"),

@@ -160,6 +160,12 @@ pub(super) fn volume_supports_root(_path: &Path) -> io::Result<VolumeCheck> {
     Ok(VolumeCheck::Suitable)
 }
 
+/// No permission bit for the group or others.
+#[cfg(any(test, feature = "testing"))]
+pub(super) fn is_private(path: &Path) -> io::Result<bool> {
+    Ok(fs::metadata(path)?.permissions().mode() & 0o077 == 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

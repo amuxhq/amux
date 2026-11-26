@@ -799,12 +799,55 @@ const INDEX: &str = "index";
 /// as added and the person's own index is never touched. Removed on drop.
 ///
 /// The copy lives in a folder only this user can enter: the index names
-/// every file in the repository, the system temporary folder is shared on
-/// Linux, and git rewrites the copy through a lock file of its own whose
-/// permissions follow the umask, not the copy's.
+/// every file in the repository, the system temporary folder may be shared
+/// (it is on Linux, and a Windows `TEMP` can be pointed anywhere), and git
+/// rewrites the copy through a lock file of its own whose permissions
+/// follow the umask, not the copy's.
 struct Scratch<'a> {
     cwd: &'a Path,
-    dir: tempfile::TempDir,
+    dir: ScratchDir,
+}
+
+/// A folder of the scratch's own in the system temporary folder, private
+/// from its creation and removed when dropped.
+///
+/// It sits inside a uniquely named folder made only for it, which no other
+/// process can have made first, and is itself made owner-only as it is
+/// created ([`os::fs::create_private_dir`]), so nothing is ever written
+/// where another user could read it, whatever the temporary folder lets
+/// in. Removal waits out a brief hold, as a virus scanner or indexer
+/// reading what git just wrote makes on Windows, and leaves what is still
+/// held to the system's temporary-file cleanup rather than fail.
+struct ScratchDir {
+    /// The uniquely named folder, removed with what it holds.
+    outer: PathBuf,
+    /// The private folder inside it.
+    path: PathBuf,
+}
+
+impl ScratchDir {
+    fn new() -> std::io::Result<Self> {
+        let outer = tempfile::Builder::new()
+            .prefix("amux-git-facts-")
+            .tempdir()?
+            .keep();
+        let path = outer.join("scratch");
+        if let Err(error) = os::fs::create_private_dir(&path) {
+            let _ = os::fs::remove_patiently(&outer, os::fs::SHARING_PATIENCE);
+            return Err(error);
+        }
+        Ok(Self { outer, path })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = os::fs::remove_patiently(&self.outer, os::fs::SHARING_PATIENCE);
+    }
 }
 
 impl<'a> Scratch<'a> {
@@ -845,11 +888,7 @@ impl<'a> Scratch<'a> {
 
     /// A folder for an index of its own, with no index in it yet.
     fn empty(cwd: &'a Path) -> Result<Self, GitError> {
-        let mut builder = tempfile::Builder::new();
-        builder.prefix("amux-git-facts-");
-        #[cfg(unix)]
-        builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700));
-        let dir = builder.tempdir().map_err(GitError::Scratch)?;
+        let dir = ScratchDir::new().map_err(GitError::Scratch)?;
         Ok(Self { cwd, dir })
     }
 
@@ -948,7 +987,10 @@ impl<'a> Scratch<'a> {
             .open(self.index())
             .and_then(|index| index.set_modified(written))
             .map_err(GitError::Scratch)?;
-        std::fs::remove_dir_all(&own).map_err(GitError::Scratch)
+        // What is still held goes with the scratch folder.
+        os::fs::remove_patiently(&own, os::fs::SHARING_PATIENCE)
+            .map(|_| ())
+            .map_err(GitError::Scratch)
     }
 
     fn index(&self) -> std::path::PathBuf {
@@ -1821,11 +1863,11 @@ mod tests {
     }
 
     /// The scratch index holds the repository's file names, so it is made
-    /// where only this user can read it, whatever the index's own mode.
-    #[cfg(unix)]
+    /// in a folder only this user can open, owner-only in its own right
+    /// wherever the system's temporary folder is and whatever it lets in,
+    /// and the folder goes with the scratch.
     #[tokio::test]
     async fn the_scratch_index_is_private_to_this_user() {
-        use std::os::unix::fs::PermissionsExt;
         let repo = tempfile::tempdir().unwrap();
         let git = |args: &[&str]| {
             let status = std::process::Command::new("git")
@@ -1839,19 +1881,24 @@ mod tests {
         git(&["init", "-q"]);
         std::fs::write(repo.path().join("secret-plans.txt"), "x\n").unwrap();
         git(&["add", "secret-plans.txt"]);
-        let own = repo.path().join(".git/index");
-        std::fs::set_permissions(&own, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let own = repo.path().join(".git").join("index");
         std::fs::write(repo.path().join("untracked.txt"), "y\n").unwrap();
 
         let scratch = super::Scratch::new(repo.path()).await.unwrap();
-        let mode =
-            |path: &std::path::Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode(scratch.dir.path()), 0o700);
+        let folder = scratch.dir.path().to_owned();
+        assert!(
+            os::testing::is_private(&folder).unwrap(),
+            "{} is not owner-only",
+            folder.display()
+        );
         assert!(scratch.index().is_file());
         assert_ne!(
             std::fs::read(&own).unwrap(),
             std::fs::read(scratch.index()).unwrap()
         );
+        drop(scratch);
+        assert!(!folder.exists());
+        assert!(!folder.parent().unwrap().exists());
     }
 
     fn git(cwd: &std::path::Path, args: &[&str]) -> String {

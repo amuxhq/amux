@@ -18,6 +18,7 @@ fixtures = []
 [dependencies]
 attachments = { workspace = true }
 client = { workspace = true }
+os = { workspace = true }
 ui-runtime = { workspace = true }
 ui-state = { workspace = true }
 settings = { workspace = true }

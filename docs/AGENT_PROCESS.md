@@ -551,7 +551,10 @@ Its program is found as a shell finds it (`os::paths::find_program`), on the
 `PATH` in the spec's environment or else the one a newly logged-on process
 would see, so a provider installed since the daemon started is found too,
 and on Windows npm's `.cmd` shim under `PATHEXT`, the spec's own when it sets
-one (`os::paths::Lookup`). A provider found on a `PATH` the agent's own lacks
+one (`os::paths::Lookup`). The spec's environment holds each variable once:
+an ACP agent's own variables replace the host's under any spelling Windows
+takes for the name (`os::paths::set_vars`: its `PATH` over the host's
+`Path`), so the lookup reads the value the provider starts with. A provider found on a `PATH` the agent's own lacks
 starts with that `PATH`, so what it runs in turn (the shim's `node`) is found
 there too. The catalogue's helper and the version probe find it and start it
 the same way, and the daemon gives the helper that `PATH` too. Windows runs a `.cmd` through

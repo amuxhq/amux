@@ -198,7 +198,9 @@ disk. A removal does not wait for holders: a tree a person holds with
   still reading there). Held in the worktree's git directory, `git worktree
   remove` removes nothing, and is asked again while the checkout and the
   git directory are both there, for up to the three seconds a removal
-  waits; held in the checkout, git removes the rest, and what is left is
+  waits. Without consent to discard, each try first checks the worktree is
+  still clean: a change saved while the removal waits keeps it, disowned,
+  as a change saved before would have. Held in the checkout, git removes the rest, and what is left is
   removed patiently. Still held after that, the worktree is kept with a
   warning.
 

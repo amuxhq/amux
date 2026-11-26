@@ -984,7 +984,10 @@ daemon holds no provider code: it runs the hidden helper `amux internal catalogu
 starts the provider just long enough to ask what it offers and whether it is
 signed in, and keeps the answer per provider under the profile's `providers/`
 folder. It asks again when the copy is half an hour old, when the provider's
-`--version` prints something new (read at most once a minute), and for a copy
+`--version` prints something new (read at most once a minute, in a process
+tree of its own, `os::process::Tree`, ended whole when ten seconds pass
+without an answer, so a wrapper whose `--version` hangs leaves nothing
+running), and for a copy
 that says signed out once a minute has passed. A caller is answered with the
 copy the host holds, however old, and never waits on the provider while there
 is one: a copy that is due is asked again in the background, one ask at a time

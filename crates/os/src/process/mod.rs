@@ -128,9 +128,43 @@ pub fn spawn_background<C: Spawnable>(cmd: &mut C) -> io::Result<Spawned<C::Chil
 /// (Unix: `process_group(0)`), so [`ProcessRef::kill_group`] reaches what
 /// it starts that stays in the group, even once that has been reparented
 /// away and no census of [`descendants`] finds it below. Windows: nothing;
-/// a job does this there ([`Family`]).
+/// a job does this there ([`Family`], [`Tree`]).
 pub fn own_group<C: Spawnable>(cmd: &mut C) {
     imp::own_group(cmd.std_command());
+}
+
+/// A child at the head of a process tree that ends whole: what the child
+/// starts, and what that starts, however it has been parented since. For a
+/// short command that must leave nothing running once it is given up on,
+/// such as a version check through a wrapper that starts the real program.
+///
+/// Unix: the child leads a process group of its own ([`own_group`]), and
+/// [`Tree::kill`] is [`ProcessRef::kill_group`]; a process that leaves the
+/// group (a session of its own) escapes. Windows: the child is started
+/// suspended, put in a Job Object of its own (`KILL_ON_JOB_CLOSE`, no
+/// breakaway) and only then let run, so everything it starts is born
+/// inside; [`Tree::kill`] ends the job, and so does dropping the tree.
+#[cfg(feature = "async")]
+#[derive(Debug)]
+pub struct Tree {
+    inner: imp::Tree,
+}
+
+#[cfg(feature = "async")]
+impl Tree {
+    /// Starts `cmd` at the head of a tree of its own. On Windows the start
+    /// replaces any creation flags `cmd` has, and a child that can't be
+    /// put in its job is killed and the error returned.
+    pub fn spawn(cmd: &mut tokio::process::Command) -> io::Result<(tokio::process::Child, Tree)> {
+        imp::Tree::spawn(cmd).map(|(child, inner)| (child, Tree { inner }))
+    }
+
+    /// Ends the child and the rest of its tree at once (SIGKILL,
+    /// `TerminateJobObject`). Unix reaches the group only while the child
+    /// is unreaped: kill before waiting on it. `Ok` when all have gone.
+    pub fn kill(&self) -> io::Result<()> {
+        self.inner.kill()
+    }
 }
 
 /// What [`exec_or_spawn`] leaves when the OS has no exec: the successor,

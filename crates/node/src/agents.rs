@@ -120,10 +120,13 @@ impl AgentProgram {
     }
 
     /// The environment it starts with: the host's additions for every
-    /// provider, with its own over them.
+    /// provider, with its own over them, whatever the case of either where
+    /// the OS names a variable whatever its case ([`os::paths::set_vars`]):
+    /// its own `PATH` replaces the host's `Path` on Windows, so it is found
+    /// on the `PATH` it starts with.
     pub fn environment(&self, provider_env: &HashMap<String, String>) -> HashMap<String, String> {
         let mut env = provider_env.clone();
-        env.extend(self.env.clone());
+        os::paths::set_vars(&mut env, self.env.clone());
         env
     }
 }
@@ -372,6 +375,67 @@ mod tests {
         );
         assert_eq!(env["A"], "1");
         assert_eq!(env["PATH"], dir.path().to_string_lossy());
+    }
+
+    /// The program's own `PATH` stands over the host's whatever the case
+    /// of either: on Windows, which names a variable whatever its case,
+    /// the host's `Path` gives way to the program's `PATH`, so the program
+    /// is looked for on its own and starts with that one `PATH`. (On Unix
+    /// `Path` is another variable, and stays.)
+    #[test]
+    fn a_programs_own_path_stands_over_the_hosts_whatever_its_case() {
+        let host = tempfile::tempdir().unwrap();
+        let own = tempfile::tempdir().unwrap();
+        for dir in [&host, &own] {
+            executable(&dir.path().join(exe("x")));
+        }
+        // The program's folder first, then this process's `PATH`, which the
+        // fake started below may need to load.
+        let inherited = std::env::var_os("PATH").unwrap_or_default();
+        let own_path = std::env::join_paths(
+            std::iter::once(own.path().to_owned()).chain(std::env::split_paths(&inherited)),
+        )
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+        let program = AgentProgram {
+            id: "x".into(),
+            name: "X".into(),
+            command: "x".into(),
+            args: Vec::new(),
+            env: [("PATH".into(), own_path.clone())].into(),
+            built_in: false,
+        };
+        let provider_env: HashMap<String, String> =
+            [("Path".into(), host.path().to_string_lossy().into_owned())].into();
+        let paths = |env: &HashMap<String, String>| {
+            env.iter()
+                .filter(|(key, _)| os::paths::same_variable(key, "PATH"))
+                .map(|(_, value)| value.clone())
+                .collect::<Vec<_>>()
+        };
+        let env = program.environment(&provider_env);
+        assert_eq!(paths(&env), std::slice::from_ref(&own_path));
+        assert_eq!(program.find(&provider_env), Some(own.path().join(exe("x"))));
+
+        // Started with that environment, the program sees one `PATH`, its
+        // own.
+        let log = own.path().join("env.json");
+        let started = std::process::Command::new(provider_fakes::binaries::path("fake-acp"))
+            // Lists the script's models, none, once its environment is
+            // logged, and exits.
+            .arg("models")
+            .envs(&env)
+            .env(provider_fakes::script::ENV_LOG_ENV, &log)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(started.success(), "{started}");
+        let seen: HashMap<String, String> =
+            serde_json::from_slice(&std::fs::read(&log).unwrap()).unwrap();
+        assert_eq!(paths(&seen), [own_path]);
     }
 
     /// Where a command is found under more than one extension, the

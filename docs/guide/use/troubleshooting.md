@@ -95,6 +95,17 @@ just above it, say what's in the way:
 
   The new `PATH` applies from your next login, or straight away after
   `amux server stop` and `amux server start`.
+
+  On macOS and Linux that is always the way. On Windows you often don't
+  need to: when a program you install adds its folder to your user or
+  system `Path` (as the Node.js and npm installers do), each agent started
+  after that finds it, with no restart. An agent that was already running
+  keeps the `PATH` it started with: run `amux settle <agent>` and then
+  `amux resume <agent>` to start it again on the same conversation. A
+  folder you added only in a terminal or a shell profile still needs the
+  steps above. An agent whose `env` in your amux config sets its own `PATH`
+  (see [Other agents](other-agents.md#add-your-own-agent)) uses that `PATH`
+  as written, so add the folder there.
 - **The relay refuses this version.** `amux status` says so. Run
   `amux update`.
 

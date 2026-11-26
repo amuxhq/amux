@@ -57,6 +57,28 @@ pub fn find_program(name: &OsStr, path: &OsStr) -> Option<PathBuf> {
     imp::find_program(name, path, None)
 }
 
+/// Whether the environment variable `key` is the one called `name`:
+/// Windows names a variable whatever its case (`Path` is `PATH`), Unix by
+/// its exact spelling.
+pub fn same_variable(key: &str, name: &str) -> bool {
+    imp::same_variable(key, name)
+}
+
+/// Sets each of `vars` in `env`, as a program started with `env` would
+/// see it: one set replaces the variable whatever the spelling `env` has
+/// it under ([`same_variable`]; on Windows a program's `PATH` replaces the
+/// host's `Path`), so `env` holds each variable once, and a lookup over it
+/// ([`Lookup`]) reads the value the program starts with.
+pub fn set_vars(
+    env: &mut HashMap<String, String>,
+    vars: impl IntoIterator<Item = (String, String)>,
+) {
+    for (key, value) in vars {
+        env.retain(|have, _| !imp::same_variable(have, &key));
+        env.insert(key, value);
+    }
+}
+
 /// How a program started with the variables `env` on top of this
 /// process's environment is found, and the `PATH` it starts with: one rule
 /// for both, so the program found is the one that starts, and what it runs

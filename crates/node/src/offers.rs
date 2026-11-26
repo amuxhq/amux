@@ -1084,29 +1084,61 @@ impl ProfileRuntime {
 /// What `<command> --version` prints, as printed; None when it cannot be
 /// read.
 async fn provider_version(command: &str, launch: &Launch) -> Option<String> {
+    version_of(command, &launch.provider_env, VERSION_PATIENCE).await
+}
+
+/// What `<command> --version` prints, started with `env` over this
+/// process's environment, when it answers within `patience`.
+///
+/// The check heads a process tree of its own ([`os::process::Tree`]): a
+/// wrapper that never answers, as an npm `.cmd` shim whose node hangs, is
+/// ended with what it started when the patience runs out, though that is
+/// no longer below it (Unix: reparented away once the wrapper exited;
+/// Windows records no children).
+async fn version_of(
+    command: &str,
+    env: &HashMap<String, String>,
+    patience: Duration,
+) -> Option<String> {
+    use tokio::io::AsyncReadExt as _;
     // Found and run as the provider is ([`os::paths::Lookup`]).
-    let lookup = os::paths::Lookup::new(&launch.provider_env);
+    let lookup = os::paths::Lookup::new(env);
     let program = lookup
         .find(command.as_ref())
         .unwrap_or_else(|| PathBuf::from(command));
     let mut probe = tokio::process::Command::new(program);
     probe
         .arg("--version")
-        .envs(&launch.provider_env)
+        .envs(env)
         .stdin(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
     if let Some(path) = lookup.refreshed_path() {
         probe.env("PATH", path);
     }
-    let output = tokio::time::timeout(VERSION_PATIENCE, probe.output())
-        .await
-        .ok()?
-        .ok()?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    let (mut child, tree) = os::process::Tree::spawn(&mut probe).ok()?;
+    let mut stdout = child.stdout.take()?;
+    let answered = tokio::time::timeout(patience, async {
+        let mut printed = Vec::new();
+        // Read to its end before the wait: unreaped, the check keeps its
+        // tree reachable (Unix: its group's id) for a kill.
+        stdout.read_to_end(&mut printed).await?;
+        let status = child.wait().await?;
+        io::Result::Ok((status, printed))
+    })
+    .await;
+    match answered {
+        Ok(Ok((status, printed))) => status
+            .success()
+            .then(|| String::from_utf8_lossy(&printed).trim().to_owned()),
+        _ => {
+            if let Err(error) = tree.kill() {
+                tracing::warn!(%command, %error, "ending a version check that did not answer failed");
+            }
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1304,5 +1336,62 @@ mod tests {
             "Log in with your account"
         );
         assert_eq!(agent_sign_in_hint("my-agent", None), "");
+    }
+
+    /// A wrapper whose `--version` never answers, as an npm `.cmd` shim
+    /// whose node hangs does, leaves the version check waiting on a pipe
+    /// that what the wrapper started still holds. The check gives up, and
+    /// what the wrapper started ends with it, though it is no longer below
+    /// the wrapper (Unix: reparented away once the wrapper exited; Windows:
+    /// nothing records a parent's children).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_version_check_that_never_answers_ends_what_it_started() {
+        use provider_fakes::dispatch;
+        let dir = tempfile::tempdir().unwrap();
+        let wrapper = dir.path().join(os::paths::exe_name("claude"));
+        let pids = dir.path().join("left.pids");
+        dispatch::install(
+            &provider_fakes::binaries::path(dispatch::BINARY),
+            &wrapper,
+            &dispatch::Plan::Leave {
+                linger_secs: 120,
+                stderr: String::new(),
+                code: 0,
+                pids: Some(pids.clone()),
+                version: None,
+            },
+        )
+        .unwrap();
+        let version = version_of(
+            &wrapper.to_string_lossy(),
+            &HashMap::new(),
+            Duration::from_secs(2),
+        )
+        .await;
+        assert_eq!(version, None);
+        let left: Vec<os::Pid> = std::fs::read_to_string(&pids)
+            .unwrap()
+            .lines()
+            .map(|pid| pid.parse().unwrap())
+            .collect();
+        assert!(!left.is_empty(), "the wrapper left a copy running");
+        let running = || {
+            left.iter()
+                .copied()
+                .filter(|&pid| os::process::ProcessRef::open(pid).is_ok_and(|copy| copy.alive()))
+                .collect::<Vec<_>>()
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !running().is_empty() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let still = running();
+        for &pid in &still {
+            // Not left behind for the test run's other tests.
+            if let Ok(copy) = os::process::ProcessRef::open(pid) {
+                let _ = copy.kill();
+            }
+        }
+        assert!(still.is_empty(), "{still:?} still run");
     }
 }

@@ -255,8 +255,7 @@ fn restore_now() {
 /// default hook reports — a panic report on the alternate screen would
 /// vanish with it.
 fn install_panic_hook() {
-    #[cfg(unix)]
-    signal_restore::install();
+    crate::platform::restore_on_signal(RESTORE_BYTES);
     PANIC_HOOK.call_once(|| {
         let previous = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
@@ -320,55 +319,6 @@ impl TerminalGuard {
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         self.restore_once();
-    }
-}
-
-/// Async-signal-safe terminal restore on SIGINT/SIGTERM/SIGHUP.
-///
-/// A tokio signal arm in the chrome loop would leave the process deaf to
-/// signals while suspended for an attach (tokio's handler stays installed
-/// process-wide, but nothing polls the stream mid-attach). Instead: a
-/// low-level handler that restores the saved cooked termios (`tcsetattr`
-/// is async-signal-safe), writes the leave-alt-screen/show-cursor bytes
-/// (raw `write` is async-signal-safe), then re-raises the default
-/// disposition so the process still dies exactly as expected. The restore
-/// is deliberately unconditional: on a terminal that is already sane it is
-/// a no-op, and that is what lets it cover both chrome mode and the
-/// mid-attach passthrough phase.
-#[cfg(unix)]
-mod signal_restore {
-    use std::sync::{Once, OnceLock};
-
-    static INSTALL: Once = Once::new();
-    static SAVED_TERMIOS: OnceLock<libc::termios> = OnceLock::new();
-
-    use super::RESTORE_BYTES;
-
-    pub(super) fn install() {
-        INSTALL.call_once(|| {
-            // Save the cooked termios once, before raw mode first engages.
-            let mut term = unsafe { std::mem::zeroed::<libc::termios>() };
-            if unsafe { libc::tcgetattr(libc::STDIN_FILENO, &mut term) } == 0 {
-                let _ = SAVED_TERMIOS.set(term);
-            }
-            for sig in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
-                // Safety: the handler body calls only async-signal-safe
-                // functions (tcsetattr, write) and signal_hook's re-raise.
-                unsafe {
-                    let _ = signal_hook::low_level::register(sig, move || {
-                        if let Some(term) = SAVED_TERMIOS.get() {
-                            libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, term);
-                        }
-                        libc::write(
-                            libc::STDOUT_FILENO,
-                            RESTORE_BYTES.as_ptr().cast(),
-                            RESTORE_BYTES.len(),
-                        );
-                        let _ = signal_hook::low_level::emulate_default_handler(sig);
-                    });
-                }
-            }
-        });
     }
 }
 
@@ -546,11 +496,11 @@ fn ask_terminal(timeout: Duration) -> Option<Answers> {
         } else {
             REPLY_QUIET.min((started + REPLY_CAP).saturating_duration_since(Instant::now()))
         };
-        if wait.is_zero() || !stdin_readable(wait) {
+        if wait.is_zero() || !crate::platform::stdin_readable(wait) {
             break;
         }
         let mut buffer = [0u8; 1024];
-        let read = read_stdin(&mut buffer);
+        let read = crate::platform::read_stdin(&mut buffer);
         if read == 0 {
             break;
         }
@@ -563,44 +513,6 @@ fn ask_terminal(timeout: Duration) -> Option<Answers> {
         }
     }
     Some(answers)
-}
-
-#[cfg(unix)]
-fn stdin_readable(timeout: Duration) -> bool {
-    let mut poll = libc::pollfd {
-        fd: libc::STDIN_FILENO,
-        events: libc::POLLIN,
-        revents: 0,
-    };
-    let millis = i32::try_from(timeout.as_millis()).unwrap_or(i32::MAX);
-    // SAFETY: `poll` reads and writes one valid pollfd for the duration of
-    // the call.
-    let ready = unsafe { libc::poll(&mut poll, 1, millis) };
-    ready > 0 && poll.revents & libc::POLLIN != 0
-}
-
-#[cfg(unix)]
-fn read_stdin(buffer: &mut [u8]) -> usize {
-    // SAFETY: the buffer is valid and writable for its whole length, and
-    // `read` writes at most that many bytes.
-    let read = unsafe {
-        libc::read(
-            libc::STDIN_FILENO,
-            buffer.as_mut_ptr().cast::<libc::c_void>(),
-            buffer.len(),
-        )
-    };
-    usize::try_from(read).unwrap_or(0)
-}
-
-#[cfg(not(unix))]
-fn stdin_readable(_timeout: Duration) -> bool {
-    false
-}
-
-#[cfg(not(unix))]
-fn read_stdin(_buffer: &mut [u8]) -> usize {
-    0
 }
 
 /// Read every complete OSC colour reply in `bytes` into `answers`, and say

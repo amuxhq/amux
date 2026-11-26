@@ -631,8 +631,11 @@ pub async fn drop<S: AsRef<str>>(
             if !is_hex(&rest) || reachable.contains(&format!("{prefix}{rest}")) {
                 continue;
             }
-            std::fs::remove_file(object.path()).map_err(GitError::Scratch)?;
-            removed += 1;
+            // One something still holds (a reader of an old snapshot, a
+            // virus scanner) is left for the next drop.
+            if gone(&object.path())? {
+                removed += 1;
+            }
         }
         // Emptied folders go too; one still holding an object stays.
         let _ = std::fs::remove_dir(fanout.path());
@@ -694,18 +697,28 @@ async fn drop_packed(
             pack.arg(folder.join("pack"));
             objects::checked("pack-objects", pack, Some(input.into_bytes())).await?;
         }
-        std::fs::remove_file(&index).map_err(GitError::Scratch)?;
+        // A pack whose index is still held stays whole, and found, for the
+        // next drop; once its index is gone, a part still held is only
+        // space, which no reader finds.
+        if !gone(&index)? {
+            continue;
+        }
         for part in PACK_PARTS {
-            match std::fs::remove_file(index.with_extension(part)) {
-                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                    return Err(GitError::Scratch(error));
-                }
-                _ => {}
-            }
+            gone(&index.with_extension(part))?;
         }
         removed += held.len() - kept.len();
     }
     Ok(removed)
+}
+
+/// Removes the file at `path`, waiting out a brief hold: whether it is
+/// gone (or never was), or still held by something else.
+fn gone(path: &Path) -> Result<bool, GitError> {
+    match os::fs::remove_patiently(path, os::fs::SHARING_PATIENCE) {
+        Ok(os::fs::Removed::Gone) => Ok(true),
+        Ok(os::fs::Removed::Later) => Ok(false),
+        Err(error) => Err(GitError::Scratch(error)),
+    }
 }
 
 /// The paths `git ls-files -z` wrote, each once.

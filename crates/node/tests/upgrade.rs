@@ -142,7 +142,8 @@ async fn a_profile_a_release_wrote_opens_with_its_agent_and_history() {
 /// place, and a start after that finds them so.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_root_an_earlier_build_left_open_is_made_private_at_start() {
-    use os::testing::private::{open_to_others, owner_only};
+    use os::testing::is_private;
+    use os::testing::private::open_to_others;
     let install = Install::new();
     let profile = install.profile_dir();
     let key = node::harness::device_key_path(&profile);
@@ -161,14 +162,14 @@ async fn a_root_an_earlier_build_left_open_is_made_private_at_start() {
     ];
     for path in &left {
         open_to_others(path).unwrap();
-        assert!(!owner_only(path).unwrap(), "{} is open", path.display());
+        assert!(!is_private(path).unwrap(), "{} is open", path.display());
     }
 
     for boot in ["boot-2", "boot-3"] {
         let daemon = install.start(boot, quiet_launch()).await;
         for path in &left {
             assert!(
-                owner_only(path).unwrap(),
+                is_private(path).unwrap(),
                 "{} is private after {boot}'s start",
                 path.display()
             );

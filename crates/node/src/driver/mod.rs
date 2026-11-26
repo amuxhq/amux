@@ -226,9 +226,14 @@ impl Driver {
         let store_at_checkpoint = Sqlite::checkpoint_wal(&dir.join(STORE))
             .inspect_err(|error| tracing::warn!(%error, "moving the store's WAL at start failed"))
             .is_ok();
-        let ring = Ring::open(dir.join(CORE_RING), RING_BYTES, &daemon.checkpoint())
-            .inspect_err(|error| tracing::warn!(%error, "the core's input ring does not open"))
-            .ok();
+        let ring = Ring::open(
+            dir.join(CORE_RING),
+            RING_BYTES,
+            &daemon.checkpoint(),
+            os::fs::write_durably,
+        )
+        .inspect_err(|error| tracing::warn!(%error, "the core's input ring does not open"))
+        .ok();
         let (closed, closed_seen) = watch::channel(());
         let core = CoreThread {
             daemon,

@@ -111,7 +111,7 @@ pub use outbox::{
     DrainReport, HttpSender, NoopSender, Push, PushCloud, PushFuture, PushRecipient, PushSender,
 };
 pub use pairing::qr::{QrPairingError, QrPairingPayload, parse_pair_link, qr_link};
-#[cfg(unix)]
+#[cfg(not(windows))] // out of scope on Windows: SSH with a Windows far end
 pub use pairing::ssh::relay_stdio_to_unix_socket;
 pub use pairing::ssh::{exchange_over_ssh, read_ssh_identity, ssh_stdio, write_ssh_identity};
 pub use profile_admin::ProfileAdmin;

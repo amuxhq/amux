@@ -943,6 +943,41 @@ async fn moved_answers_whether_the_tree_differs_from_the_snapshot() {
     assert_eq!(stored, after, "asking stored objects");
 }
 
+/// An object something else holds open, as a virus scanner or a reader of
+/// an old snapshot does on Windows, sharing no deletion, stays for the next
+/// drop: the drop that meets it neither fails nor counts it, and the next
+/// one removes it.
+#[tokio::test]
+async fn a_held_object_is_left_for_the_next_drop() {
+    let repo = repository();
+    let root = repo.path();
+    let store = store();
+    write(root, "work.txt", "first\n");
+    let first = take(root, &store.store).await.commit;
+    write(root, "work.txt", "second\n");
+    let second = take(root, &store.store).await.commit;
+    let loose = store.store.dir().join(&first[..2]).join(&first[2..]);
+    assert!(loose.is_file(), "the first snapshot's commit is loose");
+    let held = match os::testing::faults::hold_exclusively(&loose) {
+        Ok(held) => held,
+        Err(error) if error.kind() == std::io::ErrorKind::Unsupported => {
+            eprintln!("skipped: nothing can hold a file against its removal here ({error})");
+            return;
+        }
+        Err(error) => panic!("holding {}: {error}", loose.display()),
+    };
+    snapshot::drop(root, &store.store, [&second]).await.unwrap();
+    assert!(loose.is_file(), "the held commit stays");
+    drop(held);
+    let removed = snapshot::drop(root, &store.store, [&second]).await.unwrap();
+    assert!(removed >= 1, "removed {removed}");
+    assert!(!loose.exists());
+    assert_eq!(
+        read(root, &store.store, &second, "work.txt").await.unwrap(),
+        b"second\n"
+    );
+}
+
 /// Dropping keeps every snapshot named readable and removes what only the
 /// others held; a commit the store does not hold keeps nothing and is no
 /// error.

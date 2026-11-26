@@ -3,6 +3,7 @@ load("//build:rust.bzl", "TESTING", "amux_rust_library", "amux_rust_test")
 DEPS = [
     "//crates/attachments:attachments",
     "//crates/client:client",
+    "//crates/os:os",
     "//crates/settings:settings",
     "//crates/ui-code:ui-code",
     "//crates/ui-runtime:ui-runtime",

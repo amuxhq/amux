@@ -103,10 +103,20 @@ pub(crate) async fn with_said(failed: String, stderr: Option<SshStderr>) -> Stri
     }
 }
 
+/// The ssh client `path` (a `PATH` value) runs, as an absolute path: on
+/// Windows the system's OpenSSH (`ssh.exe` in System32\OpenSSH, which
+/// Windows puts on the `PATH`), never an `ssh` beside amux's own exe or in
+/// the working folder, which is where Windows would look first. Plain `ssh`
+/// when there is none, so starting it fails saying it was not found.
+fn ssh_program(path: &std::ffi::OsStr) -> std::ffi::OsString {
+    os::paths::find_program(std::ffi::OsStr::new("ssh"), path)
+        .map_or_else(|| "ssh".into(), std::path::PathBuf::into_os_string)
+}
+
 pub(crate) fn spawn_ssh_relay(target: &str, profile: crate::ProfileId) -> Result<SshChildIo> {
     let profile = profile.to_string();
     spawn_ssh_amux_command(
-        std::ffi::OsStr::new("ssh"),
+        &ssh_program(&os::paths::current_path()),
         target,
         &[RELAY_ARGS[0], RELAY_ARGS[1], "--profile", &profile],
         "SSH relay",
@@ -115,7 +125,7 @@ pub(crate) fn spawn_ssh_relay(target: &str, profile: crate::ProfileId) -> Result
 
 pub(crate) fn spawn_ssh_pair_recv(target: &str) -> Result<SshPairRecvIo> {
     spawn_ssh_amux_command(
-        std::ffi::OsStr::new("ssh"),
+        &ssh_program(&os::paths::current_path()),
         target,
         &PAIR_RECV_ARGS,
         "SSH pairing",
@@ -243,6 +253,24 @@ impl AsyncWrite for SshChildIo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ssh is the one on the PATH, by its whole path, as the system's
+    /// OpenSSH client is found on Windows (`ssh.exe`).
+    #[test]
+    fn ssh_is_found_on_the_path_by_its_whole_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let ssh = dir.path().join(os::paths::exe_name("ssh"));
+        std::fs::write(&ssh, "").unwrap();
+        os::fs::make_executable(&ssh).unwrap();
+        let path = std::env::join_paths([dir.path()]).unwrap();
+        assert_eq!(
+            std::path::PathBuf::from(ssh_program(&path)),
+            std::path::absolute(&ssh).unwrap()
+        );
+        let empty = tempfile::tempdir().unwrap();
+        let none = std::env::join_paths([empty.path()]).unwrap();
+        assert_eq!(ssh_program(&none), "ssh");
+    }
 
     #[test]
     fn ssh_args_are_noninteractive_and_carry_one_command() {

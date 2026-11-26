@@ -12,6 +12,24 @@ fn names(dir: &Path) -> Vec<String> {
     names
 }
 
+/// What the testing check calls private is what this module makes so, and
+/// a folder made plainly, or a file private only by where it is, is not.
+#[test]
+fn the_privacy_check_tells_a_private_folder_from_a_plain_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let private = dir.path().join("private");
+    create_private_dir(&private).unwrap();
+    assert!(is_private(&private).unwrap());
+    let plain = dir.path().join("plain");
+    fs::create_dir(&plain).unwrap();
+    assert!(!is_private(&plain).unwrap());
+    make_private(&plain).unwrap();
+    assert!(is_private(&plain).unwrap());
+    let secret = dir.path().join("secret");
+    drop(create_private(&secret, Create::New).unwrap());
+    assert!(is_private(&secret).unwrap());
+}
+
 #[test]
 fn a_durable_write_replaces_the_file_and_leaves_nothing_else() {
     let dir = tempfile::tempdir().unwrap();
@@ -237,6 +255,6 @@ fn making_a_private_folder_private_again_keeps_it_private() {
     write_durably(&root.join("inside"), b"x").unwrap();
     make_private(&root).unwrap();
     create_private_dir(&root).unwrap();
-    assert!(crate::testing::private::owner_only(&root).unwrap());
-    assert!(crate::testing::private::owner_only(&root.join("inside")).unwrap());
+    assert!(crate::testing::is_private(&root).unwrap());
+    assert!(crate::testing::is_private(&root.join("inside")).unwrap());
 }

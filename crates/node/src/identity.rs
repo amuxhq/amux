@@ -688,9 +688,9 @@ mod tests {
                 .starts_with(&ED25519_PKCS8_V1_PREFIX)
         );
 
-        let owner_only = os::testing::private::owner_only;
-        assert!(owner_only(dir.path()).unwrap());
-        assert!(owner_only(&device_key_path(dir.path())).unwrap());
+        let is_private = os::testing::is_private;
+        assert!(is_private(dir.path()).unwrap());
+        assert!(is_private(&device_key_path(dir.path())).unwrap());
     }
 
     #[test]
@@ -848,15 +848,16 @@ mod tests {
 
     #[test]
     fn loading_the_identity_makes_its_directory_and_key_private_again() {
-        use os::testing::private::{open_to_others, owner_only};
+        use os::testing::is_private;
+        use os::testing::private::open_to_others;
         let dir = temp_data_dir();
         identity_in(dir.path()).unwrap();
         open_to_others(dir.path()).unwrap();
         open_to_others(&device_key_path(dir.path())).unwrap();
-        assert!(!owner_only(dir.path()).unwrap());
+        assert!(!is_private(dir.path()).unwrap());
 
         identity_in(dir.path()).unwrap();
-        assert!(owner_only(dir.path()).unwrap());
-        assert!(owner_only(&device_key_path(dir.path())).unwrap());
+        assert!(is_private(dir.path()).unwrap());
+        assert!(is_private(&device_key_path(dir.path())).unwrap());
     }
 }

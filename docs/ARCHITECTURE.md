@@ -784,13 +784,13 @@ The allowed sets encode the layering above:
 | Crate | May depend on | Why |
 |---|---|---|
 | `wire`, `os`, `release`, `analytics`, `highlight`, `acp-protocol`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code; `pty-host` hosts a pseudo-terminal and nothing of amux's |
-| `git-facts` | `os` | a checkout's root in the one canonical path form, never Windows' verbatim one |
 | `log-file` | `os` | moves standard error onto the log, and opens it owner-only |
+| `git-facts` | `os` | its scratch folders made owner-only and removed patiently, and a checkout's root in the one canonical path form, never Windows' verbatim one |
 | `journal`, `store`, `attachments`, `redaction` | `wire` | |
 | `settings` | `os`, `wire` | names each experiment's version by the wire's entry for it; the home folder from `os` |
 | `agent-dir` | `os`, `wire` | `os` on Windows alone: the pipe name file's patient rename, and the user's SID a pipe is owned by |
 | `preview` | `attachments`, `wire` | |
-| `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
+| `core-ring` | `journal` | a core's input ring, in segments named as the journal's are; its drivers hand it the durable write (`os::fs::write_durably`) its checkpoints are put in place with, since a core takes no `os` |
 | `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `preview`, `redaction`, `wire` | the pure step, the checks every kind's steps meet, the agent's record built from its facts ring, and the walker that writes a protocol message as its structure alone |
 | `daemon-core` | at most `core-ring`, `journal`, `store`, `wire` | holds the store, reads journals, records its inputs |
 | `relay-core` | at most `daemon-core` | built from the daemon core's link and routing state |
@@ -803,7 +803,7 @@ The allowed sets encode the layering above:
 | `node` | `agent-dir`, `analytics`, `attachments`, `core-ring`, `daemon-core`, `git-facts`, `highlight`, `journal`, `log-file`, `os`, `path-core`, `redaction`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` or `interpret` crates, so the phone hosts a runtime with no interpreter or provider-protocol crates in its graph (only the cross-boundary provider types and Codex permission preset table in `wire`); `highlight` to colour a review's files and name each changed file's language by the rule the clients colour it by |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
 | `ui-state` → `wire`; `ui-view` → `attachments`, `preview`, `ui-state`, `wire`; `ui-code` → `highlight`, `ui-view`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library; `ui-view` holds no highlighter, since tree-sitter's grammars are C and the browser extension builds the views to WebAssembly without a C compiler; each client that draws code colours what it parses out of a chat through `ui-code` |
-| `tui` | `attachments`, `client`, `settings`, `ui-code`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
+| `tui` | `attachments`, `client`, `os`, `settings`, `ui-code`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | `os` for the home folder a path is shown from; its own OS calls (opening a link, the terminal's raw input) live in `src/platform/` |
 | `app-runtime` | `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | the phone's chats with no `node` |
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` | the daemon in the phone's process |
 | `app-bridge` | `app-embedded`, `app-runtime`, `client`, `installer` (desktop only), `node`, `ui-code`, `ui-state`, `ui-view`, `wire` | the language-neutral bridge over both |

@@ -335,7 +335,8 @@ async fn an_orphan_something_holds_is_left_for_the_next_sweep_and_the_daemon_sta
 /// folder around them passes on.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_root_in_a_folder_others_may_read_is_private() {
-    use os::testing::private::{open_to_others, owner_only};
+    use os::testing::is_private;
+    use os::testing::private::open_to_others;
     let install = Install::new();
     let around = install.path("second-drive");
     std::fs::create_dir(&around).unwrap();
@@ -355,10 +356,10 @@ async fn a_root_in_a_folder_others_may_read_is_private() {
         node::harness::device_key_path(&profile_dir),
         data_dir.join(node::GENERATION),
     ] {
-        assert!(owner_only(&path).unwrap(), "{} is private", path.display());
+        assert!(is_private(&path).unwrap(), "{} is private", path.display());
     }
     assert!(
-        !owner_only(&around).unwrap(),
+        !is_private(&around).unwrap(),
         "the folder around it is the person's"
     );
     daemon.shutdown().await.unwrap();

@@ -6,6 +6,17 @@ pub mod faults;
 pub mod pipe;
 pub mod private;
 
+/// Whether the file or folder at `path` is owner-only in its own right, as
+/// `os::fs` leaves what it makes private, so a test needs no `cfg` to say
+/// so: on Unix no permission bit for the group or others; on Windows a
+/// protected DACL (inheriting nothing from its folder) whose every allowing
+/// entry is for this user, SYSTEM or Administrators. Something private only
+/// by inheritance from a private folder is not: what makes it private is
+/// where it is.
+pub fn is_private(path: &std::path::Path) -> std::io::Result<bool> {
+    crate::fs::is_private(path)
+}
+
 /// The variable Buck's test runner (`build/test-runner.py`) sets for every
 /// test it runs.
 pub const TEST_RUNNER_ENV: &str = "AMUX_TEST_RUNNER";

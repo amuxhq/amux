@@ -5156,6 +5156,7 @@ dependencies = [
  "jiff",
  "libc",
  "node",
+ "os",
  "png",
  "prost",
  "provider-fakes",

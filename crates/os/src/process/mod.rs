@@ -386,6 +386,19 @@ pub struct Tether {
 /// killed.
 pub const TETHER_GRACE_SECS: u32 = 5;
 
+/// About how many bytes of arguments one command line can carry here:
+/// Windows' 32,767 UTF-16 units, macOS's `ARG_MAX` (1 MiB), and Linux's
+/// usual 2 MiB (a quarter of an 8 MiB stack, less the environment). A
+/// caller that must not exceed it batches well below it; a test that must
+/// exceed it sizes its input from it.
+pub const COMMAND_LINE_BYTES: usize = if cfg!(windows) {
+    32_767
+} else if cfg!(target_os = "macos") {
+    1024 * 1024
+} else {
+    2 * 1024 * 1024
+};
+
 #[cfg(feature = "async")]
 impl Tether {
     /// Tethers the process group `leader` leads, which must not have been

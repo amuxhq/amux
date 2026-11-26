@@ -33,6 +33,10 @@ pub(crate) fn run_role(name: &str, _rest: &[&str]) {
         // provider's tool shell leads a session, and waits.
         "orphaner" => {
             use std::os::unix::process::CommandExt as _;
+            #[allow(
+                clippy::zombie_processes,
+                reason = "the sleeper is the orphan this role leaves for the test to find"
+            )]
             let child = helper("sleep")
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())

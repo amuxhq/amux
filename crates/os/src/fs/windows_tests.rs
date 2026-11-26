@@ -3,7 +3,7 @@
 use std::os::windows::fs::OpenOptionsExt as _;
 use std::time::{Duration, Instant};
 
-use super::testing::dacl_sddl;
+use super::testing::{dacl_sddl, sddl_trustee};
 use super::*;
 use crate::fs::{Removed, canonical, plain, remove_patiently, write_durably};
 
@@ -46,9 +46,12 @@ fn parse(sddl: &str) -> (String, Vec<String>) {
     (flags, aces)
 }
 
+/// The ACEs of an owner-only DACL as SDDL reads them back: this user by
+/// the name SDDL gives it, which for the built-in Administrator is `LA`,
+/// not the SID the DACL was made from (CI run 45718964949).
 fn owner_only(inheritance: &str) -> Vec<String> {
-    let sid = current_user_sid().unwrap();
-    [sid.as_str(), "SY", "BA"]
+    let user = sddl_trustee(&current_user_sid().unwrap()).unwrap();
+    [user.as_str(), "SY", "BA"]
         .iter()
         .map(|who| format!("A;{inheritance};FA;;;{who}"))
         .collect()
@@ -277,6 +280,10 @@ fn set_dacl(path: &Path, sddl: &str) {
 /// something held the path: a sweep would put it off for ever.
 #[test]
 fn patient_removal_reports_a_deletion_an_acl_refuses() {
+    // A deletion asks with backup intent, which an enabled SeRestore grants
+    // past any DACL: on GitHub's runner both deletions went through.
+    let disabled = crate::testing::faults::hold_to_acls().unwrap();
+    eprintln!("disabled to be held to the DACLs: {disabled:?}");
     let dir = tempfile::tempdir().unwrap();
     let folder = dir.path().join("kept");
     let tree = folder.join("agent");

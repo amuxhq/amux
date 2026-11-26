@@ -245,6 +245,10 @@ fn file_from_inherited_refuses_our_own_standard_handle() {
 #[cfg(feature = "async")]
 #[test]
 fn kill_others_reports_a_member_it_cannot_end() {
+    // An enabled SeDebug opens any process whatever its DACL, and the
+    // helpers inherit this token: on GitHub's runner the member was ended.
+    let disabled = crate::testing::faults::hold_to_acls().unwrap();
+    eprintln!("disabled to be held to the DACLs: {disabled:?}");
     let mut driven = Driven::start(helper("contained"));
     assert_eq!(driven.expect("contained"), "ok");
     driven.tell("protected");

@@ -127,6 +127,10 @@ HOMES = (
     "crates/app-ffi/",
     "crates/app-jni/",
     "crates/launch/",
+    # Test and harness crates' own platform code (Phase 6, WP6.2a): what only
+    # that harness needs, behind an API with no `cfg`.
+    "crates/provider-fakes/src/platform/",
+    "crates/qualification/src/platform/",
 )
 
 # What Windows leaves out by choice, as words an `out of scope on

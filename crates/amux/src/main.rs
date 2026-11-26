@@ -896,8 +896,10 @@ mod tests {
         // `amux-launch supervise --config <path>`, which runs amux with the
         // same words, and `amux supervise` honours the launcher's pipe named
         // in AMUX_LAUNCH_LINEAGE (keeps it, hands it to its successor, and
-        // writes `0` to it before a deliberate exit).
+        // writes `0` to it before a deliberate exit) and AMUX_LAUNCH_RESTART
+        // (a restart that finds a stop asked for exits without a daemon).
         assert_eq!(node::supervisor::LINEAGE_ENV, "AMUX_LAUNCH_LINEAGE");
+        assert_eq!(node::supervisor::RESTART_ENV, "AMUX_LAUNCH_RESTART");
         for hidden in [
             &["amux", "supervise"][..],
             &["amux", "--config", "/config.toml", "supervise"],

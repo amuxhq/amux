@@ -27,7 +27,9 @@ things are promises, and a change keeps them:
   `browser` its message framing. So does Windows' launcher:
   `amux-launch <args>` runs `amux <args>` from its own folder, and
   `amux supervise` honours `AMUX_LAUNCH_LINEAGE` (keeps the handle, hands it
-  to its successor, writes `0` to it before a deliberate exit). A login item
+  to its successor, writes `0` to it before a deliberate exit) and
+  `AMUX_LAUNCH_RESTART` (a restart that finds a stop asked for exits
+  without a daemon). A login item
   or service unit, a supervisor handing over to the release it installed, a
   running agent's provider, a browser's native messaging host and a paired
   host at another version call them long after the build that wrote the

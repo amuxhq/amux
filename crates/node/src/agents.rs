@@ -8,7 +8,6 @@
 //! program is not installed is simply not offered.
 
 use std::collections::{BTreeMap, HashMap};
-use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use settings::agents::AgentEntry;
@@ -109,12 +108,15 @@ pub struct Offered {
 }
 
 impl AgentProgram {
-    /// Where this program's command is, looked up as it will be started:
-    /// on the PATH its own environment gives, else the host's for every
-    /// provider, else the one a newly logged-on process would see.
+    /// Where this program's command is, looked up as it will be started
+    /// ([`os::paths::Lookup`] over [`Self::environment`]): on the `PATH`
+    /// its own environment gives, else the host's for every provider, else
+    /// the one a newly logged-on process would see; on Windows under the
+    /// `PATHEXT` its own environment gives, else the host's, else this
+    /// process's.
     pub fn find(&self, provider_env: &HashMap<String, String>) -> Option<PathBuf> {
-        let path = path_for(&self.env, provider_env).unwrap_or_else(os::paths::current_path);
-        find_command(&self.command, &path, os::paths::home_dir().as_deref())
+        let lookup = os::paths::Lookup::new(&self.environment(provider_env));
+        find_command(&self.command, &lookup, os::paths::home_dir().as_deref())
     }
 
     /// The environment it starts with: the host's additions for every
@@ -139,46 +141,36 @@ pub fn offered(programs: &[AgentProgram], provider_env: &HashMap<String, String>
         .collect()
 }
 
-/// The `PATH` the program's own environment gives it, else the host's
-/// for every provider. Windows names a variable whatever its case (`Path`
-/// is `PATH`).
-fn path_for(
-    own: &BTreeMap<String, String>,
-    provider_env: &HashMap<String, String>,
-) -> Option<OsString> {
-    let any_case = cfg!(windows);
-    own.iter()
-        .chain(provider_env.iter())
-        .find(|(key, _)| {
-            if any_case {
-                key.eq_ignore_ascii_case("PATH")
-            } else {
-                *key == "PATH"
-            }
-        })
-        .map(|(_, value)| OsString::from(value))
-}
-
 /// The file `command` names, as an absolute path: a command holding a path
 /// separator is that path, a leading `~/` the home; any other is looked up
-/// on `path` as the operating system starts a program
+/// by `lookup` as the operating system starts a program
 /// ([`os::paths::find_program`]: the execute bit on Unix, `PATHEXT` on
 /// Windows, so npm's `.cmd` shims are found and the extensionless script
 /// beside one never is). A relative command or `PATH` entry is checked
 /// against the daemon's working directory, so the path returned is
 /// absolute: the program starts in the agent's folder, where the same
 /// relative path would name another file or none.
-fn find_command(command: &str, path: &OsStr, home: Option<&Path>) -> Option<PathBuf> {
+fn find_command(command: &str, lookup: &os::paths::Lookup, home: Option<&Path>) -> Option<PathBuf> {
     let homed = match (command.strip_prefix("~/"), home) {
         (Some(rest), Some(home)) => home.join(rest),
         _ => PathBuf::from(command),
     };
-    os::paths::find_program(homed.as_os_str(), path)
+    lookup.find(homed.as_os_str())
 }
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsStr;
+
     use super::*;
+
+    /// A lookup on `path` alone.
+    fn on(path: &OsStr) -> os::paths::Lookup {
+        os::paths::Lookup::new(&HashMap::from([(
+            "PATH".to_owned(),
+            path.to_string_lossy().into_owned(),
+        )]))
+    }
 
     fn entry(id: &str) -> AgentEntry {
         AgentEntry {
@@ -313,11 +305,11 @@ mod tests {
         executable(&first.join(exe("opencode")));
         executable(&second.join(exe("opencode")));
         let path = std::env::join_paths([&first, &second]).unwrap();
-        let find = |command: &str| find_command(command, &path, None);
+        let find = |command: &str| find_command(command, &on(&path), None);
         assert_eq!(find("agy"), Some(second.join(exe("agy"))));
         assert_eq!(find("opencode"), Some(first.join(exe("opencode"))));
         assert_eq!(find("grok"), None, "not installed: not offered");
-        assert_eq!(find_command("agy", OsStr::new(""), None), None);
+        assert_eq!(find_command("agy", &on(OsStr::new("")), None), None);
     }
 
     #[test]
@@ -325,7 +317,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let program = dir.path().join("bin").join(exe("my-agent"));
         executable(&program);
-        let find = |command: &str| find_command(command, OsStr::new(""), Some(dir.path()));
+        let find = |command: &str| find_command(command, &on(OsStr::new("")), Some(dir.path()));
         assert_eq!(find(program.to_str().unwrap()), Some(program.clone()));
         assert_eq!(find("~/bin/my-agent"), Some(program));
         assert_eq!(find("~/bin/missing"), None);
@@ -343,10 +335,10 @@ mod tests {
         executable(&dir.path().join(exe("my-agent")));
         let expected = here.join(&folder).join(exe("my-agent"));
         let relative = format!("./{}/my-agent", folder.to_string_lossy());
-        let found = find_command(&relative, OsStr::new(""), None).unwrap();
+        let found = find_command(&relative, &on(OsStr::new("")), None).unwrap();
         assert!(found.is_absolute(), "{found:?}");
         assert_eq!(found, expected);
-        let found = find_command("my-agent", &folder, None).unwrap();
+        let found = find_command("my-agent", &on(&folder), None).unwrap();
         assert!(found.is_absolute(), "{found:?}");
         assert_eq!(found, expected);
     }
@@ -380,5 +372,50 @@ mod tests {
         );
         assert_eq!(env["A"], "1");
         assert_eq!(env["PATH"], dir.path().to_string_lossy());
+    }
+
+    /// Where a command is found under more than one extension, the
+    /// program's own `PATHEXT` picks the file, else the host's for every
+    /// provider, before this process's (which puts `.EXE` first): as the
+    /// program would be started on Windows. Unix has no `PATHEXT`, and no
+    /// file is named `x` alone.
+    #[test]
+    fn a_programs_own_pathext_picks_the_file_its_command_names() {
+        let dir = tempfile::tempdir().unwrap();
+        for file in ["x.cmd", "x.exe"] {
+            executable(&dir.path().join(file));
+        }
+        let path = dir.path().to_string_lossy().into_owned();
+        let program = |env: &[(&str, &str)]| AgentProgram {
+            id: "x".into(),
+            name: "X".into(),
+            command: "x".into(),
+            args: Vec::new(),
+            env: env
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+                .chain([("PATH".to_owned(), path.clone())])
+                .collect(),
+            built_in: false,
+        };
+        let found = |program: AgentProgram, provider_env: &[(&str, &str)]| {
+            let provider_env = provider_env
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+                .collect();
+            program
+                .find(&provider_env)
+                .map(|found| found.file_name().unwrap().to_string_lossy().to_lowercase())
+        };
+        let shim = cfg!(windows).then(|| "x.cmd".to_owned());
+        assert_eq!(found(program(&[("PATHEXT", ".CMD;.EXE")]), &[]), shim);
+        assert_eq!(found(program(&[]), &[("PATHEXT", ".CMD;.EXE")]), shim);
+        assert_eq!(
+            found(
+                program(&[("PATHEXT", ".CMD;.EXE")]),
+                &[("PATHEXT", ".EXE;.CMD")]
+            ),
+            shim
+        );
     }
 }

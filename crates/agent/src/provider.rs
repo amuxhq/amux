@@ -2028,12 +2028,18 @@ fn provider_log(dir: &Path) -> io::Result<std::fs::File> {
 }
 
 /// The child's environment: ours without the variables a parent Claude
-/// session sets, plus the spec's additions.
+/// session sets, plus the spec's additions, and the `PATH` its program was
+/// found on where that isn't ours ([`crate::program::refreshed_path`]). A
+/// terminal's provider (Unix only) needs no such `PATH`: there the `PATH`
+/// it is found on is ours.
 fn environment(command: &mut tokio::process::Command, spec: &AgentSpec) {
     for key in crate::claude::launch::CHILD_SESSION_ENV_SCRUB {
         command.env_remove(key);
     }
     command.envs(&spec.provider_env);
+    if let Some(path) = crate::program::refreshed_path(&spec.provider_env) {
+        command.env("PATH", path);
+    }
 }
 
 #[cfg(test)]

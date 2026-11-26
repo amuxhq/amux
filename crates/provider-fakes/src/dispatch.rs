@@ -78,13 +78,20 @@ pub enum Plan {
     },
     /// Starts a copy of itself on this process's standard streams, which
     /// holds them for `linger_secs` seconds, then writes `stderr` and exits
-    /// with `code` at once.
+    /// with `code` at once. The copy adds its pid, a line, to `pids` when
+    /// given, so a test can see whether it still runs. Started with
+    /// `--version` alone, it prints `version` instead when given, and
+    /// exits leaving nothing, as a wrapper answers a version check itself.
     Leave {
         linger_secs: u64,
         #[serde(default)]
         stderr: String,
         #[serde(default)]
         code: i32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pids: Option<PathBuf>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        version: Option<String>,
     },
 }
 
@@ -504,12 +511,31 @@ pub fn main() -> i32 {
             linger_secs,
             stderr,
             code,
-        } => leave(&exe, linger_secs, &stderr, code),
+            pids,
+            version,
+        } => match version {
+            Some(version) if args == ["--version"] => {
+                println!("{version}");
+                0
+            }
+            _ => leave(&exe, linger_secs, &stderr, code, pids.as_deref()),
+        },
     }
 }
 
-fn leave(exe: &Path, linger_secs: u64, stderr: &str, code: i32) -> i32 {
+fn leave(exe: &Path, linger_secs: u64, stderr: &str, code: i32, pids: Option<&Path>) -> i32 {
     if std::env::var_os(LINGERING_ENV).is_some() {
+        if let Some(pids) = pids {
+            use std::io::Write as _;
+            let added = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(pids)
+                .and_then(|mut file| writeln!(file, "{}", std::process::id()));
+            if let Err(error) = added {
+                eprintln!("{BINARY}: adding to {}: {error}", pids.display());
+            }
+        }
         std::thread::sleep(std::time::Duration::from_secs(linger_secs));
         return 0;
     }

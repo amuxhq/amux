@@ -134,6 +134,10 @@ pub struct Agent {
 /// test's root.
 const INPUT_LOG: &str = "provider-input.jsonl";
 
+/// Where the fakes write the environment they were started with, under
+/// the test's root.
+const ENV_LOG: &str = "provider-env.json";
+
 impl Agent {
     /// The agent's working folder.
     pub fn work(&self) -> PathBuf {
@@ -147,6 +151,15 @@ impl Agent {
             .lines()
             .filter_map(|line| serde_json::from_str(line).ok())
             .collect()
+    }
+
+    /// The environment the provider last started with, each variable's
+    /// value by its name; empty before one has started.
+    pub fn provider_env(&self) -> std::collections::BTreeMap<String, String> {
+        std::fs::read(self._root.path().join(ENV_LOG))
+            .ok()
+            .and_then(|text| serde_json::from_slice(&text).ok())
+            .unwrap_or_default()
     }
 
     /// The facts ring's entries, oldest first: every event the
@@ -239,6 +252,10 @@ impl Agent {
             (
                 provider_fakes::INPUT_LOG_ENV.to_owned(),
                 root.path().join(INPUT_LOG).to_str().unwrap().to_owned(),
+            ),
+            (
+                provider_fakes::script::ENV_LOG_ENV.to_owned(),
+                root.path().join(ENV_LOG).to_str().unwrap().to_owned(),
             ),
             // Claude's own directory, where terminal Claude's transcripts go.
             (

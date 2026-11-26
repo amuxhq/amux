@@ -550,8 +550,11 @@ it started, with its working directory, command and arguments from the spec.
 Its program is found as a shell finds it (`os::paths::find_program`), on the
 `PATH` in the spec's environment or else the one a newly logged-on process
 would see, so a provider installed since the daemon started is found too,
-and on Windows npm's `.cmd` shim under `PATHEXT`; the catalogue's helper and
-the version probe find it the same way. Windows runs a `.cmd` through
+and on Windows npm's `.cmd` shim under `PATHEXT`, the spec's own when it sets
+one (`os::paths::Lookup`). A provider found on a `PATH` the agent's own lacks
+starts with that `PATH`, so what it runs in turn (the shim's `node`) is found
+there too. The catalogue's helper and the version probe find it and start it
+the same way, and the daemon gives the helper that `PATH` too. Windows runs a `.cmd` through
 `cmd.exe`, which carries no line break and cuts a command line past 8191
 characters, so behind one headless Claude's settings, its tool server's
 configuration and the system prompt the agent appends go as files in

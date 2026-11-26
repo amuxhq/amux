@@ -26,6 +26,10 @@ pub const PLAYBACK_ENV: &str = "AMUX_FAKE_PLAYBACK";
 /// The environment variable naming a file a stdio fake appends every line
 /// its host writes to, so a test can see exactly what the provider got.
 pub const INPUT_LOG_ENV: &str = "AMUX_FAKE_INPUT_LOG";
+/// The environment variable naming a file a fake writes its environment
+/// to as it starts, a JSON object of each variable's value, so a test can
+/// see what the provider was started with.
+pub const ENV_LOG_ENV: &str = "AMUX_FAKE_ENV_LOG";
 
 /// Start `sh -c command` in a session of its own and leave it running.
 pub fn spawn_detached(command: &str) {
@@ -50,6 +54,28 @@ pub fn spawn_detached(command: &str) {
     }
     if let Err(error) = shell.spawn() {
         eprintln!("spawn {command}: {error}");
+    }
+}
+
+/// Write this process's environment to the env log, when the environment
+/// names one.
+pub fn log_env() {
+    let Some(path) = std::env::var_os(ENV_LOG_ENV) else {
+        return;
+    };
+    let env: std::collections::BTreeMap<String, String> = std::env::vars_os()
+        .map(|(key, value)| {
+            (
+                key.to_string_lossy().into_owned(),
+                value.to_string_lossy().into_owned(),
+            )
+        })
+        .collect();
+    let written = serde_json::to_vec(&env)
+        .map_err(std::io::Error::other)
+        .and_then(|text| std::fs::write(&path, text));
+    if let Err(error) = written {
+        eprintln!("env log {}: {error}", Path::new(&path).display());
     }
 }
 

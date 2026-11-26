@@ -237,13 +237,27 @@ impl Maker for GitBackend {
         let path_text = path.to_string_lossy();
         // Clean but for ignored files, such as build output, or changes the
         // delete agreed to lose: forcing loses nothing else.
-        let mut removed = git(&main, &["worktree", "remove", "--force", &path_text]);
-        // Windows will not remove a folder some process still has open, as
-        // a process that has just been killed can for a moment, or a git
-        // still reading there. git then removes what it can and the
-        // worktree's own git directory, and fails with the folder left:
-        // what is left is removed patiently, so the tree does not stay on
-        // disk for good. Still held after that, it is left with a warning.
+        let remove = || git(&main, &["worktree", "remove", "--force", &path_text]);
+        let mut removed = remove();
+        // Windows will not remove a file some process still has open, as a
+        // process that has just been killed can for a moment, or a git
+        // still reading there. Held in the worktree's own git directory,
+        // what git reads to find the worktree, git removes nothing and
+        // fails with both left: it is asked again while both are there,
+        // pausing longer each time, for as long as a removal waits. Held in
+        // the checkout, git removes what it can and the git directory, and
+        // fails with the folder left: what is left is removed patiently, so
+        // the tree does not stay on disk for good. Still held after that,
+        // it is left with a warning.
+        let patience = crate::install::REMOVAL_PATIENCE;
+        let started = std::time::Instant::now();
+        let mut pause = std::time::Duration::from_millis(50);
+        while removed.is_err() && path.is_dir() && git_dir.is_dir() && started.elapsed() < patience
+        {
+            std::thread::sleep(pause.min(patience.saturating_sub(started.elapsed())));
+            pause = (pause * 2).min(std::time::Duration::from_millis(500));
+            removed = remove();
+        }
         if removed.is_err() && !git_dir.is_dir() {
             removed = match os::fs::remove_patiently(path, crate::install::REMOVAL_PATIENCE) {
                 Ok(os::fs::Removed::Gone) => Ok(String::new()),

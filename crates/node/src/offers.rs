@@ -743,6 +743,9 @@ impl ProfileRuntime {
         std::fs::create_dir_all(&dir).map_err(CatalogueError::Write)?;
         let out = dir.join(format!("{word}.asked"));
         let _ = std::fs::remove_file(&out);
+        // The helper and what it starts are found on, and run with, the
+        // one `PATH` the provider's own start would have.
+        let lookup = os::paths::Lookup::new(env);
         let mut helper = tokio::process::Command::new(&launch.install_path);
         helper
             .args(["internal", "catalogue", word])
@@ -763,6 +766,10 @@ impl ProfileRuntime {
             .stderr(Stdio::piped())
             // Ended by `running` instead, with the provider it started.
             .kill_on_drop(false);
+        if let Some(path) = lookup.refreshed_path() {
+            helper.env("PATH", path);
+        }
+        os::process::own_group(&mut helper);
         let child = helper
             .spawn()
             .map_err(|error| CatalogueError::Helper(error.to_string()))?;
@@ -797,10 +804,13 @@ impl ProfileRuntime {
 /// when its ask takes too long or the daemon stops mid-ask, it is killed
 /// with the provider it started. Killing the helper alone would leave the
 /// provider running with whatever the daemon's process handed down to it.
-/// On Unix what the helper started is found below it while it still runs
-/// and killed too; Windows has no such census, and the provider goes with
-/// the helper only where the helper holds what it starts in a job of its
-/// own (`os::process::Family`).
+/// On Unix the helper leads a process group of its own, killed with it
+/// ([`os::process::ProcessRef::kill_group`]): that reaches what a provider
+/// wrapper left holding the helper's pipe once the wrapper exited, which
+/// has been reparented away from below the helper. What the helper started
+/// in groups of their own (an ACP agent) is found below it while it still
+/// runs and killed too. Windows has neither, and the provider goes with
+/// the helper's job (`os::process::Family`).
 struct Running(Option<os::process::ProcessRef>);
 
 impl Drop for Running {
@@ -809,7 +819,7 @@ impl Drop for Running {
             // Taken first: once the helper is killed, what it started is no
             // longer below it.
             let started = os::process::descendants(helper.pid());
-            let _ = helper.kill();
+            let _ = helper.kill_group();
             os::process::kill_descendants(&started);
         }
     }
@@ -1074,13 +1084,21 @@ impl ProfileRuntime {
 /// What `<command> --version` prints, as printed; None when it cannot be
 /// read.
 async fn provider_version(command: &str, launch: &Launch) -> Option<String> {
-    let mut probe = tokio::process::Command::new(command);
+    // Found and run as the provider is ([`os::paths::Lookup`]).
+    let lookup = os::paths::Lookup::new(&launch.provider_env);
+    let program = lookup
+        .find(command.as_ref())
+        .unwrap_or_else(|| PathBuf::from(command));
+    let mut probe = tokio::process::Command::new(program);
     probe
         .arg("--version")
         .envs(&launch.provider_env)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    if let Some(path) = lookup.refreshed_path() {
+        probe.env("PATH", path);
+    }
     let output = tokio::time::timeout(VERSION_PATIENCE, probe.output())
         .await
         .ok()?

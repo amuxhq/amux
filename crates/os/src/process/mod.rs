@@ -124,6 +124,15 @@ pub fn spawn_background<C: Spawnable>(cmd: &mut C) -> io::Result<Spawned<C::Chil
     imp::spawn_background(cmd)
 }
 
+/// Readies `cmd` to start at the head of a process group of its own
+/// (Unix: `process_group(0)`), so [`ProcessRef::kill_group`] reaches what
+/// it starts that stays in the group, even once that has been reparented
+/// away and no census of [`descendants`] finds it below. Windows: nothing;
+/// a job does this there ([`Family`]).
+pub fn own_group<C: Spawnable>(cmd: &mut C) {
+    imp::own_group(cmd.std_command());
+}
+
 /// What [`exec_or_spawn`] leaves when the OS has no exec: the successor,
 /// running. The caller hands over to it and exits.
 #[derive(Debug)]
@@ -450,6 +459,16 @@ impl ProcessRef {
     /// has already exited.
     pub fn kill(&self) -> io::Result<()> {
         self.inner.kill()
+    }
+
+    /// Ends the process and the process group it leads ([`own_group`]) at
+    /// once: SIGKILL to the group, then to the process, which may lead
+    /// none. The group is reached while the process is pinned, running or
+    /// exited but not yet reaped, which keeps the group's id from being
+    /// reused. `Ok` when both have already gone. Windows has no process
+    /// groups: the process alone, as [`ProcessRef::kill`].
+    pub fn kill_group(&self) -> io::Result<()> {
+        self.inner.kill_group()
     }
 
     /// Asks the process to finish, as a polite stop does: SIGTERM, on which

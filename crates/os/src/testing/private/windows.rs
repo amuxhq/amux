@@ -1,7 +1,6 @@
-use std::io;
 use std::os::windows::ffi::OsStrExt as _;
 use std::path::Path;
-use std::ptr;
+use std::{io, ptr};
 
 use windows_sys::Win32::Foundation::{ERROR_SUCCESS, LocalFree};
 use windows_sys::Win32::Security::Authorization::{

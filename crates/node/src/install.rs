@@ -16,10 +16,9 @@
 //!                         bytes fetched for a peer's agent
 //! ```
 
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use std::{fs, io};
 
 pub const INSTALLATION_LOCK: &str = "installation.lock";
 pub const GENERATION: &str = "generation";
@@ -135,13 +134,12 @@ pub fn private_dir(path: &Path) -> io::Result<()> {
     os::fs::create_private_dir(path)
 }
 
+/// Makes a rename or a creation in `dir` durable ([`os::fs::sync_dir`]).
+pub use os::fs::sync_dir;
 /// Replaces `path` with `bytes` so that a crash or power cut leaves either
 /// the old file or the new one, and the new one is on disk before this
 /// returns, readable by this user only ([`os::fs::write_durably`]).
 pub use os::fs::write_durably;
-
-/// Makes a rename or a creation in `dir` durable ([`os::fs::sync_dir`]).
-pub use os::fs::sync_dir;
 
 /// Replaces `path` with `bytes` so that a reader sees the old file or the
 /// new one, never half of one, without waiting for the drive: for a file

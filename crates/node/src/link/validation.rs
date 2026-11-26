@@ -9,12 +9,11 @@
 //! the IP address it was given to.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::io;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
-use std::{fmt, fs};
+use std::{fmt, fs, io};
 
 use bytes::Bytes;
 

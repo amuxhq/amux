@@ -7,9 +7,8 @@
 //! configuration; config is frozen per incarnation.
 
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
+use std::{fs, io};
 
 use prost::Message as _;
 use wire::{

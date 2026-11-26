@@ -187,11 +187,10 @@ impl UdpGate {
                 loop {
                     let (n, from) = match front.recv_from(&mut buf).await {
                         Ok(received) => received,
-                        // Windows reports an earlier send's ICMP
-                        // unreachable on the next receive: a reply to a
-                        // sender that moved or went away, as a host's
-                        // socket does on a rebind or a restart. It says
-                        // nothing of this receive, and the gate goes on.
+                        // A reply to a sender that has gone (its socket
+                        // closed as its host moved) is refused, which
+                        // Windows reports on the next receive; it says
+                        // nothing about what arrives next.
                         Err(error)
                             if matches!(
                                 error.kind(),

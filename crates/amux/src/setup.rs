@@ -1,6 +1,6 @@
 //! The verbs that set an install up rather than talk to its agents:
-//! `amux update` and `amux uninstall`, and the login item `start_at_login`
-//! keeps.
+//! `amux update`, `amux uninstall` and `amux setup firewall`, and the login
+//! item `start_at_login` keeps.
 
 use std::io::{BufRead as _, IsTerminal as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -42,6 +42,60 @@ pub fn start_at_login(config: &InstallationConfig, config_path: Option<&Path>) -
             login.location()
         );
     }
+    Ok(())
+}
+
+/// What `amux setup firewall` runs itself again with, as an administrator.
+const FIREWALL_AS_ADMINISTRATOR: &[&str] = &["setup", "firewall", "--as-administrator"];
+
+/// `amux setup firewall`: makes the firewall let devices nearby reach this
+/// amux (`node::firewall`), asking for administrator approval once when it
+/// doesn't yet. `as_administrator` is that approved run, whose window
+/// nobody sees: the run that asked reads the firewall again and says what
+/// it found.
+pub fn firewall(as_administrator: bool) -> Result<()> {
+    let program = os::fs::canonical(&std::env::current_exe()?)?;
+    let system = match node::firewall::system() {
+        Err(error) if error.kind() == std::io::ErrorKind::Unsupported => {
+            println!("amux sets up no firewall on this OS: devices nearby reach it as it is.");
+            return Ok(());
+        }
+        system => system?,
+    };
+    if !as_administrator {
+        let before = node::firewall::standing(&system.read()?, &program);
+        if before.open() {
+            println!("The firewall {}", crate::status::firewall_words(before));
+            return Ok(());
+        }
+        if !system.elevated()? {
+            println!(
+                "Asking Windows for administrator approval to let devices nearby reach {}…",
+                program.display()
+            );
+        }
+    }
+    let done = node::firewall::set_up(
+        system.as_ref(),
+        &program,
+        FIREWALL_AS_ADMINISTRATOR,
+        as_administrator,
+    )
+    .context("setting up the firewall")?;
+    if as_administrator {
+        return Ok(());
+    }
+    if !done.standing.open() {
+        bail!(
+            "after the change the firewall still keeps devices nearby from reaching amux; \
+             a rule amux can't change, such as one an administrator's policy sets, may \
+             block it"
+        );
+    }
+    println!(
+        "The firewall {}",
+        crate::status::firewall_words(done.standing)
+    );
     Ok(())
 }
 

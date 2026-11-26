@@ -325,27 +325,20 @@ pub fn kill_agents_under(root: &Path) {
     }
 }
 
-/// Kills the agent `pid` leads and everything it started, as the daemon
-/// does: `taskkill /F /T` where there is one (Windows, the process tree),
-/// else SIGKILL to its process group (`pkill -KILL -g <pid>`). Says
-/// whether the kill was made.
+/// Kills the agent `pid` at once, pinned so a reused pid is never reached,
+/// then whatever is left in the process group it leads (`pkill -KILL -g`,
+/// where there is a `pkill`). What the agent started goes with it, as its
+/// family: its job ends with it on Windows, and each provider's tether ends
+/// that provider's group on Unix. Says whether the agent was killed.
 pub fn kill_group(pid: u32) -> bool {
-    let quiet = |command: &mut std::process::Command| {
-        command
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-    };
-    match quiet(std::process::Command::new("taskkill").args(["/F", "/T", "/PID", &pid.to_string()]))
-    {
-        Ok(status) => status.success(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            quiet(std::process::Command::new("pkill").args(["-KILL", "-g", &pid.to_string()]))
-                .is_ok_and(|status| status.success())
-        }
-        Err(error) => panic!("taskkill: {error}"),
-    }
+    let killed = os::process::ProcessRef::open(pid).and_then(|agent| agent.kill());
+    let _ = std::process::Command::new("pkill")
+        .args(["-KILL", "-g", &pid.to_string()])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    killed.is_ok()
 }
 
 /// Whether a process other than this one runs whose command line contains

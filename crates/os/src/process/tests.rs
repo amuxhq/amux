@@ -273,7 +273,9 @@ fn run_role(name: &str, rest: &[&str]) {
 
 /// Contains itself, then does what its stdin says: `tree` starts a member
 /// that starts a sleeper of its own; `breakaway` a member that starts a
-/// sleeper detached as a session and exits; `members`; `kill`.
+/// sleeper detached as a session and exits; `orphaner` a member whose
+/// sleeper leaves its group (a role only Unix has); `count`; `members`;
+/// `kill`.
 #[cfg(feature = "async")]
 pub(crate) fn contained() {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -301,11 +303,11 @@ pub(crate) fn contained() {
                 return;
             }
             let command = line.trim();
-            if command == "tree" || command == "breakaway" {
-                let role = if command == "tree" {
-                    "spawner"
-                } else {
-                    "daemonizer"
+            if command == "tree" || command == "orphaner" || command == "breakaway" {
+                let role = match command {
+                    "tree" => "spawner",
+                    "orphaner" => "orphaner",
+                    _ => "daemonizer",
                 };
                 let mut member = tokio::process::Command::from(helper(role));
                 member
@@ -323,7 +325,7 @@ pub(crate) fn contained() {
                         break said.to_owned();
                     }
                 };
-                if command == "tree" {
+                if command != "breakaway" {
                     say(format!("pid {id}"));
                     say(said);
                     kept.push((child, joined));
@@ -333,6 +335,9 @@ pub(crate) fn contained() {
                     joined.release().await;
                     say(said);
                 }
+            } else if command == "count" {
+                family.count();
+                say("counted");
             } else if command == "members" {
                 let members: Vec<String> = family
                     .members()
@@ -447,30 +452,38 @@ fn members_die_with_the_process_that_contains_them() {
     assert!(eventually(|| !sleeper_ref.alive()), "its child dies");
 }
 
+/// A member that starts a daemon (detached as a session) and exits. On
+/// Unix the daemon leaves the family, as a `setsid` leaves a process
+/// group, and lives on. On Windows the family's job forbids breakaway (Git
+/// Bash breaks every command away from a job that allows it), so the
+/// daemon is started inside, stays a member, and ends with the family.
 #[cfg(feature = "async")]
 #[test]
-fn a_member_that_breaks_away_survives() {
+fn a_daemon_a_member_starts_leaves_the_family_only_on_unix() {
+    let leaves = imp::tests::A_DAEMON_LEAVES_THE_FAMILY;
     let mut driven = Driven::start(helper("contained"));
     assert_eq!(driven.expect("contained"), "ok");
     driven.tell("breakaway");
     let said = driven.expect("pid");
     let daemon = pid(&said);
     let daemon_ref = ProcessRef::open(daemon).unwrap();
-    let refused = said.ends_with("refused true");
-    imp::tests::say_why_breakaway_is_refused(refused);
-    assert!(
-        !refused,
-        "the test runner's job forbids breakaway, so this can't be seen here"
-    );
+    assert_eq!(said.ends_with("refused true"), !leaves, "{said}");
     let found = members(&mut driven);
-    assert!(!found.contains(&daemon), "{daemon} not in {found:?}");
+    assert_eq!(found.contains(&daemon), !leaves, "{daemon} in {found:?}");
     driven.tell("kill");
     assert_eq!(driven.expect("killed"), "ok");
     driven.child.kill().unwrap();
     driven.child.wait().unwrap();
-    std::thread::sleep(Duration::from_millis(1500));
-    assert!(daemon_ref.alive(), "the daemon lives on");
-    daemon_ref.kill().unwrap();
+    if leaves {
+        std::thread::sleep(Duration::from_millis(1500));
+        assert!(daemon_ref.alive(), "the daemon lives on");
+        daemon_ref.kill().unwrap();
+    } else {
+        assert!(
+            eventually(|| !daemon_ref.alive()),
+            "the daemon ends with the family"
+        );
+    }
 }
 
 #[cfg(feature = "async")]

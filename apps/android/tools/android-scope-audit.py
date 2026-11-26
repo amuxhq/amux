@@ -23,12 +23,16 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import struct
 import subprocess
 import sys
 import tempfile
 import zipfile
 
 LIB_NAME = "libamux_app.so"
+PAGE_SIZE_16K = 16384
+PAGE_ALIGNMENT_16K = 2
+SIXTY_FOUR_BIT_ABIS = frozenset({"arm64-v8a", "x86_64"})
 
 FORBIDDEN_CLASS_PATTERNS: tuple[str, ...] = (
     "DoorServer",
@@ -327,6 +331,132 @@ def audit_native_libraries(
     return native_results
 
 
+def _read_varint(buf: bytes, pos: int) -> tuple[int, int]:
+    value = 0
+    shift = 0
+    while pos < len(buf):
+        byte = buf[pos]
+        pos += 1
+        value |= (byte & 0x7F) << shift
+        if not (byte & 0x80):
+            return value, pos
+        shift += 7
+        if shift > 63:
+            break
+    raise RuntimeError("malformed protobuf varint in BundleConfig.pb")
+
+
+def _iter_proto_fields(buf: bytes):
+    """Yield (field_number, wire_type, value) from a protobuf message."""
+    pos = 0
+    end = len(buf)
+    while pos < end:
+        tag, pos = _read_varint(buf, pos)
+        field_num = tag >> 3
+        wire_type = tag & 0x07
+        if wire_type == 0:
+            val, pos = _read_varint(buf, pos)
+            yield field_num, wire_type, val
+        elif wire_type == 1:
+            if pos + 8 > end:
+                raise RuntimeError("truncated 64-bit field in BundleConfig.pb")
+            yield field_num, wire_type, buf[pos : pos + 8]
+            pos += 8
+        elif wire_type == 2:
+            length, pos = _read_varint(buf, pos)
+            if pos + length > end:
+                raise RuntimeError("truncated length-delimited field in BundleConfig.pb")
+            yield field_num, wire_type, buf[pos : pos + length]
+            pos += length
+        elif wire_type == 5:
+            if pos + 4 > end:
+                raise RuntimeError("truncated 32-bit field in BundleConfig.pb")
+            yield field_num, wire_type, buf[pos : pos + 4]
+            pos += 4
+        else:
+            raise RuntimeError(f"unsupported protobuf wire type {wire_type} in BundleConfig.pb")
+
+
+def bundle_config_uncompressed_alignment(bundle_config: bytes) -> tuple[bool, int]:
+    """Read (enabled, alignment) from BundleConfig.optimizations.uncompress_native_libraries."""
+    enabled = False
+    alignment = 0
+    for field_num, wire_type, value in _iter_proto_fields(bundle_config):
+        # BundleConfig.optimizations = field 2
+        if field_num == 2 and wire_type == 2:
+            for opt_num, opt_wire, opt_val in _iter_proto_fields(value):
+                # Optimizations.uncompress_native_libraries = field 2
+                if opt_num == 2 and opt_wire == 2:
+                    for lib_num, lib_wire, lib_val in _iter_proto_fields(opt_val):
+                        if lib_num == 1 and lib_wire == 0:
+                            enabled = bool(lib_val)
+                        elif lib_num == 2 and lib_wire == 0:
+                            alignment = int(lib_val)
+    return enabled, alignment
+
+
+def elf_pt_load_segments(data: bytes, label: str) -> list[tuple[int, int, int]]:
+    """Return (p_offset, p_vaddr, p_align) for every PT_LOAD segment in an ELF64 LE binary."""
+    if len(data) < 64 or data[:4] != b"\x7fELF":
+        raise RuntimeError(f"{label} is not a valid ELF binary")
+    if data[4] != 2 or data[5] != 1:
+        raise RuntimeError(f"{label} is not a 64-bit little-endian ELF binary")
+    e_phoff = struct.unpack_from("<Q", data, 32)[0]
+    e_phentsize, e_phnum = struct.unpack_from("<HH", data, 54)
+    if e_phentsize < 56 or e_phoff + e_phentsize * e_phnum > len(data):
+        raise RuntimeError(f"{label} has an invalid ELF program header table")
+    segments: list[tuple[int, int, int]] = []
+    for index in range(e_phnum):
+        offset = e_phoff + index * e_phentsize
+        p_type, _flags, p_offset, p_vaddr, _paddr, _filesz, _memsz, p_align = struct.unpack_from(
+            "<IIQQQQQQ", data, offset
+        )
+        if p_type == 1:  # PT_LOAD
+            segments.append((p_offset, p_vaddr, p_align))
+    if not segments:
+        raise RuntimeError(f"{label} contains no PT_LOAD segments")
+    return segments
+
+
+def audit_page_size_16kb(apk_path: Path, *, abis: list[str]) -> tuple[int, str]:
+    """Verify 16 KB ELF LOAD alignment on all 64-bit .so files and PAGE_ALIGNMENT_16K in BundleConfig.pb."""
+    checked = 0
+    target_abis = [abi for abi in abis if abi in SIXTY_FOUR_BIT_ABIS]
+    with zipfile.ZipFile(apk_path, "r") as zf:
+        names = zf.namelist()
+        prefixes = tuple(
+            prefix
+            for abi in target_abis
+            for prefix in (f"lib/{abi}/", f"base/lib/{abi}/")
+        )
+        for member in sorted(names):
+            if member.endswith(".so") and member.startswith(prefixes):
+                segments = elf_pt_load_segments(zf.read(member), member)
+                for p_offset, p_vaddr, p_align in segments:
+                    if p_align < PAGE_SIZE_16K or (p_offset % PAGE_SIZE_16K) != (p_vaddr % PAGE_SIZE_16K):
+                        raise RuntimeError(
+                            f"{member} is not 16 KB aligned: "
+                            f"PT_LOAD p_align=0x{p_align:x}, p_offset=0x{p_offset:x}, p_vaddr=0x{p_vaddr:x}"
+                        )
+                checked += 1
+
+        if "BundleConfig.pb" in names:
+            enabled, alignment = bundle_config_uncompressed_alignment(zf.read("BundleConfig.pb"))
+            if not enabled or alignment != PAGE_ALIGNMENT_16K:
+                raise RuntimeError(
+                    f"{apk_path.name} BundleConfig.pb does not request 16 KB native library alignment "
+                    f"(uncompressNativeLibraries enabled={enabled}, alignment={alignment}; "
+                    f"expected enabled=True, alignment={PAGE_ALIGNMENT_16K} / PAGE_ALIGNMENT_16K)"
+                )
+            config_note = "BundleConfig.pb=PAGE_ALIGNMENT_16K"
+        else:
+            config_note = "APK (no BundleConfig.pb)"
+
+    if target_abis and checked == 0:
+        raise RuntimeError(f"{apk_path.name} has no 64-bit .so files under {', '.join(target_abis)}")
+    return checked, config_note
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apk", type=Path, required=True, help="the app bundle or release APK to audit")
@@ -349,6 +479,7 @@ def main(argv: list[str] | None = None) -> int:
     apk_path = args.apk.resolve()
     class_result = audit_classes(args.mapping.resolve())
     native_results = audit_native_libraries(apk_path, abis=abis, readelf=args.readelf, nm=args.nm)
+    aligned_so_count, page_config_note = audit_page_size_16kb(apk_path, abis=abis)
 
     print(
         f"scope-audit: APK {apk_path.name} ({apk_path.stat().st_size:,} bytes): "
@@ -361,6 +492,10 @@ def main(argv: list[str] | None = None) -> int:
             f"DT_NEEDED=[{', '.join(nr.needed_libs)}], SQLite={nr.sqlite_evidence}",
             flush=True,
         )
+    print(
+        f"scope-audit: 16 KB page alignment: {aligned_so_count} .so file(s) ELF-aligned, {page_config_note}",
+        flush=True,
+    )
 
     failures: list[str] = []
     for hit in class_result.forbidden_hits:
@@ -375,7 +510,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  - {failure}", file=sys.stderr)
         return 1
 
-    print("scope-audit: PASS (no debug/test classes, symbols or DWARF sections; SQLite statically linked)", flush=True)
+    print(
+        "scope-audit: PASS (no debug/test classes, symbols or DWARF sections; SQLite statically linked; 16 KB page-aligned)",
+        flush=True,
+    )
     return 0
 
 

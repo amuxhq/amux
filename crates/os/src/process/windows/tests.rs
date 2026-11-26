@@ -84,14 +84,8 @@ pub(crate) fn held(path: &std::ffi::OsStr) -> bool {
         .is_err()
 }
 
-/// Whether this test process is in a job, beside whether a breakaway was
-/// refused: what explains a refusal here.
-pub(crate) fn say_why_breakaway_is_refused(refused: bool) {
-    eprintln!(
-        "this test process is in a job: {}; breakaway refused: {refused}",
-        super::in_job(None)
-    );
-}
+/// A daemon a member starts can't break away from the family's job.
+pub(crate) const A_DAEMON_LEAVES_THE_FAMILY: bool = false;
 
 /// Gives this process an empty DACL, so nothing of the same user can open
 /// it to terminate it; its job can still end it.
@@ -164,8 +158,9 @@ fn jail_self() {
 /// §6's first risk: an agent whose start fell back into a job that forbids
 /// breakaway (here the jailer's, `KILL_ON_JOB_CLOSE` alone) still contains
 /// itself, since jobs nest, and still kills its tree. A member's breakaway
-/// request is not refused: it leaves the agent's job, which allows it, and
-/// stays in the outer one, which doesn't, so it ends when that job does.
+/// request is refused by the agent's job too (Git Bash would otherwise take
+/// every command out of it), so the member is started inside and dies with
+/// the rest.
 #[cfg(feature = "async")]
 #[test]
 fn contain_self_works_inside_a_job_that_forbids_breakaway() {
@@ -178,19 +173,15 @@ fn contain_self_works_inside_a_job_that_forbids_breakaway() {
     driven.tell("breakaway");
     let said = driven.expect("pid");
     let daemon = ProcessRef::open(pid(&said)).unwrap();
-    assert!(said.ends_with("refused false"), "{said}");
+    assert!(said.ends_with("refused true"), "{said}");
     let found = members(&mut driven);
-    assert!(!found.contains(&daemon.pid()), "{found:?}");
+    assert!(found.contains(&daemon.pid()), "{found:?}");
     driven.tell("kill");
     assert_eq!(driven.expect("killed"), "ok");
     assert!(eventually(|| !member.alive() && !sleeper.alive()));
-    assert!(daemon.alive(), "the member that broke away lives on");
-    // The jailer's job ending takes it: it never left that one.
-    driven.child.kill().unwrap();
-    driven.child.wait().unwrap();
     assert!(
         eventually(|| !daemon.alive()),
-        "the outer job's end takes it"
+        "the refused breakaway dies too"
     );
 }
 
@@ -245,6 +236,10 @@ fn file_from_inherited_refuses_our_own_standard_handle() {
 #[cfg(feature = "async")]
 #[test]
 fn kill_others_reports_a_member_it_cannot_end() {
+    // An enabled SeDebug opens any process whatever its DACL, and the
+    // helpers inherit this token: on GitHub's runner the member was ended.
+    let disabled = crate::testing::faults::hold_to_acls().unwrap();
+    eprintln!("disabled to be held to the DACLs: {disabled:?}");
     let mut driven = Driven::start(helper("contained"));
     assert_eq!(driven.expect("contained"), "ok");
     driven.tell("protected");

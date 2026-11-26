@@ -241,6 +241,9 @@ impl Groups {
 #[derive(Debug)]
 pub(super) struct Family {
     groups: std::sync::Arc<Groups>,
+    /// Every member [`Family::count`] found: one reparented away since is
+    /// still ended by `kill_others`.
+    counted: std::sync::Mutex<Vec<Descendant>>,
 }
 
 impl Family {
@@ -253,7 +256,33 @@ impl Family {
         }
         Ok(Family {
             groups: std::sync::Arc::default(),
+            counted: std::sync::Mutex::default(),
         })
+    }
+
+    fn counted(&self) -> std::sync::MutexGuard<'_, Vec<Descendant>> {
+        self.counted
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    pub(super) fn count(&self) {
+        let me = std::process::id() as i32;
+        let Ok(table) = table::try_table() else {
+            return;
+        };
+        let mut counted = self.counted();
+        // What has gone since an earlier count is let go of.
+        counted.retain(|descendant| {
+            table
+                .iter()
+                .any(|row| row.pid as Pid == descendant.pid && row.started == descendant.started)
+        });
+        for descendant in below(me, &table) {
+            if !counted.contains(&descendant) {
+                counted.push(descendant);
+            }
+        }
     }
 
     #[cfg(feature = "async")]
@@ -293,17 +322,23 @@ impl Family {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let mut refused: Vec<(Pid, io::Error)> = Vec::new();
         // Everything a census found: a killed member's children go to
-        // init, out of later censuses, but must be gone too.
-        let mut found: Vec<Descendant> = Vec::new();
+        // init, out of later censuses, but must be gone too. So must what
+        // an earlier count found and has left the tree since.
+        let mut found: Vec<Descendant> = std::mem::take(&mut *self.counted());
         loop {
             // The census first, while everything still runs: once a parent
             // is killed its children belong to init and are no longer
-            // below us.
+            // below us. What was counted is in it, wherever it went.
             let table = table::try_table();
-            let census = match &table {
+            let mut census = match &table {
                 Ok(table) => below(me as i32, table),
                 Err(_) => Vec::new(),
             };
+            for descendant in &found {
+                if !census.contains(descendant) {
+                    census.push(descendant.clone());
+                }
+            }
             for descendant in &census {
                 if !found.contains(descendant) {
                     found.push(descendant.clone());
@@ -507,6 +542,10 @@ impl ProcessRef {
 
     pub(super) fn kill(&self) -> io::Result<()> {
         self.signal(libc::SIGKILL).map(drop)
+    }
+
+    pub(super) fn ask_to_finish(&self) -> io::Result<()> {
+        self.signal(libc::SIGTERM).map(drop)
     }
 
     #[cfg(feature = "async")]

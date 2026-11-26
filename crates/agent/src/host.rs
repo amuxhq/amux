@@ -69,6 +69,8 @@ pub(crate) struct Driver<I: Interpreter> {
     /// Where the terminal log ends, for attached terminal clients.
     written: Option<watch::Sender<u64>>,
     provider: Option<Provider>,
+    /// What the provider is started into, and ended with.
+    family: crate::Family,
     daemon: Option<Daemon>,
     connections: u64,
     /// The timers the core armed, by when they are due.
@@ -174,13 +176,20 @@ pub(crate) async fn run<I: Interpreter>(
     spec: AgentSpec,
     clock: Arc<dyn Clock>,
     segment_bytes: u64,
+    family: crate::Family,
 ) -> Result<ExitCause, AgentError> {
     let config = spec.config.clone().unwrap_or_default();
     let terminal = spec.kind() == wire::Kind::ClaudePty;
+    // Codex's own app attaches where its server has a socket to share.
+    let codex_view = spec.kind() == wire::Kind::Codex
+        && matches!(
+            crate::provider::codex_listen(&dir),
+            Ok(crate::codex::Listen::Unix(_))
+        );
 
     // Listen first, so a daemon can dial in as soon as the process exists.
     let ctl = LocalListener::bind(&dir.join(dir::CTL_SOCK)).map_err(AgentError::Socket)?;
-    let pty = if terminal || spec.kind() == wire::Kind::Codex {
+    let pty = if terminal || codex_view {
         Some(LocalListener::bind(&dir.join(dir::PTY_SOCK)).map_err(AgentError::Socket)?)
     } else {
         None
@@ -277,6 +286,7 @@ pub(crate) async fn run<I: Interpreter>(
         pty_log,
         written,
         provider: None,
+        family,
         daemon: None,
         connections: 0,
         timers: BTreeMap::new(),
@@ -347,6 +357,7 @@ impl<I: Interpreter> Driver<I> {
             &self.dir,
             channels.provider_tx.clone(),
             self.clock.clone(),
+            self.family.clone(),
         )
         .await
         {
@@ -690,11 +701,9 @@ impl<I: Interpreter> Driver<I> {
                     Ok(())
                 }
                 Output::Exit(cause) => {
-                    // What a provider asked to finish left running below
-                    // it ends with the agent.
-                    if let Some(provider) = &mut self.provider {
-                        provider.finish();
-                    }
+                    // What the provider left running ends with the agent,
+                    // and is gone before its exit is seen.
+                    self.family.kill_others();
                     self.exit = Some(cause);
                     Ok(())
                 }
@@ -828,8 +837,21 @@ fn now_ms(clock: &dyn Clock) -> u64 {
     u64::try_from(clock.now_ms()).unwrap_or(0)
 }
 
+/// Takes connections for the listener's life: a failed accept is logged and
+/// the next one taken ([`LocalListener::accept`] retries with backoff
+/// itself, so none comes back today).
 async fn accept(mut listener: LocalListener, connections: mpsc::Sender<LocalStream>) {
-    while let Ok(stream) = listener.accept().await {
+    loop {
+        let stream = match listener.accept().await {
+            Ok(stream) => stream,
+            Err(error) => {
+                eprintln!(
+                    "amux agent: accepting on {}: {error}",
+                    listener.path().display()
+                );
+                continue;
+            }
+        };
         if connections.send(stream).await.is_err() {
             return;
         }
@@ -886,7 +908,14 @@ async fn hook_payloads(
     events: mpsc::Sender<ProviderEvent>,
     answers: HookAnswers,
 ) {
-    while let Ok(mut stream) = listener.accept().await {
+    loop {
+        let mut stream = match listener.accept().await {
+            Ok(stream) => stream,
+            Err(error) => {
+                eprintln!("amux agent: accepting a hook: {error}");
+                continue;
+            }
+        };
         let mut bytes = Vec::new();
         if stream.read_to_end(&mut bytes).await.is_err() || bytes.is_empty() {
             continue;
@@ -934,7 +963,7 @@ mod tests {
             folders: Some(crate::claude::history::ProjectFolders::of(&config, &work)),
         };
         let session = "66666666-6666-6666-6666-666666666666";
-        let slug: String = std::fs::canonicalize(&work)
+        let slug: String = os::fs::canonical(&work)
             .unwrap()
             .to_string_lossy()
             .chars()
@@ -1100,6 +1129,7 @@ mod tests {
             pty_log: None,
             written: None,
             provider: None,
+            family: crate::Family::uncontained(),
             daemon: Some(connected),
             connections: 1,
             timers: BTreeMap::new(),

@@ -145,16 +145,22 @@ mod tests {
     }
 
     /// The `ps` census, from a shell alone in a group of its own, leaves
-    /// out what the census itself starts there: here a subshell of the
-    /// shell's, standing for the one macOS's bash forks for `$(...)`,
-    /// which counted would make the tether wait out the grace for nothing.
+    /// out what the census itself starts there: the shell that becomes
+    /// `ps`, and the subshell macOS's bash forks for `$(...)`, which
+    /// counted would make the tether wait out the grace for nothing.
+    ///
+    /// The census runs in the shell itself, as the tether's loop runs it.
+    /// Run in a subshell, as this test once did, bash's `$(...)` subshell
+    /// is the shell's grandchild, a member the census rightly counts: that
+    /// test failed on macOS (CI run 45718964949) and passed only where `sh`
+    /// is dash, which forks once.
     #[test]
     fn the_ps_census_leaves_out_its_own_shells() {
         use std::os::unix::process::CommandExt as _;
 
         let script = format!(
             r#"{}g=$$
-( others_ps ) && echo found || echo none"#,
+others_ps && echo found || echo none"#,
             super::OTHERS.replacen("g=$1\n", "", 1)
         );
         let output = std::process::Command::new("/bin/sh")

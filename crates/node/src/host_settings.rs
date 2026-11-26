@@ -372,7 +372,8 @@ pub(crate) fn to_wire(
         auto_reports: config.auto_reports,
         repositories: config
             .repositories()
-            .iter()
+            .into_iter()
+            .map(crate::plain_paths::plain)
             .filter_map(|path| path.to_str().map(str::to_owned))
             .collect(),
         experiments: settings::experiments::EXPERIMENTS
@@ -490,7 +491,10 @@ fn repository(path: &str, home: Option<&Path>) -> Result<String, SettingsError> 
             "a repository is an absolute path, not {path:?}"
         )));
     }
-    let path = given.canonicalize().unwrap_or_else(|_| given.to_owned());
+    // Written plain, and an entry an earlier build wrote verbatim
+    // (`\\?\C:\…`) is read plain, so the two compare equal.
+    let path = crate::plain_paths::canonical(given)
+        .unwrap_or_else(|_| crate::plain_paths::plain(given.to_owned()));
     path.to_str()
         .map(str::to_owned)
         .ok_or_else(|| SettingsError::Invalid(format!("{path:?} is not UTF-8")))
@@ -543,8 +547,8 @@ mod tests {
         assert_eq!(
             config.repositories,
             [
-                repository.canonicalize().unwrap(),
-                dir.path().canonicalize().unwrap()
+                crate::plain_paths::canonical(&repository).unwrap(),
+                crate::plain_paths::canonical(dir.path()).unwrap()
             ]
         );
         let refused = settings.pin("~someone/app", true);
@@ -568,7 +572,10 @@ mod tests {
             login: None,
             home: Some(dir.path().to_owned()),
         });
-        let (app, lib) = (app.canonicalize().unwrap(), lib.canonicalize().unwrap());
+        let (app, lib) = (
+            crate::plain_paths::canonical(&app).unwrap(),
+            crate::plain_paths::canonical(&lib).unwrap(),
+        );
         let pinned = settings.pin("~/src/app", true).unwrap().unwrap();
         assert_eq!(pinned.repositories, std::slice::from_ref(&app));
         let pinned = settings.pin(lib.to_str().unwrap(), true).unwrap().unwrap();
@@ -597,7 +604,7 @@ mod tests {
         let folder = |name: &str| {
             let folder = dir.path().join(name);
             std::fs::create_dir_all(&folder).unwrap();
-            folder.canonicalize().unwrap()
+            crate::plain_paths::canonical(&folder).unwrap()
         };
         let (edited, app) = (folder("edited"), folder("app"));
         let settings = HostSettings::new(SettingsOptions {
@@ -654,7 +661,10 @@ mod tests {
             login: None,
             home: Some(dir.path().to_owned()),
         });
-        let (app, lib) = (app.canonicalize().unwrap(), lib.canonicalize().unwrap());
+        let (app, lib) = (
+            crate::plain_paths::canonical(&app).unwrap(),
+            crate::plain_paths::canonical(&lib).unwrap(),
+        );
         assert!(
             settings.pin(app.to_str().unwrap(), true).unwrap().is_none(),
             "a folder listed from home is pinned already"

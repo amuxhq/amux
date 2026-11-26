@@ -400,6 +400,26 @@ row. A dump interrupted by a crash leaves a `.dump-*` folder under
 `reports/` and an unredacted `.dump-*` store copy beside `store.sqlite`; the
 daemon removes both at start.
 
+Everything under `<root>` is its user's alone. The root, `reports/`, each
+profile and its `agents/` are owner-only (mode 0700; on Windows a protected
+DACL granting the user, SYSTEM and Administrators alone, which what is made
+inside inherits), and so are the files that hold a secret, wherever they
+are made. Each start makes the root, its reports and its profiles so again,
+which upgrades in place a root an earlier build left open (every one on
+Windows), and warns when the root's volume is a poor home for one: on
+Windows, anything but a local NTFS or ReFS drive. A file written whole
+(`generation`, a spec, the device key, the account) goes through one
+durable write in [`os::fs`](../crates/os/src/fs/mod.rs): a temporary file
+beside it, flushed, put in place atomically, then the folder flushed; a
+write that fails leaves no temporary file. A removal something else still
+holds, such as an agent's folder a shell works in or a log a person
+follows, is left with a warning for the next pass (the next start's sweep,
+the next listing of profiles), never a failed start or a failed
+`amux profile rm`. Paths amux stores, shows or sends (pinned and recent
+folders, a checkout's root) are canonical in the form people and programs
+take, never Windows' verbatim `\\?\C:\…`; one an earlier build stored
+verbatim is read plain.
+
 The phone app keeps the same `<root>` layout in its container, under
 `Application Support/installation/`, with no supervisor, worktrees or
 terminal client; its log is `runtime.log`, capped at 8 MiB like the
@@ -756,8 +776,9 @@ The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `log-file`, `os`, `release`, `analytics`, `git-facts`, `highlight`, `acp-protocol`, `claude-protocol`, `codex-protocol` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code |
+| `wire`, `log-file`, `os`, `release`, `analytics`, `highlight`, `acp-protocol`, `claude-protocol`, `codex-protocol` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code |
 | `pty-host` | `os` | the tether is part of an agent's family, which `os` holds |
+| `git-facts` | `os` | a checkout's root in the one canonical path form, never Windows' verbatim one |
 | `journal`, `store`, `attachments`, `redaction`, `settings` | `wire` | `settings` names each experiment's version by the wire's entry for it |
 | `agent-dir` | `os`, `wire` | `os` on Windows alone: the pipe name file's patient rename, and the user's SID a pipe is owned by |
 | `preview` | `attachments`, `wire` | |

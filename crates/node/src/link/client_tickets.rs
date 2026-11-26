@@ -207,11 +207,7 @@ fn forget(path: &Path) {
 /// A new file only this user reads. Not synced: a ticket a crash loses
 /// costs one full handshake.
 fn private_file(path: &Path) -> io::Result<fs::File> {
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    options.open(path)
+    os::fs::create_private(path, os::fs::Create::New)
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

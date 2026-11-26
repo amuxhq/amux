@@ -14,7 +14,7 @@ use daemon_core::Retain;
 use store::{BlobLru, Sweep};
 use tokio::task::JoinHandle;
 
-use crate::install::REPLICAS;
+use crate::install::{REMOVAL_PATIENCE, REPLICAS, remove_or_leave};
 use crate::runtime::{ProfileRuntime, RegistryError};
 
 /// The retention sweeps run so far.
@@ -49,12 +49,17 @@ impl ProfileRuntime {
             .ok_or(crate::runtime::Stopped)?;
         for dir in &retained.removed_dirs {
             agent_dir::local_socket::forget_short_addresses(dir);
-            match std::fs::remove_dir_all(dir) {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
-            }
         }
+        // A directory something still holds (a log a person follows, a
+        // shell working inside) has no row now, so the next start's sweep
+        // removes it.
+        let dirs = retained.removed_dirs.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            for dir in &dirs {
+                remove_or_leave(dir, REMOVAL_PATIENCE, "a retired agent's directory");
+            }
+        })
+        .await;
         let own = retained.own.map_err(RegistryError::Core);
         let replicas = retained.replicas.map_err(RegistryError::Core);
         let blobs = match &replicas {

@@ -328,6 +328,42 @@ async fn an_orphan_something_holds_is_left_for_the_next_sweep_and_the_daemon_sta
     daemon.shutdown().await.unwrap();
 }
 
+/// A root made in a folder other users may read, as one on a second drive
+/// or anywhere outside the user's profile on Windows is (`D:\amux`): the
+/// root, its reports, the profile, its agents and the files that hold its
+/// secrets are this user's alone from the first start, not what the
+/// folder around them passes on.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_root_in_a_folder_others_may_read_is_private() {
+    use os::testing::private::{open_to_others, owner_only};
+    let install = Install::new();
+    let around = install.path("second-drive");
+    std::fs::create_dir(&around).unwrap();
+    open_to_others(&around).unwrap();
+    let data_dir = around.join("amux");
+    let profile = node::create_profile(&data_dir).unwrap();
+    let mut options = install.options("boot-1", install.launch("idle", vec![]));
+    options.data_dir = data_dir.clone();
+    let daemon = node::start(options, None).await.expect("the daemon starts");
+
+    let profile_dir = node::profile_dir(&data_dir, profile);
+    for path in [
+        data_dir.clone(),
+        data_dir.join(node::REPORTS),
+        profile_dir.clone(),
+        profile_dir.join(node::AGENTS),
+        node::harness::device_key_path(&profile_dir),
+        data_dir.join(node::GENERATION),
+    ] {
+        assert!(owner_only(&path).unwrap(), "{} is private", path.display());
+    }
+    assert!(
+        !owner_only(&around).unwrap(),
+        "the folder around it is the person's"
+    );
+    daemon.shutdown().await.unwrap();
+}
+
 /// A profile binds the link socket SSH relays hand a link to only where
 /// anything dials it: not on Windows, where SSH with a Windows machine at
 /// the far end is out of scope.
@@ -1721,7 +1757,7 @@ async fn a_host_offers_its_repositories_and_where_its_agents_ran_to_paired_hosts
     })
     .await
     .unwrap();
-    let older_path = older.canonicalize().unwrap();
+    let older_path = os::fs::canonical(&older).unwrap();
     assert!(
         desk_runtime
             .host_entry()

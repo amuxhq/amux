@@ -681,6 +681,7 @@ pub async fn start(
         settings,
     } = options;
     let lock = InstallationLock::acquire(&data_dir)?;
+    crate::install::prepare_root(&data_dir);
     let boot_id = match boot_id {
         Some(boot_id) => boot_id,
         None => generation::boot_id().map_err(StartError::BootId)?,

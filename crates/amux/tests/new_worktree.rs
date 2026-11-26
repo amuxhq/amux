@@ -71,10 +71,6 @@ async fn desk(workspaces: bool) -> Desk {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: git can't make the worktree under the verbatim data path amux hands it (`//?/C:/...`): could not create leading directories"
-)]
 async fn amux_new_with_worktree_starts_its_agent_in_a_new_worktree() {
     for workspaces in [true, false] {
         say(format!(
@@ -82,7 +78,7 @@ async fn amux_new_with_worktree_starts_its_agent_in_a_new_worktree() {
             if workspaces { "on" } else { "off" }
         ));
         let desk = desk(workspaces).await;
-        let work = desk.work.canonicalize().unwrap();
+        let work = os::fs::canonical(&desk.work).unwrap();
         let work_text = work.to_string_lossy().into_owned();
         let created = desk
             .run(&[

@@ -979,7 +979,9 @@ branch in the agent's spec as the base its git facts measure against. A
 folder outside a repository or with no branch checked out is
 `FAILED_PRECONDITION`, and a name a branch already has is `ALREADY_EXISTS`;
 the name needs no translating, since every agent name is valid as a branch
-and a folder (lowercase letters, digits and hyphens, `wire::agent_name_problem`);
+and a folder (lowercase letters, digits and hyphens, `wire::agent_name_problem`,
+and never a name Windows reads as a device's, `con`, `nul`, `aux`, `prn`,
+`com0`–`com9` or `lpt0`–`lpt9`, which every host refuses `INVALID_ARGUMENT`);
 either way no agent is made. Renaming the agent leaves its branch alone, and
 amux never removes a worktree or its branch.
 

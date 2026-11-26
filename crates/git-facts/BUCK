@@ -1,6 +1,7 @@
 load("//build:rust.bzl", "amux_rust_library", "amux_rust_test")
 
 DEPS = [
+    "//crates/os:os",
     "//third-party/rust:sha2",
     "//third-party/rust:tempfile",
     "//third-party/rust:thiserror",
@@ -10,12 +11,10 @@ DEPS = [
 amux_rust_library(
     version = "0.1.0",
     deps = DEPS,
-    # Cargo's [dev-dependencies] serve unit and integration tests alike.
-    test_deps = ["//crates/os:os"],
 )
 
 amux_rust_test(
     name = "integration",
     version = "0.1.0",
-    deps = DEPS + ["//crates/os:os"],
+    deps = DEPS,
 )

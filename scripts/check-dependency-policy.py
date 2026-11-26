@@ -31,8 +31,9 @@ ALLOWED_LOCAL = {
     # interpret, the UI library, client and browser-core never take it.
     "os": set(),
     # Reads an agent folder's branch and change totals by running git; the
-    # agent process and the daemon share it.
-    "git-facts": set(),
+    # agent process and the daemon share it. os for the one canonical path
+    # form a checkout's root is reported in.
+    "git-facts": {"os"},
     # Syntax highlighting over tree-sitter's grammars: a leaf, so the host
     # colouring a diff and every client colouring a chat share one engine.
     "highlight": set(),

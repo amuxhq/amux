@@ -536,10 +536,6 @@ async fn a_daemon_killed_mid_turn_loses_nothing() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: `amux profile rm office` fails: the file is being used by another process (os error 32)"
-)]
 async fn the_cli_verbs_work_against_a_started_daemon() {
     let gate = tempfile::tempdir().unwrap();
     let gate = gate.path().join("gate");

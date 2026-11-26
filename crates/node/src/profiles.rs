@@ -9,12 +9,12 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::install::{AGENTS, PROFILES, private_dir, write_durably};
+use crate::install::{AGENTS, PROFILES, REMOVAL_PATIENCE, remove_or_leave, write_durably};
 
 pub type ProfileId = Uuid;
 
@@ -68,7 +68,8 @@ pub fn list(data_dir: &Path) -> io::Result<Vec<ProfileEntry>> {
                 profiles.push(profile);
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                std::fs::remove_dir_all(entry.path())?;
+                // One something still holds goes at a later listing.
+                remove_or_leave(&entry.path(), Duration::ZERO, "a half-removed profile");
             }
             Err(error) => return Err(error),
         }
@@ -128,11 +129,17 @@ fn create_as(data_dir: &Path, id: ProfileId, label: &str) -> io::Result<ProfileE
     let dir = profile_dir(data_dir, id);
     // What a crash left of an earlier try under this id.
     let staging = data_dir.join(PROFILES).join(format!(".{id}"));
-    match std::fs::remove_dir_all(&staging) {
-        Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
-        _ => {}
+    if os::fs::remove_patiently(&staging, REMOVAL_PATIENCE)? == os::fs::Removed::Later {
+        return Err(io::Error::new(
+            io::ErrorKind::ResourceBusy,
+            format!(
+                "{} is still in use from an earlier try at this profile",
+                staging.display()
+            ),
+        ));
     }
-    private_dir(&staging.join(AGENTS))?;
+    os::fs::create_private_dir(&staging)?;
+    os::fs::create_private_dir(&staging.join(AGENTS))?;
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_millis() as i64);
@@ -149,28 +156,33 @@ fn create_as(data_dir: &Path, id: ProfileId, label: &str) -> io::Result<ProfileE
             .fold(now_ms, i64::max),
     };
     write_entry_in(&staging, &entry)?;
-    std::fs::rename(&staging, &dir)?;
+    os::fs::rename_patiently(&staging, &dir)?;
     crate::install::sync_dir(&data_dir.join(PROFILES))?;
     Ok(entry)
 }
 
 /// Removes a profile: its profile file first, so a crash midway leaves a
 /// directory the next start removes, never a listed profile half gone.
+/// What something else still holds once the profile file is gone (a shell
+/// working inside, a log a person has open) is left, with a warning, for
+/// the next listing to remove: the profile is gone either way.
 pub(crate) fn discard(data_dir: &Path, profile: ProfileId) -> io::Result<()> {
     let dir = profile_dir(data_dir, profile);
-    match std::fs::remove_file(dir.join(PROFILE_FILE)) {
-        Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
-        _ => {}
+    if os::fs::remove_patiently(&dir.join(PROFILE_FILE), REMOVAL_PATIENCE)?
+        == os::fs::Removed::Later
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::ResourceBusy,
+            format!("{} is open elsewhere", dir.join(PROFILE_FILE).display()),
+        ));
     }
     if let Ok(agents) = std::fs::read_dir(dir.join(crate::install::AGENTS)) {
         for agent in agents.flatten() {
             agent_dir::local_socket::forget_short_addresses(&agent.path());
         }
     }
-    match std::fs::remove_dir_all(dir) {
-        Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
-        _ => Ok(()),
-    }
+    remove_or_leave(&dir, REMOVAL_PATIENCE, "a removed profile's folder");
+    Ok(())
 }
 
 #[cfg(test)]
@@ -222,9 +234,32 @@ mod tests {
         let data_dir = tempfile::tempdir().unwrap();
         let kept = create_labelled(data_dir.path(), "kept").unwrap();
         let half = profile_dir(data_dir.path(), Uuid::new_v4());
-        private_dir(&half.join(AGENTS)).unwrap();
+        std::fs::create_dir_all(half.join(AGENTS)).unwrap();
         assert_eq!(list(data_dir.path()).unwrap(), vec![kept]);
         assert!(!half.exists());
+    }
+
+    /// A profile whose folder something else holds open, as a log a person
+    /// follows on Windows is held, is still discarded: its file goes, the
+    /// listing no longer shows it, and its folder goes at a listing once
+    /// nothing holds it.
+    #[test]
+    fn a_profile_something_holds_is_discarded_and_its_folder_goes_later() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let kept = create_labelled(data_dir.path(), "kept").unwrap();
+        let gone = create_labelled(data_dir.path(), "gone").unwrap();
+        let log = profile_dir(data_dir.path(), gone.id)
+            .join(AGENTS)
+            .join("agent.log");
+        std::fs::write(&log, b"x").unwrap();
+        // Unix has no share modes: nothing holds the file there.
+        let held = os::testing::faults::hold_exclusively(&log).ok();
+
+        discard(data_dir.path(), gone.id).unwrap();
+        assert_eq!(list(data_dir.path()).unwrap(), vec![kept.clone()]);
+        drop(held);
+        assert_eq!(list(data_dir.path()).unwrap(), vec![kept]);
+        assert!(!profile_dir(data_dir.path(), gone.id).exists());
     }
 
     #[test]
@@ -235,7 +270,7 @@ mod tests {
             .path()
             .join(PROFILES)
             .join(format!(".{}", Uuid::new_v4()));
-        private_dir(&making.join(AGENTS)).unwrap();
+        std::fs::create_dir_all(making.join(AGENTS)).unwrap();
         assert_eq!(list(data_dir.path()).unwrap(), vec![kept]);
         assert!(making.exists());
     }

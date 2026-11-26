@@ -1,10 +1,5 @@
 use std::fmt;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-#[cfg(unix)]
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-#[cfg(windows)]
-use std::os::windows::ffi::OsStrExt;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use rcgen::{
@@ -600,149 +595,32 @@ fn ed25519_public_key_from_spki(spki: &[u8]) -> Result<[u8; ED25519_PUBKEY_LEN],
     Ok(pubkey)
 }
 
+/// Writes a secret that is never replaced, only this user's: a crash leaves
+/// all of it or none, and of two writers one wins and the other sees
+/// `AlreadyExists`.
 pub(crate) fn create_private_file(path: &Path, bytes: &[u8]) -> Result<(), IdentityError> {
     if let Some(parent) = path.parent() {
         ensure_data_dir(parent)?;
     }
-    let tmp = temp_path_for(path);
-    let mut options = private_write_options();
-    options.create_new(true);
-    let mut file = options.open(&tmp)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    drop(file);
-    match publish_new_file(&tmp, path) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            let _ = fs::remove_file(&tmp);
-            Err(IdentityError::Io(error))
-        }
-    }
+    Ok(os::fs::create_new_durably(path, bytes)?)
 }
 
-#[cfg(not(target_os = "android"))]
-fn publish_new_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
-    fs::hard_link(tmp, path)?;
-    let _ = fs::remove_file(tmp);
-    Ok(())
-}
-
-/// Android SELinux denies `link(2)` (`fs::hard_link`) on `app_data_file` for
-/// untrusted apps, so publish the synced temporary file with `renameat2`
-/// (`RENAME_NOREPLACE`) to keep atomic create-without-overwrite semantics.
-/// Bionic has exported `renameat2` since API 30, below the app's minimum SDK.
-#[cfg(target_os = "android")]
-fn publish_new_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-
-    let nul = |what| std::io::Error::new(std::io::ErrorKind::InvalidInput, what);
-    let from =
-        CString::new(tmp.as_os_str().as_bytes()).map_err(|_| nul("interior NUL in temp path"))?;
-    let to = CString::new(path.as_os_str().as_bytes())
-        .map_err(|_| nul("interior NUL in target path"))?;
-    // SAFETY: `from` and `to` are NUL-terminated strings that outlive the call,
-    // and `AT_FDCWD` resolves both relative to the working directory.
-    let rc = unsafe {
-        libc::renameat2(
-            libc::AT_FDCWD,
-            from.as_ptr(),
-            libc::AT_FDCWD,
-            to.as_ptr(),
-            libc::RENAME_NOREPLACE as _,
-        )
-    };
-    if rc == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
-}
-
+/// Replaces a secret, only this user's, all at once and on the drive.
 pub(crate) fn atomic_replace_private(path: &Path, bytes: &[u8]) -> Result<(), IdentityError> {
     if let Some(parent) = path.parent() {
         ensure_data_dir(parent)?;
     }
-    let tmp = temp_path_for(path);
-    let mut options = private_write_options();
-    options.create_new(true);
-    let mut file = options.open(&tmp)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    drop(file);
-    match replace_file(&tmp, path) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            let _ = fs::remove_file(&tmp);
-            Err(error)
-        }
-    }
+    Ok(os::fs::write_durably(path, bytes)?)
 }
 
-fn private_write_options() -> OpenOptions {
-    let mut options = OpenOptions::new();
-    options.write(true);
-    #[cfg(unix)]
-    options.mode(0o600);
-    options
-}
-
+/// The folder a secret is kept in, made only this user's, whatever an
+/// earlier build left it as.
 fn ensure_data_dir(path: &Path) -> Result<(), IdentityError> {
-    fs::create_dir_all(path)?;
-    #[cfg(unix)]
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
-    Ok(())
+    Ok(os::fs::create_private_dir(path)?)
 }
 
 pub(crate) fn ensure_private_file_mode(path: &Path) -> Result<(), IdentityError> {
-    #[cfg(unix)]
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
-    #[cfg(not(unix))]
-    let _ = path;
-    Ok(())
-}
-
-#[cfg(unix)]
-fn replace_file(from: &Path, to: &Path) -> Result<(), IdentityError> {
-    fs::rename(from, to)?;
-    Ok(())
-}
-
-#[cfg(windows)]
-fn replace_file(from: &Path, to: &Path) -> Result<(), IdentityError> {
-    use windows_sys::Win32::Storage::FileSystem::{
-        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
-    };
-
-    let from = wide_path(from);
-    let to = wide_path(to);
-    let replaced = unsafe {
-        MoveFileExW(
-            from.as_ptr(),
-            to.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if replaced == 0 {
-        return Err(IdentityError::Io(std::io::Error::last_os_error()));
-    }
-    Ok(())
-}
-
-#[cfg(windows)]
-fn wide_path(path: &Path) -> Vec<u16> {
-    path.as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect()
-}
-
-fn temp_path_for(path: &Path) -> PathBuf {
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("amux-data");
-    path.with_file_name(format!(".{file_name}.{}.tmp", uuid::Uuid::new_v4()))
+    Ok(os::fs::make_private(path)?)
 }
 
 pub fn device_key_path(data_dir: &Path) -> PathBuf {
@@ -751,8 +629,6 @@ pub fn device_key_path(data_dir: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(unix)]
-    use std::os::unix::fs::PermissionsExt;
     use std::sync::{Arc, Barrier};
     use std::time::Duration;
 
@@ -813,21 +689,9 @@ mod tests {
                 .starts_with(&ED25519_PKCS8_V1_PREFIX)
         );
 
-        #[cfg(unix)]
-        {
-            assert_eq!(
-                fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
-                0o700
-            );
-            assert_eq!(
-                fs::metadata(device_key_path(dir.path()))
-                    .unwrap()
-                    .permissions()
-                    .mode()
-                    & 0o777,
-                0o600
-            );
-        }
+        let owner_only = os::testing::private::owner_only;
+        assert!(owner_only(dir.path()).unwrap());
+        assert!(owner_only(&device_key_path(dir.path())).unwrap());
     }
 
     #[test]
@@ -983,17 +847,17 @@ mod tests {
         assert_eq!(reloaded.public_key(), first.public_key());
     }
 
-    #[cfg(unix)]
     #[test]
-    fn loading_the_identity_makes_its_directory_private_again() {
+    fn loading_the_identity_makes_its_directory_and_key_private_again() {
+        use os::testing::private::{open_to_others, owner_only};
         let dir = temp_data_dir();
         identity_in(dir.path()).unwrap();
-        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        open_to_others(dir.path()).unwrap();
+        open_to_others(&device_key_path(dir.path())).unwrap();
+        assert!(!owner_only(dir.path()).unwrap());
 
         identity_in(dir.path()).unwrap();
-        assert_eq!(
-            fs::metadata(dir.path()).unwrap().permissions().mode() & 0o777,
-            0o700
-        );
+        assert!(owner_only(dir.path()).unwrap());
+        assert!(owner_only(&device_key_path(dir.path())).unwrap());
     }
 }

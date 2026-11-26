@@ -146,7 +146,7 @@ async fn a_settings_change_is_written_and_in_force_at_once() {
     // The settings list what the config pins as it is written, a folder
     // gone from the disk too, so a settings screen can still unpin it; the
     // entry offers only folders that are there.
-    let pinned = repository.canonicalize().unwrap();
+    let pinned = os::fs::canonical(&repository).unwrap();
     std::fs::remove_dir_all(&repository).unwrap();
     let listed = door
         .get_settings(Request::new(wire::GetSettingsRequest {}))
@@ -339,7 +339,7 @@ async fn a_paired_hosts_person_pins_a_folder_and_sees_the_desks_entry_say_it() {
     let desk_runtime = runtime(&desk_daemon, &desk);
     let app = desk.work.join("app");
     std::fs::create_dir_all(app.join(".git")).unwrap();
-    let app = app.canonicalize().unwrap();
+    let app = os::fs::canonical(&app).unwrap();
     let laptop = Install::new();
     let laptop_daemon = laptop.start("boot-1", quiet_launch()).await;
     let laptop_runtime = runtime(&laptop_daemon, &laptop);
@@ -477,7 +477,7 @@ async fn an_agent_may_not_pin_a_folder() {
         settings::InstallationConfig::from_file(&file)
             .unwrap()
             .repositories,
-        std::slice::from_ref(&app.canonicalize().unwrap()),
+        std::slice::from_ref(&os::fs::canonical(&app).unwrap()),
     );
 
     drop(desk_runtime);

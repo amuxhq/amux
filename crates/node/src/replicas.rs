@@ -108,11 +108,13 @@ impl ProfileRuntime {
             if let Some(blobs) = self.replica_blobs.lock().unwrap().as_mut() {
                 blobs.forget_under(&dir);
             }
-            if let Err(error) = std::fs::remove_dir_all(&dir)
-                && error.kind() != std::io::ErrorKind::NotFound
-            {
-                tracing::warn!(%error, "removing a dropped replica's directory failed");
-            }
+            // Not waited on: this is the driver's turn. A file something
+            // holds stays, with a warning.
+            crate::install::remove_or_leave(
+                &dir,
+                std::time::Duration::ZERO,
+                "a dropped replica's directory",
+            );
         }
     }
 

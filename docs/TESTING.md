@@ -174,6 +174,7 @@ So that a test needs no gate, the harness does each platform-shaped thing one wa
 | asks whether a lock is held | `os::lock::FileLock::held` |
 | dials or serves a local socket | `agent_dir::local_socket`, never a Unix socket type, since the socket is a named pipe on Windows |
 | needs a write refused or a file unreadable, a file held open by another program, or a link to a directory | `os::testing::faults` (the `os` crate's `testing` feature; `provider_fakes::faults` re-exports it): `deny` (a mode on Unix, a deny entry in the DACL on Windows), `read_only`, `hold_exclusively` (a share mode, Windows only), `link_dir` (a junction on Windows) and `symlink`, which says why it skipped where the user may not make one; a permission fault checks `faults::unenforced()` first, which is `Some` for a process running as root |
+| asks whether only its user may open a file or folder, or needs one other users may read, as an earlier build left a root | `os::testing::private`: `owner_only` (no group or other bit on Unix; on Windows every granting entry is the user's, SYSTEM's or Administrators') and `open_to_others` (read for group and other; an inherited grant to Users on Windows) |
 
 A test that needs a program where a command is expected (a provider on the PATH, an SSH login, a wrapper, a
 stand-in agent, a build that cannot run) writes no `#!/bin/sh` script, which Windows cannot run, and makes no file

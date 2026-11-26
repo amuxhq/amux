@@ -251,6 +251,14 @@ pub enum RegistryError {
     NoFarCwd(String),
     #[error("{}", name_words(*.0))]
     BadName(wire::AgentNameProblem),
+    /// A name that would be a device's as a file name on Windows (`con`,
+    /// `nul`, `com1`…), refused on every host so a name one host takes
+    /// works on every other, as the folder of a worktree there.
+    #[error(
+        "{0:?} cannot name an agent: Windows reads it as a device's name (CON, PRN, AUX, NUL, \
+         COM0-9, LPT0-9), so no folder there can be called it"
+    )]
+    ReservedName(String),
     #[error("another agent on this host is already named {0}; names are unique on a host")]
     NameTaken(String),
     #[error("agent {0} has a parent; only an agent with no parent is pinned")]
@@ -350,6 +358,19 @@ fn kind_not_run_words(host: &str, kind: Kind, runs_none: bool) -> String {
     format!("{host} does not run {kind} agents")
 }
 
+/// Why `name`, given to an agent, is refused: the rule every client
+/// checks, then the device names no file on Windows can have, which the
+/// daemon refuses on every OS.
+fn name_refusal(name: &str) -> Result<(), RegistryError> {
+    if let Some(problem) = wire::agent_name_problem(name) {
+        return Err(RegistryError::BadName(problem));
+    }
+    if os::fs::reserved_name(name) {
+        return Err(RegistryError::ReservedName(name.to_owned()));
+    }
+    Ok(())
+}
+
 /// A refused name, as the daemon's error says it.
 fn name_words(problem: wire::AgentNameProblem) -> String {
     match problem {
@@ -377,6 +398,7 @@ impl RegistryError {
             | Self::BadCwd(_)
             | Self::NoFarCwd(_)
             | Self::BadName(_)
+            | Self::ReservedName(_)
             | Self::ForAgents(_)
             | Self::UnknownModel(_) => ErrorCode::InvalidArgument,
             Self::KindNotRun { .. }
@@ -1253,8 +1275,8 @@ impl ProfileRuntime {
         };
 
         let given = request.name.filter(|name| !name.is_empty());
-        if let Some(problem) = given.as_deref().and_then(wire::agent_name_problem) {
-            return Err(RegistryError::BadName(problem));
+        if let Some(name) = given.as_deref() {
+            name_refusal(name)?;
         }
         let workspaces = self.workspaces_on();
         // A new workspace's name, given or not, is no branch the repository
@@ -1292,8 +1314,7 @@ impl ProfileRuntime {
                 fork: delegated.as_ref().and_then(|(_, fork)| fork.clone()),
             },
         )?;
-        let recent = Path::new(&cwd)
-            .canonicalize()
+        let recent = crate::plain_paths::canonical(Path::new(&cwd))
             .ok()
             .and_then(|path| path.to_str().map(str::to_owned));
         let create = daemon_core::Create {
@@ -1876,9 +1897,7 @@ impl ProfileRuntime {
     /// the name it was spawned with. A live Codex agent is told, so its
     /// thread takes the name.
     pub async fn rename(&self, id: AgentId, name: &str) -> Result<Agent, RegistryError> {
-        if let Some(problem) = wire::agent_name_problem(name) {
-            return Err(RegistryError::BadName(problem));
-        }
+        name_refusal(name)?;
         let agent = core_agent(id);
         let name = name.to_owned();
         self.registry_row(id, ClientRequest::RenameAgent { agent, name })

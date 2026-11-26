@@ -356,6 +356,15 @@ pub fn plain(path: PathBuf) -> PathBuf {
     }
 }
 
+/// Whether `name`, as one file or folder name, is one Windows cannot give
+/// a file: a device's (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`,
+/// `LPT0`–`LPT9`, in any case, alone or before an extension), or one
+/// ending in a dot or a space, which Windows drops. Pure text, the same
+/// answer on every OS, so a name one host takes works on every other.
+pub fn reserved_name(name: &str) -> bool {
+    verbatim::reserved(name) || name.ends_with('.') || name.ends_with(' ')
+}
+
 // Executables ------------------------------------------------------------------
 
 /// Lets `path` be run. Unix: an execute bit wherever there is a read bit.

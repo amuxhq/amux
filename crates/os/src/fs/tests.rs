@@ -216,3 +216,27 @@ fn the_temporary_folder_can_hold_a_root() {
     let check = volume_supports_root(&dir.path().join("not").join("yet")).unwrap();
     assert_eq!(check, VolumeCheck::Suitable, "{check}");
 }
+
+#[test]
+fn a_device_name_or_a_trailing_dot_or_space_is_reserved_on_every_os() {
+    for name in [
+        "con", "NUL", "aux", "com1", "lpt9", "prn.txt", "name.", "name ",
+    ] {
+        assert!(reserved_name(name), "{name:?}");
+    }
+    for name in ["console", "com10", "fix-login", "a.con", "nul-checker"] {
+        assert!(!reserved_name(name), "{name:?}");
+    }
+}
+
+#[test]
+fn making_a_private_folder_private_again_keeps_it_private() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    create_private_dir(&root).unwrap();
+    fs::write(root.join("inside"), b"x").unwrap();
+    make_private(&root).unwrap();
+    create_private_dir(&root).unwrap();
+    assert!(crate::testing::private::owner_only(&root).unwrap());
+    assert!(crate::testing::private::owner_only(&root.join("inside")).unwrap());
+}

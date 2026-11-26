@@ -4,6 +4,7 @@
 
 pub mod faults;
 pub mod pipe;
+pub mod private;
 
 /// The variable Buck's test runner (`build/test-runner.py`) sets for every
 /// test it runs.

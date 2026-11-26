@@ -28,15 +28,6 @@ pub const WORKTREES: &str = "worktrees";
 /// made it.
 pub const OWNER_MARKER: &str = "amux-owner";
 
-/// The waits between tries of a removal Windows refused, about three
-/// seconds in all.
-const REMOVAL_RETRIES: [std::time::Duration; 4] = [
-    std::time::Duration::from_millis(250),
-    std::time::Duration::from_millis(500),
-    std::time::Duration::from_millis(1_000),
-    std::time::Duration::from_millis(1_500),
-];
-
 /// The worktrees of one host, under the installation's folder.
 pub struct GitBackend {
     host: String,
@@ -44,10 +35,13 @@ pub struct GitBackend {
 }
 
 impl GitBackend {
+    /// The worktrees of `host` under `root`, which git is handed plain:
+    /// git cannot make a worktree under Windows' verbatim form
+    /// (`\\?\C:\…`), which it reads as `//?/C:/…`.
     pub fn new(host: Uuid, root: PathBuf) -> Self {
         Self {
             host: host.to_string(),
-            root,
+            root: crate::plain_paths::plain(root),
         }
     }
 
@@ -157,9 +151,13 @@ impl Maker for GitBackend {
             }
             let path_text = path.to_string_lossy();
             let repository = Path::new(&plan.repository);
+            // Long paths on, so a deep repository's files fit under the
+            // installation's folder on Windows; nothing elsewhere.
             git(
                 repository,
                 &[
+                    "-c",
+                    "core.longpaths=true",
                     "worktree",
                     "add",
                     "--quiet",
@@ -244,26 +242,14 @@ impl Maker for GitBackend {
         // a process that has just been killed can for a moment, or a git
         // still reading there. git then removes what it can and the
         // worktree's own git directory, and fails with the folder left:
-        // what is left is removed again for a short while, so the tree does
-        // not stay on disk for good.
-        if cfg!(windows) {
-            for wait in REMOVAL_RETRIES {
-                if !path.is_dir() {
-                    removed = Ok(String::new());
-                    break;
-                }
-                if removed.is_ok() {
-                    break;
-                }
-                std::thread::sleep(wait);
-                removed = if git_dir.is_dir() {
-                    git(&main, &["worktree", "remove", "--force", &path_text])
-                } else {
-                    std::fs::remove_dir_all(path)
-                        .map(|()| String::new())
-                        .map_err(|error| format!("removing {}: {error}", path.display()))
-                };
-            }
+        // what is left is removed patiently, so the tree does not stay on
+        // disk for good. Still held after that, it is left with a warning.
+        if removed.is_err() && !git_dir.is_dir() {
+            removed = match os::fs::remove_patiently(path, crate::install::REMOVAL_PATIENCE) {
+                Ok(os::fs::Removed::Gone) => Ok(String::new()),
+                Ok(os::fs::Removed::Later) => Err(format!("{} is still in use", path.display())),
+                Err(error) => Err(format!("removing {}: {error}", path.display())),
+            };
         }
         if let Err(error) = removed {
             tracing::warn!(id = %workspace.id, %error, "removing a worktree failed");

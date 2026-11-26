@@ -278,14 +278,20 @@ impl Drop for Ending {
 /// launcher starts nothing again and exits.
 #[tokio::test(flavor = "multi_thread")]
 async fn server_stop_ends_the_launcher_that_started_the_supervisor() {
-    os::testing::require_test_runner("this test runs amux");
-    let install = Install::with_binary(true, "", provider_fakes::binaries::path("amux"));
+    // Both copied into one folder, as an install has them: the launcher
+    // runs the amux beside it, and a Unix test's binaries are links to
+    // folders of their own.
+    let bin = tempfile::tempdir().unwrap();
+    let (amux, launcher) = (
+        bin.path().join(os::paths::exe_name("amux")),
+        bin.path().join(os::paths::exe_name("amux-launch")),
+    );
+    std::fs::copy(amux_binary(), &amux).unwrap();
+    std::fs::copy(provider_fakes::binaries::path("amux-launch"), &launcher).unwrap();
+    let install = Install::with_binary(true, "", amux);
     let config = install.config.to_str().unwrap().to_owned();
     let launcher = install
-        .run(
-            &provider_fakes::binaries::path("amux-launch"),
-            &["supervise", "--config", &config],
-        )
+        .run(&launcher, &["supervise", "--config", &config])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()

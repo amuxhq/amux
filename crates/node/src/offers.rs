@@ -743,6 +743,9 @@ impl ProfileRuntime {
         std::fs::create_dir_all(&dir).map_err(CatalogueError::Write)?;
         let out = dir.join(format!("{word}.asked"));
         let _ = std::fs::remove_file(&out);
+        // The helper and what it starts are found on, and run with, the
+        // one `PATH` the provider's own start would have.
+        let lookup = os::paths::Lookup::new(env);
         let mut helper = tokio::process::Command::new(&launch.install_path);
         helper
             .args(["internal", "catalogue", word])
@@ -763,12 +766,14 @@ impl ProfileRuntime {
             .stderr(Stdio::piped())
             // Ended by `running` instead, with the provider it started.
             .kill_on_drop(false);
-        #[cfg(unix)]
-        helper.process_group(0);
+        if let Some(path) = lookup.refreshed_path() {
+            helper.env("PATH", path);
+        }
+        os::process::own_group(&mut helper);
         let child = helper
             .spawn()
             .map_err(|error| CatalogueError::Helper(error.to_string()))?;
-        let mut running = Running(child.id());
+        let mut running = Running(os::process::ProcessRef::of_child(&child).ok());
         let deadline = Duration::from_millis(launch.core.start_deadline_ms);
         let output = match tokio::time::timeout(deadline, child.wait_with_output()).await {
             Ok(output) => {
@@ -795,18 +800,27 @@ impl ProfileRuntime {
     }
 }
 
-/// A catalogue helper still running, by its pid: dropped before it exits,
-/// as when its ask takes too long or the daemon stops mid-ask, it is
-/// killed with the provider it started, which runs in its group (on
-/// Windows, below it in its process tree). Killing the helper alone would
-/// leave the provider running with whatever the daemon's process handed
-/// down to it.
-struct Running(Option<u32>);
+/// A catalogue helper still running, pinned: dropped before it exits, as
+/// when its ask takes too long or the daemon stops mid-ask, it is killed
+/// with the provider it started. Killing the helper alone would leave the
+/// provider running with whatever the daemon's process handed down to it.
+/// On Unix the helper leads a process group of its own, killed with it
+/// ([`os::process::ProcessRef::kill_group`]): that reaches what a provider
+/// wrapper left holding the helper's pipe once the wrapper exited, which
+/// has been reparented away from below the helper. What the helper started
+/// in groups of their own (an ACP agent) is found below it while it still
+/// runs and killed too. Windows has neither, and the provider goes with
+/// the helper's job (`os::process::Family`).
+struct Running(Option<os::process::ProcessRef>);
 
 impl Drop for Running {
     fn drop(&mut self) {
-        if let Some(pid) = self.0.take() {
-            crate::runtime::kill_group(pid);
+        if let Some(helper) = self.0.take() {
+            // Taken first: once the helper is killed, what it started is no
+            // longer below it.
+            let started = os::process::descendants(helper.pid());
+            let _ = helper.kill_group();
+            os::process::kill_descendants(&started);
         }
     }
 }
@@ -1070,21 +1084,61 @@ impl ProfileRuntime {
 /// What `<command> --version` prints, as printed; None when it cannot be
 /// read.
 async fn provider_version(command: &str, launch: &Launch) -> Option<String> {
-    let mut probe = tokio::process::Command::new(command);
+    version_of(command, &launch.provider_env, VERSION_PATIENCE).await
+}
+
+/// What `<command> --version` prints, started with `env` over this
+/// process's environment, when it answers within `patience`.
+///
+/// The check heads a process tree of its own ([`os::process::Tree`]): a
+/// wrapper that never answers, as an npm `.cmd` shim whose node hangs, is
+/// ended with what it started when the patience runs out, though that is
+/// no longer below it (Unix: reparented away once the wrapper exited;
+/// Windows records no children).
+async fn version_of(
+    command: &str,
+    env: &HashMap<String, String>,
+    patience: Duration,
+) -> Option<String> {
+    use tokio::io::AsyncReadExt as _;
+    // Found and run as the provider is ([`os::paths::Lookup`]).
+    let lookup = os::paths::Lookup::new(env);
+    let program = lookup
+        .find(command.as_ref())
+        .unwrap_or_else(|| PathBuf::from(command));
+    let mut probe = tokio::process::Command::new(program);
     probe
         .arg("--version")
-        .envs(&launch.provider_env)
+        .envs(env)
         .stdin(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
-    let output = tokio::time::timeout(VERSION_PATIENCE, probe.output())
-        .await
-        .ok()?
-        .ok()?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    if let Some(path) = lookup.refreshed_path() {
+        probe.env("PATH", path);
+    }
+    let (mut child, tree) = os::process::Tree::spawn(&mut probe).ok()?;
+    let mut stdout = child.stdout.take()?;
+    let answered = tokio::time::timeout(patience, async {
+        let mut printed = Vec::new();
+        // Read to its end before the wait: unreaped, the check keeps its
+        // tree reachable (Unix: its group's id) for a kill.
+        stdout.read_to_end(&mut printed).await?;
+        let status = child.wait().await?;
+        io::Result::Ok((status, printed))
+    })
+    .await;
+    match answered {
+        Ok(Ok((status, printed))) => status
+            .success()
+            .then(|| String::from_utf8_lossy(&printed).trim().to_owned()),
+        _ => {
+            if let Err(error) = tree.kill() {
+                tracing::warn!(%command, %error, "ending a version check that did not answer failed");
+            }
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1282,5 +1336,62 @@ mod tests {
             "Log in with your account"
         );
         assert_eq!(agent_sign_in_hint("my-agent", None), "");
+    }
+
+    /// A wrapper whose `--version` never answers, as an npm `.cmd` shim
+    /// whose node hangs does, leaves the version check waiting on a pipe
+    /// that what the wrapper started still holds. The check gives up, and
+    /// what the wrapper started ends with it, though it is no longer below
+    /// the wrapper (Unix: reparented away once the wrapper exited; Windows:
+    /// nothing records a parent's children).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_version_check_that_never_answers_ends_what_it_started() {
+        use provider_fakes::dispatch;
+        let dir = tempfile::tempdir().unwrap();
+        let wrapper = dir.path().join(os::paths::exe_name("claude"));
+        let pids = dir.path().join("left.pids");
+        dispatch::install(
+            &provider_fakes::binaries::path(dispatch::BINARY),
+            &wrapper,
+            &dispatch::Plan::Leave {
+                linger_secs: 120,
+                stderr: String::new(),
+                code: 0,
+                pids: Some(pids.clone()),
+                version: None,
+            },
+        )
+        .unwrap();
+        let version = version_of(
+            &wrapper.to_string_lossy(),
+            &HashMap::new(),
+            Duration::from_secs(2),
+        )
+        .await;
+        assert_eq!(version, None);
+        let left: Vec<os::Pid> = std::fs::read_to_string(&pids)
+            .unwrap()
+            .lines()
+            .map(|pid| pid.parse().unwrap())
+            .collect();
+        assert!(!left.is_empty(), "the wrapper left a copy running");
+        let running = || {
+            left.iter()
+                .copied()
+                .filter(|&pid| os::process::ProcessRef::open(pid).is_ok_and(|copy| copy.alive()))
+                .collect::<Vec<_>>()
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !running().is_empty() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let still = running();
+        for &pid in &still {
+            // Not left behind for the test run's other tests.
+            if let Ok(copy) = os::process::ProcessRef::open(pid) {
+                let _ = copy.kill();
+            }
+        }
+        assert!(still.is_empty(), "{still:?} still run");
     }
 }

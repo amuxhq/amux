@@ -16,9 +16,9 @@
 //!                         bytes fetched for a peer's agent
 //! ```
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+use std::{fs, io};
 
 pub const INSTALLATION_LOCK: &str = "installation.lock";
 pub const GENERATION: &str = "generation";
@@ -50,10 +50,11 @@ pub(crate) fn installation_id(data_dir: &Path) -> io::Result<uuid::Uuid> {
 
 /// The installation's exclusive lock, held for the daemon's lifetime. The
 /// file is never removed: unlinking it would let a second opener lock a
-/// different inode while this one is still held.
+/// different inode while this one is still held. It holds no data; what it
+/// would hold stays readable while it is held ([`os::lock::FileLock`]).
 #[derive(Debug)]
 pub struct InstallationLock {
-    file: Option<File>,
+    _lock: os::lock::FileLock,
 }
 
 impl InstallationLock {
@@ -62,26 +63,9 @@ impl InstallationLock {
     pub fn acquire(data_dir: &Path) -> Result<Self, LockError> {
         private_dir(data_dir).map_err(LockError::Io)?;
         let path = data_dir.join(INSTALLATION_LOCK);
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(&path)
-            .map_err(LockError::Io)?;
-        match file.try_lock() {
-            Ok(()) => Ok(Self { file: Some(file) }),
-            Err(fs::TryLockError::WouldBlock) => Err(LockError::Busy(path)),
-            Err(fs::TryLockError::Error(error)) => Err(LockError::Io(error)),
-        }
-    }
-}
-
-impl Drop for InstallationLock {
-    fn drop(&mut self) {
-        // Unlock explicitly: a descriptor a concurrently forked child
-        // inherited would otherwise keep the lock until that child execs.
-        if let Some(file) = self.file.take() {
-            let _ = file.unlock();
+        match os::lock::FileLock::try_acquire(&path).map_err(LockError::Io)? {
+            Some(lock) => Ok(Self { _lock: lock }),
+            None => Err(LockError::Busy(path)),
         }
     }
 }
@@ -109,21 +93,13 @@ pub fn prune_reports(dir: &Path) -> io::Result<()> {
             continue;
         }
         let meta = entry.metadata()?;
-        reports.push((meta.modified()?, entry.file_name(), meta.is_dir()));
+        reports.push((meta.modified()?, entry.file_name()));
     }
     reports.sort();
     let excess = reports.len().saturating_sub(REPORTS_KEPT);
-    for (_, name, is_dir) in reports.into_iter().take(excess) {
-        let path = dir.join(name);
-        let removed = if is_dir {
-            fs::remove_dir_all(&path)
-        } else {
-            fs::remove_file(&path)
-        };
-        match removed {
-            Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
-            _ => {}
-        }
+    for (_, name) in reports.into_iter().take(excess) {
+        // One a person has open is pruned at a later report.
+        remove_or_leave(&dir.join(name), Duration::ZERO, "an old report");
     }
     Ok(())
 }
@@ -142,84 +118,98 @@ pub(crate) fn sweep_dump_leftovers(data_dir: &Path, profile_dirs: &[PathBuf]) {
             if !entry.file_name().to_string_lossy().starts_with(".dump-") {
                 continue;
             }
-            let path = entry.path();
-            let removed = if path.is_dir() {
-                fs::remove_dir_all(&path)
-            } else {
-                fs::remove_file(&path)
-            };
-            if let Err(error) = removed {
-                tracing::warn!(%error, path = %path.display(), "cannot remove a dump's leftover");
-            }
+            remove_or_leave(&entry.path(), Duration::ZERO, "a dump's leftover");
         }
     }
 }
 
-/// Creates a directory, and its parents, only this user can enter.
+/// Creates a directory, and its parents, only this user can enter. One
+/// that is there already is left as it is: it may be a folder a person
+/// chose to hold a socket. What an earlier build left of the root is made
+/// private at start, by [`prepare_root`].
 pub fn private_dir(path: &Path) -> io::Result<()> {
-    let mut builder = fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
+    if path.is_dir() {
+        return Ok(());
     }
-    builder.create(path)
+    os::fs::create_private_dir(path)
 }
 
+/// Makes a rename or a creation in `dir` durable ([`os::fs::sync_dir`]).
+pub use os::fs::sync_dir;
 /// Replaces `path` with `bytes` so that a crash or power cut leaves either
 /// the old file or the new one, and the new one is on disk before this
-/// returns: a temporary file, fsync, rename, fsync of the directory.
-pub fn write_durably(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let (dir, temp) = temp_beside(path)?;
-    {
-        let mut file = File::create(&temp)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-    }
-    fs::rename(&temp, path)?;
-    sync_dir(dir)
-}
+/// returns, readable by this user only ([`os::fs::write_durably`]).
+pub use os::fs::write_durably;
 
 /// Replaces `path` with `bytes` so that a reader sees the old file or the
 /// new one, never half of one, without waiting for the drive: for a file
 /// whose loss to a power cut costs only a recomputation or a stale hint.
 pub fn write_cache(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let (_, temp) = temp_beside(path)?;
-    fs::write(&temp, bytes)?;
-    fs::rename(&temp, path).inspect_err(|_| {
-        let _ = fs::remove_file(&temp);
-    })
+    os::fs::replace_atomically(path, bytes)
 }
 
-/// The directory `path` is in, and a temporary name beside it that no
-/// other process writing the same file uses.
-fn temp_beside(path: &Path) -> io::Result<(&Path, std::path::PathBuf)> {
-    let dir = path
-        .parent()
-        .ok_or_else(|| io::Error::other("a file written whole needs a parent directory"))?;
-    let name = path
-        .file_name()
-        .ok_or_else(|| io::Error::other("a file written whole needs a name"))?;
-    let temp = dir.join(format!(
-        ".{}.{}.tmp",
-        name.to_string_lossy(),
-        std::process::id()
-    ));
-    Ok((dir, temp))
+/// How long a removal in a sweep or a discard waits for something else to
+/// let go of what it removes before leaving it for the next pass.
+pub(crate) const REMOVAL_PATIENCE: Duration = Duration::from_secs(3);
+
+/// Removes the file or tree at `path`, waiting up to `patience` for
+/// something else to let go of it. One still held (a shell working inside,
+/// a log open without delete sharing) or refused is left, with a warning
+/// naming `what`, for the next pass, never an error: true once it is gone.
+pub(crate) fn remove_or_leave(path: &Path, patience: Duration, what: &str) -> bool {
+    match os::fs::remove_patiently(path, patience) {
+        Ok(os::fs::Removed::Gone) => true,
+        Ok(os::fs::Removed::Later) => {
+            tracing::warn!(path = %path.display(), "{what} is still in use; the next pass removes it");
+            false
+        }
+        Err(error) => {
+            tracing::warn!(path = %path.display(), %error, "{what} could not be removed; the next pass tries again");
+            false
+        }
+    }
 }
 
-/// Makes a rename in `dir` durable.
-#[cfg(unix)]
-pub fn sync_dir(dir: &Path) -> io::Result<()> {
-    File::open(dir)?.sync_all()
-}
-
-/// Windows makes a rename durable with the file's own flush; a directory
-/// cannot be opened for one.
-#[cfg(not(unix))]
-pub fn sync_dir(_dir: &Path) -> io::Result<()> {
-    Ok(())
+/// Readies the installation's root at the daemon's start. It says when the
+/// root's volume is a poor home for one, and makes the root, its reports
+/// and each profile and its agents only this user's, which upgrades in
+/// place a root an earlier build left readable by others, as every one on
+/// Windows was. Nothing here stops a start: what fails is said and left.
+pub(crate) fn prepare_root(data_dir: &Path) {
+    match os::fs::volume_supports_root(data_dir) {
+        Ok(os::fs::VolumeCheck::Suitable) => {}
+        Ok(check) => tracing::warn!(
+            root = %data_dir.display(),
+            "the root's volume is a poor home for amux's data ({check}): a file something \
+             holds may not be replaced or removed, and the files may not be private"
+        ),
+        Err(error) => {
+            tracing::warn!(root = %data_dir.display(), %error, "the root's volume could not be checked");
+        }
+    }
+    let private = |path: &Path| {
+        if let Err(error) = os::fs::make_private(path) {
+            tracing::warn!(path = %path.display(), %error, "could not be made private");
+        }
+    };
+    private(data_dir);
+    if let Err(error) = os::fs::create_private_dir(&data_dir.join(REPORTS)) {
+        tracing::warn!(%error, "the reports folder could not be made private");
+    }
+    let Ok(profiles) = fs::read_dir(data_dir.join(PROFILES)) else {
+        return;
+    };
+    for profile in profiles.flatten() {
+        let dir = profile.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        private(&dir);
+        let agents = dir.join(AGENTS);
+        if agents.is_dir() {
+            private(&agents);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -263,6 +253,23 @@ mod tests {
         for gone in ["dump-00", "dump-01", "dump-02"] {
             assert!(!left.contains(&gone.to_owned()), "{left:?}");
         }
+    }
+
+    /// A write whose replace fails takes its temporary file with it: what
+    /// a failed write leaves is the old file, and only the old file.
+    #[test]
+    fn a_durable_write_that_fails_leaves_no_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join(GENERATION);
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("inside"), b"x").unwrap();
+        assert!(write_durably(&target, b"x").is_err());
+        assert!(write_cache(&target, b"x").is_err());
+        let left: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(left, [GENERATION], "nothing but the target is left");
     }
 
     #[test]

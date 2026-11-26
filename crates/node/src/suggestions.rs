@@ -41,7 +41,7 @@ fn suggest_outside(home: &Path, now: SystemTime, temporary: &[PathBuf]) -> Vec<w
     codex_sessions(&home.join(".codex").join("sessions"), since, &mut ran);
     ran.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
 
-    let home = home.canonicalize().unwrap_or_else(|_| home.to_owned());
+    let home = crate::plain_paths::canonical(home).unwrap_or_else(|_| home.to_owned());
     // A home made under a temporary directory, as a sandbox's is, keeps
     // what is under it.
     let temporary: Vec<&PathBuf> = temporary
@@ -186,7 +186,7 @@ fn temporary_dirs() -> Vec<PathBuf> {
     }
     let canonical: Vec<PathBuf> = dirs
         .iter()
-        .filter_map(|dir| dir.canonicalize().ok())
+        .filter_map(|dir| crate::plain_paths::canonical(dir).ok())
         .collect();
     dirs.extend(canonical);
     dirs
@@ -213,7 +213,7 @@ mod tests {
 
     fn repo(path: &Path) -> PathBuf {
         std::fs::create_dir_all(path.join(".git")).unwrap();
-        path.canonicalize().unwrap()
+        crate::plain_paths::canonical(path).unwrap()
     }
 
     fn json(value: serde_json::Value) -> String {
@@ -286,7 +286,7 @@ mod tests {
             now,
         );
 
-        let temporary = [dir.path().join("scratch").canonicalize().unwrap()];
+        let temporary = [crate::plain_paths::canonical(&dir.path().join("scratch")).unwrap()];
         let offered = suggest_outside(&home, now, &temporary);
         let paths: Vec<&str> = offered.iter().map(|entry| entry.path.as_str()).collect();
         assert_eq!(

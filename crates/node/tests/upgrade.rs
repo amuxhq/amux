@@ -135,6 +135,49 @@ async fn a_profile_a_release_wrote_opens_with_its_agent_and_history() {
     }
 }
 
+/// A root as every release before this build left it on Windows, where it
+/// made nothing private, and as a person may leave one anywhere: the
+/// root, its profile, the profile's agents and its device key readable by
+/// other users. The daemon's start makes each this user's alone, in
+/// place, and a start after that finds them so.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_root_an_earlier_build_left_open_is_made_private_at_start() {
+    use os::testing::is_private;
+    use os::testing::private::open_to_others;
+    let install = Install::new();
+    let profile = install.profile_dir();
+    let key = node::harness::device_key_path(&profile);
+    // The first start makes the device key, as a release's did.
+    install
+        .start("boot-1", quiet_launch())
+        .await
+        .shutdown()
+        .await
+        .unwrap();
+    let left = [
+        install.data_dir.clone(),
+        profile.clone(),
+        profile.join(node::AGENTS),
+        key,
+    ];
+    for path in &left {
+        open_to_others(path).unwrap();
+        assert!(!is_private(path).unwrap(), "{} is open", path.display());
+    }
+
+    for boot in ["boot-2", "boot-3"] {
+        let daemon = install.start(boot, quiet_launch()).await;
+        for path in &left {
+            assert!(
+                is_private(path).unwrap(),
+                "{} is private after {boot}'s start",
+                path.display()
+            );
+        }
+        daemon.shutdown().await.unwrap();
+    }
+}
+
 /// Opens the release's store with this build, which runs the migrations it
 /// lacks, and reads a row of every kind the release left in it.
 fn the_store_holds_what_the_release_left(install: &Install) {

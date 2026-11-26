@@ -1127,6 +1127,83 @@ async fn an_agent_that_stops_reading_holds_up_neither_other_parents_nor_a_kill()
     crash(daemon, runtime).await;
 }
 
+/// A write on an agent's control connection that overruns its patience
+/// closes the connection outright, both halves: the daemon's watcher stops
+/// reading it and dials the agent again, so an agent that was only slow
+/// hears the next input. Shutting down the write half alone left the read
+/// half holding the connection open (on Windows a pipe's shutdown is
+/// nothing at all), and the agent was deaf until it restarted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_control_write_that_overruns_closes_the_connection_and_the_agent_is_dialled_again() {
+    const WRITE_MS: i64 = 300;
+    let install = Install::new();
+    let mut slow = SyntheticAgent::new(&install, "slow", SEGMENTS);
+    slow.register(&install);
+    slow.go_live();
+    let launch = Launch {
+        ctl_write_ms: WRITE_MS,
+        ..quiet_launch()
+    };
+    let daemon = install.start("boot-1", launch).await;
+    let runtime = runtime(&daemon, &install);
+    let hellos = |n: usize| {
+        let sent = slow.hellos();
+        (sent >= n)
+            .then_some(())
+            .ok_or_else(|| format!("{sent} hellos"))
+    };
+    until("the daemon's dial", || async { hellos(1) })
+        .await
+        .unwrap();
+    let send = |id: &[u8], text: &str| SendInputRequest {
+        agent_id: slow.id.as_bytes().to_vec(),
+        input: Some(prompt(id, text)),
+    };
+
+    // The agent stops reading, and inputs too large for the socket's buffer
+    // overrun their writes. Two, since a Windows pipe takes in one whole
+    // write while the reader is away and only the next one waits; the
+    // input whose write was taken in loses its answer when the connection
+    // closes.
+    slow.stop_reading();
+    let bound = Duration::from_millis(WRITE_MS as u64 + 10_000);
+    let big = "x".repeat(8 << 20);
+    let first = tokio::spawn({
+        let runtime = runtime.clone();
+        let request = send(b"big-1", &big);
+        async move { runtime.send_input(&request).await }
+    });
+    let second = tokio::time::timeout(bound, runtime.send_input(&send(b"big-2", &big)))
+        .await
+        .expect("the overrun write gives up");
+    let gave_up = |sent: &Result<SendInputResponse, RelayError>| {
+        matches!(sent, Err(RelayError::Lost | RelayError::Unavailable))
+    };
+    assert!(gave_up(&second), "{second:?}");
+    let first = tokio::time::timeout(bound, first)
+        .await
+        .expect("the first input's send ends with its connection")
+        .unwrap();
+    assert!(gave_up(&first), "{first:?}");
+
+    // Back from whatever held it, the agent is dialled again and takes the
+    // next input.
+    slow.read_again();
+    until("the daemon to dial again", || async { hellos(2) })
+        .await
+        .unwrap();
+    let answer = runtime
+        .send_input(&send(b"after", "are you there?"))
+        .await
+        .expect("the input after the overrun reaches the agent");
+    assert_eq!(verdict(&answer), "queued");
+    assert!(
+        slow.inputs().iter().any(|handed| handed.id() == b"after"),
+        "the agent was handed the input after the overrun"
+    );
+    crash(daemon, runtime).await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_parents_message_resumes_its_exited_child_and_the_child_finishes_again() {
     let install = Install::new();

@@ -8,7 +8,17 @@ pub(super) fn current_path() -> OsString {
     std::env::var_os("PATH").unwrap_or_default()
 }
 
-pub(super) fn find_program(name: &OsStr, path: &OsStr) -> Option<PathBuf> {
+/// Unix names a variable by its exact spelling.
+pub(super) fn same_variable(key: &str, name: &str) -> bool {
+    key == name
+}
+
+/// `PATHEXT` is Windows' own: here it is ignored.
+pub(super) fn find_program(
+    name: &OsStr,
+    path: &OsStr,
+    _pathext: Option<&OsStr>,
+) -> Option<PathBuf> {
     if name.is_empty() {
         return None;
     }
@@ -44,17 +54,17 @@ mod tests {
         fs::set_permissions(second.join("tool"), Permissions::from_mode(0o755)).unwrap();
         let path = std::env::join_paths([&first, &second]).unwrap();
         assert_eq!(
-            find_program(OsStr::new("tool"), &path),
+            find_program(OsStr::new("tool"), &path, None),
             Some(second.join("tool"))
         );
         fs::set_permissions(first.join("tool"), Permissions::from_mode(0o700)).unwrap();
         assert_eq!(
-            find_program(OsStr::new("tool"), &path),
+            find_program(OsStr::new("tool"), &path, None),
             Some(first.join("tool"))
         );
         fs::create_dir(first.join("dir")).unwrap();
         assert_eq!(
-            find_program(OsStr::new("dir"), &path),
+            find_program(OsStr::new("dir"), &path, None),
             None,
             "a folder never runs"
         );

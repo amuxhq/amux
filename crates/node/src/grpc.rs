@@ -108,18 +108,27 @@ impl AsyncWrite for Connection {
     }
 }
 
-/// Every connection the listener accepts, until it fails.
+/// Every connection the listener accepts, for the listener's life: a
+/// failed accept is logged and the next one tried, so one bad moment never
+/// leaves the socket unserved.
 pub(crate) fn incoming(
     listener: LocalListener,
 ) -> impl Stream<Item = std::io::Result<Connection>> + Send + 'static {
-    futures_util::stream::unfold(Some(listener), |listener| async move {
-        let mut listener = listener?;
-        match listener.accept().await {
-            Ok(stream) => Some((Ok(Connection(stream)), Some(listener))),
-            Err(error) => Some((Err(error), None)),
+    futures_util::stream::unfold(listener, |mut listener| async move {
+        loop {
+            match listener.accept().await {
+                Ok(stream) => return Some((Ok(Connection(stream)), listener)),
+                Err(error) => {
+                    tracing::warn!(socket = %listener.path().display(), %error, "accepting a connection failed");
+                    tokio::time::sleep(ACCEPT_RETRY).await;
+                }
+            }
         }
     })
 }
+
+/// How long an accept loop waits after a failed accept before the next.
+pub(crate) const ACCEPT_RETRY: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// Serves the services `entry` is served on a listener, with the profile's
 /// administration on the profile's own socket, behind the entry's layer

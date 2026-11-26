@@ -223,12 +223,17 @@ impl Driver {
         let trust = Arc::new(std::sync::RwLock::new(daemon.trust().clone()));
         // The ring's first checkpoint is the core as it starts, beside a
         // main file holding every commit so far.
-        let store_at_checkpoint = Sqlite::checkpoint_wal(&dir.join(STORE))
+        let store_at_checkpoint = Sqlite::checkpoint_wal(&os::fs::long_form(&dir.join(STORE)))
             .inspect_err(|error| tracing::warn!(%error, "moving the store's WAL at start failed"))
             .is_ok();
-        let ring = Ring::open(dir.join(CORE_RING), RING_BYTES, &daemon.checkpoint())
-            .inspect_err(|error| tracing::warn!(%error, "the core's input ring does not open"))
-            .ok();
+        let ring = Ring::open(
+            dir.join(CORE_RING),
+            RING_BYTES,
+            &daemon.checkpoint(),
+            os::fs::write_durably,
+        )
+        .inspect_err(|error| tracing::warn!(%error, "the core's input ring does not open"))
+        .ok();
         let (closed, closed_seen) = watch::channel(());
         let core = CoreThread {
             daemon,
@@ -1467,7 +1472,8 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
                 return;
             };
             blocking(move || {
-                Sqlite::checkpoint_wal(&dir.join(STORE)).map_err(std::io::Error::other)
+                Sqlite::checkpoint_wal(&os::fs::long_form(&dir.join(STORE)))
+                    .map_err(std::io::Error::other)
             })
             .await
         }
@@ -1489,7 +1495,7 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
             let Some(runtime) = runtime.upgrade() else {
                 return;
             };
-            if runtime.kill_process(uuid::Uuid::from_bytes(agent.0)) {
+            if runtime.kill_process(uuid::Uuid::from_bytes(agent.0)).await {
                 JobResult::Done
             } else {
                 JobResult::Failed("no process this daemon can kill".to_owned())

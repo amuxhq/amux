@@ -222,7 +222,7 @@ it and answers from its copy, so the caller's call is never passed on.
 | Call | Answers with | Meaning |
 | --- | --- | --- |
 | `CreateAgent` | `Agent` | Spawn, optionally with a first prompt (see [Creating and resuming](#creating-and-resuming)). Names are unique on a host, counting exited agents: a given name another agent on the host holds gets the next free suffix (`worker-2`), and the returned `Agent` says the name it got. Without a name the daemon gives a word pair (`quiet-otter`) that no other agent on the host and no branch in the folder's repository has. With `new_workspace` the agent's host first makes a worktree on a branch named after the agent, and the agent starts there; under the workspaces experiment it answers with the row first and makes the workspace after ([new workspaces](PROTOCOL.md#new-workspaces)) |
-| `RenameAgent` | `Agent` | A name outside the rule (lowercase letters, digits and hyphens, starting with a letter or digit, at most 64) is refused `INVALID_ARGUMENT`, as it is for `CreateAgent`; a name another agent on the host holds, exited ones included, is refused `ALREADY_EXISTS` saying so. The agent's branch keeps the name it was made with |
+| `RenameAgent` | `Agent` | A name outside the rule (lowercase letters, digits and hyphens, starting with a letter or digit, at most 64), or one Windows reads as a device's (`con`, `nul`, `aux`, `prn`, `com0`–`com9`, `lpt0`–`lpt9`, refused by every host so a name works on every one), is refused `INVALID_ARGUMENT`, as it is for `CreateAgent`; a name another agent on the host holds, exited ones included, is refused `ALREADY_EXISTS` saying so. The agent's branch keeps the name it was made with |
 | `SetFiling` | `Agent` | Files the agent open, pinned or closed, apart from its lifecycle ([filing](PROTOCOL.md#filing)). Closing ends a live agent now: its running turn is cancelled the provider's own way and it exits, resumable, answered once it has ended. There is no "stop when done". The terminal, the phone and an agent's stop tool all close; the interrupt input is what ends only the turn. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule). Pinning is refused for an agent with a parent |
 | `ResumeAgent` | `Agent` | Start the agent's directory again, optionally with a first prompt; with `if_suspended`, only if it is live with no process, so a client acting on a row that may be out of date never starts an agent stopped since |
 | `DeleteAgent` | nothing | Stops the agent if live and removes it for good. Its children follow on their own hosts by [the family rule](PROTOCOL.md#the-family-rule). `discard_workspace_changes` agrees to lose the uncommitted changes of a workspace the delete removes ([new workspaces](PROTOCOL.md#new-workspaces)); unset, they are kept |
@@ -984,7 +984,10 @@ daemon holds no provider code: it runs the hidden helper `amux internal catalogu
 starts the provider just long enough to ask what it offers and whether it is
 signed in, and keeps the answer per provider under the profile's `providers/`
 folder. It asks again when the copy is half an hour old, when the provider's
-`--version` prints something new (read at most once a minute), and for a copy
+`--version` prints something new (read at most once a minute, in a process
+tree of its own, `os::process::Tree`, ended whole when ten seconds pass
+without an answer, so a wrapper whose `--version` hangs leaves nothing
+running), and for a copy
 that says signed out once a minute has passed. A caller is answered with the
 copy the host holds, however old, and never waits on the provider while there
 is one: a copy that is due is asked again in the background, one ask at a time

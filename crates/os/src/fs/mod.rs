@@ -94,6 +94,14 @@ pub fn create_private(path: &Path, how: Create) -> io::Result<File> {
     imp::create_private(path, how)
 }
 
+/// Whether `path` is owner-only in its own right, as [`create_private_dir`],
+/// [`make_private`] and [`create_private`] leave it, for a test to check;
+/// [`crate::testing::is_private`] is its public form.
+#[cfg(any(test, feature = "testing"))]
+pub(crate) fn is_private(path: &Path) -> io::Result<bool> {
+    imp::is_private(path)
+}
+
 /// The current user's SID as a string (`S-1-5-21-…`), for an SDDL.
 /// Windows only: elsewhere it returns [`io::ErrorKind::Unsupported`].
 pub fn current_user_sid() -> io::Result<String> {
@@ -354,6 +362,26 @@ pub fn plain(path: PathBuf) -> PathBuf {
         Some(plain) => PathBuf::from(plain),
         None => path,
     }
+}
+
+/// `path` as a library that calls the OS itself, not through std, must be
+/// handed it to reach a deep path, SQLite among them. Windows: absolute,
+/// and verbatim (`\\?\…`) when it is too long for a plain path, the rule
+/// std applies to every path it hands Windows; without it a process that
+/// is not long-path aware opens nothing past `MAX_PATH`. Elsewhere `path`
+/// as it is. Only for handing over: what is stored or shown stays in the
+/// plain form ([`canonical`]).
+pub fn long_form(path: &Path) -> PathBuf {
+    imp::long_form(path)
+}
+
+/// Whether `name`, as one file or folder name, is one Windows cannot give
+/// a file: a device's (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`,
+/// `LPT0`–`LPT9`, in any case, alone or before an extension), or one
+/// ending in a dot or a space, which Windows drops. Pure text, the same
+/// answer on every OS, so a name one host takes works on every other.
+pub fn reserved_name(name: &str) -> bool {
+    verbatim::reserved(name) || name.ends_with('.') || name.ends_with(' ')
 }
 
 // Executables ------------------------------------------------------------------

@@ -9,6 +9,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use crate::plain_paths::{canonical, plain};
+
 /// What a profile's runtime asks of the installation about its folders:
 /// the person's home, where Claude Code and Codex keep their sessions, and
 /// pinning a folder among the repositories in the settings, which the
@@ -113,15 +115,16 @@ pub(crate) fn folders(
 ) -> Vec<wire::Folder> {
     let pinned = pinned
         .iter()
-        .filter_map(|path| path.canonicalize().ok())
+        .filter_map(|path| canonical(path).ok())
         .filter(|path| path.is_dir())
         .filter_map(|path| folder(&path, wire::FolderKind::Pinned, None));
     let recent = recent
         .iter()
-        .map(|(path, at)| (PathBuf::from(path), *at))
+        // Read plain: an earlier build stored Windows' verbatim form.
+        .map(|(path, at)| (plain(PathBuf::from(path)), *at))
         // A directory since replaced by a symlink is not the one that was
         // used, and gone is gone.
-        .filter(|(path, _)| path.canonicalize().ok().as_ref() == Some(path) && path.is_dir())
+        .filter(|(path, _)| canonical(path).ok().as_ref() == Some(path) && path.is_dir())
         .filter_map(|(path, at)| folder(&path, wire::FolderKind::Recent, Some(at)));
     let mut seen = BTreeSet::new();
     pinned
@@ -169,6 +172,7 @@ mod tests {
     fn recorded(paths: &[(&std::path::Path, i64)]) -> Vec<(String, i64)> {
         let mut store = store::Sqlite::open_in_memory([0; 16]).unwrap();
         for (path, at) in paths {
+            // As an earlier build stored it: Windows' verbatim form there.
             let path = path.canonicalize().unwrap();
             store
                 .record_recent_directory(path.to_str().unwrap(), *at)
@@ -183,7 +187,7 @@ mod tests {
         let make = |name: &str| {
             let path = temp.path().join(name);
             std::fs::create_dir(&path).unwrap();
-            path.canonicalize().unwrap()
+            canonical(&path).unwrap()
         };
         let (app, notes, scratch, dotfiles) = (
             make("app"),

@@ -3,7 +3,9 @@
 
 use std::fs::File;
 use std::io;
-use std::os::windows::io::{AsRawHandle as _, FromRawHandle as _, OwnedHandle, RawHandle};
+use std::os::windows::io::{
+    AsRawHandle as _, FromRawHandle as _, IntoRawHandle as _, OwnedHandle, RawHandle,
+};
 use std::os::windows::process::CommandExt as _;
 
 use windows_sys::Win32::Foundation::{
@@ -17,16 +19,21 @@ use windows_sys::Win32::System::Console::{
 use windows_sys::Win32::System::Diagnostics::Debug::{
     SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX, SetErrorMode,
 };
+#[cfg(feature = "async")]
+use windows_sys::Win32::System::JobObjects::TerminateJobObject;
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
-    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_PROCESS_ID_LIST,
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicProcessIdList,
-    JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
+    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    JOBOBJECT_BASIC_PROCESS_ID_LIST, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JobObjectBasicProcessIdList, JobObjectExtendedLimitInformation, QueryInformationJobObject,
+    SetInformationJobObject,
 };
+#[cfg(feature = "async")]
+use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
 use windows_sys::Win32::System::Threading::{
     CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, GetCurrentProcess,
-    GetProcessId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SUSPEND_RESUME,
-    PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, TerminateProcess, WaitForSingleObject,
+    GetExitCodeProcess, GetProcessId, INFINITE, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_SUSPEND_RESUME, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, TerminateProcess,
+    WaitForSingleObject,
 };
 
 use super::{Descendant, Detach, Replaced, Spawnable, Spawned};
@@ -43,6 +50,10 @@ const BACKGROUND: u32 = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_BRE
 pub(super) fn detach(cmd: &mut std::process::Command, _how: Detach) {
     cmd.creation_flags(BACKGROUND);
 }
+
+/// Windows has no process groups to kill: a job holds what a process
+/// starts.
+pub(super) fn own_group(_cmd: &mut std::process::Command) {}
 
 pub(super) fn spawn_background<C: Spawnable>(cmd: &mut C) -> io::Result<Spawned<C::Child>> {
     match cmd.spawn_child() {
@@ -197,6 +208,10 @@ pub(super) fn set_inheritable(file: &File, on: bool) -> io::Result<()> {
     Ok(())
 }
 
+pub(super) fn file_of_pipe(end: impl Into<OwnedHandle>) -> File {
+    File::from(end.into())
+}
+
 pub(super) fn raw_for_child(file: &File) -> u64 {
     file.as_raw_handle() as u64
 }
@@ -257,33 +272,51 @@ pub(super) struct Family {
     job: Held,
 }
 
+/// A new job that ends every process in it once its last handle closes,
+/// and lets none break away: Git Bash (MSYS2, Cygwin's runtime) starts
+/// every command broken away from a job that allows it, so a provider's
+/// tool shells would all leave it.
+fn kill_on_close_job() -> io::Result<OwnedHandle> {
+    // SAFETY: a new, unnamed job whose handle isn't inheritable (no
+    // security attributes), owned at once, so a failure closes it.
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let job = OwnedHandle::from_raw_handle(job as RawHandle);
+        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let set = SetInformationJobObject(
+            job.as_raw_handle() as HANDLE,
+            JobObjectExtendedLimitInformation,
+            (&raw const limits).cast(),
+            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        );
+        if set == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(job)
+    }
+}
+
 impl Family {
     pub(super) fn contain_self() -> io::Result<Family> {
-        // SAFETY: a new, unnamed job whose handle isn't inheritable (no
-        // security attributes), set up and joined; on failure the handle
-        // is closed before this process is in it.
-        unsafe {
-            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-            if job.is_null() {
-                return Err(io::Error::last_os_error());
-            }
-            let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-            limits.BasicLimitInformation.LimitFlags =
-                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
-            let set = SetInformationJobObject(
-                job,
-                JobObjectExtendedLimitInformation,
-                (&raw const limits).cast(),
-                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            );
-            if set == 0 || AssignProcessToJobObject(job, GetCurrentProcess()) == 0 {
-                let error = io::Error::last_os_error();
-                CloseHandle(job);
-                return Err(error);
-            }
-            Ok(Family { job: Held(job) })
+        let job = kill_on_close_job()?;
+        // SAFETY: joining the job just made; on failure its handle closes
+        // with `job`, before this process is in it.
+        if unsafe { AssignProcessToJobObject(job.as_raw_handle() as HANDLE, GetCurrentProcess()) }
+            == 0
+        {
+            return Err(io::Error::last_os_error());
         }
+        Ok(Family {
+            job: Held(job.into_raw_handle() as HANDLE),
+        })
     }
+
+    /// Nothing to do: the job keeps every member wherever its parent went.
+    pub(super) fn count(&self) {}
 
     #[cfg(feature = "async")]
     pub(super) fn prepare(&self, _cmd: &mut tokio::process::Command) {}
@@ -466,6 +499,57 @@ impl Member {
     pub(super) async fn release(self) {}
 }
 
+/// A child in a job of its own, which ends what is left of it when the
+/// tree is dropped.
+#[cfg(feature = "async")]
+#[derive(Debug)]
+pub(super) struct Tree {
+    job: OwnedHandle,
+}
+
+#[cfg(feature = "async")]
+impl Tree {
+    pub(super) fn spawn(
+        cmd: &mut tokio::process::Command,
+    ) -> io::Result<(tokio::process::Child, Tree)> {
+        let job = kill_on_close_job()?;
+        // Suspended until it is in the job, so nothing it starts is born
+        // outside.
+        cmd.as_std_mut().creation_flags(CREATE_SUSPENDED);
+        let mut child = cmd.spawn()?;
+        let entered = match child.raw_handle() {
+            // SAFETY: the job just made, and the child's own process
+            // handle, open while `child` is; a process created suspended
+            // runs once its one thread is resumed.
+            Some(process) => unsafe {
+                if AssignProcessToJobObject(job.as_raw_handle() as HANDLE, process as HANDLE) == 0 {
+                    Err(io::Error::last_os_error())
+                } else if NtResumeProcess(process as HANDLE) < 0 {
+                    Err(io::Error::other("resuming the child failed"))
+                } else {
+                    Ok(())
+                }
+            },
+            None => Err(io::Error::other("the child has already been reaped")),
+        };
+        match entered {
+            Ok(()) => Ok((child, Tree { job })),
+            Err(error) => {
+                let _ = child.start_kill();
+                Err(error)
+            }
+        }
+    }
+
+    pub(super) fn kill(&self) -> io::Result<()> {
+        // SAFETY: ending the processes of the job whose handle we own.
+        if unsafe { TerminateJobObject(self.job.as_raw_handle() as HANDLE, 1) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+}
+
 #[cfg(feature = "async")]
 #[derive(Debug)]
 pub(crate) struct Tether;
@@ -562,6 +646,10 @@ impl ProcessRef {
         unsafe { WaitForSingleObject(self.raw(), 0) == WAIT_TIMEOUT }
     }
 
+    pub(super) fn kill_group(&self) -> io::Result<()> {
+        self.kill()
+    }
+
     pub(super) fn kill(&self) -> io::Result<()> {
         if !self.alive() {
             return Ok(());
@@ -577,6 +665,16 @@ impl ProcessRef {
             return Err(error);
         }
         Ok(())
+    }
+
+    pub(super) fn ask_to_finish(&self) -> io::Result<()> {
+        if !self.alive() {
+            return Ok(());
+        }
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Windows has no way to ask a process without a window to finish",
+        ))
     }
 
     #[cfg(feature = "async")]
@@ -596,6 +694,55 @@ impl ProcessRef {
     pub(super) fn resume(&self) -> io::Result<()> {
         // SAFETY: resuming the process whose handle we own.
         self.nt(unsafe { NtResumeProcess(self.raw()) })
+    }
+
+    pub(super) fn ask_to_stop(&self) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Windows has no signal to ask a process to stop with",
+        ))
+    }
+
+    pub(super) fn reap(&self) -> io::Result<i32> {
+        // SAFETY: waiting on and querying a process handle we own.
+        unsafe {
+            if WaitForSingleObject(self.raw(), INFINITE) != WAIT_OBJECT_0 {
+                return Err(io::Error::last_os_error());
+            }
+            let mut code = 0u32;
+            if GetExitCodeProcess(self.raw(), &mut code) == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(code as i32)
+        }
+    }
+
+    pub(super) fn for_successor(&self) -> io::Result<Option<File>> {
+        let copy = duplicate(self.raw())?;
+        // SAFETY: a fresh duplicate this process owns; a File is how the
+        // inheritance helpers carry a handle, and nothing reads it as one.
+        Ok(Some(unsafe { File::from_raw_handle(copy as RawHandle) }))
+    }
+
+    pub(super) unsafe fn inherited(pid: Pid, handle: Option<u64>) -> io::Result<ProcessRef> {
+        let Some(handle) = handle else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("no handle was handed over for process {pid}"),
+            ));
+        };
+        // SAFETY: the caller's promise, passed on.
+        let file = unsafe { file_from_inherited(handle) }?;
+        let handle = OwnedHandle::from(file);
+        // SAFETY: querying a process handle we own.
+        let named = unsafe { GetProcessId(handle.as_raw_handle() as HANDLE) };
+        if named != pid {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("the handle handed over names process {named}, not {pid}"),
+            ));
+        }
+        Ok(ProcessRef { handle, pid })
     }
 
     fn nt(&self, status: i32) -> io::Result<()> {
@@ -618,19 +765,4 @@ impl ProcessRef {
             self.pid
         )))
     }
-}
-
-#[cfg(test)]
-pub(super) fn in_job(job: Option<HANDLE>) -> bool {
-    let mut inside = 0;
-    // SAFETY: asking about this process, with a job handle the caller
-    // holds or null for any job.
-    unsafe {
-        IsProcessInJob(
-            GetCurrentProcess(),
-            job.unwrap_or(std::ptr::null_mut()),
-            &mut inside,
-        );
-    }
-    inside != 0
 }

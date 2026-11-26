@@ -45,7 +45,6 @@ dependencies = [
  "hyper-util",
  "interpret",
  "journal",
- "libc",
  "log-file",
  "notify",
  "os",
@@ -66,7 +65,6 @@ dependencies = [
  "tower",
  "url",
  "uuid",
- "windows-sys 0.61.2",
  "wire",
  "zstd",
 ]
@@ -2088,6 +2086,7 @@ version = "0.1.0"
 dependencies = [
  "agent-dir",
  "libc",
+ "os",
  "provider-fakes",
  "release",
  "reqwest",
@@ -2409,7 +2408,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 name = "log-file"
 version = "0.1.0"
 dependencies = [
- "libc",
+ "os",
  "tempfile",
 ]
 
@@ -3263,7 +3262,6 @@ dependencies = [
  "anyhow",
  "bytes",
  "libc",
- "os",
  "portable-pty",
  "thiserror 2.0.20",
  "tokio",
@@ -4104,6 +4102,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "gethostname",
+ "os",
  "serde",
  "serde_ignored",
  "tempfile",
@@ -5157,6 +5156,7 @@ dependencies = [
  "jiff",
  "libc",
  "node",
+ "os",
  "png",
  "prost",
  "provider-fakes",

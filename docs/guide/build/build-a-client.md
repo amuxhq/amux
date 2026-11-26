@@ -339,6 +339,12 @@ Details:
   `x86_64-pc-windows-msvc`) names a URL, a size and a SHA-256, and the
   manifest carries an Ed25519 signature over them. Check the download's
   size and SHA-256 against it.
+- **Running `amux server start`.** Give it no pipe to wait on: standard
+  output to nothing, standard error to a file you read once it exits. It
+  returns once amux answers, but the supervisor and daemon it leaves running
+  may hold whatever streams it was given, so a client reading a pipe to its
+  end could wait on them. Bound the wait too; the installer crate gives it 60
+  seconds.
 - **Exit codes.** Every `amux` command exits 0 on success and 1 on failure,
   with the reason on standard error; 2 is a usage error.
 

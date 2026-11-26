@@ -354,9 +354,14 @@ impl Installation {
         // The experiments the daemon started with keep their tables; every
         // other experiment's are dropped.
         let experiments = self.launch.lock().unwrap().experiments.versions();
-        let store =
-            store::Sqlite::open_with(&dir.join(STORE), host.as_bytes().to_vec(), &experiments)
-                .map_err(|error| StartError::Store { profile, error })?;
+        // SQLite opens the file itself, not through std: a deep root's store
+        // is handed over in its long form.
+        let store = store::Sqlite::open_with(
+            &os::fs::long_form(&dir.join(STORE)),
+            host.as_bytes().to_vec(),
+            &experiments,
+        )
+        .map_err(|error| StartError::Store { profile, error })?;
         // Every write is the core's, which holds its commits while its
         // checkpoint's WAL job runs; that job and the clean shutdown's
         // flush are the only checkpoints.
@@ -681,6 +686,7 @@ pub async fn start(
         settings,
     } = options;
     let lock = InstallationLock::acquire(&data_dir)?;
+    crate::install::prepare_root(&data_dir);
     let boot_id = match boot_id {
         Some(boot_id) => boot_id,
         None => generation::boot_id().map_err(StartError::BootId)?,

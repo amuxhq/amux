@@ -1359,10 +1359,6 @@ async fn attach_refuses_a_file_over_the_attachment_limit() {
 /// `/dev/zero` (`NUL` on Windows) never ends, so neither is read. The pipe
 /// is a local socket's: the socket itself on Unix, and on Windows the named
 /// pipe (`\\.\pipe\…`) that the file at its path names.
-#[cfg_attr(
-    windows,
-    ignore = "windows: refused, but not as not a regular file: a named pipe with reading the pipe: Incorrect function (os error 1), NUL with The parameter is incorrect (os error 87), a link to NUL with The system cannot find the file specified (os error 2)"
-)]
 #[tokio::test(flavor = "multi_thread")]
 async fn attach_reads_only_a_regular_file() {
     let mut mcp = Mcp::start().await;

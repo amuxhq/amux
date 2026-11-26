@@ -108,7 +108,7 @@ pub async fn serve(mut listener: LocalListener, how: Serve) {
                         };
                     });
                 }
-                Err(_) => return,
+                Err(error) => eprintln!("amux agent: accepting a terminal client: {error}"),
             },
             Some(_) = clients.join_next() => {}
         }

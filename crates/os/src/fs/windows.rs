@@ -17,13 +17,14 @@ use windows_sys::Win32::Foundation::{
     LocalFree,
 };
 use windows_sys::Win32::Security::Authorization::{
-    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
-    SE_FILE_OBJECT, SetNamedSecurityInfoW, SetSecurityInfo,
+    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
+    GetNamedSecurityInfoW, SDDL_REVISION_1, SE_FILE_OBJECT, SetNamedSecurityInfoW, SetSecurityInfo,
 };
 use windows_sys::Win32::Security::{
-    ACL, DACL_SECURITY_INFORMATION, GetSecurityDescriptorDacl, GetTokenInformation,
-    PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY,
-    TOKEN_USER, TokenUser,
+    ACE_HEADER, ACL, DACL_SECURITY_INFORMATION, GetAce, GetSecurityDescriptorControl,
+    GetSecurityDescriptorDacl, GetTokenInformation, PROTECTED_DACL_SECURITY_INFORMATION,
+    PSECURITY_DESCRIPTOR, SE_DACL_PROTECTED, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER,
+    TokenUser,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CREATE_ALWAYS, CREATE_NEW, CreateDirectoryW, CreateFileW, DELETE, FILE_APPEND_DATA,
@@ -77,6 +78,12 @@ pub(super) fn make_private(path: &Path) -> io::Result<()> {
     let dir = fs::metadata(path)?.is_dir();
     let descriptor = PrivateDescriptor::new(dir)?;
     let wide = wide(path)?;
+    // Setting a folder's DACL walks everything inside it to pass the new
+    // entries on, which for a root holding worktrees is a long wait at
+    // every start: a folder that has the private DACL already keeps it.
+    if has_dacl(&wide, descriptor.dacl()?) {
+        return Ok(());
+    }
     // SAFETY: `wide` is NUL-terminated; the ACL lives in `descriptor`,
     // which outlives the call. No owner, group or SACL is changed.
     let status = unsafe {
@@ -94,6 +101,78 @@ pub(super) fn make_private(path: &Path) -> io::Result<()> {
         return Err(io::Error::from_raw_os_error(status as i32));
     }
     Ok(())
+}
+
+/// Whether the object at `wide` has a protected DACL holding exactly the
+/// entries of `want`. False when either cannot be read.
+fn has_dacl(wide: &[u16], want: *const ACL) -> bool {
+    let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
+    let mut dacl: *mut ACL = ptr::null_mut();
+    // SAFETY: `wide` is NUL-terminated; `descriptor` receives a
+    // LocalAlloc'd descriptor freed below, which `dacl` points into.
+    let status = unsafe {
+        GetNamedSecurityInfoW(
+            wide.as_ptr(),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            &mut dacl,
+            ptr::null_mut(),
+            &mut descriptor,
+        )
+    };
+    if status != 0 {
+        return false;
+    }
+    let mut control = 0u16;
+    let mut revision = 0u32;
+    // SAFETY: `descriptor` is the valid descriptor read above.
+    let protected =
+        unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } != 0
+            && control & SE_DACL_PROTECTED != 0;
+    // SAFETY: both ACLs are valid: `dacl` lies in `descriptor`, freed only
+    // after this, and `want` in the caller's.
+    let same = protected && !dacl.is_null() && !want.is_null() && unsafe { same_aces(dacl, want) };
+    // SAFETY: allocated by GetNamedSecurityInfoW, freed once.
+    unsafe { LocalFree(descriptor) };
+    same
+}
+
+/// Whether the ACLs `a` and `b` hold the same entries in the same order.
+///
+/// # Safety
+/// Both must point at valid ACLs.
+unsafe fn same_aces(a: *const ACL, b: *const ACL) -> bool {
+    // SAFETY: the caller promises valid ACLs.
+    let count = unsafe { (*a).AceCount };
+    if count != unsafe { (*b).AceCount } {
+        return false;
+    }
+    (0..u32::from(count)).all(|n| {
+        // SAFETY: `n` is below both ACLs' entry counts.
+        match unsafe { (ace(a, n), ace(b, n)) } {
+            (Some(x), Some(y)) => x == y,
+            _ => false,
+        }
+    })
+}
+
+/// The bytes of entry `n` of `acl`.
+///
+/// # Safety
+/// `acl` must point at a valid ACL that outlives the slice.
+unsafe fn ace<'a>(acl: *const ACL, n: u32) -> Option<&'a [u8]> {
+    let mut entry: *mut std::ffi::c_void = ptr::null_mut();
+    // SAFETY: the caller promises a valid ACL; `entry` receives a pointer
+    // into it.
+    if unsafe { GetAce(acl, n, &mut entry) } == 0 || entry.is_null() {
+        return None;
+    }
+    // SAFETY: every entry starts with its header, which gives its size.
+    let size = unsafe { (*entry.cast::<ACE_HEADER>()).AceSize };
+    // SAFETY: the entry's `size` bytes lie inside the ACL.
+    Some(unsafe { std::slice::from_raw_parts(entry.cast::<u8>(), usize::from(size)) })
 }
 
 pub(super) fn private_open_options() -> OpenOptions {
@@ -665,6 +744,19 @@ pub(crate) fn wide(path: &Path) -> io::Result<Vec<u16>> {
     Ok(wide)
 }
 
+/// [`wide`] as a path, for a library that calls Windows itself; `path` as
+/// it is when it has no absolute form or holds a NUL, which no open takes
+/// either way.
+pub(super) fn long_form(path: &Path) -> PathBuf {
+    match wide(path) {
+        Ok(mut wide) => {
+            wide.pop();
+            PathBuf::from(OsString::from_wide(&wide))
+        }
+        Err(_) => path.to_owned(),
+    }
+}
+
 /// The NUL-terminated wide string at `text`.
 ///
 /// # Safety
@@ -679,7 +771,30 @@ unsafe fn from_wide_nul(text: *const u16) -> OsString {
     OsString::from_wide(unsafe { std::slice::from_raw_parts(text, length) })
 }
 
-#[cfg(test)]
+/// A protected DACL every entry of which lets in only this user, SYSTEM
+/// or Administrators.
+#[cfg(any(test, feature = "testing"))]
+pub(super) fn is_private(path: &Path) -> io::Result<bool> {
+    let sddl = testing::dacl_sddl(path)?;
+    let Some(dacl) = sddl.strip_prefix("D:") else {
+        return Ok(false);
+    };
+    let mut parts = dacl.split('(');
+    let flags = parts.next().unwrap_or_default();
+    let sid = testing::sddl_trustee(&current_user_sid()?)?;
+    let owner_only = parts.all(|ace| {
+        let fields: Vec<&str> = ace.trim_end_matches(')').split(';').collect();
+        // An allowing entry's trustee is its sixth field; a denying one
+        // lets nobody in.
+        fields.first() != Some(&"A")
+            || fields
+                .get(5)
+                .is_some_and(|who| [sid.as_str(), "SY", "BA"].contains(who))
+    });
+    Ok(flags.starts_with('P') && owner_only)
+}
+
+#[cfg(any(test, feature = "testing"))]
 pub(super) mod testing {
     //! Reading back what this module sets.
 

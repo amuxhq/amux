@@ -1,6 +1,7 @@
 //! Where things are: the home folder, a program's file name, the `PATH` a
 //! newly logged-on process would see, and the program a name runs.
 
+use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
@@ -53,7 +54,93 @@ pub fn current_path() -> OsString {
 /// file npm puts beside its `.cmd` shim is a shell script Windows cannot
 /// start. On Unix, a file with an execute bit.
 pub fn find_program(name: &OsStr, path: &OsStr) -> Option<PathBuf> {
-    imp::find_program(name, path)
+    imp::find_program(name, path, None)
+}
+
+/// Whether the environment variable `key` is the one called `name`:
+/// Windows names a variable whatever its case (`Path` is `PATH`), Unix by
+/// its exact spelling.
+pub fn same_variable(key: &str, name: &str) -> bool {
+    imp::same_variable(key, name)
+}
+
+/// Sets each of `vars` in `env`, as a program started with `env` would
+/// see it: one set replaces the variable whatever the spelling `env` has
+/// it under ([`same_variable`]; on Windows a program's `PATH` replaces the
+/// host's `Path`), so `env` holds each variable once, and a lookup over it
+/// ([`Lookup`]) reads the value the program starts with.
+pub fn set_vars(
+    env: &mut HashMap<String, String>,
+    vars: impl IntoIterator<Item = (String, String)>,
+) {
+    for (key, value) in vars {
+        env.retain(|have, _| !imp::same_variable(have, &key));
+        env.insert(key, value);
+    }
+}
+
+/// How a program started with the variables `env` on top of this
+/// process's environment is found, and the `PATH` it starts with: one rule
+/// for both, so the program found is the one that starts, and what it runs
+/// in turn (npm's `claude.cmd` runs `node`) is found on the same `PATH`.
+///
+/// `PATH`: `env`'s when it sets one, else [`current_path`]. `PATHEXT`
+/// (Windows): `env`'s when it sets one, else this process's. Windows names
+/// a variable whatever its case (`Path` is `PATH`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Lookup {
+    path: OsString,
+    pathext: Option<OsString>,
+    /// Set when `env` sets no `PATH` and [`current_path`] is not this
+    /// process's own (Windows, after something was installed since it
+    /// started): the program is started with it.
+    refreshed: Option<OsString>,
+}
+
+impl Lookup {
+    pub fn new(env: &HashMap<String, String>) -> Lookup {
+        let var = |name: &str| {
+            env.iter()
+                .find(|(key, _)| imp::same_variable(key, name))
+                .map(|(_, value)| OsString::from(value))
+        };
+        let pathext = var("PATHEXT");
+        if let Some(path) = var("PATH") {
+            return Lookup {
+                path,
+                pathext,
+                refreshed: None,
+            };
+        }
+        let path = current_path();
+        let refreshed =
+            (std::env::var_os("PATH").unwrap_or_default() != path).then(|| path.clone());
+        Lookup {
+            path,
+            pathext,
+            refreshed,
+        }
+    }
+
+    /// The program `name` runs, as [`find_program`] finds it on this
+    /// lookup's `PATH`, under its `PATHEXT` on Windows.
+    pub fn find(&self, name: &OsStr) -> Option<PathBuf> {
+        imp::find_program(name, &self.path, self.pathext.as_deref())
+    }
+
+    /// The `PATH` programs are looked for on.
+    pub fn path(&self) -> &OsStr {
+        &self.path
+    }
+
+    /// The `PATH` to set on the program beyond `env`, when there is one:
+    /// [`current_path`], where `env` sets none and it differs from this
+    /// process's. Started without it, a program found on a folder added
+    /// since this process started would inherit a `PATH` lacking that
+    /// folder.
+    pub fn refreshed_path(&self) -> Option<&OsStr> {
+        self.refreshed.as_deref()
+    }
 }
 
 /// The first of `candidates` that `runnable` accepts, made absolute: a

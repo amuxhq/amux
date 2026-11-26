@@ -8,6 +8,22 @@ fn a_program_name_carries_the_platform_suffix() {
     );
 }
 
+/// A variable set over an environment replaces it under any spelling the
+/// OS takes for its name (Windows: `PATH` replaces `Path`), and nothing
+/// else; on Unix `Path` is another variable.
+#[test]
+fn a_variable_set_replaces_it_under_any_spelling_the_os_takes_for_it() {
+    let mut env = HashMap::from([
+        ("Path".to_owned(), "host".to_owned()),
+        ("Other".to_owned(), "1".to_owned()),
+    ]);
+    set_vars(&mut env, [("PATH".to_owned(), "own".to_owned())]);
+    assert_eq!(env["PATH"], "own");
+    assert_eq!(env["Other"], "1");
+    assert_eq!(env.contains_key("Path"), !same_variable("Path", "PATH"));
+    assert_eq!(env.len(), if same_variable("Path", "PATH") { 2 } else { 3 });
+}
+
 #[test]
 fn the_home_folder_is_known() {
     let home = home_dir().expect("a home folder");

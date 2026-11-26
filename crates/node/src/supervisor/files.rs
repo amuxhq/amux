@@ -5,7 +5,6 @@
 //! installed.
 
 use std::ffi::OsString;
-use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -85,13 +84,15 @@ impl Files {
     /// this supervisor's own running image, when it started after a swap
     /// and before the activation that would have retired prev; that cannot
     /// be replaced, so it moves aside first, where the next start removes
-    /// it.
+    /// it. Otherwise the binary is the build that just failed to start, and
+    /// on Windows an image that has only just exited can stay held for a
+    /// moment, so the rename over it is patient.
     pub fn restore_prev(&self, binary: &Path, mine: &FileId) -> io::Result<()> {
         if cfg!(windows) && FileId::of(binary).is_ok_and(|current| current == *mine) {
             let _ = std::fs::remove_file(&self.aside);
             std::fs::rename(binary, &self.aside)?;
         }
-        std::fs::rename(&self.prev, binary)?;
+        os::fs::rename_patiently(&self.prev, binary)?;
         sync_parent(binary)
     }
 
@@ -171,7 +172,7 @@ impl FileId {
         use windows_sys::Win32::Storage::FileSystem::{
             BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
         };
-        let file = File::open(path)?;
+        let file = std::fs::File::open(path)?;
         // SAFETY: an all-zero struct is a valid out parameter.
         let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
         // SAFETY: querying a handle we own into a struct we own.
@@ -183,27 +184,6 @@ impl FileId {
             file: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
         })
     }
-}
-
-/// A descriptor the supervisor that exec'd this one handed over.
-#[cfg(unix)]
-pub fn inherited_file(fd: u64) -> io::Result<File> {
-    use std::os::fd::{FromRawFd as _, RawFd};
-    let fd = RawFd::try_from(fd).map_err(io::Error::other)?;
-    // SAFETY: fcntl on a descriptor handed over to this process.
-    if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: the descriptor was handed over and nothing else owns it.
-    Ok(unsafe { File::from_raw_fd(fd) })
-}
-
-/// Windows supervisors never hand their lock over; the next one takes it.
-#[cfg(windows)]
-pub fn inherited_file(_fd: u64) -> io::Result<File> {
-    Err(io::Error::other(
-        "a Windows supervisor takes its lock again",
-    ))
 }
 
 #[cfg(test)]
@@ -241,5 +221,30 @@ mod tests {
         if cfg!(windows) {
             assert_eq!(std::fs::read(&files.aside).unwrap(), b"running");
         }
+    }
+
+    /// A rollback renames prev over the build that just failed to start.
+    /// On Windows an image that has only just exited can stay held for a
+    /// moment; the rename waits for it rather than failing the supervisor.
+    /// A handle sharing nothing stands in for that hold here.
+    #[test]
+    fn prev_goes_back_over_a_binary_held_for_a_moment() {
+        let (_dir, binary, files) = install();
+        std::fs::write(&files.prev, b"previous").unwrap();
+        let held = match provider_fakes::faults::hold_exclusively(&binary) {
+            Ok(held) => held,
+            // Unix has no share modes, so nothing holds a file this way.
+            Err(error) if error.kind() == io::ErrorKind::Unsupported => return,
+            Err(error) => panic!("holding the binary: {error}"),
+        };
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            drop(held);
+        });
+        let mine = FileId::of(&files.prev).unwrap();
+        files.restore_prev(&binary, &mine).unwrap();
+        release.join().unwrap();
+        assert_eq!(std::fs::read(&binary).unwrap(), b"previous");
+        assert!(!files.prev_exists());
     }
 }

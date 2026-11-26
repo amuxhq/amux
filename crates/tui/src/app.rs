@@ -2874,7 +2874,7 @@ fn open_url(url: &str) -> std::io::Result<()> {
             .spawn()
             .map(|_| ());
     }
-    system_open(url)
+    crate::platform::system_open(url)
 }
 
 /// Saves an attachment and hands it to the system: straight to its app when
@@ -2882,75 +2882,9 @@ fn open_url(url: &str) -> std::io::Result<()> {
 fn open_attachment(name: &str, bytes: &[u8]) -> std::io::Result<()> {
     let path = open::save(name, bytes)?;
     match open::opening(name) {
-        open::Opening::Open => system_open(&path.to_string_lossy()),
-        open::Opening::Reveal => reveal(&path),
+        open::Opening::Open => crate::platform::system_open(&path.to_string_lossy()),
+        open::Opening::Reveal => crate::platform::reveal(&path),
     }
-}
-
-/// Shows a file in its folder.
-#[cfg(target_os = "macos")]
-fn reveal(path: &std::path::Path) -> std::io::Result<()> {
-    std::process::Command::new("open")
-        .arg("-R")
-        .arg(path)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map(|_| ())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn reveal(path: &std::path::Path) -> std::io::Result<()> {
-    let folder = path.parent().unwrap_or(path);
-    system_open(&folder.to_string_lossy())
-}
-
-/// Hands the link to the shell's own URL handler. Never through `cmd`,
-/// whose parser would read `&` or `|` in a link as command separators.
-#[cfg(windows)]
-fn system_open(url: &str) -> std::io::Result<()> {
-    use windows_sys::Win32::UI::Shell::ShellExecuteW;
-    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-    let wide = |text: &str| text.encode_utf16().chain([0]).collect::<Vec<u16>>();
-    let (verb, file) = (wide("open"), wide(url));
-    // SAFETY: both strings are NUL-terminated UTF-16 buffers that outlive the
-    // call; the remaining pointers are documented as optional.
-    let instance = unsafe {
-        ShellExecuteW(
-            std::ptr::null_mut(),
-            verb.as_ptr(),
-            file.as_ptr(),
-            std::ptr::null(),
-            std::ptr::null(),
-            SW_SHOWNORMAL,
-        )
-    };
-    // ShellExecuteW reports success as a value greater than 32.
-    if instance as isize > 32 {
-        Ok(())
-    } else {
-        Err(std::io::Error::other(format!(
-            "the system could not open it (code {})",
-            instance as isize
-        )))
-    }
-}
-
-#[cfg(not(windows))]
-fn system_open(url: &str) -> std::io::Result<()> {
-    let opener = if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    std::process::Command::new(opener)
-        .arg(url)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map(|_| ())
 }
 
 fn ctrl_held(key: &KeyEvent) -> bool {

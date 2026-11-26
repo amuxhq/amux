@@ -36,34 +36,29 @@ fn taking_the_lock_keeps_what_the_file_holds() {
     assert_eq!(fs::read_to_string(&path).unwrap(), "1234");
 }
 
-/// std's lock and this one on one file exclude each other, both ways:
-/// `supervisor.lock` and `installation.lock` are std locks that tests
-/// probe with [`FileLock::held`].
+/// A lock taken through a file already open on the lock file, as a
+/// supervisor takes the one it was handed, is held like any other, and
+/// is refused while another holds it.
 #[test]
-fn a_std_lock_and_a_file_lock_exclude_each_other() {
+fn a_lock_is_taken_through_a_file_already_open() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("supervisor.lock");
-    let std_lock = || {
-        let file = OpenOptions::new()
+    let open = || {
+        OpenOptions::new()
+            .read(true)
+            .write(true)
             .create(true)
             .truncate(false)
-            .write(true)
             .open(&path)
-            .unwrap();
-        match file.try_lock() {
-            Ok(()) => Some(file),
-            Err(fs::TryLockError::WouldBlock) => None,
-            Err(fs::TryLockError::Error(error)) => panic!("{error}"),
-        }
+            .unwrap()
     };
-    let held = std_lock().expect("free");
+    let mut lock = FileLock::try_from_file(open()).unwrap().expect("free");
+    lock.write_data(b"4242").unwrap();
     assert!(FileLock::held(&path).unwrap());
-    assert!(FileLock::try_acquire(&path).unwrap().is_none());
-    drop(held);
-    let lock = FileLock::try_acquire(&path).unwrap().expect("free");
-    assert!(std_lock().is_none());
+    assert!(FileLock::try_from_file(open()).unwrap().is_none());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "4242");
     drop(lock);
-    assert!(std_lock().is_some());
+    assert!(!FileLock::held(&path).unwrap());
 }
 
 /// A probe opens the file to write, as an NFS mount's exclusive lock

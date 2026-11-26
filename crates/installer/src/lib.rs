@@ -35,6 +35,9 @@ pub mod update;
 
 /// How long [`ensure`] waits for a started amux to answer.
 pub const START_PATIENCE: Duration = Duration::from_secs(30);
+/// The longest `amux server start` may take before [`ensure`] gives up on
+/// it: it waits for the front door itself, for half this.
+pub const RUN_PATIENCE: Duration = Duration::from_secs(60);
 /// The most a manifest may be.
 const MANIFEST_LIMIT: u64 = 1 << 20;
 /// The most a build may be, whatever its manifest says.
@@ -48,6 +51,30 @@ pub struct Options {
     /// (`~/.config/amux/config.toml`), which is what every client should
     /// use outside tests.
     pub config: Option<PathBuf>,
+    /// The home folder amux is installed under (`<home>/.amux/bin`), and
+    /// the one the amux it starts is given; `None` is the user's
+    /// ([`os::paths::home_dir`]), which is what every client should use
+    /// outside tests.
+    pub home: Option<PathBuf>,
+}
+
+impl Options {
+    /// Where amux is installed: `<home>/.amux/bin`.
+    pub fn install_dir(&self) -> Result<PathBuf, Error> {
+        let home = match &self.home {
+            Some(home) => home.clone(),
+            None => os::paths::home_dir()
+                .filter(|home| !home.as_os_str().is_empty())
+                .ok_or(Error::NoHome)?,
+        };
+        Ok(home.join(".amux").join("bin"))
+    }
+
+    /// The installed binary, `<home>/.amux/bin/amux` (`amux.exe` on
+    /// Windows).
+    pub fn installed_binary(&self) -> Result<PathBuf, Error> {
+        Ok(self.install_dir()?.join(os::paths::exe_name("amux")))
+    }
 }
 
 /// What [`ensure`] found or did.
@@ -103,6 +130,8 @@ pub enum Error {
         status: String,
         output: String,
     },
+    #[error("`{command}` did not finish within {}s", RUN_PATIENCE.as_secs())]
+    TimedOut { command: String },
     #[error("amux did not answer on {} within {}s", path.display(), START_PATIENCE.as_secs())]
     NotAnswering { path: PathBuf },
 }
@@ -136,15 +165,12 @@ pub fn front_door(path: Option<&Path>) -> Result<PathBuf, Error> {
 
 /// Where amux is installed: `~/.amux/bin`, on every platform.
 pub fn install_dir() -> Result<PathBuf, Error> {
-    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-        .filter(|home| !home.is_empty())
-        .ok_or(Error::NoHome)?;
-    Ok(PathBuf::from(home).join(".amux").join("bin"))
+    Options::default().install_dir()
 }
 
 /// The installed binary, `~/.amux/bin/amux` (`amux.exe` on Windows).
 pub fn installed_binary() -> Result<PathBuf, Error> {
-    Ok(install_dir()?.join(if cfg!(windows) { "amux.exe" } else { "amux" }))
+    Options::default().installed_binary()
 }
 
 /// Whether amux answers on `front_door` now.
@@ -161,7 +187,7 @@ pub async fn ensure(options: &Options, mut on_step: impl FnMut(Step)) -> Result<
     if answering(&door).await {
         return Ok(Outcome::Running);
     }
-    let binary = installed_binary()?;
+    let binary = options.installed_binary()?;
     let installed = match binary.exists() {
         true => None,
         false => install(&config, &binary, &mut on_step).await?,
@@ -179,7 +205,12 @@ pub async fn ensure(options: &Options, mut on_step: impl FnMut(Step)) -> Result<
     // Starts the supervisor (or, without one, the daemon) unless the login
     // item already has; a running one is left alone.
     if !answering(&door).await {
-        run(&binary, &with_config(&["server", "start"])).await?;
+        run(
+            &binary,
+            &with_config(&["server", "start"]),
+            options.home.as_deref(),
+        )
+        .await?;
     }
     wait_for(&door).await?;
     Ok(match installed {
@@ -435,34 +466,79 @@ async fn login_path() -> Option<String> {
     None
 }
 
-/// Runs the installed amux with `args` to completion.
-async fn run(binary: &Path, args: &[OsString]) -> Result<(), Error> {
-    let mut command = tokio::process::Command::new(binary);
-    command
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        // The installation is the one `ensure` resolved, named by `--config`
-        // when it is not the default; an `AMUX_CONFIG` the client inherited
-        // would point the command at another.
-        .env_remove("AMUX_CONFIG");
-    if let Some(path) = login_path().await {
-        command.env("PATH", path);
-    }
-    let output = command.output().await.map_err(io("running", binary))?;
-    if output.status.success() {
-        return Ok(());
-    }
+/// Runs the installed amux with `args` to completion, within
+/// [`RUN_PATIENCE`], with `home` as its home when one is given.
+///
+/// Its standard output goes nowhere and its standard error to a file of
+/// its own, never to a pipe: whatever it leaves running in the background
+/// may hold its standard streams for as long as that runs, and a pipe this
+/// waited to see the end of would end only then (a desktop app's first
+/// start would hang on it). The file is read once the command exits.
+async fn run(binary: &Path, args: &[OsString], home: Option<&Path>) -> Result<(), Error> {
     let words = std::iter::once(binary.as_os_str())
         .chain(args.iter().map(OsString::as_os_str))
         .map(|word| word.to_string_lossy())
         .collect::<Vec<_>>()
         .join(" ");
+    let (stderr, said) = said_file()?;
+    let mut command = tokio::process::Command::new(binary);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(stderr)
+        .kill_on_drop(true)
+        // The installation is the one `ensure` resolved, named by `--config`
+        // when it is not the default; an `AMUX_CONFIG` the client inherited
+        // would point the command at another.
+        .env_remove("AMUX_CONFIG");
+    if let Some(home) = home {
+        // Where each OS's home is read from (os::paths::home_dir).
+        command.env("HOME", home).env("USERPROFILE", home);
+    }
+    if let Some(path) = login_path().await {
+        command.env("PATH", path);
+    }
+    let finished = async {
+        let mut child = command.spawn().map_err(io("running", binary))?;
+        child.wait().await.map_err(io("running", binary))
+    };
+    let status = tokio::time::timeout(RUN_PATIENCE, finished).await;
+    let output = std::fs::read_to_string(&said).unwrap_or_default();
+    let _ = std::fs::remove_file(&said);
+    let status = status.map_err(|_| Error::TimedOut {
+        command: words.clone(),
+    })??;
+    if status.success() {
+        return Ok(());
+    }
     Err(Error::Command {
         command: words,
-        status: output.status.to_string(),
-        output: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        status: status.to_string(),
+        output: output.trim().to_owned(),
     })
+}
+
+/// A new file in the temporary folder for a command's standard error: the
+/// handle to give it, and its path to read.
+fn said_file() -> Result<(std::fs::File, PathBuf), Error> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    let dir = std::env::temp_dir();
+    loop {
+        let path = dir.join(format!(
+            "amux-start-{}-{}.err",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(file) => return Ok((file, path)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(io("creating", &path)(error)),
+        }
+    }
 }

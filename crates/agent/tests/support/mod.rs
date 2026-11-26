@@ -134,6 +134,10 @@ pub struct Agent {
 /// test's root.
 const INPUT_LOG: &str = "provider-input.jsonl";
 
+/// Where the fakes write the environment they were started with, under
+/// the test's root.
+const ENV_LOG: &str = "provider-env.json";
+
 impl Agent {
     /// The agent's working folder.
     pub fn work(&self) -> PathBuf {
@@ -147,6 +151,15 @@ impl Agent {
             .lines()
             .filter_map(|line| serde_json::from_str(line).ok())
             .collect()
+    }
+
+    /// The environment the provider last started with, each variable's
+    /// value by its name; empty before one has started.
+    pub fn provider_env(&self) -> std::collections::BTreeMap<String, String> {
+        std::fs::read(self._root.path().join(ENV_LOG))
+            .ok()
+            .and_then(|text| serde_json::from_slice(&text).ok())
+            .unwrap_or_default()
     }
 
     /// The facts ring's entries, oldest first: every event the
@@ -239,6 +252,10 @@ impl Agent {
             (
                 provider_fakes::INPUT_LOG_ENV.to_owned(),
                 root.path().join(INPUT_LOG).to_str().unwrap().to_owned(),
+            ),
+            (
+                provider_fakes::script::ENV_LOG_ENV.to_owned(),
+                root.path().join(ENV_LOG).to_str().unwrap().to_owned(),
             ),
             // Claude's own directory, where terminal Claude's transcripts go.
             (
@@ -339,6 +356,7 @@ impl Agent {
             dir.clone(),
             clock.clone(),
             segment_bytes,
+            family(),
         ));
         let reader = journal::Reader::new(dir.join(agent::JOURNAL), 0);
         Self {
@@ -491,16 +509,13 @@ impl Agent {
     /// The directory is free for the next incarnation: the lock is released
     /// and the control socket is gone.
     pub fn assert_released(&self) {
-        let lock = std::fs::OpenOptions::new()
-            .write(true)
-            .open(self.dir.join(agent::LOCK))
-            .unwrap();
+        let lock = self.dir.join(agent::LOCK);
         // Other tests in this process spawn children at the same time, and
         // a child being spawned can hold a copy of every descriptor until it
         // execs; a lock the agent closed has been seen held for about a
         // millisecond that way. Allow a moment, never a hang.
         let deadline = std::time::Instant::now() + Duration::from_secs(1);
-        while lock.try_lock().is_err() {
+        while os::lock::FileLock::held(&lock).unwrap() {
             assert!(
                 std::time::Instant::now() < deadline,
                 "the agent released its lock"
@@ -535,6 +550,17 @@ impl Agent {
     }
 }
 
+/// The family every agent a test runs starts its provider into: this
+/// process's, made once, as `amux internal agent` makes its own first.
+/// Each test runs in a process of its own (build/test-runner.py), and runs
+/// its agents one after another, so a kill of the family reaches the
+/// agent's own provider and what it started, and nothing another test
+/// runs.
+pub fn family() -> agent::Family {
+    static FAMILY: std::sync::OnceLock<agent::Family> = std::sync::OnceLock::new();
+    FAMILY.get_or_init(agent::Family::contain_self).clone()
+}
+
 /// Runs the next incarnation once the last one's lock is free, as the
 /// daemon waits for a dying process's lock. Every agent in a test shares
 /// this process's descriptors, so a sibling test forking a provider can
@@ -546,7 +572,9 @@ async fn run_when_unlocked(
 ) -> Result<ExitCause, AgentError> {
     let started = std::time::Instant::now();
     loop {
-        match agent::run_cutting_segments_at(dir.clone(), clock.clone(), segment_bytes).await {
+        match agent::run_cutting_segments_at(dir.clone(), clock.clone(), segment_bytes, family())
+            .await
+        {
             Err(AgentError::Locked(_)) if started.elapsed() < PATIENCE => {
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }

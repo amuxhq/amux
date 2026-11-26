@@ -12,6 +12,24 @@ fn names(dir: &Path) -> Vec<String> {
     names
 }
 
+/// What the testing check calls private is what this module makes so, and
+/// a folder made plainly, or a file private only by where it is, is not.
+#[test]
+fn the_privacy_check_tells_a_private_folder_from_a_plain_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let private = dir.path().join("private");
+    create_private_dir(&private).unwrap();
+    assert!(is_private(&private).unwrap());
+    let plain = dir.path().join("plain");
+    fs::create_dir(&plain).unwrap();
+    assert!(!is_private(&plain).unwrap());
+    make_private(&plain).unwrap();
+    assert!(is_private(&plain).unwrap());
+    let secret = dir.path().join("secret");
+    drop(create_private(&secret, Create::New).unwrap());
+    assert!(is_private(&secret).unwrap());
+}
+
 #[test]
 fn a_durable_write_replaces_the_file_and_leaves_nothing_else() {
     let dir = tempfile::tempdir().unwrap();
@@ -137,6 +155,26 @@ fn canonical_round_trips() {
     assert!(canonical_once.is_dir());
 }
 
+/// A deep path's long form is one a library calling Windows itself can
+/// open (verbatim there); a shallow one is left plain, as it is elsewhere.
+#[test]
+fn a_deep_path_has_a_long_form_and_a_shallow_one_stays_plain() {
+    let dir = tempfile::tempdir().unwrap();
+    let shallow = canonical(dir.path()).unwrap().join("store.sqlite");
+    assert_eq!(long_form(&shallow), shallow);
+    let deep = shallow
+        .with_file_name("deep".repeat(70))
+        .join("store.sqlite");
+    let long = long_form(&deep);
+    assert_eq!(
+        long.to_string_lossy().starts_with(r"\\?\"),
+        cfg!(windows),
+        "{}",
+        long.display()
+    );
+    assert!(long.ends_with(Path::new(&"deep".repeat(70)).join("store.sqlite")));
+}
+
 #[test]
 fn an_executable_is_executable_and_a_plain_file_on_unix_is_not() {
     let dir = tempfile::tempdir().unwrap();
@@ -215,4 +253,28 @@ fn the_temporary_folder_can_hold_a_root() {
     let dir = tempfile::tempdir().unwrap();
     let check = volume_supports_root(&dir.path().join("not").join("yet")).unwrap();
     assert_eq!(check, VolumeCheck::Suitable, "{check}");
+}
+
+#[test]
+fn a_device_name_or_a_trailing_dot_or_space_is_reserved_on_every_os() {
+    for name in [
+        "con", "NUL", "aux", "com1", "lpt9", "prn.txt", "name.", "name ",
+    ] {
+        assert!(reserved_name(name), "{name:?}");
+    }
+    for name in ["console", "com10", "fix-login", "a.con", "nul-checker"] {
+        assert!(!reserved_name(name), "{name:?}");
+    }
+}
+
+#[test]
+fn making_a_private_folder_private_again_keeps_it_private() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("root");
+    create_private_dir(&root).unwrap();
+    write_durably(&root.join("inside"), b"x").unwrap();
+    make_private(&root).unwrap();
+    create_private_dir(&root).unwrap();
+    assert!(crate::testing::is_private(&root).unwrap());
+    assert!(crate::testing::is_private(&root.join("inside")).unwrap());
 }

@@ -299,6 +299,84 @@ fn a_worktree_that_cannot_be_marked_is_undone_with_its_branch() {
     assert!(!worktrees.contains("unmarked"), "{worktrees}");
 }
 
+/// A process holding a worktree's git metadata for a moment, as a git
+/// still reading there does, fails git's removal with the checkout and the
+/// metadata both left: the removal is tried again while it can still
+/// succeed, and the worktree goes once the hold ends. Unix has no hold of
+/// this kind: opens never exclude each other there.
+#[test]
+fn a_worktree_whose_metadata_is_held_for_a_moment_still_goes() {
+    let place = Place::new();
+    let backends = place.backends(HOST);
+    let planned = backends.plan(&place.repo(), "held").unwrap();
+    backends.make(&planned.workspace, &planned.plan).unwrap();
+    let checkout = PathBuf::from(&planned.workspace.id);
+    let metadata = PathBuf::from(run_git(&checkout, &["rev-parse", "--absolute-git-dir"]));
+    // What `git worktree remove` reads to find the worktree, and nothing
+    // before it does.
+    let held = match provider_fakes::faults::hold_exclusively(&metadata.join("gitdir")) {
+        Ok(held) => held,
+        Err(error) if error.kind() == std::io::ErrorKind::Unsupported => {
+            println!("skipped: {error}");
+            return;
+        }
+        Err(error) => panic!("holding the metadata: {error}"),
+    };
+    let release = std::thread::spawn(move || {
+        // Longer than the git commands before the removal take, shorter
+        // than the removal's patience.
+        std::thread::sleep(std::time::Duration::from_millis(1_200));
+        drop(held);
+    });
+    assert_eq!(backends.delete(&planned.workspace, false), Removal::Removed);
+    release.join().unwrap();
+    assert!(!checkout.exists(), "the checkout was left");
+    assert!(!metadata.exists(), "git's metadata was left");
+}
+
+/// A change saved while the removal waits out a hold on the worktree's git
+/// metadata is a change like one there before: without consent to lose
+/// it, the worktree is kept with the change and disowned, as it would have
+/// been had the change come first, though the hold then ends and git could
+/// remove it. Unix has no hold of this kind.
+#[test]
+fn a_change_saved_while_the_removal_waits_is_kept() {
+    let place = Place::new();
+    let backends = place.backends(HOST);
+    let planned = backends.plan(&place.repo(), "saved").unwrap();
+    backends.make(&planned.workspace, &planned.plan).unwrap();
+    let checkout = PathBuf::from(&planned.workspace.id);
+    let metadata = PathBuf::from(run_git(&checkout, &["rev-parse", "--absolute-git-dir"]));
+    let held = match provider_fakes::faults::hold_exclusively(&metadata.join("gitdir")) {
+        Ok(held) => held,
+        Err(error) if error.kind() == std::io::ErrorKind::Unsupported => {
+            println!("skipped: {error}");
+            return;
+        }
+        Err(error) => panic!("holding the metadata: {error}"),
+    };
+    let saved = checkout.join("saved-meanwhile.txt");
+    let person = {
+        let saved = saved.clone();
+        std::thread::spawn(move || {
+            // After the git commands before the removal, and its first
+            // try; the hold ends well within the removal's patience.
+            std::thread::sleep(std::time::Duration::from_millis(700));
+            std::fs::write(&saved, "mine\n").unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(700));
+            drop(held);
+        })
+    };
+    assert_eq!(backends.delete(&planned.workspace, false), Removal::Kept);
+    person.join().unwrap();
+    assert_eq!(std::fs::read_to_string(&saved).unwrap(), "mine\n");
+    assert!(metadata.exists(), "git's metadata went");
+    assert!(
+        !backends.resolve(&planned.workspace.id).made_here,
+        "a kept worktree is disowned"
+    );
+}
+
 /// The wt backend, against a wt home and trees folder of the test's own.
 #[cfg(not(any(windows, target_os = "ios", target_os = "android")))] // out of scope on Windows: wt
 mod wt {

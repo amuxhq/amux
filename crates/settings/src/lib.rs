@@ -29,12 +29,7 @@ fn xdg_dir(env_var: &str, default_suffix: &str) -> PathBuf {
             return PathBuf::from(base);
         }
     }
-    let home = if cfg!(windows) {
-        std::env::var("USERPROFILE").ok()
-    } else {
-        std::env::var("HOME").ok()
-    };
-    home.map(PathBuf::from)
+    os::paths::home_dir()
         .map(|home| home.join(default_suffix))
         .unwrap_or_else(|| PathBuf::from(default_suffix))
 }
@@ -661,11 +656,11 @@ impl InstallationConfig {
 
     /// The repository list with a leading `~/` made the home directory.
     pub fn repositories(&self) -> Vec<PathBuf> {
-        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" });
+        let home = os::paths::home_dir();
         self.repositories
             .iter()
             .map(|path| match (path.strip_prefix("~"), &home) {
-                (Ok(rest), Some(home)) => PathBuf::from(home).join(rest),
+                (Ok(rest), Some(home)) => home.join(rest),
                 _ => path.clone(),
             })
             .collect()
@@ -751,14 +746,16 @@ pub fn is_deployment_key(key: &str) -> bool {
 }
 
 // Resolve aliases in the existing ancestor, even before a socket or state file
-// exists. This gives /tmp and /private/tmp the same identity on macOS.
+// exists. This gives /tmp and /private/tmp the same identity on macOS. The
+// result is in the plain form (`os::fs::canonical`), never Windows' verbatim
+// one, so every path under the root is one people and programs take.
 fn absolute_path(path: &Path, base: &Path) -> Result<PathBuf, ConfigError> {
     let path = if path.is_absolute() {
         path.to_owned()
     } else {
         base.join(path)
     };
-    match std::fs::canonicalize(&path) {
+    match os::fs::canonical(&path) {
         Ok(path) => Ok(path),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             let parent = path.parent().ok_or_else(|| {
@@ -793,9 +790,28 @@ mod tests {
         let path = dir.path().join("config.toml");
         std::fs::write(&path, "root = \"install\"\n").unwrap();
         let config = InstallationConfig::from_file(&path).unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap().join("install");
+        let root = os::fs::canonical(dir.path()).unwrap().join("install");
         assert_eq!(config.root, root);
         assert_eq!(config.front_door(), root.join("amux.sock"));
+    }
+
+    /// The root, and so every path under it, and the file's own path are
+    /// in the form people and programs take: never Windows' verbatim
+    /// `\\?\C:\…`, which git, `cmd.exe` and the tools an agent runs refuse
+    /// or print back oddly.
+    #[test]
+    fn the_root_is_in_the_plain_form() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "root = \"install\"\n").unwrap();
+        let config = InstallationConfig::from_file(&path).unwrap();
+        for resolved in [&config.root, config.path.as_ref().unwrap()] {
+            assert!(
+                !resolved.to_string_lossy().starts_with(r"\\?\"),
+                "{} is verbatim",
+                resolved.display()
+            );
+        }
     }
 
     /// With no file at all, the front door is in the default root.

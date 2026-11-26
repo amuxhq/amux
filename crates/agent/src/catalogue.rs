@@ -73,6 +73,10 @@ const SETTINGS: &str = "amux-settings";
 /// Asks `provider`, run as `command` (with `args` for an ACP agent), and
 /// writes a `ProviderOffer` to `out`; the exit code says whether it could.
 pub fn main(provider: &str, command: &str, args: &[String], out: &Path) -> i32 {
+    // What the helper starts ends with it: an ACP agent npm installed runs
+    // as its `.cmd` shim's child, which killing the shim leaves running.
+    let family = crate::Family::contain_self();
+    let program = crate::program::find(command, &Default::default());
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -94,9 +98,9 @@ pub fn main(provider: &str, command: &str, args: &[String], out: &Path) -> i32 {
             ..ProviderOffer::default()
         };
         match provider {
-            wire::agents::CLAUDE => ask_claude(command).await.map(plain),
-            wire::agents::CODEX => ask_codex(command).await.map(plain),
-            agent => ask_acp(agent, command, args).await,
+            wire::agents::CLAUDE => ask_claude(&program).await.map(plain),
+            wire::agents::CODEX => ask_codex(&program).await.map(plain),
+            agent => ask_acp(agent, &program, args, &family).await,
         }
     });
     let written = asked.and_then(|offer| {
@@ -116,7 +120,7 @@ pub fn main(provider: &str, command: &str, args: &[String], out: &Path) -> i32 {
 /// names the account. Claude starts no tool server and runs no hook for it,
 /// except where the organization manages its MCP servers: Claude there
 /// refuses to be told to start none, and starts the organization's.
-async fn ask_claude(command: &str) -> Result<(Catalogue, bool), String> {
+async fn ask_claude(command: &Path) -> Result<(Catalogue, bool), String> {
     let managed = crate::claude::launch::managed_mcp(
         std::env::var_os(crate::claude::launch::MANAGED_SETTINGS_PATH_ENV)
             .as_deref()
@@ -144,7 +148,7 @@ async fn ask_claude(command: &str) -> Result<(Catalogue, bool), String> {
         .stderr(Stdio::null())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|error| format!("starting {command}: {error}"))?;
+        .map_err(|error| format!("starting {}: {error}", command.display()))?;
     let mut stdin = child.stdin.take().expect("stdin is piped");
     let stdout = child.stdout.take().expect("stdout is piped");
     let initialize = claude_stream::ControlRequest::new(
@@ -232,15 +236,15 @@ fn claude_signed_in(account: &AccountInfo) -> bool {
 
 /// Codex's app server lists its models (in pages) and skills before any
 /// thread, and reads the account.
-async fn ask_codex(command: &str) -> Result<(Catalogue, bool), String> {
+async fn ask_codex(command: &Path) -> Result<(Catalogue, bool), String> {
     let listen = crate::codex::Listen::Stdio;
     let mut server = tokio::process::Command::new(command);
     server.stderr(Stdio::null()).kill_on_drop(true);
     let mut child = crate::codex::spawn_server(server, &listen)
-        .map_err(|error| format!("starting {command}: {error}"))?;
+        .map_err(|error| format!("starting {}: {error}", command.display()))?;
     let (sender, receiver) = crate::codex::Connection::connect(&listen, &mut child, Duration::ZERO)
         .await
-        .map_err(|error| format!("starting {command}: {error}"))?
+        .map_err(|error| format!("starting {}: {error}", command.display()))?
         .into_split();
     let mut codex = CodexProbe {
         sender,
@@ -373,13 +377,15 @@ impl CodexProbe {
 /// listing command where it has one ([`interpret::acp::ModelListing`]):
 /// `agy models`, `opencode models`. That failing leaves what `initialize`
 /// said standing.
-async fn ask_acp(agent: &str, command: &str, args: &[String]) -> Result<ProviderOffer, String> {
+async fn ask_acp(
+    agent: &str,
+    command: &Path,
+    args: &[String],
+    family: &crate::Family,
+) -> Result<ProviderOffer, String> {
     use interpret::acp::ModelListing;
     let listing = interpret::acp::quirks(agent).lists_models;
-    let mut child = tokio::process::Command::new(crate::acp::program(
-        command,
-        &std::collections::HashMap::new(),
-    ));
+    let mut child = tokio::process::Command::new(command);
     child
         .args(args)
         .stdin(Stdio::piped())
@@ -391,7 +397,7 @@ async fn ask_acp(agent: &str, command: &str, args: &[String]) -> Result<Provider
     }
     let mut child = child
         .spawn()
-        .map_err(|error| format!("starting {command}: {error}"))?;
+        .map_err(|error| format!("starting {}: {error}", command.display()))?;
     let mut stdin = child.stdin.take().expect("stdin is piped");
     let stdout = child.stdout.take().expect("stdout is piped");
     let mut line = crate::acp::initialize(INITIALIZE);
@@ -417,12 +423,11 @@ async fn ask_acp(agent: &str, command: &str, args: &[String]) -> Result<Provider
         .is_err()
     {
         // Behind npm's `.cmd` shim on Windows, the agent is the shim's
-        // child, which killing the shim alone leaves running.
-        #[cfg(windows)]
-        if let Some(pid) = child.id() {
-            crate::acp::kill_tree(pid);
+        // child, which killing the shim alone leaves running: the family
+        // ends both.
+        if !family.kill_others() {
+            let _ = child.start_kill();
         }
-        let _ = child.start_kill();
     }
     let init = init?;
     let mut offer = interpret::acp::host_offer(agent, &init);
@@ -476,11 +481,8 @@ async fn acp_answer(
 /// What the agent's program prints run with `args` in place of its ACP
 /// ones, in the helper's folder and environment; None where it cannot run,
 /// fails, or takes longer than [`LISTING_PATIENCE`].
-async fn listed(command: &str, args: &[&str]) -> Option<String> {
-    let mut listing = tokio::process::Command::new(crate::acp::program(
-        command,
-        &std::collections::HashMap::new(),
-    ));
+async fn listed(command: &Path, args: &[&str]) -> Option<String> {
+    let mut listing = tokio::process::Command::new(command);
     listing
         .args(args)
         .stdin(Stdio::null())

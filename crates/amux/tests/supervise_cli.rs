@@ -203,10 +203,6 @@ fn a_piped_server_start_ends_when_start_does() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
-)]
 async fn stop_goes_to_the_supervisor_first_where_the_install_has_one() {
     let install = Install::new(true, "");
     let started = install.amux(&["server", "start"]);
@@ -298,10 +294,6 @@ async fn stop_goes_to_the_daemon_where_the_install_has_no_supervisor() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
-)]
 async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
     let with = Install::new(true, "");
     let listed = with.command(&["ls"]).output().unwrap();
@@ -347,10 +339,9 @@ async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
 
 // Built everywhere so the test listing names it wherever the contracts
 // are checked; only macOS has the assertion to look for.
-#[cfg_attr(target_os = "linux", ignore = "only macOS holds a sleep assertion")]
 #[cfg_attr(
-    windows,
-    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
+    not(target_os = "macos"),
+    ignore = "only macOS holds a sleep assertion"
 )]
 #[tokio::test(flavor = "multi_thread")]
 async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
@@ -521,7 +512,7 @@ async fn update_says_updates_are_deploys_without_a_supervisor() {
 #[tokio::test(flavor = "multi_thread")]
 #[cfg_attr(
     windows,
-    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
+    ignore = "windows: the supervisor's own update comes from a new pid, not the supervisor that was started (`the supervisor exec'd in place`)"
 )]
 async fn update_retry_installs_the_channel_build_now_even_one_rolled_back_here() {
     let builds = tempfile::tempdir().unwrap();
@@ -572,10 +563,6 @@ async fn update_retry_installs_the_channel_build_now_even_one_rolled_back_here()
 /// update` says so and fails, rather than leaving the person to read the
 /// log, and a later `amux update` leaves that build alone unless retried.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
-)]
 async fn update_reports_a_build_that_never_started_and_then_leaves_it_alone() {
     let builds = tempfile::tempdir().unwrap();
     let bin = builds.path().join("bin");
@@ -630,10 +617,6 @@ async fn update_reports_a_build_that_never_started_and_then_leaves_it_alone() {
 /// serves the experiments switched on, says so to clients, and the agent in
 /// the middle of a turn keeps its process across it.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: reading supervisor.lock while the supervisor holds it fails (os error 33: another process has locked a portion of the file)"
-)]
 async fn under_a_supervisor_an_experiment_switch_restarts_the_daemon_through_it() {
     use support::desk::{Desk, LONG_GRACE_SECS};
 

@@ -192,9 +192,8 @@ const BINARY_NAMES: [&str; 3] = ["amux.exe", "amux.staged.exe", "amux.prev.exe"]
 
 /// Where amux is installed: `~/.amux/bin`, on every platform.
 pub(crate) fn install_dir() -> Result<PathBuf> {
-    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-        .context("the home directory is not set")?;
-    Ok(PathBuf::from(home).join(".amux").join("bin"))
+    let home = os::paths::home_dir().context("the home directory is not set")?;
+    Ok(home.join(".amux").join("bin"))
 }
 
 /// This machine's live agents on each profile, with the profile's client;
@@ -261,7 +260,7 @@ const SHELL_PATH_LINES: &str =
 /// writes to.
 #[cfg(unix)]
 fn unset_shell_path() -> Result<()> {
-    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+    let Some(home) = os::paths::home_dir() else {
         return Ok(());
     };
     for name in [".zshrc", ".bashrc", ".profile"] {

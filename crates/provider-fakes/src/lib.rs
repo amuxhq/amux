@@ -77,7 +77,10 @@ pub enum Mode {
 
 /// Read the mode from [`PLAYBACK_ENV`] or [`SCRIPT_ENV`]; neither set is an
 /// empty script, a provider that answers its handshake and never speaks.
+/// First, where [`script::ENV_LOG_ENV`] names a file, the fake's
+/// environment is written there.
 pub fn mode_from_env() -> Result<Mode, String> {
+    script::log_env();
     if let Some(selector) = std::env::var_os(PLAYBACK_ENV) {
         let (dir, transport) = playback::parse_selector(&selector.to_string_lossy());
         let process = if transport.is_empty() {

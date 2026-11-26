@@ -1,6 +1,8 @@
 load("//build:rust.bzl", "amux_rust_library")
 
-DEPS = [] + select({"DEFAULT": ["//third-party/rust:libc"], "prelude//os:windows": [], "prelude//os:none": []})
+DEPS = [
+    "//crates/os:os",
+]
 
 TEST_DEPS = [
     "//third-party/rust:tempfile",

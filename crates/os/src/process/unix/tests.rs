@@ -29,6 +29,24 @@ pub(crate) fn run_role(name: &str, _rest: &[&str]) {
             super::table::BLIND.store(true, std::sync::atomic::Ordering::SeqCst);
             crate::process::tests::contained();
         }
+        // Starts a sleeper that leads a process group of its own, as a
+        // provider's tool shell leads a session, and waits.
+        "orphaner" => {
+            use std::os::unix::process::CommandExt as _;
+            #[allow(
+                clippy::zombie_processes,
+                reason = "the sleeper is the orphan this role leaves for the test to find"
+            )]
+            let child = helper("sleep")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .process_group(0)
+                .spawn()
+                .expect("the sleeper starts");
+            crate::process::tests::say(format!("pid {}", child.id()));
+            std::thread::sleep(std::time::Duration::from_secs(60));
+        }
         other => panic!("no role {other:?}"),
     }
 }
@@ -53,8 +71,8 @@ pub(crate) fn held(_path: &std::ffi::OsStr) -> bool {
     false
 }
 
-/// Nothing on Unix explains a refused breakaway: none is ever refused.
-pub(crate) fn say_why_breakaway_is_refused(_refused: bool) {}
+/// A daemon a member starts in a session of its own leaves the family.
+pub(crate) const A_DAEMON_LEAVES_THE_FAMILY: bool = true;
 
 /// A family whose census can't be taken isn't reported ended: what was
 /// below it can't be found to kill, or seen gone. Its groups are killed
@@ -71,6 +89,36 @@ fn kill_others_without_a_census_is_an_error() {
     let said = driven.expect("killed");
     assert!(said.starts_with("err "), "{said}");
     assert!(eventually(|| !member.alive()), "its group is killed");
+}
+
+/// A member whose parent exits is reparented away, out of every later
+/// census: one counted while it was still below is ended all the same, and
+/// one never counted escapes, as a provider's tool shell would once the
+/// provider finishes on a polite stop.
+#[cfg(feature = "async")]
+#[test]
+fn a_counted_member_reparented_away_still_dies_on_kill_others() {
+    for counted in [true, false] {
+        let mut driven = Driven::start(helper("contained"));
+        assert_eq!(driven.expect("contained"), "ok");
+        driven.tell("orphaner");
+        let member = ProcessRef::open(pid(&driven.expect("pid"))).unwrap();
+        let sleeper = ProcessRef::open(pid(&driven.expect("pid"))).unwrap();
+        if counted {
+            driven.tell("count");
+            assert_eq!(driven.expect("counted"), "");
+        }
+        member.kill().unwrap();
+        assert!(eventually(|| !member.alive()), "the member dies");
+        driven.tell("kill");
+        assert_eq!(driven.expect("killed"), "ok");
+        if counted {
+            assert!(eventually(|| !sleeper.alive()), "the counted sleeper dies");
+        } else {
+            assert!(sleeper.alive(), "an uncounted sleeper is out of reach");
+            sleeper.kill().unwrap();
+        }
+    }
 }
 
 /// A stop with nothing below it to kill (the common case, a provider
@@ -147,4 +195,22 @@ fn the_census_finds_a_childs_children() {
         ProcessRef::open(sleeper).unwrap().kill().unwrap();
     }
     driven.child.kill().unwrap();
+}
+
+/// Asking a child to stop is SIGTERM, which ends one that doesn't catch it.
+#[test]
+fn asking_a_child_to_stop_sends_sigterm() {
+    let mut child = helper("sleep")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pinned = ProcessRef::of_std_child(&child).unwrap();
+    pinned.ask_to_stop().unwrap();
+    assert_eq!(pinned.reap().unwrap(), -libc::SIGTERM);
+    pinned
+        .ask_to_stop()
+        .expect("asking what has exited is no error");
+    // Reaped already, so this only fails.
+    let _ = child.wait();
 }

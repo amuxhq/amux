@@ -648,13 +648,17 @@ async fn since_the_last_review_keeps_no_upstream_edit_to_a_file_the_agent_only_r
     assert_eq!(listed, [("d.txt", Some("b.txt"), 0)]);
 }
 
-/// Thousands of long paths, more bytes of them than a command line holds
-/// on any platform, are compared all the same: the whole tree's since-last
-/// names no path to git, and where only some files are wanted they are
-/// asked for a bounded number of bytes at a time.
+/// Long paths, more bytes of them than one command line holds here, are
+/// compared all the same: the whole tree's since-last names no path to
+/// git, and where only some files are wanted they are asked for a bounded
+/// number of bytes at a time. The count is sized from this platform's limit
+/// (some 8,400 files on Linux, a few hundred on Windows, whose limit is
+/// 32 KiB), since writing and snapshotting 8,000 files took Windows up to
+/// three minutes under load and proved nothing more there.
 #[tokio::test]
 async fn a_change_of_thousands_of_long_paths_is_compared_whole() {
-    const FILES: usize = 8_000;
+    const PATH_BYTES: usize = 250;
+    const FILES: usize = os::process::COMMAND_LINE_BYTES / PATH_BYTES + 100;
     let repo = repository(&[("keep.txt", "one\n")]);
     let dir = repo.path();
     let (_held, store) = store();
@@ -662,14 +666,13 @@ async fn a_change_of_thousands_of_long_paths_is_compared_whole() {
     std::fs::write(dir.join("keep.txt"), "two\n").unwrap();
     let round = snapshot(dir, store.dir());
 
-    // Each path some 250 bytes: 2 MB of them, past what macOS (1 MB) or
-    // Linux (2 MB, less the environment) takes in one call's arguments.
+    // Each path some 250 bytes, past what one call's arguments take here.
     let folder = format!("{}{}", "nested-folder-".repeat(8), "end");
     std::fs::create_dir_all(dir.join(&folder)).unwrap();
     let paths: Vec<String> = (0..FILES)
         .map(|n| format!("{folder}/{}-{n:05}.txt", "a-long-file-name".repeat(8)))
         .collect();
-    assert!(paths.iter().map(String::len).sum::<usize>() > 2_000_000);
+    assert!(paths.iter().map(String::len).sum::<usize>() > os::process::COMMAND_LINE_BYTES);
     for path in &paths {
         std::fs::write(dir.join(path), "made\n").unwrap();
     }

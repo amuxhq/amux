@@ -258,7 +258,11 @@ neither.
 [`runtime.rs`](../crates/node/src/runtime.rs)) exists for every agent whose
 process is live. It holds the agent's directory, the write half of the
 control connection, the inputs and dumps waiting for the agent's answer on
-that connection, the last Hello, and the process ids. One watcher task per
+that connection, the last Hello, and the agent's process, pinned
+(`os::process::ProcessRef`: the one this daemon started, or the one that
+answered the dial), so a kill never reaches a process that took its pid
+since. A write that overruns its patience closes the connection outright,
+read half too, and the watcher dials again. One watcher task per
 handle dials `ctl.sock` and feeds the core what it reads: the Hello, each
 Nudge, the connection ending. The core ingests the journal on a Nudge, and
 when the connection ends the driver tells it whether the process is gone
@@ -376,7 +380,7 @@ $TMPDIR/amux-<uid>/<hash>, <hash>.d
     account                   the account binding and its credential, when bound
     relay-token               the week-long relay token the account service issued, so a launch dials at once
     sock                      the client socket, owner-only
-    link.sock                 where `amux internal ssh-link` hands in a peer's link over SSH
+    link.sock                 where `amux internal ssh-link` hands in a peer's link over SSH (not on Windows)
     store.sqlite              agents, items, paired hosts, drafts, recent directories, deliveries,
                               notifications; written only by this profile's core
     core-ring/                the core's newest checkpoint and the inputs since, for dumps and replay
@@ -395,6 +399,29 @@ Unpairing a host removes the tickets and tokens it gave, beside its store
 row. A dump interrupted by a crash leaves a `.dump-*` folder under
 `reports/` and an unredacted `.dump-*` store copy beside `store.sqlite`; the
 daemon removes both at start.
+
+Everything under `<root>` is its user's alone. The root, `reports/`, each
+profile and its `agents/` are owner-only (mode 0700; on Windows a protected
+DACL granting the user, SYSTEM and Administrators alone, which what is made
+inside inherits), and so are the files that hold a secret, wherever they
+are made. Each start makes the root, its reports and its profiles so again,
+which upgrades in place a root an earlier build left open (every one on
+Windows), and warns when the root's volume is a poor home for one: on
+Windows, anything but a local NTFS or ReFS drive. A file written whole
+(`generation`, a spec, the device key, the account) goes through one
+durable write in [`os::fs`](../crates/os/src/fs/mod.rs): a temporary file
+beside it, flushed, put in place atomically, then the folder flushed; a
+write that fails leaves no temporary file. A removal something else still
+holds, such as an agent's folder a shell works in or a log a person
+follows, is left with a warning for the next pass (the next start's sweep,
+the next listing of profiles), never a failed start or a failed
+`amux profile rm`. Paths amux stores, shows or sends (the root and
+everything under it, pinned and recent folders, a checkout's root) are
+canonical in the form people and programs take, never Windows' verbatim
+`\\?\C:\…`; one an earlier build stored verbatim is read plain. SQLite,
+which opens its files without std, is handed the store's path in its
+long form (`os::fs::long_form`: verbatim only when it is too long for a
+plain one), so a deep root's store still opens.
 
 The phone app keeps the same `<root>` layout in its container, under
 `Application Support/installation/`, with no supervisor, worktrees or
@@ -461,7 +488,10 @@ time:
    as it was, and the daemon does not start.
 5. Finish the sweep: resume ingest from each stored cursor, and mark
    exited, with the cause "while amux was stopped", every agent whose
-   process is gone.
+   process is gone. A directory no row lists is removed; one something
+   still holds (a shell working in it, a log open as `Get-Content -Wait`
+   holds it on Windows) is left for the next start's sweep, with a
+   warning, and never stops this one.
 6. Refuse to start if another daemon answers on the front door. Otherwise
    bring each profile into service: its client socket, its network edge,
    its outboxes, which first run only once every own journal has been read
@@ -592,16 +622,26 @@ nicer in several places, and Windows pays for each:
   nothing, so a connection is ended by closing it
   (`LocalStream::close`, or a `Closer` for a split one).
 - **Process groups.** Agents start with `CREATE_NEW_PROCESS_GROUP` and
-  `DETACHED_PROCESS`; a kill ends the process tree with `taskkill /F /T`.
+  `CREATE_NO_WINDOW`, breaking away from the daemon's job. Each agent then
+  puts itself in a Job Object of its own (`os::process::Family`, which
+  forbids breakaway), so its provider and everything the provider starts
+  are born inside it and end with it; the agent's stop and kill end the
+  job's members. The daemon kills an agent through the process handle it
+  holds (`TerminateProcess`), never by pid, and what the agent started goes
+  with the agent's job.
 - **Terminals.** Pseudo-terminals are ConPTY, through `portable-pty` in
   [`pty-host`](../crates/pty-host/src/lib.rs).
 - **Updates.** A running executable cannot be renamed over, so the
   supervisor stops the daemon before the swap and moves the binary aside by
   rename, and its own update is a spawn-then-exit rather than an exec.
 - **Signals.** There are none: `amux server stop` asks the supervisor over
-  its control socket (`supervisor.sock`), and the supervisor stops its child
-  by closing the activation pipe.
-- **SSH.** Pairing and linking over SSH need a Unix host at the far end.
+  its control socket (`supervisor.sock`), as it does everywhere, and the
+  supervisor stops its child by closing the activation pipe. What the OS
+  sends instead (Ctrl+C, the console closing, logoff, shutdown) reaches the
+  supervisor and the daemon through `os::signal::terminated`, and each
+  shuts down cleanly before the OS ends it.
+- **SSH.** Pairing and linking over SSH need a Unix host at the far end,
+  so a Windows profile binds no `link.sock`.
 - **Terminal Claude.** Not hosted on Windows in this build: an agent of kind
   `claude_pty` there ends before spawning anything, with the cause "terminal
   Claude is not hosted on Windows in this build; headless Claude and Codex
@@ -746,12 +786,14 @@ The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `log-file`, `os`, `release`, `analytics`, `git-facts`, `highlight`, `acp-protocol`, `claude-protocol`, `codex-protocol` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code |
-| `pty-host` | `os` | the tether is part of an agent's family, which `os` holds |
-| `journal`, `store`, `attachments`, `redaction`, `settings` | `wire` | `settings` names each experiment's version by the wire's entry for it |
+| `wire`, `os`, `release`, `analytics`, `highlight`, `acp-protocol`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code; `pty-host` hosts a pseudo-terminal and nothing of amux's |
+| `log-file` | `os` | moves standard error onto the log, and opens it owner-only |
+| `git-facts` | `os` | its scratch folders made owner-only and removed patiently, and a checkout's root in the one canonical path form, never Windows' verbatim one |
+| `journal`, `store`, `attachments`, `redaction` | `wire` | |
+| `settings` | `os`, `wire` | names each experiment's version by the wire's entry for it; the home folder from `os`, and the root in its one canonical path form |
 | `agent-dir` | `os`, `wire` | `os` on Windows alone: the pipe name file's patient rename, and the user's SID a pipe is owned by |
 | `preview` | `attachments`, `wire` | |
-| `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
+| `core-ring` | `journal` | a core's input ring, in segments named as the journal's are; its drivers hand it the durable write (`os::fs::write_durably`) its checkpoints are put in place with, since a core takes no `os` |
 | `interpret` | `attachments`, `claude-protocol`, `codex-protocol`, `core-ring`, `preview`, `redaction`, `wire` | the pure step, the checks every kind's steps meet, the agent's record built from its facts ring, and the walker that writes a protocol message as its structure alone |
 | `daemon-core` | at most `core-ring`, `journal`, `store`, `wire` | holds the store, reads journals, records its inputs |
 | `relay-core` | at most `daemon-core` | built from the daemon core's link and routing state |
@@ -764,7 +806,7 @@ The allowed sets encode the layering above:
 | `node` | `agent-dir`, `analytics`, `attachments`, `core-ring`, `daemon-core`, `git-facts`, `highlight`, `journal`, `log-file`, `os`, `path-core`, `redaction`, `relay-core`, `release`, `settings`, `socket-core`, `store`, `supervisor-core`, `wire` | the driver of the daemon, relay, path and supervisor cores; reaches agents only through the directory contract, never the `agent` or `interpret` crates, so the phone hosts a runtime with no interpreter or provider-protocol crates in its graph (only the cross-boundary provider types and Codex permission preset table in `wire`); `highlight` to colour a review's files and name each changed file's language by the rule the clients colour it by |
 | `client` | `agent-dir`, `wire` | the local socket and the clock come from the contract crate |
 | `ui-state` → `wire`; `ui-view` → `attachments`, `preview`, `ui-state`, `wire`; `ui-code` → `highlight`, `ui-view`; `ui-runtime` → `client`, `ui-state`, `ui-view`, `wire` | | the view library; `ui-view` holds no highlighter, since tree-sitter's grammars are C and the browser extension builds the views to WebAssembly without a C compiler; each client that draws code colours what it parses out of a chat through `ui-code` |
-| `tui` | `attachments`, `client`, `settings`, `ui-code`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | |
+| `tui` | `attachments`, `client`, `os`, `settings`, `ui-code`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | `os` for the home folder a path is shown from; its own OS calls (opening a link, the terminal's raw input) live in `src/platform/` |
 | `app-runtime` | `client`, `ui-runtime`, `ui-state`, `ui-view`, `wire` | the phone's chats with no `node` |
 | `app-embedded` | `analytics`, `app-runtime`, `client`, `log-file`, `node`, `wire` | the daemon in the phone's process |
 | `app-bridge` | `app-embedded`, `app-runtime`, `client`, `installer` (desktop only), `node`, `ui-code`, `ui-state`, `ui-view`, `wire` | the language-neutral bridge over both |
@@ -776,7 +818,7 @@ The allowed sets encode the layering above:
 | `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `provider-fakes`, `relay-core`, `store`, `supervisor-core`, `ui-state`, `wire` | replays the core's and the sessions' records, judging the models' properties; an agent's record carries no provider's words, so it replays as a stream made up from it through the real interpreter, held to the provider's types by the fakes' conformance; an installation's facts rings replay through the interpreter as they are, and the relay's and supervisor's reports through their cores; `just repro`, a debugging tool nothing links |
 | `qualification` | `node`, `provider-fakes`, `pty-host`, `redaction`, `testnet`, `wire` | the live lane and the performance workloads over the harness; its probes host terminal Claude on a pseudo-terminal of their own and sanitize what they record |
 | `xtask` | `release` | signs releases |
-| `installer` | `agent-dir`, `release`, `settings` | finds the front door from the settings, checks a download against the manifest, and waits on the local socket, without the daemon |
+| `installer` | `agent-dir`, `os`, `release`, `settings` | finds the front door from the settings, checks a download against the manifest, and waits on the local socket, without the daemon |
 | `ios-tools` | `app-runtime`, `ui-state`, `ui-view`, `wire` | generates the Swift and Kotlin mirrors and the markdown fixtures |
 
 The phone bridge (`app-embedded`, `app-bridge`, `app-ffi`, `app-jni`) links `node` on purpose: it

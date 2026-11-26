@@ -7,9 +7,8 @@
 //! configuration; config is frozen per incarnation.
 
 use std::collections::{BTreeMap, HashMap};
-use std::fs::{self, OpenOptions};
-use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
+use std::{fs, io};
 
 use prost::Message as _;
 use wire::{
@@ -423,25 +422,20 @@ pub fn path(dir: &Path, n: u32) -> PathBuf {
 }
 
 /// Writes `spec.<n>`, refusing to replace one that exists: a spec is
-/// never rewritten. Written through a temporary file so a reader never
-/// sees half a spec.
+/// never rewritten. Written whole and durably ([`os::fs::create_new_durably`]),
+/// so a reader, or the start after a crash, never sees half a spec.
 pub fn write(dir: &Path, spec: &AgentSpec) -> io::Result<()> {
     let target = path(dir, spec.incarnation);
-    if target.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            format!("{} exists and is never rewritten", target.display()),
-        ));
-    }
-    let temp = dir.join(format!(".spec.{}.tmp", spec.incarnation));
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&temp)?;
-    file.write_all(&spec.encode_to_vec())?;
-    drop(file);
-    fs::rename(&temp, &target)
+    os::fs::create_new_durably(&target, &spec.encode_to_vec()).map_err(|error| {
+        if error.kind() == io::ErrorKind::AlreadyExists {
+            io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("{} exists and is never rewritten", target.display()),
+            )
+        } else {
+            error
+        }
+    })
 }
 
 /// The newest spec in a directory and its number.

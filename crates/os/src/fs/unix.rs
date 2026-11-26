@@ -3,12 +3,17 @@
 use std::fs::{self, DirBuilder, File, Metadata, OpenOptions, Permissions};
 use std::io::{self, Write as _};
 use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, PermissionsExt as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{Create, Flush, Publish, VolumeCheck};
 
 /// Unix paths have no verbatim form.
 pub(super) const VERBATIM_PATHS: bool = false;
+
+/// Unix has no plain-path limit for a library to be kept under.
+pub(super) fn long_form(path: &Path) -> PathBuf {
+    path.to_owned()
+}
 
 pub(super) fn create_private_dir(dir: &Path) -> io::Result<()> {
     DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
@@ -158,6 +163,12 @@ pub(super) fn is_executable(_path: &Path, meta: &Metadata) -> bool {
 
 pub(super) fn volume_supports_root(_path: &Path) -> io::Result<VolumeCheck> {
     Ok(VolumeCheck::Suitable)
+}
+
+/// No permission bit for the group or others.
+#[cfg(any(test, feature = "testing"))]
+pub(super) fn is_private(path: &Path) -> io::Result<bool> {
+    Ok(fs::metadata(path)?.permissions().mode() & 0o077 == 0)
 }
 
 #[cfg(test)]

@@ -37,6 +37,39 @@ pub(super) fn detach(cmd: &mut std::process::Command, how: Detach) {
     }
 }
 
+pub(super) fn own_group(cmd: &mut std::process::Command) {
+    cmd.process_group(0);
+}
+
+/// A child leading a process group of its own, pinned so the group is
+/// reached while it is unreaped.
+#[cfg(feature = "async")]
+#[derive(Debug)]
+pub(super) struct Tree {
+    leader: ProcessRef,
+}
+
+#[cfg(feature = "async")]
+impl Tree {
+    pub(super) fn spawn(
+        cmd: &mut tokio::process::Command,
+    ) -> io::Result<(tokio::process::Child, Tree)> {
+        own_group(cmd.as_std_mut());
+        let mut child = cmd.spawn()?;
+        match ProcessRef::of_child(&child) {
+            Ok(leader) => Ok((child, Tree { leader })),
+            Err(error) => {
+                let _ = child.start_kill();
+                Err(error)
+            }
+        }
+    }
+
+    pub(super) fn kill(&self) -> io::Result<()> {
+        self.leader.kill_group()
+    }
+}
+
 pub(super) fn spawn_background<C: Spawnable>(cmd: &mut C) -> io::Result<Spawned<C::Child>> {
     Ok(Spawned {
         child: cmd.spawn_child()?,
@@ -107,6 +140,10 @@ fn set_cloexec(fd: RawFd, on: bool) -> io::Result<()> {
 
 pub(super) fn set_inheritable(file: &File, on: bool) -> io::Result<()> {
     set_cloexec(file.as_raw_fd(), !on)
+}
+
+pub(super) fn file_of_pipe(end: impl Into<std::os::fd::OwnedFd>) -> File {
+    File::from(end.into())
 }
 
 pub(super) fn raw_for_child(file: &File) -> u64 {
@@ -237,6 +274,9 @@ impl Groups {
 #[derive(Debug)]
 pub(super) struct Family {
     groups: std::sync::Arc<Groups>,
+    /// Every member [`Family::count`] found: one reparented away since is
+    /// still ended by `kill_others`.
+    counted: std::sync::Mutex<Vec<Descendant>>,
 }
 
 impl Family {
@@ -249,7 +289,33 @@ impl Family {
         }
         Ok(Family {
             groups: std::sync::Arc::default(),
+            counted: std::sync::Mutex::default(),
         })
+    }
+
+    fn counted(&self) -> std::sync::MutexGuard<'_, Vec<Descendant>> {
+        self.counted
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    pub(super) fn count(&self) {
+        let me = std::process::id() as i32;
+        let Ok(table) = table::try_table() else {
+            return;
+        };
+        let mut counted = self.counted();
+        // What has gone since an earlier count is let go of.
+        counted.retain(|descendant| {
+            table
+                .iter()
+                .any(|row| row.pid as Pid == descendant.pid && row.started == descendant.started)
+        });
+        for descendant in below(me, &table) {
+            if !counted.contains(&descendant) {
+                counted.push(descendant);
+            }
+        }
     }
 
     #[cfg(feature = "async")]
@@ -289,17 +355,23 @@ impl Family {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let mut refused: Vec<(Pid, io::Error)> = Vec::new();
         // Everything a census found: a killed member's children go to
-        // init, out of later censuses, but must be gone too.
-        let mut found: Vec<Descendant> = Vec::new();
+        // init, out of later censuses, but must be gone too. So must what
+        // an earlier count found and has left the tree since.
+        let mut found: Vec<Descendant> = std::mem::take(&mut *self.counted());
         loop {
             // The census first, while everything still runs: once a parent
             // is killed its children belong to init and are no longer
-            // below us.
+            // below us. What was counted is in it, wherever it went.
             let table = table::try_table();
-            let census = match &table {
+            let mut census = match &table {
                 Ok(table) => below(me as i32, table),
                 Err(_) => Vec::new(),
             };
+            for descendant in &found {
+                if !census.contains(descendant) {
+                    census.push(descendant.clone());
+                }
+            }
             for descendant in &census {
                 if !found.contains(descendant) {
                     found.push(descendant.clone());
@@ -505,6 +577,30 @@ impl ProcessRef {
         self.signal(libc::SIGKILL).map(drop)
     }
 
+    pub(super) fn kill_group(&self) -> io::Result<()> {
+        // Exited or not: unreaped, the leader holds its group's id.
+        let pinned = table::row(self.pid as i32).is_some_and(|row| row.started == self.started);
+        if pinned {
+            // SAFETY: killpg only sends a signal, to the group whose id is
+            // the pid of the process just checked to be the one pinned.
+            if unsafe { libc::killpg(self.pid as libc::pid_t, libc::SIGKILL) } == -1 {
+                let error = io::Error::last_os_error();
+                match error.raw_os_error() {
+                    // No such group: the process leads none. macOS answers
+                    // EPERM for a group whose only member has exited
+                    // unreaped.
+                    Some(libc::ESRCH | libc::EPERM) => {}
+                    _ => return Err(error),
+                }
+            }
+        }
+        self.kill()
+    }
+
+    pub(super) fn ask_to_finish(&self) -> io::Result<()> {
+        self.signal(libc::SIGTERM).map(drop)
+    }
+
     #[cfg(feature = "async")]
     pub(super) async fn exited(&self) -> io::Result<()> {
         while self.alive() {
@@ -519,6 +615,51 @@ impl ProcessRef {
 
     pub(super) fn resume(&self) -> io::Result<()> {
         self.act(libc::SIGCONT)
+    }
+
+    pub(super) fn ask_to_stop(&self) -> io::Result<()> {
+        self.signal(libc::SIGTERM).map(drop)
+    }
+
+    pub(super) fn reap(&self) -> io::Result<i32> {
+        let mut status = 0;
+        loop {
+            // SAFETY: a wait on one pid; the caller vouches it is our
+            // unreaped child.
+            if unsafe { libc::waitpid(self.pid as libc::pid_t, &mut status, 0) } != -1 {
+                break;
+            }
+            let error = io::Error::last_os_error();
+            if error.kind() != io::ErrorKind::Interrupted {
+                return Err(error);
+            }
+        }
+        if libc::WIFEXITED(status) {
+            Ok(libc::WEXITSTATUS(status))
+        } else if libc::WIFSIGNALED(status) {
+            Ok(-libc::WTERMSIG(status))
+        } else {
+            Err(io::Error::other(format!(
+                "waitpid reported status {status:#x} for {}",
+                self.pid
+            )))
+        }
+    }
+
+    pub(super) fn for_successor(&self) -> io::Result<Option<File>> {
+        Ok(None)
+    }
+
+    pub(super) unsafe fn inherited(pid: Pid, handle: Option<u64>) -> io::Result<ProcessRef> {
+        if let Some(handle) = handle {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("a process handle ({handle}) is handed over only on Windows"),
+            ));
+        }
+        // A child of the image this one replaced is ours: unreaped, it may
+        // have exited, but its pid can't have been reused.
+        Self::of_unreaped(pid)
     }
 
     fn act(&self, signal: libc::c_int) -> io::Result<()> {

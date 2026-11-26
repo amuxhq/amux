@@ -74,7 +74,6 @@ crates/testnet/src/journey/perf.rs 1
 crates/testnet/src/journey/terminal_stories.rs 1
 crates/testnet/src/lib.rs 1
 crates/testnet/src/net.rs 5
-crates/testnet/tests/harness.rs 1
 crates/testnet/tests/spec_links.rs 1
 crates/testnet/tests/spec_network.rs 1
 crates/xtask/src/credentials.rs 2

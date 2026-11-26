@@ -151,8 +151,46 @@ impl ProcessHost {
     /// the supervisor's is: found from the moment the daemon takes the
     /// lock, before it serves the front door, so a daemon stalled in its
     /// start can still be killed.
+    ///
+    /// A daemon that takes the lock writes its pid a moment later, so for
+    /// that moment the lock names whoever had it before, an earlier daemon
+    /// whose pid another process may have since. So the process is
+    /// believed only when it runs the host's amux and started no later
+    /// than the pid was written: another program, or another amux (another
+    /// host's daemon) started since, is left alone.
     fn locked_daemon(&self) -> Result<Option<os::process::ProcessRef>, String> {
-        holder(&self.data_dir.join(node::INSTALLATION_LOCK), "the daemon")
+        let lock = self.data_dir.join(node::INSTALLATION_LOCK);
+        let Some(daemon) = holder(&lock, "the daemon")? else {
+            return Ok(None);
+        };
+        Ok(self.took(&daemon, &lock).then_some(daemon))
+    }
+
+    /// Whether `process`, which `lock` names, runs the host's amux and
+    /// started no later than the lock's pid was written. The write's time
+    /// is read before the lock is seen to still name the process, so the
+    /// two belong to one write.
+    fn took(&self, process: &os::process::ProcessRef, lock: &Path) -> bool {
+        let same_file = |one: &Path, other: &Path| match (
+            std::fs::canonicalize(one),
+            std::fs::canonicalize(other),
+        ) {
+            (Ok(one), Ok(other)) => one == other,
+            _ => false,
+        };
+        let runs_amux = process
+            .image()
+            .is_ok_and(|image| same_file(&image, &self.amux));
+        let Ok(written) = std::fs::metadata(lock).and_then(|lock| lock.modified()) else {
+            return false;
+        };
+        let names = named(lock) == Some(process.pid());
+        // Linux knows a process's start only to the second its boot time
+        // is given in.
+        let started_first = process
+            .started()
+            .is_ok_and(|started| started <= written + Duration::from_secs(2));
+        runs_amux && names && started_first
     }
 
     /// Crashes the daemon: killed outright (SIGKILL, `TerminateProcess`),
@@ -176,11 +214,15 @@ impl ProcessHost {
     /// as serving its front door. The supervisor goes first, so it starts
     /// nothing more.
     pub(crate) async fn kill_all(&self) -> Result<(), String> {
+        self.kill_all_within(Duration::from_secs(10)).await
+    }
+
+    async fn kill_all_within(&self, patience: Duration) -> Result<(), String> {
         let locks = [
             self.data_dir.join(node::supervisor::SUPERVISOR_LOCK),
             self.data_dir.join(node::INSTALLATION_LOCK),
         ];
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        let deadline = tokio::time::Instant::now() + patience;
         loop {
             if let Some(supervisor) = self.supervisor()? {
                 let _ = supervisor.kill();
@@ -278,37 +320,46 @@ fn lock_held(lock: &Path) -> Result<bool, String> {
 /// exited meanwhile is gone, not whoever has its pid now. `what` names it
 /// in an error.
 fn holder(lock: &Path, what: &str) -> Result<Option<os::process::ProcessRef>, String> {
-    let named = || {
-        std::fs::read_to_string(lock)
-            .ok()
-            .and_then(|named| named.trim().parse::<u32>().ok())
-    };
     if !lock_held(lock)? {
         return Ok(None);
     }
-    let Some(pid) = named() else {
+    let Some(pid) = named(lock) else {
         return Ok(None);
     };
     let process = match os::process::ProcessRef::open(pid) {
         Ok(process) => process,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        // Gone, or another user's, which no process of this net is.
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+            ) =>
+        {
+            return Ok(None);
+        }
         Err(error) => return Err(format!("opening {what} (pid {pid}): {error}")),
     };
-    Ok((lock_held(lock)? && named() == Some(pid)).then_some(process))
+    Ok((lock_held(lock)? && named(lock) == Some(pid)).then_some(process))
+}
+
+/// The pid `lock` holds, if it holds one.
+fn named(lock: &Path) -> Option<u32> {
+    std::fs::read_to_string(lock)
+        .ok()
+        .and_then(|named| named.trim().parse().ok())
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
-
     use super::*;
 
     /// What the stalled daemon below holds its lock in.
     const STALLED_DIR: &str = "AMUX_TEST_STALLED_DAEMON_DIR";
 
     /// A daemon stalled in its start: it takes the installation lock and
-    /// names itself in it, as a daemon does first, and then serves
-    /// nothing. This test's binary runs it as a child of the test below.
+    /// names itself in it, as a daemon does first, says so on its output,
+    /// and then serves nothing. This test's binary runs it as a child of
+    /// the tests below.
     #[test]
     fn stalled_daemon() {
         let Some(dir) = std::env::var_os(STALLED_DIR) else {
@@ -321,7 +372,68 @@ mod tests {
                 .expect("the lock is free");
         lock.write_data(std::process::id().to_string().as_bytes())
             .unwrap();
+        println!("stalled {}", std::process::id());
         std::thread::sleep(Duration::from_secs(600));
+    }
+
+    /// A host in `root` whose amux is `amux`.
+    fn host_in(root: &Path, amux: PathBuf) -> ProcessHost {
+        ProcessHost {
+            amux,
+            config: root.join("config.toml"),
+            data_dir: root.join("data"),
+            front_door: root.join("data").join("amux.sock"),
+            bin: root.join("bin"),
+            bonjour: false,
+            relay_ca: root.join("relay-ca.pem"),
+        }
+    }
+
+    /// [`stalled_daemon`] running for `host`, killed on drop.
+    struct Stalled(std::process::Child);
+
+    impl Stalled {
+        /// Starts it and waits until it says it holds the lock, so nothing
+        /// probes the lock (which takes it for a moment when it is free)
+        /// while the child is still to take it.
+        fn start(host: &ProcessHost) -> Stalled {
+            use std::io::BufRead as _;
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "process::tests::stalled_daemon", "--nocapture"])
+                .env(STALLED_DIR, &host.data_dir)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap();
+            let stdout = child.stdout.take().unwrap();
+            let (said, heard) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                for line in std::io::BufReader::new(stdout).lines() {
+                    let Ok(line) = line else { break };
+                    if let Some(pid) = line.strip_prefix("stalled ") {
+                        let _ = said.send(pid.trim().parse::<u32>().ok());
+                    }
+                }
+            });
+            let stalled = Stalled(child);
+            let pid = heard
+                .recv_timeout(Duration::from_secs(30))
+                .expect("the stalled daemon never said it took its lock");
+            assert_eq!(pid, Some(stalled.0.id()));
+            stalled
+        }
+
+        fn running(&mut self) -> bool {
+            self.0.try_wait().unwrap().is_none()
+        }
+    }
+
+    impl Drop for Stalled {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
     }
 
     /// A daemon that took its lock and never opened its front door is
@@ -329,47 +441,58 @@ mod tests {
     #[tokio::test]
     async fn killing_a_host_kills_a_daemon_stalled_before_its_front_door() {
         let root = tempfile::tempdir().unwrap();
-        let host = ProcessHost {
-            amux: PathBuf::from("amux"),
-            config: root.path().join("config.toml"),
-            data_dir: root.path().join("data"),
-            front_door: root.path().join("data").join("amux.sock"),
-            bin: root.path().join("bin"),
-            bonjour: false,
-            relay_ca: root.path().join("relay-ca.pem"),
-        };
-        let mut daemon = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "process::tests::stalled_daemon", "--nocapture"])
-            .env(STALLED_DIR, &host.data_dir)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .unwrap();
+        let host = host_in(root.path(), std::env::current_exe().unwrap());
+        let mut daemon = Stalled::start(&host);
         let lock = host.data_dir.join(node::INSTALLATION_LOCK);
-        let deadline = Instant::now() + Duration::from_secs(30);
-        while !(lock_held(&lock).unwrap() && host.locked_daemon().unwrap().is_some()) {
-            assert!(
-                Instant::now() < deadline,
-                "the stalled daemon never took its lock"
-            );
-            assert!(
-                daemon.try_wait().unwrap().is_none(),
-                "the stalled daemon exited"
-            );
-            std::thread::sleep(Duration::from_millis(50));
-        }
+        assert!(lock_held(&lock).unwrap());
+        assert!(host.locked_daemon().unwrap().is_some());
         assert!(
             host.daemon().await.unwrap().is_none(),
             "it serves no front door"
         );
         let killed = host.kill_all().await;
-        if killed.is_err() {
-            let _ = daemon.kill();
-        }
-        let status = daemon.wait().unwrap();
+        let status = daemon.0.wait().unwrap();
         killed.unwrap();
         assert!(!status.success(), "killed, not exited: {status:?}");
+        assert!(!daemon.running());
         assert!(!lock_held(&lock).unwrap());
+    }
+
+    /// The pid a lock names may be an earlier daemon's, since reused: a
+    /// process that runs another program, or that started after the pid
+    /// was written, is not the host's daemon, and is left running.
+    #[tokio::test]
+    async fn killing_a_host_leaves_a_process_its_lock_names_that_is_not_its_daemon() {
+        // Another program: this test's binary, where the host runs amux.
+        let root = tempfile::tempdir().unwrap();
+        let elsewhere = root.path().join("amux.exe");
+        std::fs::write(&elsewhere, b"not this test").unwrap();
+        let host = host_in(root.path(), elsewhere);
+        let mut other = Stalled::start(&host);
+        assert!(host.locked_daemon().unwrap().is_none());
+        let left = host.kill_all_within(Duration::from_secs(1)).await;
+        assert!(left.unwrap_err().contains("still held"));
+        assert!(other.running(), "another program was killed");
+
+        // The host's amux, started after the pid was written: the lock is
+        // left as an earlier daemon wrote it, before this one started.
+        let root = tempfile::tempdir().unwrap();
+        let host = host_in(root.path(), std::env::current_exe().unwrap());
+        let mut later = Stalled::start(&host);
+        let lock = host.data_dir.join(node::INSTALLATION_LOCK);
+        let started = os::process::ProcessRef::of_std_child(&later.0)
+            .unwrap()
+            .started()
+            .unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&lock)
+            .unwrap()
+            .set_modified(started - Duration::from_secs(60))
+            .unwrap();
+        assert!(host.locked_daemon().unwrap().is_none());
+        let left = host.kill_all_within(Duration::from_secs(1)).await;
+        assert!(left.unwrap_err().contains("still held"));
+        assert!(later.running(), "an amux started since was killed");
     }
 }

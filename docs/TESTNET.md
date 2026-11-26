@@ -221,7 +221,10 @@ supervisor is the pid its `supervisor.lock` holds. Removing a process host, or s
 until neither lock is held, and a test pins them first with `Net::host_processes` to see each exit. A daemon that
 took its lock and stalled before serving its front door has no server to name it, so there it is the pid its
 `installation.lock` holds, believed as the supervisor's is: while the lock stays held across the look and still
-names it. Its agents
+names it. A daemon writes that pid a moment after it takes the lock, so until then the lock names an earlier
+daemon, whose pid may since be another process's: the pid is believed only when its process runs the host's
+`amux` (`ProcessRef::image`) and started no later than the pid was written (`ProcessRef::started` against the
+file's last write). Its agents
 keep running through a kill, in their grace, and the next daemon adopts them. The net reaches it as a client does,
 over its front door and profile socket: the waits that listen inside an in-process runtime (`fence`, `turn_ended`, `input_settled`) use the
 profile's Subscribe stream instead, back-filling with Fetch past the 200 rows a subscription opens with.

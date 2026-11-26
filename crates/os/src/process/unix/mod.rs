@@ -642,6 +642,23 @@ impl ProcessRef {
         table::row(self.pid as i32).is_some_and(|row| row.started == self.started && !row.zombie)
     }
 
+    /// The program file it runs, read by pid and believed only while the
+    /// process is still the one pinned, after the read.
+    pub(super) fn image(&self) -> io::Result<std::path::PathBuf> {
+        let image = table::image(self.pid as i32)?;
+        if !self.alive() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("process {} has exited", self.pid),
+            ));
+        }
+        Ok(image)
+    }
+
+    pub(super) fn started(&self) -> io::Result<std::time::SystemTime> {
+        table::wall_clock(self.started)
+    }
+
     fn signal(&self, signal: libc::c_int) -> io::Result<bool> {
         if !self.alive() {
             return Ok(false);

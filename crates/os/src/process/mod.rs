@@ -11,7 +11,7 @@
 
 use std::fs::File;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
 
 use crate::Pid;
@@ -616,6 +616,21 @@ impl ProcessRef {
     /// before it is reaped.
     pub fn alive(&self) -> bool {
         self.inner.alive()
+    }
+
+    /// The program file the process runs, as the system names it
+    /// (`QueryFullProcessImageNameW`, `/proc/<pid>/exe`, `proc_pidpath`),
+    /// of the process pinned. Unix reads it by pid and answers `NotFound`
+    /// when the pinned process has gone by the end of the read.
+    pub fn image(&self) -> io::Result<PathBuf> {
+        self.inner.image()
+    }
+
+    /// When the process started, on the wall clock: Windows' creation
+    /// time; on Linux the start time `/proc` keeps, to the second the boot
+    /// time is known to; on macOS to the microsecond.
+    pub fn started(&self) -> io::Result<std::time::SystemTime> {
+        self.inner.started()
     }
 
     /// Ends the process at once (SIGKILL, `TerminateProcess`). `Ok` when it

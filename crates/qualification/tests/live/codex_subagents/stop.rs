@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use tokio::net::UnixStream;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
-use wire::{CodexInput, PromptInput, codex_input};
+use wire::{AgentSettings, CodexInput, PromptInput, codex_input};
 
 use super::super::asks::settled;
 use super::super::{Install, Scenario, TURN, Verdict};
@@ -157,7 +157,7 @@ impl Install {
     /// steered into its turn. Each step's effect is noted: whether the
     /// child's turn ends, whether its command's process is gone, and
     /// whether the parent stops waiting and finishes its turn.
-    pub(super) async fn child_stop(&self) -> Result<Verdict, String> {
+    pub(in super::super) async fn child_stop(&self) -> Result<Verdict, String> {
         let scenario = Scenario::ChildStop;
         let (agent, follow) = match self
             .ready_agent(scenario, Some(AgentSettings::default()))

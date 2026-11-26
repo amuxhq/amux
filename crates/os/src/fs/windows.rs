@@ -689,7 +689,7 @@ pub(super) fn is_private(path: &Path) -> io::Result<bool> {
     };
     let mut parts = dacl.split('(');
     let flags = parts.next().unwrap_or_default();
-    let sid = current_user_sid()?;
+    let sid = testing::sddl_trustee(&current_user_sid()?)?;
     let owner_only = parts.all(|ace| {
         let fields: Vec<&str> = ace.trim_end_matches(')').split(';').collect();
         // An allowing entry's trustee is its sixth field; a denying one

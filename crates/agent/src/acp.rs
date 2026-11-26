@@ -9,7 +9,7 @@
 //! interpreter turns into asks.
 
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use acp_protocol::client::{
     ForkSessionRequest, InitializeRequest, LoadSessionRequest, NewSessionRequest, PROTOCOL_VERSION,
@@ -336,85 +336,9 @@ fn file_uri(path: &Path) -> Option<String> {
     url::Url::from_file_path(&path).ok().map(String::from)
 }
 
-/// Kills the process `pid` and every process below it, as `taskkill /T`
-/// does, and returns once they are gone: the daemon stops an agent's
-/// process tree the same way. Blocking, so a caller about to end cannot
-/// end before the tree does.
-#[cfg(windows)]
-pub fn kill_tree(pid: u32) {
-    let _ = std::process::Command::new("taskkill")
-        .args(["/F", "/T", "/PID", &pid.to_string()])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-}
-
-/// Starts `taskkill /F /T` on `pid` without waiting for it, for a caller
-/// that must not be held up while it runs; None when it could not start.
-#[cfg(windows)]
-pub fn start_killing_tree(pid: u32) -> Option<tokio::process::Child> {
-    tokio::process::Command::new("taskkill")
-        .args(["/F", "/T", "/PID", &pid.to_string()])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(false)
-        .spawn()
-        .ok()
-}
-
-/// The program to start for `command`. On Windows a bare name is looked up
-/// on the PATH under each of PATHEXT's extensions, as a shell would: an
-/// agent installed by npm is a `.cmd` shim, which starting the name alone
-/// never finds. Anywhere else, and for a path, the command as given.
-pub fn program(command: &str, env: &std::collections::HashMap<String, String>) -> PathBuf {
-    #[cfg(windows)]
-    {
-        let variable = |name: &str| {
-            env.iter()
-                .find(|(key, _)| key.eq_ignore_ascii_case(name))
-                .map(|(_, value)| std::ffi::OsString::from(value))
-                .or_else(|| std::env::var_os(name))
-        };
-        let path = variable("PATH").unwrap_or_default();
-        let extensions = variable("PATHEXT")
-            .and_then(|value| value.into_string().ok())
-            .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".to_owned());
-        if let Some(found) = find_program(command, &path, &extensions, |path| path.is_file()) {
-            return found;
-        }
-    }
-    #[cfg(not(windows))]
-    let _ = env;
-    PathBuf::from(command)
-}
-
-/// Where a bare program name is found on `path` under one of `extensions`
-/// (a `;`-separated list, PATHEXT's form): None for a name holding a
-/// folder or an extension already, and for one found nowhere.
-#[cfg_attr(not(any(windows, test)), allow(dead_code))]
-fn find_program(
-    name: &str,
-    path: &std::ffi::OsStr,
-    extensions: &str,
-    exists: impl Fn(&Path) -> bool,
-) -> Option<PathBuf> {
-    if name.contains(['/', '\\']) || Path::new(name).extension().is_some() {
-        return None;
-    }
-    std::env::split_paths(path).find_map(|folder| {
-        extensions
-            .split(';')
-            .filter(|extension| !extension.is_empty())
-            .map(|extension| folder.join(format!("{name}{}", extension.to_ascii_lowercase())))
-            .find(|candidate| exists(candidate))
-    })
-}
-
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     use super::Takes;
 
@@ -656,28 +580,5 @@ mod tests {
         assert_eq!(load["method"], "session/load");
         assert_eq!(load["params"]["mcpServers"][0]["name"], "amux");
         assert!(super::open_session(&interpret::acp::Opening::Unresumable, &setup, true).is_none());
-    }
-
-    /// A bare name is found under PATHEXT's extensions in PATH's order, as
-    /// npm's `.cmd` shims need on Windows; a path or a name with an
-    /// extension is left as given.
-    #[test]
-    fn a_bare_name_is_found_under_each_extension() {
-        let folders = [PathBuf::from("/a"), PathBuf::from("/b")];
-        let path = std::env::join_paths(&folders).unwrap();
-        let exists = |path: &Path| path == Path::new("/b/opencode.cmd");
-        assert_eq!(
-            super::find_program("opencode", &path, ".COM;.EXE;.BAT;.CMD", exists),
-            Some(PathBuf::from("/b/opencode.cmd"))
-        );
-        assert_eq!(
-            super::find_program("opencode.cmd", &path, ".CMD", exists),
-            None
-        );
-        assert_eq!(
-            super::find_program("/b/opencode", &path, ".CMD", exists),
-            None
-        );
-        assert_eq!(super::find_program("grok", &path, ".CMD", exists), None);
     }
 }

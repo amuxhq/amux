@@ -56,8 +56,7 @@ ALLOWED_LOCAL = {
     "acp-protocol": set(),
     "claude-protocol": set(),
     "codex-protocol": set(),
-    # The tether lives in os, beside the family it is part of.
-    "pty-host": {"os"},
+    "pty-host": set(),
     # The daemon reaches agent processes only through the directory contract,
     # never the agent or interpret crates, so the phone hosts a runtime with
     # no interpreter or provider-protocol crates in its graph. redaction walks

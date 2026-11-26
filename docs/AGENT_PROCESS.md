@@ -157,25 +157,35 @@ action, `exit(cause)`:
    which closes every open ask and writes the final `Exited` boundary with
    the cause (an `ExitCause`) and its own words, in a step whose
    `incarnation_end` carries the same;
-2. take a census of every process below the provider, then ask it to
-   finish: end of input and SIGTERM for headless Claude, the end of its
-   connection (on which the agent sends SIGTERM) for Codex, SIGTERM to the
-   process group for terminal Claude. Every provider cleans up the commands
-   it runs on SIGTERM, and headless Claude does not exit on the end of its
-   input alone while a background shell runs;
-3. enter `Exiting` with a ten-second deadline, after which everything below
-   the provider and its process group are killed.
+2. count the agent's family (below), then ask the provider to finish: the
+   end of its input for headless Claude (and on Unix SIGTERM), the end of
+   its connection for Codex (on which the agent sends a Codex server on a
+   socket SIGTERM), SIGTERM to the process group for terminal Claude. Every
+   provider cleans up the commands it runs on SIGTERM, and headless Claude
+   does not exit on the end of its input alone while a background shell
+   runs. Windows has no such ask: no console control event is sent, since
+   most programs take one as "exit now", a `.cmd` shim's shell answers it
+   with a question, and it reaches every process on the console;
+3. enter `Exiting` with a ten-second deadline, after which the family is
+   killed.
 
 The provider's own exit then ends the loop, after the agent kills whatever
-of the census still runs. Claude's and Codex's tool shells each lead a
-session of their own, so a kill of the provider's process group misses
-them, and by the time the provider has exited its orphans belong to init:
-the census, taken while the provider runs, is what finds them. Each process
-is remembered with its start time and killed only if that same process is
-still running ([`tree.rs`](../crates/agent/src/tree.rs)). Two paths skip `exit`: the
-provider exiting by itself (the interpreter records it as the final boundary,
-with the exit code or "killed by a signal"), and a kill, which kills the
-provider's process group at once and writes nothing.
+of its family still runs, and returns once it is gone, so nothing of it
+holds the agent's folder when the daemon sees the exit. The family is
+everything the agent process starts ([`family.rs`](../crates/agent/src/family.rs),
+`os::process::Family`): the agent's first act is to contain itself, so on
+Windows it is in a Job Object of its own, which every process it starts
+afterwards is born inside and which ends with it however it ends; on Unix
+each provider leads a process group of its own, tethered to the agent, and
+the census is every process descended from it. Claude's and Codex's tool
+shells each lead a session of their own, so a kill of the provider's
+process group misses them, and by the time the provider has exited its
+orphans belong to init: the count before the ask, taken while the provider
+runs, is what finds them on Unix. Each process is remembered with its
+start time and killed only if that same process is still running. Two
+paths skip `exit`: the provider exiting by itself (the interpreter records
+it as the final boundary, with the exit code or "killed by a signal"), and
+a kill, which kills the family at once and writes nothing.
 
 | While | What happens | Result |
 |---|---|---|
@@ -189,9 +199,9 @@ provider's process group at once and writes nothing.
 | Any | The interpreter asks to exit (`Effect::Exit`) | `exit` with `ENDED_UNEXPECTEDLY` and the interpreter's words |
 | Any | A write to the directory fails (in practice, a full disk): a journal frame, a blob, or the provider's own state in `private/` that the next incarnation resumes from (Codex's thread id, the transcript position) | `exit` with `DIRECTORY_FAILED` and the failed write as the detail; if even that cannot be written, the provider is killed. The cause is then not in the journal either, so the row says `ENDED_UNEXPECTEDLY` (or `ENDED_WHILE_AWAY`) |
 | Any | The provider exits | The loop ends; `PROVIDER_EXITED` with the exit code or signal |
-| Any | `Stop { kill }` arrives | Everything below the provider, and its process group, is killed; `KILLED` |
+| Any | `Stop { kill }` arrives | The family is killed; `KILLED` |
 | Start | The provider cannot be started | `COULD_NOT_START`, with why |
-| `Exiting` | Ten seconds pass | Everything below the provider, and its process group, is killed |
+| `Exiting` | Ten seconds pass | The family is killed |
 
 Why the incarnation ended travels in the journal, not on `ctl.sock`: the
 step that writes the final boundary also carries `incarnation_end`, and the
@@ -507,7 +517,7 @@ version integer, and a frame a reader does not know is ignored.
 | `agent_message` | daemon → agent | An `Envelope` with the sender the daemon set; the recipient's interpreter picks the carrier |
 | `dump_request` | daemon → agent | `AgentDumpRequest { dump_id }`: asks for the agent's record for a report, answered in any mode |
 | `rename` | daemon → agent | `Rename { name }`: a Codex agent's thread takes the agent's new name, so Codex's own app shows what amux does; other kinds have nothing to rename |
-| `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill everything below the provider and its process group at once (the daemon's escalation past the stop deadline) |
+| `stop` | daemon → agent | `Stop { kill }`: without `kill`, cancel the turn the provider's own way and exit; with it, kill the agent's family at once (the daemon's escalation past the stop deadline) |
 | `read_git` | daemon → agent | `ReadGit {}`: read the folder's [git facts](#git-facts) again, as at a turn end; a draining or exiting agent ignores it |
 | `children` | daemon → agent | `Children { children }`: the agents directly below this one that are live, on every host its daemon knows of, each with its incarnation, sent whenever the list changes and when the daemon connects: always to an agent it found running (even with none, which settles a spawn the last daemon took and never answered), and to one it has just started only if it has any; a one-shot agent waits for each incarnation's last report |
 | `dump` | agent → daemon | `DumpPart` holding the agent's record, answering a dump request |
@@ -535,11 +545,21 @@ grace timer; a daemon that dials in before the timer runs out cancels it.
 
 ## Provider children
 
-Every child runs in its own process group, so a kill reaches whatever it
-started, with its working directory, command and arguments from the spec. Its
-environment is the agent's, minus the variables a parent Claude session sets
-(`claude::launch::CHILD_SESSION_ENV_SCRUB`), plus the spec's additions. Its
-stderr goes to `private/provider.log`.
+Every child is started into the agent's family, so a kill reaches whatever
+it started, with its working directory, command and arguments from the spec.
+Its program is found as a shell finds it (`os::paths::find_program`), on the
+`PATH` in the spec's environment or else the one a newly logged-on process
+would see, so a provider installed since the daemon started is found too,
+and on Windows npm's `.cmd` shim under `PATHEXT`; the catalogue's helper and
+the version probe find it the same way. Windows runs a `.cmd` through
+`cmd.exe`, which carries no line break and cuts a command line past 8191
+characters, so behind one headless Claude's settings, its tool server's
+configuration and the system prompt the agent appends go as files in
+`private/` (`--settings`, `--mcp-config` and `--append-system-prompt-file`
+name them). Its environment is the agent's, minus the variables a parent
+Claude session sets (`claude::launch::CHILD_SESSION_ENV_SCRUB`), plus the
+spec's additions. Its stderr goes to `private/provider.log`, and the agent's
+own to `agent.log`, which it points its standard error at as it starts.
 
 The child's exit ends the agent, never the end of its output. A straggler the
 provider left behind can hold a terminal or a pipe open forever, so after the
@@ -550,8 +570,8 @@ any transcript rows a follower has not read yet, the agent's own and then
 its subagents'.
 
 A provider's background jobs do not outlive the agent's exit: every provider
-ends them on SIGTERM, and the census kills any it left. A provider process killed on its
-own leaves them running, orphaned, and terminal Claude's `/exit` lets the
+ends them on SIGTERM, and the family's kill ends any it left. A provider process killed on its
+own leaves them running, orphaned (on Windows, until the agent exits), and terminal Claude's `/exit` lets the
 person move the session and its jobs into Claude's own background, where
 they keep running after the pane closes. Either way the agent's list of
 jobs is emptied at the exit ([background jobs](INTERPRETERS.md#background-jobs)).
@@ -643,7 +663,8 @@ The agent runs the spec's command with the spec's arguments plus
 --include-partial-messages --permission-prompt-tool stdio
 --replay-user-messages`, `--session-id <id>` or `--resume <id>` (kept in
 `private/provider-session` as for terminal Claude, and replaced the same
-way), `--settings <json>` and `--mcp-config`. It also appends one sentence to
+way), `--settings <json>` and `--mcp-config` (files behind a `.cmd` shim;
+see [Provider children](#provider-children)). It also appends one sentence to
 Claude's system prompt, joined to any `--append-system-prompt` the spec's
 arguments carry: write a Bash call's `description` before its `command`.
 Claude streams a call's input in the order the model writes its fields, and
@@ -652,10 +673,10 @@ can take the model many seconds to write; asked, it writes the description
 first, so the call's row can open on it.
 A reset gives Claude a new session, which the interpreter names once Claude's
 next `init` reports it; the agent saves it and names it on later user
-messages. Claude leads a process group of its own and finishes its turn
-after its input closes, so on Unix it is tethered as a Codex server on a
-socket is (see [Codex](#codex)): an agent that dies, however it dies, takes
-it with it. Claude reports nothing until
+messages. Claude finishes its turn after its input closes, so it is in the
+agent's family: on Unix it leads a process group of its own, tethered as a
+Codex server on a socket is (see [Codex](#codex)), and on Windows it is born
+in the agent's job. An agent that dies, however it dies, takes it with it. Claude reports nothing until
 asked, so the agent writes an `initialize` control request at once, built
 from `claude_protocol::stream` types like every line written to Claude; its
 answer is what says Claude takes input, and it lists the models and commands
@@ -727,7 +748,8 @@ Closing the agent's connection ends a stdio server. On a socket, the end of
 the agent's connection (closed by the agent, or dropped by the server) is
 when the agent sends the server SIGTERM; Codex then finishes any running
 turn and exits. Nothing tells a socket server that the agent died, so the
-agent also starts a tether beside it: a shell in the server's process group
+agent's family (on Unix, where Codex has its socket) also starts a tether
+beside it: a shell in the server's process group
 reading a pipe only the agent holds. When the agent dies, however it dies,
 the pipe closes and the shell sends the server's group SIGTERM, and, if the
 server is still running five seconds later (one with an approval open

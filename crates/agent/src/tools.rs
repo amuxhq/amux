@@ -800,12 +800,44 @@ fn store_file(dir: &Path, path: &Path, name: String) -> Result<Attachment, Strin
     use sha2::Digest as _;
 
     let reading = |error: std::io::Error| format!("reading {}: {error}", path.display());
+    let not_regular = || format!("{} is not a regular file", path.display());
     let limit = wire::ATTACHMENT_SIZE_LIMIT as u64;
-    let resolved = std::fs::canonicalize(path).map_err(reading)?;
-    let metadata = std::fs::metadata(&resolved).map_err(reading)?;
+    // What the path is comes first, links followed, before anything else
+    // resolves it: resolving a device or a pipe fails on Windows, in words
+    // that don't say why it isn't read.
+    let missing = |error: &std::io::Error| {
+        matches!(
+            error.kind(),
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+        )
+    };
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
+        // A link to nothing (on Windows, a link to `NUL`, which a link
+        // can't reach) is no regular file either.
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound
+                && std::fs::symlink_metadata(path).is_ok() =>
+        {
+            return Err(not_regular());
+        }
+        Err(error) if missing(&error) => return Err(reading(error)),
+        // Something is there, but it has no file's metadata to give: a
+        // device such as `NUL`, or a pipe.
+        Err(_) => return Err(not_regular()),
+    };
     if !metadata.is_file() {
-        return Err(format!("{} is not a regular file", path.display()));
+        return Err(not_regular());
     }
+    // A regular file resolves; what has no final path to give is not one,
+    // whatever its metadata said.
+    let resolved = std::fs::canonicalize(path).map_err(|error| {
+        if missing(&error) {
+            reading(error)
+        } else {
+            not_regular()
+        }
+    })?;
     if metadata.len() > limit {
         return Err(too_large_words(&name));
     }

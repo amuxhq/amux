@@ -18,6 +18,7 @@ pub(crate) mod markdown;
 pub mod onboarding;
 mod open;
 pub(crate) mod panel;
+mod platform;
 pub mod qr;
 pub mod report;
 pub mod run;

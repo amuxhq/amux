@@ -94,6 +94,14 @@ pub fn create_private(path: &Path, how: Create) -> io::Result<File> {
     imp::create_private(path, how)
 }
 
+/// Whether `path` is owner-only in its own right, as [`create_private_dir`],
+/// [`make_private`] and [`create_private`] leave it, for a test to check;
+/// [`crate::testing::is_private`] is its public form.
+#[cfg(any(test, feature = "testing"))]
+pub(crate) fn is_private(path: &Path) -> io::Result<bool> {
+    imp::is_private(path)
+}
+
 /// The current user's SID as a string (`S-1-5-21-…`), for an SDDL.
 /// Windows only: elsewhere it returns [`io::ErrorKind::Unsupported`].
 pub fn current_user_sid() -> io::Result<String> {

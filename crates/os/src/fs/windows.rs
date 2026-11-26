@@ -679,7 +679,30 @@ unsafe fn from_wide_nul(text: *const u16) -> OsString {
     OsString::from_wide(unsafe { std::slice::from_raw_parts(text, length) })
 }
 
-#[cfg(test)]
+/// A protected DACL every entry of which lets in only this user, SYSTEM
+/// or Administrators.
+#[cfg(any(test, feature = "testing"))]
+pub(super) fn is_private(path: &Path) -> io::Result<bool> {
+    let sddl = testing::dacl_sddl(path)?;
+    let Some(dacl) = sddl.strip_prefix("D:") else {
+        return Ok(false);
+    };
+    let mut parts = dacl.split('(');
+    let flags = parts.next().unwrap_or_default();
+    let sid = current_user_sid()?;
+    let owner_only = parts.all(|ace| {
+        let fields: Vec<&str> = ace.trim_end_matches(')').split(';').collect();
+        // An allowing entry's trustee is its sixth field; a denying one
+        // lets nobody in.
+        fields.first() != Some(&"A")
+            || fields
+                .get(5)
+                .is_some_and(|who| [sid.as_str(), "SY", "BA"].contains(who))
+    });
+    Ok(flags.starts_with('P') && owner_only)
+}
+
+#[cfg(any(test, feature = "testing"))]
 pub(super) mod testing {
     //! Reading back what this module sets.
 

@@ -8,6 +8,7 @@ publish = false
 autotests = false
 
 [dependencies]
+os = { workspace = true }
 sha2 = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }

@@ -95,8 +95,9 @@ where
 }
 
 /// Joins stdin and stdout to the link socket at `socket_path`, carrying a
-/// peer's link.
-#[cfg(unix)]
+/// peer's link: the far end's half of an SSH link, which a Windows host
+/// never is (it binds no link socket, and its far end would need `sh`).
+#[cfg(not(windows))] // out of scope on Windows: SSH with a Windows far end
 pub async fn relay_stdio_to_unix_socket<P>(socket_path: P) -> Result<(), SshPairingError>
 where
     P: AsRef<std::path::Path>,

@@ -27,9 +27,16 @@ pub use step::{Check, DumpReason, StepBudget, StepStart, Violation, finish_step}
 const KEEP: usize = 2;
 const CHECKPOINT: &str = "checkpoint";
 
+/// How a ring puts a checkpoint in place: whole, replacing any file at the
+/// path, so a reader sees no checkpoint or all of it. The drivers pass
+/// `os::fs::write_durably`, which this crate, held to the cores' rules,
+/// does not depend on.
+pub type WriteFile = fn(&Path, &[u8]) -> io::Result<()>;
+
 /// The writer of one ring of `T`s.
 pub struct Ring<T> {
     dir: PathBuf,
+    write: WriteFile,
     segment_bytes: u64,
     /// The global offset of the next byte.
     offset: u64,
@@ -67,16 +74,23 @@ pub struct Saved<T> {
 impl<T: Serialize + DeserializeOwned> Ring<T> {
     /// Opens the ring in `dir`, `ring_bytes` across the segments it keeps,
     /// starting a new segment whose checkpoint is `checkpoint`: every
-    /// process starts its own segment from the state it resumed.
-    pub fn open(dir: PathBuf, ring_bytes: u64, checkpoint: &[u8]) -> io::Result<Self> {
+    /// process starts its own segment from the state it resumed. Each
+    /// checkpoint is written with `write`.
+    pub fn open(
+        dir: PathBuf,
+        ring_bytes: u64,
+        checkpoint: &[u8],
+        write: WriteFile,
+    ) -> io::Result<Self> {
         fs::create_dir_all(&dir)?;
         let offset = match journal::segments(&dir)?.last() {
             Some(&start) => start + fs::metadata(journal::segment_path(&dir, start))?.len(),
             None => 0,
         };
-        let segment = start_segment(&dir, offset, checkpoint)?;
+        let segment = start_segment(&dir, offset, checkpoint, write)?;
         let ring = Self {
             dir,
+            write,
             segment_bytes: (ring_bytes / KEEP as u64).max(1),
             offset,
             segment: (offset, segment),
@@ -95,7 +109,7 @@ impl<T: Serialize + DeserializeOwned> Ring<T> {
     /// Starts a new segment at `checkpoint`, the state now. Segments older
     /// than the two newest are dropped.
     pub fn rotate(&mut self, checkpoint: &[u8]) -> io::Result<()> {
-        let file = start_segment(&self.dir, self.offset, checkpoint)?;
+        let file = start_segment(&self.dir, self.offset, checkpoint, self.write)?;
         self.segment = (self.offset, file);
         self.prune()
     }
@@ -203,13 +217,10 @@ pub fn checkpoint_path(dir: &Path, start: u64) -> PathBuf {
     dir.join(format!("{}.{CHECKPOINT}", journal::segment_name(start)))
 }
 
-/// Writes the checkpoint by temp-and-rename, then creates the segment: a
+/// Writes the checkpoint whole with `write`, then creates the segment: a
 /// segment never exists without the state it starts from.
-fn start_segment(dir: &Path, start: u64, checkpoint: &[u8]) -> io::Result<File> {
-    let path = checkpoint_path(dir, start);
-    let temp = path.with_extension("tmp");
-    fs::write(&temp, checkpoint)?;
-    fs::rename(&temp, &path)?;
+fn start_segment(dir: &Path, start: u64, checkpoint: &[u8], write: WriteFile) -> io::Result<File> {
+    write(&checkpoint_path(dir, start), checkpoint)?;
     OpenOptions::new()
         .create(true)
         .append(true)
@@ -227,11 +238,36 @@ mod tests {
         at_ms: i64,
     }
 
+    /// A whole-file write; the drivers' is os::fs::write_durably.
+    const WRITE: WriteFile = |path, bytes| fs::write(path, bytes);
+
+    /// A checkpoint the writer could not put in place starts no segment:
+    /// a segment never exists without the state it starts from, and the
+    /// ring rotates on from the segment it had.
+    #[test]
+    fn a_checkpoint_that_cannot_be_written_starts_no_segment() {
+        let dir = tempfile::tempdir().unwrap();
+        let facts = dir.path().join("facts");
+        let refuse: WriteFile = |_, _| Err(io::Error::other("the disk is full"));
+        assert!(Ring::<Tick>::open(facts.clone(), 60, b"state", refuse).is_err());
+        assert!(journal::segments(&facts).unwrap().is_empty());
+
+        let mut ring = Ring::open(facts.clone(), 60, b"state", WRITE).unwrap();
+        ring.append(&Tick { at_ms: 1 }).unwrap();
+        ring.write = refuse;
+        assert!(ring.rotate(b"next").is_err());
+        assert_eq!(journal::segments(&facts).unwrap().len(), 1);
+        ring.append(&Tick { at_ms: 2 }).unwrap();
+        let saved = super::saved::<Tick>(&facts).unwrap().unwrap();
+        assert_eq!(saved.checkpoint, b"state");
+        assert_eq!(saved.inputs, vec![Tick { at_ms: 1 }, Tick { at_ms: 2 }]);
+    }
+
     #[test]
     fn the_ring_rotates_by_size_keeps_two_segments_and_resumes_from_the_newest() {
         let dir = tempfile::tempdir().unwrap();
         let facts = dir.path().join("facts");
-        let mut ring = Ring::open(facts.clone(), 60, b"state 0").unwrap();
+        let mut ring = Ring::open(facts.clone(), 60, b"state 0", WRITE).unwrap();
         for at in 0..10 {
             if ring.full() {
                 ring.rotate(format!("state {at}").as_bytes()).unwrap();
@@ -250,7 +286,7 @@ mod tests {
 
         // A new process starts its own segment after the last.
         drop(ring);
-        let ring = Ring::<Tick>::open(facts.clone(), 60, b"resumed").unwrap();
+        let ring = Ring::<Tick>::open(facts.clone(), 60, b"resumed", WRITE).unwrap();
         assert!(!ring.full());
         let saved = super::saved::<Tick>(&facts).unwrap().unwrap();
         assert_eq!(saved.checkpoint, b"resumed");
@@ -261,7 +297,7 @@ mod tests {
     fn a_torn_tail_is_cut_and_never_returned() {
         let dir = tempfile::tempdir().unwrap();
         let facts = dir.path().join("facts");
-        let mut ring = Ring::open(facts.clone(), 1 << 20, b"state").unwrap();
+        let mut ring = Ring::open(facts.clone(), 1 << 20, b"state", WRITE).unwrap();
         ring.append(&Tick { at_ms: 1 }).unwrap();
         ring.append(&Tick { at_ms: 2 }).unwrap();
         drop(ring);
@@ -280,7 +316,7 @@ mod tests {
     fn an_undone_append_is_gone_from_the_saved_inputs() {
         let dir = tempfile::tempdir().unwrap();
         let facts = dir.path().join("facts");
-        let mut ring = Ring::open(facts.clone(), 1 << 20, b"state").unwrap();
+        let mut ring = Ring::open(facts.clone(), 1 << 20, b"state", WRITE).unwrap();
         ring.append(&Tick { at_ms: 1 }).unwrap();
         let mark = ring.offset();
         ring.append(&Tick { at_ms: 2 }).unwrap();
@@ -295,7 +331,7 @@ mod tests {
     fn a_batch_appends_multiple_lines_in_order() {
         let dir = tempfile::tempdir().unwrap();
         let facts = dir.path().join("facts");
-        let mut ring = Ring::<Tick>::open(facts.clone(), 1 << 20, b"state").unwrap();
+        let mut ring = Ring::<Tick>::open(facts.clone(), 1 << 20, b"state", WRITE).unwrap();
         let mut batch = Batch::new();
         batch.push(&Tick { at_ms: 1 }).unwrap();
         batch.push(&Tick { at_ms: 2 }).unwrap();

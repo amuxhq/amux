@@ -264,6 +264,7 @@ pub(crate) async fn run<I: Interpreter>(
             bytes => bytes,
         },
         &agent.checkpoint(),
+        os::fs::write_durably,
     )
     .map_err(AgentError::Journal)?;
     let mut driver = Driver::<I> {
@@ -1084,7 +1085,7 @@ mod tests {
         std::fs::create_dir_all(&facts).unwrap();
         let mut first = Vec::new();
         let agent = Agent::start(&spec, None, 0, &mut first);
-        let ring = Ring::open(facts, 1 << 20, &agent.checkpoint()).unwrap();
+        let ring = Ring::open(facts, 1 << 20, &agent.checkpoint(), os::fs::write_durably).unwrap();
         let journal = journal::Writer::open(dir.path().join(dir::JOURNAL), 1 << 20).unwrap();
         let (connected, sent) = daemon();
         let (jobs, _) = mpsc::unbounded_channel();

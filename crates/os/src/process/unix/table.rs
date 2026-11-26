@@ -65,12 +65,20 @@ fn read_table() -> std::io::Result<Vec<Row>> {
     Ok(pids.into_iter().filter_map(row).collect())
 }
 
-/// The row for `pid`, if it names a process. `proc_pidinfo` answers
-/// nothing (ESRCH) for a process that has exited unreaped, though its pid
-/// and its group's id are still held; `sysctl` still has its row.
+/// The row for `pid`, if it names a process. `proc_pidinfo` answers ESRCH
+/// for a process that has exited unreaped, though its pid and its group's
+/// id are still held; `sysctl` still has its row. Another user's process,
+/// which `proc_pidinfo` refuses (EPERM), stays out of the table: no census
+/// needs it, and asking `sysctl` for each would slow every census.
 #[cfg(target_os = "macos")]
 pub(super) fn row(pid: i32) -> Option<Row> {
-    live_row(pid).or_else(|| unreaped_row(pid))
+    match live_row(pid) {
+        Ok(row) => Some(row),
+        Err(error) if error.raw_os_error() == Some(libc::ESRCH) => {
+            unreaped_row(pid).filter(|row| row.zombie)
+        }
+        Err(_) => None,
+    }
 }
 
 /// `proc_bsdinfo.pbi_status` and `extern_proc.p_stat` of a process
@@ -79,7 +87,7 @@ pub(super) fn row(pid: i32) -> Option<Row> {
 const SZOMB: u32 = 5;
 
 #[cfg(target_os = "macos")]
-pub(super) fn live_row(pid: i32) -> Option<Row> {
+pub(super) fn live_row(pid: i32) -> std::io::Result<Row> {
     let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
     let size = size_of::<libc::proc_bsdinfo>() as libc::c_int;
     // SAFETY: the buffer holds one proc_bsdinfo, and is read only when the
@@ -92,10 +100,13 @@ pub(super) fn live_row(pid: i32) -> Option<Row> {
             info.as_mut_ptr().cast(),
             size,
         );
-        (written == size).then(|| info.assume_init())?
+        if written != size {
+            return Err(std::io::Error::last_os_error());
+        }
+        info.assume_init()
     };
     let started = info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec;
-    Some(Row {
+    Ok(Row {
         pid,
         ppid: info.pbi_ppid as i32,
         started,

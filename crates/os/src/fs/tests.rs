@@ -234,7 +234,7 @@ fn making_a_private_folder_private_again_keeps_it_private() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("root");
     create_private_dir(&root).unwrap();
-    fs::write(root.join("inside"), b"x").unwrap();
+    write_durably(&root.join("inside"), b"x").unwrap();
     make_private(&root).unwrap();
     create_private_dir(&root).unwrap();
     assert!(crate::testing::private::owner_only(&root).unwrap());

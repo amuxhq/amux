@@ -76,7 +76,9 @@ impl HookAnswers {
             if !answer.is_empty() {
                 let _ = stream.write_all(&answer).await;
             }
-            let _ = stream.shutdown().await;
+            // Closed outright, so the hook reads its end at once; what was
+            // written arrives first.
+            stream.close();
         });
     }
 }

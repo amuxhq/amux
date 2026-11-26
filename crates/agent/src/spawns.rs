@@ -34,14 +34,23 @@ pub struct Heard {
 }
 
 /// Serves the socket of the agent in `dir` that its tool server asks on,
-/// until the listener fails. Each spawn is told to the core through
-/// `heard`, made of the child's host through the daemon (dialling retried
-/// over the window an update's restart takes, the call itself made at most
-/// once), and answered as that host answered it. An ask this build does
-/// not know is refused in words.
+/// for the listener's life: a failed accept is logged and the next one
+/// tried. Each spawn is told to the core through `heard`, made of the
+/// child's host through the daemon (dialling retried over the window an
+/// update's restart takes, the call itself made at most once), and
+/// answered as that host answered it. An ask this build does not know is
+/// refused in words.
 pub async fn serve(mut listener: LocalListener, dir: PathBuf, heard: mpsc::UnboundedSender<Heard>) {
-    while let Ok(stream) = listener.accept().await {
-        tokio::spawn(carry(stream, dir.clone(), heard.clone()));
+    loop {
+        match listener.accept().await {
+            Ok(stream) => {
+                tokio::spawn(carry(stream, dir.clone(), heard.clone()));
+            }
+            Err(error) => {
+                eprintln!("amux agent: accepting on the agent socket: {error}");
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
     }
 }
 

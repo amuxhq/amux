@@ -156,7 +156,7 @@ and are tuned the same way:
 | Fully ingested journal segments kept for dumps | 2 | `KEPT_SEGMENTS`, same file |
 | Retention sweep interval | 10 minutes | `Launch.retention_interval_ms` |
 | Agent process start deadline (spawn to Hello) | 20 s | `Settings.start_deadline_ms` |
-| Agent stop deadline before the process group is killed | 30 s | `Settings.stop_deadline_ms` |
+| Agent stop deadline before the agent is killed | 30 s | `Settings.stop_deadline_ms` |
 | Wait for an interpreter's verdict | 30 s | `Settings.reply_patience_ms`; past it the input is reported lost and the client shows it not confirmed |
 | One write on an agent's control socket | 5 s | `Launch.ctl_write_ms` |
 | Deliveries outbox retry | 30 s | `Settings.delivery_retry_ms` |

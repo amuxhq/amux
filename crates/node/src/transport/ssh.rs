@@ -272,6 +272,59 @@ mod tests {
         assert_eq!(ssh_program(&none), "ssh");
     }
 
+    /// The dial on every OS, Windows among them: the `ssh` the PATH finds
+    /// (here a stand-in, `ssh.exe` on Windows) starts by its whole path,
+    /// carries the session both ways over its standard streams, and what
+    /// it says on its error stream as it gives up is kept to explain the
+    /// failure. The stand-in answers as a far end would: SSH with a Windows
+    /// machine at the far end is out of scope, but the dial from one is not.
+    #[tokio::test]
+    async fn the_ssh_on_the_path_carries_the_session_and_says_why_it_ended() {
+        use provider_fakes::dispatch;
+        use tokio::io::AsyncWriteExt as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let stand_in = dispatch::program(dir.path(), "ssh");
+        dispatch::install(
+            &provider_fakes::binaries::path(dispatch::BINARY),
+            &stand_in,
+            &dispatch::Plan::Answer {
+                lines: 1,
+                stdout: "the far end answered\n".to_owned(),
+                stderr: "Connection to far closed by remote host.\n".to_owned(),
+                code: 255,
+            },
+        )
+        .unwrap();
+        let path = std::env::join_paths([dir.path()]).unwrap();
+        let ssh = ssh_program(&path);
+        assert_eq!(
+            std::path::PathBuf::from(&ssh),
+            std::path::absolute(&stand_in).unwrap()
+        );
+
+        let profile = uuid::Uuid::nil().to_string();
+        let mut io = spawn_ssh_amux_command(
+            &ssh,
+            "far",
+            &[RELAY_ARGS[0], RELAY_ARGS[1], "--profile", &profile],
+            "SSH relay",
+        )
+        .unwrap();
+        let stderr = io.take_stderr();
+        io.write_all(b"the near end's first flight\n")
+            .await
+            .unwrap();
+        io.flush().await.unwrap();
+        let mut out = String::new();
+        io.read_to_string(&mut out).await.unwrap();
+        assert_eq!(out, "the far end answered\n");
+        assert_eq!(
+            with_said("the link ended".to_owned(), stderr).await,
+            "the link ended; ssh: Connection to far closed by remote host."
+        );
+    }
+
     #[test]
     fn ssh_args_are_noninteractive_and_carry_one_command() {
         let command = remote_amux_command(&PAIR_RECV_ARGS).unwrap();

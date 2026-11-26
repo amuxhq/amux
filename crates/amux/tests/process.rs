@@ -785,16 +785,14 @@ fn zombies_of(pid: u32) -> Vec<String> {
 }
 
 /// Switching an experiment restarts a daemon that has no supervisor in
-/// place: the same process, so the service manager running `amux daemon`
-/// sees nothing, serving again with the experiments the config now switches
-/// on, and its agent working on across it. Several switches in a row are one
-/// restart, and a name this build does not have restarts nothing. The agent
-/// the old image started is reaped by the new one once it exits.
+/// place, serving again with the experiments the config now switches on,
+/// and its agent working on across it. Several switches in a row are one
+/// restart, and a name this build does not have restarts nothing. Where the
+/// OS has exec (Unix) the restart is the same process, so the service
+/// manager running `amux daemon` sees nothing, and the agent the old image
+/// started is reaped by the new one once it exits. Windows has no exec: the
+/// daemon starts a successor and exits cleanly, and the successor serves.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: the daemon the service manager started is still running after the experiment switch"
-)]
 async fn switching_an_experiment_restarts_the_daemon_in_place_once() {
     let gate = tempfile::tempdir().unwrap();
     let gate = gate.path().join("gate");
@@ -880,11 +878,23 @@ async fn switching_an_experiment_restarts_the_daemon_in_place_once() {
         lines[1]
     );
     let daemon = install.daemon.as_mut().unwrap();
-    assert!(
-        daemon.try_wait().unwrap().is_none(),
-        "the daemon the service manager started is still running"
-    );
-    assert_eq!(daemon.id(), Some(pid), "the same process");
+    if os::process::EXEC_KEEPS_PID {
+        assert!(
+            daemon.try_wait().unwrap().is_none(),
+            "the daemon the service manager started is still running"
+        );
+        assert_eq!(daemon.id(), Some(pid), "the same process");
+    } else {
+        // No exec: the daemon started its successor and exited cleanly,
+        // and the successor, which the test does not hold, is what serves.
+        let exited = tokio::time::timeout(PATIENCE, daemon.wait())
+            .await
+            .expect("the daemon that started its successor exits")
+            .unwrap();
+        assert!(exited.success(), "it exits cleanly: {exited}");
+        install.daemon = None;
+        install.detached = true;
+    }
     let dir = install.agent_dir(&sdk);
     assert!(agent_dir::locked(&dir), "the agent kept running");
 
@@ -932,6 +942,11 @@ async fn switching_an_experiment_restarts_the_daemon_in_place_once() {
     })
     .await
     .unwrap();
+    // A successor (Windows) is no parent of the agent, which leaves no
+    // zombie: only an exec'd image has a child to reap.
+    if !os::process::EXEC_KEEPS_PID {
+        return;
+    }
     until("the agent is reaped", || async {
         let zombies = zombies_of(pid);
         zombies
@@ -949,8 +964,7 @@ async fn switching_an_experiment_restarts_the_daemon_in_place_once() {
 /// nothing, so neither restarts; a new delay set with `amux config` is one
 /// restart, and the next serving line runs it.
 // On Windows, which has no exec, the restarted daemon is a new process the
-// test doesn't hold, and it outlives the test: Buck's runner ends it with
-// the test's job, and a cargo run leaves it running.
+// test doesn't hold: it is stopped at the end as one `server start` left is.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_running_experiments_setting_restarts_the_daemon_once() {
     let mut install = Install::new(Vec::new());
@@ -981,6 +995,7 @@ async fn a_running_experiments_setting_restarts_the_daemon_once() {
     })
     .await
     .unwrap();
+    install.detached = !os::process::EXEC_KEEPS_PID;
     let lines = serving_lines(&install);
     assert!(
         lines[0].contains(r#"experiment_settings=["suspension.after = 30m"]"#),

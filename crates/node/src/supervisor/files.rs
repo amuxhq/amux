@@ -217,6 +217,19 @@ impl Files {
         }
     }
 
+    /// Moves `path`, one of these files that a running process still
+    /// holds, aside to a fresh `<program>.old.<n>` as an update does (the
+    /// launcher's name for the launcher's files, the binary's for the
+    /// rest): how uninstalling leaves what Windows won't let it delete.
+    pub fn set_aside(&self, path: &Path) -> io::Result<PathBuf> {
+        let program = if path == self.launcher || path == self.launcher_staged {
+            &self.launcher
+        } else {
+            &self.binary
+        };
+        move_aside(path, program)
+    }
+
     /// Every binary moved aside beside the binary, the launcher's among
     /// them: `<binary>.old.<n>` and `<launcher>.old.<n>`.
     pub fn asides(&self) -> Vec<PathBuf> {

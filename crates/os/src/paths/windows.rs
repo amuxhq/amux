@@ -539,13 +539,13 @@ mod tests {
         key.set_path(
             "env",
             REG_EXPAND_SZ,
-            r"%SystemRoot%\keep;C:\Users\someone\.amux\bin\;c:\USERS\SOMEONE\.AMUX\BIN;C:\other;",
+            r"%USERPROFILE%\AppData\keep;%SystemRoot%\keep;C:\Users\someone\.amux\bin\;c:\USERS\SOMEONE\.AMUX\BIN;C:\other;",
         );
         assert!(remove_from_path_under(&env, bin).unwrap());
         assert_eq!(
             raw_path(HKEY_CURRENT_USER, &env).unwrap(),
             Some((
-                OsString::from(r"%SystemRoot%\keep;C:\other;"),
+                OsString::from(r"%USERPROFILE%\AppData\keep;%SystemRoot%\keep;C:\other;"),
                 REG_EXPAND_SZ
             ))
         );
@@ -559,7 +559,10 @@ mod tests {
         assert!(remove_from_path_under(&env, &Path::new(&root).join("keep")).unwrap());
         assert_eq!(
             raw_path(HKEY_CURRENT_USER, &env).unwrap(),
-            Some((OsString::from(r"C:\other;"), REG_EXPAND_SZ))
+            Some((
+                OsString::from(r"%USERPROFILE%\AppData\keep;C:\other;"),
+                REG_EXPAND_SZ
+            ))
         );
 
         // A value left with nothing in it goes.

@@ -1194,11 +1194,10 @@ On Windows, `install.ps1` also:
 
 - installs the x64 build on Windows on Arm, which runs it emulated, since
   only x64 ships;
-- puts `amux-launch.exe` beside `amux.exe`. No manifest names the launcher:
-  the script reads `checksums.txt` from the release folder the entry's URL
-  is in, downloads `amux-launch-windows-x86_64.exe` from there, and installs
-  nothing, amux included, unless its sha256 is the one listed. A release
-  whose `checksums.txt` lists no launcher predates it, and amux is
+- puts `amux-launch.exe` beside `amux.exe`, from the manifest's
+  `<target>/amux-launch` entry, checked by size and sha256 as amux is; a
+  launcher that isn't the entry's installs nothing, amux included. A
+  manifest naming no launcher of amux's version predates it, and amux is
   installed alone;
 - stops a running amux with `amux server stop` first, then moves whatever
   still holds an installed file (an agent runs `amux.exe` too) aside to a

@@ -172,101 +172,65 @@ pub async fn uninstall(
     Ok(())
 }
 
-/// The programs an install puts in its folder: amux, and beside it the
-/// launcher Windows' login item runs.
-const PROGRAMS: [&str; 2] = ["amux", "amux-launch"];
-
 /// How long the removals wait, all told, for programs that are ending (the
 /// launcher once its supervisor has stopped, an agent just stopped) before
 /// setting aside what they still hold.
 const ENDING_PATIENCE: Duration = Duration::from_secs(10);
 
-/// Removes every installed program from `bin` with what its updates left
-/// beside it ([`Files::beside`]: the previous build, the record of one
-/// rolled back, a download not yet installed, and each build moved aside
-/// while it ran). Windows refuses to delete an image a process is running,
-/// and this command is usually one, so such a file is renamed to a fresh
-/// `<program>.old.<n>` instead, and returned: the one thing an uninstall
-/// leaves.
+/// Removes amux from `bin` with everything its updates left there, as
+/// [`Files::beside`] names it: the binary and the launcher Windows' login
+/// item runs, the previous build, the record of one rolled back, the
+/// downloads not yet installed, and each build moved aside while it ran
+/// (`.old.<n>`). Windows refuses to delete an image a process is running,
+/// and this command is usually one, so such a file is moved aside to a
+/// fresh `<program>.old.<n>` instead, as an update would, and returned: the
+/// one thing an uninstall leaves.
 fn remove_installed(bin: &Path) -> Result<Vec<PathBuf>> {
+    let files = Files::beside(&bin.join(os::paths::exe_name("amux")));
+    let asides = files.asides();
+    let mut paths = vec![
+        bin.join(os::paths::exe_name("amux")),
+        files.prev.clone(),
+        files.rejected.clone(),
+        files.staged.clone(),
+        files.launcher.clone(),
+        files.launcher_staged.clone(),
+    ];
+    paths.extend(asides.iter().cloned());
+
     let running = std::env::current_exe().and_then(std::fs::canonicalize).ok();
     let deadline = Instant::now() + ENDING_PATIENCE;
     let mut removed = false;
     let mut held = Vec::new();
-    for program in PROGRAMS {
-        let binary = bin.join(os::paths::exe_name(program));
-        for path in installed_files(&binary) {
-            if std::fs::symlink_metadata(&path).is_err() {
-                continue;
-            }
-            let ours = running
-                .as_ref()
-                .is_some_and(|running| std::fs::canonicalize(&path).is_ok_and(|p| p == *running));
-            let patience = if ours {
-                Duration::ZERO
-            } else {
-                deadline.saturating_duration_since(Instant::now())
-            };
-            match os::fs::remove_patiently(&path, patience)
-                .with_context(|| format!("deleting {}", path.display()))?
-            {
-                os::fs::Removed::Gone => removed = true,
-                os::fs::Removed::Later => held.push(set_aside(&binary, &path)?),
-            }
+    for path in paths {
+        if std::fs::symlink_metadata(&path).is_err() {
+            continue;
+        }
+        let ours = running
+            .as_ref()
+            .is_some_and(|running| std::fs::canonicalize(&path).is_ok_and(|p| p == *running));
+        let patience = if ours {
+            Duration::ZERO
+        } else {
+            deadline.saturating_duration_since(Instant::now())
+        };
+        match os::fs::remove_patiently(&path, patience)
+            .with_context(|| format!("deleting {}", path.display()))?
+        {
+            os::fs::Removed::Gone => removed = true,
+            // One moved aside already keeps its name.
+            os::fs::Removed::Later if asides.contains(&path) => held.push(path),
+            os::fs::Removed::Later => held.push(
+                files
+                    .set_aside(&path)
+                    .with_context(|| format!("moving the running {} aside", path.display()))?,
+            ),
         }
     }
     if removed || !held.is_empty() {
         println!("Removed amux from {}.", bin.display());
     }
     Ok(held)
-}
-
-/// What an install and its updates leave for the program at `binary`: the
-/// binary, what [`Files::beside`] names, and every `<binary>.old.<n>` an
-/// update moved aside.
-fn installed_files(binary: &Path) -> Vec<PathBuf> {
-    let files = Files::beside(binary);
-    let mut paths = vec![
-        binary.to_owned(),
-        files.prev,
-        files.rejected,
-        files.staged,
-        files.aside.clone(),
-    ];
-    let aside = files.aside.file_name().map(|name| {
-        let mut name = name.to_os_string();
-        name.push(".");
-        name.to_string_lossy().into_owned()
-    });
-    if let (Some(aside), Some(dir)) = (aside, binary.parent())
-        && let Ok(entries) = std::fs::read_dir(dir)
-    {
-        for entry in entries.flatten() {
-            if entry.file_name().to_string_lossy().starts_with(&aside) {
-                paths.push(entry.path());
-            }
-        }
-    }
-    paths
-}
-
-/// Renames `path`, held by a running process, to a fresh
-/// `<binary>.old.<n>`, never over one there; one with such a name already
-/// stays as it is.
-fn set_aside(binary: &Path, path: &Path) -> Result<PathBuf> {
-    let aside = Files::beside(binary).aside;
-    let stem = aside.file_name().unwrap_or_default().to_string_lossy();
-    let name = path.file_name().unwrap_or_default().to_string_lossy();
-    if name.starts_with(&format!("{stem}.")) {
-        return Ok(path.to_owned());
-    }
-    let fresh = (1u32..)
-        .map(|n| aside.with_file_name(format!("{stem}.{n}")))
-        .find(|candidate| std::fs::symlink_metadata(candidate).is_err())
-        .expect("a free name");
-    os::fs::rename_patiently(path, &fresh)
-        .with_context(|| format!("moving the running {} aside", path.display()))?;
-    Ok(fresh)
 }
 
 /// Where amux is installed: `~/.amux/bin`, on every platform.

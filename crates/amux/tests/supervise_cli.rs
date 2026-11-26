@@ -460,6 +460,22 @@ async fn uninstall_leaves_nothing_but_a_program_still_running() {
     // (so no login item here), the PATH in a shell profile, and deletes
     // what runs.
     let windows = cfg!(windows);
+    // On Windows, an amux that didn't read the test's keys would uninstall
+    // the person's own login item and PATH entry: none runs here unless it
+    // names both.
+    let image = std::fs::read(&amux).unwrap();
+    for seam in [
+        os::paths::TEST_ENVIRONMENT_KEY,
+        node::supervisor::login::TEST_RUN_KEY,
+    ] {
+        assert!(
+            !windows
+                || image
+                    .windows(seam.len())
+                    .any(|window| window == seam.as_bytes()),
+            "the amux under test doesn't read {seam}: not run"
+        );
+    }
     // The default installation, in the scratch home: the config and root
     // amux finds by itself.
     let (appdata, local) = (home.join("AppData"), home.join("Local"));
@@ -502,10 +518,12 @@ async fn uninstall_leaves_nothing_but_a_program_still_running() {
     };
 
     // The folder on PATH, as each platform's install script puts it.
-    let kept = r"%SystemRoot%\keep;C:\elsewhere";
+    // amux runs with a scratch USERPROFILE: an entry expanded and written
+    // back would name the scratch folder for good.
+    let kept = r"%USERPROFILE%\AppData\Local\Microsoft\WindowsApps;%SystemRoot%\keep;C:\elsewhere";
     if windows {
         environment.set_path(&format!(
-            r"%SystemRoot%\keep;{};C:\elsewhere",
+            r"%USERPROFILE%\AppData\Local\Microsoft\WindowsApps;%SystemRoot%\keep;{};C:\elsewhere",
             bin.display()
         ));
     }
@@ -551,15 +569,21 @@ async fn uninstall_leaves_nothing_but_a_program_still_running() {
         .unwrap();
     // What updates leave beside each program, and an earlier build's task.
     let files = node::supervisor::Files::beside(&amux);
-    for path in [&files.prev, &files.rejected, &files.staged, &files.aside] {
+    assert_eq!(files.launcher, launcher);
+    for path in [
+        &files.prev,
+        &files.rejected,
+        &files.staged,
+        &files.launcher_staged,
+    ] {
         std::fs::write(path, b"left by an update").unwrap();
     }
-    std::fs::write(files.aside.with_extension("old.1"), b"moved aside").unwrap();
-    std::fs::write(
-        node::supervisor::Files::beside(&launcher).prev,
-        b"left by an update",
-    )
-    .unwrap();
+    for program in [&amux, &launcher] {
+        let mut aside = program.clone().into_os_string();
+        aside.push(".old.1");
+        std::fs::write(aside, b"moved aside by an update").unwrap();
+    }
+    assert_eq!(files.asides().len(), 2);
     std::fs::write(root.join("amux-task.xml"), b"\xff\xfe").unwrap();
 
     let output = run(&amux, &["uninstall", "--yes", "--delete-data"])

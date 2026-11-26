@@ -174,7 +174,7 @@ it too.
 For the default installation it then deletes, beside `amux` and
 `amux-launch`, everything their updates leave
 ([`Files::beside`](../crates/node/src/supervisor/files.rs)): `.prev`,
-`.rejected`, `.staged` and every `.old`/`.old.<n>`, and takes `~/.amux/bin`
+`.rejected`, both `.staged` downloads and every `.old.<n>`, and takes `~/.amux/bin`
 off PATH (the install script's lines in the shell profiles; on Windows the
 folder's entry in `HKCU\Environment`'s `Path`, every other entry kept as
 written, then `WM_SETTINGCHANGE`). Windows deletes no program a process is

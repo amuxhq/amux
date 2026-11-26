@@ -6,8 +6,8 @@
 //! deploy writes it, from a loopback server standing in for amux.sh and for
 //! the release's assets, and hold what they install: this machine's entry,
 //! only when the download's size and sha256 are the entry's, and on
-//! Windows the launcher beside it, only when its sha256 is the one the
-//! release's `checksums.txt` lists.
+//! Windows the launcher beside it, by the manifest's `<target>/amux-launch`
+//! entry, the same way.
 
 use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
@@ -105,7 +105,7 @@ struct Feed {
 
 impl Feed {
     /// Serves `write(url of the binary)` as the stable manifest, beside
-    /// the stand-in binary, the launcher and the release's checksums.
+    /// the stand-in binary.
     fn serving(write: impl FnOnce(&str) -> String) -> Self {
         Self::serving_with(write, Vec::new())
     }
@@ -284,42 +284,46 @@ mod powershell {
     const LAUNCHER: &[u8] = b"amux-launch 9.9.9";
     const LAUNCHER_ASSET: &str = "amux-launch-windows-x86_64.exe";
 
-    /// What the release's `checksums.txt` says of the launcher.
+    /// What the manifest's launcher entry, beside Windows' own, says.
     #[derive(Clone, Copy)]
     enum Launcher {
-        /// Its own sha256.
-        Listed,
-        /// Another file's: the download is not the release's.
+        /// The launcher's sha256 and size, of amux's release.
+        Named,
+        /// Another file's sha256: the download is not the release's.
         Tampered,
-        /// Nothing: a release from before the launcher shipped.
-        Unlisted,
+        /// The launcher of another release than amux's.
+        Older,
     }
 
-    /// A deployed manifest for every target, with the launcher and the
-    /// release's checksums beside the binary.
+    /// A deployed manifest for every target, naming the launcher beside
+    /// Windows' build as a deploy does (`<target>/amux-launch`).
     fn feed(launcher: Launcher) -> Feed {
-        let mut checksums = format!("{}  amux-windows-x86_64.exe\n", sha256(BINARY));
-        match launcher {
-            Launcher::Listed => checksums += &format!("{}  {LAUNCHER_ASSET}\n", sha256(LAUNCHER)),
-            Launcher::Tampered => {
-                checksums += &format!("{} *{LAUNCHER_ASSET}\n", sha256(b"another launcher"));
-            }
-            Launcher::Unlisted => {}
-        }
         Feed::serving_with(
             |url| {
-                let manifest = manifest(url, TARGETS, &sha256(BINARY), BINARY.len() as u64);
+                let mut manifest = manifest(url, TARGETS, &sha256(BINARY), BINARY.len() as u64);
+                let folder = url.rsplit_once('/').unwrap().0;
+                let (version, sha256) = match launcher {
+                    Launcher::Named => ("9.9.9", sha256(LAUNCHER)),
+                    Launcher::Tampered => ("9.9.9", sha256(b"another launcher")),
+                    Launcher::Older => ("9.9.8", sha256(LAUNCHER)),
+                };
+                manifest.targets.insert(
+                    release::beside_key("x86_64-pc-windows-msvc", release::LAUNCHER),
+                    Release {
+                        version: version.into(),
+                        url: format!("{folder}/{LAUNCHER_ASSET}"),
+                        sha256,
+                        size: LAUNCHER.len() as u64,
+                    },
+                );
                 format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap())
             },
-            vec![
-                ("checksums.txt".to_owned(), checksums.into_bytes()),
-                (LAUNCHER_ASSET.to_owned(), LAUNCHER.to_vec()),
-            ],
+            vec![(LAUNCHER_ASSET.to_owned(), LAUNCHER.to_vec())],
         )
     }
 
     fn honest() -> Feed {
-        feed(Launcher::Listed)
+        feed(Launcher::Named)
     }
 
     /// The script in a scratch environment: the person's homes, temporary
@@ -336,6 +340,14 @@ mod powershell {
         for dir in [&appdata, &local, &temp] {
             std::fs::create_dir_all(dir).unwrap();
         }
+        if path_key.is_some() {
+            let text = std::fs::read_to_string(script("install.ps1")).unwrap();
+            assert!(
+                text.contains("$env:AMUX_TEST_ENVIRONMENT_KEY")
+                    && text.contains(r#".StartsWith("Software\amux-test-")"#),
+                "install.ps1 doesn't keep the user PATH under the test's key: not run"
+            );
+        }
         let mut command = Command::new("powershell");
         command
             .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
@@ -348,6 +360,9 @@ mod powershell {
             .env("AMUX_RELEASES_URL", &feed.releases_url)
             .stdin(Stdio::null());
         match path_key {
+            // A script that didn't honour the key would write the person's
+            // own PATH: none runs here unless it reads the key and refuses
+            // one outside the tests' prefix.
             Some(key) => command
                 .env("AMUX_TEST_ENVIRONMENT_KEY", &key.name)
                 .env_remove("AMUX_NO_MODIFY_PATH"),
@@ -473,17 +488,7 @@ mod powershell {
         assert!(!installed(&feed).exists(), "nothing is installed");
     }
 
-    /// Every release publishes `checksums.txt`; without it the launcher
-    /// can't be checked, and nothing is installed.
-    #[test]
-    fn it_installs_nothing_from_a_release_without_its_checksums() {
-        let feed = Feed::honest();
-        let output = install(&feed, None);
-        assert!(!output.status.success(), "{}", said(&output));
-        assert!(!installed(&feed).exists(), "nothing is installed");
-    }
-
-    /// The launcher is the release's only when `checksums.txt` says so:
+    /// The launcher is the release's only when its manifest entry says so:
     /// another download installs nothing, amux included.
     #[test]
     fn it_refuses_a_launcher_whose_sha256_is_not_the_releases() {
@@ -499,14 +504,21 @@ mod powershell {
         assert!(!launcher(&feed).exists(), "nothing is installed");
     }
 
-    /// A release from before the launcher shipped installs amux alone.
+    /// A manifest from before the launcher shipped, or naming a launcher of
+    /// another release than amux's, installs amux alone.
     #[test]
-    fn a_release_without_the_launcher_installs_amux_alone() {
-        let feed = feed(Launcher::Unlisted);
-        let output = install(&feed, None);
-        assert!(output.status.success(), "{}", said(&output));
-        assert_eq!(std::fs::read(installed(&feed)).unwrap(), BINARY);
-        assert!(!launcher(&feed).exists());
+    fn a_release_without_its_launcher_installs_amux_alone() {
+        for feed in [Feed::honest(), feed(Launcher::Older)] {
+            let output = install(&feed, None);
+            assert!(output.status.success(), "{}", said(&output));
+            assert!(
+                said(&output).contains("ships no login launcher"),
+                "{}",
+                said(&output)
+            );
+            assert_eq!(std::fs::read(installed(&feed)).unwrap(), BINARY);
+            assert!(!launcher(&feed).exists());
+        }
     }
 
     #[test]
@@ -534,10 +546,14 @@ mod powershell {
     fn it_puts_the_folder_on_the_user_path_once_leaving_the_rest_as_written() {
         let feed = honest();
         let key = ScratchKey::new();
-        key.set_path(r"%SystemRoot%\keep;C:\elsewhere");
+        // The script runs with a scratch USERPROFILE: an entry expanded and
+        // written back would name the scratch folder for good.
+        let kept =
+            r"%USERPROFILE%\AppData\Local\Microsoft\WindowsApps;%SystemRoot%\keep;C:\elsewhere";
+        key.set_path(kept);
         let expected = (
             "REG_EXPAND_SZ".to_owned(),
-            format!(r"{};%SystemRoot%\keep;C:\elsewhere", bin(&feed).display()),
+            format!(r"{};{kept}", bin(&feed).display()),
         );
 
         let output = install(&feed, Some(&key));

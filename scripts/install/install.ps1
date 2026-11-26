@@ -9,10 +9,9 @@
 # rollout protects machines that already run something.
 #
 # Beside amux.exe goes amux-launch.exe, the windowless launcher Windows'
-# login item runs. No manifest names it: it is published beside the
-# binary, in the same release, and checksums.txt there gives its sha256,
-# which the download must match. A release that lists no launcher predates
-# it, and amux alone is installed.
+# login item runs, from the manifest's entry beside the target's
+# ("<target>/amux-launch"), checked the same way. A manifest that names no
+# launcher of the same release predates it, and amux alone is installed.
 #
 # The manifest is signed, and an installed amux checks that signature on
 # every later update with the key it was built with. This script does not:
@@ -37,8 +36,6 @@ $ReleasesUrl = if ($env:AMUX_RELEASES_URL) { $env:AMUX_RELEASES_URL } else { "ht
 $InstallDir = Join-Path $env:USERPROFILE ".amux\bin"
 $BinaryName = "amux.exe"
 $LauncherName = "amux-launch.exe"
-# The launcher as the release publishes it: only x64 ships.
-$LauncherAsset = "amux-launch-windows-x86_64.exe"
 
 # The target as the manifest names it: the build's Rust target triple.
 # Only x64 ships for Windows; Windows on Arm runs it emulated.
@@ -77,14 +74,14 @@ Checksum verification failed for $(Split-Path -Leaf $Path).
     }
 }
 
-# The sha256 checksums.txt gives $Asset, or $null when it lists none.
-function Get-ListedChecksum($Checksums, $Asset) {
-    foreach ($line in ($Checksums -split "`r?`n")) {
-        if ($line -match '^([0-9a-fA-F]{64})\s+\*?(\S+)\s*$' -and $Matches[2] -eq $Asset) {
-            return $Matches[1].ToLowerInvariant()
-        }
+# The download at $Path is the file the manifest entry $Entry names: its
+# size, then its sha256.
+function Assert-Download($Path, $Entry) {
+    $actualSize = (Get-Item $Path).Length
+    if ($actualSize -ne [int64]$Entry.size) {
+        throw "The download of $(Split-Path -Leaf $Path) is $actualSize bytes; the manifest says $($Entry.size)."
     }
-    return $null
+    Assert-Checksum $Path $Entry.sha256
 }
 
 # Runs $Action, again for up to about five seconds while it fails: a fresh
@@ -211,8 +208,6 @@ function Install-Amux {
     }
     $entry = $property.Value
     Write-Host "Stable is amux $($entry.version)"
-    # The release's other files are beside the binary the entry names.
-    $releaseUrl = $entry.url.Substring(0, $entry.url.LastIndexOf("/") + 1)
 
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "amux-install-$([System.Guid]::NewGuid().ToString('N').Substring(0, 8))"
     New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
@@ -223,21 +218,18 @@ function Install-Amux {
         Write-Host "Downloading $($entry.url)..."
         Invoke-WebRequest -Uri $entry.url -OutFile $binaryPath -UseBasicParsing
 
-        $actualSize = (Get-Item $binaryPath).Length
-        if ($actualSize -ne [int64]$entry.size) {
-            throw "The download is $actualSize bytes; the manifest says $($entry.size)."
-        }
-        Assert-Checksum $binaryPath $entry.sha256
+        Assert-Download $binaryPath $entry
 
-        $checksumsPath = Join-Path $tmpDir "checksums.txt"
-        Invoke-WebRequest -Uri "$($releaseUrl)checksums.txt" -OutFile $checksumsPath -UseBasicParsing
-        $launcherSha256 = Get-ListedChecksum ([System.IO.File]::ReadAllText($checksumsPath)) $LauncherAsset
+        # The launcher's entry, beside the target's, when the manifest names
+        # one from the same release.
+        $launcherProperty = $manifest.targets.PSObject.Properties["$target/amux-launch"]
         $launcherPath = $null
-        if ($launcherSha256) {
+        if ($launcherProperty -and $launcherProperty.Value.version -eq $entry.version) {
+            $launcher = $launcherProperty.Value
             $launcherPath = Join-Path $tmpDir $LauncherName
-            Write-Host "Downloading $($releaseUrl)$LauncherAsset..."
-            Invoke-WebRequest -Uri "$($releaseUrl)$LauncherAsset" -OutFile $launcherPath -UseBasicParsing
-            Assert-Checksum $launcherPath $launcherSha256
+            Write-Host "Downloading $($launcher.url)..."
+            Invoke-WebRequest -Uri $launcher.url -OutFile $launcherPath -UseBasicParsing
+            Assert-Download $launcherPath $launcher
         }
         else {
             Write-Host "This release ships no login launcher; amux alone is installed."

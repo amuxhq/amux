@@ -1047,7 +1047,7 @@ cargo = [
 
 [[suite]]
 name = "install-scripts"
-contract = "The install scripts take the stable manifest's entry for the machine and install the binary it names only when the download's size and sha256 are the entry's; a machine the channel has no build for is told so. On Windows the launcher goes beside it only when its sha256 is the one the release's checksums.txt lists (a release listing none installs amux alone), the folder goes first on the user's PATH in the registry once with every other entry kept as written, and a running amux is stopped and moved aside to a fresh .old.<n>, swept by the next install."
+contract = "The install scripts take the stable manifest's entry for the machine and install the binary it names only when the download's size and sha256 are the entry's; a machine the channel has no build for is told so. On Windows the launcher goes beside it only when the download is the manifest's `<target>/amux-launch` entry's (a manifest naming no launcher of amux's release installs amux alone), the folder goes first on the user's PATH in the registry once with every other entry kept as written, and a running amux is stopped and moved aside to a fresh .old.<n>, swept by the next install."
 paths = ["crates/xtask/tests/install_scripts.rs", "scripts/install"]
 recipe = "just suite install-scripts"
 boundary = "System composition"

@@ -24,10 +24,13 @@ pub mod claude;
 pub mod codex;
 mod dir;
 mod dump;
+mod family;
+pub use family::Family;
 mod git;
 mod hook_answers;
 mod host;
 mod notebook;
+mod program;
 mod provider;
 pub use provider::ACP_HANDSHAKE_WAIT;
 mod ready;
@@ -35,7 +38,6 @@ pub mod spawns;
 mod tail;
 mod terminal;
 mod tools;
-mod tree;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -79,9 +81,10 @@ pub enum AgentError {
 /// The size a journal segment is cut at.
 pub const JOURNAL_SEGMENT_BYTES: u64 = 1024 * 1024;
 
-/// Runs the agent in `dir` until it exits.
-pub async fn run(dir: PathBuf, clock: impl Clock) -> Result<ExitCause, AgentError> {
-    run_cutting_segments_at(dir, clock, JOURNAL_SEGMENT_BYTES).await
+/// Runs the agent in `dir` until it exits, starting what it starts into
+/// `family`: this process's, which [`main`] makes first.
+pub async fn run(dir: PathBuf, clock: impl Clock, family: Family) -> Result<ExitCause, AgentError> {
+    run_cutting_segments_at(dir, clock, JOURNAL_SEGMENT_BYTES, family).await
 }
 
 /// [`run`], with the journal cut into segments of `segment_bytes`: how a
@@ -90,6 +93,7 @@ pub async fn run_cutting_segments_at(
     dir: PathBuf,
     clock: impl Clock,
     segment_bytes: u64,
+    family: Family,
 ) -> Result<ExitCause, AgentError> {
     let dir = std::path::absolute(&dir).map_err(AgentError::Dir)?;
     let _lock = dir::lock(&dir)
@@ -98,15 +102,19 @@ pub async fn run_cutting_segments_at(
     let (_, spec) = dir::newest_spec(&dir)
         .map_err(AgentError::Dir)?
         .ok_or_else(|| AgentError::NoSpec(dir.clone()))?;
-    dir::private_dir(&dir.join(dir::PRIVATE)).map_err(AgentError::Dir)?;
+    os::fs::create_private_dir(&dir.join(dir::PRIVATE)).map_err(AgentError::Dir)?;
     let clock: Arc<dyn Clock> = Arc::new(clock);
     let trimming = tokio::spawn(trim_logs(dir.clone()));
     let codex_sock = dir.join(dir::PRIVATE).join(dir::CODEX_SOCK);
     let ended = match wire::Kind::try_from(spec.kind) {
-        Ok(wire::Kind::ClaudeSdk) => host::run::<ClaudeSdk>(dir, spec, clock, segment_bytes).await,
-        Ok(wire::Kind::ClaudePty) => host::run::<ClaudePty>(dir, spec, clock, segment_bytes).await,
-        Ok(wire::Kind::Codex) => host::run::<Codex>(dir, spec, clock, segment_bytes).await,
-        Ok(wire::Kind::Acp) => host::run::<Acp>(dir, spec, clock, segment_bytes).await,
+        Ok(wire::Kind::ClaudeSdk) => {
+            host::run::<ClaudeSdk>(dir, spec, clock, segment_bytes, family).await
+        }
+        Ok(wire::Kind::ClaudePty) => {
+            host::run::<ClaudePty>(dir, spec, clock, segment_bytes, family).await
+        }
+        Ok(wire::Kind::Codex) => host::run::<Codex>(dir, spec, clock, segment_bytes, family).await,
+        Ok(wire::Kind::Acp) => host::run::<Acp>(dir, spec, clock, segment_bytes, family).await,
         Ok(wire::Kind::Unspecified) | Err(_) => Err(AgentError::UnknownKind(spec.kind)),
     };
     trimming.abort();
@@ -119,8 +127,8 @@ pub async fn run_cutting_segments_at(
 const LOG_TRIM_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Keeps the agent's own log and its provider's under their cap. Others
-/// write both (this process's standard error, which the daemon opened, and
-/// the provider's), so they are trimmed now and then, not on each write.
+/// write both (this process's standard error, and the provider's), so they
+/// are trimmed now and then, not on each write.
 async fn trim_logs(dir: PathBuf) {
     let logs = [
         dir.join(agent_dir::AGENT_LOG),
@@ -137,10 +145,14 @@ async fn trim_logs(dir: PathBuf) {
 }
 
 /// `amux internal agent <dir>`: runs the agent on the wall clock and returns the
-/// process exit code. The runtime is shut down without waiting for its
-/// blocking threads, since a terminal reader can stay blocked for as long
-/// as a straggler the provider left behind holds the terminal.
+/// process exit code. The process contains itself first, so everything it
+/// starts is its [`Family`], and points its standard error at its log. The
+/// runtime is shut down without waiting for its blocking threads, since a
+/// terminal reader can stay blocked for as long as a straggler the
+/// provider left behind holds the terminal.
 pub fn main(dir: PathBuf) -> i32 {
+    let family = Family::contain_self();
+    claim_stderr(&dir);
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -151,7 +163,7 @@ pub fn main(dir: PathBuf) -> i32 {
             return 1;
         }
     };
-    let code = match runtime.block_on(run(dir, SystemClock)) {
+    let code = match runtime.block_on(run(dir, SystemClock, family)) {
         Ok(_) => 0,
         Err(error) => {
             eprintln!("amux agent: {error}");
@@ -160,4 +172,15 @@ pub fn main(dir: PathBuf) -> i32 {
     };
     runtime.shutdown_background();
     code
+}
+
+/// Points this process's standard error at the agent's log, appending, so
+/// what it says, a panic among it, lands there whatever its starter handed
+/// it, and nothing it starts inherits the starter's handle.
+fn claim_stderr(dir: &std::path::Path) {
+    let claimed = os::fs::create_private(&dir.join(agent_dir::AGENT_LOG), os::fs::Create::Append)
+        .and_then(|log| os::process::redirect_stderr(&log));
+    if let Err(error) = claimed {
+        eprintln!("amux agent: writing to its log: {error}");
+    }
 }

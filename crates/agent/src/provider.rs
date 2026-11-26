@@ -7,8 +7,8 @@
 //! private/hooks.sock) and its transcript rows. Codex's app server listens
 //! on private/codex.sock with the agent as one of its clients. An ACP agent
 //! is a plain child speaking JSON-RPC on stdin and stdout, on every
-//! platform. Every child runs in its own process group so a kill reaches
-//! whatever it started.
+//! platform. Every child is started into the agent's [`Family`], so a kill
+//! reaches whatever it started.
 //!
 //! The child's exit is what ends the agent, never the end of its output: a
 //! straggler the provider left behind can hold a terminal or a pipe open
@@ -37,7 +37,7 @@ use wire::{AgentSpec, Attachment};
 
 use crate::tail::{Tail, Watch};
 use crate::terminal::{self, KeyStep};
-use crate::{dir, tree};
+use crate::{Family, dir};
 
 /// How long output still in flight is collected after the child exits.
 const TRAILING_OUTPUT: Duration = Duration::from_millis(300);
@@ -53,15 +53,6 @@ const CODEX_INITIALIZE: &str = "agent-initialize";
 const CODEX_THREAD: &str = interpret::codex::THREAD_REQUEST;
 /// The longest a starting Codex server is waited for to listen.
 const CODEX_LISTEN_WAIT: Duration = Duration::from_secs(30);
-/// How long a kill on Windows waits for the child to have gone: well
-/// inside the 2 s the daemon gives the agent process to exit once it has
-/// asked it to die, and far longer than termination takes.
-#[cfg(windows)]
-const GONE_WAIT: Duration = Duration::from_millis(1_000);
-/// How long the `taskkill /T` of an ACP agent behind a Windows shim has to
-/// end its tree before the shim is killed regardless.
-#[cfg(windows)]
-const TREE_KILL_WAIT: Duration = Duration::from_secs(5);
 /// How long an ACP agent has to answer each request of its handshake:
 /// long enough for an agent that loads a lot at its start, or reaches a
 /// slow network for its sign-in.
@@ -159,11 +150,12 @@ enum Input {
 /// The running provider child.
 pub struct Provider {
     input: Input,
-    /// The child's pid, which is also its process group.
-    #[cfg_attr(not(unix), allow(dead_code))]
-    pid: Option<u32>,
-    /// Kills a plain child where there are no process groups.
-    #[cfg_attr(unix, allow(dead_code))]
+    /// The plain child's own process, pinned so its pid can't be reused
+    /// under the stop's signal or an uncontained agent's kill.
+    process: Option<os::process::ProcessRef>,
+    /// What the provider was started into: a kill ends all of it.
+    family: Family,
+    /// Tells the task waiting on a plain child that it was killed.
     kill: Option<oneshot::Sender<()>>,
     terminal: Option<pty_host::PtyHandle>,
     messaging: Option<crate::claude::hooks::MessagingCredentials>,
@@ -175,9 +167,6 @@ pub struct Provider {
     /// subagents' files.
     transcript: Option<PathBuf>,
     subagents: crate::claude::subagents::Followers,
-    /// Every process below the provider when it was asked to finish, killed
-    /// once it has exited if still running (see the tree module).
-    census: Vec<tree::Descendant>,
     /// What an ACP agent's prompts may carry, as its `initialize` answer
     /// said; None for the other kinds.
     takes: Option<Arc<std::sync::Mutex<crate::acp::Takes>>>,
@@ -185,60 +174,40 @@ pub struct Provider {
     /// handshake sent it, which the interpreter has sent again once a
     /// person may have signed in ([`Effect::AcpReopen`]).
     acp_opening: Option<Arc<std::sync::Mutex<Option<Vec<u8>>>>>,
-    /// The child is a Windows batch file, as npm's `.cmd` shim is: the
-    /// shell running it runs the program as its own child, so a kill ends
-    /// the whole tree.
-    #[cfg_attr(not(windows), allow(dead_code))]
-    behind_shim: bool,
-    /// The plain child's own process, for a kill that ends it at once.
-    #[cfg_attr(not(windows), allow(dead_code))]
-    process: Process,
 }
 
-/// A plain child's process, held for [`Provider::kill`]. On Windows, a
-/// handle of its own to the child's process, duplicated from the child's,
-/// so it stays valid after the task waiting on the child has reaped and
-/// dropped it: terminating a process that has already exited through it
-/// does nothing. Elsewhere nothing: a kill there signals the child's group.
-#[derive(Default)]
-struct Process(#[cfg(windows)] Option<std::os::windows::io::OwnedHandle>);
+/// A plain child started into the agent's family: the child, its place in
+/// the family (released once it has exited), and its process, pinned.
+type Member = (
+    tokio::process::Child,
+    Option<os::process::Member>,
+    Option<os::process::ProcessRef>,
+);
 
-impl Process {
-    fn of(child: &tokio::process::Child) -> Self {
-        #[cfg(windows)]
-        {
-            use std::os::windows::io::BorrowedHandle;
-            Self(child.raw_handle().and_then(|raw| {
-                // SAFETY: the child is alive and owns this handle for the
-                // length of the borrow, which only duplicates it.
-                unsafe { BorrowedHandle::borrow_raw(raw) }
-                    .try_clone_to_owned()
-                    .ok()
-            }))
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = child;
-            Self()
-        }
-    }
-
-    /// Ends the process, and returns once it has gone or [`GONE_WAIT`] has
-    /// passed. Termination finishes after TerminateProcess returns, and
-    /// until it does the process still has its working folder open, which
-    /// on Windows keeps that folder from being removed: a delete that
-    /// follows this agent's exit would find the workspace still in use.
-    #[cfg(windows)]
-    fn terminate(&self) {
-        use std::os::windows::io::AsRawHandle as _;
-
-        use windows_sys::Win32::System::Threading::{TerminateProcess, WaitForSingleObject};
-        if let Some(handle) = &self.0 {
-            // SAFETY: the handle is this value's own, open until it drops.
-            unsafe {
-                TerminateProcess(handle.as_raw_handle(), 1);
-                WaitForSingleObject(handle.as_raw_handle(), GONE_WAIT.as_millis() as u32);
-            }
+/// Starts a plain child into `family`: `command` readied for it, then
+/// started by `spawn`. `what` names the child if its tether can't be made
+/// (Unix), in which case it is killed and the start fails.
+fn start_member(
+    family: &Family,
+    mut command: tokio::process::Command,
+    spec: &AgentSpec,
+    what: &str,
+    spawn: impl FnOnce(tokio::process::Command) -> io::Result<tokio::process::Child>,
+) -> Result<Member, ProviderError> {
+    family.prepare(&mut command);
+    let mut child = spawn(command).map_err(|source| ProviderError::Spawn {
+        command: spec.provider_command.clone(),
+        source,
+    })?;
+    let process = os::process::ProcessRef::of_child(&child).ok();
+    match family.join(&child) {
+        Ok(member) => Ok((child, member, process)),
+        Err(source) => {
+            let _ = child.start_kill();
+            Err(ProviderError::Spawn {
+                command: format!("{what}'s tether"),
+                source,
+            })
         }
     }
 }
@@ -278,12 +247,13 @@ impl Provider {
         dir: &Path,
         events: mpsc::Sender<ProviderEvent>,
         clock: Arc<dyn crate::clock::Clock>,
+        family: Family,
     ) -> Result<Self, ProviderError> {
         match wire::Kind::try_from(spec.kind) {
-            Ok(wire::Kind::ClaudeSdk) => Self::spawn_sdk(spec, dir, events).await,
-            Ok(wire::Kind::ClaudePty) => Self::spawn_terminal(spec, dir, events).await,
-            Ok(wire::Kind::Codex) => Self::spawn_codex(spec, dir, events).await,
-            Ok(wire::Kind::Acp) => Self::spawn_acp(spec, dir, events, clock).await,
+            Ok(wire::Kind::ClaudeSdk) => Self::spawn_sdk(spec, dir, events, family).await,
+            Ok(wire::Kind::ClaudePty) => Self::spawn_terminal(spec, dir, events, family).await,
+            Ok(wire::Kind::Codex) => Self::spawn_codex(spec, dir, events, family).await,
+            Ok(wire::Kind::Acp) => Self::spawn_acp(spec, dir, events, clock, family).await,
             Ok(wire::Kind::Unspecified) | Err(_) => {
                 unreachable!("run refuses any other kind")
             }
@@ -297,10 +267,18 @@ impl Provider {
         spec: &AgentSpec,
         dir: &Path,
         events: mpsc::Sender<ProviderEvent>,
+        family: Family,
     ) -> Result<Self, ProviderError> {
         let (session, resume) = claude_session(spec, dir)?;
-        let (mut args, settings, withheld) = claude_launch(spec, dir, false)?;
+        let program = crate::program::find(&spec.provider_command, &spec.provider_env);
+        // A `.cmd` shim's shell can carry neither a line break nor a long
+        // line: what Claude takes as a file goes as one.
+        let by_file = crate::program::through_cmd(&program);
+        let (mut args, settings, withheld) = claude_launch(spec, dir, false, by_file)?;
         append_system_prompt(&mut args, DESCRIPTION_FIRST);
+        if by_file {
+            system_prompt_by_file(&mut args, dir)?;
+        }
         if withheld {
             let _ = events
                 .send(ProviderEvent::Fact(Fact {
@@ -309,7 +287,7 @@ impl Provider {
                 }))
                 .await;
         }
-        let mut command = tokio::process::Command::new(&spec.provider_command);
+        let mut command = tokio::process::Command::new(&program);
         command
             .args(&args)
             .args([
@@ -332,27 +310,12 @@ impl Provider {
             .stderr(provider_log(dir)?)
             .kill_on_drop(false);
         environment(&mut command, spec);
-        #[cfg(unix)]
-        command.process_group(0);
-        let mut child = command.spawn().map_err(|source| ProviderError::Spawn {
-            command: spec.provider_command.clone(),
-            source,
-        })?;
-        let pid = child.id();
-        let process = Process::of(&child);
-        // Claude finishes its turn after its input closes: tethered, it is
-        // asked to finish when the agent dies instead.
-        #[cfg(unix)]
-        let tether = match pty_host::Tether::new(&child) {
-            Ok(tether) => tether,
-            Err(source) => {
-                let _ = child.start_kill();
-                return Err(ProviderError::Spawn {
-                    command: "Claude's tether".to_owned(),
-                    source,
-                });
-            }
-        };
+        // Claude finishes its turn after its input closes: in the family,
+        // it ends when the agent dies instead.
+        let (mut child, member, process) =
+            start_member(&family, command, spec, "Claude", |mut command| {
+                command.spawn()
+            })?;
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
 
@@ -380,8 +343,9 @@ impl Provider {
                     child.wait().await
                 }
             };
-            #[cfg(unix)]
-            tether.release().await;
+            if let Some(member) = member {
+                member.release().await;
+            }
             let _ = tokio::time::timeout(TRAILING_OUTPUT, reader).await;
             let code = status.ok().and_then(|status| status.code());
             let _ = exited.send(ProviderEvent::Exited(code)).await;
@@ -389,7 +353,8 @@ impl Provider {
 
         let mut provider = Self {
             input: Input::Stdin(Arc::new(tokio::sync::Mutex::new(Some(stdin)))),
-            pid,
+            process,
+            family,
             kill: Some(kill),
             terminal: None,
             messaging: None,
@@ -399,11 +364,8 @@ impl Provider {
             followers: Vec::new(),
             transcript: None,
             subagents: Default::default(),
-            census: Vec::new(),
             takes: None,
             acp_opening: None,
-            behind_shim: false,
-            process,
         };
         // Claude reports nothing until it is asked; its answer is what says
         // it takes input. amux's interrupt ends the turn and leaves
@@ -443,6 +405,7 @@ impl Provider {
         spec: &AgentSpec,
         dir: &Path,
         events: mpsc::Sender<ProviderEvent>,
+        family: Family,
     ) -> Result<Self, ProviderError> {
         let session_path = dir.join(dir::PRIVATE).join(dir::PROVIDER_SESSION);
         let thread = std::fs::read_to_string(&session_path)
@@ -450,37 +413,20 @@ impl Provider {
             .map(|thread| thread.trim().to_owned())
             .filter(|thread| !thread.is_empty() && spec.incarnation > 1);
         let listen = codex_listen(dir)?;
-        let mut command = tokio::process::Command::new(&spec.provider_command);
+        let program = crate::program::find(&spec.provider_command, &spec.provider_env);
+        let mut command = tokio::process::Command::new(program);
         command
             .args(codex_args(spec, dir))
             .current_dir(&spec.cwd)
             .stderr(provider_log(dir)?)
             .kill_on_drop(false);
         environment(&mut command, spec);
-        #[cfg(unix)]
-        command.process_group(0);
-        let mut child = crate::codex::spawn_server(command, &listen).map_err(|source| {
-            ProviderError::Spawn {
-                command: spec.provider_command.clone(),
-                source,
-            }
-        })?;
-        let pid = child.id();
-        let process = Process::of(&child);
-        #[cfg(unix)]
-        let tether = match &listen {
-            crate::codex::Listen::Unix(_) => match pty_host::Tether::new(&child) {
-                Ok(tether) => Some(tether),
-                Err(source) => {
-                    let _ = child.start_kill();
-                    return Err(ProviderError::Spawn {
-                        command: "Codex's tether".to_owned(),
-                        source,
-                    });
-                }
-            },
-            crate::codex::Listen::Stdio => None,
-        };
+        // On a socket the server outlives its clients: in the family, it
+        // ends when the agent dies.
+        let (mut child, member, process) =
+            start_member(&family, command, spec, "Codex", |command| {
+                crate::codex::spawn_server(command, &listen)
+            })?;
         let connection =
             match crate::codex::Connection::connect(&listen, &mut child, CODEX_LISTEN_WAIT).await {
                 Ok(connection) => Some(connection),
@@ -589,13 +535,12 @@ impl Provider {
                         if on_socket && on_ended.is_some() =>
                     {
                         on_ended = None;
-                        terminate(&child);
+                        ask_to_finish(&child);
                     }
                 }
             };
-            #[cfg(unix)]
-            if let Some(tether) = tether {
-                tether.release().await;
+            if let Some(member) = member {
+                member.release().await;
             }
             let _ = tokio::time::timeout(TRAILING_OUTPUT, reader).await;
             let code = status.ok().and_then(|status| status.code());
@@ -686,7 +631,8 @@ impl Provider {
 
         Ok(Self {
             input: Input::Codex(sender),
-            pid,
+            process,
+            family,
             kill: Some(kill),
             terminal: None,
             messaging: None,
@@ -696,16 +642,13 @@ impl Provider {
             followers: Vec::new(),
             transcript: None,
             subagents: Default::default(),
-            census: Vec::new(),
             takes: None,
             acp_opening: None,
-            behind_shim: false,
-            process,
         })
     }
 
     /// An ACP agent: its command and arguments in the agent's folder, over
-    /// stdio pipes, tethered and with the environment scrubbed as headless
+    /// stdio pipes, in the family and with the environment scrubbed as headless
     /// Claude is. The agent does the handshake, as it does Codex's:
     /// `initialize`, then the session the interpreter's [`opening`] picks
     /// from that answer and the session saved by the last incarnation. Every
@@ -730,6 +673,7 @@ impl Provider {
         dir: &Path,
         events: mpsc::Sender<ProviderEvent>,
         clock: Arc<dyn crate::clock::Clock>,
+        family: Family,
     ) -> Result<Self, ProviderError> {
         let saved = saved_session(dir).filter(|_| spec.incarnation > 1);
         if spec.incarnation > 1
@@ -749,13 +693,7 @@ impl Provider {
             folders: vec![blobs.display().to_string()],
             tool_server: tool_server(spec, dir),
         };
-        let program = crate::acp::program(&spec.provider_command, &spec.provider_env);
-        let behind_shim = program
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| {
-                extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
-            });
+        let program = crate::program::find(&spec.provider_command, &spec.provider_env);
         let mut command = tokio::process::Command::new(program);
         command
             .args(&spec.provider_args)
@@ -765,27 +703,13 @@ impl Provider {
             .stderr(Stdio::piped())
             .kill_on_drop(false);
         environment(&mut command, spec);
-        #[cfg(unix)]
-        command.process_group(0);
-        let mut child = command.spawn().map_err(|source| ProviderError::Spawn {
-            command: spec.provider_command.clone(),
-            source,
-        })?;
-        let pid = child.id();
-        let process = Process::of(&child);
-        // An agent may run on after its input closes: tethered, it is asked
-        // to finish when the agent process dies instead.
-        #[cfg(unix)]
-        let tether = match pty_host::Tether::new(&child) {
-            Ok(tether) => tether,
-            Err(source) => {
-                let _ = child.start_kill();
-                return Err(ProviderError::Spawn {
-                    command: "the ACP agent's tether".to_owned(),
-                    source,
-                });
-            }
-        };
+        // An agent may run on after its input closes, and one npm installed
+        // runs behind a `.cmd` shim as the shim's shell's child: in the
+        // family, both end when the agent process dies.
+        let (mut child, member, process) =
+            start_member(&family, command, spec, "the ACP agent", |mut command| {
+                command.spawn()
+            })?;
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
@@ -840,8 +764,9 @@ impl Provider {
                     child.wait().await
                 }
             };
-            #[cfg(unix)]
-            tether.release().await;
+            if let Some(member) = member {
+                member.release().await;
+            }
             let _ = tokio::time::timeout(TRAILING_OUTPUT, reader).await;
             // A straggler the agent left can hold its stderr open forever.
             if tokio::time::timeout(TRAILING_OUTPUT, &mut stderr_reader)
@@ -925,7 +850,8 @@ impl Provider {
 
         Ok(Self {
             input: Input::Stdin(stdin),
-            pid,
+            process,
+            family,
             kill: Some(kill),
             terminal: None,
             messaging: None,
@@ -935,11 +861,8 @@ impl Provider {
             followers: Vec::new(),
             transcript: None,
             subagents: Default::default(),
-            census: Vec::new(),
             takes: Some(takes),
             acp_opening: Some(opening_sent),
-            behind_shim,
-            process,
         })
     }
 
@@ -951,14 +874,16 @@ impl Provider {
         spec: &AgentSpec,
         dir: &Path,
         events: mpsc::Sender<ProviderEvent>,
+        family: Family,
     ) -> Result<Self, ProviderError> {
         if !wire::Kind::ClaudePty.hosted_on(wire::Platform::here()) {
             return Err(ProviderError::TerminalOnWindows);
         }
         let (session, resume) = claude_session(spec, dir)?;
+        let program = crate::program::find(&spec.provider_command, &spec.provider_env);
         // A version that cannot be read starts anyway: a wrapper or an odd
         // banner is likelier than an old Claude.
-        match crate::claude::version::probe_version(Path::new(&spec.provider_command)).await {
+        match crate::claude::version::probe_version(&program).await {
             Ok(version) if version < crate::claude::version::MIN_TERMINAL => {
                 return Err(ProviderError::ClaudeTooOld {
                     found: version.to_string(),
@@ -975,7 +900,7 @@ impl Provider {
             }))
             .await;
         let private = dir.join(dir::PRIVATE);
-        let (mut args, settings, withheld) = claude_launch(spec, dir, true)?;
+        let (mut args, settings, withheld) = claude_launch(spec, dir, true, false)?;
         if withheld {
             let _ = events
                 .send(ProviderEvent::Fact(Fact {
@@ -1003,7 +928,7 @@ impl Provider {
             socket_address(&private.join(dir::HOOKS_SOCK))?.into(),
         ));
         let process = pty_host::spawn(pty_host::PtySpawn {
-            command: PathBuf::from(&spec.provider_command),
+            command: program,
             args,
             cwd: PathBuf::from(&spec.cwd),
             env,
@@ -1080,7 +1005,9 @@ impl Provider {
         });
         Ok(Self {
             input: Input::Terminal(terminal::typist(handle.clone())),
-            pid: Some(handle.pid()),
+            // The terminal's process is signalled through its group.
+            process: None,
+            family,
             kill: None,
             terminal: Some(handle),
             messaging: None,
@@ -1090,11 +1017,8 @@ impl Provider {
             followers: Vec::new(),
             transcript: None,
             subagents: Default::default(),
-            census: Vec::new(),
             takes: None,
             acp_opening: None,
-            behind_shim: false,
-            process: Process::default(),
         })
     }
 
@@ -1414,29 +1338,24 @@ impl Provider {
         rows
     }
 
-    /// Asks the provider to finish: end of input for a plain child, a
-    /// terminate signal for a terminal one. Codex on a socket is sent its
-    /// signal once its server has closed the agent's connection in turn.
-    /// Asks the provider to finish: the end of its input, and SIGTERM, on
-    /// which every provider cleans up the commands it runs. What runs below
-    /// it is counted first, for `finish` to end what it leaves.
+    /// Asks the provider to finish: the end of its input for a plain child
+    /// (and on Unix SIGTERM, on which every provider cleans up the commands
+    /// it runs), a terminate signal for a terminal one. Codex on a socket
+    /// is sent its signal once its server has closed the agent's connection
+    /// in turn. No console control event is sent on Windows: most programs
+    /// take one as "exit now", a `.cmd` shim's shell answers it with a
+    /// question, and it reaches every process on the console. The family is
+    /// counted first, so what the provider leaves when it exits ends with
+    /// the agent (or with the kill the grace's end brings).
     pub fn close(&mut self) {
-        if let Some(pid) = self.pid
-            && self.census.is_empty()
-        {
-            self.census = tree::descendants(pid);
-        }
+        self.family.count();
         match std::mem::replace(&mut self.input, Input::Closed) {
             Input::Stdin(stdin) => {
                 tokio::spawn(async move { stdin.lock().await.take() });
                 // Headless Claude does not exit on the end of its input
                 // while a background shell runs.
-                #[cfg(unix)]
-                if let Some(pid) = self.pid {
-                    // SAFETY: kill only sends a signal.
-                    unsafe {
-                        libc::kill(pid as libc::pid_t, libc::SIGTERM);
-                    }
+                if let Some(process) = &self.process {
+                    let _ = process.ask_to_finish();
                 }
             }
             Input::Codex(sender) => {
@@ -1455,61 +1374,22 @@ impl Provider {
         }
     }
 
-    /// The provider has exited after `close`: whatever it left running
-    /// below it is killed.
-    pub fn finish(&mut self) {
-        tree::kill(&std::mem::take(&mut self.census));
-    }
-
-    /// Everything below the provider, then its process group, now.
+    /// The provider and everything the agent started, now. The family is
+    /// gone before this returns: the agent process exits right after a
+    /// kill, which can drop the task waiting on the child before that task
+    /// has killed it, and a member left running would hold the agent's
+    /// folder (which Windows then can't remove) and the handles it
+    /// inherited. An uncontained agent kills the provider alone. The task
+    /// waiting on the child then sees it exit.
     pub fn kill(&mut self) {
-        if let Some(pid) = self.pid {
-            self.census.extend(tree::descendants(pid));
-        }
-        self.finish();
-        if let Some(terminal) = &self.terminal {
-            let _ = terminal.signal_process_group(pty_host::ProcessGroupSignal::Kill);
-            return;
-        }
-        #[cfg(unix)]
-        if let Some(pid) = self.pid {
-            // SAFETY: killpg only sends a signal.
-            unsafe {
-                libc::killpg(pid as libc::pid_t, libc::SIGKILL);
+        if !self.family.kill_others() {
+            if let Some(terminal) = &self.terminal {
+                let _ = terminal.signal_process_group(pty_host::ProcessGroupSignal::Kill);
+            } else if let Some(process) = &self.process {
+                let _ = process.kill();
             }
         }
-        #[cfg(not(unix))]
         if let Some(kill) = self.kill.take() {
-            // Windows has no process groups. An ACP agent npm installed
-            // runs behind a `.cmd` shim whose shell runs the agent as its
-            // child, so killing the shim alone would leave the agent
-            // running: that tree is ended by `taskkill /T`, started here
-            // and not waited for, since the stop the daemon asked waits on
-            // this agent process's exit within seconds and taskkill can take
-            // that long on a loaded machine. The shim itself is killed only
-            // once taskkill is done (or has had its time), since a tree
-            // whose root has gone can no longer be found from it. Started,
-            // taskkill runs on even if this process ends first.
-            #[cfg(windows)]
-            if self.behind_shim
-                && let Some(pid) = self.pid
-                && let Some(mut tree) = crate::acp::start_killing_tree(pid)
-            {
-                tokio::spawn(async move {
-                    let _ = tokio::time::timeout(TREE_KILL_WAIT, tree.wait()).await;
-                    let _ = kill.send(());
-                });
-                return;
-            }
-            // Any other child ends here, before this returns: the agent
-            // process exits right after a kill, which can drop the task
-            // waiting on the child before that task has killed it, and the
-            // child would outlive the agent, holding its folder and the
-            // handles it inherited. It has gone by the time the agent's exit
-            // is seen, so a delete that follows can remove its folder. The
-            // task then sees it exit.
-            #[cfg(windows)]
-            self.process.terminate();
             let _ = kill.send(());
         }
     }
@@ -1737,12 +1617,23 @@ fn closed() -> io::Error {
 /// bypass-permissions agent does not hold an agent message behind an
 /// approval nobody is there to give, and runs amux's own tools, all but
 /// `attach`, without asking; terminal Claude also reports its hook events to the agent
-/// through the hook binary at the install path.
+/// through the hook binary at the install path. `by_file` writes the tool
+/// server's configuration and the settings to files in private/ and
+/// names those instead, as Claude takes either.
 fn claude_launch(
     spec: &AgentSpec,
     dir: &Path,
     hooks: bool,
+    by_file: bool,
 ) -> io::Result<(Vec<String>, String, bool)> {
+    let carried = |name: &str, value: String| -> io::Result<String> {
+        if !by_file {
+            return Ok(value);
+        }
+        let path = dir.join(dir::PRIVATE).join(name);
+        std::fs::write(&path, value)?;
+        Ok(path.display().to_string())
+    };
     let mut args = spec.provider_args.clone();
     let managed_folder = spec
         .provider_env
@@ -1757,14 +1648,14 @@ fn claude_launch(
         tools = None;
     }
     if let Some((command, server_args)) = &tools {
+        let config = serde_json::json!({
+            "mcpServers": {
+                interpret::AMUX_TOOL_SERVER: { "command": command, "args": server_args },
+            },
+        });
         args.extend([
             "--mcp-config".to_owned(),
-            serde_json::json!({
-                "mcpServers": {
-                    interpret::AMUX_TOOL_SERVER: { "command": command, "args": server_args },
-                },
-            })
-            .to_string(),
+            carried(dir::CLAUDE_MCP_CONFIG, config.to_string())?,
         ]);
     }
     let sources = crate::claude::launch::take_settings_args(&mut args).map_err(io::Error::other)?;
@@ -1796,7 +1687,37 @@ fn claude_launch(
             .collect(),
     };
     let settings = crate::claude::launch::merged_settings(user, &managed);
-    Ok((args, settings.to_string(), withheld))
+    Ok((
+        args,
+        carried(dir::CLAUDE_SETTINGS, settings.to_string())?,
+        withheld,
+    ))
+}
+
+/// Moves the system prompt the arguments append into a file in private/,
+/// appended from there (`--append-system-prompt-file`, which headless
+/// Claude takes): a `.cmd` shim's shell can't carry the line breaks it
+/// holds.
+fn system_prompt_by_file(args: &mut Vec<String>, dir: &Path) -> io::Result<()> {
+    const FLAG: &str = "--append-system-prompt";
+    let Some(at) = args
+        .iter()
+        .position(|arg| arg == FLAG || arg.starts_with(&format!("{FLAG}=")))
+    else {
+        return Ok(());
+    };
+    let text = match args[at].strip_prefix(&format!("{FLAG}=")) {
+        Some(text) => text.to_owned(),
+        None if at + 1 < args.len() => args.remove(at + 1),
+        None => String::new(),
+    };
+    let path = dir.join(dir::PRIVATE).join(dir::CLAUDE_SYSTEM_PROMPT);
+    std::fs::write(&path, text)?;
+    args.splice(
+        at..=at,
+        [format!("{FLAG}-file"), path.display().to_string()],
+    );
+    Ok(())
 }
 
 /// An absolute path as Claude's permission rules name it: Claude matches
@@ -1856,7 +1777,7 @@ pub fn codex_view(
 ) -> Option<pty_host::PtySpawn> {
     let args = crate::codex::attach_args(thread, &codex_listen(dir).ok()?)?;
     Some(pty_host::PtySpawn {
-        command: PathBuf::from(&spec.provider_command),
+        command: crate::program::find(&spec.provider_command, &spec.provider_env),
         args,
         cwd: PathBuf::from(&spec.cwd),
         env: spec
@@ -1940,17 +1861,11 @@ async fn send_codex(sender: &CodexSender, bytes: &[u8]) -> io::Result<()> {
 }
 
 /// Asks a Codex server to finish, while it is still running.
-fn terminate(child: &tokio::process::Child) {
-    // A reaped child has no id, so this never signals a reused pid.
-    #[cfg(unix)]
-    if let Some(pid) = child.id() {
-        // SAFETY: kill only sends a signal.
-        unsafe {
-            libc::kill(pid as libc::pid_t, libc::SIGTERM);
-        }
+fn ask_to_finish(child: &tokio::process::Child) {
+    // A reaped child can't be pinned, so this never signals a reused pid.
+    if let Ok(process) = os::process::ProcessRef::of_child(child) {
+        let _ = process.ask_to_finish();
     }
-    #[cfg(not(unix))]
-    let _ = child;
 }
 
 /// Where this agent's Codex server listens: a socket in its private
@@ -2103,11 +2018,13 @@ fn new_session(path: &Path) -> io::Result<(String, bool)> {
     Ok((session, false))
 }
 
+/// The provider's log, appended to and only this user's: it holds what the
+/// provider says of its account and its work.
 fn provider_log(dir: &Path) -> io::Result<std::fs::File> {
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join(dir::PRIVATE).join(dir::PROVIDER_LOG))
+    os::fs::create_private(
+        &dir.join(dir::PRIVATE).join(dir::PROVIDER_LOG),
+        os::fs::Create::Append,
+    )
 }
 
 /// The child's environment: ours without the variables a parent Claude
@@ -2434,7 +2351,7 @@ mod tests {
             cwd: std::env::temp_dir().to_string_lossy().into_owned(),
             ..Default::default()
         };
-        let (_, settings, _) = super::claude_launch(&spec, &dir, false).unwrap();
+        let (_, settings, _) = super::claude_launch(&spec, &dir, false, false).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&settings).unwrap();
         let rule = format!("Read(/{}/**)", super::rule_path(&dir.join("blobs")));
         assert!(
@@ -2464,7 +2381,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let (_, settings, withheld) = super::claude_launch(&spec, &dir, false).unwrap();
+        let (_, settings, withheld) = super::claude_launch(&spec, &dir, false, false).unwrap();
         assert!(!withheld);
         let settings: serde_json::Value = serde_json::from_str(&settings).unwrap();
         let allow: Vec<&str> = settings["permissions"]["allow"]
@@ -2485,6 +2402,55 @@ mod tests {
                 "set_working_on"
             ]
             .map(|tool| format!("mcp__amux__{tool}"))
+        );
+    }
+
+    /// Behind a `.cmd` shim, whose shell carries no line break and cuts a
+    /// long line, headless Claude's settings, tool server and appended
+    /// system prompt go as files in private/, each named in the value's
+    /// place, with the values as they would have gone inline.
+    #[test]
+    fn behind_a_shim_the_launch_values_go_by_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(crate::dir::PRIVATE)).unwrap();
+        let spec = wire::AgentSpec {
+            cwd: std::env::temp_dir().to_string_lossy().into_owned(),
+            provider_args: vec!["--append-system-prompt".into(), "Be brief.".into()],
+            provider_env: [(
+                crate::claude::launch::MANAGED_SETTINGS_PATH_ENV.to_owned(),
+                dir.path().join("no-managed-settings").display().to_string(),
+            )]
+            .into(),
+            config: Some(wire::EffectiveConfig {
+                install_path: "/opt/amux".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let (inline_args, inline_settings, _) =
+            super::claude_launch(&spec, dir.path(), false, false).unwrap();
+        let (mut args, settings, _) = super::claude_launch(&spec, dir.path(), false, true).unwrap();
+        super::append_system_prompt(&mut args, super::DESCRIPTION_FIRST);
+        super::system_prompt_by_file(&mut args, dir.path()).unwrap();
+
+        let read = |path: &str| std::fs::read_to_string(path).unwrap();
+        assert_eq!(read(&settings), inline_settings);
+        let value = |args: &[String], flag: &str| {
+            let at = args.iter().position(|arg| arg == flag).unwrap();
+            args[at + 1].clone()
+        };
+        assert_eq!(
+            read(&value(&args, "--mcp-config")),
+            value(&inline_args, "--mcp-config")
+        );
+        assert!(!args.iter().any(|arg| arg == "--append-system-prompt"));
+        assert_eq!(
+            read(&value(&args, "--append-system-prompt-file")),
+            format!("Be brief.\n\n{}", super::DESCRIPTION_FIRST)
+        );
+        assert!(
+            args.iter().all(|arg| !arg.contains('\n')),
+            "a line break left on the command line: {args:?}"
         );
     }
 

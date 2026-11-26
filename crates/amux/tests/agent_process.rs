@@ -586,16 +586,27 @@ async fn a_codex_agent_outlives_its_daemon_and_resumes() {
 
 /// Headless Claude leads a process group of its own and finishes its turn
 /// after its input closes, so an agent killed outright mid-turn would leave
-/// it running with no one to answer. Tethered as Codex is, it is asked to
-/// finish when its agent dies, and killed if it has not a few seconds on.
+/// it running with no one to answer. In the agent's family, it ends when
+/// its agent dies: on Unix its tether asks it to finish, and kills it if it
+/// has not a few seconds on; on Windows the agent's job ends with the
+/// agent. What Claude started in a session of its own (a tool's command)
+/// goes too where the family holds orphans, which Windows' job does and a
+/// Unix process tree can't.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_killed_agent_takes_its_headless_claude_with_it() {
+    let holds_orphans = cfg!(windows);
     let agent = Fixture::new(Kind::ClaudeSdk);
+    // What the command's processes are looked for by: Windows names the
+    // sleep itself `"…\sleep.exe" 600.…`.
+    let command = format!("600.{}", uuid::Uuid::new_v4().as_u128() % 1_000_000_000);
     agent.spec(
         1,
         "first",
         vec![
             text("working"),
+            Step::Spawn {
+                command: format!("exec sleep {command}"),
+            },
             Step::WaitFor {
                 path: agent.release.clone(),
             },
@@ -614,6 +625,15 @@ async fn a_killed_agent_takes_its_headless_claude_with_it() {
     agent
         .wait("the turn is under way", |log| log.has_text("working"))
         .await;
+    until("Claude's command to run", || {
+        std::future::ready(
+            support::running_mentioning(&command)
+                .then_some(())
+                .ok_or("not yet"),
+        )
+    })
+    .await
+    .unwrap();
     // The agent alone, at once.
     process.kill().unwrap();
     assert!(!exits(&mut process).await.success());
@@ -625,8 +645,22 @@ async fn a_killed_agent_takes_its_headless_claude_with_it() {
         )
     })
     .await;
-    let _ = Command::new("pkill")
-        .args(["-f", agent.dir.to_str().unwrap()])
-        .status();
+    let command_gone = if holds_orphans {
+        until("Claude's command to go with its agent", || {
+            std::future::ready(
+                (!support::running_mentioning(&command))
+                    .then_some(())
+                    .ok_or("it runs on"),
+            )
+        })
+        .await
+    } else {
+        Ok(())
+    };
+    // What a failed run leaves (Windows: the test's job ends it).
+    for left in [agent.dir.to_str().unwrap(), &command] {
+        let _ = Command::new("pkill").args(["-f", left]).status();
+    }
     gone.unwrap();
+    command_gone.unwrap();
 }

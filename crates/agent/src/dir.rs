@@ -11,7 +11,6 @@ use wire::AgentSpec;
 pub const HOOKS_SOCK: &str = "hooks.sock";
 /// The socket the agent's Codex app server listens on, under private/.
 /// Windows hosts Codex over stdio.
-#[cfg_attr(not(unix), allow(dead_code))]
 pub const CODEX_SOCK: &str = "codex.sock";
 /// Terminal Claude's messaging socket, under private/, which Claude binds.
 pub const MESSAGING_SOCK: &str = "messaging.sock";
@@ -23,6 +22,13 @@ pub const FACTS: &str = "facts";
 pub const PROVIDER_SESSION: &str = "provider-session";
 /// What the provider wrote to stderr.
 pub const PROVIDER_LOG: &str = "provider.log";
+/// Headless Claude's launch values, under private/, for a Claude behind a
+/// `.cmd` shim, whose shell can't carry them on its command line: the
+/// settings, the tool server's configuration and the system prompt it
+/// appends.
+pub const CLAUDE_SETTINGS: &str = "claude-settings.json";
+pub const CLAUDE_MCP_CONFIG: &str = "claude-mcp-config.json";
+pub const CLAUDE_SYSTEM_PROMPT: &str = "claude-system-prompt.md";
 
 /// The newest `spec.<n>` and its number.
 pub fn newest_spec(dir: &Path) -> io::Result<Option<(u32, AgentSpec)>> {
@@ -45,18 +51,6 @@ pub fn newest_spec(dir: &Path) -> io::Result<Option<(u32, AgentSpec)>> {
     let spec = AgentSpec::decode(bytes.as_slice())
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     Ok(Some((n, spec)))
-}
-
-/// Creates a directory only this user can enter.
-pub fn private_dir(path: &Path) -> io::Result<()> {
-    let mut builder = fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder.create(path)
 }
 
 /// Writes `blobs/<hex>` by temp-and-rename; the name is the content's hash,

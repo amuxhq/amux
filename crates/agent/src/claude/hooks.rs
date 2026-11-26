@@ -72,23 +72,28 @@ pub fn unwrap_forwarded(
 }
 
 /// Forward hook stdin to a session socket and wait for what the agent
-/// answers, which is empty unless it decides the hook.
-#[cfg(unix)]
+/// answers, which is empty unless it decides the hook. The hook command is
+/// a short process of its own with no runtime, so the call gets one.
 fn forward(stdin: &[u8], socket: &Path) -> Result<Vec<u8>, std::io::Error> {
-    use std::io::{Read, Write};
-    let mut stream = std::os::unix::net::UnixStream::connect(socket)?;
-    stream.write_all(stdin)?;
-    stream.shutdown(std::net::Shutdown::Write)?;
-    let mut answer = Vec::new();
-    stream.read_to_end(&mut answer)?;
-    Ok(answer)
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    runtime.block_on(async {
+        let mut stream = agent_dir::local_socket::connect(socket).await?;
+        stream.write_all(stdin).await?;
+        // The end of the payload: the agent reads to it, then answers.
+        stream.shutdown().await?;
+        let mut answer = Vec::new();
+        stream.read_to_end(&mut answer).await?;
+        Ok(answer)
+    })
 }
 
 /// Forward hook stdin and the provider's per-session messaging credentials.
 ///
 /// [`HookReceiver`] and [`unwrap_forwarded`] remove the transport envelope,
 /// so the credential token never reaches the payload.
-#[cfg(unix)]
 pub fn forward_with_messaging(
     stdin: &[u8],
     socket: &Path,
@@ -105,18 +110,6 @@ pub fn forward_with_messaging(
     let encoded = serde_json::to_vec(&envelope)
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
     forward(&encoded, socket)
-}
-
-#[cfg(not(unix))]
-pub fn forward_with_messaging(
-    _stdin: &[u8],
-    _socket: &Path,
-    _messaging: &MessagingCredentials,
-) -> Result<Vec<u8>, std::io::Error> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "Claude hook sockets require Unix",
-    ))
 }
 
 /// What a hook command does: forward its stdin to `socket`, with the
@@ -136,14 +129,6 @@ pub fn forward_from_env(stdin: &[u8], socket: &Path) -> Result<Vec<u8>, std::io:
         ),
         _ => forward(stdin, socket),
     }
-}
-
-#[cfg(not(unix))]
-fn forward(_stdin: &[u8], _socket: &Path) -> Result<Vec<u8>, std::io::Error> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "Claude hook sockets require Unix",
-    ))
 }
 
 // out of scope on Windows: terminal Claude, whose hooks these carry.

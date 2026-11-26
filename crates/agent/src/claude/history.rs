@@ -67,7 +67,7 @@ pub fn config_root(provider_env: &std::collections::HashMap<String, String>) -> 
         .get(CONFIG_DIR)
         .map(PathBuf::from)
         .or_else(|| std::env::var_os(CONFIG_DIR).map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".claude")))
+        .or_else(|| os::paths::home_dir().map(|home| home.join(".claude")))
 }
 
 /// The project folders the transcripts of a working folder's sessions are
@@ -87,7 +87,7 @@ impl ProjectFolders {
     pub fn of(config_root: &Path, working_dir: &Path) -> Self {
         let projects = config_root.join("projects");
         let mut resolved = vec![projects.clone()];
-        resolved.extend(std::fs::canonicalize(&projects).ok());
+        resolved.extend(os::fs::canonical(&projects).ok());
         resolved.dedup();
         Self {
             projects: resolved,
@@ -187,16 +187,21 @@ pub fn valid_session_id(session_id: &str) -> bool {
     uuid::Uuid::parse_str(session_id).is_ok()
 }
 
+/// The path as Claude names its project by: resolved, and on Windows in
+/// its plain form (`C:\…`, not `\\?\C:\…`), as Claude's own Node reads it.
 fn absolute_path(path: &Path) -> std::io::Result<PathBuf> {
     if path.is_absolute() {
-        Ok(std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()))
+        Ok(os::fs::canonical(path).unwrap_or_else(|_| path.to_path_buf()))
     } else {
         Ok(std::env::current_dir()?.join(path))
     }
 }
 
+/// Claude's name for the project folder of the working folder `path`:
+/// every character of its resolved, plain path that is not a letter or a
+/// digit made a `-` (`C:\Users\a` is `C--Users-a`).
 fn project_slug(path: &Path) -> String {
-    let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let canonical = os::fs::canonical(path).unwrap_or_else(|_| path.to_path_buf());
     canonical
         .to_string_lossy()
         .chars()
@@ -215,6 +220,18 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    /// A project is named by its folder's plain path, as Claude names it:
+    /// on Windows `C:\…` resolved, not the `\\?\C:\…` that resolving
+    /// gives, whose slug (`----C--…`) names a folder Claude never writes.
+    #[test]
+    fn a_projects_slug_is_its_plain_path() {
+        let work = TempDir::new().unwrap();
+        let slug = project_slug(work.path());
+        assert!(!slug.starts_with("----"), "{slug}");
+        let plain = os::fs::canonical(work.path()).unwrap();
+        assert_eq!(slug.len(), plain.to_string_lossy().chars().count());
+    }
 
     #[test]
     fn session_file_uses_the_configured_project_slug() {

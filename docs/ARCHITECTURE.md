@@ -619,17 +619,24 @@ nicer in several places, and Windows pays for each:
   nothing, so a connection is ended by closing it
   (`LocalStream::close`, or a `Closer` for a split one).
 - **Process groups.** Agents start with `CREATE_NEW_PROCESS_GROUP` and
-  `CREATE_NO_WINDOW`, breaking away from the daemon's job. The daemon kills
-  an agent through the process handle it holds (`TerminateProcess`), never
-  by pid; what the agent started goes with the agent's own job.
+  `CREATE_NO_WINDOW`, breaking away from the daemon's job. Each agent then
+  puts itself in a Job Object of its own (`os::process::Family`, which
+  forbids breakaway), so its provider and everything the provider starts
+  are born inside it and end with it; the agent's stop and kill end the
+  job's members. The daemon kills an agent through the process handle it
+  holds (`TerminateProcess`), never by pid, and what the agent started goes
+  with the agent's job.
 - **Terminals.** Pseudo-terminals are ConPTY, through `portable-pty` in
   [`pty-host`](../crates/pty-host/src/lib.rs).
 - **Updates.** A running executable cannot be renamed over, so the
   supervisor stops the daemon before the swap and moves the binary aside by
   rename, and its own update is a spawn-then-exit rather than an exec.
 - **Signals.** There are none: `amux server stop` asks the supervisor over
-  its control socket (`supervisor.sock`), and the supervisor stops its child
-  by closing the activation pipe.
+  its control socket (`supervisor.sock`), as it does everywhere, and the
+  supervisor stops its child by closing the activation pipe. What the OS
+  sends instead (Ctrl+C, the console closing, logoff, shutdown) reaches the
+  supervisor and the daemon through `os::signal::terminated`, and each
+  shuts down cleanly before the OS ends it.
 - **SSH.** Pairing and linking over SSH need a Unix host at the far end,
   so a Windows profile binds no `link.sock`.
 - **Terminal Claude.** Not hosted on Windows in this build: an agent of kind
@@ -776,10 +783,11 @@ The allowed sets encode the layering above:
 
 | Crate | May depend on | Why |
 |---|---|---|
-| `wire`, `log-file`, `os`, `release`, `analytics`, `highlight`, `acp-protocol`, `claude-protocol`, `codex-protocol` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code |
-| `pty-host` | `os` | the tether is part of an agent's family, which `os` holds |
+| `wire`, `os`, `release`, `analytics`, `highlight`, `acp-protocol`, `claude-protocol`, `codex-protocol`, `pty-host` | nothing in the workspace | leaves everything else builds on; the protocol crates are types and take in no process, socket or async code; `highlight` is one engine for every client's code; `pty-host` hosts a pseudo-terminal and nothing of amux's |
 | `git-facts` | `os` | a checkout's root in the one canonical path form, never Windows' verbatim one |
-| `journal`, `store`, `attachments`, `redaction`, `settings` | `wire` | `settings` names each experiment's version by the wire's entry for it |
+| `log-file` | `os` | moves standard error onto the log, and opens it owner-only |
+| `journal`, `store`, `attachments`, `redaction` | `wire` | |
+| `settings` | `os`, `wire` | names each experiment's version by the wire's entry for it; the home folder from `os` |
 | `agent-dir` | `os`, `wire` | `os` on Windows alone: the pipe name file's patient rename, and the user's SID a pipe is owned by |
 | `preview` | `attachments`, `wire` | |
 | `core-ring` | `journal` | a core's input ring, in segments named as the journal's are |
@@ -807,7 +815,7 @@ The allowed sets encode the layering above:
 | `replay-support` | `core-ring`, `daemon-core`, `interpret`, `journal`, `models`, `provider-fakes`, `relay-core`, `store`, `supervisor-core`, `ui-state`, `wire` | replays the core's and the sessions' records, judging the models' properties; an agent's record carries no provider's words, so it replays as a stream made up from it through the real interpreter, held to the provider's types by the fakes' conformance; an installation's facts rings replay through the interpreter as they are, and the relay's and supervisor's reports through their cores; `just repro`, a debugging tool nothing links |
 | `qualification` | `node`, `provider-fakes`, `pty-host`, `redaction`, `testnet`, `wire` | the live lane and the performance workloads over the harness; its probes host terminal Claude on a pseudo-terminal of their own and sanitize what they record |
 | `xtask` | `release` | signs releases |
-| `installer` | `agent-dir`, `release`, `settings` | finds the front door from the settings, checks a download against the manifest, and waits on the local socket, without the daemon |
+| `installer` | `agent-dir`, `os`, `release`, `settings` | finds the front door from the settings, checks a download against the manifest, and waits on the local socket, without the daemon |
 | `ios-tools` | `app-runtime`, `ui-state`, `ui-view`, `wire` | generates the Swift and Kotlin mirrors and the markdown fixtures |
 
 The phone bridge (`app-embedded`, `app-bridge`, `app-ffi`, `app-jni`) links `node` on purpose: it

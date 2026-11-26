@@ -9,8 +9,9 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_LOCAL = {
     "wire": set(),
-    # A host's name is wire's type, built where the configured one is read.
-    "settings": {"wire"},
+    # A host's name is wire's type, built where the configured one is read;
+    # os for the home folder.
+    "settings": {"os", "wire"},
     # The typed events a device may send and their uploader: a leaf, so the
     # daemon, the phone bridge and the CLI share one definition.
     "analytics": set(),
@@ -24,8 +25,9 @@ ALLOWED_LOCAL = {
     # a pipe is owned by.
     "agent-dir": {"os", "wire"},
     "redaction": {"wire"},
-    # The capped log file every process writes and a dump reads the tail of.
-    "log-file": set(),
+    # The capped log file every process writes and a dump reads the tail of;
+    # os to move standard error onto it and to open it owner-only.
+    "log-file": {"os"},
     # The operating-system primitives several crates share: a leaf, taking
     # only libc, windows-sys and (behind `async`) tokio. Cores, wire,
     # interpret, the UI library, client and browser-core never take it.
@@ -55,8 +57,7 @@ ALLOWED_LOCAL = {
     "acp-protocol": set(),
     "claude-protocol": set(),
     "codex-protocol": set(),
-    # The tether lives in os, beside the family it is part of.
-    "pty-host": {"os"},
+    "pty-host": set(),
     # The daemon reaches agent processes only through the directory contract,
     # never the agent or interpret crates, so the phone hosts a runtime with
     # no interpreter or provider-protocol crates in its graph. redaction walks
@@ -80,7 +81,7 @@ ALLOWED_LOCAL = {
     # What a client calls to find, install and start amux: the front door
     # from the settings, a download checked against the release manifest,
     # and the local socket it waits on, without linking the daemon.
-    "installer": {"agent-dir", "release", "settings"},
+    "installer": {"agent-dir", "os", "release", "settings"},
     # The Swift mirrors of the view values are generated from their
     # definitions, so the generator reads them.
     "ios-tools": {"app-runtime", "source-tree", "ui-state", "ui-view", "wire"},

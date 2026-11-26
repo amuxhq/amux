@@ -339,6 +339,7 @@ impl Agent {
             dir.clone(),
             clock.clone(),
             segment_bytes,
+            family(),
         ));
         let reader = journal::Reader::new(dir.join(agent::JOURNAL), 0);
         Self {
@@ -491,16 +492,13 @@ impl Agent {
     /// The directory is free for the next incarnation: the lock is released
     /// and the control socket is gone.
     pub fn assert_released(&self) {
-        let lock = std::fs::OpenOptions::new()
-            .write(true)
-            .open(self.dir.join(agent::LOCK))
-            .unwrap();
+        let lock = self.dir.join(agent::LOCK);
         // Other tests in this process spawn children at the same time, and
         // a child being spawned can hold a copy of every descriptor until it
         // execs; a lock the agent closed has been seen held for about a
         // millisecond that way. Allow a moment, never a hang.
         let deadline = std::time::Instant::now() + Duration::from_secs(1);
-        while lock.try_lock().is_err() {
+        while os::lock::FileLock::held(&lock).unwrap() {
             assert!(
                 std::time::Instant::now() < deadline,
                 "the agent released its lock"
@@ -535,6 +533,17 @@ impl Agent {
     }
 }
 
+/// The family every agent a test runs starts its provider into: this
+/// process's, made once, as `amux internal agent` makes its own first.
+/// Each test runs in a process of its own (build/test-runner.py), and runs
+/// its agents one after another, so a kill of the family reaches the
+/// agent's own provider and what it started, and nothing another test
+/// runs.
+pub fn family() -> agent::Family {
+    static FAMILY: std::sync::OnceLock<agent::Family> = std::sync::OnceLock::new();
+    FAMILY.get_or_init(agent::Family::contain_self).clone()
+}
+
 /// Runs the next incarnation once the last one's lock is free, as the
 /// daemon waits for a dying process's lock. Every agent in a test shares
 /// this process's descriptors, so a sibling test forking a provider can
@@ -546,7 +555,9 @@ async fn run_when_unlocked(
 ) -> Result<ExitCause, AgentError> {
     let started = std::time::Instant::now();
     loop {
-        match agent::run_cutting_segments_at(dir.clone(), clock.clone(), segment_bytes).await {
+        match agent::run_cutting_segments_at(dir.clone(), clock.clone(), segment_bytes, family())
+            .await
+        {
             Err(AgentError::Locked(_)) if started.elapsed() < PATIENCE => {
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }

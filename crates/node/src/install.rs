@@ -16,7 +16,7 @@
 //!                         bytes fetched for a peer's agent
 //! ```
 
-use std::fs::{self, File, OpenOptions};
+use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -51,10 +51,11 @@ pub(crate) fn installation_id(data_dir: &Path) -> io::Result<uuid::Uuid> {
 
 /// The installation's exclusive lock, held for the daemon's lifetime. The
 /// file is never removed: unlinking it would let a second opener lock a
-/// different inode while this one is still held.
+/// different inode while this one is still held. It holds no data; what it
+/// would hold stays readable while it is held ([`os::lock::FileLock`]).
 #[derive(Debug)]
 pub struct InstallationLock {
-    file: Option<File>,
+    _lock: os::lock::FileLock,
 }
 
 impl InstallationLock {
@@ -63,26 +64,9 @@ impl InstallationLock {
     pub fn acquire(data_dir: &Path) -> Result<Self, LockError> {
         private_dir(data_dir).map_err(LockError::Io)?;
         let path = data_dir.join(INSTALLATION_LOCK);
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(&path)
-            .map_err(LockError::Io)?;
-        match file.try_lock() {
-            Ok(()) => Ok(Self { file: Some(file) }),
-            Err(fs::TryLockError::WouldBlock) => Err(LockError::Busy(path)),
-            Err(fs::TryLockError::Error(error)) => Err(LockError::Io(error)),
-        }
-    }
-}
-
-impl Drop for InstallationLock {
-    fn drop(&mut self) {
-        // Unlock explicitly: a descriptor a concurrently forked child
-        // inherited would otherwise keep the lock until that child execs.
-        if let Some(file) = self.file.take() {
-            let _ = file.unlock();
+        match os::lock::FileLock::try_acquire(&path).map_err(LockError::Io)? {
+            Some(lock) => Ok(Self { _lock: lock }),
+            None => Err(LockError::Busy(path)),
         }
     }
 }

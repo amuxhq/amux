@@ -188,6 +188,14 @@ pub fn set_inheritable(file: &File, on: bool) -> io::Result<()> {
     imp::set_inheritable(file, on)
 }
 
+/// An anonymous pipe: its read end, then its write end, as files the
+/// inheritance helpers take. Neither end is inheritable until
+/// [`set_inheritable`] says so.
+pub fn pipe() -> io::Result<(File, File)> {
+    let (read, write) = io::pipe()?;
+    Ok((imp::file_of_pipe(read), imp::file_of_pipe(write)))
+}
+
 /// The number a successor is told for an inherited `file`, which it turns
 /// back into a file with [`file_from_inherited`]: the descriptor on Unix,
 /// the handle's value on Windows.
@@ -218,12 +226,15 @@ pub unsafe fn file_from_inherited(raw: u64) -> io::Result<File> {
 /// The calling process and everything it starts, contained.
 ///
 /// Windows: [`Family::contain_self`] assigns this process to a new Job
-/// Object (`KILL_ON_JOB_CLOSE | BREAKAWAY_OK`, its handle held
-/// non-inheritably and never closed), so every child is born inside it:
-/// no suspended start, no race. A process that asks for
-/// `CREATE_BREAKAWAY_FROM_JOB` (a build daemon shared between agents)
-/// escapes, as a `setsid` escapes a process group on Unix. When this
-/// process dies, however it dies, the handle closes and the rest dies.
+/// Object (`KILL_ON_JOB_CLOSE`, its handle held non-inheritably and never
+/// closed), so every child is born inside it: no suspended start, no race.
+/// The job forbids breakaway: Git Bash (MSYS2, on Cygwin's runtime) starts
+/// every command broken away from a job that allows it, which would take a
+/// provider's tool shells out of the family. So nothing escapes, a build
+/// daemon a tool starts included (a `setsid` escapes on Unix), and
+/// [`spawn_background`] from inside the family starts its child inside.
+/// When this process dies, however it dies, the handle closes and the rest
+/// dies.
 ///
 /// Unix: each child started through [`Family::prepare`] and
 /// [`Family::join`] leads a process group of its own, tethered to this
@@ -257,6 +268,17 @@ impl Family {
     #[cfg(feature = "async")]
     pub fn join(&self, child: &tokio::process::Child) -> io::Result<Member> {
         self.inner.join(child).map(|inner| Member { inner })
+    }
+
+    /// Counts the family as it stands, so a later [`Family::kill_others`]
+    /// ends these members too, even once they have left it. Unix: a member
+    /// whose parent exits is reparented away, out of every later census,
+    /// as a provider's tool shell (a session of its own) is when the
+    /// provider finishes on a polite stop; so a stop counts the family
+    /// before it asks. Windows: nothing; the job keeps every member
+    /// wherever its parent went.
+    pub fn count(&self) {
+        self.inner.count();
     }
 
     /// Ends every member but this process, at once (SIGKILL,
@@ -364,8 +386,8 @@ impl Descendant {
 /// census of what it leaves must be taken while it still runs.
 ///
 /// Empty where the table can't be read, which includes Windows, where a
-/// [`Family`]'s job takes the census instead: this is the Unix census
-/// `agent` uses until its callers move to [`Family`].
+/// [`Family`]'s job takes the census instead: this is the Unix census of
+/// a process that isn't this one (the test net's hosts).
 pub fn descendants(root: Pid) -> Vec<Descendant> {
     imp::descendants(root)
 }
@@ -430,6 +452,16 @@ impl ProcessRef {
         self.inner.kill()
     }
 
+    /// Asks the process to finish, as a polite stop does: SIGTERM, on which
+    /// a program cleans up what it runs. `Ok` when it has already exited.
+    /// Windows has no such ask of a process without a window (a console
+    /// control event reaches every process on the console, and a `.cmd`
+    /// shim answers it with a question): `Unsupported`, and the caller
+    /// closes the process's input instead.
+    pub fn ask_to_finish(&self) -> io::Result<()> {
+        self.inner.ask_to_finish()
+    }
+
     /// Resolves once the process has exited. Unix, which has no handle to
     /// wait on for a process that isn't our child, looks every 50 ms.
     #[cfg(feature = "async")]
@@ -447,5 +479,51 @@ impl ProcessRef {
     /// Lets a suspended process run again (SIGCONT, `NtResumeProcess`).
     pub fn resume(&self) -> io::Result<()> {
         self.inner.resume()
+    }
+
+    /// Asks the process to stop: SIGTERM. `Ok` when it has already exited.
+    /// Windows has no such request (amux sends no console control events,
+    /// §2.2 of the Windows design): `Unsupported`, and the caller stops the
+    /// process its own way, closing an input it exits on.
+    pub fn ask_to_stop(&self) -> io::Result<()> {
+        self.inner.ask_to_stop()
+    }
+
+    /// Waits, blocking, for a child of this process to exit, and reaps it:
+    /// its exit code, or on Unix the negated signal that ended it. Call it
+    /// from a thread of its own, once.
+    ///
+    /// Unix: `waitpid`, so the process must be this process's unreaped
+    /// child: one it started, or one the image it exec'd from started.
+    /// Windows: any process this refers to.
+    pub fn reap(&self) -> io::Result<i32> {
+        self.inner.reap()
+    }
+
+    /// What a successor this process starts needs to take this process
+    /// over with [`ProcessRef::inherited`]. Windows: a duplicate of the
+    /// handle, as a file to mark with [`set_inheritable`] around the
+    /// successor's start and to name with [`raw_for_child`]; it is the
+    /// handle that keeps the pid from being reused, so the successor
+    /// never opens the process by pid. Unix: `None`, as a child stays the
+    /// child of the image its parent execs into, and its pid can't be
+    /// reused until that image reaps it.
+    pub fn for_successor(&self) -> io::Result<Option<File>> {
+        self.inner.for_successor()
+    }
+
+    /// Takes over the process `pid` that the process this one replaced
+    /// handed over: on Windows through the handle it passed as `handle`
+    /// (what its [`ProcessRef::for_successor`] gave, by [`raw_for_child`]),
+    /// which must name `pid`; on Unix by pid, as the process is this
+    /// process's child, and `handle` must be `None`. `InvalidInput` when
+    /// what was passed doesn't fit.
+    ///
+    /// # Safety
+    ///
+    /// As [`file_from_inherited`], for `handle`.
+    pub unsafe fn inherited(pid: Pid, handle: Option<u64>) -> io::Result<ProcessRef> {
+        // SAFETY: the caller's promise, passed on.
+        unsafe { imp::ProcessRef::inherited(pid, handle) }.map(|inner| ProcessRef { inner })
     }
 }

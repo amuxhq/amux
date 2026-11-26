@@ -59,6 +59,18 @@ a password, for example with a key in your SSH agent. The two devices then
 connect through SSH from then on. This is a good fit for a server you already
 SSH into; see [Running amux on a server](../use/server.md).
 
+From Windows, amux uses the `ssh` that comes with Windows. A key with a
+passphrase works only once it's in the SSH agent, and Windows ships that
+service turned off. In PowerShell as an administrator, turn it on once:
+
+```powershell
+Get-Service ssh-agent | Set-Service -StartupType Automatic
+Start-Service ssh-agent
+```
+
+Then, as yourself, `ssh-add` your key. The machine you pair with must run
+macOS or Linux: amux can't be reached over SSH on a Windows machine.
+
 ## Through amux's relay
 
 With [Pro](https://amux.sh/docs/account/plans-and-billing/), devices signed

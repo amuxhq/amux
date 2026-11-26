@@ -1,5 +1,5 @@
+use std::fmt;
 use std::path::{Path, PathBuf};
-use std::{fmt, fs};
 
 use rcgen::{
     CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, KeyPair, KeyUsagePurpose,
@@ -551,7 +551,10 @@ fn load_or_create_device_key(path: &Path) -> Result<Vec<u8>, IdentityError> {
 
 fn load_device_key(path: &Path) -> Result<Vec<u8>, IdentityError> {
     ensure_private_file_mode(path)?;
-    let private_key_pkcs8 = fs::read(path)?;
+    // Patient: of two first runs, the one that lost the creation reads the
+    // key the other just put in place, which on Windows stays open in its
+    // writer, shared with nobody, for a moment more.
+    let private_key_pkcs8 = os::fs::read_patiently(path)?;
     ed25519_seed_from_pkcs8_v1(&private_key_pkcs8)?;
     Ok(private_key_pkcs8)
 }

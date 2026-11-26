@@ -247,6 +247,11 @@ enum Command {
         #[command(subcommand)]
         command: ServerCommand,
     },
+    /// Set up what this device needs for devices nearby to reach amux.
+    Setup {
+        #[command(subcommand)]
+        command: SetupCommand,
+    },
     /// Run the daemon under a supervisor that restarts it and, under
     /// `updates = "auto"`, installs releases: what the login item runs.
     #[command(hide = true)]
@@ -287,6 +292,18 @@ enum ServerCommand {
     /// Stop amux cleanly: the supervisor first where one runs. Agents keep
     /// running.
     Stop,
+}
+
+#[derive(Debug, Subcommand)]
+enum SetupCommand {
+    /// Let devices nearby reach amux through Windows' firewall: a rule
+    /// allowing amux on private and domain networks, added after Windows asks
+    /// for administrator approval once.
+    Firewall {
+        /// This is the run Windows approved, as an administrator.
+        #[arg(long, hide = true)]
+        as_administrator: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -430,6 +447,11 @@ fn main() -> ExitCode {
             Ok(false) => ExitCode::from(3),
             Err(error) => report(Err(error)),
         },
+        // The firewall is the machine's, not the installation's: no config
+        // is read, and amux needn't be running.
+        Command::Setup {
+            command: SetupCommand::Firewall { as_administrator },
+        } => report(setup::firewall(as_administrator)),
         command => report(run(command, cli.config, cli.profile)),
     }
 }
@@ -884,6 +906,7 @@ mod tests {
                 "uninstall",
                 "config",
                 "server",
+                "setup",
                 "help",
             ]
         );

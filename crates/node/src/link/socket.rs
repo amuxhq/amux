@@ -936,26 +936,35 @@ fn bind_udp(bind: SocketAddr, remembered_port: Option<u16>) -> io::Result<std::n
     bind_one(bind.ip(), bind.port())
 }
 
+/// Binds the profile's socket at `ip` and `port`, the port its own alone
+/// ([`crate::platform::claim_port`]).
 fn bind_one(ip: IpAddr, port: u16) -> io::Result<std::net::UdpSocket> {
+    let at = SocketAddr::new(ip, port);
     if !ip.is_unspecified() {
-        return std::net::UdpSocket::bind(SocketAddr::new(ip, port));
+        return bind_claimed(udp_socket(socket2::Domain::for_address(at))?, at);
     }
     match dual_stack_socket() {
-        Ok(socket) => {
-            socket.bind(&SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), port).into())?;
-            Ok(socket.into())
-        }
+        Ok(socket) => bind_claimed(socket, SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), port)),
         // No IPv6 on this host: IPv4 alone.
-        Err(_) => std::net::UdpSocket::bind(SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port)),
+        Err(_) => bind_claimed(
+            udp_socket(socket2::Domain::IPV4)?,
+            SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port),
+        ),
     }
 }
 
+fn bind_claimed(socket: socket2::Socket, at: SocketAddr) -> io::Result<std::net::UdpSocket> {
+    crate::platform::claim_port(&socket)?;
+    socket.bind(&at.into())?;
+    Ok(socket.into())
+}
+
+fn udp_socket(domain: socket2::Domain) -> io::Result<socket2::Socket> {
+    socket2::Socket::new(domain, socket2::Type::DGRAM, Some(socket2::Protocol::UDP))
+}
+
 fn dual_stack_socket() -> io::Result<socket2::Socket> {
-    let socket = socket2::Socket::new(
-        socket2::Domain::IPV6,
-        socket2::Type::DGRAM,
-        Some(socket2::Protocol::UDP),
-    )?;
+    let socket = udp_socket(socket2::Domain::IPV6)?;
     socket.set_only_v6(false)?;
     Ok(socket)
 }
@@ -974,13 +983,21 @@ struct Udp {
 
 impl Udp {
     fn new(socket: std::net::UdpSocket, rebindable: bool) -> io::Result<Self> {
-        socket.set_nonblocking(true)?;
         let v6 = socket.local_addr()?.is_ipv6();
         Ok(Self {
-            socket: RwLock::new(Some(tokio::net::UdpSocket::from_std(socket)?)),
+            socket: RwLock::new(Some(Self::receiving(socket)?)),
             v6,
             rebindable,
         })
+    }
+
+    /// `socket` made ready for the runtime, its receives deaf to ICMP
+    /// unreachables ([`crate::platform::ignore_unreachable`]), a caller's
+    /// socket too.
+    fn receiving(socket: std::net::UdpSocket) -> io::Result<tokio::net::UdpSocket> {
+        crate::platform::ignore_unreachable(&socket)?;
+        socket.set_nonblocking(true)?;
+        tokio::net::UdpSocket::from_std(socket)
     }
 
     fn with<T>(
@@ -1042,8 +1059,9 @@ impl Datagrams for Udp {
                     // answer needs to find its interface.
                     return Poll::Ready(Ok((read.filled().len(), plain(from))));
                 }
-                // Windows reports an earlier send's ICMP unreachable on the
-                // next receive; it says nothing about this one.
+                // An earlier send's ICMP unreachable says nothing about this
+                // receive. Our sockets don't report one (`receiving`); this
+                // is for an OS that does all the same.
                 Poll::Ready(Err(error))
                     if matches!(
                         error.kind(),
@@ -1081,8 +1099,7 @@ impl Datagrams for Udp {
         };
         drop(old);
         let fresh = bind_one(at.ip(), at.port()).or_else(|_| bind_one(at.ip(), 0))?;
-        fresh.set_nonblocking(true)?;
-        *held = Some(tokio::net::UdpSocket::from_std(fresh)?);
+        *held = Some(Self::receiving(fresh)?);
         Ok(true)
     }
 }
@@ -2834,5 +2851,48 @@ mod tests {
         assert_eq!(round_trip(&link, b"after errors").await, b"after errors");
         assert_eq!(link.server_socket.drops().receive_errors, 5);
         assert_eq!(link.server.close_reason(), None);
+    }
+
+    /// The port a profile's socket is bound on is its own: no other socket
+    /// binds it, not even one that asks to share it (Windows lets a socket
+    /// with SO_REUSEADDR take a port another holds, and its datagrams with
+    /// it, unless the holder bound it exclusively).
+    #[test]
+    fn socket_port_is_its_own_against_a_socket_asking_to_share_it() {
+        let held = bind_one(Ipv4Addr::LOCALHOST.into(), 0).unwrap();
+        let at = held.local_addr().unwrap();
+        let other = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )
+        .unwrap();
+        other.set_reuse_address(true).unwrap();
+        other
+            .bind(&at.into())
+            .expect_err("another socket binds the profile's port");
+    }
+
+    /// A datagram sent to a port nobody listens on leaves the socket's next
+    /// receive waiting for the next datagram: Windows would otherwise
+    /// report the ICMP unreachable that comes back as an error on it.
+    #[tokio::test]
+    async fn socket_send_to_a_closed_port_leaves_the_next_receive_waiting() {
+        let closed = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let udp = Udp::new(bind_one(Ipv4Addr::LOCALHOST.into(), 0).unwrap(), true).unwrap();
+        for _ in 0..3 {
+            std::future::poll_fn(|cx| udp.poll_send_ready(cx))
+                .await
+                .unwrap();
+            udp.send_to(b"anyone there?", closed).unwrap();
+        }
+        let socket = udp.socket.write().unwrap().take().unwrap();
+        let mut buf = [0u8; 64];
+        let received =
+            tokio::time::timeout(Duration::from_millis(500), socket.recv_from(&mut buf)).await;
+        assert!(received.is_err(), "the receive ended: {received:?}");
     }
 }

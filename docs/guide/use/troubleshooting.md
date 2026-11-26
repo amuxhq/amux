@@ -18,6 +18,7 @@ It answers most questions in a few lines:
 - whether it starts at login
 - each account on this device, and whether the relay is connected
 - whether usage counts are on, and where the config file is
+- on Windows, whether the firewall lets devices nearby reach amux
 
 ## amux isn't running
 
@@ -59,9 +60,31 @@ Its chat fills in again when the device is back.
   app, go to **Privacy & Security** → **Local Network** and turn on amux.
 - Open amux on the device and start pairing there, with `amux pair`. The
   phone offers to pair only with a device that's waiting for it.
+- If the device runs Windows, check its firewall (next section).
 
 [Connect your phone](../get-started/connect-your-phone.md) has the other ways
 to pair, including when the phone and device are on different networks.
+
+## Devices nearby can't reach a Windows device
+
+Windows' firewall drops what other devices on your network send to a program
+it has no rule for. Until amux has one, a Windows device still reaches your
+other devices, because it dials out to them, but they can't dial it, and
+neither your phone nor your other computers find it nearby. `amux status`
+says which it is. To add the rule:
+
+```sh
+amux setup firewall
+```
+
+Windows asks once for an administrator's approval. The rule lets devices on
+private and domain networks reach amux, never on public ones such as a café's,
+and lasts across updates, because amux is always started from the same
+place, `~\.amux\bin\amux.exe`.
+
+If you dismissed Windows' own prompt to allow amux when it first appeared,
+Windows added a rule that blocks it instead. `amux status` says so, and
+`amux setup firewall` replaces that rule with its own.
 
 ## An agent can't carry on
 

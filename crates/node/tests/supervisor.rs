@@ -145,6 +145,39 @@ impl Server {
         manifest.signature = release::sign(seed, &manifest);
         *self.manifest.lock().unwrap() = serde_json::to_string(&manifest).unwrap();
     }
+
+    /// Serves `bytes` as `version`, with `launcher` named beside it as the
+    /// release's launcher, in one manifest signed with the test key.
+    fn publish_with_launcher(&self, version: &str, bytes: Vec<u8>, launcher: Vec<u8>) {
+        let entry = |name: String, bytes: Vec<u8>| {
+            let release = Release {
+                version: version.to_owned(),
+                url: self.url(&format!("/artifacts/{name}")),
+                sha256: release::sha256_of(&bytes),
+                size: bytes.len() as u64,
+            };
+            self.artifacts.lock().unwrap().insert(name, bytes);
+            release
+        };
+        let mut manifest = Manifest {
+            channel: "stable".into(),
+            rollout: None,
+            targets: [
+                (
+                    release::TARGET.to_owned(),
+                    entry(format!("amux-{version}"), bytes),
+                ),
+                (
+                    release::beside_key(release::TARGET, release::LAUNCHER),
+                    entry(format!("amux-launch-{version}"), launcher),
+                ),
+            ]
+            .into(),
+            signature: String::new(),
+        };
+        manifest.signature = release::sign(&TEST_SEED, &manifest);
+        *self.manifest.lock().unwrap() = serde_json::to_string(&manifest).unwrap();
+    }
 }
 
 /// `name` as an executable is named here: `amux.exe` on Windows.
@@ -162,6 +195,9 @@ struct Fixture {
     /// `amux-launch` beside the binary, when a test starts the supervisor
     /// through it, as Windows' login item does.
     launcher: Option<Child>,
+    /// Processes started from the binary at the path, standing in for the
+    /// agents and tool servers of the build installed then.
+    running: Vec<Child>,
     /// The supervisor core's step budget, when a test sets one: the
     /// stand-in otherwise gives it a second.
     step_budget_micros: Option<u64>,
@@ -180,6 +216,7 @@ impl Fixture {
             server: Server::start().await,
             supervisor: None,
             launcher: None,
+            running: Vec::new(),
             step_budget_micros: None,
         };
         let build = fixture.build("1.0.0");
@@ -257,6 +294,45 @@ impl Fixture {
         command
     }
 
+    /// Starts a process from the binary at the path, as the daemon starts
+    /// an agent and an agent a tool server: it runs that build's image
+    /// until it is killed, and on Windows keeps the file mapped. It is the
+    /// stand-in's daemon with no supervisor, so it never exits on its own,
+    /// with events of its own away from the supervisor's.
+    fn run_installed(&mut self) -> u32 {
+        let dir = self.dir.join("installed-runs");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut command = Command::new(&self.bin);
+        command
+            .arg("daemon")
+            .env("FAKE_AMUX_DIR", &dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = start(|| command.spawn()).unwrap();
+        let pid = child.id();
+        self.running.push(child);
+        pid
+    }
+
+    /// The binaries moved aside beside the binary: `amux.old.<n>`, on
+    /// Windows while something still runs them.
+    fn asides(&self) -> Vec<String> {
+        let stem = format!("{}.old.", exe("amux"));
+        let mut names: Vec<String> = std::fs::read_dir(self.dir.join("bin"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with(&stem))
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Where `start_launched` puts the launcher: beside the binary.
+    fn launcher_path(&self) -> PathBuf {
+        self.dir.join("bin").join(exe("amux-launch"))
+    }
+
     fn start(&mut self) -> u32 {
         let mut command = self.supervise(&self.bin);
         let child = start(|| command.spawn()).unwrap();
@@ -268,7 +344,7 @@ impl Fixture {
     /// Starts the supervisor as Windows' login item does: `amux-launch
     /// supervise`, with the launcher copied beside the binary it runs.
     fn start_launched(&mut self) {
-        let launcher = self.dir.join("bin").join(exe("amux-launch"));
+        let launcher = self.launcher_path();
         let built = binaries().join(exe("amux-launch"));
         write_executable(|| std::fs::copy(built, &launcher)).unwrap();
         let mut command = self.supervise(&launcher);
@@ -499,6 +575,10 @@ impl Drop for Fixture {
             let _ = child.kill();
             let _ = child.wait();
         }
+        for mut child in self.running.drain(..) {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
         for event in self.events() {
             kill(event.pid);
         }
@@ -667,6 +747,109 @@ async fn installs_a_newer_signed_release_and_execs_it_keeping_pid_child_pipe_and
     let eof = fixture.nth(1, "eof", "2.0.0").await;
     assert_eq!(eof.pid, restarted.pid);
     until_dead(restarted.pid).await;
+}
+
+/// Design goal #1 across releases: agents and tool servers keep the image
+/// of the build they started from, and on Windows that file can be neither
+/// deleted nor renamed over while they run. Two updates in a row, each
+/// with a process of every earlier build still running, both install,
+/// activate and hand over; each retired build moves aside to a name of its
+/// own, and a check sweeps it once nothing runs it.
+#[tokio::test(flavor = "multi_thread")]
+async fn two_updates_in_a_row_install_while_every_earlier_build_still_runs() {
+    let mut fixture = Fixture::new().await;
+    let first = fixture.start();
+    fixture.nth(1, "go", "1.0.0").await;
+    let mut running = vec![fixture.run_installed()];
+
+    fixture.publish("2.0.0");
+    let second = fixture.nth(1, "supervise-inherited", "2.0.0").await;
+    fixture.took_over(first, &second).await;
+    running.push(fixture.run_installed());
+
+    fixture.publish("2.1.0");
+    fixture.nth(1, "go", "2.1.0").await;
+    let third = fixture.nth(1, "supervise-inherited", "2.1.0").await;
+    fixture.took_over(second.pid, &third).await;
+    fixture.transcript("two updates in a row, a process of each earlier build running");
+    assert_eq!(fixture.installed(), "2.1.0");
+    assert!(!fixture.prev().exists(), "activation retired prev");
+    for pid in &running {
+        assert!(alive(*pid), "pid {pid} runs on from its build's image");
+    }
+    if !os::fs::RUNNING_IMAGE_REPLACEABLE {
+        assert_eq!(
+            fixture.asides().len(),
+            2,
+            "one build moved aside per update: {:?}",
+            fixture.asides()
+        );
+    }
+
+    // The earlier builds' last processes exit: a check sweeps their files.
+    for pid in running {
+        kill(pid);
+        until_dead(pid).await;
+    }
+    until("the binaries moved aside to be swept", || {
+        let asides = fixture.asides();
+        std::future::ready(if asides.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("{asides:?}"))
+        })
+    })
+    .await
+    .unwrap();
+    assert_eq!(fixture.count("start", "2.1.0"), 1);
+    assert!(alive(third.pid), "the supervisor serves on");
+}
+
+/// The launcher beside the binary is updated from the same release, while
+/// it runs: it is the login item's restart policy, and on Windows keeps
+/// its image mapped. The line it started goes on across the update, and a
+/// deliberate stop still ends it.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_update_installs_the_releases_launcher_beside_the_binary_while_it_runs() {
+    let mut fixture = Fixture::new().await;
+    fixture.start_launched();
+    let supervisor = fixture.nth(1, "supervise", "1.0.0").await;
+    fixture.nth(1, "go", "1.0.0").await;
+    let launcher = fixture.launcher_path();
+    // Another build of the launcher: the same program with bytes after it
+    // that nothing reads.
+    let mut newer = std::fs::read(&launcher).unwrap();
+    newer.extend_from_slice(b"the release's launcher");
+    fixture
+        .server
+        .publish_with_launcher("2.0.0", fixture.bytes("2.0.0"), newer.clone());
+
+    let handed = fixture.nth(1, "supervise-inherited", "2.0.0").await;
+    fixture.took_over(supervisor.pid, &handed).await;
+    fixture.transcript("an update to 2.0.0 with its launcher, under a running launcher");
+    assert_eq!(fixture.installed(), "2.0.0");
+    assert!(
+        std::fs::read(&launcher).unwrap() == newer,
+        "the release's launcher is beside the binary"
+    );
+    assert!(
+        !launcher
+            .with_file_name(format!("{}.staged", exe("amux-launch")))
+            .exists(),
+        "nothing is left staged"
+    );
+    assert!(
+        fixture.launcher_runs(),
+        "the running launcher kept its line"
+    );
+
+    fixture.stop_supervisor().await;
+    assert!(fixture.launcher_exit().await.success());
+    assert_eq!(
+        fixture.count("supervise", "1.0.0"),
+        1,
+        "nothing was started again"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

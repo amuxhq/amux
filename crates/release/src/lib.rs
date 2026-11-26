@@ -125,6 +125,30 @@ pub struct Release {
     pub size: u64,
 }
 
+/// The program a release ships beside a target's amux, which the manifest
+/// names too: Windows' login item launcher, `amux-launch`. An update
+/// installs it with amux, from the same release.
+pub const LAUNCHER: &str = "amux-launch";
+
+/// The key a manifest names `program`'s build for `target` by, beside the
+/// target's own key for amux: `<target>/<program>`. A build looks up only
+/// the keys it knows, so one that predates the key ignores it, while the
+/// signature covers every key ([`signed_message`]): a manifest naming the
+/// launcher verifies and installs on any build.
+pub fn beside_key(target: &str, program: &str) -> String {
+    format!("{target}/{program}")
+}
+
+/// The launcher's build in `manifest` for `target`, when it names one of
+/// the version it names for amux: the two come from one release.
+pub fn launcher<'a>(manifest: &'a Manifest, target: &str) -> Option<&'a Release> {
+    let amux = manifest.targets.get(target)?;
+    manifest
+        .targets
+        .get(&beside_key(target, LAUNCHER))
+        .filter(|launcher| launcher.version == amux.version)
+}
+
 /// What a manifest's signature covers: the channel, the rollout (100 when
 /// absent) and, per target in name order, the version, the url, the
 /// artifact's hash and its size.
@@ -383,6 +407,64 @@ mod tests {
         ] {
             assert!(!is_loopback(url), "{url}");
         }
+    }
+
+    /// The launcher rides in the manifest as a key of its own beside the
+    /// target's, under the one signature: a build reads amux's entry as it
+    /// always has, and the launcher's only when it comes from the same
+    /// release.
+    #[test]
+    fn the_launcher_is_named_beside_its_target_under_the_signature() {
+        let seed = [3u8; 32];
+        let entry = |version: &str, name: &str| Release {
+            version: version.to_owned(),
+            url: format!("http://127.0.0.1/{name}"),
+            sha256: sha256_of(name.as_bytes()),
+            size: 1,
+        };
+        let target = "x86_64-pc-windows-msvc";
+        let mut manifest = Manifest {
+            channel: "stable".into(),
+            rollout: None,
+            targets: [
+                (target.to_owned(), entry("2.0.0", "amux")),
+                (beside_key(target, LAUNCHER), entry("2.0.0", "launcher")),
+            ]
+            .into(),
+            signature: String::new(),
+        };
+        manifest.signature = sign(&seed, &manifest);
+        assert_eq!(
+            beside_key(target, LAUNCHER),
+            format!("{target}/amux-launch")
+        );
+        assert_eq!(
+            verify_manifest(&manifest, "stable", &[public_key(&seed)]),
+            Ok(())
+        );
+        assert_eq!(
+            launcher(&manifest, target),
+            Some(&entry("2.0.0", "launcher"))
+        );
+        assert!(matches!(
+            choose(&manifest, target, &Version::new(1, 0, 0), None, None),
+            Choice::Install { release, .. } if release == entry("2.0.0", "amux")
+        ));
+        // The signature covers the launcher's entry too.
+        let mut tampered = manifest.clone();
+        tampered
+            .targets
+            .insert(beside_key(target, LAUNCHER), entry("2.0.0", "other"));
+        assert_eq!(
+            verify_manifest(&tampered, "stable", &[public_key(&seed)]),
+            Err(VerifyError::Signature)
+        );
+        // A launcher of another release is not this one's.
+        manifest
+            .targets
+            .insert(beside_key(target, LAUNCHER), entry("1.9.0", "launcher"));
+        assert_eq!(launcher(&manifest, target), None);
+        assert_eq!(launcher(&manifest, "another-triple"), None);
     }
 
     /// A development build follows no feed but a test's own: the test key

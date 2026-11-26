@@ -55,10 +55,10 @@ pub(super) fn remove(agent_dir: &Path) -> io::Result<bool> {
     let folder = agent_dir.join(daemon_core::reviews::REVIEW);
     match std::fs::symlink_metadata(&folder) {
         Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(&folder).map(|()| true),
-        // Windows removes a link to a directory as a directory, and doing
-        // so leaves what it names.
-        Ok(meta) if meta.is_symlink() && cfg!(windows) => std::fs::remove_file(&folder)
-            .or_else(|_| std::fs::remove_dir(&folder))
+        // A link is removed as a file; Windows removes a link to a
+        // directory as a directory, and doing so leaves what it names.
+        Ok(meta) if meta.is_symlink() => std::fs::remove_file(&folder)
+            .or_else(|error| std::fs::remove_dir(&folder).map_err(|_| error))
             .map(|()| true),
         Ok(_) => std::fs::remove_file(&folder).map(|()| true),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),

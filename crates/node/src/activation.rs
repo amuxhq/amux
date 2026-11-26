@@ -111,19 +111,8 @@ impl InheritedPipe {
 
     /// The pipe, on the current runtime.
     pub fn into_pipe(self) -> io::Result<ActivationPipe> {
-        #[cfg(unix)]
-        {
-            let read = tokio::net::unix::pipe::Receiver::from_file(self.read)?;
-            let write = tokio::net::unix::pipe::Sender::from_file(self.write)?;
-            Ok(ActivationPipe::new(read, write))
-        }
-        #[cfg(not(unix))]
-        {
-            Ok(ActivationPipe::new(
-                tokio::fs::File::from_std(self.read),
-                tokio::fs::File::from_std(self.write),
-            ))
-        }
+        let (read, write) = os::process::async_pipe(self.read, self.write)?;
+        Ok(ActivationPipe::new(read, write))
     }
 }
 

@@ -278,3 +278,55 @@ fn making_a_private_folder_private_again_keeps_it_private() {
     assert!(crate::testing::is_private(&root).unwrap());
     assert!(crate::testing::is_private(&root.join("inside")).unwrap());
 }
+
+/// Two names of one file share its identity; another file has its own.
+#[test]
+fn a_hard_link_shares_its_files_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let one = dir.path().join("one");
+    fs::write(&one, "one").unwrap();
+    let linked = dir.path().join("linked");
+    fs::hard_link(&one, &linked).unwrap();
+    let other = dir.path().join("other");
+    fs::write(&other, "one").unwrap();
+    assert_eq!(FileId::of(&one).unwrap(), FileId::of(&linked).unwrap());
+    assert_ne!(FileId::of(&one).unwrap(), FileId::of(&other).unwrap());
+    assert_eq!(
+        FileId::of(&dir.path().join("missing")).unwrap_err().kind(),
+        io::ErrorKind::NotFound
+    );
+}
+
+/// A new file has no execute bit; one made executable has it where files
+/// have one, which Windows' don't.
+#[test]
+fn the_execute_bit_is_the_one_make_executable_sets() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("tool");
+    fs::write(&file, "tool").unwrap();
+    assert!(!has_execute_bit(&fs::metadata(&file).unwrap()));
+    make_executable(&file).unwrap();
+    assert_eq!(
+        has_execute_bit(&fs::metadata(&file).unwrap()),
+        !cfg!(windows)
+    );
+}
+
+/// A file's and a folder's modification time are set alike.
+#[test]
+fn set_modified_sets_a_files_and_a_folders_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("file");
+    fs::write(&file, "file").unwrap();
+    let folder = dir.path().join("folder");
+    fs::create_dir(&folder).unwrap();
+    let at = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for path in [&file, &folder] {
+        set_modified(path, at).unwrap();
+        assert_eq!(
+            fs::metadata(path).unwrap().modified().unwrap(),
+            at,
+            "{path:?}"
+        );
+    }
+}

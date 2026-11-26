@@ -96,11 +96,7 @@ impl Hosts {
             return Ok(Vec::new());
         }
         write_if_changed(&self.script(), self.script_text().as_bytes())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            std::fs::set_permissions(self.script(), std::fs::Permissions::from_mode(0o755))?;
-        }
+        os::fs::make_executable(&self.script())?;
         let manifest = self.manifest();
         let mut written = Vec::new();
         for folder in folders {
@@ -144,35 +140,35 @@ impl Hosts {
 /// where a browser finds its hosts in the registry, which this does not
 /// write yet.
 fn browser_dirs(home: &Path) -> Vec<PathBuf> {
-    if cfg!(windows) {
-        return Vec::new();
-    }
-    #[cfg(target_os = "macos")]
-    let (base, names): (PathBuf, &[&str]) = (
-        home.join("Library/Application Support"),
-        &[
-            "Google/Chrome",
-            "Google/Chrome Beta",
-            "Google/Chrome Canary",
-            "Chromium",
-            "Microsoft Edge",
-            "BraveSoftware/Brave-Browser",
-            "Arc/User Data",
-            "Vivaldi",
-        ],
-    );
-    #[cfg(not(target_os = "macos"))]
-    let (base, names): (PathBuf, &[&str]) = (
-        home.join(".config"),
-        &[
-            "google-chrome",
-            "google-chrome-beta",
-            "chromium",
-            "microsoft-edge",
-            "BraveSoftware/Brave-Browser",
-            "vivaldi",
-        ],
-    );
+    let (base, names): (PathBuf, &[&str]) = if cfg!(windows) {
+        (PathBuf::new(), &[])
+    } else if cfg!(target_os = "macos") {
+        (
+            home.join("Library/Application Support"),
+            &[
+                "Google/Chrome",
+                "Google/Chrome Beta",
+                "Google/Chrome Canary",
+                "Chromium",
+                "Microsoft Edge",
+                "BraveSoftware/Brave-Browser",
+                "Arc/User Data",
+                "Vivaldi",
+            ],
+        )
+    } else {
+        (
+            home.join(".config"),
+            &[
+                "google-chrome",
+                "google-chrome-beta",
+                "chromium",
+                "microsoft-edge",
+                "BraveSoftware/Brave-Browser",
+                "vivaldi",
+            ],
+        )
+    };
     names.iter().map(|name| base.join(name)).collect()
 }
 

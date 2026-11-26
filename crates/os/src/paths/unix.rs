@@ -8,6 +8,18 @@ pub(super) fn current_path() -> OsString {
     std::env::var_os("PATH").unwrap_or_default()
 }
 
+pub(super) fn from_bytes(bytes: &[u8]) -> PathBuf {
+    PathBuf::from(OsStr::from_bytes(bytes))
+}
+
+pub(super) fn login_shell() -> Option<PathBuf> {
+    shell_of(std::env::var_os("SHELL"))
+}
+
+fn shell_of(shell: Option<OsString>) -> Option<PathBuf> {
+    shell.filter(|shell| !shell.is_empty()).map(PathBuf::from)
+}
+
 /// A Unix user's `PATH` is whatever their shell's profile builds; an
 /// install script edits that file itself.
 pub(super) fn remove_from_user_path(_dir: &Path) -> std::io::Result<bool> {
@@ -77,6 +89,22 @@ mod tests {
             None,
             "a folder never runs"
         );
+    }
+
+    #[test]
+    fn a_path_from_bytes_keeps_bytes_that_are_not_utf8() {
+        let bytes = b"dir/am\xffux";
+        assert_eq!(from_bytes(bytes).as_os_str().as_bytes(), bytes);
+    }
+
+    #[test]
+    fn the_login_shell_is_shell_when_it_names_one() {
+        assert_eq!(
+            shell_of(Some("/bin/zsh".into())),
+            Some(PathBuf::from("/bin/zsh"))
+        );
+        assert_eq!(shell_of(Some(OsString::new())), None);
+        assert_eq!(shell_of(None), None);
     }
 
     #[test]

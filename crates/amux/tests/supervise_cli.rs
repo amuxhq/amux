@@ -713,10 +713,9 @@ async fn uninstall_leaves_nothing_but_a_program_still_running() {
     assert_eq!(std::fs::read_to_string(&profile).unwrap(), "# mine\n\n");
 }
 
-// Unix's own behaviour: a launcher's blocked signal mask is inherited, and
-// the stop is a signal. Windows stops amux through supervisor.sock, which
-// no mask reaches, and `stop_goes_to_the_supervisor_first_...` drives it.
-#[cfg(unix)]
+// Windows stops amux through supervisor.sock, which no mask reaches, and
+// `stop_goes_to_the_supervisor_first_...` drives it.
+#[cfg(unix)] // Unix only by nature: a launcher's blocked signal mask, inherited, and a stop that is a signal
 #[tokio::test(flavor = "multi_thread")]
 async fn stop_reaches_an_amux_started_with_its_stop_signals_blocked() {
     use std::os::unix::process::CommandExt;
@@ -815,7 +814,8 @@ async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
 }
 
 // Built everywhere so the test listing names it wherever the contracts
-// are checked; only macOS has the assertion to look for.
+// are checked.
+// macOS only by nature: a power assertion, which only macOS shows (pmset)
 #[cfg_attr(
     not(target_os = "macos"),
     ignore = "only macOS holds a sleep assertion"
@@ -893,6 +893,8 @@ async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
 
 /// `start_at_login` writes the login item for the next login and removes
 /// it, with amux stopped; an install without a supervisor has none.
+// Linux only by nature: systemd's user session, which registering the unit
+// needs and a test runner has none of
 #[cfg_attr(
     target_os = "linux",
     ignore = "registering the systemd unit needs a user session"

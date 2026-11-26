@@ -57,6 +57,38 @@ pub async fn terminated() -> io::Result<Stop> {
     imp::terminated().await
 }
 
+/// Starts listening for a stop now, as [`terminated`] does on its first
+/// poll, so a stop that lands before the first wait is still seen by it:
+/// for a command that must listen before it changes something a stop
+/// would have to undo. Returns an error if it can't register.
+pub fn listen() -> io::Result<()> {
+    imp::listen()
+}
+
+/// This process's terminal being resized.
+///
+/// Unix: SIGWINCH. Windows: [`Resizes::listen`] is `Unsupported`, as a
+/// console reports a resize as an input record among the rest of its
+/// input, not to the process.
+#[derive(Debug)]
+pub struct Resizes {
+    inner: imp::Resizes,
+}
+
+impl Resizes {
+    /// Listens from now on: a resize before the first [`Resizes::recv`]
+    /// is kept for it. Call it from inside a tokio runtime.
+    pub fn listen() -> io::Result<Resizes> {
+        imp::Resizes::listen().map(|inner| Resizes { inner })
+    }
+
+    /// The next resize (several at once come as one); `None` once no
+    /// more can come.
+    pub async fn recv(&mut self) -> Option<()> {
+        self.inner.recv().await
+    }
+}
+
 /// Says the clean shutdown that followed [`terminated`] has finished:
 /// Windows releases the shutdown block reason and lets the OS end the
 /// process. Unix: nothing. Calling it with no stop seen does nothing but

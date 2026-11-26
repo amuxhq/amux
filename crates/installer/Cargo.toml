@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 agent-dir = { workspace = true }
-os = { workspace = true }
+os = { workspace = true, features = ["async"] }
 release = { workspace = true }
 reqwest = { workspace = true }
 semver = { workspace = true }

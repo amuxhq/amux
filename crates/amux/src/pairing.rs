@@ -119,7 +119,12 @@ pub async fn wait(mut admin: Admin, qr: bool, link: bool) -> Result<()> {
     let mut joining = false;
     loop {
         tokio::select! {
-            () = &mut ended => return cancel(admin).await,
+            () = &mut ended => {
+                let closed = cancel(admin).await;
+                // The clean end is done: Windows may end the process now.
+                os::signal::finished();
+                return closed;
+            }
             () = tokio::time::sleep_until(deadline) => {
                 println!("Pairing mode ended.");
                 return Ok(());
@@ -226,33 +231,15 @@ pub fn parse_duration(input: &str) -> Result<Duration, String> {
 }
 
 /// Resolves when the command is asked to end: Ctrl+C, its terminal closing
-/// (SIGHUP) or a kill (SIGTERM). Any of them must close pairing mode, or it
-/// stays open until it expires and refuses the next `amux pair`.
-#[cfg(unix)]
+/// (SIGHUP) or a kill (SIGTERM); on Windows Ctrl+C, its console closing,
+/// a logoff or a shutdown. Any of them must close pairing mode, or it
+/// stays open until it expires and refuses the next `amux pair`. Listens
+/// from the call, so a stop before the first wait is kept for it.
 fn ended() -> Result<impl std::future::Future<Output = ()>> {
-    use tokio::signal::unix::{SignalKind, signal};
-    let mut interrupt = signal(SignalKind::interrupt()).context("listening for Ctrl+C")?;
-    let mut terminate = signal(SignalKind::terminate()).context("listening for SIGTERM")?;
-    let mut hangup = signal(SignalKind::hangup()).context("listening for SIGHUP")?;
-    Ok(async move {
-        tokio::select! {
-            _ = interrupt.recv() => {}
-            _ = terminate.recv() => {}
-            _ = hangup.recv() => {}
-        }
-    })
-}
-
-#[cfg(not(unix))]
-fn ended() -> Result<impl std::future::Future<Output = ()>> {
-    use tokio::signal::windows::{ctrl_c, ctrl_close};
-    let mut interrupt = ctrl_c().context("listening for Ctrl+C")?;
-    let mut close = ctrl_close().context("listening for the console closing")?;
-    Ok(async move {
-        tokio::select! {
-            _ = interrupt.recv() => {}
-            _ = close.recv() => {}
-        }
+    os::signal::listen().context("listening for the command to end")?;
+    Ok(async {
+        // One that can't be listened for was refused above.
+        let _ = os::signal::terminated().await;
     })
 }
 
@@ -566,7 +553,7 @@ async fn pair_over_ssh(admin: Admin, target: String) -> Result<()> {
 /// `amux internal ssh-pair`, run by SSH on this host: the identity exchange's far
 /// end, over stdin and stdout. It trusts the near end before answering, so
 /// the near end trusts only a host that has trusted it.
-#[cfg(unix)]
+#[cfg(not(windows))] // out of scope on Windows: SSH with a Windows far end
 pub async fn pair_recv(admin: Admin) -> Result<()> {
     let own = own_identity(&admin).await?;
     let mut stdio = node::ssh_stdio();
@@ -583,7 +570,7 @@ pub async fn pair_recv(admin: Admin) -> Result<()> {
 
 /// `amux internal ssh-link`, run by SSH on this host: stdin and stdout joined to the
 /// profile's link socket, carrying a peer's link.
-#[cfg(unix)]
+#[cfg(not(windows))] // out of scope on Windows: SSH with a Windows far end
 pub async fn relay(profile: &wire::Profile) -> Result<()> {
     // The profile's directory holds its client socket, identity and link
     // socket, on this machine.

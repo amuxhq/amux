@@ -117,7 +117,21 @@ impl Connection {
                     receiver: Receiver(ReceiverOf::Stdio(BufReader::new(stdout))),
                 })
             }
+            #[cfg(unix)] // out of scope on Windows: attach, Codex's socket
             Listen::Unix(path) => socket::connect(path, child, wait).await,
+            // Where Codex's socket is in scope the arm above takes it.
+            #[allow(unreachable_patterns)]
+            Listen::Unix(path) => {
+                let _ = wait;
+                Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    format!(
+                        "Codex is hosted over stdio on this platform, not on {}",
+                        path.display()
+                    ),
+                )
+                .into())
+            }
         }
     }
 
@@ -297,31 +311,6 @@ mod socket {
                 Err(error) => return Some(Err(io::Error::other(error))),
             }
         }
-    }
-}
-
-#[cfg(not(unix))]
-mod socket {
-    use std::path::Path;
-    use std::time::Duration;
-
-    use tokio::process::Child;
-
-    use super::{ConnectError, Connection};
-
-    pub async fn connect(
-        path: &Path,
-        _child: &mut Child,
-        _wait: Duration,
-    ) -> Result<Connection, ConnectError> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            format!(
-                "Codex is hosted over stdio on this platform, not on {}",
-                path.display()
-            ),
-        )
-        .into())
     }
 }
 

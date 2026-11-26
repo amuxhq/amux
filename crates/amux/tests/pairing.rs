@@ -69,10 +69,11 @@ async fn a_second_amux_pair_is_refused_while_one_holds_pairing_mode_open() {
     desk.run(&["server", "stop"]).await;
 }
 
-// Unix's own behaviour: SIGTERM, SIGHUP and SIGINT each end `amux pair`.
-// On Windows it ends on Ctrl+C or its console closing, console control
-// events no test sends (amux sends none; proposal §2.9).
-#[cfg(unix)]
+// SIGTERM, SIGHUP and SIGINT each end `amux pair`. On Windows it ends on
+// Ctrl+C or its console closing, console control events no test sends to
+// another process (amux sends none; proposal §2.9); os::signal's tests
+// deliver each in-process.
+#[cfg(unix)] // Unix only by nature: the three stop signals, sent to another process
 #[tokio::test(flavor = "multi_thread")]
 async fn pairing_mode_closes_however_amux_pair_ends() {
     /// Sends `signal` to a running `amux pair` and returns what it printed as

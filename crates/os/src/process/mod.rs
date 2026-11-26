@@ -318,6 +318,28 @@ pub fn harden_start() {
     imp::harden_start();
 }
 
+/// Clears the signal mask this process was started with, before it starts
+/// any thread. A process inherits its launcher's mask, and std's spawn
+/// keeps it, so a process started from a thread that blocks signals (a
+/// Grand Central Dispatch worker, where the Mac app starts amux) would
+/// never hear SIGTERM or SIGINT, nor would anything it starts. Windows has
+/// no signal mask: nothing to clear.
+pub fn unblock_signals() {
+    imp::unblock_signals();
+}
+
+/// Starts reaping, as each exits, the children this process already has
+/// as it starts: those an earlier image of it started before it exec'd
+/// itself ([`exec_or_spawn`]), which the new image has no handle on and
+/// which would otherwise linger as zombies. A thread of its own polls for
+/// them until the last has gone. Says how many it found.
+///
+/// Windows has no exec, so a process starts with no children, and an
+/// exited process leaves no zombie: always `Ok(0)` (documented exception).
+pub fn reap_inherited() -> io::Result<usize> {
+    imp::reap_inherited()
+}
+
 /// Whether this process shows a console window: what a log says, so a
 /// background process that would put one on the desktop is seen to.
 /// Windows: whether its console (if any) has a window, which no process
@@ -353,6 +375,24 @@ pub fn set_inheritable(file: &File, on: bool) -> io::Result<()> {
 pub fn pipe() -> io::Result<(File, File)> {
     let (read, write) = io::pipe()?;
     Ok((imp::file_of_pipe(read), imp::file_of_pipe(write)))
+}
+
+/// A pipe's two ends (`read`, `write`: what [`pipe`] gives, or what
+/// [`file_from_inherited`] took over) as streams on the current tokio
+/// runtime, which must be running.
+///
+/// Unix: non-blocking, through the runtime's reactor. Windows: tokio's
+/// file, whose reads and writes run on the blocking pool, since an
+/// anonymous pipe can't be read overlapped.
+#[cfg(feature = "async")]
+pub fn async_pipe(
+    read: File,
+    write: File,
+) -> io::Result<(
+    impl tokio::io::AsyncRead + Send + Unpin + 'static,
+    impl tokio::io::AsyncWrite + Send + Unpin + 'static,
+)> {
+    imp::async_pipe(read, write)
 }
 
 /// The number a successor is told for an inherited `file`, which it turns

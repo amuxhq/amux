@@ -1828,14 +1828,7 @@ fn tool_server(spec: &AgentSpec, dir: &Path) -> Option<(String, Vec<String>)> {
 /// for a child that dials it with no knowledge of the short links long
 /// paths need.
 fn socket_address(path: &Path) -> io::Result<PathBuf> {
-    #[cfg(unix)]
-    {
-        crate::local_socket::unix_address(path)
-    }
-    #[cfg(not(unix))]
-    {
-        Ok(path.to_owned())
-    }
+    crate::local_socket::unix_address(path)
 }
 
 /// Where terminal Claude binds its messaging socket. Claude binds it itself
@@ -1843,14 +1836,7 @@ fn socket_address(path: &Path) -> io::Result<PathBuf> {
 /// long for a socket moves to a real private directory rather than behind
 /// the link the agent's own sockets use.
 fn messaging_address(path: &Path) -> io::Result<PathBuf> {
-    #[cfg(unix)]
-    {
-        crate::local_socket::unix_private_address(path)
-    }
-    #[cfg(not(unix))]
-    {
-        Ok(path.to_owned())
-    }
+    crate::local_socket::unix_private_address(path)
 }
 
 async fn send_codex(sender: &CodexSender, bytes: &[u8]) -> io::Result<()> {

@@ -33,6 +33,31 @@ fn role() {
     std::process::exit(0);
 }
 
+/// A pipe's ends carry bytes as streams on a runtime, and the reader sees
+/// the end once the writer is dropped.
+#[cfg(feature = "async")]
+#[test]
+fn a_pipe_carries_bytes_on_the_runtime() {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let (read, write) = pipe().unwrap();
+        let (mut read, mut write) = async_pipe(read, write).unwrap();
+        write.write_all(b"prepared\n").await.unwrap();
+        write.flush().await.unwrap();
+        drop(write);
+        let mut said = String::new();
+        tokio::time::timeout(WAIT, read.read_to_string(&mut said))
+            .await
+            .expect("the end arrives")
+            .unwrap();
+        assert_eq!(said, "prepared\n");
+    });
+}
+
 /// This test binary in `role`, with no stream set.
 pub(crate) fn helper(role: &str) -> Command {
     let mut command = Command::new(std::env::current_exe().expect("the test binary"));

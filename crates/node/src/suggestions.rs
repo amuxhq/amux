@@ -180,10 +180,13 @@ fn repository(dir: &Path) -> Option<PathBuf> {
 
 /// The directories whose contents are made to be thrown away.
 fn temporary_dirs() -> Vec<PathBuf> {
+    let shared: &[&str] = if cfg!(unix) {
+        &["/tmp", "/var/tmp", "/var/folders"]
+    } else {
+        &[]
+    };
     let mut dirs = vec![std::env::temp_dir()];
-    if cfg!(unix) {
-        dirs.extend(["/tmp", "/var/tmp", "/var/folders"].map(PathBuf::from));
-    }
+    dirs.extend(shared.iter().map(PathBuf::from));
     let canonical: Vec<PathBuf> = dirs
         .iter()
         .filter_map(|dir| crate::plain_paths::canonical(dir).ok())

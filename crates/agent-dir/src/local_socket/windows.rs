@@ -6,7 +6,7 @@ use std::future::Future;
 use std::io::{self, Read};
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::{AsRawHandle, RawHandle};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -698,6 +698,16 @@ fn only_me() -> io::Result<usize> {
 }
 
 /// Nothing to forget: a pipe ends with its last handle.
+/// A pipe's name file has no length limit to shorten for.
+pub fn address(path: &Path) -> io::Result<PathBuf> {
+    Ok(path.to_owned())
+}
+
+/// As [`address`]: the path itself.
+pub fn private_address(path: &Path) -> io::Result<PathBuf> {
+    Ok(path.to_owned())
+}
+
 pub fn forget(_dir: &Path) {}
 
 fn listening(listening: &mut Mutex<Vec<Listening>>) -> &mut Vec<Listening> {

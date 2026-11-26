@@ -633,12 +633,44 @@ pub(super) fn is_held(error: &io::Error) -> bool {
 
 // Executables ------------------------------------------------------------------
 
+pub(super) fn file_id(path: &Path) -> io::Result<(u64, u64)> {
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+    };
+    let file = File::open(path)?;
+    // SAFETY: an all-zero struct is a valid out parameter.
+    let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+    // SAFETY: querying a handle we own into a struct we own.
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut info) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok((
+        u64::from(info.dwVolumeSerialNumber),
+        (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+    ))
+}
+
+/// Read and write access (a handle setting times must be able to write
+/// them), with backup semantics, without which a folder doesn't open.
+pub(super) fn open_for_times(path: &Path) -> io::Result<File> {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+}
+
 pub(super) fn make_executable(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
 pub(super) fn is_executable(path: &Path, meta: &Metadata) -> bool {
     meta.is_file() && crate::paths::windows::runs_by_extension(path)
+}
+
+pub(super) fn has_execute_bit(_meta: &Metadata) -> bool {
+    false
 }
 
 // The root's volume ----------------------------------------------------------------

@@ -853,15 +853,11 @@ async fn blob_ids<'c>(
 
 /// The mode git records for a regular file.
 fn mode(meta: &std::fs::Metadata) -> &'static str {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        if meta.permissions().mode() & 0o111 != 0 {
-            return "100755";
-        }
+    if os::fs::has_execute_bit(meta) {
+        "100755"
+    } else {
+        "100644"
     }
-    let _ = meta;
-    "100644"
 }
 
 fn nul_separated(paths: &[&[u8]]) -> Vec<u8> {
@@ -875,11 +871,7 @@ fn nul_separated(paths: &[&[u8]]) -> Vec<u8> {
 
 /// Where a path git names from the top folder is on disk.
 fn on_disk(root: &Path, path: &[u8]) -> PathBuf {
-    #[cfg(unix)]
-    let path = <std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(path).to_owned();
-    #[cfg(not(unix))]
-    let path = std::ffi::OsString::from(String::from_utf8_lossy(path).into_owned());
-    root.join(path)
+    root.join(os::paths::from_bytes(path))
 }
 
 fn lossy(path: &[u8]) -> String {

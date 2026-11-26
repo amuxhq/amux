@@ -24,6 +24,14 @@ const USER_ENVIRONMENT: &str = "Environment";
 /// What Windows tries when `PATHEXT` is unset.
 const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
 
+pub(super) fn login_shell() -> Option<PathBuf> {
+    None
+}
+
+pub(super) fn from_bytes(bytes: &[u8]) -> PathBuf {
+    PathBuf::from(String::from_utf8_lossy(bytes).into_owned())
+}
+
 pub(super) fn current_path() -> OsString {
     merged_path(
         std::env::var_os("PATH").unwrap_or_default(),
@@ -401,6 +409,12 @@ mod tests {
     };
 
     use super::*;
+
+    /// Windows has no login shell, whatever `SHELL` says.
+    #[test]
+    fn there_is_no_login_shell() {
+        assert_eq!(login_shell(), None);
+    }
 
     fn wide(text: &str) -> Vec<u16> {
         text.encode_utf16().chain([0]).collect()

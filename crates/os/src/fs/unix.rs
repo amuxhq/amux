@@ -151,6 +151,16 @@ pub(super) fn is_held(error: &io::Error) -> bool {
     )
 }
 
+pub(super) fn file_id(path: &Path) -> io::Result<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt as _;
+    let metadata = fs::metadata(path)?;
+    Ok((metadata.dev(), metadata.ino()))
+}
+
+pub(super) fn open_for_times(path: &Path) -> io::Result<File> {
+    File::open(path)
+}
+
 pub(super) fn make_executable(path: &Path) -> io::Result<()> {
     let mode = fs::metadata(path)?.permissions().mode();
     let executable = mode | ((mode & 0o444) >> 2);
@@ -159,6 +169,10 @@ pub(super) fn make_executable(path: &Path) -> io::Result<()> {
 
 pub(super) fn is_executable(_path: &Path, meta: &Metadata) -> bool {
     meta.is_file() && meta.permissions().mode() & 0o111 != 0
+}
+
+pub(super) fn has_execute_bit(meta: &Metadata) -> bool {
+    meta.permissions().mode() & 0o111 != 0
 }
 
 pub(super) fn volume_supports_root(_path: &Path) -> io::Result<VolumeCheck> {

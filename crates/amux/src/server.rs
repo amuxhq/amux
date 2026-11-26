@@ -131,8 +131,20 @@ pub fn run_daemon(
     // Whether this process shows a console window: never, when it was
     // started in the background (§2.2 of the Windows design, P1).
     tracing::info!(window = os::process::console_window(), "console");
-    #[cfg(unix)]
-    crate::relaunch::reap_inherited();
+    // The children of the daemon this one replaced by exec, if it did
+    // (crate::relaunch): nothing else waits for them.
+    match os::process::reap_inherited() {
+        Ok(0) => {}
+        Ok(children) => {
+            tracing::info!(
+                children,
+                "reaping the children of the daemon this one replaced"
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "could not start reaping the replaced daemon's children");
+        }
+    }
     for key in &config.ignored {
         tracing::warn!(key, "ignoring an unknown config key");
     }

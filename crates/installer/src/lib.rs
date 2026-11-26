@@ -30,7 +30,7 @@ use settings::InstallationConfig;
 use sha2::{Digest as _, Sha256};
 use tokio::io::AsyncWriteExt as _;
 
-#[cfg(target_os = "macos")]
+#[cfg(target_os = "macos")] // macOS only by nature: the Mac app's own update feed
 pub mod update;
 
 /// How long [`ensure`] waits for a started amux to answer.
@@ -407,16 +407,10 @@ fn fetch(url: &str) -> impl FnOnce(reqwest::Error) -> Error {
 /// process that wrote it be one that marks what it downloads: the login
 /// item that runs it has nobody to answer Gatekeeper's question.
 fn make_executable(path: &Path) -> Result<(), Error> {
-    // Windows runs whatever it is handed and keeps no quarantine here.
-    #[cfg(not(unix))]
-    let _ = path;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
-            .map_err(io("making executable", path))?;
-    }
-    #[cfg(target_os = "macos")]
+    os::fs::make_executable(path).map_err(io("making executable", path))?;
+    // Windows keeps no quarantine of what a process writes, and Linux has
+    // no Gatekeeper.
+    #[cfg(target_os = "macos")] // macOS only by nature: Gatekeeper's quarantine attribute
     {
         use std::os::unix::ffi::OsStrExt as _;
         let path = std::ffi::CString::new(path.as_os_str().as_bytes())
@@ -438,12 +432,11 @@ fn make_executable(path: &Path) -> Result<(), Error> {
 /// the Start menu runs with the system's sparse PATH, so the agents its
 /// login item starts would not find the providers a person installed;
 /// their login shell's PATH is what a terminal would have given them.
-#[cfg(unix)]
+/// None on Windows, which has no login shell: amux reads the logged-on
+/// PATH there itself (`os::paths::current_path`).
 async fn login_path() -> Option<String> {
     const MARK: &str = "__amux_path__";
-    let shell = std::env::var("SHELL")
-        .ok()
-        .filter(|shell| !shell.is_empty())?;
+    let shell = os::paths::login_shell()?;
     let output = tokio::time::timeout(
         Duration::from_secs(10),
         tokio::process::Command::new(shell)
@@ -461,11 +454,6 @@ async fn login_path() -> Option<String> {
     (!path.is_empty()).then(|| path.to_owned())
 }
 
-#[cfg(not(unix))]
-async fn login_path() -> Option<String> {
-    None
-}
-
 /// Runs the installed amux with `args` to completion, within
 /// [`RUN_PATIENCE`], with `home` as its home when one is given.
 ///
@@ -474,6 +462,10 @@ async fn login_path() -> Option<String> {
 /// may hold its standard streams for as long as that runs, and a pipe this
 /// waited to see the end of would end only then (a desktop app's first
 /// start would hang on it). The file is read once the command exits.
+///
+/// It starts in the background ([`os::process::background`]): on Windows
+/// with no window, since a desktop app has no console for it to share and
+/// a console program started from one would otherwise open its own.
 async fn run(binary: &Path, args: &[OsString], home: Option<&Path>) -> Result<(), Error> {
     let words = std::iter::once(binary.as_os_str())
         .chain(args.iter().map(OsString::as_os_str))
@@ -482,12 +474,15 @@ async fn run(binary: &Path, args: &[OsString], home: Option<&Path>) -> Result<()
         .join(" ");
     let (stderr, said) = said_file()?;
     let mut command = tokio::process::Command::new(binary);
+    // Where the caller runs, as a plain start would; the binary's folder
+    // when that is gone.
+    let cwd = std::env::current_dir()
+        .ok()
+        .or_else(|| binary.parent().map(Path::to_owned))
+        .unwrap_or_else(std::env::temp_dir);
+    os::process::background(&mut command, os::process::Detach::Group, &cwd);
     command
         .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(stderr)
-        .kill_on_drop(true)
         // The installation is the one `ensure` resolved, named by `--config`
         // when it is not the default; an `AMUX_CONFIG` the client inherited
         // would point the command at another.
@@ -499,11 +494,23 @@ async fn run(binary: &Path, args: &[OsString], home: Option<&Path>) -> Result<()
     if let Some(path) = login_path().await {
         command.env("PATH", path);
     }
-    let finished = async {
-        let mut child = command.spawn().map_err(io("running", binary))?;
-        child.wait().await.map_err(io("running", binary))
+    let given = os::process::Given {
+        stdin: os::process::Stream::Null,
+        stdout: os::process::Stream::Null,
+        stderr: os::process::Stream::File(stderr),
+        files: &[],
     };
-    let status = tokio::time::timeout(RUN_PATIENCE, finished).await;
+    let mut child = os::process::spawn_background(&mut command, given)
+        .map_err(io("running", binary))?
+        .child;
+    let status = tokio::time::timeout(RUN_PATIENCE, child.wait()).await;
+    if status.is_err() {
+        // Given up on: it ends here, as a dropped child once did.
+        if let Ok(process) = child.pin() {
+            let _ = process.kill();
+        }
+    }
+    let status = status.map(|waited| waited.map_err(io("running", binary)));
     let output = std::fs::read_to_string(&said).unwrap_or_default();
     let _ = std::fs::remove_file(&said);
     let status = status.map_err(|_| Error::TimedOut {

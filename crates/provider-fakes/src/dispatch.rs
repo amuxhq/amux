@@ -21,6 +21,8 @@
 //! - [`Plan::Next`], a wrapper that runs the next program of its name on
 //!   the PATH past its own folder, as a usage meter or a version manager
 //!   does.
+//! - [`Plan::Leave`], a start that leaves a process of its own holding its
+//!   standard streams, as a launcher that leaves a daemon running does.
 //!
 //! The binary with no plan beside it says so and exits at once with status
 //! 3: a build broken on purpose is this program alone.
@@ -74,7 +76,20 @@ pub enum Plan {
         rounds_env: String,
         max_rounds: u32,
     },
+    /// Starts a copy of itself on this process's standard streams, which
+    /// holds them for `linger_secs` seconds, then writes `stderr` and exits
+    /// with `code` at once.
+    Leave {
+        linger_secs: u64,
+        #[serde(default)]
+        stderr: String,
+        #[serde(default)]
+        code: i32,
+    },
 }
+
+/// Set in the copy a [`Plan::Leave`] starts, which lingers instead.
+const LINGERING_ENV: &str = "FAKE_PROVIDER_LINGERING";
 
 /// Which provider a host command stands for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -480,7 +495,30 @@ pub fn main() -> i32 {
             rounds_env,
             max_rounds,
         } => next(&exe, &name, &rounds_env, max_rounds, &args),
+        Plan::Leave {
+            linger_secs,
+            stderr,
+            code,
+        } => leave(&exe, linger_secs, &stderr, code),
     }
+}
+
+fn leave(exe: &Path, linger_secs: u64, stderr: &str, code: i32) -> i32 {
+    if std::env::var_os(LINGERING_ENV).is_some() {
+        std::thread::sleep(std::time::Duration::from_secs(linger_secs));
+        return 0;
+    }
+    // Every standard stream inherited, as a launcher's careless start
+    // leaves them.
+    if let Err(error) = std::process::Command::new(exe)
+        .env(LINGERING_ENV, "1")
+        .spawn()
+    {
+        eprintln!("{BINARY}: leaving a copy behind: {error}");
+        return 127;
+    }
+    eprint!("{stderr}");
+    code
 }
 
 fn host(command: &HostCommand, args: &[String]) -> i32 {

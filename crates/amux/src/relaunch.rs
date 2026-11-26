@@ -14,42 +14,33 @@
 //!
 //! Windows has no exec. The nearest honest equivalent is a fresh process:
 //! the daemon starts the same executable with the same arguments and
-//! environment, detached, and exits. Its id changes, so a service manager
+//! environment, in the background with no window
+//! ([`os::process::exec_or_spawn`]), and exits. Its id changes, so a service manager
 //! watching the first process sees it exit cleanly and no longer tracks the
 //! daemon that took over.
 
 use std::io;
 
-/// Replaces this process with a fresh start of the same daemon. Returns
-/// only if that could not be done.
-#[cfg(unix)]
+/// Replaces this process with a fresh start of the same daemon: an exec on
+/// Unix; on Windows, which has no exec, the same command started in the
+/// background on this process's standard streams, as this one exits.
+/// Returns only if that could not be done.
 pub fn relaunch() -> io::Error {
-    use std::os::unix::process::CommandExt as _;
     let (exe, args) = match this_command() {
         Ok(found) => found,
         Err(error) => return error,
     };
-    std::process::Command::new(exe).args(args).exec()
-}
-
-/// Starts a fresh daemon beside this one, which then exits: Windows has no
-/// exec.
-#[cfg(windows)]
-pub fn relaunch() -> io::Error {
-    use std::os::windows::process::CommandExt as _;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    let (exe, args) = match this_command() {
-        Ok(found) => found,
-        Err(error) => return error,
-    };
-    match std::process::Command::new(exe)
-        .args(args)
-        .stdin(std::process::Stdio::null())
-        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
-        .spawn()
-    {
-        Ok(_) => std::process::exit(0),
+    let mut command = std::process::Command::new(exe);
+    command.args(args);
+    match os::process::exec_or_spawn(command) {
+        Ok(replaced) => {
+            if replaced.breakaway_refused {
+                tracing::warn!(
+                    "the job the daemon runs in forbids leaving it: the next one ends when that job does"
+                );
+            }
+            std::process::exit(0)
+        }
         Err(error) => error,
     }
 }

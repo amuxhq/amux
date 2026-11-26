@@ -272,6 +272,9 @@ pub fn run_daemon(
     // Every task and socket of this run goes with the runtime; the
     // installation lock went with the shutdown.
     runtime.shutdown_timeout(Duration::from_secs(5));
+    // Shut down cleanly: a stop the OS asked for (Windows: a closed
+    // console, logoff or shutdown) may end the process now.
+    os::signal::finished();
     match ended? {
         Ended::Stop => Ok(()),
         Ended::Relaunch => {
@@ -391,24 +394,19 @@ async fn supervisor_gone(pipe: Option<node::ActivationPipe>) {
     }
 }
 
-#[cfg(unix)]
+/// Resolves when the OS asks this process to stop: SIGTERM, SIGINT or
+/// SIGHUP; on Windows Ctrl+C, a closed console, logoff or shutdown, after
+/// which the caller shuts down cleanly and calls
+/// [`os::signal::finished`]. One it can't listen for is logged, and never
+/// resolves.
 pub(crate) async fn terminated() {
-    use tokio::signal::unix::{SignalKind, signal};
-    let (Ok(mut term), Ok(mut int)) = (
-        signal(SignalKind::terminate()),
-        signal(SignalKind::interrupt()),
-    ) else {
-        return std::future::pending().await;
-    };
-    tokio::select! {
-        _ = term.recv() => {}
-        _ = int.recv() => {}
+    match os::signal::terminated().await {
+        Ok(stop) => tracing::info!(?stop, "the OS asked amux to stop"),
+        Err(error) => {
+            tracing::warn!(%error, "cannot hear the OS ask amux to stop");
+            std::future::pending::<()>().await;
+        }
     }
-}
-
-#[cfg(not(unix))]
-pub(crate) async fn terminated() {
-    let _ = tokio::signal::ctrl_c().await;
 }
 
 /// Starts amux, detached from this terminal, unless a daemon answers
@@ -591,31 +589,31 @@ pub async fn stop(config: &InstallationConfig) -> Result<()> {
     Ok(())
 }
 
-/// Signals the pid the supervisor's lock file holds.
-#[cfg(unix)]
-async fn stop_supervisor(_config: &InstallationConfig, pid: &str) -> Result<()> {
-    let pid: libc::pid_t = pid
-        .parse()
-        .with_context(|| format!("the supervisor's lock holds {pid:?}, not a pid"))?;
-    // SAFETY: a signal to the process holding the supervisor's lock.
-    if unsafe { libc::kill(pid, libc::SIGTERM) } == -1 {
-        return Err(std::io::Error::last_os_error())
-            .with_context(|| format!("signalling amux supervise (pid {pid})"));
-    }
-    Ok(())
-}
-
-/// Windows has no signals: the supervisor's control socket.
-#[cfg(not(unix))]
-async fn stop_supervisor(config: &InstallationConfig, _pid: &str) -> Result<()> {
-    node::supervisor::ask(&config.root, node::supervisor::Request::Stop, PATIENCE)
+/// Asks the supervisor to stop over its control socket, on every OS.
+/// Where that fails (a supervisor that could not bind its socket, or one
+/// that does not answer) and the OS has signals, the pid the supervisor's
+/// lock holds is sent SIGTERM instead.
+async fn stop_supervisor(config: &InstallationConfig, pid: &str) -> Result<()> {
+    let asked = node::supervisor::ask(&config.root, node::supervisor::Request::Stop, PATIENCE)
         .await
-        .context("asking amux supervise to stop")?;
-    Ok(())
+        .context("asking amux supervise to stop");
+    let Err(error) = asked else {
+        return Ok(());
+    };
+    let pid: u32 = pid.parse().with_context(|| {
+        format!("{error:#}; and the supervisor's lock holds {pid:?}, not a pid")
+    })?;
+    match os::process::ProcessRef::open(pid).and_then(|process| process.ask_to_stop()) {
+        Ok(()) => Ok(()),
+        Err(signal) if signal.kind() == std::io::ErrorKind::Unsupported => Err(error),
+        Err(signal) => Err(error.context(format!(
+            "and signalling amux supervise (pid {pid}) failed: {signal}"
+        ))),
+    }
 }
 
 /// The pid of the supervisor holding the installation's supervisor lock,
-/// if one is running.
+/// if one is running: the lock's data, readable while it is held.
 pub(crate) fn running_supervisor(root: &Path) -> Result<Option<String>> {
     let path = root.join(node::supervisor::SUPERVISOR_LOCK);
     if !lock_held(&path)? {
@@ -636,18 +634,7 @@ fn installation_locked(root: &Path) -> Result<bool> {
 
 /// Whether some process holds the lock on the file at `path`.
 fn lock_held(path: &Path) -> Result<bool> {
-    let file = match OpenOptions::new().write(true).open(path) {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error).with_context(|| format!("opening {}", path.display())),
-    };
-    match file.try_lock() {
-        Ok(()) => Ok(false),
-        Err(std::fs::TryLockError::WouldBlock) => Ok(true),
-        Err(std::fs::TryLockError::Error(error)) => {
-            Err(error).with_context(|| format!("probing {}", path.display()))
-        }
-    }
+    os::lock::FileLock::held(path).with_context(|| format!("probing {}", path.display()))
 }
 
 #[cfg(test)]

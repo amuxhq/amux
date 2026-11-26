@@ -10,8 +10,9 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
-/// The byte a lock covers: past any data a lock file holds, and inside
-/// the range std's whole-file lock takes.
+/// The byte a lock covers: past any data a lock file holds. Not the last
+/// byte, `u64::MAX`, whose range would end past 2^64, which a file system
+/// or redirector may refuse.
 const LOCKED_BYTE: u64 = u64::MAX - 1;
 
 fn at_locked_byte() -> OVERLAPPED {
@@ -21,8 +22,7 @@ fn at_locked_byte() -> OVERLAPPED {
     overlapped
 }
 
-/// Takes the lock, or `false` when another handle holds that byte (as
-/// std's whole-file lock does).
+/// Takes the lock, or `false` when another handle holds that byte.
 pub(super) fn try_lock(file: &File) -> io::Result<bool> {
     let mut overlapped = at_locked_byte();
     // SAFETY: `file` is open for reading or writing, synchronously, so the

@@ -185,27 +185,6 @@ impl FileId {
     }
 }
 
-/// A descriptor the supervisor that exec'd this one handed over.
-#[cfg(unix)]
-pub fn inherited_file(fd: u64) -> io::Result<File> {
-    use std::os::fd::{FromRawFd as _, RawFd};
-    let fd = RawFd::try_from(fd).map_err(io::Error::other)?;
-    // SAFETY: fcntl on a descriptor handed over to this process.
-    if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: the descriptor was handed over and nothing else owns it.
-    Ok(unsafe { File::from_raw_fd(fd) })
-}
-
-/// Windows supervisors never hand their lock over; the next one takes it.
-#[cfg(windows)]
-pub fn inherited_file(_fd: u64) -> io::Result<File> {
-    Err(io::Error::other(
-        "a Windows supervisor takes its lock again",
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

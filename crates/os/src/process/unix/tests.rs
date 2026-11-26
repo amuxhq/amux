@@ -192,3 +192,21 @@ fn the_census_finds_a_childs_children() {
     }
     driven.child.kill().unwrap();
 }
+
+/// Asking a child to stop is SIGTERM, which ends one that doesn't catch it.
+#[test]
+fn asking_a_child_to_stop_sends_sigterm() {
+    let mut child = helper("sleep")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pinned = ProcessRef::of_std_child(&child).unwrap();
+    pinned.ask_to_stop().unwrap();
+    assert_eq!(pinned.reap().unwrap(), -libc::SIGTERM);
+    pinned
+        .ask_to_stop()
+        .expect("asking what has exited is no error");
+    // Reaped already, so this only fails.
+    let _ = child.wait();
+}

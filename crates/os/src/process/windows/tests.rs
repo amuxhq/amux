@@ -256,3 +256,21 @@ fn a_refused_breakaway_is_tried_again_on_the_next_start() {
     let driven = Driven::start(helper("jailed-twice"));
     assert_eq!(driven.expect("refused"), "true true");
 }
+
+/// Windows has no signal to ask a process to stop with: the caller is told
+/// so, and the process runs on.
+#[test]
+fn asking_a_process_to_stop_is_unsupported() {
+    let mut child = helper("sleep")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pinned = ProcessRef::of_std_child(&child).unwrap();
+    let error = pinned.ask_to_stop().unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::Unsupported, "{error}");
+    assert!(pinned.alive());
+    pinned.kill().unwrap();
+    assert_eq!(pinned.reap().unwrap(), 1, "TerminateProcess's exit code");
+    let _ = child.wait();
+}

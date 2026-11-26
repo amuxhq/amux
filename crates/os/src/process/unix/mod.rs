@@ -109,6 +109,10 @@ pub(super) fn set_inheritable(file: &File, on: bool) -> io::Result<()> {
     set_cloexec(file.as_raw_fd(), !on)
 }
 
+pub(super) fn file_of_pipe(end: impl Into<std::os::fd::OwnedFd>) -> File {
+    File::from(end.into())
+}
+
 pub(super) fn raw_for_child(file: &File) -> u64 {
     file.as_raw_fd() as u64
 }
@@ -558,6 +562,51 @@ impl ProcessRef {
 
     pub(super) fn resume(&self) -> io::Result<()> {
         self.act(libc::SIGCONT)
+    }
+
+    pub(super) fn ask_to_stop(&self) -> io::Result<()> {
+        self.signal(libc::SIGTERM).map(drop)
+    }
+
+    pub(super) fn reap(&self) -> io::Result<i32> {
+        let mut status = 0;
+        loop {
+            // SAFETY: a wait on one pid; the caller vouches it is our
+            // unreaped child.
+            if unsafe { libc::waitpid(self.pid as libc::pid_t, &mut status, 0) } != -1 {
+                break;
+            }
+            let error = io::Error::last_os_error();
+            if error.kind() != io::ErrorKind::Interrupted {
+                return Err(error);
+            }
+        }
+        if libc::WIFEXITED(status) {
+            Ok(libc::WEXITSTATUS(status))
+        } else if libc::WIFSIGNALED(status) {
+            Ok(-libc::WTERMSIG(status))
+        } else {
+            Err(io::Error::other(format!(
+                "waitpid reported status {status:#x} for {}",
+                self.pid
+            )))
+        }
+    }
+
+    pub(super) fn for_successor(&self) -> io::Result<Option<File>> {
+        Ok(None)
+    }
+
+    pub(super) unsafe fn inherited(pid: Pid, handle: Option<u64>) -> io::Result<ProcessRef> {
+        if let Some(handle) = handle {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("a process handle ({handle}) is handed over only on Windows"),
+            ));
+        }
+        // A child of the image this one replaced is ours: unreaped, it may
+        // have exited, but its pid can't have been reused.
+        Self::of_unreaped(pid)
     }
 
     fn act(&self, signal: libc::c_int) -> io::Result<()> {

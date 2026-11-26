@@ -492,16 +492,13 @@ impl Agent {
     /// The directory is free for the next incarnation: the lock is released
     /// and the control socket is gone.
     pub fn assert_released(&self) {
-        let lock = std::fs::OpenOptions::new()
-            .write(true)
-            .open(self.dir.join(agent::LOCK))
-            .unwrap();
+        let lock = self.dir.join(agent::LOCK);
         // Other tests in this process spawn children at the same time, and
         // a child being spawned can hold a copy of every descriptor until it
         // execs; a lock the agent closed has been seen held for about a
         // millisecond that way. Allow a moment, never a hang.
         let deadline = std::time::Instant::now() + Duration::from_secs(1);
-        while lock.try_lock().is_err() {
+        while os::lock::FileLock::held(&lock).unwrap() {
             assert!(
                 std::time::Instant::now() < deadline,
                 "the agent released its lock"

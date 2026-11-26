@@ -76,7 +76,10 @@ Nothing ever starts a daemon beside a supervisor.
   whatever service manager runs it, and the CLI says so while it waits.
 - `amux supervise` refuses to run when the config says `supervisor = false`.
 - A second supervisor on the same data directory fails at once: the first
-  holds `<data_dir>/supervisor.lock`, which also records its pid.
+  holds `<data_dir>/supervisor.lock`, which also records its pid, readable
+  while the lock is held (`amux status` and the second supervisor's refusal
+  name it). On Windows the lock is one byte past the file's data, since a
+  Windows lock is mandatory over the bytes it covers.
 
 The supervisor logs to `<data_dir>/supervisor.log`; the daemon logs to
 `<data_dir>/daemon.log` unless `AMUX_LOG` names another file. `<data_dir>` is
@@ -150,16 +153,24 @@ running without its binary.
 A stop request reaches the process that owns the daemon, or the daemon would
 come straight back.
 
-- **With a supervisor**, `amux server stop` stops the supervisor. On Unix it
-  sends SIGTERM to the pid recorded in `supervisor.lock`; Windows has no
-  signals, so it writes `stop` to the supervisor's control socket,
-  `<data_dir>/supervisor.sock`. The supervisor then stops its daemon — SIGTERM,
-  up to the 30-second stop deadline, then a kill — and exits cleanly. The CLI
-  waits up to 45 seconds for both locks to be released and prints
+- **With a supervisor**, `amux server stop` stops the supervisor. It writes
+  `stop` to the supervisor's control socket, `<data_dir>/supervisor.sock`, on
+  every OS; where that fails and the OS has signals, it sends SIGTERM to the
+  pid recorded in `supervisor.lock`. The supervisor then stops its daemon (on
+  Unix SIGTERM, on Windows, which has no signals, closing the activation
+  pipe), up to the 30-second stop deadline, then a kill, and exits cleanly.
+  The CLI waits up to 45 seconds for both locks to be released and prints
   `Stopped amux supervise and its daemon.`
 - **Without a supervisor**, `amux server stop` asks the daemon to shut down
   over its front door and waits until the daemon has released the
   installation lock.
+
+The OS asking amux to stop is heard the same way by the supervisor and the
+daemon (`os::signal::terminated`): SIGTERM, SIGINT or SIGHUP on Unix; on
+Windows Ctrl+C, the console closing, logoff and shutdown. Each shuts down
+cleanly, the supervisor stopping its daemon first, and only then lets the OS
+end it (`os::signal::finished`), so a reboot leaves the clean-shutdown flag
+set and the generation unchanged.
 
 Either way agents keep running. Each sees its control socket close and waits
 out its grace period (`agent.grace_secs`, five minutes by default) for the
@@ -250,7 +261,7 @@ has, in each install cell:
   finds it already has as it starts; one started any other way has none.
   Windows has no exec, and the nearest honest equivalent is a fresh
   process: the daemon starts its own executable with the same arguments and
-  environment, detached, and exits. Its process id changes, so a service
+  environment, in the background with no window, and exits. Its process id changes, so a service
   manager watching the first process sees it exit cleanly and no longer
   tracks the one that took over.
 
@@ -375,8 +386,11 @@ After `go`, and last, a supervisor whose own executable is no longer the one at
 the install path replaces itself with the installed binary. On Unix it execs
 `amux supervise --inherit <state>` in place: same pid, and the child, both pipe
 ends and the lock all cross the exec, so the daemon never notices. On Windows
-it starts the new supervisor and exits; the new one waits up to ten seconds for
-the lock. If the handover fails, the old supervisor keeps running, which is
+it starts the new supervisor and exits. The child is handed over as an
+inheritable process handle beside the pipe's ends, never as a pid the new
+supervisor would open, which a process started meanwhile could have taken;
+the lock goes with the process that took it, so the new one waits up to ten
+seconds to take it again. If the handover fails, the old supervisor keeps running, which is
 still correct. Either way the supervisor is never the stale part for long, and
 it never restarts the daemon to update itself.
 
@@ -425,7 +439,7 @@ sleep, which is no worse than `keep_awake = false`.
 
 `just journey system survive-daemon` tells the same story end to end: agents of
 every kind finish their turns with amux killed, amux comes back under its
-supervisor, a newer build is activated, and resuming loses nothing. All of
-these suites are Unix-only; the Windows code paths are compiled on the Windows
-CI runner but not exercised there. See [Testing](TESTING.md) for how to run
+supervisor, a newer build is activated, and resuming loses nothing. The
+suites run on Windows too, but for the cases marked
+`ignore = "windows: ..."`, which say what still fails there. See [Testing](TESTING.md) for how to run
 them.

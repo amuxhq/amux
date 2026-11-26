@@ -37,7 +37,6 @@ pub mod login;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ffi::OsString;
-use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -51,6 +50,7 @@ pub use control::{Request, SUPERVISOR_SOCKET, ask};
 use core_ring::DumpLimit;
 pub use files::{FileId, Files, SUPERVISOR_LOCK};
 pub use keep_awake::{KeepAwake, REASON as KEEP_AWAKE_REASON};
+use os::lock::FileLock;
 use semver::Version;
 use sha2::{Digest as _, Sha256};
 use supervisor_core::{
@@ -282,10 +282,14 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
         pending: VecDeque::new(),
         dumps: Dumps::default(),
     };
-    if driver.execute(out)?.is_some() {
-        return Ok(());
-    }
-    driver.run(finished).await
+    let done = match driver.execute(out)? {
+        Some(Done) => Ok(()),
+        None => driver.run(finished).await,
+    };
+    // The daemon is stopped and the lock released: a stop the OS asked for
+    // (Windows: a closed console, logoff or shutdown) may end the process.
+    os::signal::finished();
+    done
 }
 
 /// The supervisor core's driver: the daemon processes and their pipes, the
@@ -620,29 +624,40 @@ impl Driver {
     }
 
     /// Replaces this process with the installed binary in supervise mode,
-    /// keeping the child, the pipe and the lock. A failure leaves this
-    /// supervisor running, which is still correct.
+    /// keeping the child and the pipe, and the lock where it can cross: an
+    /// exec on Unix; on Windows, which has no exec, a successor started with
+    /// all of it, the child's process handle among it, as this one exits.
+    /// A failure leaves this supervisor running, which is still correct.
     fn become_installed(&self, child: &Child) {
-        let inherited = match child.hand_over(&self.lock.file) {
-            Ok(inherited) => inherited,
+        let lock = self.lock.0.file();
+        let handed = match child.hand_over(lock) {
+            Ok(handed) => handed,
             Err(error) => {
                 tracing::warn!(%error, "could not hand over to the installed binary");
-                child.keep(&self.lock.file);
+                child.keep(lock);
                 return;
             }
         };
         tracing::info!(binary = %self.binary.display(), "handing over to the installed binary");
-        #[cfg(unix)]
-        {
-            let error = child::exec_supervisor(&self.binary, &self.args, &inherited);
-            tracing::warn!(%error, "could not exec the installed binary");
-        }
-        #[cfg(windows)]
-        match child::spawn_supervisor(&self.binary, &self.args, &inherited) {
-            Ok(()) => std::process::exit(0),
+        let mut successor = std::process::Command::new(&self.binary);
+        successor
+            .args(&self.args)
+            .arg("supervise")
+            .arg("--inherit")
+            .arg(handed.inherited.to_arg());
+        match os::process::exec_or_spawn(successor) {
+            Ok(replaced) => {
+                if replaced.breakaway_refused {
+                    tracing::warn!(
+                        "the job the supervisor runs in forbids leaving it: the next one ends when that job does"
+                    );
+                }
+                std::process::exit(0);
+            }
             Err(error) => tracing::warn!(%error, "could not start the installed binary"),
         }
-        child.keep(&self.lock.file);
+        drop(handed);
+        child.keep(lock);
     }
 }
 
@@ -820,83 +835,74 @@ fn rollout_host(data_dir: &Path) -> Option<uuid::Uuid> {
 }
 
 /// The supervisor's own lock, `<data_dir>/supervisor.lock`, holding its
-/// pid for `amux server stop`. It crosses the exec after an update with the
-/// rest of the supervisor's state.
-struct SupervisorLock {
-    file: File,
-}
+/// pid for `amux status` and `amux server stop`, readable while it is held.
+/// On Unix it crosses the exec after an update with the rest of the
+/// supervisor's state; a Windows successor takes it again.
+struct SupervisorLock(FileLock);
 
 impl SupervisorLock {
     /// Takes the lock. A supervisor started by the previous one on Windows
     /// waits for it to exit and release it.
     fn acquire(data_dir: &Path, handed_over: bool) -> Result<Self, SuperviseError> {
-        use std::io::{Read as _, Seek as _, Write as _};
         let path = data_dir.join(SUPERVISOR_LOCK);
         let lock_error = |error| SuperviseError::Lock {
             path: path.clone(),
             error,
         };
         private_dir(data_dir).map_err(lock_error)?;
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(&path)
-            .map_err(lock_error)?;
         let mut tries = if handed_over { 100 } else { 1 };
-        loop {
-            match file.try_lock() {
-                Ok(()) => break,
-                Err(std::fs::TryLockError::WouldBlock) if tries > 1 => {
+        let mut lock = loop {
+            match FileLock::try_acquire(&path).map_err(lock_error)? {
+                Some(lock) => break lock,
+                None if tries > 1 => {
                     tries -= 1;
                     std::thread::sleep(Duration::from_millis(100));
                 }
-                Err(std::fs::TryLockError::WouldBlock) => {
-                    let mut pid = String::new();
-                    let _ = file.read_to_string(&mut pid);
-                    return Err(SuperviseError::Busy {
-                        path,
-                        pid: pid.trim().to_owned(),
-                    });
-                }
-                Err(std::fs::TryLockError::Error(error)) => return Err(lock_error(error)),
+                None => return Err(busy(path)),
             }
-        }
-        file.set_len(0).map_err(lock_error)?;
-        file.rewind().map_err(lock_error)?;
-        write!(file, "{}", std::process::id()).map_err(lock_error)?;
-        file.sync_all().map_err(lock_error)?;
-        Ok(Self { file })
+        };
+        lock.write_data(std::process::id().to_string().as_bytes())
+            .map_err(lock_error)?;
+        Ok(Self(lock))
     }
 
+    /// Takes the lock through the descriptor the supervisor this one exec'd
+    /// from handed over, and so holds already.
     fn inherit(fd: u64, data_dir: &Path) -> Result<Self, SuperviseError> {
-        let file = files::inherited_file(fd).map_err(|error| SuperviseError::Lock {
-            path: data_dir.join(SUPERVISOR_LOCK),
-            error,
-        })?;
-        Ok(Self { file })
+        let path = data_dir.join(SUPERVISOR_LOCK);
+        // SAFETY: the supervisor this one replaced handed the descriptor
+        // over in `--inherit`, taken once as the supervisor starts, and
+        // nothing else in this process owns it.
+        let taken =
+            unsafe { os::process::file_from_inherited(fd) }.and_then(FileLock::try_from_file);
+        match taken {
+            Ok(Some(lock)) => Ok(Self(lock)),
+            Ok(None) => Err(busy(path)),
+            Err(error) => Err(SuperviseError::Lock { path, error }),
+        }
     }
 }
 
-#[cfg(unix)]
-async fn terminated() {
-    use tokio::signal::unix::{SignalKind, signal};
-    let (Ok(mut term), Ok(mut int)) = (
-        signal(SignalKind::terminate()),
-        signal(SignalKind::interrupt()),
-    ) else {
-        return std::future::pending().await;
-    };
-    tokio::select! {
-        _ = term.recv() => {}
-        _ = int.recv() => {}
+/// Another supervisor holds the lock at `path`, which names its pid.
+fn busy(path: PathBuf) -> SuperviseError {
+    let pid = std::fs::read_to_string(&path).unwrap_or_default();
+    SuperviseError::Busy {
+        path,
+        pid: pid.trim().to_owned(),
     }
 }
 
-#[cfg(not(unix))]
+/// Resolves when the OS asks the supervisor to stop: SIGTERM, SIGINT or
+/// SIGHUP; on Windows Ctrl+C, a closed console, logoff or shutdown. One it
+/// can't listen for is logged, and never resolves.
 async fn terminated() {
-    let _ = tokio::signal::ctrl_c().await;
+    match os::signal::terminated().await {
+        Ok(stop) => tracing::info!(?stop, "the OS asked the supervisor to stop"),
+        Err(error) => {
+            tracing::warn!(%error, "cannot hear the OS ask the supervisor to stop");
+            std::future::pending::<()>().await;
+        }
+    }
 }
 
 /// Makes a rename or removal of `path` durable.

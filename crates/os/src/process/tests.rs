@@ -228,6 +228,42 @@ fn run_role(name: &str, rest: &[&str]) {
             say(format!("spawned {}", replaced.child.id()));
         }
         "say" => say(format!("said {}", rest.join(" "))),
+        "exit-after" => {
+            std::thread::sleep(Duration::from_millis(rest[0].parse().expect("ms")));
+            std::process::exit(rest[1].parse().expect("a code"));
+        }
+        // Starts a child, then hands it to a successor it replaces itself
+        // with, as a supervisor does after an update.
+        "bequeath" => {
+            // Waited for by the successor, not here.
+            #[expect(clippy::zombie_processes)]
+            let child = helper("exit-after 1000 7")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .spawn()
+                .expect("the child starts");
+            let pinned = ProcessRef::of_std_child(&child).expect("the child is pinned");
+            let handle = pinned.for_successor().expect("a handle for the successor");
+            let raw = match &handle {
+                Some(file) => {
+                    set_inheritable(file, true).expect("the handle is inheritable");
+                    raw_for_child(file).to_string()
+                }
+                None => "-".to_owned(),
+            };
+            exec_or_spawn(helper(&format!("heir {} {raw}", child.id())))
+                .expect("the successor starts");
+            say("bequeathed");
+        }
+        "heir" => {
+            let pid: Pid = rest[0].parse().expect("a pid");
+            let handle = (rest[1] != "-").then(|| rest[1].parse().expect("a handle"));
+            // SAFETY: the bequeathing role handed this handle over, and
+            // nothing else in this process has it.
+            let inherited = unsafe { ProcessRef::inherited(pid, handle) }.expect("taken over");
+            assert_eq!(inherited.pid(), pid);
+            say(format!("reaped {}", inherited.reap().expect("reaped")));
+        }
         #[cfg(feature = "async")]
         "signal" => crate::signal::tests::signal_role(rest),
         // A role only one OS has.
@@ -658,4 +694,33 @@ fn file_from_inherited_refuses_what_is_no_inherited_file() {
         let error = unsafe { file_from_inherited(raw) }.unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput, "{raw}");
     }
+}
+
+/// A child is reaped with its exit code, by this process and by a
+/// successor it is handed to: the image an exec replaces this one with on
+/// Unix, a successor started with the handle on Windows.
+#[test]
+fn a_child_is_reaped_here_and_by_a_successor_it_is_handed_to() {
+    let mut child = helper("exit-after 0 7")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pinned = ProcessRef::of_std_child(&child).unwrap();
+    assert_eq!(pinned.reap().unwrap(), 7);
+    // Reaped already on Unix, where this only fails.
+    let _ = child.wait();
+
+    let driven = Driven::start(helper("bequeath"));
+    let said = driven.rest();
+    assert!(said.iter().any(|line| line == "reaped 7"), "{said:?}");
+}
+
+/// What a successor is handed must fit: on Unix no handle, on Windows an
+/// open one that names the pid.
+#[test]
+fn a_handover_that_does_not_fit_is_refused() {
+    // SAFETY: refused before anything is taken.
+    let error = unsafe { ProcessRef::inherited(0x7FFF_FFF0, Some(u64::MAX)) }.unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput, "{error}");
 }

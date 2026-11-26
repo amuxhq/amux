@@ -2,6 +2,7 @@ load("//build:rust.bzl", "amux_rust_library", "amux_rust_test")
 
 DEPS = [
     "//crates/agent-dir:agent-dir",
+    "//crates/os:os",
     "//crates/release:release",
     "//crates/settings:settings",
     "//third-party/rust:reqwest",

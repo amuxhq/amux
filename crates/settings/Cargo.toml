@@ -10,6 +10,7 @@ publish = false
 # The CLI takes `ui.chat_in`'s values as a command-line choice too.
 clap = { workspace = true, optional = true }
 gethostname = { workspace = true }
+os = { workspace = true }
 serde = { workspace = true }
 serde_ignored = { workspace = true }
 toml = { workspace = true }

@@ -106,7 +106,7 @@ fn own_config(config_path: Option<&Path>) -> Option<&Path> {
 }
 
 /// `amux uninstall`: stops this machine's running agents, removes the
-/// login item (and an earlier build's), stops amux and with it Windows'
+/// login item, stops amux and with it Windows'
 /// launcher, deletes the installed programs and what updates left beside
 /// them, and takes their folder off PATH; with
 /// `delete_data`, the installation's root and config file too. A person at
@@ -158,12 +158,6 @@ pub async fn uninstall(
         .with_context(|| format!("removing the login item ({})", login.location()))?
     {
         println!("Removed the login item ({}).", login.location());
-    }
-    if login
-        .remove_earlier()
-        .context("removing the login item an earlier amux registered")?
-    {
-        println!("Removed the scheduled task an earlier amux registered.");
     }
     // Stopping the supervisor on purpose ends the launcher that started
     // it (Windows' login item) too.

@@ -166,6 +166,11 @@ paths = [
     "build/nativelink/macos.json5",
     "scripts/ci-sample-system.sh",
     "scripts/rerun-on-cache-timeout.sh",
+    # A home's module for macOS alone (`platform/macos.rs`), whose `cfg` is
+    # on its parent's declaration, so the file itself holds none.
+    "crates/**/macos.rs",
+    "crates/**/macos_*.rs",
+    "crates/**/macos/**",
 ]
 contains_in = ["crates/**"]
 contains = [
@@ -183,6 +188,9 @@ paths = [
     "build/nativelink/macos.json5",
     "scripts/ci-sample-system.sh",
     "scripts/rerun-on-cache-timeout.sh",
+    "crates/**/macos.rs",
+    "crates/**/macos_*.rs",
+    "crates/**/macos/**",
 ]
 contains_in = ["crates/**"]
 contains = [
@@ -212,6 +220,17 @@ paths = [
     ".config/**",
     "scripts/test-binaries.sh",
     "scripts/workspace-test.sh",
+    # A home's module for Windows alone (`fs/windows.rs`, `process/windows/`,
+    # the tests beside one), whose `cfg` is on its parent's declaration, so
+    # the file itself holds none; the programs only Windows ships or builds
+    # with (the login item's launcher, the resources linked into each
+    # program); and the install script only the Windows job runs.
+    "crates/**/windows.rs",
+    "crates/**/windows_*.rs",
+    "crates/**/windows/**",
+    "crates/launch/**",
+    "crates/exe-resource/**",
+    "scripts/install/install.ps1",
 ]
 contains_in = ["crates/**"]
 contains = [

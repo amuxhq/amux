@@ -13,7 +13,8 @@
 //!   and the launcher exits;
 //! - the end with nothing written: the line died, and amux is started again
 //!   after a backoff, 1 s doubling to 60 s, and back to 1 s after a line
-//!   that ran 10 minutes.
+//!   that ran 10 minutes, unless amux is gone from the folder by then
+//!   (uninstalled), when the launcher exits.
 //!
 //! `amux supervise` keeps the pipe for life and hands it to the successor
 //! it starts at a self-update, so an update never reads as a death.
@@ -64,6 +65,11 @@ fn main() {
         // A start that failed (amux moved aside mid-update, say) is a
         // death too, and is tried again.
         std::thread::sleep(backoff.after(started.elapsed()));
+        // No amux beside it any more (uninstalled while it waited): there
+        // is nothing to start, and no supervisor will ever end the line.
+        if !amux.exists() {
+            return;
+        }
         restart = true;
     }
 }

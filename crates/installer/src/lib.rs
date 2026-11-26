@@ -10,7 +10,9 @@
 //! 2. If amux is installed (`~/.amux/bin/amux`) but stopped, it starts it.
 //! 3. Otherwise it downloads the channel's build, checks it against the
 //!    signed manifest, places it under a lock so two clients installing at
-//!    once cannot interleave, and starts it.
+//!    once cannot interleave, and starts it. On Windows the launcher the
+//!    login item runs (`amux-launch.exe`) comes with it, from the same
+//!    release, as the install script puts it beside `amux.exe`.
 //!
 //! amux always comes from the channel's feed, never from a copy a client
 //! carries: a client can be older than the channel, and the first amux on a
@@ -256,31 +258,61 @@ async fn install(
         return Ok(None);
     }
     let staged = dir.join(format!(".amux.installing.{}", std::process::id()));
+    let launcher = dir.join(os::paths::exe_name(release::LAUNCHER));
+    let staged_launcher = dir.join(format!(
+        ".{}.installing.{}",
+        release::LAUNCHER,
+        std::process::id()
+    ));
     let placed = async {
-        let version = download(config, &staged, on_step).await?;
+        let downloaded = download(config, &staged, &staged_launcher, on_step).await?;
         make_executable(&staged)?;
+        // The launcher first: amux in its place is what says an install
+        // is done.
+        if downloaded.launcher {
+            make_executable(&staged_launcher)?;
+            tokio::fs::rename(&staged_launcher, &launcher)
+                .await
+                .map_err(io("placing", &launcher))?;
+        }
         tokio::fs::rename(&staged, binary)
             .await
             .map_err(io("placing", binary))?;
-        Ok(version)
+        Ok(downloaded.version)
     }
     .await;
     if placed.is_err() {
         let _ = std::fs::remove_file(&staged);
+        let _ = std::fs::remove_file(&staged_launcher);
     }
     drop(lock);
     placed.map(Some)
 }
 
+/// What [`download`] fetched and checked.
+struct Downloaded {
+    /// The build's version.
+    version: String,
+    /// Whether the launcher came too.
+    launcher: bool,
+}
+
 /// Downloads the channel's build for this target to `staged`, believing
 /// nothing in the manifest until its signature verifies against a key this
 /// build trusts, and the build only once its size and hash are the
-/// manifest's. Returns its version.
+/// manifest's. The launcher Windows' login item runs comes too, to
+/// `staged_launcher` and checked the same way, when the manifest names one
+/// from the same release beside the target's build
+/// ([`release::launcher`]): without it the login item would start
+/// `amux.exe` itself, in a window and with no restart. No other target's
+/// manifest names one, and one that predates the launcher names none
+/// either: amux alone comes.
 async fn download(
     config: &InstallationConfig,
     staged: &Path,
+    staged_launcher: &Path,
     on_step: &mut impl FnMut(Step),
-) -> Result<String, Error> {
+) -> Result<Downloaded, Error> {
     let url = config.manifest_url();
     let client = http(&url)?;
     let manifest = manifest(&client, &url, config.channel_name()).await?;
@@ -291,14 +323,26 @@ async fn download(
             channel: config.channel_name().to_owned(),
             target: release::TARGET.to_owned(),
         })?;
+    let launcher = release::launcher(&manifest, release::TARGET);
+    // One download to the person, of both programs' signed sizes.
+    let total = build.size + launcher.map_or(0, |launcher| launcher.size);
     artifact(&client, build, staged, |received| {
-        on_step(Step::Downloading {
-            received,
-            total: build.size,
-        })
+        on_step(Step::Downloading { received, total })
     })
     .await?;
-    Ok(build.version.clone())
+    if let Some(launcher) = launcher {
+        artifact(&client, launcher, staged_launcher, |received| {
+            on_step(Step::Downloading {
+                received: build.size + received,
+                total,
+            })
+        })
+        .await?;
+    }
+    Ok(Downloaded {
+        version: build.version.clone(),
+        launcher: launcher.is_some(),
+    })
 }
 
 /// A client for one feed and the artifacts it names.

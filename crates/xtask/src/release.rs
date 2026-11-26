@@ -49,11 +49,17 @@ const ASSETS: &[(&str, &str)] = &[
     ("aarch64-apple-darwin", "amux-macos-arm64"),
     ("x86_64-pc-windows-msvc", "amux-windows-x86_64.exe"),
 ];
-/// What the Release workflow publishes beside a target's binary that no
-/// manifest names: Windows' login item launcher, `amux-launch.exe`, which
-/// an install puts beside `amux.exe`. A deploy checks each is attested and
-/// in `checksums.txt`, so no channel names a release that lacks one.
-const BESIDE: &[(&str, &str)] = &[("x86_64-pc-windows-msvc", "amux-launch-windows-x86_64.exe")];
+/// What the Release workflow publishes beside a target's binary: Windows'
+/// login item launcher, `amux-launch.exe`, which an install puts beside
+/// `amux.exe`. A deploy checks each is attested and in `checksums.txt`,
+/// and names it in the manifest under `<target>/amux-launch`
+/// (`release::beside_key`), so the supervisor installs it with amux from
+/// the same release.
+const BESIDE: &[(&str, &str, &str)] = &[(
+    "x86_64-pc-windows-msvc",
+    release::LAUNCHER,
+    "amux-launch-windows-x86_64.exe",
+)];
 const CHANNELS: &[&str] = &["stable", "preview"];
 /// The target whose binary a deploy signs with Developer ID before any
 /// manifest names it.
@@ -388,7 +394,8 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
     ])?;
     let staging = root.join("target/release-deploy").join(&tag);
     std::fs::create_dir_all(&staging)?;
-    for (_, asset) in BESIDE {
+    let mut targets = BTreeMap::new();
+    for (target, program, asset) in BESIDE {
         gh(&[
             "release",
             "download",
@@ -404,14 +411,20 @@ fn deploy(version: &str, rest: &[&str]) -> Result<(), Box<dyn std::error::Error>
         gh(&check.iter().map(String::as_str).collect::<Vec<_>>()).map_err(|error| {
             format!("{asset} of {tag} is not attested by {WORKFLOW} at {commit}: {error}")
         })?;
-        agrees_with_checksums(
-            &checksums,
-            asset,
-            &release::sha256_of(&std::fs::read(&path)?),
-        )
-        .map_err(|error| format!("{tag}: {error}"))?;
+        let bytes = std::fs::read(&path)?;
+        let sha256 = release::sha256_of(&bytes);
+        agrees_with_checksums(&checksums, asset, &sha256)
+            .map_err(|error| format!("{tag}: {error}"))?;
+        targets.insert(
+            release::beside_key(target, program),
+            Release {
+                version: version.into(),
+                url: format!("https://github.com/{repository}/releases/download/{tag}/{asset}"),
+                sha256,
+                size: bytes.len() as u64,
+            },
+        );
     }
-    let mut targets = BTreeMap::new();
     for (target, asset) in ASSETS {
         gh(&[
             "release",
@@ -916,14 +929,32 @@ mod tests {
             .lines()
             .find(|line| line.contains("sha256sum"))
             .expect("the workflow writes checksums.txt");
-        for (_, asset) in ASSETS.iter().chain(BESIDE) {
+        let beside = BESIDE.iter().map(|(target, _, asset)| (*target, *asset));
+        for (_, asset) in ASSETS.iter().copied().chain(beside) {
             assert!(
-                checksummed.split_whitespace().any(|word| word == *asset),
+                checksummed.split_whitespace().any(|word| word == asset),
                 "{asset} is in checksums.txt: {checksummed}"
             );
             assert!(
-                workflow.lines().any(|line| line.trim() == *asset),
+                workflow.lines().any(|line| line.trim() == asset),
                 "{asset} is among the release's files"
+            );
+        }
+    }
+
+    /// What a release ships beside a target's binary is named in the
+    /// manifest beside that target's entry, which the supervisor reads it
+    /// with: a target the manifest names amux for.
+    #[test]
+    fn what_ships_beside_a_binary_is_named_beside_its_target() {
+        for (target, program, _) in BESIDE {
+            assert!(
+                ASSETS.iter().any(|(named, _)| named == target),
+                "{target} has a binary of its own"
+            );
+            assert_eq!(
+                release::beside_key(target, program),
+                format!("{target}/amux-launch")
             );
         }
     }

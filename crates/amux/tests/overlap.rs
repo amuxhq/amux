@@ -1,5 +1,6 @@
 //! Releases overlapping on one machine, with the built binaries: agents of
-//! the previous build working on across an update to the build under test,
+//! the first build working on across two updates and a daemon killed
+//! mid-turn,
 //! a fleet of the previous build staying open through that update,
 //! a store the previous build created surviving a rollback before
 //! activation, and the generated LaunchAgent restarted under a running
@@ -11,7 +12,7 @@
 use std::collections::BTreeMap;
 use std::io::BufRead as _;
 
-use support::desk::{Desk, LONG_GRACE_SECS, lock_held, say};
+use support::desk::{Desk, LONG_GRACE_SECS, kill, lock_held, say};
 use support::{
     Channel, agent_pid, amux_binary, chat, client, count, created_id, gated_turn, says, texts,
     turns_ended, until,
@@ -23,19 +24,33 @@ fn alive(pid: u32) -> bool {
     os::process::ProcessRef::open(pid).is_ok_and(|process| process.alive())
 }
 
-/// Agents the previous build started keep their process, and their inode,
-/// through an update: the new daemon adopts them and they take new turns.
+/// Design goal #1 across releases: agents the first build started keep
+/// their process through two updates in a row and then a daemon killed
+/// mid-turn. Each new daemon adopts them; they finish the turn the kill
+/// interrupted and take new ones. On Windows each agent keeps the first
+/// build's image mapped throughout, which neither update may delete or
+/// rename over.
 #[tokio::test(flavor = "multi_thread")]
-async fn agents_of_the_previous_build_work_on_after_an_update() {
+async fn agents_of_the_first_build_work_on_through_two_updates_and_a_daemon_kill() {
     let running = node::version();
-    let previous = release::version_stamp::previous(running).unwrap();
+    let first = release::version_stamp::previous(running).unwrap();
+    // Between the two: semver orders `-previous` before `-previous.2`.
+    let second = format!("{first}.2");
     let channel = Channel::serve().await;
     let gate_dir = tempfile::tempdir().unwrap();
-    let gate = gate_dir.path().join("gate");
-    std::fs::write(&gate, b"").unwrap();
-    // Two turns: a live agent plays on through one script.
-    let turns = [gated_turn(&gate), gated_turn(&gate)].concat();
-    let desk = Desk::new(true, LONG_GRACE_SECS, &previous, channel.url(), turns);
+    let gates = [
+        gate_dir.path().join("first"),
+        gate_dir.path().join("second"),
+    ];
+    std::fs::write(&gates[0], b"").unwrap();
+    // Three turns: a live agent plays on through one script.
+    let turns = [
+        gated_turn(&gates[0]),
+        gated_turn(&gates[1]),
+        gated_turn(&gates[1]),
+    ]
+    .concat();
+    let desk = Desk::new(true, LONG_GRACE_SECS, &first, channel.url(), turns);
     let work = desk.work.to_string_lossy().into_owned();
     desk.run(&["server", "start"]).await;
 
@@ -72,24 +87,67 @@ async fn agents_of_the_previous_build_work_on_after_an_update() {
         pids.insert(*name, agent_pid(&dir).expect("the agent runs"));
     }
 
-    channel.publish(running, std::fs::read(amux_binary()).unwrap());
-    let updated = desk.run(&["update"]).await;
+    let staged = tempfile::tempdir().unwrap();
+    let second_build = staged.path().join("amux");
+    node::release::restamp(amux_binary(), &second_build, &second).unwrap();
+    for (version, bytes) in [
+        (second.as_str(), std::fs::read(&second_build).unwrap()),
+        (running, std::fs::read(amux_binary()).unwrap()),
+    ] {
+        channel.publish(version, bytes);
+        let updated = desk.run(&["update"]).await;
+        assert!(
+            updated.contains(&format!("amux {version} is running.")),
+            "{updated}"
+        );
+        for (name, id) in &agents {
+            assert_eq!(
+                agent_pid(&desk.agent_dir(id)),
+                Some(pids[name]),
+                "{name} kept its process through the update to {version}"
+            );
+        }
+    }
+    let supervisor = desk.supervisor_pid().expect("a supervisor runs");
     assert!(
-        updated.contains(&format!("amux {running} is running.")),
-        "{updated}"
+        !node::supervisor::Files::beside(&desk.amux_path())
+            .prev
+            .exists(),
+        "activated: prev is gone"
     );
+
+    // A turn under the newest daemon, killed with every agent mid-turn.
+    let chats = client(&desk.socket).await;
+    for name in agents.keys() {
+        desk.run(&["send", name, "second", "task"]).await;
+    }
+    for (name, id) in &agents {
+        until(&format!("{name} is mid-turn"), || {
+            let chats = chats.clone();
+            async move { says(&chat(&chats, id).await, "started", 2) }
+        })
+        .await
+        .unwrap();
+    }
+    let daemon = desk.daemon_pid();
+    kill(daemon);
+    say(format!(
+        "-- killed amux daemon (pid {daemon}) with every agent of amux {first} mid-turn"
+    ));
+    until("another daemon to answer", || async {
+        let answers = desk.daemon_pid() != daemon
+            && desk.daemon_running()
+            && support::grpc_channel(&desk.socket).await.is_ok();
+        answers.then_some(()).ok_or("no new daemon answers yet")
+    })
+    .await
+    .unwrap();
+    std::fs::write(&gates[1], b"").unwrap();
 
     let chats = client(&desk.socket).await;
     for (name, id) in &agents {
-        let pid = agent_pid(&desk.agent_dir(id));
-        assert_eq!(
-            pid,
-            Some(pids[name]),
-            "{name} kept its process through the update"
-        );
-        desk.run(&["send", name, "second", "task"]).await;
         until(
-            &format!("{name} finishes a turn under the new daemon"),
+            &format!("{name} finishes the turn the kill interrupted"),
             || {
                 let chats = chats.clone();
                 async move { says(&chat(&chats, id).await, "finished", 2) }
@@ -97,7 +155,27 @@ async fn agents_of_the_previous_build_work_on_after_an_update() {
         )
         .await
         .unwrap();
+        desk.run(&["send", name, "third", "task"]).await;
+        until(
+            &format!("{name} finishes a turn under the new daemon"),
+            || {
+                let chats = chats.clone();
+                async move { says(&chat(&chats, id).await, "finished", 3) }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            agent_pid(&desk.agent_dir(id)),
+            Some(pids[name]),
+            "{name} kept its process through the kill"
+        );
     }
+    assert_eq!(
+        desk.supervisor_pid(),
+        Some(supervisor),
+        "one supervisor throughout the kill"
+    );
     for name in agents.keys() {
         desk.run(&["settle", name]).await;
     }

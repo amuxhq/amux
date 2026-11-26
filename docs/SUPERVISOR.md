@@ -387,6 +387,16 @@ untouched. The supervisor then stops its daemon and starts the new binary.
 On Windows a running executable cannot be replaced, so the supervisor stops
 the daemon first and renames the current binary aside to `amux.prev`.
 
+On Windows the release's launcher, `amux-launch.exe`, comes with it: the
+manifest names it beside the Windows binary
+([Release](RELEASE.md#the-manifest)), the supervisor downloads and verifies
+it with the binary (a bad one fails the update), and puts it beside
+`amux.exe` in the same swap, so the two stay from one release. A launcher
+running as the login item keeps its old image, which is harmless: its
+command line and its pipe are all it shares with amux, and both are
+promised. A launcher that fails to go in leaves the one there, and the
+next release tries again; a rollback puts back `amux.exe` alone.
+
 ![The agent never learns an update happened except by EOF on its control socket. A crash is the same timeline: the supervisor restarts the child either way, and after K starts that never activate it restarts the previous binary instead. A daemon that never returns ends at the grace timer: the agent drains and exits, its journal remainder is ingested by whichever daemon comes next, and the agent shows as exited (daemon lost) with one-tap resume.](figures/update-timeline.svg)
 
 From everywhere else an update looks like a daemon restart. Agents see their
@@ -446,9 +456,34 @@ previous binary reads and writes it as the new one left it. A bad release that h
 corrective release with a higher version, never by moving back.
 
 The supervisor needs write access to the directory holding the `amux` binary,
-because every file above lives beside it. On Windows `amux.old` also appears
-there briefly: a running supervisor cannot delete its own executable, so it
-moves it aside and the next start removes it.
+because every file above lives beside it, with the `.old.<n>` names on
+Windows ([Binaries in use](#binaries-in-use-windows)).
+
+## Binaries in use (Windows)
+
+Windows keeps the file a process started from mapped until it exits, and
+refuses to delete a mapped file or rename another over it; it can only be
+renamed away. Running agents and tool servers keep the image of the build
+that started them, so after two updates three builds may be running from
+three files. Wherever an update on Unix would delete a binary or rename
+over one, the Windows supervisor renames it aside to a name of its own,
+`amux.exe.old.<n>` (the first `n` free, never over an existing file), and
+deletes it there if nothing runs it:
+
+| Step | Unix | Windows |
+| --- | --- | --- |
+| The swap | hard-link the binary to `amux.prev`, rename the staged file over the path | rename the binary to `amux.prev`, then the staged file to the free path (put back if that fails) |
+| Activation | delete `amux.prev` | rename `amux.prev` aside |
+| Rollback | rename `amux.prev` over the path | rename the failed build aside, then `amux.prev` to the free path |
+| The launcher | rename the staged launcher over it | rename the running launcher aside (`amux-launch.exe.old.<n>`), then the staged one to the free path |
+
+Every supervisor start and every update check sweeps the `.old.<n>` names
+beside the binary with `os::fs::remove_patiently`, and leaves what is still
+mapped for the next sweep, so a build's file goes within the hour after its
+last agent does. No sweep ever stops the supervisor. Renames wait out a
+virus scanner holding a fresh file for a moment (`rename_patiently`).
+`.prev`, `.rejected` and `.staged` keep their names and meaning everywhere,
+since the next release's supervisor reads them.
 
 ## The supervisor updates itself
 
@@ -503,10 +538,10 @@ sleep, which is no worse than `keep_awake = false`.
 | Where | What it shows |
 | --- | --- |
 | [`crates/supervisor-core/src/tests.rs`](../crates/supervisor-core/src/tests.rs) | The core's rules one input at a time; among them a restart the daemon asks for stopping it and starting it again at once, with no backoff and nothing moved, and nothing started when the supervisor is stopping. |
-| [`crates/node/tests/supervisor.rs`](../crates/node/tests/supervisor.rs) | The real supervisor driving a stand-in binary (`fake-amux`) whose daemon mode is scripted per version, against a local manifest server, with releases signed by the test key. Restart on every exit and stop on request; install a newer signed release and exec it keeping pid, child, pipe and lock (on Windows, a successor that takes the lock again); under `amux-launch`, a dead supervisor started again after a doubling backoff, the launcher's line kept open across the self-update, and the launcher ended by a deliberate stop; refuse a bad hash or signature; roll back after K starts that never prepare and skip the rejected build; stop a daemon that hangs before `prepared` at the start deadline; restart without rollback after `go`; kill at the stop deadline; the three recovery cases above; the real `amux daemon` exiting when its supervisor dies; rollout and version choice. |
+| [`crates/node/tests/supervisor.rs`](../crates/node/tests/supervisor.rs) | The real supervisor driving a stand-in binary (`fake-amux`) whose daemon mode is scripted per version, against a local manifest server, with releases signed by the test key. Restart on every exit and stop on request; install a newer signed release and exec it keeping pid, child, pipe and lock (on Windows, a successor that takes the lock again); two updates in a row with a process of each earlier build still running from its image (on Windows each retired build moved aside to a name of its own and swept once nothing runs it); the release's launcher installed beside the binary while it runs; under `amux-launch`, a dead supervisor started again after a doubling backoff, the launcher's line kept open across the self-update, and the launcher ended by a deliberate stop; refuse a bad hash or signature; roll back after K starts that never prepare and skip the rejected build; stop a daemon that hangs before `prepared` at the start deadline; restart without rollback after `go`; kill at the stop deadline; the three recovery cases above; the real `amux daemon` exiting when its supervisor dies; rollout and version choice. |
 | [`crates/amux/tests/supervise_cli.rs`](../crates/amux/tests/supervise_cli.rs) | The CLI around it, with the real binary: `start_at_login` writing the login item for the next login and removing it, and finding no supervisor to write one for, stop going to the supervisor first or to the daemon when there is none, and ending the launcher that started it, a client starting the supervisor only where the install has one, a client's experiment switch restarting the daemon through the supervisor with the agent mid-turn keeping its process, the supervisor's power assertion under `keep_awake`, let go and taken again as the setting changes (macOS), `amux config set channel`, and `amux update` reporting a build that never started and leaving it alone after, and `amux update --retry` installing a build this machine had rolled back. |
 | [`crates/node/tests/settings.rs`](../crates/node/tests/settings.rs) | The daemon's half of keep-awake: wanted while an agent works under `keep_awake`, not once the turn ends or the setting goes off. |
-| [`crates/amux/tests/overlap.rs`](../crates/amux/tests/overlap.rs) | Releases overlapping on one machine. Agents started by the previous build work on after an update; a terminal client of the previous build keeps working and names the newer daemon; the previous build reopens and works in a store the new build opened before it was killed ahead of `prepared`; restarting the generated LaunchAgent under a running turn leaves the agent running. "The previous build" is a copy of the build under test re-stamped one version lower (`node::release::restamp`). |
+| [`crates/amux/tests/overlap.rs`](../crates/amux/tests/overlap.rs) | Releases overlapping on one machine. Agents started by the first build work on through two updates in a row and a daemon killed mid-turn; a terminal client of the previous build keeps working and names the newer daemon; the previous build reopens and works in a store the new build opened before it was killed ahead of `prepared`; restarting the generated LaunchAgent under a running turn leaves the agent running. "The previous build" is a copy of the build under test re-stamped one version lower (`node::release::restamp`). |
 | [`crates/amux/tests/process.rs`](../crates/amux/tests/process.rs) | A daemon killed mid-turn loses nothing: agents finish without it and the next daemon adopts them. A daemon with no supervisor restarts itself in place, once, for several `amux config set experiments.enabled` in a row, keeping its process id and its agent mid-turn, restarts nothing for a name the build lacks, and reaps the agent the replaced image started. |
 
 `just journey system survive-daemon` tells the same story end to end: agents of

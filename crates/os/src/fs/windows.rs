@@ -744,6 +744,19 @@ pub(crate) fn wide(path: &Path) -> io::Result<Vec<u16>> {
     Ok(wide)
 }
 
+/// [`wide`] as a path, for a library that calls Windows itself; `path` as
+/// it is when it has no absolute form or holds a NUL, which no open takes
+/// either way.
+pub(super) fn long_form(path: &Path) -> PathBuf {
+    match wide(path) {
+        Ok(mut wide) => {
+            wide.pop();
+            PathBuf::from(OsString::from_wide(&wide))
+        }
+        Err(_) => path.to_owned(),
+    }
+}
+
 /// The NUL-terminated wide string at `text`.
 ///
 /// # Safety

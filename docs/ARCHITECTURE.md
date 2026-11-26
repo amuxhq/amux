@@ -415,10 +415,13 @@ write that fails leaves no temporary file. A removal something else still
 holds, such as an agent's folder a shell works in or a log a person
 follows, is left with a warning for the next pass (the next start's sweep,
 the next listing of profiles), never a failed start or a failed
-`amux profile rm`. Paths amux stores, shows or sends (pinned and recent
-folders, a checkout's root) are canonical in the form people and programs
-take, never Windows' verbatim `\\?\C:\…`; one an earlier build stored
-verbatim is read plain.
+`amux profile rm`. Paths amux stores, shows or sends (the root and
+everything under it, pinned and recent folders, a checkout's root) are
+canonical in the form people and programs take, never Windows' verbatim
+`\\?\C:\…`; one an earlier build stored verbatim is read plain. SQLite,
+which opens its files without std, is handed the store's path in its
+long form (`os::fs::long_form`: verbatim only when it is too long for a
+plain one), so a deep root's store still opens.
 
 The phone app keeps the same `<root>` layout in its container, under
 `Application Support/installation/`, with no supervisor, worktrees or
@@ -787,7 +790,7 @@ The allowed sets encode the layering above:
 | `log-file` | `os` | moves standard error onto the log, and opens it owner-only |
 | `git-facts` | `os` | its scratch folders made owner-only and removed patiently, and a checkout's root in the one canonical path form, never Windows' verbatim one |
 | `journal`, `store`, `attachments`, `redaction` | `wire` | |
-| `settings` | `os`, `wire` | names each experiment's version by the wire's entry for it; the home folder from `os` |
+| `settings` | `os`, `wire` | names each experiment's version by the wire's entry for it; the home folder from `os`, and the root in its one canonical path form |
 | `agent-dir` | `os`, `wire` | `os` on Windows alone: the pipe name file's patient rename, and the user's SID a pipe is owned by |
 | `preview` | `attachments`, `wire` | |
 | `core-ring` | `journal` | a core's input ring, in segments named as the journal's are; its drivers hand it the durable write (`os::fs::write_durably`) its checkpoints are put in place with, since a core takes no `os` |

@@ -85,13 +85,15 @@ impl Files {
     /// this supervisor's own running image, when it started after a swap
     /// and before the activation that would have retired prev; that cannot
     /// be replaced, so it moves aside first, where the next start removes
-    /// it.
+    /// it. Otherwise the binary is the build that just failed to start, and
+    /// on Windows an image that has only just exited can stay held for a
+    /// moment, so the rename over it is patient.
     pub fn restore_prev(&self, binary: &Path, mine: &FileId) -> io::Result<()> {
         if cfg!(windows) && FileId::of(binary).is_ok_and(|current| current == *mine) {
             let _ = std::fs::remove_file(&self.aside);
             std::fs::rename(binary, &self.aside)?;
         }
-        std::fs::rename(&self.prev, binary)?;
+        os::fs::rename_patiently(&self.prev, binary)?;
         sync_parent(binary)
     }
 
@@ -220,5 +222,30 @@ mod tests {
         if cfg!(windows) {
             assert_eq!(std::fs::read(&files.aside).unwrap(), b"running");
         }
+    }
+
+    /// A rollback renames prev over the build that just failed to start.
+    /// On Windows an image that has only just exited can stay held for a
+    /// moment; the rename waits for it rather than failing the supervisor.
+    /// A handle sharing nothing stands in for that hold here.
+    #[test]
+    fn prev_goes_back_over_a_binary_held_for_a_moment() {
+        let (_dir, binary, files) = install();
+        std::fs::write(&files.prev, b"previous").unwrap();
+        let held = match provider_fakes::faults::hold_exclusively(&binary) {
+            Ok(held) => held,
+            // Unix has no share modes, so nothing holds a file this way.
+            Err(error) if error.kind() == io::ErrorKind::Unsupported => return,
+            Err(error) => panic!("holding the binary: {error}"),
+        };
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            drop(held);
+        });
+        let mine = FileId::of(&files.prev).unwrap();
+        files.restore_prev(&binary, &mine).unwrap();
+        release.join().unwrap();
+        assert_eq!(std::fs::read(&binary).unwrap(), b"previous");
+        assert!(!files.prev_exists());
     }
 }

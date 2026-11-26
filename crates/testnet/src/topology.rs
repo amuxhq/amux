@@ -289,12 +289,15 @@ impl HostDecl {
 impl AgentDecl {
     /// A branch needs a folder of the agent's own below its host's work
     /// directory: never a declared repository, the work directory itself or
-    /// a path outside the net.
+    /// a path outside the net. A rooted path is outside it on every OS:
+    /// `/tmp` has no drive on Windows, so it is not absolute there, but it
+    /// names the current drive's root, not a folder below the work
+    /// directory.
     pub(crate) fn check_branch(&self) -> Result<(), TopologyError> {
         let folder = self
             .cwd
             .as_deref()
-            .is_some_and(|cwd| !cwd.is_empty() && !Path::new(cwd).is_absolute());
+            .is_some_and(|cwd| !cwd.is_empty() && !Path::new(cwd).has_root());
         if self.branch.is_some() && (self.repository.is_some() || !folder) {
             return Err(TopologyError::BranchWithoutFolder(self.name.clone()));
         }

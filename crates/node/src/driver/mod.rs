@@ -223,7 +223,7 @@ impl Driver {
         let trust = Arc::new(std::sync::RwLock::new(daemon.trust().clone()));
         // The ring's first checkpoint is the core as it starts, beside a
         // main file holding every commit so far.
-        let store_at_checkpoint = Sqlite::checkpoint_wal(&dir.join(STORE))
+        let store_at_checkpoint = Sqlite::checkpoint_wal(&os::fs::long_form(&dir.join(STORE)))
             .inspect_err(|error| tracing::warn!(%error, "moving the store's WAL at start failed"))
             .is_ok();
         let ring = Ring::open(
@@ -1472,7 +1472,8 @@ async fn run_job(runtime: Weak<ProfileRuntime>, job: JobId, op: Job, inputs: Wea
                 return;
             };
             blocking(move || {
-                Sqlite::checkpoint_wal(&dir.join(STORE)).map_err(std::io::Error::other)
+                Sqlite::checkpoint_wal(&os::fs::long_form(&dir.join(STORE)))
+                    .map_err(std::io::Error::other)
             })
             .await
         }

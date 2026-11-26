@@ -364,6 +364,17 @@ pub fn plain(path: PathBuf) -> PathBuf {
     }
 }
 
+/// `path` as a library that calls the OS itself, not through std, must be
+/// handed it to reach a deep path, SQLite among them. Windows: absolute,
+/// and verbatim (`\\?\…`) when it is too long for a plain path, the rule
+/// std applies to every path it hands Windows; without it a process that
+/// is not long-path aware opens nothing past `MAX_PATH`. Elsewhere `path`
+/// as it is. Only for handing over: what is stored or shown stays in the
+/// plain form ([`canonical`]).
+pub fn long_form(path: &Path) -> PathBuf {
+    imp::long_form(path)
+}
+
 /// Whether `name`, as one file or folder name, is one Windows cannot give
 /// a file: a device's (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`,
 /// `LPT0`–`LPT9`, in any case, alone or before an extension), or one

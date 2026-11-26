@@ -811,11 +811,12 @@ fn write_core(
     }
     let checkpoint = daemon_core::redact::checkpoint(&captured.checkpoint, &structure)
         .map_err(|error| format!("the checkpoint: {error}"))?;
-    let cursors: BTreeMap<Vec<u8>, u64> = store::redact::redact_file(scratch, &structure)
-        .map_err(|error| format!("redacting the store: {error}"))?
-        .into_iter()
-        .map(|(key, cursor)| (key.agent, cursor))
-        .collect();
+    let cursors: BTreeMap<Vec<u8>, u64> =
+        store::redact::redact_file(&os::fs::long_form(scratch), &structure)
+            .map_err(|error| format!("redacting the store: {error}"))?
+            .into_iter()
+            .map(|(key, cursor)| (key.agent, cursor))
+            .collect();
     std::fs::create_dir_all(out).map_err(|error| format!("making {CORE}: {error}"))?;
     let write = |name: &str, bytes: &[u8]| {
         std::fs::write(out.join(name), bytes).map_err(|error| format!("writing {name}: {error}"))

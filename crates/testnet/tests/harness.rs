@@ -39,10 +39,6 @@ fn turn_ended(events: &[SessionEvent]) -> bool {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "windows: an agent naming a branch with cwd \"/tmp\" validates, where \"names a branch\" was expected"
-)]
 fn a_topology_rejects_unknown_and_duplicate_names_before_anything_starts() {
     let two = || Topology::new().host("a").host("b");
     let cases: Vec<(Topology, &str)> = vec![

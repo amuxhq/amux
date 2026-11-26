@@ -396,46 +396,8 @@ fn move_aside(path: &Path, binary: &Path) -> io::Result<PathBuf> {
     Ok(aside)
 }
 
-/// A file's identity: device and inode on Unix, volume and file index on
-/// Windows. Two paths with one identity are hard links to one file.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FileId {
-    device: u64,
-    file: u64,
-}
-
-impl FileId {
-    #[cfg(unix)]
-    pub fn of(path: &Path) -> io::Result<Self> {
-        use std::os::unix::fs::MetadataExt as _;
-        let metadata = std::fs::metadata(path)?;
-        Ok(Self {
-            device: metadata.dev(),
-            file: metadata.ino(),
-        })
-    }
-
-    #[cfg(windows)]
-    pub fn of(path: &Path) -> io::Result<Self> {
-        use std::os::windows::io::AsRawHandle as _;
-
-        use windows_sys::Win32::Foundation::HANDLE;
-        use windows_sys::Win32::Storage::FileSystem::{
-            BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
-        };
-        let file = std::fs::File::open(path)?;
-        // SAFETY: an all-zero struct is a valid out parameter.
-        let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
-        // SAFETY: querying a handle we own into a struct we own.
-        if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut info) } == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(Self {
-            device: u64::from(info.dwVolumeSerialNumber),
-            file: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
-        })
-    }
-}
+/// A file's identity, which two hard links to one file share.
+pub use os::fs::FileId;
 
 #[cfg(test)]
 mod tests {

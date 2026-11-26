@@ -319,7 +319,7 @@ mod tests {
     /// A script's `#!` names its language, but only a regular file is read
     /// for it: a link to a script outside the checkout, or to a pipe that
     /// would hold an open forever, names none and returns at once.
-    #[cfg(unix)]
+    #[cfg(unix)] // Unix only by nature: a FIFO, which a path names and an open of waits on
     #[test]
     fn only_a_regular_file_is_read_for_its_language() {
         fn created(path: &str) -> git_facts::ChangedFile {

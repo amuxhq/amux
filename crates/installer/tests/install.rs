@@ -220,7 +220,7 @@ async fn a_start_returns_when_the_command_does_whatever_it_leaves_running() {
 /// The Mac app's feed: a newer app is downloaded, checked and unpacked
 /// beside the running one, a current one is left alone, and an app that is
 /// not the one the manifest hashed is never staged.
-#[cfg(target_os = "macos")]
+#[cfg(target_os = "macos")] // macOS only by nature: the Mac app's own update feed
 #[tokio::test(flavor = "multi_thread")]
 async fn the_mac_app_stages_a_newer_version_only_once_it_checks_out() {
     use installer::update::{self, Staged};

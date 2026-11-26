@@ -43,9 +43,6 @@ uuid = { workspace = true, features = ["v4"] }
 vt100 = { workspace = true }
 wire = { workspace = true, features = ["grpc"] }
 
-[target.'cfg(unix)'.dependencies]
-libc = { workspace = true }
-
 [target.'cfg(unix)'.dev-dependencies]
 libc = { workspace = true }
 

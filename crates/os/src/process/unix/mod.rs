@@ -186,6 +186,64 @@ pub(super) fn harden_start() {
     }
 }
 
+#[cfg(feature = "async")]
+pub(super) fn async_pipe(
+    read: File,
+    write: File,
+) -> io::Result<(
+    tokio::net::unix::pipe::Receiver,
+    tokio::net::unix::pipe::Sender,
+)> {
+    Ok((
+        tokio::net::unix::pipe::Receiver::from_file(read)?,
+        tokio::net::unix::pipe::Sender::from_file(write)?,
+    ))
+}
+
+pub(super) fn unblock_signals() {
+    // SAFETY: an empty set built by sigemptyset, set on this thread; the
+    // caller runs it before starting any other.
+    unsafe {
+        let mut none = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+        libc::sigemptyset(none.as_mut_ptr());
+        libc::pthread_sigmask(libc::SIG_SETMASK, none.as_ptr(), std::ptr::null_mut());
+    }
+}
+
+/// The pids whose parent is this process, from the process table.
+pub(super) fn children() -> Vec<i32> {
+    // SAFETY: getpid has no preconditions.
+    let me = unsafe { libc::getpid() };
+    table::table()
+        .into_iter()
+        .filter(|row| row.ppid == me && row.pid > 0)
+        .map(|row| row.pid)
+        .collect()
+}
+
+pub(super) fn reap_inherited() -> io::Result<usize> {
+    let mut children = children();
+    let found = children.len();
+    if found == 0 {
+        return Ok(0);
+    }
+    std::thread::Builder::new()
+        .name("amux-reap".into())
+        .spawn(move || {
+            while !children.is_empty() {
+                children.retain(|&pid| {
+                    let mut status = 0;
+                    // SAFETY: a non-blocking wait on one pid this process
+                    // was found to be the parent of.
+                    let reaped = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+                    reaped == 0
+                });
+                std::thread::sleep(std::time::Duration::from_secs(5));
+            }
+        })?;
+    Ok(found)
+}
+
 pub(super) fn redirect_stderr(file: &File) -> io::Result<()> {
     if file.as_raw_fd() == libc::STDERR_FILENO {
         // Opened while descriptor 2 was closed: the file is standard error

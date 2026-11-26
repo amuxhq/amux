@@ -400,6 +400,32 @@ pub fn reserved_name(name: &str) -> bool {
     verbatim::reserved(name) || name.ends_with('.') || name.ends_with(' ')
 }
 
+// Identity and times -------------------------------------------------------------
+
+/// A file's identity: its device and inode on Unix, its volume's serial
+/// number and file index on Windows. Two paths with one identity are hard
+/// links to one file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileId {
+    device: u64,
+    file: u64,
+}
+
+impl FileId {
+    /// The identity of the file at `path`, following links.
+    pub fn of(path: &Path) -> io::Result<FileId> {
+        let (device, file) = imp::file_id(path)?;
+        Ok(FileId { device, file })
+    }
+}
+
+/// Sets when the file or folder at `path` was last modified. Windows opens
+/// a folder only with backup semantics, and sets its times only through a
+/// handle that may write them; this opens either as it must.
+pub fn set_modified(path: &Path, at: std::time::SystemTime) -> io::Result<()> {
+    imp::open_for_times(path)?.set_modified(at)
+}
+
 // Executables ------------------------------------------------------------------
 
 /// Lets `path` be run. Unix: an execute bit wherever there is a read bit.
@@ -414,6 +440,13 @@ pub fn make_executable(path: &Path) -> io::Result<()> {
 /// file whose extension `PATHEXT` lists (`.exe`, `.cmd`, `.bat`…).
 pub fn is_executable(path: &Path, meta: &Metadata) -> bool {
     imp::is_executable(path, meta)
+}
+
+/// Whether the file whose metadata is `meta` has an execute bit, as git
+/// records a file's mode: any of the three on Unix. Windows: `false`,
+/// as its files have no such bit (documented exception).
+pub fn has_execute_bit(meta: &Metadata) -> bool {
+    imp::has_execute_bit(meta)
 }
 
 // The root's volume ----------------------------------------------------------------

@@ -1173,7 +1173,8 @@ async fn the_agents_diff_command_is_truthful_and_writes_nothing() {
         .output()
         .unwrap();
     assert!(String::from_utf8_lossy(&status.stdout).contains("?? made.txt"));
-    if cfg!(target_os = "macos") {
+    #[cfg(target_os = "macos")] // macOS only by nature: sandbox-exec, which forbids every write
+    {
         assert_eq!(run(true), shown, "the same where nothing may be written");
     }
     host.stop().await;

@@ -21,7 +21,9 @@ mod review;
 
 pub use review::*;
 
-// The tests drive real agent processes, which run on Unix.
+// The tests drive real agent processes and watch the wake descriptor as
+// the iOS app's run loop does.
+// Unix only by nature: the phone's bridge, whose wake is a descriptor (poll)
 #[cfg(all(test, unix))]
 mod tests;
 

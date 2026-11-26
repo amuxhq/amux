@@ -267,6 +267,22 @@ fn the_census_leaves_a_childs_children_to_the_job() {
     driven.child.kill().unwrap();
 }
 
+/// Windows has no exec, so a process inherits no children to reap, even
+/// while it has children of its own.
+#[test]
+fn nothing_is_inherited_to_reap() {
+    let mut child = helper("sleep")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    crate::process::unblock_signals();
+    assert_eq!(crate::process::reap_inherited().unwrap(), 0);
+    child.kill().unwrap();
+    let _ = child.wait();
+}
+
 /// Beside what `file_from_inherited_refuses_what_is_no_inherited_file`
 /// refuses everywhere: one of our own standard handles.
 #[test]

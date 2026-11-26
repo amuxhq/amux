@@ -21,6 +21,17 @@ use super::{INSTANCES, Listener, is_amux_pipe, owned_by_me, random_name};
 
 const HEX32: &str = "0123456789abcdef0123456789abcdef";
 
+/// A pipe's name file has no length limit: a socket's address is its own
+/// path, however deep.
+#[test]
+fn a_sockets_address_is_its_own_path() {
+    let root = tempfile::tempdir().unwrap();
+    let deep = root.path().join("d".repeat(60)).join("e".repeat(60));
+    let path = deep.join("hooks.sock");
+    assert_eq!(unix_address(&path).unwrap(), path);
+    assert_eq!(unix_private_address(&path).unwrap(), path);
+}
+
 /// Name files whose reads stall, and for how long: a share gone quiet,
 /// for the reads of one path alone, so tests running beside are untouched.
 static STALLED: std::sync::Mutex<Vec<(std::path::PathBuf, Duration)>> =

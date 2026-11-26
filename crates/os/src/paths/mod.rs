@@ -45,6 +45,22 @@ pub fn current_path() -> OsString {
     imp::current_path()
 }
 
+/// The person's login shell, whose `PATH` a terminal would have given
+/// them. Unix: `SHELL`, when it is set and not empty. Windows: `None`, as
+/// it has no login shell: a logged-on process's `PATH` is
+/// [`current_path`]'s, and a `SHELL` a Unix-like toolkit set (Git Bash's
+/// `/usr/bin/bash`) names no program Windows can start.
+pub fn login_shell() -> Option<PathBuf> {
+    imp::login_shell()
+}
+
+/// The path a program printed as `bytes` (git, naming a file). Unix: the
+/// bytes as they are, which any path may be. Windows: read as UTF-8,
+/// lossily, the encoding a program printing a path there uses (git does).
+pub fn from_bytes(bytes: &[u8]) -> PathBuf {
+    imp::from_bytes(bytes)
+}
+
 /// Names the key under `HKCU` that holds the user's environment, in place
 /// of `Environment`, for a test on Windows: it must be under
 /// `Software\amux-test-`, so no test reaches the person's own `Path`.

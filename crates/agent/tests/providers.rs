@@ -1288,7 +1288,7 @@ fn terminal_claude_replays_transport_loss_mid_turn() {
 
 /// Windows does not host terminal Claude: the agent ends before spawning
 /// anything and says why, in words the chat shows.
-#[cfg(windows)]
+#[cfg(windows)] // Windows only by nature: the one platform that refuses terminal Claude
 #[tokio::test(flavor = "multi_thread")]
 async fn windows_refuses_terminal_claude_and_names_the_platform() {
     let agent = Agent::start(Setup {

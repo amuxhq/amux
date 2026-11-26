@@ -356,9 +356,12 @@ async fn passthrough(held: &Held, leader: &LeaderKey, returning: bool) -> Result
     // Listen for window changes before reading the size and drawing: a
     // terminal resized once it shows the agent's screen must reach the
     // agent, and a signal with no listener yet is lost.
-    #[cfg(unix)]
-    let mut resized =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::window_change())?;
+    // Windows' console tells no process of a resize: none to listen for.
+    let mut resized = match os::signal::Resizes::listen() {
+        Ok(resizes) => Some(resizes),
+        Err(error) if error.kind() == io::ErrorKind::Unsupported => None,
+        Err(error) => return Err(error.into()),
+    };
     let (rows, cols) = terminal_size();
     {
         let mut screen = held.screen.lock().unwrap();
@@ -387,10 +390,12 @@ async fn passthrough(held: &Held, leader: &LeaderKey, returning: bool) -> Result
     let mut keys = read_keys(Chords::new(leader));
     let mut ended = held.ended.clone();
     let outcome = loop {
-        #[cfg(unix)]
-        let window = resized.recv();
-        #[cfg(not(unix))]
-        let window = std::future::pending::<Option<()>>();
+        let window = async {
+            match &mut resized {
+                Some(resizes) => resizes.recv().await,
+                None => std::future::pending().await,
+            }
+        };
         tokio::select! {
             key = keys.recv() => match key {
                 Some(Scanned::Keys(bytes)) => {
@@ -664,7 +669,7 @@ mod tests {
         };
         assert_eq!(attacher.refusal(&agent([7; 16], Kind::ClaudePty)), None);
         let codex = attacher.refusal(&agent([7; 16], Kind::Codex));
-        if cfg!(windows) {
+        if !wire::AgentCapabilities::codex(wire::Platform::here()).attachable {
             let codex = codex.unwrap();
             assert!(codex.contains("does not open on Windows"), "{codex}");
             assert!(

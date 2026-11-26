@@ -69,11 +69,13 @@ pub fn restamp(from: &Path, to: &Path, version: &str) -> io::Result<()> {
     body[..version.len()].copy_from_slice(version.as_bytes());
     let _ = std::fs::remove_file(to);
     std::fs::write(to, &bytes)?;
+    // Unix only by nature: the execute bit a copy needs to run, which Windows' files have none of
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
         std::fs::set_permissions(to, std::fs::Permissions::from_mode(0o755))?;
     }
+    // macOS only by nature: a changed Mach-O must be signed again to run
     #[cfg(target_os = "macos")]
     {
         let status = std::process::Command::new("codesign")

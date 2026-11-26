@@ -4,8 +4,6 @@ pub mod experiments;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
-#[cfg(target_os = "macos")]
-use std::process::Command;
 
 use gethostname::gethostname;
 use serde::{Deserialize, Serialize};
@@ -16,18 +14,19 @@ fn xdg_dir(env_var: &str, default_suffix: &str) -> PathBuf {
     if let Ok(value) = std::env::var(env_var) {
         return PathBuf::from(value);
     }
-    #[cfg(windows)]
-    {
-        let base = if default_suffix.starts_with(".config") {
-            std::env::var("APPDATA").ok()
-        } else {
-            std::env::var("LOCALAPPDATA")
-                .ok()
-                .or_else(|| std::env::var("APPDATA").ok())
-        };
-        if let Some(base) = base {
-            return PathBuf::from(base);
-        }
+    // Windows keeps a user's settings under APPDATA, and the rest under
+    // LOCALAPPDATA.
+    let base = if !cfg!(windows) {
+        None
+    } else if default_suffix.starts_with(".config") {
+        std::env::var("APPDATA").ok()
+    } else {
+        std::env::var("LOCALAPPDATA")
+            .ok()
+            .or_else(|| std::env::var("APPDATA").ok())
+    };
+    if let Some(base) = base {
+        return PathBuf::from(base);
     }
     os::paths::home_dir()
         .map(|home| home.join(default_suffix))
@@ -80,6 +79,7 @@ fn system_host_name() -> String {
 /// is made the nearest one rather than refused: a host must start with no
 /// configuration.
 pub fn default_host_name() -> HostName {
+    // macOS only by nature: the Computer Name a Mac keeps apart from its host name
     #[cfg(target_os = "macos")]
     if let Some(name) = macos_computer_name() {
         return HostName::lossy(&name);
@@ -87,9 +87,10 @@ pub fn default_host_name() -> HostName {
     HostName::lossy(&system_host_name())
 }
 
+// macOS only by nature: the Computer Name a Mac keeps apart from its host name
 #[cfg(target_os = "macos")]
 fn macos_computer_name() -> Option<String> {
-    let output = Command::new("scutil")
+    let output = std::process::Command::new("scutil")
         .args(["--get", "ComputerName"])
         .output()
         .ok()?;

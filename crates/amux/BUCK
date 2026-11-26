@@ -31,7 +31,7 @@ DEPS = [
     "//third-party/rust:tracing-subscriber",
     "//third-party/rust:uuid",
     "//third-party/rust:vt100",
-] + select({"DEFAULT": ["//third-party/rust:libc"], "prelude//os:windows": [], "prelude//os:none": []})
+]
 
 TEST_DEPS = [
     "//crates/exe-resource:exe-resource",

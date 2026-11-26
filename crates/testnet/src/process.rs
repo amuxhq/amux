@@ -1,8 +1,10 @@
 //! Hosts that are real `amux` processes: the daemon alone, or the daemon
 //! under `amux supervise`. The net starts and stops them the way a person
 //! does, through the CLI against the host's installation config, kills the
-//! daemon with a signal the way a crash does, and reaches it only through
-//! its sockets, as any client must.
+//! daemon outright the way a crash does, and reaches it only through its
+//! sockets, as any client must. The daemon is the process serving the
+//! front door while the installation lock is held, as the operating system
+//! names the socket's server; the supervisor is the pid its lock holds.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -34,6 +36,10 @@ pub(crate) struct ProcessHost {
 /// How long a process host has to answer after a start: a fresh binary's
 /// first launch can stall on macOS while it is assessed.
 const START: Duration = Duration::from_secs(90);
+
+/// How long the front door has to answer the dial that names its server: a
+/// serving daemon answers at once.
+const DOOR_PATIENCE: Duration = Duration::from_secs(2);
 
 impl ProcessHost {
     fn command(&self) -> tokio::process::Command {
@@ -105,33 +111,117 @@ impl ProcessHost {
         Ok(())
     }
 
-    /// The daemon's process: whoever holds the installation lock.
-    pub(crate) fn daemon_pid(&self) -> Option<u32> {
-        lock_holder(&self.data_dir.join(node::INSTALLATION_LOCK))
+    /// The daemon's process, pinned: the one serving the front door, as
+    /// the operating system names the socket's server, while a daemon
+    /// holds the installation lock across the look. `None` when no daemon
+    /// holds the lock, or one does without serving the front door (it is
+    /// starting or shutting down).
+    pub(crate) async fn daemon(&self) -> Result<Option<os::process::ProcessRef>, String> {
+        let lock = self.data_dir.join(node::INSTALLATION_LOCK);
+        if !lock_held(&lock)? {
+            return Ok(None);
+        }
+        let Ok((stream, Some(pid))) =
+            agent_dir::local_socket::connect_to_process_within(&self.front_door, DOOR_PATIENCE)
+                .await
+        else {
+            return Ok(None);
+        };
+        stream.close();
+        let daemon = match os::process::ProcessRef::open(pid) {
+            Ok(daemon) => daemon,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(format!("opening the daemon (pid {pid}): {error}")),
+        };
+        // Pinned, it is believed only while the lock is still held: a
+        // daemon that exited meanwhile is gone, not whoever has its pid now.
+        Ok(lock_held(&lock)?.then_some(daemon))
+    }
+
+    /// The supervisor's process, pinned: the pid its lock holds, believed
+    /// only while the lock stays held across the look and still names it.
+    pub(crate) fn supervisor(&self) -> Result<Option<os::process::ProcessRef>, String> {
+        let lock = self.data_dir.join(node::supervisor::SUPERVISOR_LOCK);
+        let named = || {
+            std::fs::read_to_string(&lock)
+                .ok()
+                .and_then(|named| named.trim().parse::<u32>().ok())
+        };
+        if !lock_held(&lock)? {
+            return Ok(None);
+        }
+        let Some(pid) = named() else {
+            return Ok(None);
+        };
+        let supervisor = match os::process::ProcessRef::open(pid) {
+            Ok(supervisor) => supervisor,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(format!("opening the supervisor (pid {pid}): {error}")),
+        };
+        Ok((lock_held(&lock)? && named() == Some(pid)).then_some(supervisor))
     }
 
     /// Crashes the daemon: killed outright (SIGKILL, `TerminateProcess`),
     /// so nothing is flushed or closed politely. A supervisor, if there is
     /// one, sees its daemon die as it would any crash.
-    pub(crate) fn kill(&self) -> Result<u32, String> {
-        let pid = self
-            .daemon_pid()
-            .ok_or("no daemon holds the installation lock")?;
-        os::process::ProcessRef::open(pid)
-            .and_then(|daemon| daemon.kill())
+    pub(crate) async fn kill(&self) -> Result<u32, String> {
+        let daemon = self
+            .daemon()
+            .await?
+            .ok_or("no daemon serves the front door")?;
+        let pid = daemon.pid();
+        daemon
+            .kill()
             .map_err(|error| format!("killing the daemon (pid {pid}): {error}"))?;
         Ok(pid)
+    }
+
+    /// Kills the host's supervisor and daemon, whoever started them, and
+    /// waits until neither lock is held: what outlived a stop, or a
+    /// daemon a supervisor started as the stop came. The supervisor goes
+    /// first, so it starts nothing more.
+    pub(crate) async fn kill_all(&self) -> Result<(), String> {
+        let locks = [
+            self.data_dir.join(node::supervisor::SUPERVISOR_LOCK),
+            self.data_dir.join(node::INSTALLATION_LOCK),
+        ];
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(supervisor) = self.supervisor()? {
+                let _ = supervisor.kill();
+            }
+            if let Some(daemon) = self.daemon().await? {
+                let _ = daemon.kill();
+            }
+            let mut held = Vec::new();
+            for lock in &locks {
+                if lock_held(lock)? {
+                    held.push(lock.display().to_string());
+                }
+            }
+            if held.is_empty() {
+                return Ok(());
+            }
+            if tokio::time::Instant::now() > deadline {
+                return Err(format!(
+                    "the host's processes would not die: {} still held",
+                    held.join(" and ")
+                ));
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
     }
 
     /// Waits until no daemon holds the installation lock.
     pub(crate) async fn wait_down(&self) -> Result<(), String> {
         let lock = self.data_dir.join(node::INSTALLATION_LOCK);
         patience::until("the daemon to let go of its lock", || {
-            let held = lock_holder(&lock);
+            let held = lock_held(&lock);
             async move {
                 match held {
-                    None => Ok(()),
-                    Some(pid) => Err(format!("held by {pid}")),
+                    Ok(false) => Ok(()),
+                    Ok(true) => Err("still held".to_owned()),
+                    Err(error) => Err(error),
                 }
             }
         })
@@ -180,19 +270,8 @@ impl ProcessHost {
     }
 }
 
-/// The process holding `lock` open, if any: the lock is held for as long
-/// as its file is open.
-fn lock_holder(lock: &Path) -> Option<u32> {
-    if !lock.exists() {
-        return None;
-    }
-    let listed = std::process::Command::new("lsof")
-        .arg("-t")
-        .arg(lock)
-        .output()
-        .ok()?;
-    String::from_utf8_lossy(&listed.stdout)
-        .lines()
-        .filter_map(|line| line.trim().parse::<u32>().ok())
-        .next()
+/// Whether a process holds the lock on `lock`, probed as every amux lock
+/// is ([`os::lock::FileLock::held`]): no file, no lock.
+fn lock_held(lock: &Path) -> Result<bool, String> {
+    os::lock::FileLock::held(lock).map_err(|error| format!("probing {}: {error}", lock.display()))
 }

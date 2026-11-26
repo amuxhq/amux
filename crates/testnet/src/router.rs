@@ -22,6 +22,11 @@ use tokio::io::ReadBuf;
 use tokio::net::UdpSocket;
 use tokio::time::Instant;
 
+/// How many errors in a row one poll reads past on a port before it moves
+/// on, asking to be polled again: each is an earlier send's ICMP
+/// unreachable, of which a port has a few queued at most.
+const ERRORS_READ_PAST: usize = 64;
+
 /// How the router maps and filters: the two axes that decide whether a
 /// punched packet gets through.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -236,17 +241,26 @@ impl Datagrams for Router {
                     .collect()
             };
             let mut arrived = None;
-            for socket in &sockets {
-                let mut read = ReadBuf::new(buf);
-                match socket.poll_recv_from(cx, &mut read) {
-                    Poll::Ready(Ok(from)) => {
-                        arrived = Some((socket.clone(), read.filled().len(), from));
-                        break;
+            'sockets: for socket in &sockets {
+                for _ in 0..ERRORS_READ_PAST {
+                    let mut read = ReadBuf::new(buf);
+                    match socket.poll_recv_from(cx, &mut read) {
+                        Poll::Ready(Ok(from)) => {
+                            arrived = Some((socket.clone(), read.filled().len(), from));
+                            break 'sockets;
+                        }
+                        // A port's error (an ICMP unreachable echoed back,
+                        // which Windows reports on the next receive) is that
+                        // port's; the host hears of none, as behind a NAT.
+                        // The port is read again: a receive that ended in
+                        // an error left no waker, so returning Pending on it
+                        // would leave the port unread until another woke.
+                        Poll::Ready(Err(_)) => {}
+                        Poll::Pending => continue 'sockets,
                     }
-                    // A port's error (an ICMP unreachable echoed back) is
-                    // that port's; the host hears of none, as behind a NAT.
-                    Poll::Ready(Err(_)) | Poll::Pending => {}
                 }
+                // Still erring: polled again soon rather than left unread.
+                cx.waker().wake_by_ref();
             }
             let Some((socket, len, from)) = arrived else {
                 return Poll::Pending;

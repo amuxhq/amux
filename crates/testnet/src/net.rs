@@ -597,14 +597,17 @@ impl Net {
                 None => self.take_down(name, false).await?,
             }
         }
-        let dir = self.hosts[name].dir.clone();
-        kill_agents_in(&agents_folders(&self.hosts[name].info.data_dir)).await?;
-        if process.is_some() {
-            // A daemon or supervisor that outlived its stop dies here with
-            // the agents: its command line names the host's folder. Nothing
-            // of the host's may run on once the net has forgotten it.
-            kill_all_under(name, &dir).await?;
+        if let Some(process) = &process {
+            // A daemon or supervisor that outlived its stop, or a daemon its
+            // supervisor started as the stop came, dies here, found by the
+            // locks it holds. Nothing of the host's may run on once the net
+            // has forgotten it.
+            process.kill_all().await.map_err(|why| NetError::Process {
+                host: name.to_owned(),
+                why,
+            })?;
         }
+        kill_agents_in(&agents_folders(&self.hosts[name].info.data_dir)).await?;
         self.forget_host(name);
         Ok(self.ack(said))
     }
@@ -878,6 +881,26 @@ impl Net {
             .ok_or_else(|| NetError::NoHost(name.to_owned()))?
             .process
             .as_ref())
+    }
+
+    /// A process host's running supervisor and daemon, pinned, so a test can
+    /// see each exit even once its pid is another's: each found as the net
+    /// finds it to kill it, by the lock it holds and, for the daemon, by the
+    /// front door it serves.
+    pub async fn host_processes(
+        &self,
+        name: &str,
+    ) -> Result<Vec<os::process::ProcessRef>, NetError> {
+        let process = self.process(name)?.ok_or(NetError::Unsupported(
+            "pinning the processes of a host that runs in the net's process",
+        ))?;
+        let error = |why| NetError::Process {
+            host: name.to_owned(),
+            why,
+        };
+        let supervisor = process.supervisor().map_err(error)?;
+        let daemon = process.daemon().await.map_err(error)?;
+        Ok(supervisor.into_iter().chain(daemon).collect())
     }
 
     /// Refuses a verb that reaches into a daemon's runtime, which a process
@@ -1941,7 +1964,7 @@ impl Net {
         }
         let process = decl.runs_as_process().then(|| ProcessHost {
             amux: if decl.supervised {
-                dir.join("install").join("amux")
+                dir.join("install").join(os::paths::exe_name("amux"))
             } else {
                 self.binaries.amux()
             },
@@ -3212,7 +3235,7 @@ impl Net {
             if !self.is_up(host) {
                 return Err(NetError::Down(host.to_owned()));
             }
-            let pid = process.kill().map_err(|why| NetError::Process {
+            let pid = process.kill().await.map_err(|why| NetError::Process {
                 host: host.to_owned(),
                 why,
             })?;
@@ -3917,7 +3940,7 @@ impl Net {
     fn install_supervised(&self, host: &str) -> Result<(), NetError> {
         let install = self.hosts[host].dir.join("install");
         std::fs::create_dir_all(&install)?;
-        let amux = install.join("amux");
+        let amux = install.join(os::paths::exe_name("amux"));
         node::release::restamp(&self.binaries.amux(), &amux, SUPERVISED_VERSION)?;
         crate::feed::warm(&amux);
         Ok(())
@@ -4003,12 +4026,15 @@ impl Net {
                 Some(process) => {
                     let _ = process.stop().await;
                     // A supervised host whose daemon was killed may still be
-                    // starting it again; its supervisor goes with the stop.
-                    if let Some(pid) = process.daemon_pid()
-                        && let Ok(daemon) = os::process::ProcessRef::open(pid)
-                    {
-                        let _ = daemon.kill();
-                    }
+                    // starting it again as the stop comes, and a stop that
+                    // failed leaves its daemon running: both die here.
+                    process
+                        .kill_all()
+                        .await
+                        .map_err(|why| NetError::Process {
+                            host: name.clone(),
+                            why,
+                        })?;
                 }
                 None => self.take_down(name, true).await?,
             }
@@ -4125,79 +4151,6 @@ pub fn withdraw(kind: FakeKind, id: &[u8], queued: &[u8]) -> Input {
             }),
         },
     )
-}
-
-/// Kills every process whose command line names `dir` until none is left:
-/// a supervisor killed a moment after its daemon may have started another.
-async fn kill_all_under(host: &str, dir: &Path) -> Result<(), NetError> {
-    #[cfg(unix)]
-    {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-        loop {
-            kill_pids(&processes_under(dir));
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            let left = processes_under(dir);
-            if left.is_empty() {
-                return Ok(());
-            }
-            if tokio::time::Instant::now() > deadline {
-                return Err(NetError::Process {
-                    host: host.to_owned(),
-                    why: format!("processes of the host would not die: {left:?}"),
-                });
-            }
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (host, dir);
-        Err(NetError::Unsupported("killing a host's processes"))
-    }
-}
-
-/// The processes whose command line names `dir` or a path below it, as a
-/// whole path: `desk` must not catch `desk2`. The net's tmux server is left
-/// out, though its command line names the folder its first pane started
-/// in: it serves every host's panes.
-#[cfg(unix)]
-fn processes_under(dir: &Path) -> Vec<u32> {
-    let dir = dir.to_string_lossy().into_owned();
-    let listed = std::process::Command::new("ps")
-        .args(["-axo", "pid=,command="])
-        .output()
-        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
-        .unwrap_or_default();
-    let me = std::process::id();
-    listed
-        .lines()
-        .filter_map(|line| {
-            let (pid, command) = line.trim_start().split_once(' ')?;
-            let pid: u32 = pid.parse().ok()?;
-            let program = command.split_whitespace().next().unwrap_or_default();
-            let names_dir = command.match_indices(&dir).any(|(at, _)| {
-                matches!(
-                    command[at + dir.len()..].chars().next(),
-                    None | Some('/') | Some(' ')
-                )
-            });
-            (names_dir
-                && pid != me
-                && !program
-                    .rsplit('/')
-                    .next()
-                    .is_some_and(|name| name == "tmux"))
-            .then_some(pid)
-        })
-        .collect()
-}
-
-#[cfg(unix)]
-fn kill_pids(pids: &[u32]) {
-    for pid in pids {
-        if let Ok(process) = os::process::ProcessRef::open(*pid) {
-            let _ = process.kill();
-        }
-    }
 }
 
 /// Kills every agent process whose directory is in one of the agents

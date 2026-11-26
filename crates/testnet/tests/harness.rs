@@ -792,10 +792,6 @@ async fn the_gate_reorders_jitters_and_caps_the_rate_of_what_it_passes() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: process host: the story never finished (still running after 40 min)"
-)]
 async fn a_process_host_pairs_for_real_through_gates_that_cut_it_and_survives_a_crash() {
     assert!(matches!(
         Net::start(Topology::new().host_decl(HostDecl {
@@ -895,29 +891,46 @@ async fn a_process_host_pairs_for_real_through_gates_that_cut_it_and_survives_a_
     net.restart_daemon("box").await.unwrap();
     let removed = net.host("box").unwrap().clone();
     assert!(net.advertised().contains(&removed.host_id));
-    net.remove_host("box").await.unwrap();
+    remove_leaving_nothing(&mut net, "box", 1).await;
     assert!(
         !net.advertised().contains(&removed.host_id),
         "a removed host is not advertised"
     );
-    let left = Command::new("pgrep")
-        .arg("-f")
-        .arg(&removed.dir)
-        .output()
-        .unwrap();
-    assert!(
-        left.stdout.is_empty(),
-        "nothing of the removed host runs on: {}",
-        String::from_utf8_lossy(&left.stdout)
-    );
     net.shutdown().await.unwrap();
 }
 
+/// Removes the process host `host`, whose `expected` processes (the
+/// daemon, and its supervisor when it has one) are pinned first: each has
+/// exited once the removal returns, or soon after, and the front door no
+/// longer answers.
+async fn remove_leaving_nothing(net: &mut Net, host: &str, expected: usize) {
+    let pinned = net.host_processes(host).await.unwrap();
+    assert_eq!(pinned.len(), expected, "{host}'s processes are found");
+    let front_door = net.host(host).unwrap().front_door.clone();
+    net.remove_host(host).await.unwrap();
+    until("nothing of the removed host to run on", || {
+        let left: Vec<u32> = pinned
+            .iter()
+            .filter(|process| process.alive())
+            .map(|process| process.pid())
+            .collect();
+        async move {
+            if left.is_empty() {
+                Ok(())
+            } else {
+                Err(format!("still running: {left:?}"))
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        agent_dir::local_socket::connect(&front_door).await.is_err(),
+        "the removed host's front door answers nothing"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: process host: a supervised host (H5); its one run was cut off before it said why"
-)]
 async fn a_supervised_host_takes_a_published_release_and_rolls_back_a_broken_one() {
     let mut net = Net::start_with(Topology::new(), wall()).await.unwrap();
     net.add_host(HostDecl {
@@ -926,7 +939,12 @@ async fn a_supervised_host_takes_a_published_release_and_rolls_back_a_broken_one
     })
     .await
     .unwrap();
-    let install = net.host("box").unwrap().dir.join("install/amux");
+    let install = net
+        .host("box")
+        .unwrap()
+        .dir
+        .join("install")
+        .join(os::paths::exe_name("amux"));
     let supervisor_log = net.host("box").unwrap().data_dir.join("supervisor.log");
     // The installed binary's version, read as an until's probe: async and
     // killed if the wait's deadline passes, so a slow start reports what it
@@ -1023,14 +1041,7 @@ async fn a_supervised_host_takes_a_published_release_and_rolls_back_a_broken_one
     net.turn_ended("worker", 1).await.unwrap();
     println!("an agent ran after the crash");
     // Removing it takes the supervisor with the daemon.
-    let dir = net.host("box").unwrap().dir.clone();
-    net.remove_host("box").await.unwrap();
-    let left = Command::new("pgrep").arg("-f").arg(&dir).output().unwrap();
-    assert!(
-        left.stdout.is_empty(),
-        "nothing of the removed host runs on: {}",
-        String::from_utf8_lossy(&left.stdout)
-    );
+    remove_leaving_nothing(&mut net, "box", 2).await;
     net.shutdown().await.unwrap();
 }
 
@@ -1078,10 +1089,6 @@ fn plan(net: &Net, account: &str) -> Value {
 /// one in the net's process, and the plan read a phone makes says the same:
 /// given access while Pro, access that ended when it went Free.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: process host: the story never finished (still running after 40 min)"
-)]
 async fn a_changed_tier_reaches_a_process_host_and_the_plan_read_at_once() {
     let mut net = Net::start_with(Topology::new().relay(&["ada"]), wall())
         .await

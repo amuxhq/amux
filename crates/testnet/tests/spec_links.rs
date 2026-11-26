@@ -1210,10 +1210,6 @@ async fn resume_accepted_catches_up_within_one_round_trip() {
 /// each launch is kept open until both are on disk, as a person looking at
 /// their fleet keeps the app open.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: no ticket on disk before relaunch 2 (fails in every run on this VM)"
-)]
 async fn resume_every_relaunch_with_the_ticket_the_last_one_kept() {
     let mut net = linked_through_a_slow_network().await;
     let round_trip = 2 * ONE_WAY.as_millis();
@@ -1291,10 +1287,6 @@ async fn relaunch_behind_a_router_links_every_time() {
 /// every launch links within a few seconds, and the link goes back to the
 /// punched path once it is up.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: after a kill and relaunch, the desk's link to the laptop is not on the punched path within 30 s (Ok(None))"
-)]
 async fn relaunch_after_a_kill_links_every_time() {
     let topology = Topology::new()
         .relay(&["ada"])
@@ -1356,10 +1348,6 @@ async fn relaunch_after_a_kill_links_every_time() {
 /// leaves nothing of it running, and its next start dials the relay and
 /// the desk where they listen.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: process host: killing the laptop's daemon fails, \"no daemon holds the installation lock\""
-)]
 async fn relaunch_of_a_killed_process_links_every_time() {
     let topology = Topology::new()
         .relay(&["ada"])
@@ -1477,10 +1465,6 @@ fn tickets_beneath(dir: &std::path::Path) -> usize {
 /// data, and the laptop sends the same calls again once the handshake
 /// completes. The session is reached as on any launch.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: the worker is never observed at the laptop within 30 s; its stream ends Detached"
-)]
 async fn resume_rejected_resends_the_early_calls_after_the_handshake() {
     let mut net = linked_through_a_slow_network().await;
     net.stop_daemon("laptop").await.unwrap();
@@ -1520,10 +1504,6 @@ async fn resume_rejected_resends_the_early_calls_after_the_handshake() {
 /// The desk restarts while the laptop is away, keeping the tickets it
 /// issued: the laptop's next launch still resumes with 0-RTT accepted.
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: the replica at the laptop is never current after the desk restarts, its marker Detached (fails about half the runs, on phase 3's base too)"
-)]
 async fn resume_after_host_restart_still_resumes() {
     let mut net = linked_through_a_slow_network().await;
     net.stop_daemon("laptop").await.unwrap();

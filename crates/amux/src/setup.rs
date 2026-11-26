@@ -35,11 +35,11 @@ pub fn start_at_login(config: &InstallationConfig, config_path: Option<&Path>) -
     let login = StartAtLogin::here(&config.root, own_config(config_path))?;
     login
         .set(config.start_at_login)
-        .with_context(|| format!("changing the login item ({})", login.file().display()))?;
+        .with_context(|| format!("changing the login item ({})", login.location()))?;
     if config.start_at_login {
         println!(
             "amux starts at login ({}); `amux config set start_at_login false` stops that.",
-            login.file().display()
+            login.location()
         );
     }
     Ok(())
@@ -99,9 +99,9 @@ pub async fn uninstall(
     let login = StartAtLogin::here(&config.root, own_config(config_path))?;
     if login
         .remove_now()
-        .with_context(|| format!("removing the login item ({})", login.file().display()))?
+        .with_context(|| format!("removing the login item ({})", login.location()))?
     {
-        println!("Removed the login item ({}).", login.file().display());
+        println!("Removed the login item ({}).", login.location());
     }
     crate::server::stop(config).await?;
     if let Some(hosts) = crate::browser_host::installed(own_config(config_path)) {

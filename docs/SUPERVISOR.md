@@ -130,25 +130,39 @@ Every login item follows the same three rules:
 - **Carry the PATH of whoever turned it on.** Service managers start jobs
   with a sparse environment, and agents find their provider binaries through
   PATH: the item records the PATH of the daemon or the command that wrote it.
+  Windows starts the `Run` key's values in the person's session with their own
+  environment, so the item there carries none.
 
 What the item is on each platform
-([`crates/node/src/supervisor/login.rs`](../crates/node/src/supervisor/login.rs)):
+([`crates/node/src/supervisor/login/`](../crates/node/src/supervisor/login/mod.rs), a
+module per platform):
 
-| Platform | File | Registered with | How it restarts, and how it spares agents |
+| Platform | Item | Registered with | How it restarts, and how it spares agents |
 | --- | --- | --- | --- |
 | macOS | `~/Library/LaunchAgents/sh.amux.supervise.plist`, a LaunchAgent labelled `sh.amux.supervise` | Nothing: launchd loads every LaunchAgent at login | `RunAtLoad`, `KeepAlive` with `SuccessfulExit` false; `AbandonProcessGroup` true |
 | Linux | `$XDG_CONFIG_HOME/systemd/user/amux.service` (`~/.config/systemd/user/amux.service` by default), a systemd user unit | `systemctl --user daemon-reload`, then `systemctl --user enable amux.service`; off is `disable` | `Restart=on-failure`, `WantedBy=default.target`; `KillMode=process` |
-| Windows | `<data_dir>/amux-task.xml`, a Task Scheduler definition in UTF-16 with a byte-order mark | `schtasks /Create /F /TN amux /XML <file>`; off is `schtasks /Delete` | A logon trigger, `RestartOnFailure` every minute up to 999 times, no execution time limit, and battery power neither blocks nor stops it |
+| Windows | A string value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`: `amux` for the default root, `amux-<8 hex>` (the first four bytes of the SHA-256 of the root's path, lowercased) for any other | Nothing: Windows starts every `Run` value at logon; off deletes the value | `amux-launch.exe`, which has no console, starts `amux supervise` and restarts it with backoff unless it stopped on purpose. Windows starts it in explorer's job, which neither kills on close nor refuses breakaway |
 
-Each item runs `<binary> [--config <path>] supervise`, where `<binary>` is the
-`amux` executable that wrote it, and sends the supervisor's own output to
-`<data_dir>/supervisor.log`. An item is this installation's when it names this
-installation's `supervisor.log`, so turning the setting off in a worktree's
-installation leaves the real one starting at login.
+On macOS and Linux each item runs `<binary> [--config <path>] supervise`, where
+`<binary>` is the `amux` executable that wrote it, and sends the supervisor's
+own output to `<data_dir>/supervisor.log`. An item is this installation's when
+it names this installation's `supervisor.log`, so turning the setting off in a
+worktree's installation leaves the real one starting at login.
+
+On Windows the value is `"<bin>\amux-launch.exe" supervise [--config
+"<path>"]`, the launcher beside the `amux.exe` that wrote it; a build with no
+launcher there names `amux.exe` itself, which starts the supervisor in a
+console window and without the restart. The supervisor writes its own output
+to `supervisor.log`. The value is this installation's by its name, so two
+roots never overwrite each other and a worktree's never touches the real one.
+Windows starts no `Run` command line longer than 260 characters, so turning
+the item on with a longer one (a deep config path) is refused with an error
+saying so, and nothing is written. An `amux` scheduled task an earlier build
+registered is not removed; it still runs `amux supervise`, in a window.
 
 `amux uninstall` removes it at once: it unregisters the login item
-(`launchctl bootout`, `systemctl --user disable --now`, or `schtasks /End` and
-`/Delete`) and deletes its file, again only when it is this installation's.
+(`launchctl bootout`, `systemctl --user disable --now`, or deleting the `Run`
+value) and deletes its file, again only when it is this installation's.
 It stops this machine's agents first and amux after, so nothing is left
 running without its binary.
 
@@ -456,7 +470,7 @@ neither.
 | Platform | Supervisor (on power) | Daemon (while an agent works) |
 | --- | --- | --- |
 | macOS | The IOKit assertion `PreventSystemSleep`, which the system honours on AC power only. | `PreventUserIdleSystemSleep`, honoured on battery too. |
-| Windows | `SetThreadExecutionState(ES_CONTINUOUS \| ES_SYSTEM_REQUIRED)` on a thread kept for the purpose, set while the machine reports AC power (looked at every 30 seconds) and cleared on battery. | The same state on a thread of the daemon's, while an agent works. |
+| Windows | `SetThreadExecutionState(ES_CONTINUOUS \| ES_SYSTEM_REQUIRED)` on a thread kept for the purpose, set while the machine reports AC power or an unknown power status (255, as a desktop or a VM without a battery may report; looked at every 30 seconds) and cleared on battery. | The same state on a thread of the daemon's, while an agent works. |
 | Linux | Nothing. | Nothing. |
 
 Both are named `amux keeps this machine reachable`; `pmset -g assertions`

@@ -351,7 +351,7 @@ their own copies.
 ~/.amux/bin/amux              the installed binary; an update stages amux.staged and keeps amux.prev beside it
 ~/Library/LaunchAgents/sh.amux.supervise.plist
                               the login item `start_at_login` writes on macOS; ~/.config/systemd/user/amux.service
-                              on Linux, and a scheduled task named amux on Windows
+                              on Linux, and the HKCU Run value amux (amux-<hash> for another root) on Windows
 $TMPDIR/amux-<uid>/<hash>, <hash>.d
                               short addresses for sockets whose paths are too long (see above)
 
@@ -651,7 +651,8 @@ nicer in several places, and Windows pays for each:
   messaging socket is Unix-only; and the fake terminal Claude's raw console
   mode is Unix-only. Headless Claude and Codex talk over stdio and are
   hosted on Windows as everywhere else.
-- The login item is a logon task, and keep-awake is `SetThreadExecutionState`.
+- The login item is a value under the `Run` key that starts `amux-launch.exe`,
+  and keep-awake is `SetThreadExecutionState`.
 
 ## The crate map
 

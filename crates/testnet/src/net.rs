@@ -4028,13 +4028,10 @@ impl Net {
                     // A supervised host whose daemon was killed may still be
                     // starting it again as the stop comes, and a stop that
                     // failed leaves its daemon running: both die here.
-                    process
-                        .kill_all()
-                        .await
-                        .map_err(|why| NetError::Process {
-                            host: name.clone(),
-                            why,
-                        })?;
+                    process.kill_all().await.map_err(|why| NetError::Process {
+                        host: name.clone(),
+                        why,
+                    })?;
                 }
                 None => self.take_down(name, true).await?,
             }

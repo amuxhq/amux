@@ -65,6 +65,11 @@ sudo loginctl enable-linger "$USER"
 Lingering also stops systemd from ending your processes when you log out, on
 systems set up to do that.
 
+On Windows this adds amux to the apps that start when you sign in (it shows
+in Task Manager's Startup apps). Windows won't start one whose command is
+longer than 260 characters, so if your config file sits at a very long path,
+amux says so instead of turning it on; move the file somewhere shorter.
+
 Agents find their tools through your `PATH`, and the service remembers the
 `PATH` of the shell you turned it on from. Turn it on from a normal login
 shell, where `claude`, `codex` and the tools your agents use are all found.
@@ -75,7 +80,9 @@ login.
 ### Sleep
 
 On a Mac, amux keeps the Mac awake while it's plugged in, as long as the
-lid is open. Turn that off with `amux config set keep_awake false`. On Linux,
+lid is open. On Windows, amux keeps the PC awake while it's plugged in, and a
+desktop with no battery counts as plugged in. Turn that off with
+`amux config set keep_awake false`. On Linux,
 amux leaves power settings to you, so make sure the machine doesn't suspend on
 its own.
 

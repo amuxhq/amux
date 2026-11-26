@@ -64,6 +64,9 @@ pub async fn run(config_path: Option<&Path>) -> Result<bool> {
         println!("{updates}");
         println!("{}", login_line(&config, config_path));
     }
+    if let Some(line) = firewall_line() {
+        println!("{line}");
+    }
     if let Some(door) = door
         && daemon.is_some()
     {
@@ -133,6 +136,40 @@ fn login_line(config: &InstallationConfig, config_path: Option<&Path>) -> String
         (false, true) => "start_at_login is off, but a login item starts amux; \
              `amux config set start_at_login false` removes it."
             .to_owned(),
+    }
+}
+
+/// Whether the firewall lets devices nearby reach this amux, where amux has
+/// a firewall to ask (Windows); none elsewhere.
+fn firewall_line() -> Option<String> {
+    let standing = std::env::current_exe()
+        .and_then(|exe| os::fs::canonical(&exe))
+        .and_then(|program| node::firewall::here(&program));
+    match standing {
+        Err(error) if error.kind() == std::io::ErrorKind::Unsupported => None,
+        Err(error) => Some(format!("The firewall could not be read: {error}.")),
+        Ok(standing) => Some(format!("The firewall {}", firewall_words(standing))),
+    }
+}
+
+/// What the firewall does for devices nearby, after "The firewall".
+pub(crate) fn firewall_words(standing: node::firewall::Standing) -> &'static str {
+    use node::firewall::Standing;
+    match standing {
+        Standing::Allowed => "lets devices nearby reach amux on private and domain networks.",
+        Standing::Off => "is off on private and domain networks, so devices nearby reach amux.",
+        Standing::Closed => {
+            "has no rule that lets devices nearby reach amux, so it reaches them only by \
+             dialling out and through the relay; `amux setup firewall` adds one, after asking \
+             for administrator approval."
+        }
+        Standing::Blocked => {
+            "has a rule that keeps devices nearby from reaching amux (Windows adds one when its \
+             prompt to allow amux is dismissed), so it reaches them only by dialling out and \
+             through the relay; `amux setup firewall` replaces the rule Windows' prompt \
+             added, after asking for administrator approval, and names any other rule for \
+             you to change."
+        }
     }
 }
 

@@ -44,12 +44,6 @@ crates/provider-fakes/src/pty/engine.rs 8
 crates/provider-fakes/src/script.rs 3
 crates/pty-host/src/lib.rs 3
 crates/qualification/src/bin/acp_probe/main.rs 2
-crates/qualification/src/bin/claude_probe/capture.rs 13
-crates/qualification/src/bin/claude_probe/main.rs 1
-crates/qualification/src/bin/claude_probe/probe.rs 3
-crates/qualification/src/bin/codex_probe/capture.rs 1
-crates/qualification/src/bin/codex_probe/main.rs 1
-crates/qualification/src/bin/codex_probe/probe.rs 1
 crates/qualification/src/bin/relay_curve.rs 8
 crates/qualification/src/perf/mod.rs 31
 crates/qualification/src/perf/relay.rs 3
@@ -57,11 +51,6 @@ crates/qualification/src/perf/report.rs 9
 crates/qualification/tests/acp/client.rs 5
 crates/qualification/tests/acp/scenarios.rs 2
 crates/qualification/tests/claude_pty_live.rs 3
-crates/qualification/tests/claude_sdk_live.rs 3
-crates/qualification/tests/codex_live.rs 3
-crates/qualification/tests/live/capture.rs 1
-crates/qualification/tests/live/codex_subagents.rs 1
-crates/qualification/tests/live/mod.rs 1
 crates/release/src/version_stamp.rs 3
 crates/settings/src/lib.rs 4
 crates/shot/src/storybook.rs 3
@@ -72,9 +61,7 @@ crates/testnet/src/ctl/tui.rs 2
 crates/testnet/src/journey/perf.rs 1
 crates/testnet/src/journey/terminal_stories.rs 1
 crates/testnet/src/lib.rs 1
-crates/testnet/src/net.rs 5
-crates/testnet/tests/spec_links.rs 1
-crates/testnet/tests/spec_network.rs 1
+crates/testnet/src/net.rs 1
 crates/xtask/src/credentials.rs 2
 crates/xtask/src/release.rs 4
 crates/xtask/src/signing.rs 1

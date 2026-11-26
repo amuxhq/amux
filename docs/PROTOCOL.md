@@ -441,7 +441,19 @@ desktop daemon reads its interface addresses every two seconds) the profile
 binds its socket afresh on its port, lists its addresses again and tells
 every path machine, which probes its paths again; the link stays on whatever
 still answers, the relay's path if nothing else, and moves back when a
-better path answers.
+better path answers. On Windows the addresses read are only those of
+adapters that are up, and none of a tunnel (Teredo, 6to4, IP-HTTPS), of a
+Hyper-V switch with no gateway (WSL's, the Default Switch), at 169.254, or
+an IPv6 temporary address beside a stable one, so the temporary address's
+daily replacement is no network change (`node::platform::interface_ips`).
+
+The profile's socket is its port's alone (`SO_EXCLUSIVEADDRUSE` on
+Windows, where a socket asking to share a port could otherwise bind it
+too), and an ICMP unreachable a send brings back is no receive error
+(`SIO_UDP_CONNRESET` off on Windows, which otherwise reports it on the next
+receive). On Windows, devices nearby reach the socket only through a
+firewall rule; `amux setup firewall` adds it, and `amux status` says
+whether there is one (`node::firewall`).
 
 **Punching** is for paid accounts. A host on a paid account learns from the
 relay the public address its packets arrive from (`observed_addr`,

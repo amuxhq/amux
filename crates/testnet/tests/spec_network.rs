@@ -2614,10 +2614,6 @@ async fn a_host_is_seen_going_and_coming_with_its_identity_and_its_sign_in() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg_attr(
-    windows,
-    ignore = "windows: the session times out waiting for \"after the rebind\""
-)]
 async fn a_direct_link_keeps_its_session_through_a_rebind_a_large_transfer_and_a_poor_network() {
     use provider_fakes::script::Step;
 
@@ -2934,6 +2930,124 @@ async fn a_host_dials_the_peer_that_answered_its_pairing_again_after_that_peer_r
     until_link(&net, "desk", "box", true, REDIAL_PATIENCE).await;
     println!("desk dialled box again without discovery");
 
+    net.shutdown().await.unwrap();
+}
+
+/// One host updates while a client of the other watches an agent working
+/// on it. Box runs under its supervisor; desk, paired with it by address,
+/// holds a subscription open to box's agent mid-turn. A release is
+/// published and box's supervisor replaces its daemon under the agent,
+/// which works on; desk dials box again at the address that last worked,
+/// and the one subscription desk's client opened before the update reads
+/// what the agent says after it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_updated_mid_turn_leaves_a_paired_hosts_client_watching_its_agent() {
+    use provider_fakes::script::Step;
+
+    use crate::stories::{gate, says, text};
+
+    let mut net = Net::start_with(
+        Topology::new(),
+        testnet::NetOptions {
+            clock: testnet::ClockMode::Wall,
+            gated_lan: true,
+            ..testnet::NetOptions::default()
+        },
+    )
+    .await
+    .unwrap();
+    let scope = net.topology().scope.clone();
+    net.add_host(testnet::HostDecl {
+        supervised: true,
+        ..undiscovered_lan_host("box", &scope)
+    })
+    .await
+    .unwrap();
+    net.add_host(undiscovered_lan_host("desk", &scope))
+        .await
+        .unwrap();
+    net.add_link("desk", "box").await.unwrap();
+    assert!(net.link_up("desk", "box").await, "desk and box are linked");
+    net.spawn(
+        testnet::AgentDecl::new("worker", "box")
+            .steps(vec![
+                text("before the update"),
+                Step::TurnEnd,
+                text("working through the update"),
+                gate("updated"),
+                text("after the update"),
+                Step::TurnEnd,
+            ])
+            .prompt("go"),
+    )
+    .await
+    .unwrap();
+    // Desk serves the session once it holds the agent's row.
+    let ended = net.turn_ended("worker", 1).await.unwrap();
+    net.fence("desk", "worker", ended).await.unwrap();
+    let mut chat = net.observe("desk", "worker", 50).await.unwrap();
+    net.send("worker", "carry on").await.unwrap();
+    chat.observe_until(
+        |events| says(events, "working through the update"),
+        testnet::PATIENCE,
+    )
+    .await
+    .unwrap();
+    println!("desk's client watches worker mid-turn on box");
+
+    let published = net
+        .publish_release("0.0.2", "stable", None, false)
+        .await
+        .unwrap();
+    println!("{}", published.installed);
+    // The supervisor fetches, checks and starts the release before it
+    // stops the daemon it replaces, so this is more than loopback traffic.
+    testnet::until_within(
+        "box's daemon to serve 0.0.2",
+        2 * testnet::PATIENCE,
+        || async {
+            let mut door = net
+                .front_door("box")
+                .await
+                .map_err(|error| error.to_string())?;
+            let serving = door
+                .get_installation(wire::GetInstallationRequest {})
+                .await
+                .map_err(|error| error.to_string())?
+                .into_inner()
+                .installation
+                .map(|installation| installation.version)
+                .unwrap_or_default();
+            serving
+                .ends_with("0.0.2")
+                .then_some(())
+                .ok_or_else(|| format!("serving {serving:?}"))
+        },
+    )
+    .await
+    .unwrap();
+    println!("box's daemon serves 0.0.2, and worker runs on under it");
+
+    net.open_gate("updated").unwrap();
+    net.turn_ended("worker", 2).await.unwrap();
+    let events = chat
+        .observe_until(|events| says(events, "after the update"), REDIAL_PATIENCE)
+        .await
+        .unwrap();
+    assert!(
+        says(events, "before the update"),
+        "the one subscription read the whole turn"
+    );
+    let marks: Vec<_> = testnet::observe::marks(events)
+        .into_iter()
+        .filter(|mark| {
+            !matches!(
+                mark,
+                testnet::observe::Mark::Item(_) | testnet::observe::Mark::Append(_)
+            )
+        })
+        .collect();
+    println!("desk's subscription, opened before the update, read after it; its marks: {marks:?}");
     net.shutdown().await.unwrap();
 }
 

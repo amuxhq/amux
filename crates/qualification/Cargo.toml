@@ -56,6 +56,7 @@ path = "src/bin/acp_probe/main.rs"
 [dependencies]
 source-tree = { workspace = true }
 anyhow = { workspace = true }
+futures-util = { workspace = true }
 jiff = { workspace = true }
 node = { workspace = true }
 provider-fakes = { workspace = true }
@@ -77,7 +78,6 @@ uuid = { workspace = true, features = ["v4"] }
 wire = { workspace = true, features = ["grpc"] }
 
 [target.'cfg(unix)'.dependencies]
-futures-util = { workspace = true }
 libc = { workspace = true }
 tokio-tungstenite = { workspace = true }
 
@@ -91,6 +91,7 @@ bytes = { workspace = true }
 client = { workspace = true }
 hyper-util = { workspace = true }
 interpret = { workspace = true }
+os = { workspace = true }
 prost = { workspace = true }
 tempfile = { workspace = true }
 tower = { workspace = true }

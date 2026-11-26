@@ -3,8 +3,10 @@
 //!
 //! The daemon finds the provider command on its PATH. The lane puts a
 //! folder first on that PATH holding the probe under the provider's name
-//! (`claude` is claude-probe, `codex` is codex-probe), told by its
-//! environment to run the real provider and record what crosses: headless
+//! (`claude` is claude-probe, `codex` is codex-probe, with the platform's
+//! executable suffix), a hard link or a copy as `provider-fakes`' dispatch
+//! places a fake, so nothing is a symbolic link or needs an execute bit. Its
+//! environment tells it to run the real provider and record what crosses: headless
 //! Claude's stream lines, terminal Claude's screen, keys, hooks and
 //! transcript rows, Codex's app-server messages. Each provider process is
 //! one spawn, a line in the capture's `spawn.jsonl` with its arguments and
@@ -46,25 +48,27 @@ fn probe(name: &str) -> Result<PathBuf, String> {
     }
 }
 
-/// The first `command` on the PATH.
-fn on_path(command: &str) -> Result<PathBuf, String> {
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    std::env::split_paths(&path)
-        .map(|dir| dir.join(command))
-        .find(|candidate| candidate.is_file())
-        .ok_or_else(|| format!("no {command} on the PATH"))
+/// The program `command` runs, found as the daemon finds a provider
+/// ([`os::paths::Lookup`]: an execute bit on Unix; on Windows `PATHEXT`'s
+/// extensions, so npm's `claude.cmd` is found too), and the `PATH` it was
+/// found on, which it runs with: on Windows that takes in folders added to
+/// the registry's since this process started, where npm's shim finds
+/// `node`.
+pub fn on_path(command: &str) -> Result<(PathBuf, OsString), String> {
+    let lookup = os::paths::Lookup::new(&std::collections::HashMap::new());
+    let program = lookup
+        .find(std::ffi::OsStr::new(command))
+        .ok_or_else(|| format!("no {command} on the PATH"))?;
+    Ok((program, lookup.path().to_owned()))
 }
 
-/// The recordings folder for `kind`, next to the test binary's target
-/// directory.
+/// The recordings folder for `kind`, in the lane's target folder
+/// ([`qualification::recording::live::kept_target`]).
 pub fn recordings_dir(tag: &str) -> PathBuf {
-    let exe = std::env::current_exe().expect("the test binary's path");
-    let target = exe
-        .ancestors()
-        .nth(3)
-        .map(Path::to_owned)
-        .unwrap_or_else(|| PathBuf::from("target"));
-    target.join("live").join("recordings").join(tag)
+    qualification::recording::live::kept_target()
+        .join("live")
+        .join("recordings")
+        .join(tag)
 }
 
 impl Capture {
@@ -76,7 +80,7 @@ impl Capture {
         tag: &str,
         command: &str,
     ) -> Result<(Capture, Vec<(String, OsString)>), String> {
-        let real = on_path(command)?;
+        let (real, path) = on_path(command)?;
         let (probe, prefix) = match kind {
             Kind::Codex => (probe("codex-probe")?, "CODEX"),
             _ => (probe("claude-probe")?, "CLAUDE"),
@@ -86,8 +90,10 @@ impl Capture {
         for folder in [&shim, &dir] {
             std::fs::create_dir_all(folder).map_err(|error| error.to_string())?;
         }
-        std::os::unix::fs::symlink(&probe, shim.join(command)).map_err(|e| e.to_string())?;
-        let path = std::env::var_os("PATH").unwrap_or_default();
+        provider_fakes::dispatch::link(&probe, &provider_fakes::dispatch::program(&shim, command))
+            .map_err(|error| error.to_string())?;
+        // The daemon, the probe and the provider behind it all run on the
+        // PATH the provider was found on, the probe's folder first.
         let path = std::env::join_paths(std::iter::once(shim).chain(std::env::split_paths(&path)))
             .map_err(|error| error.to_string())?;
         let env = vec![

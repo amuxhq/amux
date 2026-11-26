@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use super::common::*;
-use super::terminal::{TerminalJourney, agent_row, at_home, at_rest, chat_of, working};
+use super::terminal::{TerminalJourney, agent_row, at_home, at_rest, chat_of, offered, working};
 use super::{
     Proved, holds, items, negative_control, never_sent, phase, poll, prompts, quoted,
     reflected_once, root,
@@ -510,10 +510,12 @@ fn manage_agent(journey: &mut TerminalJourney) -> Proved {
     journey.wait_terms(&pane, &["What should the new agent work on?", "Claude"])?;
     journey.type_text(&pane, HELLO)?;
     journey.keys(&pane, &["Enter"])?;
+    // The chat opens on the reply, and offers the agent's permissions once
+    // it has fetched them.
     journey.wait(
         &pane,
-        |frame| chat_of(frame).is_some() && at_rest(frame, &[HELLO, READY]),
-        "the first reply",
+        |frame| chat_of(frame).is_some() && at_rest(frame, &[HELLO, READY]) && offered(frame),
+        "the first reply, with the agent's permissions",
     )?;
     let created = journey.wait_inventory(
         "desk",
@@ -1911,6 +1913,7 @@ fn new_agent_worktree(journey: &mut TerminalJourney) -> Proved {
             chat_of(frame).as_deref() == Some(name)
                 && at_rest(frame, &["Working in the new worktree."])
                 && frame.contains(&format!("{name} │ {name} "))
+                && offered(frame)
         },
         "the new agent's reply, on its branch",
     )?;
@@ -1994,6 +1997,7 @@ fn new_agent_worktree(journey: &mut TerminalJourney) -> Proved {
                     &["Redesign it again.", "Working in the new worktree."],
                 )
                 && frame.contains(&format!("{second} │ {second} "))
+                && offered(frame)
         },
         "the second agent's reply, on its branch",
     )?;

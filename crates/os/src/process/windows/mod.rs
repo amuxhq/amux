@@ -12,8 +12,8 @@ use std::path::Path;
 
 use windows_sys::Win32::Foundation::{
     CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_ACCESS_DENIED,
-    ERROR_INVALID_PARAMETER, ERROR_MORE_DATA, GetHandleInformation, HANDLE, HANDLE_FLAG_INHERIT,
-    SetHandleInformation, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    ERROR_INVALID_PARAMETER, ERROR_MORE_DATA, FILETIME, GetHandleInformation, HANDLE,
+    HANDLE_FLAG_INHERIT, SetHandleInformation, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows_sys::Win32::System::Console::{
     GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, SetStdHandle,
@@ -34,11 +34,12 @@ use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
 use windows_sys::Win32::System::Threading::{
     CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
     CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList,
-    EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess, GetProcessId, INFINITE,
-    InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess,
-    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_SUSPEND_RESUME, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, STARTF_USESTDHANDLES,
-    STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+    EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess, GetProcessId,
+    GetProcessTimes, INFINITE, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
+    OpenProcess, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROCESS_INFORMATION, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SUSPEND_RESUME, PROCESS_SYNCHRONIZE,
+    PROCESS_TERMINATE, QueryFullProcessImageNameW, STARTF_USESTDHANDLES, STARTUPINFOEXW,
+    TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
 use super::{Descendant, Detach, Given, Replaced, Spawnable, Spawned, Stream};
@@ -1071,6 +1072,53 @@ impl ProcessRef {
             io::ErrorKind::Unsupported,
             "Windows has no way to ask a process without a window to finish",
         ))
+    }
+
+    pub(super) fn image(&self) -> io::Result<std::path::PathBuf> {
+        use std::os::windows::ffi::OsStringExt as _;
+        let mut buffer = vec![0u16; 32_768];
+        let mut size = buffer.len() as u32;
+        // SAFETY: `buffer` holds `size` units; the handle is ours, with
+        // PROCESS_QUERY_LIMITED_INFORMATION.
+        let read = unsafe {
+            QueryFullProcessImageNameW(
+                self.raw(),
+                PROCESS_NAME_WIN32,
+                buffer.as_mut_ptr(),
+                &mut size,
+            )
+        };
+        if read == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(std::ffi::OsString::from_wide(&buffer[..size as usize]).into())
+    }
+
+    pub(super) fn started(&self) -> io::Result<std::time::SystemTime> {
+        let zero = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+        // SAFETY: querying a process handle we own into four FILETIMEs.
+        let read = unsafe {
+            GetProcessTimes(
+                self.raw(),
+                &mut created,
+                &mut exited,
+                &mut kernel,
+                &mut user,
+            )
+        };
+        if read == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // 100 ns units since 1601, the Unix epoch 11644473600 s after it.
+        let ticks = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
+        let since_unix = ticks
+            .checked_sub(11_644_473_600 * 10_000_000)
+            .ok_or_else(|| io::Error::other("the process started before 1970"))?;
+        Ok(std::time::UNIX_EPOCH + std::time::Duration::from_nanos(since_unix * 100))
     }
 
     #[cfg(feature = "async")]

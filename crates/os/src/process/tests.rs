@@ -541,6 +541,34 @@ fn a_process_ref_waits_for_a_live_process() {
     });
 }
 
+/// A pinned process names the program it runs and when it started: this
+/// test's own binary, started before now and after this test asked for a
+/// child it starts.
+#[test]
+fn a_pinned_process_names_its_program_and_start() {
+    let own = ProcessRef::open(std::process::id()).unwrap();
+    let image = own.image().unwrap();
+    let exe = std::env::current_exe().unwrap();
+    assert_eq!(
+        std::fs::canonicalize(&image).unwrap(),
+        std::fs::canonicalize(&exe).unwrap(),
+        "{image:?}"
+    );
+    let now = std::time::SystemTime::now();
+    assert!(own.started().unwrap() <= now);
+    // Linux knows the boot time to the second.
+    let slack = Duration::from_secs(2);
+    let before = std::time::SystemTime::now();
+    let driven = Driven::start(helper("ticker"));
+    let child = ProcessRef::of_std_child(&driven.child).unwrap();
+    let started = child.started().unwrap();
+    assert!(
+        started + slack >= before && started <= std::time::SystemTime::now() + slack,
+        "{started:?} vs {before:?}"
+    );
+    drop(driven);
+}
+
 #[test]
 fn opening_no_process_is_not_found() {
     let error = ProcessRef::open(0x7FFF_FFF0).unwrap_err();

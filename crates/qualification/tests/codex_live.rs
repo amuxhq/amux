@@ -2,10 +2,8 @@
 //! such as `just live codex attach`.
 //! See live/mod.rs for what a run judges and reports.
 
-#[cfg(unix)]
 mod live;
 
-#[cfg(unix)]
 fn main() -> std::process::ExitCode {
     use live::Scenario;
     live::main(live::Driver {
@@ -22,9 +20,4 @@ fn main() -> std::process::ExitCode {
         },
         replay: interpret::replay::<interpret::codex::Codex>,
     })
-}
-
-#[cfg(not(unix))]
-fn main() {
-    println!("live codex: not_run on this platform");
 }

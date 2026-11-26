@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! <data_dir>/
-//!   installation.lock     exclusive; one daemon per data dir
+//!   installation.lock     exclusive; one daemon per data dir, its pid
 //!   generation            boot id, clean-shutdown flag, generation counter
 //!   installation_id       this installation's random id, written once
 //!   reports/              debug bundles
@@ -50,8 +50,10 @@ pub(crate) fn installation_id(data_dir: &Path) -> io::Result<uuid::Uuid> {
 
 /// The installation's exclusive lock, held for the daemon's lifetime. The
 /// file is never removed: unlinking it would let a second opener lock a
-/// different inode while this one is still held. It holds no data; what it
-/// would hold stays readable while it is held ([`os::lock::FileLock`]).
+/// different inode while this one is still held. It holds the daemon's
+/// pid, readable while it is held ([`os::lock::FileLock`]), as the
+/// supervisor's lock holds the supervisor's: the daemon is known by it
+/// before it serves anything, and is believed only while the lock is held.
 #[derive(Debug)]
 pub struct InstallationLock {
     _lock: os::lock::FileLock,
@@ -59,12 +61,17 @@ pub struct InstallationLock {
 
 impl InstallationLock {
     /// Takes `<data_dir>/installation.lock`, creating the directory as
-    /// needed, or reports that another daemon holds it.
+    /// needed, and writes this process's pid in it; or reports that another
+    /// daemon holds it.
     pub fn acquire(data_dir: &Path) -> Result<Self, LockError> {
         private_dir(data_dir).map_err(LockError::Io)?;
         let path = data_dir.join(INSTALLATION_LOCK);
         match os::lock::FileLock::try_acquire(&path).map_err(LockError::Io)? {
-            Some(lock) => Ok(Self { _lock: lock }),
+            Some(mut lock) => {
+                lock.write_data(std::process::id().to_string().as_bytes())
+                    .map_err(LockError::Io)?;
+                Ok(Self { _lock: lock })
+            }
             None => Err(LockError::Busy(path)),
         }
     }
@@ -289,5 +296,24 @@ mod tests {
         assert!(!profile.join(".dump-ef.sqlite").exists());
         assert!(!profile.join(".dump-ef.sqlite-wal").exists());
         assert!(profile.join(STORE).exists());
+    }
+
+    /// The lock names the daemon that holds it, readable while it is held:
+    /// what finds a daemon before it serves anything.
+    #[test]
+    fn the_installation_lock_names_its_daemon() {
+        let data = tempfile::tempdir().unwrap();
+        let lock = InstallationLock::acquire(data.path()).unwrap();
+        let path = data.path().join(INSTALLATION_LOCK);
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            std::process::id().to_string()
+        );
+        assert!(matches!(
+            InstallationLock::acquire(data.path()),
+            Err(LockError::Busy(_))
+        ));
+        drop(lock);
+        assert!(!os::lock::FileLock::held(&path).unwrap());
     }
 }

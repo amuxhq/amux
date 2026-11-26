@@ -357,7 +357,7 @@ $TMPDIR/amux-<uid>/<hash>, <hash>.d
 
 <root>/                       the config's `root`; default ~/.local/share/amux ($XDG_DATA_HOME/amux)
   amux.sock                   the front door; on Windows a file naming the pipe the daemon listens on
-  installation.lock           one daemon per installation
+  installation.lock           one daemon per installation; holds the daemon's pid
   installation_id             what usage analytics count an install by; minted at the first start that sends them
   generation                  boot id, clean-shutdown flag and a counter a replica compares
   onboarding.json             the onboarding steps a person confirmed or skipped, and whether a paired

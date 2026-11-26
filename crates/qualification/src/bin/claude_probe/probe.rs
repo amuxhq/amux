@@ -11,12 +11,15 @@ use tokio::sync::mpsc;
 
 #[tokio::main]
 pub(super) async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // out of scope on Windows: terminal Claude, whose hooks, tool servers
+    // and terminal the capture wraps.
     #[cfg(unix)]
     if std::env::args().nth(1).as_deref() == Some(super::capture::HOOK) {
         let mut command = std::env::args().skip(2);
         let program = command.next().ok_or("a wrapped hook names its command")?;
         return super::capture::hook(&program, &command.collect::<Vec<_>>());
     }
+    // out of scope on Windows: terminal Claude.
     #[cfg(unix)]
     if std::env::args().nth(1).as_deref() == Some(super::capture::MCP_TAP) {
         let mut command = std::env::args().skip(2);
@@ -310,6 +313,8 @@ async fn run_capture_proxy() -> Result<(), Box<dyn std::error::Error>> {
             "cwd": std::env::current_dir()?,
         }),
     )?;
+    // out of scope on Windows: terminal Claude, run in a terminal of the
+    // proxy's own.
     #[cfg(unix)]
     if super::capture::in_terminal() {
         let args = args

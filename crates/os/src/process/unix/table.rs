@@ -162,6 +162,56 @@ pub(super) fn unreaped_row(pid: i32) -> Option<Row> {
     })
 }
 
+/// The program file `pid` runs.
+#[cfg(target_os = "macos")]
+pub(super) fn image(pid: i32) -> std::io::Result<std::path::PathBuf> {
+    use std::os::unix::ffi::OsStrExt as _;
+    let mut buffer = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    // SAFETY: the buffer holds the size passed; the kernel writes at most
+    // that many bytes and says how many.
+    let length =
+        unsafe { libc::proc_pidpath(pid, buffer.as_mut_ptr().cast(), buffer.len() as u32) };
+    if length <= 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    buffer.truncate(length as usize);
+    Ok(std::ffi::OsStr::from_bytes(&buffer).into())
+}
+
+/// A row's start time on the wall clock: macOS keeps it as microseconds
+/// since the epoch.
+#[cfg(target_os = "macos")]
+pub(super) fn wall_clock(started: u64) -> std::io::Result<std::time::SystemTime> {
+    Ok(std::time::UNIX_EPOCH + std::time::Duration::from_micros(started))
+}
+
+/// The program file `pid` runs.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(super) fn image(pid: i32) -> std::io::Result<std::path::PathBuf> {
+    std::fs::read_link(format!("/proc/{pid}/exe"))
+}
+
+/// A row's start time on the wall clock: Linux keeps it as clock ticks
+/// since the boot, whose time `/proc/stat` gives to the second.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(super) fn wall_clock(started: u64) -> std::io::Result<std::time::SystemTime> {
+    let stat = std::fs::read_to_string("/proc/stat")?;
+    let booted: u64 = stat
+        .lines()
+        .find_map(|line| line.strip_prefix("btime "))
+        .and_then(|secs| secs.trim().parse().ok())
+        .ok_or_else(|| std::io::Error::other("/proc/stat has no boot time"))?;
+    // SAFETY: sysconf only reads a configuration value.
+    let hertz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    if hertz <= 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let hertz = hertz as u64;
+    Ok(std::time::UNIX_EPOCH
+        + std::time::Duration::from_secs(booted + started / hertz)
+        + std::time::Duration::from_nanos((started % hertz) * 1_000_000_000 / hertz))
+}
+
 #[cfg(any(target_os = "linux", target_os = "android"))]
 fn read_table() -> std::io::Result<Vec<Row>> {
     let mut rows = Vec::new();
@@ -213,6 +263,16 @@ fn read_table() -> std::io::Result<Vec<Row>> {
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
 pub(super) fn row(_pid: i32) -> Option<Row> {
     None
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
+pub(super) fn image(_pid: i32) -> std::io::Result<std::path::PathBuf> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
+pub(super) fn wall_clock(_started: u64) -> std::io::Result<std::time::SystemTime> {
+    Err(std::io::ErrorKind::Unsupported.into())
 }
 
 /// Whether this OS's table can be read at all.

@@ -264,7 +264,16 @@ pub fn sync_dir(dir: &Path) -> io::Result<()> {
     imp::sync_dir(dir)
 }
 
-// Patient renames and removals ----------------------------------------------
+// Patient reads, renames and removals -----------------------------------------
+
+/// Reads the whole of `path`, retrying for [`SHARING_PATIENCE`] while
+/// something else holds it. [`write_durably`] and [`create_new_durably`]
+/// put a file in place through a handle shared with nobody, closed a
+/// moment later, so on Windows a reader that finds the file in that moment
+/// meets a sharing violation; Unix has none, so it is one read there.
+pub fn read_patiently(path: &Path) -> io::Result<Vec<u8>> {
+    patiently(SHARING_PATIENCE, || std::fs::read(path))
+}
 
 /// Renames `from` to `to`, replacing a file at `to`, retrying for
 /// [`SHARING_PATIENCE`] while something else holds either one (Windows'

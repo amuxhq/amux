@@ -215,9 +215,18 @@ A net on a fake host never runs them.
 A process host is a real `amux` daemon in its own process, with its own installation config under the net's
 root (`keep_awake = false`, `telemetry = false`, `updates = "manual"`, the net's discovery scope and release feed). The
 net starts it with `amux server start` and stops it with `amux server stop`, as a person's CLI would, and kills
-it with SIGKILL on the process that holds its installation lock. Its agents keep running through a kill, in their
-grace, and the next daemon adopts them. The net reaches it as a client does, over its front door and profile
-socket: the waits that listen inside an in-process runtime (`fence`, `turn_ended`, `input_settled`) use the
+it outright (`ProcessRef::kill`: SIGKILL, `TerminateProcess`). The daemon it kills is the process serving the front
+door, as the operating system names the socket's server, while the installation lock is held across the look; a
+supervisor is the pid its `supervisor.lock` holds. Removing a process host, or shutting the net down, kills both
+until neither lock is held, and a test pins them first with `Net::host_processes` to see each exit. A daemon that
+took its lock and stalled before serving its front door has no server to name it, so there it is the pid its
+`installation.lock` holds, believed as the supervisor's is: while the lock stays held across the look and still
+names it. A daemon writes that pid a moment after it takes the lock, so until then the lock names an earlier
+daemon, whose pid may since be another process's: the pid is believed only when its process runs the host's
+`amux` (`ProcessRef::image`) and started no later than the pid was written (`ProcessRef::started` against the
+file's last write). Its agents
+keep running through a kill, in their grace, and the next daemon adopts them. The net reaches it as a client does,
+over its front door and profile socket: the waits that listen inside an in-process runtime (`fence`, `turn_ended`, `input_settled`) use the
 profile's Subscribe stream instead, back-filling with Fetch past the 200 rows a subscription opens with.
 Subscribing on a host that only replicates an agent can start replication there, which the in-process wait does
 not. It lists no interface addresses to its peers (`AMUX_TEST_INTERFACES` is set empty), as an in-process host on

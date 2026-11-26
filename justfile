@@ -559,9 +559,16 @@ merge-main:
 # With no arguments it reports not_run for every kind and starts nothing.
 # Its tests are programs of their own, not libtest's, so each runs here as
 # it is, with the operator's HOME, after Buck2 builds it and the binaries
-# it starts.
+# it starts. On Windows each runs as a Buck2 test instead (never cached),
+# in NativeLink's own session, which has the operator's profile and PATH:
+# run on the desktop, the daemon and agents it starts would open windows
+# there. It is told this checkout (`--checkout`), where it keeps its
+# recordings (target/live) and joins ACP's corpus: nothing it writes in
+# NativeLink's work folder, on this same machine, comes back. Its
+# report shows when it ends, or when the test is stopped at its bound
+# (inside the recipe's, so what it printed is kept).
 live *ARGS:
-    set -e; if [ "${1-}" = -- ]; then shift; fi; if [ $# -eq 0 ]; then for kind in claude_pty claude_sdk codex acp; do echo "live $kind: not_run (no scenario selected)"; done; exit 0; fi; kind=$1; shift; case "$kind" in claude_pty|claude_sdk|codex|acp) ;; *) echo "live: unknown kind $kind; known: claude_pty, claude_sdk, codex, acp" >&2; exit 2 ;; esac; {{bounded}} 3600 {{buck2}} run "//crates/qualification:${kind}_live" -- "$@"
+    set -e; if [ "${1-}" = -- ]; then shift; fi; if [ $# -eq 0 ]; then for kind in claude_pty claude_sdk codex acp; do echo "live $kind: not_run (no scenario selected)"; done; exit 0; fi; kind=$1; shift; case "$kind" in claude_pty|claude_sdk|codex|acp) ;; *) echo "live: unknown kind $kind; known: claude_pty, claude_sdk, codex, acp" >&2; exit 2 ;; esac; if [ "{{os()}}" = windows ]; then passed=; for arg in "$@"; do passed="$passed --test-arg $arg"; done; {{bounded}} 3600 {{buck2}} test "//crates/qualification:${kind}_live" --target-platforms root//build/platforms:{{windows_platform}}-cli-testing-dev -- --timeout 3300 "--test-arg=--checkout=$(pwd -W)" $passed; else {{bounded}} 3600 {{buck2}} run "//crates/qualification:${kind}_live" -- "$@"; fi
 
 # Waves of Sonnet testers, each on a test network of its own with real
 # Claude and Codex agents, keeping evidence of what they find (docs/QA.md).

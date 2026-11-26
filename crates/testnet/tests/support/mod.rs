@@ -69,7 +69,20 @@ pub async fn until_via(net: &Net, a: &str, b: &str, via: LiveRoute) {
         }
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|stuck| {
+        // What each side's links did is what tells a crossing from a slow
+        // path change.
+        for (host, peer) in [(a, b_id), (b, a_id)] {
+            let log: Vec<_> = net
+                .link_log(host)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|line| line.peer == peer)
+                .collect();
+            println!("{host}'s link log toward the other: {log:?}");
+        }
+        panic!("{stuck:?}")
+    });
 }
 
 /// Asserts that each end of the link between `a` and `b` is carried

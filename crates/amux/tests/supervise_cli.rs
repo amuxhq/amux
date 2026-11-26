@@ -813,13 +813,8 @@ async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
     );
 }
 
-// Built everywhere so the test listing names it wherever the contracts
-// are checked.
 // macOS only by nature: a power assertion, which only macOS shows (pmset)
-#[cfg_attr(
-    not(target_os = "macos"),
-    ignore = "only macOS holds a sleep assertion"
-)]
+#[cfg(target_os = "macos")]
 #[tokio::test(flavor = "multi_thread")]
 async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
     fn assertions_of(pid: u32) -> Vec<String> {
@@ -892,13 +887,8 @@ async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
 }
 
 /// `start_at_login` writes the login item for the next login and removes
-/// it, with amux stopped; an install without a supervisor has none.
-// Linux only by nature: systemd's user session, which registering the unit
-// needs and a test runner has none of
-#[cfg_attr(
-    target_os = "linux",
-    ignore = "registering the systemd unit needs a user session"
-)]
+/// it, with amux stopped; an install without a supervisor has none. The
+/// test's items are its own, which no service manager is told of.
 #[test]
 fn start_at_login_writes_and_removes_the_login_item() {
     let install = Install::new(true, "");

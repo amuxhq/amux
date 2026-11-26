@@ -1,4 +1,4 @@
-// The iOS tools run on the Mac that builds the app, and nowhere else.
+// macOS only by nature: the iOS tools run on the Mac that builds the app, and nowhere else
 #![cfg(target_os = "macos")]
 
 use std::os::unix::fs::PermissionsExt;

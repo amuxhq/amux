@@ -15,6 +15,7 @@ pub mod signal;
 pub mod system;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
+pub mod wake;
 
 /// A process id, as every OS amux runs on numbers them.
 pub type Pid = u32;

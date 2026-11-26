@@ -11,7 +11,7 @@ DEPS = [
     "//third-party/rust:sha2",
     "//third-party/rust:thiserror",
     "//third-party/rust:tokio",
-] + select({"DEFAULT": ["//third-party/rust:libc"], "prelude//os:windows": [], "prelude//os:none": []})
+]
 
 TEST_DEPS = [
     "//crates/provider-fakes:provider-fakes",

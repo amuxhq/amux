@@ -312,6 +312,33 @@ fn the_execute_bit_is_the_one_make_executable_sets() {
     );
 }
 
+/// A copy of a built program can be signed again, and still runs as a
+/// program; only macOS changes it.
+#[test]
+fn a_copied_program_is_signed_ad_hoc() {
+    let dir = tempfile::tempdir().unwrap();
+    let program = dir.path().join(crate::paths::exe_name("copy"));
+    fs::copy(std::env::current_exe().unwrap(), &program).unwrap();
+    make_executable(&program).unwrap();
+    let before = fs::read(&program).unwrap();
+    sign_ad_hoc(&program).unwrap();
+    assert!(is_executable(&program, &fs::metadata(&program).unwrap()));
+    if std::env::consts::OS != "macos" {
+        assert!(fs::read(&program).unwrap() == before, "the program changed");
+    }
+}
+
+/// A file no process quarantined comes out of a clearing as it was.
+#[test]
+fn a_file_with_no_quarantine_is_cleared_as_it_was() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("download");
+    fs::write(&file, "bytes").unwrap();
+    clear_quarantine(&file).unwrap();
+    clear_quarantine(&file).unwrap();
+    assert_eq!(fs::read_to_string(&file).unwrap(), "bytes");
+}
+
 /// A file's and a folder's modification time are set alike.
 #[test]
 fn set_modified_sets_a_files_and_a_folders_time() {

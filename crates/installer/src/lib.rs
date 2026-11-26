@@ -30,7 +30,6 @@ use settings::InstallationConfig;
 use sha2::{Digest as _, Sha256};
 use tokio::io::AsyncWriteExt as _;
 
-#[cfg(target_os = "macos")] // macOS only by nature: the Mac app's own update feed
 pub mod update;
 
 /// How long [`ensure`] waits for a started amux to answer.
@@ -408,23 +407,8 @@ fn fetch(url: &str) -> impl FnOnce(reqwest::Error) -> Error {
 /// item that runs it has nobody to answer Gatekeeper's question.
 fn make_executable(path: &Path) -> Result<(), Error> {
     os::fs::make_executable(path).map_err(io("making executable", path))?;
-    // Windows keeps no quarantine of what a process writes, and Linux has
-    // no Gatekeeper.
-    #[cfg(target_os = "macos")] // macOS only by nature: Gatekeeper's quarantine attribute
-    {
-        use std::os::unix::ffi::OsStrExt as _;
-        let path = std::ffi::CString::new(path.as_os_str().as_bytes())
-            .expect("a path has no interior NUL");
-        // SAFETY: both arguments are NUL-terminated strings that outlive
-        // the call. A file without the attribute fails harmlessly.
-        unsafe {
-            libc::removexattr(
-                path.as_ptr(),
-                c"com.apple.quarantine".as_ptr(),
-                libc::XATTR_NOFOLLOW,
-            );
-        }
-    }
+    // A file whose quarantine stays is Gatekeeper's to ask about.
+    let _ = os::fs::clear_quarantine(path);
     Ok(())
 }
 

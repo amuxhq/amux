@@ -5,7 +5,6 @@ pub mod experiments;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use gethostname::gethostname;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 pub use wire::HostName;
@@ -63,50 +62,15 @@ pub enum ConfigError {
 /// The amux account service a profile signs in to unless told otherwise.
 pub const DEFAULT_CLOUD_URL: &str = "https://amux.sh";
 
-/// The system hostname without its mDNS `.local` suffix.
-fn system_host_name() -> String {
-    fallback_host_name(
-        &gethostname()
-            .into_string()
-            .unwrap_or_else(|_| "unknown".to_string()),
-    )
-}
-
-/// The name a host goes by when the config names none: the Mac's Computer
-/// Name where there is one, otherwise the system hostname without its mDNS
-/// `.local` suffix. On a Mac this runs a subprocess, so the daemon resolves
-/// it once at start. A system name that is no host name (a long one, say)
-/// is made the nearest one rather than refused: a host must start with no
+/// The name a host goes by when the config names none: the computer's own
+/// name ([`os::system::computer_name`]: the Mac's Computer Name where there
+/// is one, otherwise the system hostname without its mDNS `.local`
+/// suffix). On a Mac this runs a subprocess, so the daemon resolves it
+/// once at start. A system name that is no host name (a long one, say) is
+/// made the nearest one rather than refused: a host must start with no
 /// configuration.
 pub fn default_host_name() -> HostName {
-    // macOS only by nature: the Computer Name a Mac keeps apart from its host name
-    #[cfg(target_os = "macos")]
-    if let Some(name) = macos_computer_name() {
-        return HostName::lossy(&name);
-    }
-    HostName::lossy(&system_host_name())
-}
-
-// macOS only by nature: the Computer Name a Mac keeps apart from its host name
-#[cfg(target_os = "macos")]
-fn macos_computer_name() -> Option<String> {
-    let output = std::process::Command::new("scutil")
-        .args(["--get", "ComputerName"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let name = String::from_utf8(output.stdout).ok()?;
-    let name = name.trim();
-    (!name.is_empty()).then(|| name.to_string())
-}
-
-fn fallback_host_name(host_name: &str) -> String {
-    host_name
-        .strip_suffix(".local")
-        .unwrap_or(host_name)
-        .to_string()
+    HostName::lossy(&os::system::computer_name().unwrap_or_else(|| "unknown".to_string()))
 }
 
 /// The host name a configured `host_name` is, or why it is none.
@@ -995,12 +959,6 @@ mod tests {
                 .as_str()
                 .is_empty()
         );
-    }
-
-    #[test]
-    fn fallback_host_name_strips_the_mdns_suffix() {
-        assert_eq!(fallback_host_name("Adas-MacBook.local"), "Adas-MacBook");
-        assert_eq!(fallback_host_name("build-host"), "build-host");
     }
 
     #[test]

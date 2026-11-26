@@ -13,6 +13,9 @@
 //! when it quits; nothing here touches the running app. Every other staged
 //! version is removed, and everything once the running app is current, so
 //! the directory holds at most one.
+//!
+//! It builds on every desktop OS, though only the Mac app calls it: it
+//! unpacks with macOS's `ditto`, which another OS reports missing.
 
 use std::path::{Path, PathBuf};
 

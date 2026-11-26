@@ -435,6 +435,25 @@ pub fn make_executable(path: &Path) -> io::Result<()> {
     imp::make_executable(path)
 }
 
+/// Signs the program at `path` again, ad hoc, as a binary whose bytes were
+/// changed after linking needs before it runs. macOS: `codesign --force
+/// --sign -`, which only a Mach-O passes. Elsewhere nothing, and `Ok`: no
+/// other OS asks a program for a signature to run it (documented
+/// exception).
+pub fn sign_ad_hoc(path: &Path) -> io::Result<()> {
+    imp::sign_ad_hoc(path)
+}
+
+/// Takes Gatekeeper's quarantine off the file at `path` (not following a
+/// link), should the process that wrote it be one that marks what it
+/// downloads: a program run with nobody to answer Gatekeeper's question
+/// must not carry it. `Ok` when the file has none. Elsewhere nothing, and
+/// `Ok`: Windows keeps no quarantine of what a process writes, and Linux
+/// has no Gatekeeper (documented exception).
+pub fn clear_quarantine(path: &Path) -> io::Result<()> {
+    imp::clear_quarantine(path)
+}
+
 /// Whether the file at `path`, whose metadata is `meta`, can be run as a
 /// program. Unix: a regular file with an execute bit. Windows: a regular
 /// file whose extension `PATHEXT` lists (`.exe`, `.cmd`, `.bat`…).

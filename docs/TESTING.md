@@ -154,13 +154,28 @@ mod wt;
 ```
 
 The comment goes on the gate's line or in the comment lines directly above it, and must name one of those
-features; a whole file is gated the same way with `#![cfg(not(windows))]`. Nothing else compiles a test out on
-Windows. A test that fails there while its fix is being made stays compiled and is ignored, with what fails (not a
-guessed cause):
+features; a whole file is gated the same way with `#![cfg(not(windows))]`.
+
+A test of something only one OS has, which no test on the other could hold, is gated to that OS with a reason:
 
 ```rust
-#[cfg_attr(windows, ignore = "windows: the second daemon never answers on the pipe")]
+#[cfg(windows)] // Windows only by nature: Windows' installer
+mod windows_install;
 ```
+
+The side is one of four: `Windows only by nature`, `Unix only by nature` (`cfg(unix)` or `cfg(not(windows))`, for
+a mechanism Windows has no counterpart of, such as `install.sh` or a terminal's hangup signal), `macOS only by
+nature` (`target_os = "macos"`, such as dns-sd beside Bonjour) and `Linux only by nature` (`target_os = "linux"`).
+The marker holds only on a gate of test code, with a reason, whose predicate leaves out every desktop OS the side
+isn't (`cfg(unix)` marked macOS only fails, since Linux builds it). It is not for a behaviour every OS has and
+tests differently, which is one test written against the harness below, and code outside tests has no such
+marker: it goes in a home. The reason is the reviewer's to judge.
+
+Nothing else compiles a test out on Windows, and nothing holds one back there: `platform-check` is strict, so an
+`ignore = "windows: …"` fails the check. A test that fails on Windows is fixed in the change that finds it, or, if
+what it tests is something Windows leaves out, gated as above with that feature named. (During the Windows
+programme such a test was ignored with what failed, `#[cfg_attr(windows, ignore = "windows: <symptom>")]`, until
+its fix landed; none is left, and strict mode keeps it so.)
 
 A runtime skip, with its reason, is only for a missing privilege, such as the right to make symbolic links.
 
@@ -175,7 +190,7 @@ So that a test needs no gate, the harness does each platform-shaped thing one wa
 | holds Windows to showing no window | `os::testing::desktop`: `visible_windows` lists the top-level windows on the test's desktop whose own style shows them (`IsWindowVisible` is false for every window on the desktop of Buck's non-interactive task), each with its owner's pid and program; `job_members` the processes of the job Buck's runner put the test in, which nothing it starts can leave; `show_a_window` a window of the test's own, to see that a watch sees one; `Unsupported` on Unix. `amux/tests/windows_install.rs` samples them throughout its run and fails on any new window of its job's, or of Windows Terminal, which hosts a new console outside any job |
 | asks whether a file or folder is owner-only | `os::testing::is_private`: no group or other bits on Unix, a protected DACL for this user, SYSTEM and Administrators alone on Windows; what is private only by sitting in a private folder is not |
 | dials or serves a local socket | `agent_dir::local_socket`, never a Unix socket type, since the socket is a named pipe on Windows |
-| asks whether only its user may open a file or folder, or needs one other users may read, as an earlier build left a root | `os::testing::is_private` reads it back; `os::testing::private::open_to_others` opens one up (read for group and other on Unix; a grant to Users on Windows, which a folder passes on) |
+| asks whether only its user may open a file or folder, or needs one other users may read, such as a folder a root is made in | `os::testing::is_private` reads it back; `os::testing::private::open_to_others` opens one up (read for group and other on Unix; a grant to Users on Windows, which a folder passes on) |
 | needs a write refused or a file unreadable, a file held open by another program, or a link to a directory | `os::testing::faults` (the `os` crate's `testing` feature; `provider_fakes::faults` re-exports it): `deny` (a mode on Unix, a deny entry in the DACL on Windows), `read_only`, `hold_exclusively` (a share mode, Windows only), `link_dir` (a junction on Windows) and `symlink`, which says why it skipped where the user may not make one; a permission fault checks `faults::unenforced()` first, which is `Some` for a process running as root; a test whose refusal is a Windows DACL calls `faults::hold_to_acls()` first, which disables the privileges that pass any DACL (SeBackup, SeRestore, SeTakeOwnership, SeDebug) where the token has them enabled, as on GitHub's Windows runner, where such refusals never happened |
 
 A test that needs a program where a command is expected (a provider on the PATH, an SSH login, a wrapper, a
@@ -191,24 +206,26 @@ Names carry the platform's suffix (`dispatch::program`, `os::paths::exe_name`) a
 The same rule holds the code: desktop-platform conditionals (`cfg(unix)`, `cfg(windows)`, a desktop `target_os`,
 `target_family`, `std::os::unix`, `std::os::windows`, `libc::`, `windows_sys::`) live in the homes named for
 platform code: `crates/os`, agent-dir's `local_socket`, `crates/pty-host`, node's `platform` and the supervisor's
-`login` and `keep_awake`, the terminal client's `platform`, the phone bridges (`app-ffi`, `app-jni`) and the
-launcher. A home's tests are held like any other test, since they test the API callers use without `cfg`; only a home's file for one OS (`process/unix.rs`) may gate the tests of its own code. So a home's shared `tests.rs` holds what is true on every OS, with no gate, and a test of one OS's mechanism (a Job Object, a reused pid) sits in that OS's own module beside its code, declared there with `#[cfg(test)] mod tests;` (`process/windows/tests.rs`, or `signal/windows_tests.rs` named by `#[path]` from `signal/windows.rs`), with the roles and helpers only that OS has, which the shared tests reach through `imp::tests`. Elsewhere, a module gated whole for a feature Windows leaves out carries the same comment, on a gate that leaves it out of a Windows build (`cfg(not(windows))`, never `cfg(windows)`). The mobile
+`login` and `keep_awake`, the terminal client's `platform`, the phone bridges (`app-ffi`, `app-jni`), the
+launcher, and two harnesses' own `src/platform/` (provider-fakes' terminal and socket fakes, qualification's
+performance readers). A home's tests are held like any other test, since they test the API callers use without `cfg`; only a home's file for one OS (`process/unix.rs`) may gate the tests of its own code. So a home's shared `tests.rs` holds what is true on every OS, with no gate, and a test of one OS's mechanism (a Job Object, a reused pid) sits in that OS's own module beside its code, declared there with `#[cfg(test)] mod tests;` (`process/windows/tests.rs`, or `signal/windows_tests.rs` named by `#[path]` from `signal/windows.rs`), with the roles and helpers only that OS has, which the shared tests reach through `imp::tests`. Elsewhere, a module gated whole for a feature Windows leaves out carries the same comment, on a gate that leaves it out of a Windows build (`cfg(not(windows))`, never `cfg(windows)`). The mobile
 axis (`target_os = "ios"`, `target_os = "android"`) is a product choice and may appear anywhere, and so may
 `cfg!(windows)` read as a value, such as a default editor or a path separator, rather than as the condition of a
 statement.
 
 `just platform-check` holds both rules ([`build/checks/platform_check.py`](../build/checks/platform_check.py) says
-exactly what it counts, and what it takes for test code and for `cfg!` read as data). What the tree held when the
-check arrived is listed in [`build/checks/platform-allowlist.txt`](../build/checks/platform-allowlist.txt), a
-count per file: a file may hold no more than its count, and a file not listed none. A change that moves code into a
-home passes with a note that the file's entry can be lowered; the allowlist is lowered when the change lands
-(`just platform-check --write-allowlist`), never raised. Every `ignore = "windows: ..."` is counted, and
-`just platform-check --strict` fails while the allowlist holds anything or any test is ignored on Windows.
+exactly what it counts, and what it takes for test code and for `cfg!` read as data). It is strict: no file
+outside the homes holds a conditional, and no test is ignored on Windows. While the code moved into its homes, the
+check compared each file with an allowlist (`build/checks/platform-allowlist.txt`, a count per file of what the
+tree held when the check arrived, only ever lowered); Phase 6 emptied it and deleted the file, and with no
+allowlist the check is strict however it runs, so `just premerge`, through its Buck2 test `//:platform-check`,
+holds every change to it, and `--write-allowlist` refuses to write the file again. Every gate out of scope on
+Windows or only one OS has by nature is counted, and `--list` prints them.
 
 ```sh
 just platform-check                    # the check, through Buck2
-just platform-check --list             # every conditional it counts, file and line
-just platform-check --strict           # an empty allowlist and nothing ignored on Windows
+just platform-check --list             # every conditional it counts, and each gate only one OS has
+just platform-check --strict           # the same, as it always is with no allowlist
 ```
 
 ## The catalogue

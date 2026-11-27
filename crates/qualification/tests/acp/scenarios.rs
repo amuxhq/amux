@@ -571,13 +571,7 @@ async fn edit(cx: &Cx, notes: &mut Notes) -> Result<Verdict, String> {
 fn write_script(cx: &Cx, name: &str) -> Result<(), String> {
     let path = cx.project.join(name);
     std::fs::write(&path, "#!/bin/sh\necho made > \"$1\"\n").map_err(|error| error.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .map_err(|error| error.to_string())?;
-    }
-    Ok(())
+    os::fs::make_executable(&path).map_err(|error| error.to_string())
 }
 
 /// A shell command that needs permission, answered by `answer`.

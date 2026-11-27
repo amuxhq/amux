@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 agent-dir = { workspace = true }
+os = { workspace = true, features = ["async"] }
 node = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }

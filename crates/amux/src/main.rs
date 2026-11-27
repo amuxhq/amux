@@ -364,32 +364,15 @@ enum Hook {
     Claude,
 }
 
-/// Clears the signal mask this process was started with. A process inherits
-/// its launcher's mask, and Rust's spawn keeps it, so amux started from a
-/// thread that blocks signals (a Grand Central Dispatch worker, which is
-/// where the Mac app installs and starts amux) would never hear SIGTERM or SIGINT: the
-/// supervisor could not stop its daemon, nor `amux server stop` either, and
-/// every agent and tool started below them would inherit the same deafness.
-#[cfg(unix)]
-fn unblock_signals() {
-    // SAFETY: an empty set built by sigemptyset, set before any thread is
-    // started.
-    unsafe {
-        let mut none = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
-        libc::sigemptyset(none.as_mut_ptr());
-        libc::pthread_sigmask(libc::SIG_SETMASK, none.as_ptr(), std::ptr::null_mut());
-    }
-}
-
-#[cfg(not(unix))]
-fn unblock_signals() {}
-
 fn main() -> ExitCode {
     // First, before anything can start a child: the supervisor, daemon and
     // agents this process starts must not inherit its standard handles, or
     // a caller reading this process's output to its end waits on them.
     os::process::harden_start();
-    unblock_signals();
+    // Before any thread starts: a launcher that blocks signals (the Mac
+    // app starts amux from a Grand Central Dispatch worker) would leave
+    // this process, and everything it starts, deaf to SIGTERM and SIGINT.
+    os::process::unblock_signals();
     let cli = Cli::parse();
     let Some(command) = cli.command else {
         return report(open_ui(cli.config, cli.profile, cli.cloud_url));
@@ -592,18 +575,20 @@ fn run(command: Command, config_path: Option<PathBuf>, profile: Option<String>) 
                 })
                 .await
             }
-            #[cfg(unix)]
+            #[cfg(not(windows))] // out of scope on Windows: SSH with a Windows far end
             Command::Internal {
                 command: Internal::SshPair,
             } => {
                 let selected = connect::profile(&config, profile).await?;
                 pairing::pair_recv(connect::admin_of(&selected).await?).await
             }
-            #[cfg(unix)]
+            #[cfg(not(windows))] // out of scope on Windows: SSH with a Windows far end
             Command::Internal {
                 command: Internal::SshLink,
             } => pairing::relay(&connect::profile(&config, profile).await?).await,
-            #[cfg(not(unix))]
+            // Where SSH's far end is in scope the two arms above answer,
+            // and this one is never reached.
+            #[allow(unreachable_patterns)]
             Command::Internal {
                 command: Internal::SshPair | Internal::SshLink,
             } => {

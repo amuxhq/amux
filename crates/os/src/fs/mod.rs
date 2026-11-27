@@ -391,6 +391,16 @@ pub fn long_form(path: &Path) -> PathBuf {
     imp::long_form(path)
 }
 
+/// The existing `path` in its shortest form, for a command line that
+/// must fit a limit. Windows: absolute, each folder and file by its 8.3
+/// short name (`GetShortPathNameW`, `C:\Users\SOMEON~1\…`), which names
+/// the same file; a name the volume keeps no short name for (short names
+/// turned off on it, or ReFS) stays long. Missing is an error there.
+/// Elsewhere `path` as it is, which has no short form.
+pub fn short_path(path: &Path) -> io::Result<PathBuf> {
+    imp::short_path(path)
+}
+
 /// Whether `name`, as one file or folder name, is one Windows cannot give
 /// a file: a device's (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`,
 /// `LPT0`–`LPT9`, in any case, alone or before an extension), or one
@@ -398,6 +408,32 @@ pub fn long_form(path: &Path) -> PathBuf {
 /// answer on every OS, so a name one host takes works on every other.
 pub fn reserved_name(name: &str) -> bool {
     verbatim::reserved(name) || name.ends_with('.') || name.ends_with(' ')
+}
+
+// Identity and times -------------------------------------------------------------
+
+/// A file's identity: its device and inode on Unix, its volume's serial
+/// number and file index on Windows. Two paths with one identity are hard
+/// links to one file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileId {
+    device: u64,
+    file: u64,
+}
+
+impl FileId {
+    /// The identity of the file at `path`, following links.
+    pub fn of(path: &Path) -> io::Result<FileId> {
+        let (device, file) = imp::file_id(path)?;
+        Ok(FileId { device, file })
+    }
+}
+
+/// Sets when the file or folder at `path` was last modified. Windows opens
+/// a folder only with backup semantics, and sets its times only through a
+/// handle that may write them; this opens either as it must.
+pub fn set_modified(path: &Path, at: std::time::SystemTime) -> io::Result<()> {
+    imp::open_for_times(path)?.set_modified(at)
 }
 
 // Executables ------------------------------------------------------------------
@@ -409,11 +445,37 @@ pub fn make_executable(path: &Path) -> io::Result<()> {
     imp::make_executable(path)
 }
 
+/// Signs the program at `path` again, ad hoc, as a binary whose bytes were
+/// changed after linking needs before it runs. macOS: `codesign --force
+/// --sign -`, which only a Mach-O passes. Elsewhere nothing, and `Ok`: no
+/// other OS asks a program for a signature to run it (documented
+/// exception).
+pub fn sign_ad_hoc(path: &Path) -> io::Result<()> {
+    imp::sign_ad_hoc(path)
+}
+
+/// Takes Gatekeeper's quarantine off the file at `path` (not following a
+/// link), should the process that wrote it be one that marks what it
+/// downloads: a program run with nobody to answer Gatekeeper's question
+/// must not carry it. `Ok` when the file has none. Elsewhere nothing, and
+/// `Ok`: Windows keeps no quarantine of what a process writes, and Linux
+/// has no Gatekeeper (documented exception).
+pub fn clear_quarantine(path: &Path) -> io::Result<()> {
+    imp::clear_quarantine(path)
+}
+
 /// Whether the file at `path`, whose metadata is `meta`, can be run as a
 /// program. Unix: a regular file with an execute bit. Windows: a regular
 /// file whose extension `PATHEXT` lists (`.exe`, `.cmd`, `.bat`…).
 pub fn is_executable(path: &Path, meta: &Metadata) -> bool {
     imp::is_executable(path, meta)
+}
+
+/// Whether the file whose metadata is `meta` has an execute bit, as git
+/// records a file's mode: any of the three on Unix. Windows: `false`,
+/// as its files have no such bit (documented exception).
+pub fn has_execute_bit(meta: &Metadata) -> bool {
+    imp::has_execute_bit(meta)
 }
 
 // The root's volume ----------------------------------------------------------------

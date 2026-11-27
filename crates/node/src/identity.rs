@@ -615,8 +615,9 @@ pub(crate) fn atomic_replace_private(path: &Path, bytes: &[u8]) -> Result<(), Id
     Ok(os::fs::write_durably(path, bytes)?)
 }
 
-/// The folder a secret is kept in, made only this user's, whatever an
-/// earlier build left it as.
+/// The folder a secret is kept in, made only this user's, whatever it was
+/// left as: each load makes it, and the key ([`ensure_private_file_mode`]),
+/// this user's alone again.
 fn ensure_data_dir(path: &Path) -> Result<(), IdentityError> {
     Ok(os::fs::create_private_dir(path)?)
 }

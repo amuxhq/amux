@@ -155,21 +155,22 @@ launcher there names `amux.exe` itself, which starts the supervisor in a
 console window and without the restart. The supervisor writes its own output
 to `supervisor.log`. The value is this installation's by its name, so two
 roots never overwrite each other and a worktree's never touches the real one.
-Windows starts no `Run` command line longer than 260 characters, so turning
-the item on with a longer one (a deep config path) is refused with an error
-saying so, and nothing is written. An `amux` scheduled task an earlier build
-registered is left by turning the item on or off; it still runs `amux
-supervise`, in a window. `amux uninstall` removes it.
+Windows starts no `Run` command line longer than 260 characters, so a longer
+one (a deep config or install path) is written with each path by its 8.3
+short names (`os::fs::short_path`), and only one still too long, on a volume
+keeping no short names, is refused with an error saying so, with nothing
+written.
 
 `amux uninstall` removes it at once: it unregisters the login item
 (`launchctl bootout`, `systemctl --user disable --now`, or deleting the `Run`
 value) and deletes its file, again only when it is this installation's.
-On Windows it also ends and deletes the `amux` scheduled task an earlier
-build registered for this installation, which that build marked by keeping
-the task's definition in the root (`amux-task.xml`). It stops this
+It stops this
 machine's agents first and amux after, so nothing is left running without
 its binary; the supervisor's deliberate stop ends the launcher that started
-it too.
+it too. A launcher waiting out a backoff when the uninstall runs has no
+supervisor to hear the stop: it finds `amux.exe` gone at its next attempt
+and exits, and its image, still running when the uninstall deletes the
+programs, is moved aside like any other (below).
 
 For the default installation it then deletes, beside `amux` and
 `amux-launch`, everything their updates leave
@@ -207,7 +208,19 @@ and reads the other end:
   supervisor that could not start). The launcher starts amux again after a
   backoff of 1 second doubling to 60, back to 1 after a line that ran 10
   minutes. A start that fails, say while an update has the binary moved
-  aside, counts as a death too.
+  aside, counts as a death too. If no `amux.exe` is left beside the
+  launcher when the backoff ends (an uninstall removed it while the
+  launcher waited), there is nothing to start and no supervisor will ever
+  end the line, so the launcher exits.
+
+A supervisor the launcher starts that finds another supervisor holding the
+root's lock (`amux server start` ran before the login item did, or while
+the launcher waited) writes `0` before it exits with its error: that
+supervisor owns the root, and a launcher left waiting would start amux
+again after its `amux server stop`, which found a supervisor to tell and
+so recorded nothing. A successor started at an update that finds the lock
+held leaves the line alone, since the supervisor it replaces still holds
+it. A direct `amux supervise` has no line and just fails.
 
 The supervisor holds the pipe for its whole life and never passes it to
 the daemon. At its own update it hands the pipe to its successor with the
@@ -572,11 +585,12 @@ sleep, which is no worse than `keep_awake = false`.
 | [`crates/amux/tests/windows_install.rs`](../crates/amux/tests/windows_install.rs) | Windows only: the whole install run in a scratch machine. `install.ps1` installs amux and its launcher from a feed on the loopback, `server start` and `stop`, `start_at_login` writes the `Run` value and a simulated logon starts what it names, an agent on the fakes keeps its process and its turn through two updates from the feed and answers after, and `amux uninstall` leaves only a program a running process held, with the user's PATH as it was; no step shows a window of the run's, and every supervisor and daemon logs `console window=false`. The `Run` key and `HKCU\Environment` are scratch keys, and nothing runs that doesn't read them. |
 | [`crates/node/tests/settings.rs`](../crates/node/tests/settings.rs) | The daemon's half of keep-awake: wanted while an agent works under `keep_awake`, not once the turn ends or the setting goes off. |
 | [`crates/amux/tests/overlap.rs`](../crates/amux/tests/overlap.rs) | Releases overlapping on one machine. Agents started by the first build work on through two updates in a row and a daemon killed mid-turn; a terminal client of the previous build keeps working and names the newer daemon; the previous build reopens and works in a store the new build opened before it was killed ahead of `prepared`; restarting the generated LaunchAgent under a running turn leaves the agent running. "The previous build" is a copy of the build under test re-stamped one version lower (`node::release::restamp`). |
-| [`crates/amux/tests/process.rs`](../crates/amux/tests/process.rs) | A daemon killed mid-turn loses nothing: agents finish without it and the next daemon adopts them. A daemon with no supervisor restarts itself in place, once, for several `amux config set experiments.enabled` in a row, keeping its process id and its agent mid-turn, restarts nothing for a name the build lacks, and reaps the agent the replaced image started. |
+| [`crates/amux/tests/process.rs`](../crates/amux/tests/process.rs) | A daemon killed mid-turn loses nothing: agents finish without it and the next daemon adopts them. A daemon with no supervisor restarts itself in place, once, for several `amux config set experiments.enabled` in a row, keeping its agent mid-turn and, where exec keeps it, its process id (on Windows the first daemon exits cleanly and its successor serves the new experiments), restarts nothing for a name the build lacks, and reaps the agent the replaced image started (Unix, where it is the image's child). |
 
 `just journey system survive-daemon` tells the same story end to end: agents of
 every kind finish their turns with amux killed, amux comes back under its
 supervisor, a newer build is activated, and resuming loses nothing. The
-suites run on Windows too, but for the cases marked
-`ignore = "windows: ..."`, which say what still fails there. See [Testing](TESTING.md) for how to run
-them.
+suites run on Windows too, and `windows_install.rs` only there; a case
+that belongs to one OS (a LaunchAgent, macOS's power assertion, Unix's stop
+signal, a pid an exec keeps) is skipped or branches elsewhere, and says
+so. See [Testing](TESTING.md) for how to run them.

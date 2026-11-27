@@ -136,9 +136,11 @@ pub async fn connect_to_process_within(
     Ok((LocalStream::new(stream), pid))
 }
 
-/// The path a Unix socket named `path` is bound and dialled at: the path
-/// itself, or one through a short link when it is too long.
-#[cfg(unix)]
+/// The path a socket named `path` is bound and dialled at, for a program
+/// that dials it with no knowledge of the short links long paths need.
+/// Unix: the path itself, or one through a short link when it is too
+/// long. Windows: the path itself, the file naming the pipe, which has no
+/// such limit.
 pub fn unix_address(path: &Path) -> io::Result<PathBuf> {
     imp::address(&std::path::absolute(path)?)
 }
@@ -148,7 +150,7 @@ pub fn unix_address(path: &Path) -> io::Result<PathBuf> {
 /// the path itself when it fits, else the same name in a real directory,
 /// only this user's, in the per-user runtime directory. Nothing but the
 /// program's own announcement of it leads there, so it needs no link.
-#[cfg(unix)]
+/// Windows: the path itself.
 pub fn unix_private_address(path: &Path) -> io::Result<PathBuf> {
     imp::private_address(&std::path::absolute(path)?)
 }

@@ -32,8 +32,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_DISPOSITION_INFO, FILE_DISPOSITION_INFO_EX, FILE_FLAG_BACKUP_SEMANTICS, FILE_GENERIC_READ,
     FILE_GENERIC_WRITE, FILE_RENAME_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     FILE_WRITE_DATA, FileDispositionInfo, FileDispositionInfoEx, FileRenameInfo, FileRenameInfoEx,
-    FlushFileBuffers, GetDriveTypeW, GetVolumeInformationW, GetVolumePathNameW, OPEN_ALWAYS,
-    OPEN_EXISTING, SetFileInformationByHandle, WRITE_DAC,
+    FlushFileBuffers, GetDriveTypeW, GetShortPathNameW, GetVolumeInformationW, GetVolumePathNameW,
+    OPEN_ALWAYS, OPEN_EXISTING, SetFileInformationByHandle, WRITE_DAC,
 };
 use windows_sys::Win32::System::SystemServices::FILE_SUPPORTS_POSIX_UNLINK_RENAME;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
@@ -633,12 +633,52 @@ pub(super) fn is_held(error: &io::Error) -> bool {
 
 // Executables ------------------------------------------------------------------
 
+pub(super) fn file_id(path: &Path) -> io::Result<(u64, u64)> {
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+    };
+    let file = File::open(path)?;
+    // SAFETY: an all-zero struct is a valid out parameter.
+    let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+    // SAFETY: querying a handle we own into a struct we own.
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut info) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok((
+        u64::from(info.dwVolumeSerialNumber),
+        (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+    ))
+}
+
+/// Read and write access (a handle setting times must be able to write
+/// them), with backup semantics, without which a folder doesn't open.
+pub(super) fn open_for_times(path: &Path) -> io::Result<File> {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+}
+
 pub(super) fn make_executable(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+pub(super) fn sign_ad_hoc(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+pub(super) fn clear_quarantine(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
 pub(super) fn is_executable(path: &Path, meta: &Metadata) -> bool {
     meta.is_file() && crate::paths::windows::runs_by_extension(path)
+}
+
+pub(super) fn has_execute_bit(_meta: &Metadata) -> bool {
+    false
 }
 
 // The root's volume ----------------------------------------------------------------
@@ -754,6 +794,30 @@ pub(super) fn long_form(path: &Path) -> PathBuf {
             PathBuf::from(OsString::from_wide(&wide))
         }
         Err(_) => path.to_owned(),
+    }
+}
+
+/// `GetShortPathNameW` of [`wide`]'s form, in the plain form when it has
+/// one.
+pub(super) fn short_path(path: &Path) -> io::Result<PathBuf> {
+    let long = wide(path)?;
+    let mut short: Vec<u16> = Vec::new();
+    loop {
+        // SAFETY: `long` is NUL-terminated; `short` holds `short.len()`
+        // characters (none on the first, size-only call).
+        let length =
+            unsafe { GetShortPathNameW(long.as_ptr(), short.as_mut_ptr(), short.len() as u32) }
+                as usize;
+        if length == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // Too small, the answer is the size it needs, its NUL included;
+        // big enough, the length written, without it.
+        if length < short.len() {
+            short.truncate(length);
+            return Ok(super::plain(PathBuf::from(OsString::from_wide(&short))));
+        }
+        short = vec![0u16; length];
     }
 }
 

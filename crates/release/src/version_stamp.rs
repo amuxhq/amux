@@ -5,7 +5,6 @@
 //! stamp once, with [`stamp`], and reads it with [`read`].
 
 use std::io;
-use std::path::Path;
 
 pub const LEN: usize = 64;
 const MARK_LEN: usize = 16;
@@ -44,51 +43,27 @@ pub fn read(stamp: &[u8; LEN]) -> String {
     String::from_utf8_lossy(&body[..end]).into_owned()
 }
 
-/// Copies the binary at `from` to `to` with `version` stamped in place of
-/// its own. On macOS the copy is signed again ad hoc, since the change
-/// invalidates the linker's signature.
-pub fn restamp(from: &Path, to: &Path, version: &str) -> io::Result<()> {
+/// Stamps `version` into a binary's bytes in place of its own. Writing the
+/// copy, and making it a program that runs, is `node::release::restamp`'s:
+/// this crate takes in no OS code, since a core reads its manifests.
+pub fn restamp(binary: &mut [u8], version: &str) -> io::Result<()> {
     let mark: Vec<u8> = MARK_REVERSED.iter().rev().copied().collect();
-    let mut bytes = std::fs::read(from)?;
-    let mut found = bytes
+    let mut found = binary
         .windows(MARK_LEN)
         .enumerate()
         .filter(|(_, window)| *window == mark.as_slice())
         .map(|(at, _)| at);
     let (Some(at), None) = (found.next(), found.next()) else {
-        return Err(io::Error::other(format!(
-            "{} does not hold exactly one version stamp",
-            from.display()
-        )));
+        return Err(io::Error::other(
+            "it does not hold exactly one version stamp",
+        ));
     };
     if version.len() >= LEN - MARK_LEN {
         return Err(io::Error::other("version too long to stamp"));
     }
-    let body = &mut bytes[at + MARK_LEN..at + LEN];
+    let body = &mut binary[at + MARK_LEN..at + LEN];
     body.fill(0);
     body[..version.len()].copy_from_slice(version.as_bytes());
-    let _ = std::fs::remove_file(to);
-    std::fs::write(to, &bytes)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(to, std::fs::Permissions::from_mode(0o755))?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let status = std::process::Command::new("codesign")
-            .args(["--force", "--sign", "-"])
-            .arg(to)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()?;
-        if !status.success() {
-            return Err(io::Error::other(format!(
-                "codesign {} failed",
-                to.display()
-            )));
-        }
-    }
     Ok(())
 }
 

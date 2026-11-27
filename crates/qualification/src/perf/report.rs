@@ -453,69 +453,15 @@ pub enum PerfError {
     Json(#[from] serde_json::Error),
 }
 
-#[cfg(target_os = "macos")]
+/// The machine's model, which enrolls it; an OS that names none is no
+/// enrolled machine.
 fn observed_model() -> Result<String, PerfError> {
-    use std::ffi::CString;
-
-    unsafe extern "C" {
-        fn sysctlbyname(
-            name: *const libc::c_char,
-            oldp: *mut libc::c_void,
-            oldlenp: *mut libc::size_t,
-            newp: *mut libc::c_void,
-            newlen: libc::size_t,
-        ) -> libc::c_int;
+    match crate::platform::machine_model() {
+        Err(error) if error.kind() == std::io::ErrorKind::Unsupported => {
+            Err(PerfError::UnknownMachine(std::env::consts::OS.to_owned()))
+        }
+        model => Ok(model?),
     }
-
-    let name = CString::new("hw.model").expect("static sysctl name");
-    let mut length = 0;
-    // SAFETY: the first call requests only the required buffer length.
-    if unsafe {
-        sysctlbyname(
-            name.as_ptr(),
-            std::ptr::null_mut(),
-            &mut length,
-            std::ptr::null_mut(),
-            0,
-        )
-    } != 0
-    {
-        return Err(std::io::Error::last_os_error().into());
-    }
-    let mut bytes = vec![0_u8; length];
-    // SAFETY: `bytes` owns `length` writable bytes and no new value is supplied.
-    if unsafe {
-        sysctlbyname(
-            name.as_ptr(),
-            bytes.as_mut_ptr().cast(),
-            &mut length,
-            std::ptr::null_mut(),
-            0,
-        )
-    } != 0
-    {
-        return Err(std::io::Error::last_os_error().into());
-    }
-    bytes.truncate(length);
-    while bytes.last() == Some(&0) {
-        bytes.pop();
-    }
-    String::from_utf8(bytes)
-        .map_err(|error| PerfError::Baseline(format!("hw.model was not UTF-8: {error}")))
-}
-
-#[cfg(target_os = "linux")]
-fn observed_model() -> Result<String, PerfError> {
-    Ok(
-        std::fs::read_to_string("/sys/devices/virtual/dmi/id/product_name")?
-            .trim()
-            .to_owned(),
-    )
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn observed_model() -> Result<String, PerfError> {
-    Err(PerfError::UnknownMachine(std::env::consts::OS.to_owned()))
 }
 
 fn observed_os() -> String {

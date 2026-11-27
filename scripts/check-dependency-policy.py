@@ -82,7 +82,8 @@ ALLOWED_LOCAL = {
     # version stamp a release tool can rewrite in a built binary; the xtask
     # shares both without building the daemon.
     "release": set(),
-    "xtask": {"release", "source-tree"},
+    # os for the release key's owner-only files.
+    "xtask": {"os", "release", "source-tree"},
     # Where a crate's files in the checkout are when a test or a developer
     # tool reads them at run time, under Cargo and under Buck alike: a leaf,
     # and nothing shipped depends on it.
@@ -118,8 +119,9 @@ ALLOWED_LOCAL = {
     "browser-core": {"attachments", "ui-state", "ui-view", "wire"},
     # The phone's chats and fleet over the local runtime, with no node.
     "app-runtime": {"client", "ui-runtime", "ui-state", "ui-view", "wire"},
-    # The daemon's profile runtime hosted in the phone's process.
-    "app-embedded": {"analytics", "app-runtime", "client", "log-file", "node", "wire"},
+    # The daemon's profile runtime hosted in the phone's process; os for
+    # the wake descriptor an app's run loop watches.
+    "app-embedded": {"analytics", "app-runtime", "client", "log-file", "node", "os", "wire"},
     # The language-neutral bridge over both.
     # The installer only off the phone, for a desktop app's first call.
     "app-bridge": {
@@ -212,12 +214,13 @@ SUPPORT_ALLOWED_LOCAL = {
     # the host crates, so a host bug cannot hide behind shared host code.
     "provider-fakes": {"acp-protocol", "claude-protocol", "codex-protocol", "os", "pty-host"},
     # A stand-in amux binary that runs the real supervisor, so the
-    # supervisor tests exec and roll back the shipped code.
-    "fake-amux": {"agent-dir", "node"},
+    # supervisor tests exec and roll back the shipped code; os for the
+    # OS's stop, as amux hears it.
+    "fake-amux": {"agent-dir", "node", "os"},
     # Renders the terminal client's named states to PNG for review, and
     # its storybook, whose chats are recorded sessions replayed through the
-    # interpreters.
-    "shot": {"interpret", "settings", "source-tree", "tui", "ui-code", "ui-state", "ui-view", "wire"},
+    # interpreters; os for the storybook's restart, an exec where there is one.
+    "shot": {"interpret", "os", "settings", "source-tree", "tui", "ui-code", "ui-state", "ui-view", "wire"},
     # Replays a report's records with the models' properties judged at every
     # step: the daemon core from its checkpoint over its store, and each
     # chat's record through the session model. A debugging tool: nothing

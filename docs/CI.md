@@ -81,16 +81,23 @@ takes seconds shares a job.
 | macOS tests | `macos-26`, the same | `just test //crates/... --exclude journey` through Buck2: every workspace test that isn't Linux-only, the system suites among them |
 | macOS journeys | `macos-26`, the same | `just test //crates/testnet:terminal-journeys`: the terminal journeys, which take the whole worker |
 
-On Windows, suites that need Unix processes, PTYs or sockets are compiled
-out. Among them are the tests that host
-terminal Claude: the agent's terminal cases (in its `attach`, `dump`,
+Every suite runs on Windows. A test is compiled out there only when it tests
+a feature Windows leaves out by choice (terminal Claude and raw attach, the
+wt backend, the browser's native host, SSH with a Windows machine at the far
+end, Arm64 releases, the terminal client beyond its small fixes; see
+[Windows, as a stated cost](ARCHITECTURE.md#windows-as-a-stated-cost)), and
+its gate names that feature; one that fails there while its fix is made
+stays compiled and is ignored with what fails, which `platform-check`
+counts ([Holding a test back on
+Windows](TESTING.md#holding-a-test-back-on-windows)). The largest group is
+terminal Claude's: the agent's terminal cases (in its `attach`, `dump`,
 `providers`, `tools` and `lifecycle` suites), provider-fakes' `pty` suite,
 the terminal modules of its `conformance` and `scripted` suites, and the
-terminal client's `served` suite, whose hosts run terminal Claude. Windows does not host
-terminal Claude in this build (see
-[Windows, as a stated cost](ARCHITECTURE.md#windows-as-a-stated-cost)), so
-the Windows job runs the agent's test of that refusal instead, and every
-headless Claude and Codex test as everywhere.
+terminal client's `served` suite, whose hosts run terminal Claude. The
+Windows job runs the agent's test of that refusal instead, and every
+headless Claude and Codex test as everywhere. A test of something only
+Windows has, such as the scripted install run (`windows_install.rs`), runs
+only there.
 
 The terminal journeys are `reach-host`,
 `conversation-decision-claude-pty`, `conversation-decision-claude-sdk`,
@@ -164,7 +171,14 @@ judged in this order:
    tests and journeys own code only a Mac compiles, the root `justfile` and
    the macOS worker's configuration; Windows owns code only Windows compiles
    (`cfg(windows)`, `not(unix)` and the like), its toolchain, worker and
-   recipes. That job runs.
+   recipes, the launcher (`crates/launch`), the resources linked into each
+   Windows program (`crates/exe-resource`) and the install script it runs
+   (`install.ps1`). A module for one OS (`fs/windows.rs`,
+   `process/windows/`, `platform/macos.rs`) holds no `cfg` of its own, since
+   its parent's declaration carries it, so it is matched by its path: a file
+   or folder under `crates/` named `windows` or `macos`, or a file
+   `windows_*.rs` or `macos_*.rs` beside one.
+   A module for Linux alone is the Linux gate's. That job runs.
 3. `covered`: what the Linux gate exercises (every crate, the protocol, the
    documentation, the scripts) or what no gated job uses. No gated job runs.
 4. Anything else is unclassified, and every gated job runs.
@@ -253,8 +267,9 @@ build host's cache too, so a kept result still finds it. Each test binary
 takes one of the worker's six slots, on the runner's four cores, and runs
 two of its tests at a time, so six binaries run at once and their
 downloads from the build host overlap the others' running. The job keeps Buck2's and NativeLink's logs
-as its `buck2-logs-windows` artifact. Left out, as under Cargo: the protocol models,
-the simulated stories and the terminal journeys.
+as its `buck2-logs-windows` artifact. Left out: the protocol models, which
+the nightly runs, the terminal journeys, and the `linux-only` tests; the
+simulated stories run, since the simulated net is in process.
 
 A fork's pull request has no tailnet, so its Windows job tests under Cargo
 on the runner instead (`just cargo-test -- --profile ci --exclude models`),
@@ -615,7 +630,7 @@ The checks, by the recipe that runs each alone:
 | `deny` | No dependency has an open security advisory or is a yanked release, every licence is one [`deny.toml`](../deny.toml) allows, and every crate comes from crates.io or the rustls patch; each advisory it sets aside says why it does not reach amux. A Buck2 test (`//:deny`) on the day's snapshots of the advisory database and crates.io's index, run on a Linux worker ([Repository checks](BUILD.md#repository-checks)) |
 | `shear` | Every dependency a manifest lists is used by that crate's code; one only the code cannot show, such as a crate named only to pass on a feature, is listed in that crate's manifest as one to skip, with why |
 | `cores-check` | No state-machine core (`daemon-core`, `relay-core`, `agent-core`, `supervisor-core`) nor the `core-ring` they record inputs in has tokio in its dependency graph on any target, and none of their sources holds a lock, spawns a task or awaits ([`scripts/cores-check.py`](../scripts/cores-check.py)) |
-| `platform-check` | Desktop-platform conditionals (`cfg(unix)`, `cfg(windows)`, a desktop `target_os`, `std::os::unix`, `libc::`, ...) appear only in the homes named for platform code, and elsewhere no file holds more than [`build/checks/platform-allowlist.txt`](../build/checks/platform-allowlist.txt) allows it; a test compiled out on Windows names the feature Windows leaves out ([Holding a test back on Windows](TESTING.md#holding-a-test-back-on-windows), [`build/checks/platform_check.py`](../build/checks/platform_check.py)) |
+| `platform-check` | Desktop-platform conditionals (`cfg(unix)`, `cfg(windows)`, a desktop `target_os`, `std::os::unix`, `libc::`, ...) appear only in the homes named for platform code, with no allowlist, and no test is ignored on Windows; a test compiled out on Windows names the feature Windows leaves out, or what only one OS has ([Holding a test back on Windows](TESTING.md#holding-a-test-back-on-windows), [`build/checks/platform_check.py`](../build/checks/platform_check.py)) |
 | `typed-provider-check` | The interpreters, the agent's provider handshake and Claude's messaging socket read and write provider messages only through the protocol crates: no `json!`, field looked up by name or untyped `Value` outside the listed tool payloads ([`scripts/typed-provider-check.py`](../scripts/typed-provider-check.py)) |
 | `client-kind-check` | The client crates (ui-state, ui-view, ui-runtime, tui, app-runtime, browser-core) decide nothing by an agent's `Kind` or by a provider id written out (Claude's, Codex's or a built-in ACP agent's, read from `wire::agents::BUILT_INS`), outside the listed places, each with its reason; a listed place that matches nothing fails too ([`scripts/client-kind-check.py`](../scripts/client-kind-check.py)) |
 | `docs-check` | Every link, image and heading anchor under `docs/` resolves, every figure is referenced and standalone, and `docs/README.md` lists every page once ([`scripts/docs-check.py`](../scripts/docs-check.py)) |

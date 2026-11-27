@@ -1,9 +1,7 @@
-//! Claude Code messaging-socket client.
+//! Claude Code messaging-socket client: the Unix socket terminal Claude
+//! binds, which Windows, hosting no terminal Claude, has none of.
 
 use std::path::Path;
-
-#[cfg(unix)]
-use claude_protocol::messaging::{Auth, UserMessage};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MessagingError {
@@ -14,41 +12,59 @@ pub enum MessagingError {
 }
 
 pub struct MessagingSocket {
-    #[cfg(unix)]
+    // out of scope on Windows: terminal Claude, whose messaging socket this is
+    #[cfg(not(windows))]
     stream: tokio::net::UnixStream,
 }
 
+// Each method's gate returns where terminal Claude is hosted; only Windows
+// reaches the `Unsupported` after it.
+#[allow(unreachable_code, unused_variables)]
 impl MessagingSocket {
-    #[cfg(unix)]
+    /// Connects to the socket at `path` and authenticates with `token`.
     pub async fn connect(path: &Path, token: &str) -> Result<Self, MessagingError> {
-        use tokio::io::AsyncWriteExt;
+        // out of scope on Windows: terminal Claude
+        #[cfg(not(windows))]
+        return Ok(Self {
+            stream: unix::connect(path, token).await?,
+        });
+        Err(MessagingError::Unsupported)
+    }
 
-        let mut stream = tokio::net::UnixStream::connect(path).await?;
+    /// Sends `text` as the person's message and ends the connection.
+    pub async fn send(&mut self, text: &str) -> Result<(), MessagingError> {
+        // out of scope on Windows: terminal Claude
+        #[cfg(not(windows))]
+        return unix::send(&mut self.stream, text).await;
+        Err(MessagingError::Unsupported)
+    }
+}
+
+// out of scope on Windows: terminal Claude, whose messaging socket this is
+#[cfg(not(windows))]
+mod unix {
+    use std::path::Path;
+
+    use claude_protocol::messaging::{Auth, UserMessage};
+    use tokio::io::AsyncWriteExt as _;
+    use tokio::net::UnixStream;
+
+    use super::MessagingError;
+
+    pub(super) async fn connect(path: &Path, token: &str) -> Result<UnixStream, MessagingError> {
+        let mut stream = UnixStream::connect(path).await?;
         let auth = serde_json::to_vec(&Auth::new(token)).map_err(std::io::Error::other)?;
         stream.write_all(&auth).await?;
         stream.write_all(b"\n").await?;
-        Ok(Self { stream })
+        Ok(stream)
     }
 
-    #[cfg(not(unix))]
-    pub async fn connect(_path: &Path, _token: &str) -> Result<Self, MessagingError> {
-        Err(MessagingError::Unsupported)
-    }
-
-    #[cfg(unix)]
-    pub async fn send(&mut self, text: &str) -> Result<(), MessagingError> {
-        use tokio::io::AsyncWriteExt;
-
+    pub(super) async fn send(stream: &mut UnixStream, text: &str) -> Result<(), MessagingError> {
         let message = serde_json::to_vec(&UserMessage::new(text)).map_err(std::io::Error::other)?;
-        self.stream.write_all(&message).await?;
-        self.stream.write_all(b"\n").await?;
-        self.stream.shutdown().await?;
+        stream.write_all(&message).await?;
+        stream.write_all(b"\n").await?;
+        stream.shutdown().await?;
         Ok(())
-    }
-
-    #[cfg(not(unix))]
-    pub async fn send(&mut self, _text: &str) -> Result<(), MessagingError> {
-        Err(MessagingError::Unsupported)
     }
 }
 

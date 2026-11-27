@@ -648,6 +648,23 @@ pub(super) unsafe fn file_from_inherited(raw: u64) -> io::Result<File> {
     Ok(file)
 }
 
+#[cfg(feature = "async")]
+pub(super) fn async_pipe(
+    read: File,
+    write: File,
+) -> io::Result<(tokio::fs::File, tokio::fs::File)> {
+    Ok((
+        tokio::fs::File::from_std(read),
+        tokio::fs::File::from_std(write),
+    ))
+}
+
+pub(super) fn unblock_signals() {}
+
+pub(super) fn reap_inherited() -> io::Result<usize> {
+    Ok(0)
+}
+
 pub(super) fn descendants(_root: Pid) -> Vec<Descendant> {
     Vec::new()
 }

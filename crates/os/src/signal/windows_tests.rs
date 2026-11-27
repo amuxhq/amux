@@ -139,3 +139,10 @@ fn a_cancelled_session_end_is_no_stop() {
     assert_eq!(stop, "none");
     assert_eq!(after, "None");
 }
+
+/// A console reports a resize among its input: none reaches the process.
+#[test]
+fn resizes_are_unsupported() {
+    let error = crate::signal::Resizes::listen().unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
+}

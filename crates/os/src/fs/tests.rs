@@ -175,6 +175,42 @@ fn a_deep_path_has_a_long_form_and_a_shallow_one_stays_plain() {
     assert!(long.ends_with(Path::new(&"deep".repeat(70)).join("store.sqlite")));
 }
 
+/// A path's short form names the same file. On Windows each long name
+/// becomes its 8.3 one, unless the volume keeps none, and a path past
+/// `MAX_PATH` comes back plain once its short form is under it; a missing
+/// path has no short form there. Elsewhere the path is as it was.
+#[test]
+fn a_short_path_names_the_same_file_in_8_3_names_where_there_are_some() {
+    let dir = tempfile::tempdir().unwrap();
+    let names = ["a folder with a long name", "another long-named folder"];
+    let top = canonical(dir.path()).unwrap();
+    let mut deep = top.clone();
+    for (i, name) in names.iter().cycle().take(10).enumerate() {
+        deep.push(format!("{name} {i}"));
+    }
+    fs::create_dir_all(&deep).unwrap();
+    let file = deep.join("a config file with a long name.toml");
+    fs::write(&file, b"").unwrap();
+    assert!(file.as_os_str().len() > 260);
+
+    let short = short_path(&file).unwrap();
+    assert_eq!(FileId::of(&short).unwrap(), FileId::of(&file).unwrap());
+    let text = short.to_string_lossy();
+    // Only Windows has short names; elsewhere the path is as it was.
+    assert!(cfg!(windows) || short == file, "{text}");
+    if !short.ends_with(file.strip_prefix(&top).unwrap()) {
+        // The volume keeps short names: every long one went.
+        assert!(text.len() < 260 && !text.starts_with(r"\\?\"), "{text}");
+        let tail = short.components().rev().take(11);
+        for name in tail {
+            let name = name.as_os_str().to_string_lossy();
+            assert!(name.len() <= 12 && name.contains('~'), "{name} in {text}");
+        }
+    }
+    // Windows has no short form of a missing path.
+    assert_eq!(short_path(&deep.join("missing")).is_err(), cfg!(windows));
+}
+
 #[test]
 fn an_executable_is_executable_and_a_plain_file_on_unix_is_not() {
     let dir = tempfile::tempdir().unwrap();
@@ -277,4 +313,83 @@ fn making_a_private_folder_private_again_keeps_it_private() {
     create_private_dir(&root).unwrap();
     assert!(crate::testing::is_private(&root).unwrap());
     assert!(crate::testing::is_private(&root.join("inside")).unwrap());
+}
+
+/// Two names of one file share its identity; another file has its own.
+#[test]
+fn a_hard_link_shares_its_files_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let one = dir.path().join("one");
+    fs::write(&one, "one").unwrap();
+    let linked = dir.path().join("linked");
+    fs::hard_link(&one, &linked).unwrap();
+    let other = dir.path().join("other");
+    fs::write(&other, "one").unwrap();
+    assert_eq!(FileId::of(&one).unwrap(), FileId::of(&linked).unwrap());
+    assert_ne!(FileId::of(&one).unwrap(), FileId::of(&other).unwrap());
+    assert_eq!(
+        FileId::of(&dir.path().join("missing")).unwrap_err().kind(),
+        io::ErrorKind::NotFound
+    );
+}
+
+/// A new file has no execute bit; one made executable has it where files
+/// have one, which Windows' don't.
+#[test]
+fn the_execute_bit_is_the_one_make_executable_sets() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("tool");
+    fs::write(&file, "tool").unwrap();
+    assert!(!has_execute_bit(&fs::metadata(&file).unwrap()));
+    make_executable(&file).unwrap();
+    assert_eq!(
+        has_execute_bit(&fs::metadata(&file).unwrap()),
+        !cfg!(windows)
+    );
+}
+
+/// A copy of a built program can be signed again, and still runs as a
+/// program; only macOS changes it.
+#[test]
+fn a_copied_program_is_signed_ad_hoc() {
+    let dir = tempfile::tempdir().unwrap();
+    let program = dir.path().join(crate::paths::exe_name("copy"));
+    fs::copy(std::env::current_exe().unwrap(), &program).unwrap();
+    make_executable(&program).unwrap();
+    let before = fs::read(&program).unwrap();
+    sign_ad_hoc(&program).unwrap();
+    assert!(is_executable(&program, &fs::metadata(&program).unwrap()));
+    if std::env::consts::OS != "macos" {
+        assert!(fs::read(&program).unwrap() == before, "the program changed");
+    }
+}
+
+/// A file no process quarantined comes out of a clearing as it was.
+#[test]
+fn a_file_with_no_quarantine_is_cleared_as_it_was() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("download");
+    fs::write(&file, "bytes").unwrap();
+    clear_quarantine(&file).unwrap();
+    clear_quarantine(&file).unwrap();
+    assert_eq!(fs::read_to_string(&file).unwrap(), "bytes");
+}
+
+/// A file's and a folder's modification time are set alike.
+#[test]
+fn set_modified_sets_a_files_and_a_folders_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("file");
+    fs::write(&file, "file").unwrap();
+    let folder = dir.path().join("folder");
+    fs::create_dir(&folder).unwrap();
+    let at = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for path in [&file, &folder] {
+        set_modified(path, at).unwrap();
+        assert_eq!(
+            fs::metadata(path).unwrap().modified().unwrap(),
+            at,
+            "{path:?}"
+        );
+    }
 }

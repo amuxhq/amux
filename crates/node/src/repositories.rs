@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::plain_paths::{canonical, plain};
+use crate::plain_paths::canonical;
 
 /// What a profile's runtime asks of the installation about its folders:
 /// the person's home, where Claude Code and Codex keep their sessions, and
@@ -120,8 +120,7 @@ pub(crate) fn folders(
         .filter_map(|path| folder(&path, wire::FolderKind::Pinned, None));
     let recent = recent
         .iter()
-        // Read plain: an earlier build stored Windows' verbatim form.
-        .map(|(path, at)| (plain(PathBuf::from(path)), *at))
+        .map(|(path, at)| (PathBuf::from(path), *at))
         // A directory since replaced by a symlink is not the one that was
         // used, and gone is gone.
         .filter(|(path, _)| canonical(path).ok().as_ref() == Some(path) && path.is_dir())
@@ -172,8 +171,8 @@ mod tests {
     fn recorded(paths: &[(&std::path::Path, i64)]) -> Vec<(String, i64)> {
         let mut store = store::Sqlite::open_in_memory([0; 16]).unwrap();
         for (path, at) in paths {
-            // As an earlier build stored it: Windows' verbatim form there.
-            let path = path.canonicalize().unwrap();
+            // As an agent's creation records it: canonical, plain.
+            let path = canonical(path).unwrap();
             store
                 .record_recent_directory(path.to_str().unwrap(), *at)
                 .unwrap();

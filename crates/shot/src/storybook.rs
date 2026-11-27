@@ -523,16 +523,18 @@ impl Book {
 fn restart(exe: &Path, book: &Book) -> anyhow_free::Result {
     let mut command = Command::new(exe);
     command.args(["--watch", "--story", book.story().id]);
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        Err(command.exec().into())
+    // Where there is an exec, this process becomes the rebuilt binary.
+    // Windows has none (its stand-in starts a detached successor, with no
+    // console to draw in), so the rebuilt binary runs in the foreground and
+    // this process leaves with its status.
+    if os::process::EXEC_KEEPS_PID {
+        return match os::process::exec_or_spawn(command, &[]) {
+            Err(error) => Err(error.into()),
+            Ok(_) => unreachable!("an exec returns only on failure"),
+        };
     }
-    #[cfg(not(unix))]
-    {
-        let status = command.status()?;
-        std::process::exit(status.code().unwrap_or(1));
-    }
+    let status = command.status()?;
+    std::process::exit(status.code().unwrap_or(1));
 }
 
 fn root() -> PathBuf {

@@ -15,7 +15,9 @@
 //!   launcher beside it names `amux.exe` instead, which runs the same
 //!   supervisor in a console window and without the restart.
 //! - **At most 260 characters.** Windows starts no longer `Run` command
-//!   line, so a longer one is refused rather than written.
+//!   line, so past it the paths are written by their 8.3 short names
+//!   (`os::fs::short_path`), and a line still too long (a volume keeping
+//!   no short names) is refused rather than written.
 //!
 //! Nothing is carried in the value but the command: the session's own
 //! environment, PATH included, is the person's.
@@ -57,6 +59,11 @@ pub(super) fn items() -> io::Result<PathBuf> {
 
 pub(super) fn scratch_items(_home: &Path, key: &str) -> PathBuf {
     PathBuf::from(key)
+}
+
+/// The value is the registration, and a test's goes under its own key.
+pub(super) fn registers() -> bool {
+    true
 }
 
 /// Deletes a test's key and all it holds; any other key is left alone.
@@ -105,22 +112,35 @@ pub(super) fn command_line(binary: &Path, config: Option<&Path>) -> io::Result<S
     } else {
         binary.to_owned()
     };
-    let mut line = format!("\"{}\" supervise", program.display());
-    if let Some(config) = config {
-        line.push_str(&format!(" --config \"{}\"", config.display()));
+    let render = |program: &Path, config: Option<&Path>| {
+        let mut line = format!("\"{}\" supervise", program.display());
+        if let Some(config) = config {
+            line.push_str(&format!(" --config \"{}\"", config.display()));
+        }
+        line
+    };
+    let length = |line: &str| line.encode_utf16().count();
+    let line = render(&program, config);
+    if length(&line) <= MAX_COMMAND_LINE {
+        return Ok(line);
     }
-    let length = line.encode_utf16().count();
-    if length > MAX_COMMAND_LINE {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!(
-                "the login item's command line would be {length} characters, and Windows \
-                 starts at most {MAX_COMMAND_LINE} from the Run key: {line}. Move the config \
-                 file or amux to a shorter path."
-            ),
-        ));
+    // Past the limit, each path by its folders' and file's 8.3 short
+    // names, which name the same files in fewer characters.
+    let short = |path: &Path| os::fs::short_path(path).unwrap_or_else(|_| path.to_owned());
+    let short_line = render(&short(&program), config.map(short).as_deref());
+    if length(&short_line) <= MAX_COMMAND_LINE {
+        return Ok(short_line);
     }
-    Ok(line)
+    Err(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!(
+            "the login item's command line would be {} characters ({} with short names), \
+             and Windows starts at most {MAX_COMMAND_LINE} from the Run key: {line}. Move \
+             the config file or amux to a shorter path.",
+            length(&line),
+            length(&short_line),
+        ),
+    ))
 }
 
 pub(super) fn location(login: &StartAtLogin) -> String {
@@ -150,51 +170,6 @@ pub(super) fn remove(login: &StartAtLogin) -> io::Result<()> {
 /// which tells its launcher it stopped on purpose.
 pub(super) fn remove_now(login: &StartAtLogin) -> io::Result<()> {
     remove(login)
-}
-
-/// The scheduled task builds before the `Run` value registered as the
-/// login item: one per machine, whose definition each kept in the root of
-/// the installation that registered it.
-const EARLIER_TASK: &str = "amux";
-const EARLIER_TASK_FILE: &str = "amux-task.xml";
-
-/// Ends and deletes the scheduled task an earlier build registered for
-/// this installation, which it marked by keeping the task's definition in
-/// the root, and deletes the definition; says whether there was one.
-/// Under a test's key the task is named after that key, so no test
-/// reaches the person's own.
-pub(super) fn remove_earlier(login: &StartAtLogin) -> io::Result<bool> {
-    let file = login.root.join(EARLIER_TASK_FILE);
-    if !file.is_file() {
-        return Ok(false);
-    }
-    if login.register {
-        let task = earlier_task(&login.items);
-        for arguments in [&["/End", "/TN"][..], &["/Delete", "/F", "/TN"]] {
-            // One already ended, or already deleted by hand, is fine.
-            let _ = std::process::Command::new("schtasks")
-                .args(arguments)
-                .arg(&task)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status();
-        }
-    }
-    std::fs::remove_file(&file)?;
-    Ok(true)
-}
-
-/// The earlier task's name: `amux`, or under a test's key the key's own
-/// last part (`amux-test-…`).
-fn earlier_task(items: &Path) -> String {
-    if items == Path::new(RUN_KEY) {
-        return EARLIER_TASK.to_owned();
-    }
-    items
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| items.to_string_lossy().replace('\\', "-"))
 }
 
 fn wide(text: &str) -> Vec<u16> {
@@ -388,25 +363,50 @@ mod tests {
         );
     }
 
-    /// Uninstalling removes the scheduled task an earlier build registered
-    /// for this root, which it marked with the task's definition in the
-    /// root, and only then: the real `amux` task is a test's never.
+    /// Past 260 characters, a command line names amux and the config by
+    /// their folders' and files' short names, which fit, so a config deep
+    /// in long folders still starts at login. A volume keeping no short
+    /// names (they can be turned off) is the one place it is refused.
     #[test]
-    fn the_earlier_task_goes_only_where_its_definition_marks_the_root() {
+    fn a_command_line_over_260_characters_takes_the_short_names() {
         let home = tempfile::tempdir().unwrap();
-        let scratch = ScratchItems::new(home.path());
-        let login = login(home.path(), scratch.items(), "data");
-        std::fs::create_dir_all(&login.root).unwrap();
-        assert!(!login.remove_earlier().unwrap(), "no definition, no task");
+        let binary = home.path().join("amux.exe");
+        std::fs::write(&binary, b"").unwrap();
+        let folder = "a folder whose name is long enough to need a short one";
+        let deep = (0..4).fold(home.path().to_owned(), |path, i| {
+            path.join(format!("{folder} {i}"))
+        });
+        std::fs::create_dir_all(&deep).unwrap();
+        let config = deep.join("config.toml");
+        std::fs::write(&config, b"").unwrap();
+        let long = format!(
+            "\"{}\" supervise --config \"{}\"",
+            binary.display(),
+            config.display()
+        );
+        assert!(long.len() > MAX_COMMAND_LINE, "{long}");
 
-        std::fs::write(login.root.join(EARLIER_TASK_FILE), b"\xff\xfe").unwrap();
-        assert!(login.remove_earlier().unwrap());
-        assert!(!login.root.join(EARLIER_TASK_FILE).exists());
-        assert!(!login.remove_earlier().unwrap());
-
-        assert_eq!(earlier_task(Path::new(RUN_KEY)), "amux");
-        let task = earlier_task(scratch.items());
-        assert!(task.starts_with("amux-test-"), "{task}");
+        let line = command_line(&binary, Some(&config));
+        if os::fs::short_path(&deep)
+            .unwrap()
+            .ends_with(format!("{folder} 3"))
+        {
+            let error = line.unwrap_err();
+            assert!(error.to_string().contains("with short names"), "{error}");
+            return;
+        }
+        let line = line.unwrap();
+        let short = |path: &Path| os::fs::short_path(path).unwrap();
+        assert_eq!(
+            line,
+            format!(
+                "\"{}\" supervise --config \"{}\"",
+                short(&binary).display(),
+                short(&config).display()
+            )
+        );
+        assert!(line.len() <= MAX_COMMAND_LINE, "{line}");
+        assert!(!line.contains(folder), "{line}");
     }
 
     /// Two roots' values sit side by side under the key, each set, read

@@ -334,13 +334,9 @@ pub(crate) fn up(folder: &Folder, topology: Option<&Path>) -> Result<Outcome, St
         .stdin(std::process::Stdio::null())
         .stdout(std::fs::File::create(&out).map_err(|error| error.to_string())?)
         .stderr(std::fs::File::create(&log).map_err(|error| error.to_string())?);
-    #[cfg(unix)]
-    {
-        // Its own process group: an interrupt meant for whoever ran `ctl up`
-        // must not take the net down with it.
-        use std::os::unix::process::CommandExt as _;
-        command.process_group(0);
-    }
+    // Its own process group: an interrupt meant for whoever ran `ctl up`
+    // must not take the net down with it.
+    os::process::own_group(&mut command);
     let mut child = command
         .spawn()
         .map_err(|error| format!("starting testnet serve: {error}"))?;
@@ -614,11 +610,7 @@ pub(crate) fn start_pairing(
                 .open(&out)
                 .map_err(|error| error.to_string())?,
         ));
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        command.process_group(0);
-    }
+    os::process::own_group(&mut command);
     let mut child = command
         .spawn()
         .map_err(|error| format!("starting amux pair: {error}"))?;

@@ -94,6 +94,27 @@ pub(super) async fn terminated() -> io::Result<Stop> {
     Ok(stop.expect("waited for a stop"))
 }
 
+pub(super) fn listen() -> io::Result<()> {
+    register().map(|_| ())
+}
+
+/// No resizes reach a Windows process: none can be listened for.
+#[derive(Debug)]
+pub(super) struct Resizes(std::convert::Infallible);
+
+impl Resizes {
+    pub(super) fn listen() -> io::Result<Resizes> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "a console reports a resize among its input, not to the process",
+        ))
+    }
+
+    pub(super) async fn recv(&mut self) -> Option<()> {
+        match self.0 {}
+    }
+}
+
 pub(super) fn finished() {
     let state = state();
     *state

@@ -1,6 +1,7 @@
 load("//build:rust.bzl", "amux_rust_binary", "amux_rust_test")
 
 DEPS = [
+    "//crates/os:os",
     "//crates/source-tree:source-tree",
     "//crates/release:release",
     "//third-party/rust:protoc-bin-vendored",

@@ -1651,15 +1651,13 @@ const DIFF_OPTIONS: &[&str] = &[
 /// a folder that is never made inside it is read as holding no hooks.
 fn no_hooks() -> &'static std::ffi::OsStr {
     static NO_HOOKS: std::sync::LazyLock<std::ffi::OsString> = std::sync::LazyLock::new(|| {
-        let mut setting = std::ffi::OsString::from("core.hooksPath=");
-        if cfg!(unix) {
-            setting.push("/dev/null");
+        let none: std::path::PathBuf = if cfg!(unix) {
+            "/dev/null".into()
         } else {
-            setting.push(
-                std::env::temp_dir()
-                    .join(format!("amux-git-facts-no-hooks-{}", std::process::id())),
-            );
-        }
+            std::env::temp_dir().join(format!("amux-git-facts-no-hooks-{}", std::process::id()))
+        };
+        let mut setting = std::ffi::OsString::from("core.hooksPath=");
+        setting.push(none);
         setting
     });
     &NO_HOOKS

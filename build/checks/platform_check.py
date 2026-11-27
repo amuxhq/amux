@@ -33,6 +33,14 @@ Each one is counted where it is written. Three rules hold them:
    file and folder, the whole file for an inner `#![cfg(...)]`, and the
    block an `if cfg!(...) {` or `if !cfg!(...) {` opens, when that is its
    whole condition.
+   A test of what only one OS has (Windows' installer, a Unix signal,
+   dns-sd) is exempt the same way with `// <side> only by nature: <reason>`,
+   the side `Windows`, `Unix`, `macOS` or `Linux` (NATURE_LEAVES_OUT
+   below): on an attribute gating test code, with a reason, whose predicate
+   is false in a build for every desktop OS the side isn't (`cfg(windows)`
+   for Windows; `cfg(unix)` or `cfg(not(windows))` for Unix;
+   `target_os = "macos"` for macOS). Code outside tests has no such marker:
+   it goes in a home.
 2. Test code is held to the same rule. In a home, its code is free but its
    tests are held, since they test an API callers use without `cfg`; only
    a home's file for one OS (a path part named `unix`, `windows`, `macos`,
@@ -77,9 +85,12 @@ holds the rest.
                       [--root DIR] [--allowlist FILE] [--tracked FILE]
 
 `--strict`, the end state, also fails on any allowlist entry and any
-`ignore = "windows: ..."`. `--list` prints every conditional
-counted, not only those of failing files. `--tracked FILE` names the list
-of tracked files (build/checks/inputs.py writes it): as a Buck2 test the
+`ignore = "windows: ..."`. The check is strict whatever the options
+whenever the allowlist file doesn't exist: deleting it is what turns strict
+on, in `just premerge` and its Buck2 test alike, and with none no file may
+hold any. `--list` prints every conditional counted, not only those of
+failing files, and every gate only on one OS by nature. `--tracked FILE`
+names the list of tracked files (build/checks/inputs.py writes it): as a Buck2 test the
 check sees only the files its target declares, and every tracked Rust file
 under crates/ must be among them.
 """
@@ -116,6 +127,10 @@ HOMES = (
     "crates/app-ffi/",
     "crates/app-jni/",
     "crates/launch/",
+    # Test and harness crates' own platform code (Phase 6, WP6.2a): what only
+    # that harness needs, behind an API with no `cfg`.
+    "crates/provider-fakes/src/platform/",
+    "crates/qualification/src/platform/",
 )
 
 # What Windows leaves out by choice, as words an `out of scope on
@@ -127,6 +142,8 @@ FEATURES = re.compile(
     re.IGNORECASE,
 )
 MARKER = re.compile(r"out of scope on Windows:\s*(.*)")
+# A test of what only one side has, with its reason.
+NATURE = re.compile(r"\b(Windows|Unix|macOS|Linux) only by nature:\s*(.*)")
 MOBILE = {"ios", "android"}
 # The names a home gives a file or folder for one OS.
 OS_WORDS = {"unix", "windows", "macos", "linux", "apple", "posix", "ios", "android"}
@@ -190,6 +207,8 @@ class Result:
     violations: dict[str, list[Found]]
     ignores: list[Found]
     marked: list[Found]
+    # The gates of tests only one OS has by nature, each with its marker.
+    by_nature: list[tuple[str, Found]] = field(default_factory=list)
 
 
 def lex(path: str, text: str) -> Source:
@@ -418,6 +437,42 @@ def on_windows(predicate: str) -> bool | None:
     return evaluate(predicate, windows_atom)
 
 
+def on_os(os_name: str):
+    """What a predicate is in a build for one desktop OS (`windows`,
+    `macos`, `linux`), None where it depends on something else."""
+
+    def atom(name: str, value: str | None) -> bool | None:
+        if value is None:
+            return {"windows": os_name == "windows", "unix": os_name != "windows"}.get(name)
+        if name == "target_os":
+            return value == os_name
+        if name == "target_family":
+            return value == ("windows" if os_name == "windows" else "unix")
+        return None
+
+    return lambda predicate: evaluate(predicate, atom)
+
+
+# Each side an only-by-nature marker names, and the builds its gate must
+# leave out.
+NATURE_LEAVES_OUT = {
+    "Windows": ("macos", "linux"),
+    "Unix": ("windows",),
+    "macOS": ("windows", "linux"),
+    "Linux": ("windows", "macos"),
+}
+OS_NAMES = {"windows": "Windows", "macos": "macOS", "linux": "Linux"}
+
+
+def leaves_out(kind: str, predicate: str, tree, value) -> bool:
+    """Whether a `cfg`, or a `cfg` a `cfg_attr` applies, leaves what it gates
+    out of the build `value` evaluates predicates for: a nested one only
+    where every `cfg_attr` around it applies there."""
+    if kind == "cfg":
+        return value(predicate) is False
+    return any(k == "cfg" and value(t) is False and all(value(p) is True for p in chain) for k, t, chain in tree)
+
+
 def needs_test(predicate: str) -> bool:
     """Whether the predicate holds only in a test build: `test`,
     `all(test, unix)`, but not `any(windows, test)`."""
@@ -523,21 +578,37 @@ def module_base(path: str) -> str:
     return parent + "/" if root else parent + "/" + name[: -len(".rs")] + "/"
 
 
-def marker(source: Source, line: int) -> str | None:
-    """The `out of scope on Windows:` comment on `line` (0-based) or in the
-    comment lines directly above it: the feature it names, or "" when it
-    names none."""
+def comment_marker(source: Source, line: int, pattern: re.Pattern) -> re.Match | None:
+    """`pattern` in the comment on `line` (0-based) or in the comment lines
+    directly above it."""
     candidates = [line]
     j = line - 1
     while j >= 0 and not source.code_lines[j].strip() and source.comments.get(j):
         candidates.append(j)
         j -= 1
     for j in candidates:
-        found = MARKER.search(source.comments.get(j, ""))
+        found = pattern.search(source.comments.get(j, ""))
         if found:
-            feature = FEATURES.search(found.group(1))
-            return feature.group(1) if feature else ""
+            return found
     return None
+
+
+def marker(source: Source, line: int) -> str | None:
+    """The `out of scope on Windows:` comment on `line` (0-based) or in the
+    comment lines directly above it: the feature it names, or "" when it
+    names none."""
+    found = comment_marker(source, line, MARKER)
+    if found is None:
+        return None
+    feature = FEATURES.search(found.group(1))
+    return feature.group(1) if feature else ""
+
+
+def nature_marker(source: Source, line: int) -> tuple[str, str] | None:
+    """The `<side> only by nature:` comment on `line` or directly above it:
+    its side and its reason ("" for none)."""
+    found = comment_marker(source, line, NATURE)
+    return (found.group(1), found.group(2).strip()) if found else None
 
 
 def condition_head(code: str, offset: int) -> tuple[int, re.Match | None]:
@@ -725,10 +796,19 @@ class Gate:
     # Whether what it gates is left out of a build for Windows.
     excludes_windows: bool
     extent: tuple[int, int] | None = None
+    # A `<side> only by nature:` comment's side and reason, and whether
+    # what it gates is left out of every desktop OS the side isn't.
+    nature: tuple[str, str] | None = None
+    nature_leaves_out: bool = False
 
     @property
     def exempts(self) -> bool:
         return bool(self.feature) and self.excludes_windows
+
+    @property
+    def by_nature(self) -> bool:
+        """A well-formed only-by-nature gate (scan holds it to tests)."""
+        return self.nature is not None and bool(self.nature[1]) and self.nature_leaves_out
 
 
 def gates(source: Source) -> list[Gate]:
@@ -763,14 +843,11 @@ def gates(source: Source) -> list[Gate]:
         bad_ignore = not ignore and any(
             k == "other" and re.match(r"ignore\b", t) and any(desktop(p) for p in chain) for k, t, chain in tree
         )
-        if kind == "cfg":
-            excludes = on_windows(predicate) is False
-        else:
-            # A nested cfg leaves Windows out only where every cfg_attr
-            # around it applies on Windows.
-            excludes = any(
-                k == "cfg" and on_windows(t) is False and all(on_windows(p) is True for p in chain) for k, t, chain in tree
-            )
+        excludes = leaves_out(kind, predicate, tree, on_windows)
+        nature = nature_marker(source, line) if is_desktop else None
+        nature_leaves_out = nature is not None and all(
+            leaves_out(kind, predicate, tree, on_os(other)) for other in NATURE_LEAVES_OUT[nature[0]]
+        )
         found.append(
             Gate(
                 start=m.start(),
@@ -785,6 +862,8 @@ def gates(source: Source) -> list[Gate]:
                 feature=marker(source, line) if is_desktop else None,
                 excludes_windows=excludes,
                 extent=extent,
+                nature=nature,
+                nature_leaves_out=nature_leaves_out,
             )
         )
     for m in MACRO.finditer(code):
@@ -958,21 +1037,35 @@ def scan(root: Path) -> Result:
     # First the gates, and from them the modules declared in a file of
     # their own that are test code, or out of scope, whole.
     all_gates = {path: gates(source) for path, source in sources.items()}
+
+    def module_files(path: str, source: Source, gate: Gate) -> set[str]:
+        module = None if gate.what.startswith("cfg!") else MOD_FILE.match(source.code, gate.end)
+        if module is None:
+            return set()
+        base = module_base(path) + module.group(1)
+        return {base + ".rs", base + "/"}
+
     test_modules: set[str] = set()
-    scoped_modules: set[str] = set()
     for path, source in sources.items():
         for gate in all_gates[path]:
-            if not (gate.test or gate.exempts) or gate.what.startswith("cfg!"):
-                continue
-            module = MOD_FILE.match(source.code, gate.end)
-            if module is None:
-                continue
-            base = module_base(path) + module.group(1)
-            targets = {base + ".rs", base + "/"}
             if gate.test:
-                test_modules.update(targets)
-            if gate.exempts:
-                scoped_modules.update(targets)
+                test_modules.update(module_files(path, source, gate))
+
+    # Then, knowing what is test code, the gates of tests only one OS has
+    # by nature, which exempt what they gate as an out-of-scope gate does.
+    test_spans: dict[str, list[tuple[int, int]]] = {}
+    natural: set[tuple[str, int]] = set()
+    scoped_modules: set[str] = set()
+    for path, source in sources.items():
+        file_gates = all_gates[path]
+        test_file = is_test_file(path) or under(path, test_modules)
+        spans = [g.extent for g in file_gates if g.test and g.extent] + test_items(source.code)
+        test_spans[path] = spans
+        for gate in file_gates:
+            if gate.by_nature and (test_file or gate.test or any(start <= gate.start < end for start, end in spans)):
+                natural.add((path, gate.start))
+            if gate.exempts or (path, gate.start) in natural:
+                scoped_modules.update(module_files(path, source, gate))
 
     result = Result(violations={}, ignores=[], marked=[])
 
@@ -999,8 +1092,8 @@ def scan(root: Path) -> Result:
         # what they test is the API callers use without `cfg`.
         held_tests_only = home and not is_integration_test(path)
         test_file = is_test_file(path) or under(path, test_modules)
-        tests = [g.extent for g in file_gates if g.test and g.extent] + test_items(source.code)
-        scoped = [g.extent for g in file_gates if g.exempts and g.extent]
+        tests = test_spans[path]
+        scoped = [g.extent for g in file_gates if (g.exempts or (path, g.start) in natural) and g.extent]
 
         for gate in file_gates:
             if not gate.desktop or gate.ignore or gate.bad_ignore or gate.data:
@@ -1011,6 +1104,9 @@ def scan(root: Path) -> Result:
             if gate.exempts:
                 result.marked.append(found(source, gate, True))
                 continue
+            if (path, gate.start) in natural:
+                result.by_nature.append((f"{gate.nature[0]} only by nature ({gate.nature[1]})", found(source, gate, True)))
+                continue
             if inside(gate.start, scoped):
                 continue
             what = gate.what
@@ -1018,6 +1114,15 @@ def scan(root: Path) -> Result:
                 what += " (its `out of scope on Windows:` comment names no feature Windows leaves out)"
             elif gate.feature:
                 what += " (marked out of scope on Windows, but what it gates is built for Windows)"
+            elif gate.nature is not None:
+                side, reason = gate.nature
+                if not reason:
+                    what += f" (its `{side} only by nature:` comment gives no reason)"
+                elif not gate.nature_leaves_out:
+                    others = " or ".join(OS_NAMES[o] for o in NATURE_LEAVES_OUT[side])
+                    what += f" (marked {side} only by nature, but it does not leave out {others})"
+                else:
+                    what += f" (only a test may be {side} only by nature; code goes in a home)"
             add(source, gate.line, what, is_test)
         for offset, what in paths(source):
             if inside(offset, scoped):
@@ -1061,6 +1166,9 @@ HEADER = """\
 
 
 def write_allowlist(path: Path, result: Result) -> None:
+    if not path.exists():
+        # Deleting it turned the check strict, for good.
+        raise SystemExit(f"platform-check: there is no {path}, so the check is strict; it is not written again")
     lines = [f"{name} {len(found)}\n" for name, found in sorted(result.violations.items())]
     path.write_text(HEADER + "".join(lines), encoding="utf-8", newline="\n")
 
@@ -1089,6 +1197,8 @@ def check(root: Path, allowlist: Path, strict: bool = False, listing: bool = Fal
                 print(f"  {name}")
             return 1
     result = scan(root)
+    # The switch to strict: with the allowlist gone, nothing is allowed.
+    strict = strict or not allowlist.exists()
     allowed = read_allowlist(allowlist)
     failed = False
     over, lower, stale = [], [], []
@@ -1116,16 +1226,20 @@ def check(root: Path, allowlist: Path, strict: bool = False, listing: bool = Fal
                 print(show(f))
         for f in result.ignores:
             print(show(f, "ignore"))
+        for kind, f in result.by_nature:
+            print(show(f, kind))
     if lower or stale:
         print("platform-check: allowlist entries the tree is under (the lead lowers them with --write-allowlist):")
         for name, count, limit in lower + stale:
             print(f"  {name}: {count}, allowlist {limit}")
     total = sum(len(f) for f in result.violations.values())
     tests = sum(1 for found in result.violations.values() for f in found if f.test)
+    listed = f"allowlist {len(allowed)} entries, {sum(allowed.values())} in all" if allowlist.exists() else "no allowlist"
     print(
         f"platform-check: {total} desktop-platform conditionals held ({tests} in tests) "
-        f"in {len(result.violations)} files; allowlist {len(allowed)} entries, {sum(allowed.values())} in all; "
-        f"{len(result.ignores)} `ignore = \"windows: ...\"`; {len(result.marked)} gates out of scope on Windows"
+        f"in {len(result.violations)} files; {listed}; "
+        f"{len(result.ignores)} `ignore = \"windows: ...\"`; {len(result.marked)} gates out of scope on Windows; "
+        f"{len(result.by_nature)} gates only on one OS by nature" + ("; strict" if strict else "")
     )
     if strict:
         if allowed or total or result.ignores:

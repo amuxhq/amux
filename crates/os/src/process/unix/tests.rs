@@ -62,6 +62,29 @@ pub(crate) fn run_role(name: &str, _rest: &[&str]) {
                 .expect("the sleeper starts");
             crate::process::tests::say(format!("pid {}", child.id()));
         }
+        // Starts two short sleepers and forgets them, as an image that
+        // exec'd itself forgets its children, then reaps what it inherited.
+        "reaper" => {
+            let pids: Vec<u32> = (0..2)
+                .map(|_| {
+                    #[allow(
+                        clippy::zombie_processes,
+                        reason = "reap_inherited reaps them, which is what the test checks"
+                    )]
+                    let child = std::process::Command::new("sleep")
+                        .arg("1")
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn()
+                        .expect("sleep starts");
+                    child.id()
+                })
+                .collect();
+            let found = crate::process::reap_inherited().expect("reaping starts");
+            crate::process::tests::say(format!("found {found} {} {}", pids[0], pids[1]));
+            std::thread::sleep(std::time::Duration::from_secs(60));
+        }
         other => panic!("no role {other:?}"),
     }
 }
@@ -84,6 +107,49 @@ pub(crate) fn write_fd2(bytes: &[u8]) {
 /// and dup2 closes what it replaces.
 pub(crate) fn held(_path: &std::ffi::OsStr) -> bool {
     false
+}
+
+/// A mask the launcher left is cleared: the stop signals are heard again.
+/// The mask is the calling thread's, so this thread stands in for a
+/// process's first.
+#[test]
+fn unblock_signals_clears_an_inherited_mask() {
+    fn blocked(signal: i32) -> bool {
+        // SAFETY: reads this thread's mask into a set we own.
+        unsafe {
+            let mut now = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+            libc::pthread_sigmask(libc::SIG_SETMASK, std::ptr::null(), now.as_mut_ptr());
+            libc::sigismember(now.as_ptr(), signal) == 1
+        }
+    }
+    // SAFETY: blocks two signals on this thread alone.
+    unsafe {
+        let mut set = std::mem::MaybeUninit::<libc::sigset_t>::uninit();
+        libc::sigemptyset(set.as_mut_ptr());
+        libc::sigaddset(set.as_mut_ptr(), libc::SIGTERM);
+        libc::sigaddset(set.as_mut_ptr(), libc::SIGINT);
+        libc::pthread_sigmask(libc::SIG_BLOCK, set.as_ptr(), std::ptr::null_mut());
+    }
+    assert!(blocked(libc::SIGTERM) && blocked(libc::SIGINT));
+    crate::process::unblock_signals();
+    assert!(!blocked(libc::SIGTERM) && !blocked(libc::SIGINT));
+}
+
+/// The children an image inherits are found, and each is reaped once it
+/// exits rather than left a zombie.
+#[test]
+fn inherited_children_are_found_and_reaped() {
+    let driven = Driven::start(helper("reaper"));
+    let said = driven.expect("found");
+    let words: Vec<&str> = said.split_whitespace().collect();
+    assert!(words[0].parse::<usize>().unwrap() >= 2, "{said}");
+    for pid in &words[1..] {
+        let pid: i32 = pid.parse().unwrap();
+        assert!(
+            eventually(|| super::table::row(pid).is_none()),
+            "{pid} left unreaped"
+        );
+    }
 }
 
 /// A daemon a member starts in a session of its own leaves the family.
@@ -110,6 +176,13 @@ fn kill_others_without_a_census_is_an_error() {
 /// census: one counted while it was still below is ended all the same, and
 /// one never counted escapes, as a provider's tool shell would once the
 /// provider finishes on a polite stop.
+///
+/// The sleeper is seen reparented before the kill, not inferred to be
+/// from its parent reading dead: macOS stops answering for an exiting
+/// process (`proc_prepareexit`) before it hands the children on
+/// (`proc_exit`), so "dead" there comes first. And it is seen alive then,
+/// so a sleeper that died on the way (CI run 45886389827, once) says
+/// whether `kill_others` ended it.
 #[cfg(feature = "async")]
 #[test]
 fn a_counted_member_reparented_away_still_dies_on_kill_others() {
@@ -125,12 +198,27 @@ fn a_counted_member_reparented_away_still_dies_on_kill_others() {
         }
         member.kill().unwrap();
         assert!(eventually(|| !member.alive()), "the member dies");
+        let row = || super::table::row(sleeper.pid() as i32);
+        assert!(
+            eventually(|| row().is_none_or(|row| row.ppid != member.pid() as i32)),
+            "the sleeper is reparented: {:?}",
+            row()
+        );
+        assert!(
+            sleeper.alive(),
+            "the sleeper outlives its parent: {:?}",
+            row()
+        );
         driven.tell("kill");
         assert_eq!(driven.expect("killed"), "ok");
         if counted {
             assert!(eventually(|| !sleeper.alive()), "the counted sleeper dies");
         } else {
-            assert!(sleeper.alive(), "an uncounted sleeper is out of reach");
+            assert!(
+                sleeper.alive(),
+                "an uncounted sleeper is out of reach: {:?}",
+                row()
+            );
             sleeper.kill().unwrap();
         }
     }

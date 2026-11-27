@@ -1,12 +1,12 @@
 ---
 title: Running amux on a server
-description: Put amux on an always-on machine, such as a Linux box or a Mac mini, so your agents keep working while your laptop sleeps.
+description: Put amux on an always-on machine, such as a Linux box, a Mac mini or a Windows PC, so your agents keep working while your laptop sleeps.
 sidebar:
   order: 6
 ---
 
 amux runs just as well on a machine you never sit at: a Linux server, a cloud
-VM, or a Mac mini in a cupboard. Your agents run there, and you start them,
+VM, a Mac mini in a cupboard, or a Windows PC under a desk. Your agents run there, and you start them,
 talk to them and review their work from your laptop and your phone. Your laptop
 can sleep, or leave the house, and the agents carry on.
 
@@ -18,6 +18,9 @@ On the server, install amux the same way as anywhere else
 ```sh
 curl -fsSL https://amux.sh/install | sh
 ```
+
+On a Windows PC, the same in PowerShell is `irm https://amux.sh/install | iex`,
+and `amux setup firewall` then lets the devices on its network reach it.
 
 Your agents run Claude Code and Codex on the server itself, so install
 whichever you use there and sign in to it, with `claude` then `/login`, or
@@ -45,6 +48,9 @@ the same network. For your phone, and other ways to reach a server, such as
 the relay or Tailscale, see
 [Add another device](../get-started/add-another-computer.md).
 
+A Windows server can't be reached over SSH. Pair it with the six-digit code
+`amux pair` shows on it, or through the relay.
+
 ## Keep it running
 
 amux keeps running after you close your SSH session, but it won't come back by
@@ -66,13 +72,27 @@ Lingering also stops systemd from ending your processes when you log out, on
 systems set up to do that.
 
 On Windows this adds amux to the apps that start when you sign in (it shows
-in Task Manager's Startup apps). Windows won't start one whose command is
-longer than 260 characters, so if your config file sits at a very long path,
-amux says so instead of turning it on; move the file somewhere shorter.
+in Task Manager's Startup apps), with no window. If amux stops unexpectedly,
+it starts again by itself within a minute; `amux server stop` stops it
+until you next sign in. Windows won't start one whose command is longer
+than 260 characters, so when amux or your config file sits at a very long
+path, amux names them by their short (8.3) names, such as `C:\PROGRA~1`.
+Only if that is still too long, on a drive with short names turned off,
+does amux say so instead of turning it on; move the file somewhere shorter.
+
+Windows starts amux only once you sign in, and signing out ends it and the
+agents running on the PC. So on a Windows PC you keep as a server, stay
+signed in: locking the screen is fine. A restart (for Windows Update, say)
+starts amux again when you next sign in, and the agents it ended show as
+stopped, ready to resume.
 
 Agents find their tools through your `PATH`, and the service remembers the
 `PATH` of the shell you turned it on from. Turn it on from a normal login
 shell, where `claude`, `codex` and the tools your agents use are all found.
+Windows starts amux with your own environment, and amux also reads your
+user and system `Path` afresh, so a program you install there later is
+found by the next agent that starts
+([Troubleshooting](troubleshooting.md#an-agent-cant-carry-on)).
 
 `amux status` tells you whether amux is running and whether it starts at
 login.
@@ -125,7 +145,9 @@ Two lines matter:
 
 Switching an [experiment](terminal.md#settings) restarts amux in place: it
 stops cleanly and starts again as the same process, so your service manager
-sees nothing happen and your agents keep running.
+sees nothing happen and your agents keep running. On Windows it starts
+again as a new process, and the one your service manager started exits
+cleanly.
 
 Without a supervisor, amux doesn't update itself. To update, run the install
 script again, which installs the latest stable release, and restart the

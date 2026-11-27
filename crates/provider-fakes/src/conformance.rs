@@ -49,9 +49,9 @@ pub async fn conformance(kind: Kind, binary: &Path, recording: &Path) -> Result<
             match kind {
                 Kind::ClaudeSdk => stdio(binary, recording, process).await,
                 // Codex's hosts reach it on a socket where they can.
-                #[cfg(unix)]
-                Kind::Codex => socket(binary, recording, process).await,
-                #[cfg(not(unix))]
+                Kind::Codex if crate::platform::UNIX_SOCKETS => {
+                    socket(binary, recording, process).await
+                }
                 Kind::Codex => stdio(binary, recording, process).await,
                 Kind::ClaudePty => terminal(binary, recording, process).await,
                 Kind::Acp => stdio(binary, recording, process).await,
@@ -145,7 +145,6 @@ async fn stdio(binary: &Path, recording: &Path, process: &Process) -> Result<(),
 
 /// Plays a Codex process served on a Unix socket, the recording's host as
 /// its one client.
-#[cfg(unix)]
 async fn socket(binary: &Path, recording: &Path, process: &Process) -> Result<(), String> {
     use futures_util::{SinkExt, StreamExt};
     use tokio_tungstenite::tungstenite::Message;

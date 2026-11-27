@@ -87,12 +87,11 @@ pub(crate) fn file(name: &str, filename: &str) -> Result<File, Box<dyn std::erro
         .as_nanos();
     let directory =
         std::env::temp_dir().join(format!("amux-credential-{}-{nanos}", std::process::id()));
-    let builder = &mut std::fs::DirBuilder::new();
-    // Readable by this user alone; `create` fails rather than reuse a
-    // directory someone else made at that name.
-    #[cfg(unix)]
-    std::os::unix::fs::DirBuilderExt::mode(&mut *builder, 0o700);
-    builder.create(&directory)?;
+    // Readable by this user alone; `create_dir` fails rather than reuse a
+    // directory someone else made at that name, and the value is written
+    // only once no one else can open it.
+    std::fs::create_dir(&directory)?;
+    os::fs::make_private(&directory)?;
     let file = File {
         path: directory.join(filename),
         directory,

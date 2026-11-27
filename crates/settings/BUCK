@@ -3,7 +3,6 @@ load("//build:rust.bzl", "APP", "amux_rust_library")
 DEPS = [
     "//crates/os:os",
     "//crates/wire:wire",
-    "//third-party/rust:gethostname",
     "//third-party/rust:serde",
     "//third-party/rust:serde_ignored",
     "//third-party/rust:thiserror",

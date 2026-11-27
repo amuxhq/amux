@@ -330,8 +330,9 @@ async fn server_stop_ends_the_launcher_that_started_the_supervisor() {
 /// tell, so it records the stop in the root; the supervisor the launcher
 /// starts next reads it, says the stop on the launcher's pipe and exits
 /// without starting a daemon, and the launcher exits. amux is moved away
-/// while the stop runs, so each restart the launcher tries fails until
-/// it is back, and the stop lands in the wait however the timing falls.
+/// while the stop runs, with a file in its place that can't start, so each
+/// restart the launcher tries fails until it is back, and the stop lands in
+/// the wait however the timing falls.
 #[tokio::test(flavor = "multi_thread")]
 async fn server_stop_while_the_launcher_waits_to_restart_ends_the_launcher() {
     let bin = tempfile::tempdir().unwrap();
@@ -359,8 +360,11 @@ async fn server_stop_while_the_launcher_waits_to_restart_ends_the_launcher() {
         .supervisor_pid()
         .expect("the launcher ran amux supervise");
 
-    // A running program can be renamed, on Windows too.
+    // A running program can be renamed, on Windows too. What stands in is
+    // no program, so a start fails; a launcher finding nothing at all
+    // there would exit instead (uninstalled).
     std::fs::rename(&amux, &away).unwrap();
+    std::fs::write(&amux, b"").unwrap();
     os::process::ProcessRef::open(supervisor)
         .and_then(|process| process.kill())
         .expect("killing the supervisor");
@@ -376,6 +380,7 @@ async fn server_stop_while_the_launcher_waits_to_restart_ends_the_launcher() {
         stdout(&stopped)
     );
     assert!(install.data.join(node::supervisor::STOPPED).exists());
+    std::fs::remove_file(&amux).unwrap();
     std::fs::rename(&away, &amux).unwrap();
 
     until("the launcher to exit", || {
@@ -398,6 +403,109 @@ async fn server_stop_while_the_launcher_waits_to_restart_ends_the_launcher() {
     })
     .await
     .unwrap();
+}
+
+/// A launcher started while a supervisor already owns the root (`amux
+/// server start` ran before the login item did) ends its line: the
+/// supervisor it starts finds the lock busy and says the stop as it exits,
+/// so the launcher exits too, rather than waiting to start amux again once
+/// the running supervisor is stopped.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_launcher_started_while_a_supervisor_runs_exits_and_a_later_stop_holds() {
+    let bin = tempfile::tempdir().unwrap();
+    let (amux, launcher) = (
+        bin.path().join(os::paths::exe_name("amux")),
+        bin.path().join(os::paths::exe_name("amux-launch")),
+    );
+    std::fs::copy(amux_binary(), &amux).unwrap();
+    std::fs::copy(provider_fakes::binaries::path("amux-launch"), &launcher).unwrap();
+    let install = Install::with_binary(true, "", amux);
+    install.amux(&["server", "start"]);
+    let supervisor = install
+        .supervisor_pid()
+        .expect("server start ran amux supervise");
+
+    let config = install.config.to_str().unwrap().to_owned();
+    let launcher = install
+        .run(&launcher, &["supervise", "--config", &config])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let launcher = std::cell::RefCell::new(Ending(launcher));
+    until("the launcher to exit", || {
+        launcher.borrow_mut().0.try_wait().unwrap().is_some()
+    })
+    .await;
+    let status = launcher.borrow_mut().0.wait().unwrap();
+    assert!(status.success(), "{status}");
+    assert_eq!(
+        install.supervisor_pid(),
+        Some(supervisor),
+        "the supervisor that owned the root still does"
+    );
+
+    let stopped = install.amux(&["server", "stop"]);
+    assert!(
+        stdout(&stopped).contains("Stopped amux supervise and its daemon."),
+        "{}",
+        stdout(&stopped)
+    );
+    until("the supervisor to exit", || !alive(supervisor)).await;
+    holds_for("nothing to start again", Duration::from_secs(2), || async {
+        install.supervisor_pid().is_none() && !install.answers() && !install.daemon_running()
+    })
+    .await
+    .unwrap();
+}
+
+/// A launcher waiting to restart a line that died exits when amux is gone
+/// from its folder by then (uninstalled), rather than retrying a program
+/// that isn't there for as long as it runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_launcher_whose_amux_is_gone_exits_instead_of_restarting() {
+    let bin = tempfile::tempdir().unwrap();
+    let (amux, away, launcher) = (
+        bin.path().join(os::paths::exe_name("amux")),
+        bin.path().join(os::paths::exe_name("amux-away")),
+        bin.path().join(os::paths::exe_name("amux-launch")),
+    );
+    std::fs::copy(amux_binary(), &amux).unwrap();
+    std::fs::copy(provider_fakes::binaries::path("amux-launch"), &launcher).unwrap();
+    let install = Install::with_binary(true, "", amux.clone());
+    let config = install.config.to_str().unwrap().to_owned();
+    let launcher = install
+        .run(&launcher, &["supervise", "--config", &config])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let launcher = std::cell::RefCell::new(Ending(launcher));
+    until("the launched supervisor's daemon to answer", || {
+        install.answers()
+    })
+    .await;
+    let supervisor = install
+        .supervisor_pid()
+        .expect("the launcher ran amux supervise");
+
+    // Gone from where the launcher looks (a running program can only be
+    // renamed on Windows), and then the line dies.
+    std::fs::rename(&amux, &away).unwrap();
+    os::process::ProcessRef::open(supervisor)
+        .and_then(|process| process.kill())
+        .expect("killing the supervisor");
+    until("the launcher to exit", || {
+        launcher.borrow_mut().0.try_wait().unwrap().is_some()
+    })
+    .await;
+    let status = launcher.borrow_mut().0.wait().unwrap();
+    assert!(status.success(), "{status}");
+    until("the supervisor and its daemon to end", || {
+        !alive(supervisor) && install.supervisor_pid().is_none() && !install.daemon_running()
+    })
+    .await;
+    assert!(!amux.exists(), "nothing put amux back");
 }
 
 /// Both programs an install puts on Windows carry the application manifest
@@ -511,9 +619,9 @@ fn login_value(items: &Path) -> Option<String> {
 /// `amux uninstall --yes --delete-data` of the default installation, run
 /// by the installed amux as a person would, while the login item's
 /// launcher runs it: it stops amux and so the launcher, removes the login
-/// item and the scheduled task an earlier build registered, deletes both
-/// programs and everything updates left beside them, takes their folder off
-/// PATH, and deletes the root and the config. Windows refuses to delete a
+/// item, deletes both programs and everything updates left beside them,
+/// takes their folder off PATH, and deletes the root and the config.
+/// Windows refuses to delete a
 /// running program, and the uninstalling amux is one: it is left as a
 /// `amux.exe.old.<n>`, the one thing an uninstall leaves. Elsewhere
 /// nothing is left at all.
@@ -642,7 +750,7 @@ async fn uninstall_leaves_nothing_but_a_program_still_running() {
         .trim()
         .parse()
         .unwrap();
-    // What updates leave beside each program, and an earlier build's task.
+    // What updates leave beside each program.
     let files = node::supervisor::Files::beside(&amux);
     assert_eq!(files.launcher, launcher);
     for path in [
@@ -659,7 +767,6 @@ async fn uninstall_leaves_nothing_but_a_program_still_running() {
         std::fs::write(aside, b"moved aside by an update").unwrap();
     }
     assert_eq!(files.asides().len(), 2);
-    std::fs::write(root.join("amux-task.xml"), b"\xff\xfe").unwrap();
 
     let output = run(&amux, &["uninstall", "--yes", "--delete-data"])
         .output()
@@ -671,11 +778,6 @@ async fn uninstall_leaves_nothing_but_a_program_still_running() {
     );
     assert!(output.status.success(), "{said}");
     assert_eq!(said.contains("Removed the login item"), windows, "{said}");
-    assert_eq!(
-        said.contains("Removed the scheduled task an earlier amux registered."),
-        windows,
-        "{said}"
-    );
     assert_eq!(login_value(login.items()), None, "{said}");
     until("the launcher to exit", || {
         launched.borrow_mut().0.try_wait().unwrap().is_some()
@@ -713,10 +815,9 @@ async fn uninstall_leaves_nothing_but_a_program_still_running() {
     assert_eq!(std::fs::read_to_string(&profile).unwrap(), "# mine\n\n");
 }
 
-// Unix's own behaviour: a launcher's blocked signal mask is inherited, and
-// the stop is a signal. Windows stops amux through supervisor.sock, which
-// no mask reaches, and `stop_goes_to_the_supervisor_first_...` drives it.
-#[cfg(unix)]
+// Windows stops amux through supervisor.sock, which no mask reaches, and
+// `stop_goes_to_the_supervisor_first_...` drives it.
+#[cfg(unix)] // Unix only by nature: a launcher's blocked signal mask, inherited, and a stop that is a signal
 #[tokio::test(flavor = "multi_thread")]
 async fn stop_reaches_an_amux_started_with_its_stop_signals_blocked() {
     use std::os::unix::process::CommandExt;
@@ -814,12 +915,8 @@ async fn a_client_starts_the_supervisor_only_where_the_install_has_one() {
     );
 }
 
-// Built everywhere so the test listing names it wherever the contracts
-// are checked; only macOS has the assertion to look for.
-#[cfg_attr(
-    not(target_os = "macos"),
-    ignore = "only macOS holds a sleep assertion"
-)]
+// macOS only by nature: a power assertion, which only macOS shows (pmset)
+#[cfg(target_os = "macos")]
 #[tokio::test(flavor = "multi_thread")]
 async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
     fn assertions_of(pid: u32) -> Vec<String> {
@@ -892,14 +989,16 @@ async fn the_supervisor_holds_the_power_sleep_assertion_under_keep_awake() {
 }
 
 /// `start_at_login` writes the login item for the next login and removes
-/// it, with amux stopped; an install without a supervisor has none.
-#[cfg_attr(
-    target_os = "linux",
-    ignore = "registering the systemd unit needs a user session"
-)]
+/// it, with amux stopped; an install without a supervisor has none. The
+/// test's items are its own, which no service manager is told of. amux is
+/// copied to a temporary folder, so the item's length is the test's
+/// folders', not the build's (Windows starts no `Run` line past 260).
 #[test]
 fn start_at_login_writes_and_removes_the_login_item() {
-    let install = Install::new(true, "");
+    let bin = tempfile::tempdir().unwrap();
+    let amux = bin.path().join(os::paths::exe_name("amux"));
+    std::fs::copy(amux_binary(), &amux).unwrap();
+    let install = Install::with_binary(true, "", amux);
     let on = install.amux(&["config", "set", "start_at_login", "true"]);
     assert!(
         stdout(&on).contains("amux starts at login"),
@@ -908,8 +1007,13 @@ fn start_at_login_writes_and_removes_the_login_item() {
     );
     let login = install.login_item();
     let item = login.contents().expect("this install's login item");
+    // Past 260 characters, Windows' item names the config by its short form.
+    let short = os::fs::short_path(&install.config).unwrap();
     assert!(
-        item.contains("supervise") && item.contains(&*install.config.to_string_lossy()),
+        item.contains("supervise")
+            && [&install.config, &short]
+                .iter()
+                .any(|config| item.contains(&*config.to_string_lossy())),
         "{item}"
     );
     assert!(

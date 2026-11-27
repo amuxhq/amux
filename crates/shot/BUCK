@@ -3,6 +3,7 @@ load("//build:rust.bzl", "amux_rust_binary", "amux_rust_library")
 DEPS = [
     "//crates/source-tree:source-tree",
     "//crates/interpret:interpret",
+    "//crates/os:os",
     "//crates/settings:settings",
     "//crates/tui:tui",
     "//crates/ui-code:ui-code",

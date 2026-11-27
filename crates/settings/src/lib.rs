@@ -4,10 +4,7 @@ pub mod experiments;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
-#[cfg(target_os = "macos")]
-use std::process::Command;
 
-use gethostname::gethostname;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 pub use wire::HostName;
@@ -16,18 +13,19 @@ fn xdg_dir(env_var: &str, default_suffix: &str) -> PathBuf {
     if let Ok(value) = std::env::var(env_var) {
         return PathBuf::from(value);
     }
-    #[cfg(windows)]
-    {
-        let base = if default_suffix.starts_with(".config") {
-            std::env::var("APPDATA").ok()
-        } else {
-            std::env::var("LOCALAPPDATA")
-                .ok()
-                .or_else(|| std::env::var("APPDATA").ok())
-        };
-        if let Some(base) = base {
-            return PathBuf::from(base);
-        }
+    // Windows keeps a user's settings under APPDATA, and the rest under
+    // LOCALAPPDATA.
+    let base = if !cfg!(windows) {
+        None
+    } else if default_suffix.starts_with(".config") {
+        std::env::var("APPDATA").ok()
+    } else {
+        std::env::var("LOCALAPPDATA")
+            .ok()
+            .or_else(|| std::env::var("APPDATA").ok())
+    };
+    if let Some(base) = base {
+        return PathBuf::from(base);
     }
     os::paths::home_dir()
         .map(|home| home.join(default_suffix))
@@ -64,48 +62,15 @@ pub enum ConfigError {
 /// The amux account service a profile signs in to unless told otherwise.
 pub const DEFAULT_CLOUD_URL: &str = "https://amux.sh";
 
-/// The system hostname without its mDNS `.local` suffix.
-fn system_host_name() -> String {
-    fallback_host_name(
-        &gethostname()
-            .into_string()
-            .unwrap_or_else(|_| "unknown".to_string()),
-    )
-}
-
-/// The name a host goes by when the config names none: the Mac's Computer
-/// Name where there is one, otherwise the system hostname without its mDNS
-/// `.local` suffix. On a Mac this runs a subprocess, so the daemon resolves
-/// it once at start. A system name that is no host name (a long one, say)
-/// is made the nearest one rather than refused: a host must start with no
+/// The name a host goes by when the config names none: the computer's own
+/// name ([`os::system::computer_name`]: the Mac's Computer Name where there
+/// is one, otherwise the system hostname without its mDNS `.local`
+/// suffix). On a Mac this runs a subprocess, so the daemon resolves it
+/// once at start. A system name that is no host name (a long one, say) is
+/// made the nearest one rather than refused: a host must start with no
 /// configuration.
 pub fn default_host_name() -> HostName {
-    #[cfg(target_os = "macos")]
-    if let Some(name) = macos_computer_name() {
-        return HostName::lossy(&name);
-    }
-    HostName::lossy(&system_host_name())
-}
-
-#[cfg(target_os = "macos")]
-fn macos_computer_name() -> Option<String> {
-    let output = Command::new("scutil")
-        .args(["--get", "ComputerName"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let name = String::from_utf8(output.stdout).ok()?;
-    let name = name.trim();
-    (!name.is_empty()).then(|| name.to_string())
-}
-
-fn fallback_host_name(host_name: &str) -> String {
-    host_name
-        .strip_suffix(".local")
-        .unwrap_or(host_name)
-        .to_string()
+    HostName::lossy(&os::system::computer_name().unwrap_or_else(|| "unknown".to_string()))
 }
 
 /// The host name a configured `host_name` is, or why it is none.
@@ -994,12 +959,6 @@ mod tests {
                 .as_str()
                 .is_empty()
         );
-    }
-
-    #[test]
-    fn fallback_host_name_strips_the_mdns_suffix() {
-        assert_eq!(fallback_host_name("Adas-MacBook.local"), "Adas-MacBook");
-        assert_eq!(fallback_host_name("build-host"), "build-host");
     }
 
     #[test]

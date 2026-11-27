@@ -36,7 +36,7 @@ fn latch(stop: Stop) {
 /// receiver dropped with a caller's future (a `select!` another branch
 /// won) would leave a stop that lands before the next call caught by
 /// nobody. Returns once the three are registered.
-fn listen() -> io::Result<()> {
+pub(super) fn listen() -> io::Result<()> {
     static LISTENING: OnceLock<Result<(), (io::ErrorKind, String)>> = OnceLock::new();
     let listening = LISTENING.get_or_init(|| {
         let (ready, registered) = std::sync::mpsc::channel();
@@ -116,6 +116,20 @@ pub(super) async fn terminated() -> io::Result<Stop> {
 }
 
 pub(super) fn finished() {}
+
+/// SIGWINCH, through tokio.
+#[derive(Debug)]
+pub(super) struct Resizes(tokio::signal::unix::Signal);
+
+impl Resizes {
+    pub(super) fn listen() -> io::Result<Resizes> {
+        signal(SignalKind::window_change()).map(Resizes)
+    }
+
+    pub(super) async fn recv(&mut self) -> Option<()> {
+        self.0.recv().await
+    }
+}
 
 #[cfg(any(test, feature = "testing"))]
 pub(super) fn deliver(event: super::testing::Event) -> io::Result<bool> {

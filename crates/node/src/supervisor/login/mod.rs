@@ -52,7 +52,9 @@ pub const LAUNCH_AGENT_LABEL: &str = "sh.amux.supervise";
 pub const SYSTEMD_UNIT: &str = "amux.service";
 /// Names the key under `HKCU` whose values are login items, in place of
 /// the `Run` key, for a test on Windows; it must be under
-/// `Software\amux-test-`. Ignored elsewhere, where a test sets `HOME`.
+/// `Software\amux-test-`. Elsewhere, where a test sets `HOME` to put its
+/// items in a place of its own, it says only that they are a test's: they
+/// are written, and no service manager is told of them.
 pub const TEST_RUN_KEY: &str = "AMUX_TEST_RUN_KEY";
 /// The prefix every [`TEST_RUN_KEY`] starts with.
 const TEST_KEY_PREFIX: &str = r"Software\amux-test-";
@@ -185,7 +187,7 @@ impl StartAtLogin {
             path: std::env::var("PATH").unwrap_or_default(),
             root: root.to_owned(),
             items: platform::items()?,
-            register: true,
+            register: platform::registers(),
         })
     }
 
@@ -225,14 +227,6 @@ impl StartAtLogin {
         }
         platform::remove_now(self)?;
         Ok(true)
-    }
-
-    /// Removes the item an earlier build registered for this installation
-    /// in place of today's, as uninstalling does: on Windows the `amux`
-    /// scheduled task builds before the `Run` value used. Says whether
-    /// there was one; elsewhere there never is.
-    pub fn remove_earlier(&self) -> io::Result<bool> {
-        platform::remove_earlier(self)
     }
 }
 
@@ -299,6 +293,13 @@ mod file_item {
         manager::items(home, None::<OsString>)
     }
 
+    /// Whether to tell the service manager: not of a test's items, which
+    /// the service manager reads from the person's own home, not the
+    /// test's.
+    pub(super) fn registers() -> bool {
+        std::env::var_os(super::TEST_RUN_KEY).is_none()
+    }
+
     /// The test's home goes with its temporary directory.
     pub(super) fn forget_scratch(_items: &Path) {}
 
@@ -351,11 +352,6 @@ mod file_item {
     pub(super) fn remove_now(login: &StartAtLogin) -> io::Result<()> {
         run(login, &manager::stop_commands(), false)?;
         remove_file(&file(login))
-    }
-
-    /// A LaunchAgent and a systemd unit are what every build wrote.
-    pub(super) fn remove_earlier(_login: &StartAtLogin) -> io::Result<bool> {
-        Ok(false)
     }
 
     fn remove_file(file: &Path) -> io::Result<()> {

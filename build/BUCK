@@ -107,10 +107,11 @@ amux_files(
 )
 
 # The platform check's script and its allowlist (`//:platform-check`, and
-# its tests among the root BUCK's script tests).
+# its tests among the root BUCK's script tests). A glob, so deleting the
+# allowlist, which turns the check strict, needs no change here.
 amux_files(
     name = "platform-check",
-    srcs = ["checks/platform_check.py", "checks/platform-allowlist.txt"],
+    srcs = ["checks/platform_check.py"] + glob(["checks/platform-allowlist.txt"]),
 )
 
 # buf for the protocol check on a Mac's own worker, when no Linux worker is

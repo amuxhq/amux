@@ -161,64 +161,15 @@ pub fn append_row(path: &Path, row: &[u8]) -> std::io::Result<()> {
 /// Put the terminal into raw mode, so keys arrive byte for byte and output
 /// leaves unchanged. Not a terminal (a test driving stdio) is left alone.
 pub fn raw_mode() {
-    #[cfg(unix)]
-    // SAFETY: tcgetattr/tcsetattr on stdin with a zeroed, then filled,
-    // termios owned by this frame.
-    unsafe {
-        let mut termios: libc::termios = std::mem::zeroed();
-        if libc::tcgetattr(0, &mut termios) == 0 {
-            libc::cfmakeraw(&mut termios);
-            libc::tcsetattr(0, libc::TCSANOW, &termios);
-        }
-    }
-    // A console reads whole echoed lines and turns Ctrl-C into a signal
-    // until those modes are off; then keys arrive as the bytes typed.
-    #[cfg(windows)]
-    // SAFETY: console mode calls on this process's standard input handle,
-    // with a mode owned by this frame.
-    unsafe {
-        use windows_sys::Win32::System::Console::{
-            ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT,
-            ENABLE_VIRTUAL_TERMINAL_INPUT, GetConsoleMode, GetStdHandle, STD_INPUT_HANDLE,
-            SetConsoleMode,
-        };
-        let input = GetStdHandle(STD_INPUT_HANDLE);
-        let mut mode = 0;
-        if GetConsoleMode(input, &mut mode) != 0 {
-            mode &= !(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
-            SetConsoleMode(input, mode | ENABLE_VIRTUAL_TERMINAL_INPUT);
-        }
-    }
+    crate::platform::raw_mode();
 }
 
 /// The terminal's size as `size <rows>x<cols>`.
 pub fn size_line() -> String {
-    #[cfg(unix)]
-    {
-        // SAFETY: TIOCGWINSZ fills the zeroed winsize owned by this frame.
-        let mut size: libc::winsize = unsafe { std::mem::zeroed() };
-        if unsafe { libc::ioctl(1, libc::TIOCGWINSZ, &mut size) } == 0 {
-            return format!("size {}x{}", size.ws_row, size.ws_col);
-        }
+    match crate::platform::terminal_size() {
+        Some((rows, columns)) => format!("size {rows}x{columns}"),
+        None => "size unknown".to_owned(),
     }
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::System::Console::{
-            CONSOLE_SCREEN_BUFFER_INFO, GetConsoleScreenBufferInfo, GetStdHandle, STD_OUTPUT_HANDLE,
-        };
-        // SAFETY: the zeroed buffer info owned by this frame is filled by
-        // the call on this process's standard output handle.
-        let mut info: CONSOLE_SCREEN_BUFFER_INFO = unsafe { std::mem::zeroed() };
-        if unsafe { GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &mut info) } != 0 {
-            let window = info.srWindow;
-            return format!(
-                "size {}x{}",
-                window.Bottom - window.Top + 1,
-                window.Right - window.Left + 1
-            );
-        }
-    }
-    "size unknown".to_owned()
 }
 
 /// Plays a recorded terminal session; a recorded exit ends it there with

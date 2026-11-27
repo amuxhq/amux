@@ -408,18 +408,32 @@ fewer than the six a Windows test that takes the whole worker asks for
 alone when the build host is out of reach: a Windows machine can't compile
 anything itself, so Linux actions wait for it instead.
 
-Two steps need an elevated shell, because the task runs as you without your
-signing in (an S4U task), which Windows lets only an administrator set up:
-`install` itself, and stopping a running NativeLink, since its
-`nativelink.exe` belongs to that task (`Stop-Process -Name nativelink -Force`
-in an elevated PowerShell). Everything else, the recipes included, runs
-unelevated.
+What needs an elevated shell is the task's, because it runs as you without
+your signing in (an S4U task), which Windows lets only an administrator set
+up, and its `nativelink.exe` belongs to it:
 
-A build that fails with "CAS blob(s) … missing" (or "not found in either
-fast or slow store") after the build host's cache was wiped is a stale Buck2
-daemon: it remembers the blobs it uploaded before the wipe as already there,
-and so never uploads them again. `scripts/buck2 kill` ends it, and the next
-build starts a daemon that knows nothing and uploads what's missing.
+- `python scripts/nativelink.py install`, which registers the task, stops
+  the NativeLink it ran before and starts it again;
+- `python scripts/nativelink.py uninstall`, which stops it and removes the
+  task;
+- stopping a running NativeLink by hand: `Stop-Process -Name nativelink
+  -Force` in an elevated PowerShell (`Stop-ScheduledTask` alone ends the
+  `cmd.exe` the task started and leaves NativeLink serving).
+
+Everything else, the recipes and `status` included, runs unelevated.
+
+When a build goes wrong on a Windows machine:
+
+- **"CAS blob(s) … missing"** (or "not found in either fast or slow
+  store") after the build host's cache was wiped is a stale Buck2 daemon:
+  it remembers the blobs it uploaded before the wipe as already there, and
+  so never uploads them again. `scripts/buck2 kill` ends it, and the next
+  build starts a daemon that knows nothing and uploads what's missing.
+- **Buck2 commands that time out together**, when several start at once
+  with no daemon running (`just premerge` starts its scripts beside its
+  tests): each finds no daemon, kills the one another has just started and
+  starts its own, so the rest wait until their bounds fire. Start the
+  daemon first, `scripts/buck2 server`, and they all find it.
 
 Windows can't start a sh script itself, so a Python script that runs
 `scripts/buck2` or `scripts/bounded` runs it with `sh`, and one that runs
@@ -524,6 +538,7 @@ each run in the checkout with its output kept and printed when it fails:
 | `tests-check` | It checks the suite catalogue against every `just` recipe and every path the catalogue names, so its inputs would be the whole checkout; Cargo's view of every crate's targets it reads from `//:cargo-metadata` |
 | `parity`, `shipping-check`, `ci-jobs-check` | Queries of Buck2's own graph (`uquery`, `cquery`), which no action of that graph can make; `parity` reads Cargo's side from `//:cargo-metadata` |
 | `lint` | Clippy is Buck2 actions, cached like the tests, but a build of each target's clippy output, which `buck2 test` doesn't build, so it is a `buck2 build` beside the test run |
+| `lint-linux` | On Windows only: `just lint` for Linux's build, on a Linux worker. Windows' own lint leaves out every `cfg(unix)` item, so a warning only Linux's build has would otherwise reach the land; with no Linux worker in reach it is skipped and named |
 | `check-windows` | Every Windows binary is Buck2 actions on a Linux worker, cached like the tests, but in the Windows configuration, which `buck2 test` over the Linux targets doesn't build, so it is a `buck2 build --materializations none` beside the test run; with no Linux worker in reach it is skipped and named |
 | `apple-build` | Every Swift module of the iPhone app, the Mac app, their packages and their test bundles, compiled in the configurations CI's Apple jobs build, with nothing linked or run and no simulator booted. Buck2 actions on the Mac's worker, cached like the tests, but in the two Apple configurations, which `buck2 test` doesn't build, so it is a `buck2 build --materializations none` beside the test run. The Apple graphs configure only on a Mac, so anywhere else, as on the landing host, it is skipped and named |
 

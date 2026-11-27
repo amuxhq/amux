@@ -251,7 +251,21 @@ pub async fn supervise(options: SuperviseOptions) -> Result<(), SuperviseError> 
     let _awake = Aborting(keep_awake_on_power(keep_awake));
     let lock = match inherited.and_then(|inherited| inherited.lock) {
         Some(fd) => SupervisorLock::inherit(fd, &data_dir)?,
-        None => SupervisorLock::acquire(&data_dir, inherited.is_some())?,
+        None => SupervisorLock::acquire(&data_dir, inherited.is_some()).inspect_err(|error| {
+            // Another supervisor owns the root (started by hand before the
+            // login item ran, or while the launcher waited): this line ends
+            // on purpose, or the launcher would keep restarting it and
+            // start amux again after that supervisor's `server stop`. A
+            // successor that finds the lock busy leaves the line to the
+            // supervisor it was replacing.
+            if inherited.is_none()
+                && matches!(error, SuperviseError::Busy { .. })
+                && let Some(lineage) = lineage.take()
+            {
+                tracing::info!("{error}: ending the launcher's line");
+                lineage.stopping();
+            }
+        })?,
     };
     let files = Files::beside(&binary);
     files.clear_leftovers();

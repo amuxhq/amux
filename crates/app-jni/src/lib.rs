@@ -22,6 +22,11 @@ use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{JNI_FALSE, JNI_TRUE, jboolean, jbyteArray, jint, jlong, jstring};
 
+#[cfg(unix)]
+mod unix;
+#[cfg(unix)]
+use unix::StopLatch;
+
 const BRIDGE_EXCEPTION: &str = "sh/amux/core/runtime/BridgeException";
 
 // --- handle tables & waking ------------------------------------------------
@@ -30,66 +35,6 @@ static NEXT_HANDLE: AtomicI64 = AtomicI64::new(1);
 
 fn next_handle() -> i64 {
     NEXT_HANDLE.fetch_add(1, Ordering::Relaxed)
-}
-
-/// A runtime's stop, signalled once and readable for good: nothing ever
-/// reads it. The runtime's own wake descriptor cannot carry a stop, because
-/// every step reads it empty: a step racing the stop would swallow the wake
-/// and leave the watcher in its poll, holding the runtime the stop waits for.
-#[cfg(unix)]
-struct StopLatch {
-    reader: std::os::unix::net::UnixStream,
-    writer: std::os::unix::net::UnixStream,
-}
-
-#[cfg(unix)]
-impl StopLatch {
-    fn new() -> Result<Self, String> {
-        let (reader, writer) = std::os::unix::net::UnixStream::pair()
-            .and_then(|(reader, writer)| {
-                reader.set_nonblocking(true)?;
-                writer.set_nonblocking(true)?;
-                Ok((reader, writer))
-            })
-            .map_err(|error| format!("failed to create the runtime's stop latch: {error}"))?;
-        Ok(Self { reader, writer })
-    }
-
-    fn set(&self) {
-        use std::io::Write as _;
-        // A full buffer is readable already.
-        let _ = (&self.writer).write(&[1]);
-    }
-
-    /// Waits for the runtime's wake descriptor or `timeout_ms` (-1 for
-    /// ever): -1 once the latch is set or on failure, 1 when `wake_fd` is
-    /// readable, 0 on timeout or a signal.
-    fn wait(&self, wake_fd: i32, timeout_ms: i32) -> i32 {
-        use std::os::fd::AsRawFd as _;
-        if wake_fd < 0 {
-            return -1;
-        }
-        let watched = |fd| libc::pollfd {
-            fd,
-            events: libc::POLLIN,
-            revents: 0,
-        };
-        let mut fds = [watched(wake_fd), watched(self.reader.as_raw_fd())];
-        // SAFETY: `fds` holds two valid `pollfd` entries.
-        let rc = unsafe { libc::poll(fds.as_mut_ptr(), 2, timeout_ms) };
-        if rc < 0 {
-            let interrupted = std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR);
-            return if interrupted { 0 } else { -1 };
-        }
-        let ready = libc::POLLIN | libc::POLLERR | libc::POLLHUP;
-        if fds[1].revents != 0 {
-            -1
-        } else if fds[0].revents & ready != 0 {
-            1
-        } else {
-            0
-        }
-    }
 }
 
 struct RuntimeSlot {
@@ -1829,10 +1774,10 @@ mod tests {
 
     use super::*;
 
-    struct TempDir(PathBuf);
+    pub(crate) struct TempDir(PathBuf);
 
     impl TempDir {
-        fn new(prefix: &str) -> Self {
+        pub(crate) fn new(prefix: &str) -> Self {
             let path = std::env::temp_dir().join(format!(
                 "amux-{prefix}-{}-{}",
                 std::process::id(),
@@ -1860,78 +1805,12 @@ mod tests {
         rest[..end].to_owned()
     }
 
-    fn start_config(dir: &TempDir) -> String {
+    pub(crate) fn start_config(dir: &TempDir) -> String {
         let data_dir = dir.0.to_str().expect("utf-8 temp dir");
         let escaped_dir = data_dir.replace('\\', "\\\\").replace('"', "\\\"");
         format!(
             r#"{{"data_dir":"{escaped_dir}","device_name":"JNI Test","lan":false,"telemetry":false,"auto_reports":false}}"#
         )
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_ring_wakes_the_wait_and_a_stop_ends_it() {
-        let dir = TempDir::new("app-jni-wake");
-        let runtime_handle = start_runtime_from_json(&start_config(&dir)).expect("start runtime");
-
-        // A ring stays readable until a step reads it.
-        let _ = with_runtime(runtime_handle, AmuxRuntime::step);
-        with_runtime(runtime_handle, AmuxRuntime::ring).expect("runtime");
-        assert_eq!(wait_wake(runtime_handle, 5_000), 1);
-
-        // A watcher that never steps keeps waking until the stop, then ends.
-        let (ended, end) = std::sync::mpsc::channel();
-        let watcher = std::thread::spawn(move || {
-            loop {
-                let ready = wait_wake(runtime_handle, -1);
-                if ready < 0 {
-                    let _ = ended.send(ready);
-                    return;
-                }
-            }
-        });
-        stop_runtime_handle(runtime_handle);
-        assert_eq!(
-            end.recv_timeout(std::time::Duration::from_secs(30)),
-            Ok(-1),
-            "the stop ends the wait"
-        );
-        watcher.join().expect("watcher");
-        assert_eq!(wait_wake(runtime_handle, 0), -1);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn an_interrupt_ends_the_wait_even_after_a_step_drained_the_wake() {
-        let dir = TempDir::new("app-jni-interrupt");
-        let runtime_handle = start_runtime_from_json(&start_config(&dir)).expect("start runtime");
-        let interrupt = || {
-            get_runtime(runtime_handle)
-                .expect("runtime slot")
-                .stop
-                .set()
-        };
-
-        // The stop's signal lands, then a step on the core thread reads the
-        // wake descriptor empty before the watcher polls.
-        interrupt();
-        let _ = with_runtime(runtime_handle, AmuxRuntime::step);
-        let (ended, end) = std::sync::mpsc::channel();
-        let watcher = std::thread::spawn(move || {
-            let _ = ended.send(wait_wake(runtime_handle, -1));
-        });
-        assert_eq!(
-            end.recv_timeout(std::time::Duration::from_secs(5)),
-            Ok(-1),
-            "the interrupt still ends the wait"
-        );
-        watcher.join().expect("watcher");
-        // The latch stays set: every later wait returns at once, and a
-        // second interrupt is harmless.
-        interrupt();
-        assert_eq!(wait_wake(runtime_handle, -1), -1);
-        stop_runtime_handle(runtime_handle);
-        assert_eq!(wait_wake(runtime_handle, 0), -1);
     }
 
     #[test]

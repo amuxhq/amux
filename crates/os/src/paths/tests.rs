@@ -1,5 +1,14 @@
 use super::*;
 
+/// A path printed in UTF-8 reads back as itself everywhere.
+#[test]
+fn a_utf8_path_from_bytes_is_itself() {
+    assert_eq!(
+        from_bytes("src/main é.rs".as_bytes()),
+        PathBuf::from("src/main é.rs")
+    );
+}
+
 #[test]
 fn a_program_name_carries_the_platform_suffix() {
     assert_eq!(

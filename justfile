@@ -199,9 +199,11 @@ test-tui:
 
 # Lint every workspace target with warnings denied: clippy over each of the
 # workspace's own libraries, binaries and tests (build/checks/clippy.py),
-# the live tests and perf binaries among them.
-lint:
-    {{bounded}} 3600 scripts/py build/checks/clippy.py
+# the live tests and perf binaries among them. Arguments go to `buck2 build`:
+# `just lint --target-platforms root//build/platforms:linux-cli-testing-dev`
+# lints Linux's build from Windows, as `just premerge` does there.
+lint *ARGS:
+    {{bounded}} 3600 scripts/py build/checks/clippy.py "$@"
 
 # Fail when a crate's BUCK file and its Cargo.toml disagree on its targets
 # or dependencies (build/checks/parity.py).
@@ -377,14 +379,14 @@ cores-check:
 
 # A desktop-platform conditional (`cfg(unix)`, `cfg(windows)`, a desktop
 # `target_os`, `std::os::unix`, `libc::`, ...) belongs in the homes named for
-# platform code; elsewhere a file may hold no more than
-# build/checks/platform-allowlist.txt allows it, and a test gated off Windows
-# must name a feature Windows leaves out (docs/TESTING.md, "Holding a test
-# back on Windows"). With no options it is the Buck2 check
-# `//:platform-check`; with any it runs the script here: `--strict` also
-# wants the allowlist empty and no test ignored on Windows, `--list` prints
-# every conditional counted, `--write-allowlist` writes the allowlist.
-# Fail on desktop-platform code outside its homes, beyond the allowlist.
+# platform code and nowhere else, no test is ignored on Windows, and a test
+# gated off Windows names a feature Windows leaves out or what only one OS
+# has (docs/TESTING.md, "Holding a test back on Windows"). With no options
+# it is the Buck2 check `//:platform-check`; with any it runs the script
+# here: `--list` prints every conditional counted. With no allowlist file
+# (build/checks/platform-allowlist.txt, deleted in Phase 6) it is always
+# strict.
+# Fail on desktop-platform code outside its homes.
 platform-check *ARGS:
     if [ $# -eq 0 ]; then "{{just_executable()}}" test //:platform-check; else {{bounded}} 120 scripts/py -B build/checks/platform_check.py "$@"; fi
 
@@ -490,8 +492,9 @@ premerge_android := "//apps/android/..."
 # any other), and beside them the checks that stay scripts, because they read
 # the whole workspace or query the build graph itself (build/checks/premerge.py
 # names them and says why), among them the build of every Windows binary on
-# a Linux worker (`check-windows`) and, on a Mac, the compile of every
-# Swift module of the Apple apps and their tests (`apple-build`). A failing
+# a Linux worker (`check-windows`), on Windows clippy over Linux's build too
+# (`lint-linux`), and, on a Mac, the compile of every Swift module of the
+# Apple apps and their tests (`apple-build`). A failing
 # one fails the run and its output is printed at the end. Linking the Apple
 # apps, their tests and the tests on macOS and Windows stay with `just ios
 # verify` and CI (docs/CI.md, "`just premerge`").

@@ -15,5 +15,5 @@ mod process;
 mod relay;
 mod supervise_cli;
 mod system_journeys;
-#[cfg(windows)] // Windows' installer
+#[cfg(windows)] // Windows only by nature: Windows' installer
 mod windows_install;

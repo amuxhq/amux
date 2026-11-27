@@ -10,7 +10,9 @@
 //! 2. If amux is installed (`~/.amux/bin/amux`) but stopped, it starts it.
 //! 3. Otherwise it downloads the channel's build, checks it against the
 //!    signed manifest, places it under a lock so two clients installing at
-//!    once cannot interleave, and starts it.
+//!    once cannot interleave, and starts it. On Windows the launcher the
+//!    login item runs (`amux-launch.exe`) comes with it, from the same
+//!    release, as the install script puts it beside `amux.exe`.
 //!
 //! amux always comes from the channel's feed, never from a copy a client
 //! carries: a client can be older than the channel, and the first amux on a
@@ -30,7 +32,6 @@ use settings::InstallationConfig;
 use sha2::{Digest as _, Sha256};
 use tokio::io::AsyncWriteExt as _;
 
-#[cfg(target_os = "macos")]
 pub mod update;
 
 /// How long [`ensure`] waits for a started amux to answer.
@@ -257,31 +258,61 @@ async fn install(
         return Ok(None);
     }
     let staged = dir.join(format!(".amux.installing.{}", std::process::id()));
+    let launcher = dir.join(os::paths::exe_name(release::LAUNCHER));
+    let staged_launcher = dir.join(format!(
+        ".{}.installing.{}",
+        release::LAUNCHER,
+        std::process::id()
+    ));
     let placed = async {
-        let version = download(config, &staged, on_step).await?;
+        let downloaded = download(config, &staged, &staged_launcher, on_step).await?;
         make_executable(&staged)?;
+        // The launcher first: amux in its place is what says an install
+        // is done.
+        if downloaded.launcher {
+            make_executable(&staged_launcher)?;
+            tokio::fs::rename(&staged_launcher, &launcher)
+                .await
+                .map_err(io("placing", &launcher))?;
+        }
         tokio::fs::rename(&staged, binary)
             .await
             .map_err(io("placing", binary))?;
-        Ok(version)
+        Ok(downloaded.version)
     }
     .await;
     if placed.is_err() {
         let _ = std::fs::remove_file(&staged);
+        let _ = std::fs::remove_file(&staged_launcher);
     }
     drop(lock);
     placed.map(Some)
 }
 
+/// What [`download`] fetched and checked.
+struct Downloaded {
+    /// The build's version.
+    version: String,
+    /// Whether the launcher came too.
+    launcher: bool,
+}
+
 /// Downloads the channel's build for this target to `staged`, believing
 /// nothing in the manifest until its signature verifies against a key this
 /// build trusts, and the build only once its size and hash are the
-/// manifest's. Returns its version.
+/// manifest's. The launcher Windows' login item runs comes too, to
+/// `staged_launcher` and checked the same way, when the manifest names one
+/// from the same release beside the target's build
+/// ([`release::launcher`]): without it the login item would start
+/// `amux.exe` itself, in a window and with no restart. No other target's
+/// manifest names one, and one that predates the launcher names none
+/// either: amux alone comes.
 async fn download(
     config: &InstallationConfig,
     staged: &Path,
+    staged_launcher: &Path,
     on_step: &mut impl FnMut(Step),
-) -> Result<String, Error> {
+) -> Result<Downloaded, Error> {
     let url = config.manifest_url();
     let client = http(&url)?;
     let manifest = manifest(&client, &url, config.channel_name()).await?;
@@ -292,14 +323,26 @@ async fn download(
             channel: config.channel_name().to_owned(),
             target: release::TARGET.to_owned(),
         })?;
+    let launcher = release::launcher(&manifest, release::TARGET);
+    // One download to the person, of both programs' signed sizes.
+    let total = build.size + launcher.map_or(0, |launcher| launcher.size);
     artifact(&client, build, staged, |received| {
-        on_step(Step::Downloading {
-            received,
-            total: build.size,
-        })
+        on_step(Step::Downloading { received, total })
     })
     .await?;
-    Ok(build.version.clone())
+    if let Some(launcher) = launcher {
+        artifact(&client, launcher, staged_launcher, |received| {
+            on_step(Step::Downloading {
+                received: build.size + received,
+                total,
+            })
+        })
+        .await?;
+    }
+    Ok(Downloaded {
+        version: build.version.clone(),
+        launcher: launcher.is_some(),
+    })
 }
 
 /// A client for one feed and the artifacts it names.
@@ -407,30 +450,9 @@ fn fetch(url: &str) -> impl FnOnce(reqwest::Error) -> Error {
 /// process that wrote it be one that marks what it downloads: the login
 /// item that runs it has nobody to answer Gatekeeper's question.
 fn make_executable(path: &Path) -> Result<(), Error> {
-    // Windows runs whatever it is handed and keeps no quarantine here.
-    #[cfg(not(unix))]
-    let _ = path;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
-            .map_err(io("making executable", path))?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        use std::os::unix::ffi::OsStrExt as _;
-        let path = std::ffi::CString::new(path.as_os_str().as_bytes())
-            .expect("a path has no interior NUL");
-        // SAFETY: both arguments are NUL-terminated strings that outlive
-        // the call. A file without the attribute fails harmlessly.
-        unsafe {
-            libc::removexattr(
-                path.as_ptr(),
-                c"com.apple.quarantine".as_ptr(),
-                libc::XATTR_NOFOLLOW,
-            );
-        }
-    }
+    os::fs::make_executable(path).map_err(io("making executable", path))?;
+    // A file whose quarantine stays is Gatekeeper's to ask about.
+    let _ = os::fs::clear_quarantine(path);
     Ok(())
 }
 
@@ -438,12 +460,11 @@ fn make_executable(path: &Path) -> Result<(), Error> {
 /// the Start menu runs with the system's sparse PATH, so the agents its
 /// login item starts would not find the providers a person installed;
 /// their login shell's PATH is what a terminal would have given them.
-#[cfg(unix)]
+/// None on Windows, which has no login shell: amux reads the logged-on
+/// PATH there itself (`os::paths::current_path`).
 async fn login_path() -> Option<String> {
     const MARK: &str = "__amux_path__";
-    let shell = std::env::var("SHELL")
-        .ok()
-        .filter(|shell| !shell.is_empty())?;
+    let shell = os::paths::login_shell()?;
     let output = tokio::time::timeout(
         Duration::from_secs(10),
         tokio::process::Command::new(shell)
@@ -461,11 +482,6 @@ async fn login_path() -> Option<String> {
     (!path.is_empty()).then(|| path.to_owned())
 }
 
-#[cfg(not(unix))]
-async fn login_path() -> Option<String> {
-    None
-}
-
 /// Runs the installed amux with `args` to completion, within
 /// [`RUN_PATIENCE`], with `home` as its home when one is given.
 ///
@@ -474,6 +490,10 @@ async fn login_path() -> Option<String> {
 /// may hold its standard streams for as long as that runs, and a pipe this
 /// waited to see the end of would end only then (a desktop app's first
 /// start would hang on it). The file is read once the command exits.
+///
+/// It starts in the background ([`os::process::background`]): on Windows
+/// with no window, since a desktop app has no console for it to share and
+/// a console program started from one would otherwise open its own.
 async fn run(binary: &Path, args: &[OsString], home: Option<&Path>) -> Result<(), Error> {
     let words = std::iter::once(binary.as_os_str())
         .chain(args.iter().map(OsString::as_os_str))
@@ -482,12 +502,15 @@ async fn run(binary: &Path, args: &[OsString], home: Option<&Path>) -> Result<()
         .join(" ");
     let (stderr, said) = said_file()?;
     let mut command = tokio::process::Command::new(binary);
+    // Where the caller runs, as a plain start would; the binary's folder
+    // when that is gone.
+    let cwd = std::env::current_dir()
+        .ok()
+        .or_else(|| binary.parent().map(Path::to_owned))
+        .unwrap_or_else(std::env::temp_dir);
+    os::process::background(&mut command, os::process::Detach::Group, &cwd);
     command
         .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(stderr)
-        .kill_on_drop(true)
         // The installation is the one `ensure` resolved, named by `--config`
         // when it is not the default; an `AMUX_CONFIG` the client inherited
         // would point the command at another.
@@ -499,11 +522,23 @@ async fn run(binary: &Path, args: &[OsString], home: Option<&Path>) -> Result<()
     if let Some(path) = login_path().await {
         command.env("PATH", path);
     }
-    let finished = async {
-        let mut child = command.spawn().map_err(io("running", binary))?;
-        child.wait().await.map_err(io("running", binary))
+    let given = os::process::Given {
+        stdin: os::process::Stream::Null,
+        stdout: os::process::Stream::Null,
+        stderr: os::process::Stream::File(stderr),
+        files: &[],
     };
-    let status = tokio::time::timeout(RUN_PATIENCE, finished).await;
+    let mut child = os::process::spawn_background(&mut command, given)
+        .map_err(io("running", binary))?
+        .child;
+    let status = tokio::time::timeout(RUN_PATIENCE, child.wait()).await;
+    if status.is_err() {
+        // Given up on: it ends here, as a dropped child once did.
+        if let Ok(process) = child.pin() {
+            let _ = process.kill();
+        }
+    }
+    let status = status.map(|waited| waited.map_err(io("running", binary)));
     let output = std::fs::read_to_string(&said).unwrap_or_default();
     let _ = std::fs::remove_file(&said);
     let status = status.map_err(|_| Error::TimedOut {

@@ -34,6 +34,9 @@ pub(crate) fn signal_role(rest: &[&str]) {
     if rest[0] == "between" {
         return between_role(event(rest[1]).expect("an event"));
     }
+    if rest[0] == "listened" {
+        return listened_role(event(rest[1]).expect("an event"));
+    }
     let Some(event) = event(rest[0]) else {
         return imp::tests::signal_role(rest);
     };
@@ -97,6 +100,25 @@ fn between_role(event: Event) {
     });
 }
 
+/// Listens with no wait at all, delivers `event`, and only then waits:
+/// says whether the wait sees it.
+fn listened_role(event: Event) {
+    super::listen().unwrap();
+    let answered = std::thread::spawn(move || deliver(event)).join().unwrap();
+    say(format!("answered {}", answered.unwrap()));
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        match tokio::time::timeout(Duration::from_millis(1500), terminated()).await {
+            Ok(stop) => say(format!("then {:?}", stop.unwrap())),
+            Err(_) => say("then none"),
+        }
+        finished();
+    });
+}
+
 /// Every line a process in the role says for `name`.
 fn says(name: &str) -> Vec<String> {
     let mut command = helper(&format!("signal {name}"));
@@ -128,6 +150,14 @@ fn a_stop_between_two_waits_is_seen_by_the_next() {
         said.iter().any(|line| line == "again Interrupt"),
         "{said:?}"
     );
+}
+
+/// A stop that lands after `listen` and before any wait is the first
+/// wait's.
+#[test]
+fn a_stop_after_listen_is_seen_by_the_first_wait() {
+    let said = says("listened interrupt");
+    assert!(said.iter().any(|line| line == "then Interrupt"), "{said:?}");
 }
 
 /// The stop a process in the role saw for `name`, the block reason during

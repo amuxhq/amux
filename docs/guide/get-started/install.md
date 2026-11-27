@@ -1,6 +1,6 @@
 ---
 title: Install
-description: Install amux on your Mac or Linux machine, then let its first run set it up and pair your phone.
+description: Install amux on your Mac, Windows PC or Linux machine, then let its first run set it up and pair your phone.
 sidebar:
   order: 1
 ---
@@ -11,7 +11,7 @@ Install it on every device you want agents to work on.
 
 ## Before you start
 
-- A Mac with Apple silicon, or Linux on x86-64.
+- A Mac with Apple silicon, a PC with Windows 10 or 11, or Linux on x86-64.
 - Claude Code or Codex, installed and signed in on that machine. amux runs
   the agents you already use, on your own subscription to them.
 
@@ -29,6 +29,41 @@ The script downloads the current release, checks it against the release's
 signed checksum, installs it as `~/.amux/bin/amux`, and adds that folder to
 your `PATH`. Open a new terminal afterwards, or run the line it prints, so
 your shell finds `amux`.
+
+**On Windows, from PowerShell** (no administrator needed):
+
+```powershell
+irm https://amux.sh/install | iex
+```
+
+The script installs `amux.exe` in `%USERPROFILE%\.amux\bin`, beside
+`amux-launch.exe`, the small program that starts amux when you sign in, and
+adds that folder to your user `Path`. Open a new terminal afterwards so it
+finds `amux`. If amux was already running, the script stops it first, and
+tells you to run `amux server start` to start the new version. Windows on
+Arm gets the x64 build, which Windows runs for you.
+
+amux isn't signed yet, so Windows may warn about it the first time it runs.
+If you see **Windows protected your PC**, choose **More info**, then **Run
+anyway**. On a PC with Smart App Control turned on, Windows may block amux
+outright until it is signed.
+
+### Let devices nearby reach a Windows PC
+
+Windows' firewall keeps your phone and your other computers on the same
+network from reaching amux until it has a rule for it. Add one once:
+
+```powershell
+amux setup firewall
+```
+
+Windows asks for an administrator's approval, then the rule lasts across
+updates. Without it, your PC still reaches your other devices, because it
+dials them, but they can't dial it, and your phone doesn't find it nearby.
+If Windows asks whether to allow amux on networks when it first starts, you
+can allow it, or cancel and run `amux setup firewall` instead.
+[Troubleshooting](../use/troubleshooting.md#devices-nearby-cant-reach-a-windows-device)
+has more.
 
 ## Set it up
 
@@ -78,8 +113,9 @@ left off.
 
 To change any of the setup choices later, press **,** on the home screen for
 Settings. `amux status` shows whether amux is
-running, which version, whether it starts at login, and which account each
-profile is signed in to.
+running, which version, whether it starts at login, which account each
+profile is signed in to and, on Windows, whether the firewall lets devices
+nearby reach it.
 
 amux keeps itself up to date. See [Updates and channels](../use/updates.md).
 
@@ -97,4 +133,6 @@ to remove that too.
 
 On Windows a program can't be deleted while it runs, and `amux uninstall`
 is one, so it leaves itself behind as `amux.exe.old.1` (or the next free
-number) and says so. Delete that file once the command has finished.
+number) and says so. Delete that file once the command has finished. If amux
+had stopped unexpectedly and was about to start again, `amux-launch.exe` may
+be left the same way, until it notices amux is gone and exits.

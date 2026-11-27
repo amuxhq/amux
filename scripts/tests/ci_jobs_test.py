@@ -267,6 +267,60 @@ class TheRealTableTest(unittest.TestCase):
         decided = ci_jobs.decide(self.table, ["crates/pty-host/src/lib.rs"], Fake(head={"crates/pty-host/src/lib.rs": code}))
         self.assertEqual({j for j, (r, _) in decided.items() if r}, {"windows-tests"})
 
+    def selected(self, path: str) -> set[str]:
+        # The file holds no `cfg` of its own: its module's is on the parent's
+        # declaration, so only its path can select a job.
+        decided = ci_jobs.decide(self.table, [path], Fake(head={path: "pub fn f() {}"}))
+        return {j for j, (r, _) in decided.items() if r}
+
+    def test_a_module_for_windows_alone_runs_the_windows_tests(self):
+        for path in [
+            "crates/os/src/fs/windows.rs",
+            "crates/os/src/fs/windows_tests.rs",
+            "crates/os/src/process/windows/mod.rs",
+            "crates/os/src/process/windows/wait.rs",
+            "crates/os/src/testing/desktop/windows.rs",
+            "crates/agent-dir/src/local_socket/windows.rs",
+            "crates/node/src/platform/windows.rs",
+            "crates/node/src/supervisor/login/windows.rs",
+            "crates/node/src/supervisor/keep_awake/windows.rs",
+            "crates/tui/src/platform/windows.rs",
+            "crates/provider-fakes/src/platform/windows.rs",
+            "crates/qualification/src/platform/windows.rs",
+            "crates/amux/tests/windows_install.rs",
+        ]:
+            with self.subTest(path):
+                self.assertEqual(self.selected(path), {"windows-tests"})
+
+    def test_what_only_windows_ships_or_runs_runs_the_windows_tests(self):
+        for path in [
+            "crates/launch/src/main.rs",
+            "crates/launch/build.rs",
+            "crates/exe-resource/src/lib.rs",
+            "scripts/install/install.ps1",
+        ]:
+            with self.subTest(path):
+                self.assertEqual(self.selected(path), {"windows-tests"})
+
+    def test_a_module_for_macos_alone_runs_the_macos_tests_and_journeys(self):
+        for path in [
+            "crates/node/src/platform/macos.rs",
+            "crates/node/src/supervisor/login/macos.rs",
+            "crates/node/src/supervisor/keep_awake/macos.rs",
+            "crates/qualification/src/platform/unix/macos.rs",
+        ]:
+            with self.subTest(path):
+                self.assertEqual(self.selected(path), {"macos-tests", "macos-journeys"})
+
+    def test_a_module_for_linux_alone_is_the_linux_gates(self):
+        for path in [
+            "crates/node/src/platform/linux.rs",
+            "crates/node/src/supervisor/login/linux.rs",
+            "crates/qualification/src/platform/unix/linux.rs",
+        ]:
+            with self.subTest(path):
+                self.assertEqual(self.selected(path), set())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -94,13 +94,7 @@ impl Phone {
     /// A descriptor that is readable whenever something waits for
     /// [`Phone::step`]; -1 where there are no descriptors to watch.
     pub fn wake_fd(&self) -> i32 {
-        #[cfg(unix)]
-        {
-            use std::os::fd::AsRawFd as _;
-            self.wake.reader.as_raw_fd()
-        }
-        #[cfg(not(unix))]
-        -1
+        self.wake.descriptor.raw()
     }
 
     /// Marks something as waiting for the next step, from any thread.
@@ -220,10 +214,7 @@ impl Drop for Transport {
 /// app's queue to watch, and a condition for a thread blocked in
 /// [`Phone::wait`].
 struct Wake {
-    #[cfg(unix)]
-    reader: std::os::unix::net::UnixStream,
-    #[cfg(unix)]
-    writer: std::os::unix::net::UnixStream,
+    descriptor: os::wake::Descriptor,
     /// A byte is in the descriptor, or about to be.
     armed: AtomicBool,
     rings: Mutex<u64>,
@@ -232,21 +223,11 @@ struct Wake {
 
 impl Wake {
     fn new() -> Result<Wake, EmbeddedError> {
-        #[cfg(unix)]
-        let (reader, writer) = std::os::unix::net::UnixStream::pair()
-            .and_then(|(reader, writer)| {
-                reader.set_nonblocking(true)?;
-                writer.set_nonblocking(true)?;
-                Ok((reader, writer))
-            })
-            .map_err(|error| {
-                EmbeddedError::Relay(format!("opening the wake descriptor: {error}"))
-            })?;
+        let descriptor = os::wake::Descriptor::new().map_err(|error| {
+            EmbeddedError::Relay(format!("opening the wake descriptor: {error}"))
+        })?;
         Ok(Wake {
-            #[cfg(unix)]
-            reader,
-            #[cfg(unix)]
-            writer,
+            descriptor,
             armed: AtomicBool::new(false),
             rings: Mutex::new(0),
             rang: Condvar::new(),
@@ -256,11 +237,8 @@ impl Wake {
     fn ring(&self) {
         *self.rings.lock().unwrap_or_else(|p| p.into_inner()) += 1;
         self.rang.notify_all();
-        #[cfg(unix)]
         if !self.armed.swap(true, Ordering::SeqCst) {
-            use std::io::Write as _;
-            // A full buffer is readable already.
-            let _ = (&self.writer).write(&[1]);
+            self.descriptor.ring();
         }
     }
 
@@ -268,12 +246,7 @@ impl Wake {
     /// lands meanwhile is stepped by the step that follows, and the next
     /// one writes again.
     fn quiet(&self) {
-        #[cfg(unix)]
-        {
-            use std::io::Read as _;
-            let mut drained = [0_u8; 64];
-            while matches!((&self.reader).read(&mut drained), Ok(read) if read > 0) {}
-        }
+        self.descriptor.drain();
         self.armed.store(false, Ordering::SeqCst);
     }
 

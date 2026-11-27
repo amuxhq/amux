@@ -138,6 +138,9 @@ fn create_as(data_dir: &Path, id: ProfileId, label: &str) -> io::Result<ProfileE
             ),
         ));
     }
+    // A root made here is private from the start, as are the folders that
+    // inherit from it; one already there is left as it is.
+    crate::install::private_dir(data_dir)?;
     os::fs::create_private_dir(&staging)?;
     os::fs::create_private_dir(&staging.join(AGENTS))?;
     let now_ms = SystemTime::now()

@@ -16,6 +16,13 @@ amux --profile work      # open it on another profile
 
 Press `?` at any time to see every key.
 
+On Windows the terminal app isn't supported: use the desktop app there. It
+still opens, but Windows' console has no bracketed paste, so a pasted
+message with several lines is sent at its first line break, and Ctrl+Enter
+and Shift+Enter arrive as Enter. The commands at the end of this page work
+on Windows as they do elsewhere, apart from `amux attach`, which opens the
+same terminal chat.
+
 ## Home
 
 Home is your fleet. `+ New Agent` sits at the top, and the agents are below it

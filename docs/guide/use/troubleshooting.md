@@ -66,6 +66,19 @@ Its chat fills in again when the device is back.
 [Connect your phone](../get-started/connect-your-phone.md) has the other ways
 to pair, including when the phone and device are on different networks.
 
+## The phone finds my device but can't reach it
+
+If the phone says **Pairing couldn't reach that device** after you type the
+code, it found the device but nothing it sent got through. That's usual for
+a device in a virtual machine on its app's shared network (Parallels' and
+VMware's default): the phone hears it announce itself, but can't reach the
+address inside the VM. Either:
+
+- set the virtual machine's network to bridged, so it joins your Wi-Fi; or
+- pair through the relay or Tailscale, as
+  [Connect your phone](../get-started/connect-your-phone.md#at-home-and-away)
+  describes.
+
 ## Devices nearby can't reach a Windows device
 
 Windows' firewall drops what other devices on your network send to a program

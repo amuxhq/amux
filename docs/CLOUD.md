@@ -454,7 +454,9 @@ An invitation never changes the receiving device's configuration or relay.
 QR and printed-code pairing both go through the same authenticated route
 check: a cloud cannot route to a host on another cloud or another account, and
 knowing a host's identity and secret does not supply that route. When the host
-cannot be reached, both say: "Pairing could not reach this host. Check that
-both devices are online and signed in to the same cloud account." Incorrect
+cannot be reached, both say: "Pairing couldn't reach that device. Check that
+both devices are online and on the same network, signed in to the same
+account, or paired with the same device.", with the `HostUnreachable` reason;
+what each address answered goes to the joiner's log. Incorrect
 and expired secrets are indistinguishable, and neither path writes trust
 before the person confirms.

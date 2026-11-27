@@ -447,7 +447,9 @@ impl Edge {
         // goes to the log.
         let (pending, via) = selected.ok_or_else(|| {
             tracing::info!(
-                last = last_unreachable.as_deref().unwrap_or("no address or route to try"),
+                last = last_unreachable
+                    .as_deref()
+                    .unwrap_or("no address or route to try"),
                 "pairing could not reach the other host"
             );
             crate::grpc::status(wire::Error::because(

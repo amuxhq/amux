@@ -317,7 +317,9 @@ async fn server_stop_ends_the_launcher_that_started_the_supervisor() {
     .await;
     let status = launcher.borrow_mut().0.wait().unwrap();
     assert!(status.success(), "{status}");
-    assert!(!alive(supervisor));
+    // The launcher ends at the lineage's end, which the supervisor gives as
+    // it goes; it may be a moment from gone (or not yet reaped) then.
+    until("the supervisor to end", || !alive(supervisor)).await;
     holds_for("nothing to start again", Duration::from_secs(2), || async {
         install.supervisor_pid().is_none() && !install.answers()
     })
@@ -783,7 +785,7 @@ async fn uninstall_leaves_nothing_but_a_program_still_running() {
         launched.borrow_mut().0.try_wait().unwrap().is_some()
     })
     .await;
-    assert!(!alive(supervisor), "{said}");
+    until("the supervisor to end", || !alive(supervisor)).await;
     assert!(!root.exists() && !config.exists(), "{said}");
 
     let left: Vec<String> = match std::fs::read_dir(&bin) {

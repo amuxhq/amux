@@ -47,7 +47,7 @@ pub enum ChannelError {
     #[error("host {host_id} is not reachable")]
     NoRoute { host_id: HostId },
     #[error(
-        "Pairing could not reach this host. Check that both devices are online, and on the same network, signed in to the same account or paired with the same host."
+        "Pairing couldn't reach that device. Check that both devices are online and on the same network, signed in to the same account, or paired with the same device."
     )]
     NoPairingRoute,
     #[error("the forwarder refused to carry the link: {0:?}")]

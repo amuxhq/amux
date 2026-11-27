@@ -235,6 +235,50 @@ async fn a_phone_locked_out_of_pairing_says_so_in_words() {
     net.shutdown().await.unwrap();
 }
 
+/// A code typed for a machine the phone found but can't reach (one behind a
+/// VM's NAT, say) is refused in a sentence that says so. The apps show a
+/// refusal written as a sentence as it is and say "That code didn't work"
+/// for anything else, so the reason must read as one. QA: a phone pairing
+/// with a Windows VM on Parallels' shared network said the code was wrong.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_phone_that_cannot_reach_the_machine_says_so_not_that_the_code_was_wrong() {
+    let dir = tempfile::tempdir().unwrap();
+    let embedded = EmbeddedRuntime::start_with(
+        &config(dir.path()),
+        loopback(),
+        Arc::new(SystemClock),
+        queue(),
+        Surface::Ios,
+    )
+    .await
+    .unwrap();
+    let phone = only_profile(&embedded).await;
+    let nobody = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let silent = nobody.local_addr().unwrap().to_string();
+    let refused = embedded
+        .begin_pair(
+            phone,
+            &PairRequest::Pin {
+                host_id: vec![7; 16],
+                pin: "123456".to_owned(),
+                addrs: vec![silent],
+            },
+        )
+        .await
+        .expect_err("nobody answers there");
+    let said = refused.to_string();
+    let mut start = said.chars();
+    assert!(
+        start.next().is_some_and(char::is_uppercase)
+            && start.next().is_some_and(char::is_lowercase)
+            && said.ends_with('.'),
+        "the refusal is not a sentence the phone shows: {said}"
+    );
+    assert!(said.contains("couldn't reach"), "{said}");
+    drop(nobody);
+    embedded.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_phone_pairs_by_pin_and_reads_the_desks_agents_from_its_own_rows() {
     let net = Net::start(

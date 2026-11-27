@@ -441,16 +441,20 @@ impl Edge {
             )));
         }
         // The other host not answering is this daemon's answer, not this
-        // daemon going away: Unavailable would read as the latter.
+        // daemon going away: Unavailable would read as the latter. The
+        // person reads the one sentence (a phone shows it as written, and
+        // would otherwise say the code was wrong); what each address said
+        // goes to the log.
         let (pending, via) = selected.ok_or_else(|| {
+            tracing::info!(
+                last = last_unreachable
+                    .as_deref()
+                    .unwrap_or("no address or route to try"),
+                "pairing could not reach the other host"
+            );
             crate::grpc::status(wire::Error::because(
                 wire::ErrorReason::HostUnreachable,
-                format!(
-                    "the other host could not be reached: {}",
-                    last_unreachable.unwrap_or_else(|| {
-                        crate::link::ChannelError::NoPairingRoute.to_string()
-                    })
-                ),
+                crate::link::ChannelError::NoPairingRoute.to_string(),
             ))
         })?;
         Ok(wire::PendingPair {
